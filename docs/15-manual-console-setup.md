@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **50 collections, 614 fields and 116 indexes**. Entered by hand at a
+> This is **50 collections, 616 fields and 116 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -192,7 +192,7 @@ There are 50 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: _none — server only_ · **Update**: Team: admins · **Delete**: _none — server only_
 
-**Attributes** (33)
+**Attributes** (35)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -229,6 +229,8 @@ There are 50 collections. A progress checklist is at the end of this document.
 | `email_from_name` | String | size 120 | No | — | No |
 | `email_from_address` | String | size 160 | No | — | No |
 | `email_reply_to` | String | size 160 | No | — | No |
+| `storage_mode` | Enum | multi, single | No | multi | No |
+| `shared_bucket_id` | String | size 64 | No | — | No |
 
 **Indexes**: none.
 
@@ -1823,7 +1825,7 @@ way mistakes creep in.
 
 - [ ]  1. `venues` (16 fields, 2 indexes)
 - [ ]  2. `venue_menu_items` (6 fields, 1 indexes)
-- [ ]  3. `settings` (33 fields, 0 indexes)
+- [ ]  3. `settings` (35 fields, 0 indexes)
 - [ ]  4. `payment_methods` (10 fields, 2 indexes)
 - [ ]  5. `categories` (8 fields, 1 indexes)
 - [ ]  6. `menu_items` (16 fields, 2 indexes)

@@ -206,3 +206,29 @@ list on the terminal showing what's due in the next few hours.
 - **Time-based prices** — happy hour and similar. This changes the price the
   customer *sees*; discounts (doc 14) reduce an already-priced bill. Keeping
   the two separate is what makes the reports honest.
+
+
+---
+
+## 13.8 Storage layout
+
+The design uses three storage buckets — menu images (public), branding
+(public), expense receipts (managers only) — so a private receipt and a public
+photo are separated by where they live, not just by a permission setting.
+
+Appwrite's free plan allows **one** bucket. When provisioning detects that, it
+falls back automatically:
+
+- All files share one bucket, and **file-level security is switched on**.
+- Every upload must therefore carry its own permissions: menu images and
+  branding are readable by anyone, expense receipts by managers and admins
+  only. The property that matters — receipts are not world-readable — is
+  preserved; the isolation is just weaker, since a mistake at upload time is no
+  longer caught by the bucket itself.
+- `settings.storage_mode` records which layout is in use (`multi` or `single`)
+  and `settings.shared_bucket_id` names the shared bucket, so the apps know
+  where to upload without guessing.
+
+Upgrading the Appwrite plan later and re-running `npm run provision` creates the
+separate buckets and flips the mode back to `multi`. Existing files stay where
+they are.

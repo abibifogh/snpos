@@ -264,15 +264,66 @@ async function main() {
   log('✓', `Collections (${COLLECTIONS.length})`);
 
   // ---- buckets -----------------------------------------------------------
+  //
+  // The design wants one bucket per purpose, so a public menu image and a
+  // private expense receipt are separated by the bucket they live in. A plan
+  // capped at one bucket makes that impossible, so we fall back to a single
+  // shared bucket with FILE-level security: every upload carries its own
+  // permissions, which preserves the property that matters (receipts are not
+  // world-readable) even though the isolation is weaker.
+  let storageMode = 'multi';
+  let sharedBucketId = '';
+
   for (const b of BUCKETS) {
     const perms = toPermissions({ read: b.read, create: b.write, update: b.write, delete: b.write }, teamIds);
-    await ensureExists(
-      `bucket ${b.id}`,
-      () => storage.getBucket(b.id),
-      () => storage.createBucket(b.id, b.name, perms, false, true, b.maxSize, b.extensions, 'gzip', false, true),
-    );
+    try {
+      await ensureExists(
+        `bucket ${b.id}`,
+        () => storage.getBucket(b.id),
+        () => storage.createBucket(b.id, b.name, perms, false, true, b.maxSize, b.extensions, 'gzip', false, true),
+      );
+    } catch (e) {
+      if (!isPlanLimit(e)) throw e;
+
+      // Widen whichever bucket already exists to serve every purpose.
+      sharedBucketId = BUCKETS[0].id;
+      storageMode = 'single';
+      const allExtensions = [...new Set(BUCKETS.flatMap((x) => x.extensions))];
+      const maxSize = Math.max(...BUCKETS.map((x) => x.maxSize));
+      const sharedPerms = toPermissions(
+        {
+          read: ['any'], // per-file permissions do the real gating
+          create: ['team:cashiers', 'team:managers', 'team:admins'],
+          update: ['team:managers', 'team:admins'],
+          delete: ['team:managers', 'team:admins'],
+        },
+        teamIds,
+      );
+      await retry(
+        () =>
+          storage.updateBucket(
+            sharedBucketId,
+            'SNPOS files (shared)',
+            sharedPerms,
+            true /* fileSecurity — each file carries its own permissions */,
+            true,
+            maxSize,
+            allExtensions,
+            'gzip',
+            false,
+            true,
+          ),
+        `widen bucket ${sharedBucketId}`,
+      );
+
+      log('!', `Plan allows one storage bucket, so all files share \`${sharedBucketId}\`.`);
+      log(' ', '  File-level security is on: uploads must set their own permissions.');
+      log(' ', '  Menu images stay public; expense receipts stay manager-only.');
+      log(' ', '  Upgrading the Appwrite plan later restores separate buckets — re-run then.');
+      break;
+    }
   }
-  log('✓', 'Buckets');
+  log('✓', `Buckets (${storageMode === 'single' ? '1 shared' : BUCKETS.length})`);
 
   // ---- seed data ---------------------------------------------------------
   await waitForAttributes('settings', COLLECTIONS.find((c) => c.id === 'settings').attributes.map((a) => a[0]));
@@ -302,6 +353,8 @@ async function main() {
       expense_approval_threshold: 20000,
       cash_variance_tolerance: 500,
       terminal_idle_lock_seconds: 180,
+      storage_mode: storageMode,
+      shared_bucket_id: sharedBucketId,
     }),
   );
 

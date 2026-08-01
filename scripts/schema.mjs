@@ -137,6 +137,12 @@ export const COLLECTIONS = [
       ['email_from_name', 's', 120, false],
       ['email_from_address', 's', 160, false],
       ['email_reply_to', 's', 160, false],
+      // Storage layout. 'multi' = one bucket per purpose (the design intent);
+      // 'single' = everything in one bucket with per-file permissions, which is
+      // what a plan capped at one bucket forces. Apps read this to know where
+      // to upload and must set explicit file permissions in 'single' mode.
+      ['storage_mode', 'e', ['multi', 'single'], false, 'multi'],
+      ['shared_bucket_id', 's', 64, false],
     ],
   },
   {

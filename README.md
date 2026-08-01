@@ -53,6 +53,10 @@ an accounting/analytics layer.
 Still assumed, not yet confirmed: **Appwrite Cloud** for hosting (the
 provisioning script works unchanged against a self-hosted instance).
 
+Running on Appwrite's **free plan** works, with one adaptation: the plan allows
+a single storage bucket, so all files share one with per-file permissions
+instead of three separate buckets. See [doc 13.8](docs/13-features.md).
+
 ## Repo layout (target)
 
 ```
