@@ -2,7 +2,7 @@
 /**
  * Idempotent Appwrite provisioner for SNPOS.
  *
- *   cp .env.example .env && edit, then:  pnpm provision
+ *   cp .env.example .env && edit, then:  npm run provision
  *
  * Safe to re-run: creates what is missing, skips what exists, never drops.
  */
@@ -267,7 +267,7 @@ async function main() {
   log('✓', 'Seed data');
 
   log('▸', `Done — ${created} created, ${skipped} already present.`);
-  log('▸', 'Next: pnpm seed:admin --email you@example.com --name "Owner"');
+  log('▸', 'Next: npm run seed:admin -- --email you@example.com --name "Owner"');
 }
 
 main().catch((e) => {

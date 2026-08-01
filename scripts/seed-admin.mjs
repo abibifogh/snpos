@@ -3,7 +3,7 @@
  * Creates the first admin account, adds it to the admins team and writes its
  * staff profile.
  *
- *   pnpm seed:admin --email you@example.com --name "Owner"
+ *   npm run seed:admin -- --email you@example.com --name "Owner"
  */
 import 'dotenv/config';
 import { parseArgs } from 'node:util';
@@ -13,7 +13,7 @@ import { DB_ID } from './schema.mjs';
 
 const { values } = parseArgs({ options: { email: { type: 'string' }, name: { type: 'string' } } });
 if (!values.email) {
-  console.error('Usage: pnpm seed:admin --email you@example.com --name "Owner"');
+  console.error('Usage: npm run seed:admin -- --email you@example.com --name "Owner"');
   process.exit(1);
 }
 
