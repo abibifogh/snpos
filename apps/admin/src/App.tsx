@@ -10,6 +10,8 @@ import { MenuItemsPage } from './pages/MenuItems';
 import { FeaturesPage } from './pages/Features';
 import { VenuesPage } from './pages/Venues';
 import { AccountPage } from './pages/Account';
+import { AddonsPage } from './pages/Addons';
+import { ExpensesPage } from './pages/Expenses';
 
 export function App() {
   const { user, loading } = useSession();
@@ -30,6 +32,8 @@ export function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/menu/categories" element={<CategoriesPage />} />
         <Route path="/menu/items" element={<MenuItemsPage />} />
+        <Route path="/menu/options" element={<AddonsPage />} />
+        <Route path="/expenses" element={<ExpensesPage />} />
         <Route path="/venues" element={<VenuesPage />} />
         <Route path="/features" element={<FeaturesPage />} />
         <Route path="/settings" element={<SettingsPage />} />

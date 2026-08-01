@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import type { Category, Station } from '@snpos/core';
+import { parseWindows, describeWindows, isAvailable } from '@snpos/core';
+import type { Category, Station, Windows } from '@snpos/core';
+import { HoursEditor } from '../components/HoursEditor';
+import { ImageField } from '../components/ImageField';
+import { useSession } from '../session';
 
 const STATIONS: Station[] = ['hot', 'cold', 'bar', 'dessert'];
 const blank = (sort: number): Partial<Category> => ({
@@ -9,7 +13,9 @@ const blank = (sort: number): Partial<Category> => ({
 });
 
 export function CategoriesPage() {
+  const { settings } = useSession();
   const toast = useToast();
+  const [hours, setHours] = useState<Windows>({});
   const [rows, setRows] = useState<Category[] | null>(null);
   const [editing, setEditing] = useState<Partial<Category> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -29,6 +35,8 @@ export function CategoriesPage() {
       active: editing.active ?? true,
       unavailable_display: editing.unavailable_display ?? 'grey',
       station: editing.station ?? 'hot',
+      availability: Object.keys(hours).length ? JSON.stringify(hours) : '',
+      image_id: editing.image_id ?? '',
     };
     try {
       if (editing.$id) await db.updateDocument(DB_ID, 'categories', editing.$id, payload);
@@ -60,7 +68,7 @@ export function CategoriesPage() {
     <>
       <div className="spread">
         <h1>Categories</h1>
-        <Button variant="primary" onClick={() => setEditing(blank((rows?.length ?? 0) + 1))}>Add category</Button>
+        <Button variant="primary" onClick={() => { setEditing(blank((rows?.length ?? 0) + 1)); setHours({}); }}>Add category</Button>
       </div>
 
       {error && !editing && <Notice>{error}</Notice>}
@@ -80,6 +88,7 @@ export function CategoriesPage() {
                   <th style={{ width: '3.5rem' }}>Order</th>
                   <th>Name</th>
                   <th>Station</th>
+                  <th>Available</th>
                   <th>Status</th>
                   <th />
                 </tr>
@@ -93,9 +102,16 @@ export function CategoriesPage() {
                       {c.description && <div className="small dim">{c.description}</div>}
                     </td>
                     <td className="dim">{c.station}</td>
+                    <td className="small dim">
+                      {(() => {
+                        const w = parseWindows(c.availability);
+                        if (!w) return 'All day';
+                        return isAvailable(w) ? <Badge tone="ok">Now</Badge> : <span>{describeWindows(w)}</span>;
+                      })()}
+                    </td>
                     <td>{c.active ? <Badge tone="ok">Active</Badge> : <Badge>Hidden</Badge>}</td>
                     <td className="num">
-                      <Button size="sm" variant="ghost" onClick={() => setEditing(c)}>Edit</Button>
+                      <Button size="sm" variant="ghost" onClick={() => { setEditing(c); setHours(parseWindows(c.availability) ?? {}); }}>Edit</Button>
                       <Button size="sm" variant="ghost" onClick={() => remove(c)}>Delete</Button>
                     </td>
                   </tr>
@@ -143,6 +159,21 @@ export function CategoriesPage() {
               <option value="hide">Hide completely</option>
             </Select>
           </Field>
+          <ImageField
+            fileId={editing.image_id}
+            purpose="menu"
+            settings={settings}
+            onChange={(id) => setEditing({ ...editing, image_id: id ?? '' })}
+            label="Category photo"
+            hint="Optional. Shown as the category header on the customer menu."
+          />
+
+          <Field
+            label="Available hours"
+            hint="When this section shows on the menu. A dish in several categories appears and disappears with each one — so the same dish can be in Lunch and in Dinner and show at both times."
+          />
+          <HoursEditor value={hours} onChange={setHours} emptyMeans="this category shows all day, every day" />
+
           <Field>
             <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label="Active" />
           </Field>

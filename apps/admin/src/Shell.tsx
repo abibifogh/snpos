@@ -12,8 +12,10 @@ const NAV: { group: string; links: NavLinkDef[] }[] = [
     links: [
       { to: '/menu/categories', label: 'Categories' },
       { to: '/menu/items', label: 'Dishes & drinks' },
+      { to: '/menu/options', label: 'Options' },
     ],
   },
+  { group: 'Money', links: [{ to: '/expenses', label: 'Expenses' }] },
   {
     group: 'Setup',
     links: [

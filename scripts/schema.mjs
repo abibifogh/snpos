@@ -208,11 +208,38 @@ export const COLLECTIONS = [
     ],
   },
   {
+    /**
+     * A dish can sit in several categories at once — Jollof in both "Lunch"
+     * and "Mains" — and each category has its own availability hours, so the
+     * same dish appears and disappears at different times depending on which
+     * section the customer is looking at.
+     *
+     * menu_items.category_id remains the PRIMARY category: it decides the
+     * default station and gives every dish one home even if these rows are
+     * never created.
+     */
+    id: 'menu_item_categories',
+    name: 'Menu item categories',
+    perms: { read: ['any'], create: MGMT, update: MGMT, delete: MGMT },
+    attributes: [
+      ['menu_item_id', 's', 64, true],
+      ['category_id', 's', 64, true],
+      ['sort', 'i', null, false, 0], // position within THIS category
+      ['active', 'b', null, false, true], // hide from one category, keep others
+    ],
+    indexes: [
+      ['item_category', 'unique', ['menu_item_id', 'category_id']],
+      ['category', 'key', ['category_id', 'sort']],
+      ['item', 'key', ['menu_item_id']],
+    ],
+  },
+  {
     id: 'addon_groups',
     name: 'Add-on groups',
     perms: { read: ['any'], create: MGMT, update: MGMT, delete: MGMT },
     attributes: [
       ['name', 's', 120, true],
+      ['description', 's', 300, false], // shown under the group heading
       ['min_select', 'i', null, true, 0],
       ['max_select', 'i', null, true, 1],
       ['required', 'b', null, true, false],
@@ -459,7 +486,7 @@ export const COLLECTIONS = [
     name: 'Shift expenses',
     perms: { read: ['team:cashiers', ...MGMT], create: ['team:cashiers', ...MGMT], update: MGMT, delete: ADMIN },
     attributes: [
-      ['shift_id', 's', 64, true],
+      ['shift_id', 's', 64, false], // blank = recorded outside a shift
       ['category', 'e', ['supplies', 'transport', 'utilities', 'repairs', 'staff_advance', 'petty_cash', 'other'], true],
       ['payee', 's', 160, false],
       ['amount', 'i', null, true, 0],

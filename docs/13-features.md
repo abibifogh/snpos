@@ -232,3 +232,38 @@ falls back automatically:
 Upgrading the Appwrite plan later and re-running `npm run provision` creates the
 separate buckets and flips the mode back to `multi`. Existing files stay where
 they are.
+
+
+---
+
+## 13.9 Menu structure
+
+### A dish can live in several categories
+
+`menu_items.category_id` is the dish's **primary** category — it gives every
+dish one home and sets its default kitchen station. Additional memberships are
+rows in `menu_item_categories`.
+
+This exists because categories carry their own availability hours. Put Jollof
+in both *Lunch* (11:00–15:00) and *À la carte* (all day) and it appears under
+Lunch only at lunchtime, while remaining visible under À la carte throughout.
+The same dish, two different visibility rules, no duplicate record and no
+divergent prices.
+
+A membership can be switched off per category (`active`) without removing it,
+and carries its own `sort` so a dish can be third under Lunch and first under
+Mains.
+
+### Options (add-ons)
+
+`addon_groups` are reusable question sets — "Choose your protein" — with
+`addon_options` as the answers. Each option carries a `price_delta` which may
+be **zero**: an included choice and a paid upgrade are the same mechanism, and
+nothing needs a special case for "free".
+
+Groups attach to dishes through `menu_item_addon_groups`, so one group serves
+many dishes. `min_select`, `max_select` and `required` express the rules —
+pick one, pick up to three, must answer before ordering.
+
+Prices are captured onto the order line at the time of ordering, so changing an
+option's price later never rewrites what a past customer was charged.
