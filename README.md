@@ -57,19 +57,32 @@ Running on Appwrite's **free plan** works, with one adaptation: the plan allows
 a single storage bucket, so all files share one with per-file permissions
 instead of three separate buckets. See [doc 13.8](docs/13-features.md).
 
-## Repo layout (target)
+## Running the admin app
+
+```bash
+npm install
+npm run dev          # http://localhost:5174
+```
+
+Needs `VITE_APPWRITE_ENDPOINT`, `VITE_APPWRITE_PROJECT` and `VITE_DB_ID` in a
+`.env` at the repo root (see `.env.example`), and `localhost` registered as a
+**Web platform** in the Appwrite console — the SDK refuses unregistered origins.
+
+No API key is needed to run the apps; that is only for the provisioning scripts.
+
+## Repo layout
 
 ```
 apps/
+  admin/       Admin & manager dashboard                          [built]
   menu/        Customer QR menu (public, no login)
   pos/         Waiter + cashier terminal
   kitchen/     Kitchen display system
-  kitchen-android/  Capacitor shell around kitchen/ (alarm, wake, boot restart)
-  admin/       Admin & manager dashboard
+  kitchen-android/  Capacitor shell around kitchen/
 packages/
-  core/        Shared SDK client, types, availability engine, money utils
+  core/        Appwrite client, types, money, feature flags, availability [built]
+  ui/          Themed components + runtime branding                      [built]
   offline/     Local store, outbox queue, sync worker, conflict rules
-  ui/          Themed component library (reads branding from settings)
 functions/
   order-guard/          Server-side price + availability validation
   preorder-fire/        Releases scheduled orders to the kitchen at fire time

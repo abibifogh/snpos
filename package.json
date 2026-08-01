@@ -8,7 +8,11 @@
     "provision": "node scripts/provision.mjs",
     "seed:admin": "node scripts/seed-admin.mjs",
     "gen:manual": "node scripts/gen-manual-setup.mjs",
-    "doctor": "node scripts/doctor.mjs"
+    "doctor": "node scripts/doctor.mjs",
+    "dev": "npm run dev -w @snpos/admin",
+    "dev:admin": "npm run dev -w @snpos/admin",
+    "build:admin": "npm run build -w @snpos/admin",
+    "typecheck": "npm run typecheck -w @snpos/admin"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
@@ -16,5 +20,9 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ]
 }

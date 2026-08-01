@@ -1,0 +1,108 @@
+/** Shapes mirroring the collections created by scripts/schema.mjs. */
+
+export interface Doc {
+  $id: string;
+  $createdAt: string;
+  $updatedAt: string;
+}
+
+export interface Settings extends Doc {
+  restaurant_name: string;
+  timezone: string;
+  currency_code: string;
+  currency_symbol: string;
+  currency_decimals: number;
+  symbol_position: 'before' | 'after';
+  primary_color: string;
+  secondary_color: string;
+  accent_color?: string;
+  logo_light_id?: string;
+  logo_dark_id?: string;
+  tax_rate_bp: number;
+  tax_inclusive: boolean;
+  service_charge_bp: number;
+  shift_float_policy: 'zero' | 'carry_over' | 'prompt';
+  shift_float_default: number;
+  kitchen_ack_sla_seconds: number;
+  kitchen_ping_max_level: number;
+  require_reject_reason: boolean;
+  qr_orders_need_approval: boolean;
+  order_number_prefix?: string;
+  low_stock_default_bp: number;
+  cash_variance_tolerance: number;
+  terminal_idle_lock_seconds: number;
+  default_locale?: string;
+  enabled_locales?: string[];
+  email_from_name?: string;
+  email_from_address?: string;
+  storage_mode?: 'multi' | 'single';
+  shared_bucket_id?: string;
+}
+
+export interface Venue extends Doc {
+  name: string;
+  slug: string;
+  address?: string;
+  phone?: string;
+  timezone: string;
+  active: boolean;
+  sort: number;
+  primary_color?: string;
+  secondary_color?: string;
+  opening_hours?: string;
+  holiday_closures?: string;
+  order_number_prefix?: string;
+}
+
+export type Station = 'hot' | 'cold' | 'bar' | 'dessert';
+
+export interface Category extends Doc {
+  name: string;
+  description?: string;
+  sort: number;
+  image_id?: string;
+  active: boolean;
+  availability?: string;
+  unavailable_display: 'grey' | 'hide';
+  station: Station;
+}
+
+export interface MenuItem extends Doc {
+  category_id: string;
+  name: string;
+  description?: string;
+  price: number;
+  image_id?: string;
+  image_focal_x: number;
+  image_focal_y: number;
+  sku?: string;
+  active: boolean;
+  availability?: string;
+  sold_out_until?: string;
+  prep_minutes: number;
+  station: Station | 'inherit';
+  tags?: string[];
+  sort: number;
+  track_stock: boolean;
+}
+
+export interface FeatureFlag extends Doc {
+  key: string;
+  venue_id?: string;
+  enabled: boolean;
+  config?: string;
+}
+
+export interface StaffProfile extends Doc {
+  user_id: string;
+  display_name: string;
+  role: 'cook' | 'waiter' | 'cashier' | 'manager' | 'admin';
+  active: boolean;
+  phone?: string;
+  can_open_shift: boolean;
+  can_close_shift: boolean;
+  can_void: boolean;
+  can_discount_up_to_bp: number;
+  can_mark_paid?: boolean;
+  venue_ids?: string[];
+}
