@@ -1,15 +1,15 @@
 # 13 — Optional features and the admin switchboard
 
-All twelve features below are **in scope**, and every one of them is something
+Every feature below is **in scope**, and every one of them is something
 an admin turns on or off — nothing is forced on you. This doc covers how the
 switchboard works and what each feature does.
 
 ## 13.1 The switchboard
 
-**Admin → Settings → Features** lists all twelve with a toggle each and an
+**Admin → Settings → Features** lists them all with a toggle each and an
 "Options" panel underneath.
 
-- Off by default at group level or on, per the table in 13.2 — you can change
+- On or off at group level per the table in 13.2 — you can change
   any of them before go-live.
 - Each venue can **override the group setting**. Delivery on at the high street
   branch, off at the mall branch, without touching the others.
@@ -25,11 +25,12 @@ Technically: rows in the `feature_flags` collection keyed by feature name, with
 a JSON `config` blob per feature. Apps call `isEnabled('takeaway')` and render
 accordingly. Defaults live in `FEATURES` in `scripts/schema.mjs`.
 
-## 13.2 The twelve
+## 13.2 The features
 
 | Key | Feature | Default | Notes |
 | --- | --- | --- | --- |
 | `receipts` | Receipts and kitchen slips | On | Email by default — see 13.3 |
+| `preorders` | Order ahead / order while closed | On | Kitchen stays silent until fire time — see 13.6 |
 | `takeaway` | Takeaway and delivery | On | Multiple pickup points — see 13.4 |
 | `waste_log` | Waste log | On | Makes the stock alerts trustworthy |
 | `time_clock` | Staff clock in / out | On | Adds labour cost to reports |
@@ -100,19 +101,89 @@ It contains:
 - Cash counted vs expected, and the variance.
 - Voids, discounts and refunds, with who authorised them.
 - Waste recorded during the shift.
-- **Stock items reported low or out for 3 or more shifts running** — called out
-  by name, with how many shifts and how long it's been that way. A single low
-  reading is noise; the same item low four shifts running is either a supply
-  problem or something worse, and it's exactly the thing that gets normalised
-  and ignored on a dashboard. The threshold is configurable
-  (`persistent_stock_threshold`, default 3).
+- **Stock, in two separate sections** — see below.
+
+### Stock is reported in two sections, never merged
+
+**① New this shift.** Every item reported low or out **for the first time**,
+listed in full. This is what to act on tonight: reorder it, or 86 it before
+tomorrow's service.
+
+**② Ongoing — flagged 3+ shifts running.** A summarised roll-up of items that
+have been low or out for three or more consecutive shifts, each with how many
+shifts and how long it's been that way. This is what to make a *decision*
+about: a supplier who keeps short-delivering, a par level set too low, or
+something going missing.
+
+Keeping them apart is the whole point. A first-time flag is normal operations.
+The same item low for the fourth shift running is a different kind of problem
+wearing the same clothes, and merging the two lists is exactly how the second
+one gets ignored. The threshold for section ② is configurable
+(`persistent_stock_threshold`, default 3), and either section can be switched
+off on its own.
 
 The count lives on each ingredient (`consecutive_low_count`) and resets the
-moment a count comes back healthy. Recipients are configured per person and per
-channel — email, WhatsApp, SMS or push — under Admin → Settings → Reports. You
-can also switch on a separate nightly digest if you want both.
+moment a count comes back healthy — so an item that recovers and later dips
+again correctly reappears in section ① rather than carrying old history.
+Recipients are configured per person and per channel — email, WhatsApp, SMS or
+push — under Admin → Settings → Reports. You can also switch on a separate
+nightly digest if you want both.
 
-## 13.6 The rest, briefly
+## 13.6 Ordering while closed (`preorders`)
+
+Customers can browse the menu and place an order **outside trading hours**,
+choosing a time when the restaurant will be open. Nothing reaches the kitchen
+until that time comes round.
+
+### What the customer sees
+
+When the venue is closed, the menu opens normally with a banner — *"We're
+closed right now — order ahead and pick a time"* — rather than a dead end. They
+build their order as usual, then choose a slot from the next available trading
+period. The time picker only ever offers slots the kitchen can actually serve:
+
+- Inside opening hours, respecting per-venue holiday closures.
+- At least `min_lead_minutes` away (default 30) — nobody orders for five
+  minutes from now.
+- No later than `cutoff_minutes_before_close` before the venue shuts.
+- Up to `max_days_ahead` in advance (default 7).
+- Not already full, if you've set a per-slot capacity.
+
+Ordering ahead works **during** service too — "I'll collect at 7pm" — and for
+all three fulfilment types, each of which you can switch off separately.
+
+### What the kitchen sees: nothing, until it's time
+
+This is the part that matters. A pre-order sits in a new `SCHEDULED` state and
+is **invisible to the kitchen screen and silent** — it does not alarm, does not
+count towards busy mode, and does not appear in the ticket queue.
+
+At `fire_at`, computed by working back from the requested time using the items'
+prep minutes plus a small buffer, the order flips to `PENDING` and behaves
+exactly like a live order: it appears, it alarms, it escalates. The kitchen
+never has to remember that something is due later — the system remembers.
+
+If you'd rather see them in advance, `require_staff_confirmation` puts
+pre-orders in front of a manager first, and there's a separate "Coming up"
+list on the terminal showing what's due in the next few hours.
+
+### The details that stop it going wrong
+
+- **Shifts.** A pre-order placed while closed belongs to no shift. It's stamped
+  with whichever shift is open when it fires, so the money lands in the right
+  day's takings rather than the day it was typed.
+- **Prices.** Snapshotted at ordering. If you change a price overnight, the
+  customer pays what they were quoted.
+- **Availability.** Re-checked at fire time. If something has sold out
+  overnight, staff are prompted to call the customer rather than the order
+  silently failing — there's a `cannot_meet_slot` rejection reason for exactly
+  this.
+- **Capacity.** `slot_capacity` caps orders per slot, held in `preorder_slots`
+  and incremented server-side in one step, so two people can't both take the
+  last place at 12:00. Left at 0 it's unlimited.
+- **Payment** is still recorded by staff at handover, unchanged by any of this.
+
+## 13.7 The rest, briefly
 
 - **Waste log** — staff record spoiled, dropped or binned food as it happens,
   with an optional photo and a cost. Kept separate from stock movements so

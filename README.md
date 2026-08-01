@@ -17,11 +17,11 @@ an accounting/analytics layer.
 | [06 — Accounting & analytics](docs/06-accounting-analytics.md) | Ledger, dashboards, variance flagging |
 | [07 — Roles & access](docs/07-roles-access.md) | Cook / waiter / cashier / manager / admin matrix |
 | [08 — Deployment](docs/08-deployment.md) | **Step-by-step, stage by stage** |
-| [09 — Open decisions](docs/09-open-decisions.md) | Features awaiting your confirmation |
+| [09 — Open decisions](docs/09-open-decisions.md) | How the scope was decided (history) |
 | [10 — Decisions log](docs/10-decisions-log.md) | What's been decided, in plain language |
 | [11 — Offline mode](docs/11-offline-mode.md) | Working through an internet outage |
 | [12 — Kitchen app](docs/12-kitchen-app.md) | Native Android app for the alarm |
-| [13 — Features](docs/13-features.md) | The twelve optional features and the admin switchboard |
+| [13 — Features](docs/13-features.md) | Optional features, pre-ordering, and the admin switchboard |
 | [14 — Discounts](docs/14-discounts.md) | Discounts, codes, and marking a bill paid |
 
 ## Confirmed decisions
@@ -36,14 +36,18 @@ an accounting/analytics layer.
    and accounts per location, plus a group-wide comparison view.
 4. **The kitchen screen is a native Android app**, so the alarm works with the
    tablet locked — [doc 12](docs/12-kitchen-app.md).
-5. **All twelve optional features are in, and every one is an admin toggle** —
+5. **Every optional feature is in, and every one is an admin toggle** —
    [doc 13](docs/13-features.md). Receipts are emailed rather than printed
    (kitchen slips print separately and switch off on their own); takeaway
    supports several pickup points per venue; the shift summary is sent the
-   moment a shift closes and names stock low or out for 3+ shifts running.
+   moment a shift closes, listing stock flagged for the first time and, in its
+   own section, anything low or out for 3+ shifts running.
 6. **Discounts and discount codes** — guests can type a code while ordering,
    staff apply discounts before payment, and **staff always mark the bill
    paid** — [doc 14](docs/14-discounts.md).
+7. **Customers can order while the restaurant is closed**, choosing a time when
+   it will be open. Pre-orders stay silent and invisible to the kitchen until
+   the moment they need cooking — [doc 13.6](docs/13-features.md).
 
 Still assumed, not yet confirmed: **Appwrite Cloud** for hosting (the
 provisioning script works unchanged against a self-hosted instance).
@@ -63,6 +67,7 @@ packages/
   ui/          Themed component library (reads branding from settings)
 functions/
   order-guard/          Server-side price + availability validation
+  preorder-fire/        Releases scheduled orders to the kitchen at fire time
   kitchen-escalate/     Re-ping unacknowledged orders
   shift-close/          Post shift to ledger, depletion, variance flags
   stock-variance/       Nightly theoretical-vs-actual analysis

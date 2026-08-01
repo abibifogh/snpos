@@ -74,11 +74,11 @@ drifts out of step with the rest of the system.
 
 ---
 
-### 5. All twelve optional features are in — and all are switchable
+### 5. Every optional feature is in — and every one is switchable
 
-Every feature offered is included, and **each one is an on/off switch an admin
-controls**, per venue if you want. Nothing is welded in. Full list and what each
-does: [doc 13](13-features.md).
+All twelve features offered are included, plus ordering-ahead (decision 11), and
+**each one is an on/off switch an admin controls**, per venue if you want.
+Nothing is welded in. Full list and what each does: [doc 13](13-features.md).
 
 *What this changes:* turning something off hides it, it never deletes it — so
 you can start simple, switch things on as you find you want them, and switch
@@ -104,18 +104,23 @@ directions shown to the customer, its own opening hours and its own extra prep
 time. The kitchen ticket shows which one, because handing food to the wrong
 queue is *the* classic takeaway mistake.
 
-### 8. The summary is sent at shift close, and names persistent stock problems
+### 8. The summary is sent at shift close, and splits stock two ways
 
-Not a nightly timer — it goes out **the moment a shift is closed**. Alongside
-sales, cash variance, voids and waste, it names any stock item that has been
-reported low or out for **3 or more shifts running**, with how long it's been
-that way.
+Not a nightly timer — it goes out **the moment a shift is closed**, carrying
+sales, cash variance, voids, discounts and waste.
 
-*Why that matters:* one low reading is noise. The same item low four shifts
-running is either a supplier problem or someone helping themselves — and it's
-exactly the kind of thing that gets normalised and ignored when it only ever
-appears as a dashboard tile. Putting it in a message you actually read is the
-point. The threshold is adjustable if 3 turns out to be too noisy.
+Stock appears as **two separate sections**:
+
+1. **New this shift** — everything reported low or out for the first time,
+   listed in full. What to act on tonight.
+2. **Ongoing** — a roll-up of anything low or out for **3 or more shifts
+   running**, with how long it's been that way. What to make a decision about.
+
+*Why keep them apart:* one low reading is normal operations. The same item low
+four shifts running is either a supplier problem or someone helping themselves
+— a different problem wearing the same clothes. Merged into one list, the second
+kind disappears into the first. The threshold is adjustable if 3 turns out to be
+too noisy, and either section can be switched off on its own.
 
 ### 9. Discounts and discount codes
 
@@ -141,6 +146,28 @@ This is enforced, not merely intended: the customer-facing app has no route
 that can mark an order paid, and the permissions exclude guests entirely, so it
 can't be done with a crafted request either. Details in
 [doc 14](14-discounts.md).
+
+### 11. Customers can order while you're closed
+
+The menu stays open outside trading hours. A customer who scans a QR code or
+opens the link at 11pm sees the full menu with a banner, builds their order, and
+**picks a time when you'll be open** — rather than hitting a dead end and going
+elsewhere.
+
+*The important part:* the kitchen sees nothing. A pre-order is completely
+silent — no alarm, no ticket, nothing in the queue — until the moment it needs
+cooking, which the system works out by counting back from the requested time
+using each dish's prep time. Nobody has to remember that something is due later.
+
+*What this changes:* you'll need to set your **opening hours** per venue
+(Admin → Venues → Hours) — the system can't offer sensible times without them.
+You can cap how many orders any one time slot accepts, so ten people can't all
+book 12:00 and swamp the pass. Prices are locked in at the time of ordering, and
+if something sells out overnight staff are prompted to phone the customer rather
+than the order quietly failing.
+
+Ordering ahead works during service too ("I'll collect at 7pm"), and like
+everything else it's a switch you can turn off.
 
 ---
 

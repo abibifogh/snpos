@@ -70,6 +70,11 @@ export const COLLECTIONS = [
       ['shift_float_default', 'i', null, true, 0],
       ['order_number_prefix', 's', 8, false],
       ['tax_rate_bp', 'i', null, false],
+      // Trading hours, same JSON shape as menu availability. Used to decide
+      // whether the venue is open now and, when it isn't, which future slots a
+      // customer may pre-order into.
+      ['opening_hours', 's', 4000, false],
+      ['holiday_closures', 's', 4000, false], // dated exceptions
     ],
     indexes: [['slug_unique', 'unique', ['slug']], ['active_sort', 'key', ['active', 'sort']]],
   },
@@ -283,14 +288,18 @@ export const COLLECTIONS = [
       ['channel', 'e', ['qr', 'waiter', 'counter', 'takeaway', 'delivery'], true],
       ['table_id', 's', 64, false],
       ['session_id', 's', 64, false],
-      ['shift_id', 's', 64, true],
-      ['status', 'e', ['PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'CLOSED', 'REJECTED', 'CANCELLED'], true, 'PENDING'],
+      // Optional: a pre-order placed while the restaurant is closed belongs to no
+      // shift yet. It is stamped with the shift that is open when it fires.
+      ['shift_id', 's', 64, false],
+      // SCHEDULED = a pre-order waiting for its fire time. It is not shown to
+      // the kitchen and does not alarm until then.
+      ['status', 'e', ['SCHEDULED', 'PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'CLOSED', 'REJECTED', 'CANCELLED'], true, 'PENDING'],
       ['alert_level', 'i', null, true, 0],
       ['accepted_at', 'd', null, false],
       ['accepted_by', 's', 64, false],
       ['rejected_at', 'd', null, false],
       ['rejected_by', 's', 64, false],
-      ['reject_reason_code', 'e', ['out_of_stock', 'too_busy', 'item_unavailable', 'closing_soon', 'duplicate', 'customer_request', 'other'], false],
+      ['reject_reason_code', 'e', ['out_of_stock', 'too_busy', 'item_unavailable', 'closing_soon', 'duplicate', 'customer_request', 'cannot_meet_slot', 'other'], false],
       ['reject_reason_note', 's', 500, false],
       ['subtotal', 'i', null, true, 0],
       ['discount_total', 'i', null, true, 0],
@@ -320,7 +329,17 @@ export const COLLECTIONS = [
       // --- Takeaway and delivery (feature 2)
       ['fulfilment', 'e', ['dine_in', 'takeaway', 'delivery'], false, 'dine_in'],
       ['pickup_point_id', 's', 64, false],
-      ['pickup_at', 'd', null, false],
+
+      // --- Scheduled / pre-orders
+      // Placed while the restaurant is closed (or in advance while open) for a
+      // future time. `scheduled_for` is when the customer wants it; `fire_at`
+      // is when the kitchen should be told, worked back from prep time. Until
+      // fire_at the order sits in `scheduled` and never alarms the kitchen.
+      ['is_preorder', 'b', null, false, false],
+      ['scheduled_for', 'd', null, false],
+      ['fire_at', 'd', null, false],
+      ['slot_id', 's', 64, false],
+      ['placed_while_closed', 'b', null, false, false],
       ['delivery_zone_id', 's', 64, false],
       ['delivery_address', 's', 500, false],
       ['delivery_fee', 'i', null, false, 0],
@@ -342,7 +361,8 @@ export const COLLECTIONS = [
       ['session', 'key', ['session_id']],
       ['table', 'key', ['table_id']],
       ['fulfilment_status', 'key', ['venue_id', 'fulfilment', 'status']],
-      ['pickup_point', 'key', ['pickup_point_id', 'pickup_at']],
+      ['pickup_point', 'key', ['pickup_point_id', 'scheduled_for']],
+      ['due', 'key', ['venue_id', 'status', 'fire_at']], // drives the fire-time sweep
       ['customer', 'key', ['customer_id']],
     ],
   },
@@ -782,6 +802,30 @@ export const COLLECTIONS = [
     indexes: [['venue_active', 'key', ['venue_id', 'active', 'sort']]],
   },
 
+  {
+    // Bookable time slots for pre-orders. A row per slot per venue, created on
+    // demand. `booked_count` is what stops fifty people all pre-ordering for
+    // 12:00 — capacity is checked and incremented server-side in one step, so
+    // two simultaneous orders can't both take the last place.
+    id: 'preorder_slots',
+    name: 'Pre-order slots',
+    perms: { read: ['any'], create: [], update: [], delete: MGMT },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['pickup_point_id', 's', 64, false],
+      ['slot_start', 'd', null, true],
+      ['slot_end', 'd', null, true],
+      ['capacity', 'i', null, true, 0], // 0 = unlimited
+      ['booked_count', 'i', null, true, 0],
+      ['status', 'e', ['open', 'full', 'closed'], true, 'open'],
+      ['closed_reason', 's', 200, false],
+    ],
+    indexes: [
+      ['venue_slot', 'unique', ['venue_id', 'pickup_point_id', 'slot_start']],
+      ['venue_start', 'key', ['venue_id', 'slot_start']],
+    ],
+  },
+
   // ---- 3. Waste log ------------------------------------------------------
   {
     // Deliberately separate from stock_movements so "we threw it away" can
@@ -1036,7 +1080,12 @@ export const COLLECTIONS = [
       ['period_start', 'd', null, true],
       ['period_end', 'd', null, true],
       ['payload', 's', 16000, true], // JSON: the full figures
-      ['persistent_stock_ids', 's[]', 64, false], // flagged 3+ shifts running
+      // Stock is reported in two separate sections, never merged:
+      //  - new_stock_ids: flagged low/out for the FIRST time this shift
+      //  - persistent_stock_ids: flagged for `persistent_stock_threshold`
+      //    shifts running (default 3) — the ones that need a decision
+      ['new_stock_ids', 's[]', 64, false],
+      ['persistent_stock_ids', 's[]', 64, false],
       ['delivery_status', 'e', ['queued', 'sent', 'partial', 'failed'], true, 'queued'],
       ['delivered_to', 's', 2000, false],
       ['last_error', 's', 500, false],
@@ -1253,6 +1302,31 @@ export const FEATURES = [
     },
   },
   {
+    key: 'preorders',
+    label: 'Order ahead / order while closed',
+    enabled: true,
+    config: {
+      // Customers can browse and order outside trading hours, choosing a time
+      // when the restaurant will be open. Nothing reaches the kitchen until
+      // that time comes round.
+      allow_when_closed: true,
+      allow_when_open: true, // "I'll collect at 7pm" during service
+      fulfilments: ['takeaway', 'delivery', 'dine_in'],
+      max_days_ahead: 7,
+      min_lead_minutes: 30, // no ordering for 5 minutes from now
+      slot_minutes: 15, // granularity of the time picker
+      slot_capacity: 0, // orders per slot; 0 = unlimited
+      cutoff_minutes_before_close: 30, // last slot of a trading day
+      // The kitchen is told with enough time to cook, not at ordering time.
+      fire_lead_uses_prep_time: true,
+      fire_lead_extra_minutes: 5,
+      // Whether staff must confirm a pre-order before its fire time.
+      require_staff_confirmation: false,
+      auto_cancel_unconfirmed_hours: 0,
+      closed_message: "We're closed right now — order ahead and pick a time.",
+    },
+  },
+  {
     key: 'waste_log',
     label: 'Waste log',
     enabled: true,
@@ -1306,10 +1380,12 @@ export const FEATURES = [
       include_cash_variance: true,
       include_voids_and_discounts: true,
       include_waste: true,
-      // Ingredients low or out for this many shifts running are called out by
-      // name, with how long they've been that way.
+      // Stock is reported as TWO separate sections, deliberately not merged.
+      // "New today" is what to act on now; "ongoing" is what to make a
+      // decision about. Averaging them into one list loses both signals.
+      include_new_stock_alerts: true, // flagged low/out for the first time
+      include_persistent_stock: true, // flagged N shifts running
       persistent_stock_threshold: 3,
-      include_persistent_stock: true,
       channels: ['email'],
     },
   },

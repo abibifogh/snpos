@@ -47,6 +47,9 @@ until it passes. Stages 0–3 are setup; 4–9 are build-and-ship; 10 is go-live
 ```bash
 git clone <this repo> && cd snpos
 cp .env.example .env        # fill APPWRITE_ENDPOINT, PROJECT_ID, API_KEY
+                            # NB: the endpoint is region-specific — copy the
+                            # exact one from your console, e.g.
+                            # https://fra.cloud.appwrite.io/v1
 pnpm install
 pnpm provision              # runs scripts/provision.mjs
 ```
@@ -60,8 +63,9 @@ missing and reports what already exists. It creates:
 - the seeded chart of accounts, default payment methods (Cash, Card), and the
   `settings` document with sane defaults.
 
-**Verify:** the console shows the `snpos` database with ~25 collections, and
-`settings/main` exists with `shift_float_policy = "zero"`.
+**Verify:** the console shows the `snpos` database with ~50 collections, and
+`settings/main` exists with `shift_float_policy = "zero"`. `feature_flags`
+should hold one row per feature and `venues` your first venue.
 
 > Appwrite creates attributes asynchronously. If an index fails with "attribute
 > not available", wait 10 seconds and re-run `pnpm provision` — the script
@@ -112,7 +116,19 @@ the scheduled ones.
 
 ---
 
-## Stage 4b — Venues
+## Stage 4b — Trading hours
+
+Set each venue's opening hours under **Admin → Venues → [venue] → Hours**, plus
+any dated holiday closures. The system needs these to know when it's open, and —
+if pre-ordering is on — which future times a customer may order into. Without
+hours set, the "order ahead" time picker has nothing to offer.
+
+**Verify:** open the customer menu outside those hours. You should see the menu
+with an "order ahead" banner, not a dead end.
+
+---
+
+## Stage 4c — Venues
 
 `provision.mjs` creates your first venue (`main`) automatically. For each
 additional location: Admin → Venues → Add, then set its name, address,
@@ -131,9 +147,9 @@ change, while the menu stays the same.
 
 ---
 
-## Stage 4c — Switch features on or off
+## Stage 4d — Switch features on or off
 
-`provision.mjs` seeds all twelve features as enabled at group level. Go to
+`provision.mjs` seeds every feature as enabled at group level. Go to
 **Admin → Settings → Features** and turn off anything you don't want yet — you
 can change any of them later without losing data ([doc 13](13-features.md)).
 
@@ -145,8 +161,11 @@ Set at minimum:
 - **Takeaway** — add your pickup points under Admin → Venues → [venue] →
   Pickup points. `Front counter` is created for you; add any others, with their
   directions and lead times.
-- **Shift summary** — add recipients under Admin → Settings → Reports, and
-  confirm the persistent-stock threshold (default: 3 shifts running).
+- **Shift summary** — add recipients under Admin → Settings → Reports. Both
+  stock sections are on by default: items flagged for the first time, and
+  separately anything low or out for 3+ shifts running (threshold adjustable).
+- **Pre-orders** — confirm the lead time, slot length, how far ahead customers
+  may order, and any per-slot capacity. Needs Stage 4b done first.
 - **Discounts** — set each role's discount ceiling in Stage 5, step 11, and the
   manager-PIN threshold (default: above 20%).
 
