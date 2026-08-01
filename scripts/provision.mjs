@@ -28,13 +28,37 @@ let skipped = 0;
 
 const log = (icon, msg) => console.log(`${icon} ${msg}`);
 
+/** True when the failure is a dropped connection rather than a rejection. */
+const isTransient = (e) =>
+  /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|network|502|503|504/i.test(e?.message || '');
+
+/**
+ * Retry a call through transient network failures.
+ *
+ * Free-tier connections drop regularly, and a provisioning run makes hundreds
+ * of calls — without this, one dropped socket half an hour in throws away the
+ * whole run.
+ */
+async function retry(fn, label = '', tries = 5) {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (!isTransient(e) || i >= tries) throw e;
+      const wait = 1000 * 2 ** i;
+      log('  …', `${label || 'call'} failed (${e.message}); retrying in ${wait / 1000}s`);
+      await sleep(wait);
+    }
+  }
+}
+
 /** True when the failure is a plan/quota ceiling rather than a real fault. */
 const isPlanLimit = (e) => /maximum number of|limit.*reached|upgrade to increase/i.test(e?.message || '');
 
 /** Run fn, tolerating "already exists". */
 async function ensure(label, fn) {
   try {
-    await fn();
+    await retry(fn, label);
     created++;
     log('  +', label);
   } catch (e) {
@@ -63,7 +87,7 @@ async function ensure(label, fn) {
  */
 async function ensureExists(label, getFn, createFn) {
   try {
-    await getFn();
+    await retry(getFn, label);
     skipped++;
     return;
   } catch (e) {
@@ -128,13 +152,17 @@ async function waitForAttributes(colId, keys, timeoutMs) {
   let lastReport = 0;
 
   while (Date.now() < deadline) {
-    const { attributes } = await db.listAttributes(DB_ID, colId);
+    const { attributes } = await retry(() => db.listAttributes(DB_ID, colId), `list ${colId}`);
     const byKey = Object.fromEntries(attributes.map((a) => [a.key, a.status]));
 
-    // A failed attribute never becomes available — waiting for it is pointless.
-    const failed = keys.filter((k) => byKey[k] === 'failed');
-    if (failed.length) {
-      throw new Error(`${colId}: Appwrite failed to build ${failed.join(', ')}. Delete the collection in the console and re-run.`);
+    // `failed` and `stuck` never resolve on their own — waiting is pointless.
+    const wedged = keys.filter((k) => byKey[k] === 'failed' || byKey[k] === 'stuck');
+    if (wedged.length) {
+      throw new Error(
+        `${colId}: Appwrite reports ${wedged.map((k) => `${k} → ${byKey[k]}`).join(', ')}\n` +
+          `  These will not finish on their own. Delete the \`${colId}\` collection in the\n` +
+          `  Appwrite console, then re-run — it will be rebuilt cleanly.`,
+      );
     }
 
     const pending = keys.filter((k) => byKey[k] !== 'available');
@@ -142,12 +170,13 @@ async function waitForAttributes(colId, keys, timeoutMs) {
 
     if (Date.now() - lastReport > 15000) {
       lastReport = Date.now();
-      log('  …', `waiting for ${colId}: ${pending.length} of ${keys.length} attributes still building`);
+      const kinds = [...new Set(pending.map((k) => byKey[k] || 'missing'))].join(', ');
+      log('  …', `waiting for ${colId}: ${pending.length} of ${keys.length} attributes [${kinds}]`);
     }
     await sleep(2000);
   }
 
-  const { attributes } = await db.listAttributes(DB_ID, colId);
+  const { attributes } = await retry(() => db.listAttributes(DB_ID, colId), `list ${colId}`);
   const byKey = Object.fromEntries(attributes.map((a) => [a.key, a.status]));
   const stuck = keys.filter((k) => byKey[k] !== 'available').map((k) => `${k}(${byKey[k] || 'missing'})`);
   throw new Error(
@@ -186,9 +215,9 @@ async function main() {
   for (const col of COLLECTIONS) {
     const perms = toPermissions(col.perms, teamIds);
     try {
-      await db.getCollection(DB_ID, col.id);
+      await retry(() => db.getCollection(DB_ID, col.id), `collection ${col.id}`);
       // Keep permissions in sync on re-runs.
-      await db.updateCollection(DB_ID, col.id, col.name, perms, true);
+      await retry(() => db.updateCollection(DB_ID, col.id, col.name, perms, true), `perms ${col.id}`);
       skipped++;
     } catch (e) {
       if (e?.code !== 404) throw new Error(`collection ${col.id} (checking): ${e.message}`);
@@ -197,7 +226,7 @@ async function main() {
       );
     }
 
-    const existing = new Set((await db.listAttributes(DB_ID, col.id)).attributes.map((a) => a.key));
+    const existing = new Set((await retry(() => db.listAttributes(DB_ID, col.id), `list ${col.id}`)).attributes.map((a) => a.key));
     for (const attr of col.attributes) {
       if (existing.has(attr[0])) continue;
       await ensure(`${col.id}.${attr[0]}`, () => createAttribute(col.id, attr));
@@ -205,7 +234,7 @@ async function main() {
 
     if (col.indexes?.length) {
       await waitForAttributes(col.id, col.attributes.map((a) => a[0]));
-      const haveIdx = new Set((await db.listIndexes(DB_ID, col.id)).indexes.map((i) => i.key));
+      const haveIdx = new Set((await retry(() => db.listIndexes(DB_ID, col.id), `indexes ${col.id}`)).indexes.map((i) => i.key));
       for (const [key, type, attrs, orders] of col.indexes) {
         if (haveIdx.has(key)) continue;
         await ensure(`${col.id}#${key}`, () => db.createIndex(DB_ID, col.id, key, type, attrs, orders));
