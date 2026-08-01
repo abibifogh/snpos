@@ -481,7 +481,7 @@ There are 50 collections. A progress checklist is at the end of this document.
 | `customer_name` | String | size 160 | No | — | No |
 | `customer_phone` | String | size 40 | No | — | No |
 | `customer_email` | String | size 160 | No | — | No |
-| `email_source` | Enum | guest_at_order, staff_entered, customer_profile, declined, (blank) | No | — | No |
+| `email_source` | Enum | guest_at_order, staff_entered, customer_profile, declined | No | — | No |
 | `locale` | String | size 10 | No | — | No |
 | `fulfilment` | Enum | dine_in, takeaway, delivery | No | dine_in | No |
 | `pickup_point_id` | String | size 64 | No | — | No |
@@ -493,7 +493,7 @@ There are 50 collections. A progress checklist is at the end of this document.
 | `delivery_zone_id` | String | size 64 | No | — | No |
 | `delivery_address` | String | size 500 | No | — | No |
 | `delivery_fee` | Integer | — | No | 0 | No |
-| `delivery_status` | Enum | pending, ready, dispatched, delivered, failed, (blank) | No | — | No |
+| `delivery_status` | Enum | pending, ready, dispatched, delivered, failed | No | — | No |
 | `driver_name` | String | size 120 | No | — | No |
 | `quoted_wait_minutes` | Integer | — | No | — | No |
 | `discounts_applied` | String | size 4000 | No | — | No |
@@ -712,7 +712,7 @@ There are 50 collections. A progress checklist is at the end of this document.
 | `shelf_life_days` | Integer | — | No | — | No |
 | `consecutive_low_count` | Integer | — | No | 0 | No |
 | `consecutive_low_since` | Datetime | — | No | — | No |
-| `last_low_severity` | Enum | low, out, (blank) | No | — | No |
+| `last_low_severity` | Enum | low, out | No | — | No |
 | `active` | Boolean | — | **Yes** | — | No |
 
 **Indexes** (3)
@@ -1089,14 +1089,14 @@ There are 50 collections. A progress checklist is at the end of this document.
 | `channel` | Enum | email, print, none | **Yes** | — | No |
 | `to_email` | String | size 160 | No | — | No |
 | `status` | Enum | queued, sent, failed, skipped, bounced | **Yes** | — | No |
-| `skip_reason` | Enum | no_email, customer_declined, feature_off, (blank) | No | — | No |
+| `skip_reason` | Enum | no_email, customer_declined, feature_off | No | — | No |
 | `attempts` | Integer | — | **Yes** | — | No |
 | `last_error` | String | size 500 | No | — | No |
 | `sent_at` | Datetime | — | No | — | No |
 | `provider_ref` | String | size 200 | No | — | No |
 | `pdf_file_id` | String | size 64 | No | — | No |
 | `requested_by` | String | size 64 | No | — | No |
-| `email_source` | Enum | guest_at_order, staff_entered, customer_profile, (blank) | No | — | No |
+| `email_source` | Enum | guest_at_order, staff_entered, customer_profile | No | — | No |
 
 **Indexes** (3)
 

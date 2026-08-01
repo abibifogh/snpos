@@ -323,7 +323,7 @@ export const COLLECTIONS = [
       ['customer_name', 's', 160, false],
       ['customer_phone', 's', 40, false],
       ['customer_email', 's', 160, false],
-      ['email_source', 'e', ['guest_at_order', 'staff_entered', 'customer_profile', 'declined', ''], false],
+      ['email_source', 'e', ['guest_at_order', 'staff_entered', 'customer_profile', 'declined'], false],
       ['locale', 's', 10, false],
 
       // --- Takeaway and delivery (feature 2)
@@ -343,7 +343,7 @@ export const COLLECTIONS = [
       ['delivery_zone_id', 's', 64, false],
       ['delivery_address', 's', 500, false],
       ['delivery_fee', 'i', null, false, 0],
-      ['delivery_status', 'e', ['pending', 'ready', 'dispatched', 'delivered', 'failed', ''], false],
+      ['delivery_status', 'e', ['pending', 'ready', 'dispatched', 'delivered', 'failed'], false],
       ['driver_name', 's', 120, false],
       ['quoted_wait_minutes', 'i', null, false], // set by busy mode (feature 11)
 
@@ -507,7 +507,7 @@ export const COLLECTIONS = [
       // comes back healthy. Anything at 3 or more is escalated by name.
       ['consecutive_low_count', 'i', null, false, 0],
       ['consecutive_low_since', 'd', null, false],
-      ['last_low_severity', 'e', ['low', 'out', ''], false],
+      ['last_low_severity', 'e', ['low', 'out'], false],
       ['active', 'b', null, true, true],
     ],
     indexes: [['active_name', 'key', ['active', 'name']], ['critical', 'key', ['critical']]],
@@ -746,14 +746,14 @@ export const COLLECTIONS = [
       ['channel', 'e', ['email', 'print', 'none'], true],
       ['to_email', 's', 160, false],
       ['status', 'e', ['queued', 'sent', 'failed', 'skipped', 'bounced'], true, 'queued'],
-      ['skip_reason', 'e', ['no_email', 'customer_declined', 'feature_off', ''], false],
+      ['skip_reason', 'e', ['no_email', 'customer_declined', 'feature_off'], false],
       ['attempts', 'i', null, true, 0],
       ['last_error', 's', 500, false],
       ['sent_at', 'd', null, false],
       ['provider_ref', 's', 200, false],
       ['pdf_file_id', 's', 64, false],
       ['requested_by', 's', 64, false],
-      ['email_source', 'e', ['guest_at_order', 'staff_entered', 'customer_profile', ''], false],
+      ['email_source', 'e', ['guest_at_order', 'staff_entered', 'customer_profile'], false],
     ],
     indexes: [
       ['order', 'key', ['order_id']],
@@ -1218,6 +1218,18 @@ export const COLLECTIONS = [
     ],
   },
 ];
+
+// Appwrite rejects an empty string as an enum option (elements must be 1+ chars).
+// These attributes are all optional, so "unset" already means blank — an empty
+// option was both invalid and redundant. Fail loudly if one is reintroduced.
+for (const c of COLLECTIONS) {
+  for (const [key, type, arg] of c.attributes) {
+    if (type.replace('[]', '') !== 'e') continue;
+    if (!Array.isArray(arg) || arg.some((v) => typeof v !== 'string' || v.length === 0)) {
+      throw new Error(`${c.id}.${key}: enum values must all be non-empty strings`);
+    }
+  }
+}
 
 /**
  * Multi-venue scoping.
