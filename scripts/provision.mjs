@@ -28,6 +28,9 @@ let skipped = 0;
 
 const log = (icon, msg) => console.log(`${icon} ${msg}`);
 
+/** True when the failure is a plan/quota ceiling rather than a real fault. */
+const isPlanLimit = (e) => /maximum number of|limit.*reached|upgrade to increase/i.test(e?.message || '');
+
 /** Run fn, tolerating "already exists". */
 async function ensure(label, fn) {
   try {
@@ -39,8 +42,34 @@ async function ensure(label, fn) {
       skipped++;
       return;
     }
+    if (isPlanLimit(e)) {
+      throw new Error(
+        `${label}: ${e.message}\n` +
+          `  This is an Appwrite plan ceiling, not a fault in the schema. Either free up\n` +
+          `  an unused resource in the console, or upgrade the project's plan, then re-run.`,
+      );
+    }
     throw new Error(`${label}: ${e.message}`);
   }
+}
+
+/**
+ * Create only if it is genuinely missing.
+ *
+ * `ensure` relies on a 409 conflict to detect "already there", but Appwrite
+ * checks plan limits BEFORE it checks the ID, so re-creating something that
+ * already exists on a capped plan fails with "maximum number of databases
+ * reached" instead. Looking first avoids depending on which check wins.
+ */
+async function ensureExists(label, getFn, createFn) {
+  try {
+    await getFn();
+    skipped++;
+    return;
+  } catch (e) {
+    if (e?.code !== 404) throw new Error(`${label} (checking): ${e.message}`);
+  }
+  await ensure(label, createFn);
 }
 
 /** Map our role strings to Appwrite Permission entries. */
@@ -118,20 +147,25 @@ async function main() {
   log('✓', 'Teams');
 
   // ---- database ----------------------------------------------------------
-  await ensure(`database ${DB_ID}`, () => db.create(DB_ID, 'SNPOS'));
+  await ensureExists(
+    `database ${DB_ID}`,
+    () => db.get(DB_ID),
+    () => db.create(DB_ID, 'SNPOS'),
+  );
 
   // ---- collections -------------------------------------------------------
   for (const col of COLLECTIONS) {
     const perms = toPermissions(col.perms, teamIds);
     try {
-      await db.createCollection(DB_ID, col.id, col.name, perms, true /* documentSecurity */);
-      created++;
-      log('  +', `collection ${col.id}`);
-    } catch (e) {
-      if (!exists(e)) throw e;
+      await db.getCollection(DB_ID, col.id);
       // Keep permissions in sync on re-runs.
       await db.updateCollection(DB_ID, col.id, col.name, perms, true);
       skipped++;
+    } catch (e) {
+      if (e?.code !== 404) throw new Error(`collection ${col.id} (checking): ${e.message}`);
+      await ensure(`collection ${col.id}`, () =>
+        db.createCollection(DB_ID, col.id, col.name, perms, true /* documentSecurity */),
+      );
     }
 
     const existing = new Set((await db.listAttributes(DB_ID, col.id)).attributes.map((a) => a.key));
@@ -154,8 +188,10 @@ async function main() {
   // ---- buckets -----------------------------------------------------------
   for (const b of BUCKETS) {
     const perms = toPermissions({ read: b.read, create: b.write, update: b.write, delete: b.write }, teamIds);
-    await ensure(`bucket ${b.id}`, () =>
-      storage.createBucket(b.id, b.name, perms, false, true, b.maxSize, b.extensions, 'gzip', false, true),
+    await ensureExists(
+      `bucket ${b.id}`,
+      () => storage.getBucket(b.id),
+      () => storage.createBucket(b.id, b.name, perms, false, true, b.maxSize, b.extensions, 'gzip', false, true),
     );
   }
   log('✓', 'Buckets');
