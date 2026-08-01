@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Restaurant POS on Appwrite — QR ordering, kitchen display, shift control, accounting",
+  "description": "Restaurant POS on Appwrite \u2014 QR ordering, kitchen display, shift control, accounting",
   "scripts": {
     "provision": "node scripts/provision.mjs",
-    "seed:admin": "node scripts/seed-admin.mjs"
+    "seed:admin": "node scripts/seed-admin.mjs",
+    "gen:manual": "node scripts/gen-manual-setup.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

@@ -23,6 +23,7 @@ an accounting/analytics layer.
 | [12 — Kitchen app](docs/12-kitchen-app.md) | Native Android app for the alarm |
 | [13 — Features](docs/13-features.md) | Optional features, pre-ordering, and the admin switchboard |
 | [14 — Discounts](docs/14-discounts.md) | Discounts, codes, and marking a bill paid |
+| [15 — Manual console setup](docs/15-manual-console-setup.md) | Every collection, field and index, for building by hand |
 
 ## Confirmed decisions
 
@@ -74,4 +75,5 @@ functions/
   payment-webhook/      Gateway callback (dormant until enabled)
 scripts/
   provision.mjs         Creates every collection, attribute, index, bucket, team
+  gen-manual-setup.mjs  Regenerates doc 15 from the schema (npm run gen:manual)
 ```
