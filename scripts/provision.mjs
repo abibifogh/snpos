@@ -114,17 +114,46 @@ async function createAttribute(colId, tuple) {
   }
 }
 
-/** Poll until every listed attribute reports status "available". */
-async function waitForAttributes(colId, keys, timeoutMs = 60000) {
-  const deadline = Date.now() + timeoutMs;
+/**
+ * Poll until every listed attribute reports status "available".
+ *
+ * Appwrite builds attributes in a background queue, so a wide collection on a
+ * cold or throttled project can take minutes. The budget scales with the number
+ * of attributes rather than being a flat minute, and progress is printed so a
+ * long wait doesn't look like a hang.
+ */
+async function waitForAttributes(colId, keys, timeoutMs) {
+  const budget = timeoutMs ?? Math.max(120000, keys.length * 8000);
+  const deadline = Date.now() + budget;
+  let lastReport = 0;
+
   while (Date.now() < deadline) {
     const { attributes } = await db.listAttributes(DB_ID, colId);
     const byKey = Object.fromEntries(attributes.map((a) => [a.key, a.status]));
+
+    // A failed attribute never becomes available — waiting for it is pointless.
+    const failed = keys.filter((k) => byKey[k] === 'failed');
+    if (failed.length) {
+      throw new Error(`${colId}: Appwrite failed to build ${failed.join(', ')}. Delete the collection in the console and re-run.`);
+    }
+
     const pending = keys.filter((k) => byKey[k] !== 'available');
     if (pending.length === 0) return;
-    await sleep(1500);
+
+    if (Date.now() - lastReport > 15000) {
+      lastReport = Date.now();
+      log('  …', `waiting for ${colId}: ${pending.length} of ${keys.length} attributes still building`);
+    }
+    await sleep(2000);
   }
-  throw new Error(`Timed out waiting for attributes on ${colId}`);
+
+  const { attributes } = await db.listAttributes(DB_ID, colId);
+  const byKey = Object.fromEntries(attributes.map((a) => [a.key, a.status]));
+  const stuck = keys.filter((k) => byKey[k] !== 'available').map((k) => `${k}(${byKey[k] || 'missing'})`);
+  throw new Error(
+    `Timed out after ${Math.round(budget / 1000)}s waiting for ${colId}: ${stuck.join(', ')}\n` +
+      `  Appwrite is still building these. Re-run — it will resume from here.`,
+  );
 }
 
 async function main() {
