@@ -1079,7 +1079,11 @@ export const COLLECTIONS = [
       ['shift_id', 's', 64, false],
       ['period_start', 'd', null, true],
       ['period_end', 'd', null, true],
-      ['payload', 's', 16000, true], // JSON: the full figures
+      // 20000 rather than 16000 deliberately: at or below 16383 Appwrite stores a
+      // string inline as VARCHAR, which at 4 bytes/char would consume 64KB of the
+      // 65535-byte row limit on its own. Above it, the column becomes TEXT and is
+      // stored out of row for ~12 bytes. Bigger is genuinely cheaper here.
+      ['payload', 's', 20000, true], // JSON: the full figures
       // Stock is reported in two separate sections, never merged:
       //  - new_stock_ids: flagged low/out for the FIRST time this shift
       //  - persistent_stock_ids: flagged for `persistent_stock_threshold`
@@ -1218,6 +1222,34 @@ export const COLLECTIONS = [
     ],
   },
 ];
+
+/**
+ * Guard the MariaDB row-size limit.
+ *
+ * Strings sized 16383 or under become VARCHAR and count against the 65535-byte
+ * row limit at 4 bytes per character; larger ones become TEXT and cost ~12
+ * bytes in-row. A collection that creeps over the limit fails part-way through
+ * provisioning with "maximum number or size of attributes reached", which does
+ * not name the offending field — so catch it here instead.
+ */
+const VARCHAR_MAX = 16383;
+const ROW_LIMIT = 65535;
+for (const c of COLLECTIONS) {
+  let bytes = 0;
+  for (const [, type, arg] of c.attributes) {
+    const base = type.replace('[]', '');
+    if (type.endsWith('[]')) bytes += 12;
+    else if (base === 's') bytes += arg <= VARCHAR_MAX ? arg * 4 : 12;
+    else if (base === 'e') bytes += Math.max(...arg.map((v) => v.length)) * 4;
+    else bytes += 8;
+  }
+  if (bytes > ROW_LIMIT) {
+    throw new Error(
+      `${c.id}: estimated row size ${bytes} exceeds ${ROW_LIMIT} bytes. ` +
+        `Shrink a large string, or push it above ${VARCHAR_MAX} chars so it is stored as TEXT.`,
+    );
+  }
+}
 
 // Appwrite rejects an empty string as an enum option (elements must be 1+ chars).
 // These attributes are all optional, so "unset" already means blank — an empty

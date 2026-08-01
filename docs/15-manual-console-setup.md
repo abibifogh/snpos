@@ -1500,7 +1500,7 @@ There are 50 collections. A progress checklist is at the end of this document.
 | `shift_id` | String | size 64 | No | — | No |
 | `period_start` | Datetime | — | **Yes** | — | No |
 | `period_end` | Datetime | — | **Yes** | — | No |
-| `payload` | String | size 16000 | **Yes** | — | No |
+| `payload` | String | size 20000 | **Yes** | — | No |
 | `new_stock_ids` | String | size 64 | No | — | Yes |
 | `persistent_stock_ids` | String | size 64 | No | — | Yes |
 | `delivery_status` | Enum | queued, sent, partial, failed | **Yes** | — | No |
