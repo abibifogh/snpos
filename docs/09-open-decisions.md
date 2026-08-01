@@ -7,10 +7,11 @@ specified. Below is what I'd add, split by how strongly I'd argue for it.
 Reply with the numbers you want and I'll fold them into the specs and the
 provisioning script.
 
-> **Settled so far** (see [doc 10](10-decisions-log.md) for the plain-language
-> version): payments are record-only, offline mode is **in**, multi-venue is
-> **in**, and the kitchen alarm gets a native Android app. Items B1, B3 and C4
-> below are therefore confirmed and no longer open.
+> **All of section B and C below are now confirmed** — every optional feature
+> is in scope, and each one is an admin toggle. See [doc 13](13-features.md) for
+> what they do and [doc 10](10-decisions-log.md) for the plain-language record.
+> This doc is kept as the history of how the scope was decided; nothing on it is
+> still awaiting an answer except the hosting question in the final section.
 
 ---
 
@@ -30,11 +31,11 @@ provisioning script.
 | # | Feature | Effort | What it buys you |
 | --- | --- | --- | --- |
 | ~~B1~~ | ~~Offline-first mode~~ | High | **CONFIRMED — in scope.** See doc 11 |
-| **B2** | **Thermal receipt printing** (80mm ESC/POS) + kitchen docket printing as a backup to the KDS | Medium | Customers ask for receipts; tax authorities require them; a printed docket saves you when the tablet dies |
+| ~~B2~~ | ~~Receipts and kitchen dockets~~ | Medium | **CONFIRMED (feature 1)** — changed to *email* receipts by default, with printing optional and kitchen slips separately switchable. Doc 13.3 |
 | ~~B3~~ | ~~Native wrapper for the kitchen device~~ | Low–Medium | **CONFIRMED — in scope.** See doc 12 |
-| **B4** | **Customer profiles + order history** (phone-identified) | Medium | Enables re-order, "your usual", and turns anonymous QR scans into a marketable customer list |
-| **B5** | **Purchase orders & goods-receiving flow** | Medium | You already have purchases; adding PO → receive → invoice-match closes the loop and makes the variance analysis in doc 06 far more accurate |
-| **B6** | **Daily summary email/push to the owner** (Appwrite Messaging) | Low | Sales, cash variance, flags — in your inbox at close without opening the dashboard |
+| ~~B4~~ | ~~Customer profiles + order history~~ | Medium | **CONFIRMED (feature 5)** |
+| ~~B5~~ | ~~Purchase orders & goods-receiving~~ | Medium | **CONFIRMED (feature 9)** |
+| ~~B6~~ | ~~Daily summary to the owner~~ | Low | **CONFIRMED (feature 10)** — sent immediately on shift close, and it names stock low/out for 3+ shifts running. Doc 13.5 |
 
 ---
 
@@ -42,16 +43,16 @@ provisioning script.
 
 | # | Feature | Notes |
 | --- | --- | --- |
-| C1 | Loyalty (points or digital stamp card) | Natural once B4 exists; drives repeat visits |
-| C2 | Reservations / booking calendar | Only if you take bookings; otherwise skip |
-| C3 | Takeaway & delivery flow with a pickup-time queue | Say yes if you do any off-premise trade |
+| ~~C1~~ | ~~Loyalty~~ | **CONFIRMED (feature 6)** |
+| C2 | Reservations / booking calendar | **Still not in scope** — the only item from this list not selected. Say the word if you take bookings |
+| ~~C3~~ | ~~Takeaway & delivery~~ | **CONFIRMED (feature 2)** — extended to allow many admin-defined pickup points per venue. Doc 13.4 |
 | ~~C4~~ | ~~Multi-branch support~~ | **CONFIRMED — in scope**, already in the schema. Shared menu, separate operations — see doc 10 |
-| C5 | Staff clock-in/out + labour cost as % of sales | Pairs with the hourly sales heatmap for rostering |
-| C6 | Waste log (record spoilage as it happens) | Materially improves variance accuracy — B5 and this together explain most of your leakage |
-| C7 | Happy-hour / time-based pricing | Reuses the availability engine; low extra cost |
-| C8 | Customer feedback prompt after payment | One tap, feeds a rating per dish and per server |
-| C9 | Kitchen capacity throttling | Auto-delays QR orders when the queue exceeds N tickets, instead of the kitchen drowning |
-| C10 | Multi-language menu (English + local) | Straightforward: a translations map per item |
+| ~~C5~~ | ~~Staff clock-in/out~~ | **CONFIRMED (feature 4)** |
+| ~~C6~~ | ~~Waste log~~ | **CONFIRMED (feature 3)** |
+| ~~C7~~ | ~~Happy-hour / time-based pricing~~ | **CONFIRMED (feature 12)** |
+| ~~C8~~ | ~~Feedback after payment~~ | **CONFIRMED (feature 7)** |
+| ~~C9~~ | ~~Kitchen capacity throttling~~ | **CONFIRMED (feature 11)** |
+| ~~C10~~ | ~~Multi-language menu~~ | **CONFIRMED (feature 8)** |
 
 ---
 
@@ -77,3 +78,12 @@ provisioning script.
    Still open: whether "shared menu, separate operations" is the right sharing
    rule for your locations (doc 10, decision 3).
 4. ~~**Offline mode**~~ — **Answered: yes.** See doc 11.
+
+---
+
+## Outcome
+
+Everything above except C2 (reservations) is now in scope, and every one of them
+is an **admin toggle** rather than a permanent commitment — see
+[doc 13](13-features.md). Discounts and discount codes were added on top, with
+payment always marked by staff: [doc 14](14-discounts.md).

@@ -124,6 +124,14 @@ export const COLLECTIONS = [
       ['expense_approval_threshold', 'i', null, true, 20000],
       ['cash_variance_tolerance', 'i', null, true, 500],
       ['terminal_idle_lock_seconds', 'i', null, true, 180],
+      // Language (feature 8). All other per-feature config lives in
+      // feature_flags.config so it can be overridden per venue.
+      ['default_locale', 's', 10, false, 'en'],
+      ['enabled_locales', 's[]', 10, false],
+      // Outbound email identity, shared by receipts and shift summaries.
+      ['email_from_name', 's', 120, false],
+      ['email_from_address', 's', 160, false],
+      ['email_reply_to', 's', 160, false],
     ],
   },
   {
@@ -295,6 +303,35 @@ export const COLLECTIONS = [
       ['placed_by', 's', 80, true],
       ['guest_count', 'i', null, true, 1],
       ['notes', 's', 500, false],
+
+      // --- Payment is always marked by staff. Guests never settle a bill in
+      // the app, so no customer-facing route may write these two fields.
+      ['marked_paid_by', 's', 64, false],
+      ['marked_paid_at', 'd', null, false],
+
+      // --- Who's eating (features 1, 5, 6, 7)
+      ['customer_id', 's', 64, false],
+      ['customer_name', 's', 160, false],
+      ['customer_phone', 's', 40, false],
+      ['customer_email', 's', 160, false],
+      ['email_source', 'e', ['guest_at_order', 'staff_entered', 'customer_profile', 'declined', ''], false],
+      ['locale', 's', 10, false],
+
+      // --- Takeaway and delivery (feature 2)
+      ['fulfilment', 'e', ['dine_in', 'takeaway', 'delivery'], false, 'dine_in'],
+      ['pickup_point_id', 's', 64, false],
+      ['pickup_at', 'd', null, false],
+      ['delivery_zone_id', 's', 64, false],
+      ['delivery_address', 's', 500, false],
+      ['delivery_fee', 'i', null, false, 0],
+      ['delivery_status', 'e', ['pending', 'ready', 'dispatched', 'delivered', 'failed', ''], false],
+      ['driver_name', 's', 120, false],
+      ['quoted_wait_minutes', 'i', null, false], // set by busy mode (feature 11)
+
+      // --- Discounts and loyalty
+      ['discounts_applied', 's', 4000, false], // JSON snapshot of each redemption
+      ['loyalty_points_earned', 'i', null, false, 0],
+      ['loyalty_points_redeemed', 'i', null, false, 0],
     ],
     indexes: [
       ['idem_unique', 'unique', ['idem_key']],
@@ -304,6 +341,9 @@ export const COLLECTIONS = [
       ['status_created', 'key', ['status', '$createdAt']],
       ['session', 'key', ['session_id']],
       ['table', 'key', ['table_id']],
+      ['fulfilment_status', 'key', ['venue_id', 'fulfilment', 'status']],
+      ['pickup_point', 'key', ['pickup_point_id', 'pickup_at']],
+      ['customer', 'key', ['customer_id']],
     ],
   },
   {
@@ -442,6 +482,12 @@ export const COLLECTIONS = [
       ['supplier_id', 's', 64, false],
       ['category', 's', 80, false],
       ['shelf_life_days', 'i', null, false],
+      // Persistence tracking for the shift-close summary: how many shifts in a
+      // row this has come out low or out of stock. Reset the moment a count
+      // comes back healthy. Anything at 3 or more is escalated by name.
+      ['consecutive_low_count', 'i', null, false, 0],
+      ['consecutive_low_since', 'd', null, false],
+      ['last_low_severity', 'e', ['low', 'out', ''], false],
       ['active', 'b', null, true, true],
     ],
     indexes: [['active_name', 'key', ['active', 'name']], ['critical', 'key', ['critical']]],
@@ -603,6 +649,10 @@ export const COLLECTIONS = [
       ['can_close_shift', 'b', null, true, false],
       ['can_void', 'b', null, true, false],
       ['can_discount_up_to_bp', 'i', null, true, 0],
+      ['can_mark_paid', 'b', null, false, true],
+      ['can_apply_discount_codes', 'b', null, false, true],
+      ['can_record_waste', 'b', null, false, true],
+      ['hourly_rate', 'i', null, false], // feature 4: labour cost
     ],
     indexes: [['user_unique', 'unique', ['user_id']], ['active_role', 'key', ['active', 'role']]],
   },
@@ -638,6 +688,486 @@ export const COLLECTIONS = [
     ],
     indexes: [['actor_created', 'key', ['actor_id', '$createdAt']], ['action', 'key', ['action']]],
   },
+
+  // ======================================================================
+  //  OPTIONAL FEATURES (1–12)
+  //  Every one of these is switched on or off by an admin — see FEATURES
+  //  below. Collections exist whether or not the feature is enabled; a
+  //  disabled feature simply hides its UI and skips its hooks, so turning
+  //  something on later never needs a migration or loses history.
+  // ======================================================================
+
+  {
+    // The master switchboard. A blank venue_id row is the group-wide default;
+    // a row naming a venue overrides it for that venue only.
+    id: 'feature_flags',
+    name: 'Feature flags',
+    perms: { read: ['any'], create: ADMIN, update: ADMIN, delete: ADMIN },
+    attributes: [
+      ['key', 's', 60, true],
+      ['venue_id', 's', 64, false],
+      ['enabled', 'b', null, true, false],
+      ['config', 's', 8000, false], // JSON, shape depends on the feature
+      ['updated_by', 's', 64, false],
+    ],
+    indexes: [['key_venue', 'unique', ['key', 'venue_id']], ['key', 'key', ['key']]],
+  },
+
+  // ---- 1. Receipts and kitchen slips ------------------------------------
+  {
+    // One row per delivery attempt, so "did the customer get their receipt?"
+    // is answerable months later.
+    id: 'receipts',
+    name: 'Receipts',
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['order_id', 's', 64, true],
+      ['channel', 'e', ['email', 'print', 'none'], true],
+      ['to_email', 's', 160, false],
+      ['status', 'e', ['queued', 'sent', 'failed', 'skipped', 'bounced'], true, 'queued'],
+      ['skip_reason', 'e', ['no_email', 'customer_declined', 'feature_off', ''], false],
+      ['attempts', 'i', null, true, 0],
+      ['last_error', 's', 500, false],
+      ['sent_at', 'd', null, false],
+      ['provider_ref', 's', 200, false],
+      ['pdf_file_id', 's', 64, false],
+      ['requested_by', 's', 64, false],
+      ['email_source', 'e', ['guest_at_order', 'staff_entered', 'customer_profile', ''], false],
+    ],
+    indexes: [
+      ['order', 'key', ['order_id']],
+      ['status_created', 'key', ['status', '$createdAt']],
+      ['email', 'key', ['to_email']],
+    ],
+  },
+
+  // ---- 2. Takeaway and delivery -----------------------------------------
+  {
+    // Admin-defined collection points. A venue can have many: front counter,
+    // side hatch, a kiosk in a mall, a partner shop across town.
+    id: 'pickup_points',
+    name: 'Pickup points',
+    perms: { read: ['any'], create: MGMT, update: MGMT, delete: MGMT },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['name', 's', 120, true],
+      ['kind', 'e', ['counter', 'window', 'kiosk', 'locker', 'partner_site', 'kerbside'], true, 'counter'],
+      ['address', 's', 300, false],
+      ['directions', 's', 500, false], // shown to the customer on their phone
+      ['phone', 's', 40, false],
+      ['lead_minutes', 'i', null, true, 0], // extra prep time for a distant point
+      ['opening_hours', 's', 2000, false], // JSON, same shape as menu availability
+      ['station', 's', 40, false], // which kitchen station serves it
+      ['accepts_delivery', 'b', null, true, false],
+      ['active', 'b', null, true, true],
+      ['sort', 'i', null, true, 0],
+    ],
+    indexes: [['venue_active_sort', 'key', ['venue_id', 'active', 'sort']]],
+  },
+  {
+    id: 'delivery_zones',
+    name: 'Delivery zones',
+    perms: { read: ['any'], create: MGMT, update: MGMT, delete: MGMT },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['pickup_point_id', 's', 64, false], // which point dispatches this zone
+      ['name', 's', 120, true],
+      ['fee', 'i', null, true, 0],
+      ['min_order_total', 'i', null, true, 0],
+      ['eta_minutes', 'i', null, true, 30],
+      ['active', 'b', null, true, true],
+      ['sort', 'i', null, true, 0],
+    ],
+    indexes: [['venue_active', 'key', ['venue_id', 'active', 'sort']]],
+  },
+
+  // ---- 3. Waste log ------------------------------------------------------
+  {
+    // Deliberately separate from stock_movements so "we threw it away" can
+    // never be confused with "we sold it" or "it went missing".
+    id: 'waste_log',
+    name: 'Waste log',
+    perms: { read: MGMT, create: ALL_STAFF, update: MGMT, delete: MGMT },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['shift_id', 's', 64, false],
+      ['ingredient_id', 's', 64, false],
+      ['menu_item_id', 's', 64, false], // a finished plate, not a raw ingredient
+      ['qty', 'f', null, true],
+      ['unit', 's', 20, true],
+      ['reason', 'e', ['spoiled', 'expired', 'dropped', 'burnt', 'prep_error', 'customer_return', 'staff_meal', 'trim', 'other'], true],
+      ['note', 's', 500, false],
+      ['value', 'i', null, true, 0], // cost, so waste shows up in money terms
+      ['photo_file_id', 's', 64, false],
+      ['recorded_by', 's', 64, true],
+      ['approved_by', 's', 64, false],
+    ],
+    indexes: [
+      ['venue_created', 'key', ['venue_id', '$createdAt']],
+      ['shift', 'key', ['shift_id']],
+      ['ingredient', 'key', ['ingredient_id']],
+      ['reason', 'key', ['reason']],
+    ],
+  },
+
+  // ---- 4. Staff clock in / out ------------------------------------------
+  {
+    id: 'time_entries',
+    name: 'Time entries',
+    perms: { read: MGMT, create: ALL_STAFF, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['user_id', 's', 64, true],
+      ['shift_id', 's', 64, false],
+      ['clock_in', 'd', null, true],
+      ['clock_out', 'd', null, false],
+      ['break_minutes', 'i', null, true, 0],
+      ['minutes_worked', 'i', null, false], // computed on clock-out
+      ['hourly_rate_snapshot', 'i', null, false],
+      ['labour_cost', 'i', null, false],
+      ['source', 'e', ['pin', 'manager', 'auto_close'], true, 'pin'],
+      ['edited_by', 's', 64, false],
+      ['edit_reason', 's', 300, false],
+      ['note', 's', 300, false],
+    ],
+    indexes: [
+      ['user_in', 'key', ['user_id', 'clock_in']],
+      ['venue_in', 'key', ['venue_id', 'clock_in']],
+      ['open', 'key', ['user_id', 'clock_out']],
+    ],
+  },
+
+  // ---- 5 & 6. Customers and loyalty --------------------------------------
+  {
+    // Group-wide by design: a customer known at one venue is known at all of
+    // them. `venue_ids` records where they've actually eaten.
+    id: 'customers',
+    name: 'Customers',
+    perms: { read: ALL_STAFF, create: ['any'], update: ALL_STAFF, delete: ADMIN },
+    attributes: [
+      ['phone', 's', 40, false],
+      ['email', 's', 160, false],
+      ['name', 's', 160, false],
+      ['locale', 's', 10, false],
+      ['marketing_opt_in', 'b', null, true, false],
+      ['receipt_opt_in', 'b', null, true, true],
+      ['venue_ids', 's[]', 64, false],
+      ['first_seen', 'd', null, false],
+      ['last_seen', 'd', null, false],
+      ['order_count', 'i', null, true, 0],
+      ['total_spent', 'i', null, true, 0],
+      ['avg_order_value', 'i', null, true, 0],
+      ['tags', 's[]', 40, false], // 'regular', 'vip', 'allergy:nuts'
+      ['notes', 's', 1000, false],
+      ['blocked', 'b', null, true, false],
+    ],
+    indexes: [
+      ['phone_unique', 'unique', ['phone']],
+      ['email', 'key', ['email']],
+      ['last_seen', 'key', ['last_seen']],
+    ],
+  },
+  {
+    id: 'loyalty_programs',
+    name: 'Loyalty programs',
+    perms: { read: ['any'], create: ADMIN, update: ADMIN, delete: ADMIN },
+    attributes: [
+      ['name', 's', 120, true],
+      ['venue_ids', 's[]', 64, false], // empty = all venues
+      ['kind', 'e', ['points', 'stamps', 'spend_tiers'], true, 'points'],
+      ['earn_per_currency_unit', 'f', null, false], // points mode
+      ['stamp_target', 'i', null, false], // stamps mode: buy N get 1
+      ['stamp_qualifying_item_ids', 's[]', 64, false],
+      ['redeem_value_per_point', 'i', null, false],
+      ['min_redeem_points', 'i', null, true, 0],
+      ['reward_description', 's', 300, false],
+      ['expiry_days', 'i', null, false],
+      ['active', 'b', null, true, true],
+    ],
+    indexes: [['active', 'key', ['active']]],
+  },
+  {
+    id: 'loyalty_ledger',
+    name: 'Loyalty ledger',
+    perms: { read: ALL_STAFF, create: [], update: [], delete: [] },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['customer_id', 's', 64, true],
+      ['program_id', 's', 64, true],
+      ['order_id', 's', 64, false],
+      ['type', 'e', ['earn', 'redeem', 'adjust', 'expire', 'reverse'], true],
+      ['delta', 'i', null, true],
+      ['balance_after', 'i', null, true],
+      ['expires_at', 'd', null, false],
+      ['note', 's', 300, false],
+      ['created_by', 's', 64, false],
+    ],
+    indexes: [
+      ['customer_created', 'key', ['customer_id', '$createdAt']],
+      ['order', 'key', ['order_id']],
+    ],
+  },
+
+  // ---- 7. Feedback -------------------------------------------------------
+  {
+    id: 'feedback',
+    name: 'Feedback',
+    perms: { read: MGMT, create: ['any'], update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['order_id', 's', 64, false],
+      ['customer_id', 's', 64, false],
+      ['rating', 'i', null, true], // 1–5
+      ['food_rating', 'i', null, false],
+      ['service_rating', 'i', null, false],
+      ['speed_rating', 'i', null, false],
+      ['tags', 's[]', 40, false],
+      ['comment', 's', 2000, false],
+      ['item_ids', 's[]', 64, false], // what they actually ate
+      ['served_by', 's', 64, false],
+      ['shift_id', 's', 64, false],
+      ['status', 'e', ['new', 'seen', 'responded', 'resolved', 'ignored'], true, 'new'],
+      ['response', 's', 2000, false],
+      ['responded_by', 's', 64, false],
+      ['responded_at', 'd', null, false],
+    ],
+    indexes: [
+      ['venue_created', 'key', ['venue_id', '$createdAt']],
+      ['rating', 'key', ['rating']],
+      ['status', 'key', ['status']],
+      ['served_by', 'key', ['served_by']],
+    ],
+  },
+
+  // ---- 8. Multi-language menu -------------------------------------------
+  {
+    // Generic so any user-facing text can be translated without new columns:
+    // one row per (thing, language, field).
+    id: 'translations',
+    name: 'Translations',
+    perms: { read: ['any'], create: MGMT, update: MGMT, delete: MGMT },
+    attributes: [
+      ['entity_type', 'e', ['menu_item', 'category', 'addon_group', 'addon_option', 'venue', 'pickup_point', 'discount'], true],
+      ['entity_id', 's', 64, true],
+      ['locale', 's', 10, true],
+      ['field', 's', 40, true], // 'name' | 'description' | ...
+      ['value', 's', 2000, true],
+      ['machine_translated', 'b', null, true, false],
+      ['updated_by', 's', 64, false],
+    ],
+    indexes: [
+      ['entity_locale_field', 'unique', ['entity_type', 'entity_id', 'locale', 'field']],
+      ['locale', 'key', ['locale']],
+    ],
+  },
+
+  // ---- 9. Purchase orders and receiving ---------------------------------
+  {
+    id: 'purchase_orders',
+    name: 'Purchase orders',
+    perms: { read: MGMT, create: MGMT, update: MGMT, delete: MGMT },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['supplier_id', 's', 64, true],
+      ['po_number', 's', 40, true],
+      ['status', 'e', ['draft', 'sent', 'part_received', 'received', 'cancelled'], true, 'draft'],
+      ['expected_at', 'd', null, false],
+      ['sent_at', 'd', null, false],
+      ['subtotal', 'i', null, true, 0],
+      ['tax', 'i', null, true, 0],
+      ['total', 'i', null, true, 0],
+      ['ordered_by', 's', 64, true],
+      ['approved_by', 's', 64, false],
+      ['note', 's', 1000, false],
+      ['auto_generated', 'b', null, true, false], // raised from par levels
+    ],
+    indexes: [
+      ['venue_status', 'key', ['venue_id', 'status']],
+      ['po_number_unique', 'unique', ['venue_id', 'po_number']],
+      ['supplier', 'key', ['supplier_id']],
+    ],
+  },
+  {
+    id: 'purchase_order_items',
+    name: 'Purchase order items',
+    perms: { read: MGMT, create: MGMT, update: MGMT, delete: MGMT },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['purchase_order_id', 's', 64, true],
+      ['ingredient_id', 's', 64, true],
+      ['qty_ordered', 'f', null, true],
+      ['qty_received', 'f', null, true, 0],
+      ['unit', 's', 20, true],
+      ['unit_cost_expected', 'i', null, true, 0],
+      ['unit_cost_actual', 'i', null, false],
+      ['line_total', 'i', null, true, 0],
+      ['discrepancy', 'e', ['none', 'short', 'over', 'price_up', 'price_down', 'quality', 'not_delivered'], true, 'none'],
+      ['discrepancy_note', 's', 500, false],
+    ],
+    indexes: [['po', 'key', ['purchase_order_id']], ['ingredient', 'key', ['ingredient_id']]],
+  },
+
+  // ---- 10. Scheduled summaries ------------------------------------------
+  {
+    // Who gets the end-of-shift summary, and how.
+    id: 'report_subscriptions',
+    name: 'Report subscriptions',
+    perms: { read: MGMT, create: ADMIN, update: ADMIN, delete: ADMIN },
+    attributes: [
+      ['venue_ids', 's[]', 64, false], // empty = every venue
+      ['user_id', 's', 64, false],
+      ['channel', 'e', ['email', 'whatsapp', 'sms', 'push'], true, 'email'],
+      ['destination', 's', 200, true],
+      ['events', 's[]', 40, true], // 'shift_close', 'daily_digest', 'stock_alert'
+      ['active', 'b', null, true, true],
+    ],
+    indexes: [['active', 'key', ['active']]],
+  },
+  {
+    // The generated summary itself, kept so it can be re-read and re-sent.
+    id: 'summary_reports',
+    name: 'Summary reports',
+    perms: { read: MGMT, create: [], update: [], delete: [] },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['kind', 'e', ['shift_close', 'daily_digest'], true],
+      ['shift_id', 's', 64, false],
+      ['period_start', 'd', null, true],
+      ['period_end', 'd', null, true],
+      ['payload', 's', 16000, true], // JSON: the full figures
+      ['persistent_stock_ids', 's[]', 64, false], // flagged 3+ shifts running
+      ['delivery_status', 'e', ['queued', 'sent', 'partial', 'failed'], true, 'queued'],
+      ['delivered_to', 's', 2000, false],
+      ['last_error', 's', 500, false],
+      ['sent_at', 'd', null, false],
+    ],
+    indexes: [
+      ['venue_kind_created', 'key', ['venue_id', 'kind', '$createdAt']],
+      ['shift', 'key', ['shift_id']],
+    ],
+  },
+
+  // ---- 11. Kitchen busy mode --------------------------------------------
+  {
+    id: 'kitchen_status',
+    name: 'Kitchen status',
+    perms: { read: ['any'], create: ALL_STAFF, update: ALL_STAFF, delete: MGMT },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['station', 's', 40, true, 'all'],
+      ['mode', 'e', ['normal', 'busy', 'paused'], true, 'normal'],
+      ['pending_count', 'i', null, true, 0],
+      ['quoted_wait_minutes', 'i', null, true, 0],
+      ['auto', 'b', null, true, true], // tripped by thresholds vs set by hand
+      ['set_by', 's', 64, false],
+      ['reason', 's', 300, false],
+      ['until', 'd', null, false],
+    ],
+    indexes: [['venue_station', 'unique', ['venue_id', 'station']]],
+  },
+
+  // ---- 12. Time-based prices --------------------------------------------
+  {
+    // Changes the price the customer SEES (happy hour, breakfast pricing).
+    // Distinct from a discount, which reduces an already-priced bill.
+    id: 'price_rules',
+    name: 'Price rules',
+    perms: { read: ['any'], create: MGMT, update: MGMT, delete: MGMT },
+    attributes: [
+      ['name', 's', 120, true],
+      ['venue_ids', 's[]', 64, false],
+      ['scope', 'e', ['all', 'category', 'item', 'tag'], true, 'item'],
+      ['target_ids', 's[]', 64, false],
+      ['adjust_kind', 'e', ['percent_off', 'amount_off', 'fixed_price'], true, 'percent_off'],
+      ['adjust_value', 'i', null, true], // basis points, minor units, or price
+      ['days_of_week', 's[]', 3, false], // 'mon'…'sun'; empty = every day
+      ['time_start', 's', 5, false], // '16:00'
+      ['time_end', 's', 5, false],
+      ['starts_at', 'd', null, false],
+      ['ends_at', 'd', null, false],
+      ['channels', 's[]', 20, false], // 'qr', 'pos', 'takeaway', 'delivery'
+      ['priority', 'i', null, true, 0], // highest wins; ties broken by cheapest
+      ['show_original_price', 'b', null, true, true],
+      ['badge_text', 's', 40, false],
+      ['active', 'b', null, true, true],
+    ],
+    indexes: [['active_priority', 'key', ['active', 'priority']]],
+  },
+
+  // ---- Discounts and discount codes -------------------------------------
+  {
+    // A discount with no `code` is a button staff can press (e.g. "Staff 20%").
+    // A discount with a code can also be typed by a guest while ordering.
+    id: 'discounts',
+    name: 'Discounts',
+    perms: { read: ['any'], create: MGMT, update: MGMT, delete: MGMT },
+    attributes: [
+      ['name', 's', 120, true],
+      ['code', 's', 40, false], // blank = staff-applied only, no code
+      ['description', 's', 500, false],
+      ['venue_ids', 's[]', 64, false], // empty = all venues
+      ['kind', 'e', ['percent', 'amount', 'free_item', 'item_percent', 'free_delivery'], true, 'percent'],
+      ['value', 'i', null, true], // basis points for percent, minor units for amount
+      ['free_item_id', 's', 64, false],
+      ['scope', 'e', ['order', 'category', 'item', 'tag'], true, 'order'],
+      ['target_ids', 's[]', 64, false],
+      ['min_order_total', 'i', null, true, 0],
+      ['max_discount_amount', 'i', null, false], // caps a percent discount
+      // Who may apply it, and when.
+      ['guest_applicable', 'b', null, true, false], // typed at QR ordering
+      ['staff_applicable', 'b', null, true, true], // applied after accepting
+      ['requires_manager', 'b', null, true, false],
+      ['auto_apply', 'b', null, true, false], // applies itself when it qualifies
+      ['stackable', 'b', null, true, false],
+      // When it is live.
+      ['starts_at', 'd', null, false],
+      ['ends_at', 'd', null, false],
+      ['days_of_week', 's[]', 3, false],
+      ['time_start', 's', 5, false],
+      ['time_end', 's', 5, false],
+      ['channels', 's[]', 20, false],
+      // Limits.
+      ['usage_limit_total', 'i', null, false],
+      ['usage_limit_per_customer', 'i', null, false],
+      ['first_order_only', 'b', null, true, false],
+      ['used_count', 'i', null, true, 0],
+      ['active', 'b', null, true, true],
+      ['created_by', 's', 64, false],
+    ],
+    indexes: [
+      ['code_unique', 'unique', ['code']],
+      ['active_code', 'key', ['active', 'code']],
+      ['active', 'key', ['active']],
+    ],
+  },
+  {
+    // Every application, including ones later reversed — this is the audit
+    // trail for the single easiest way to steal from a restaurant.
+    id: 'discount_redemptions',
+    name: 'Discount redemptions',
+    perms: { read: MGMT, create: ALL_STAFF, update: MGMT, delete: [] },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['discount_id', 's', 64, true],
+      ['code_snapshot', 's', 40, false],
+      ['order_id', 's', 64, true],
+      ['customer_id', 's', 64, false],
+      ['amount', 'i', null, true],
+      ['stage', 'e', ['guest_ordering', 'staff_post_accept', 'auto'], true],
+      ['applied_by', 's', 64, false], // blank when the guest typed the code
+      ['approved_by', 's', 64, false], // manager PIN, when required
+      ['status', 'e', ['applied', 'reversed'], true, 'applied'],
+      ['reversed_by', 's', 64, false],
+      ['reverse_reason', 's', 300, false],
+    ],
+    indexes: [
+      ['order', 'key', ['order_id']],
+      ['discount_created', 'key', ['discount_id', '$createdAt']],
+      ['customer', 'key', ['customer_id']],
+      ['applied_by', 'key', ['applied_by']],
+    ],
+  },
 ];
 
 /**
@@ -670,6 +1200,153 @@ for (const id of VENUE_SCOPED) {
 
 // Staff belong to one or more venues; an empty list means "all venues" (owner).
 COLLECTIONS.find((c) => c.id === 'staff_profiles').attributes.push(['venue_ids', 's[]', 64, false]);
+
+/**
+ * The twelve optional features, and their default configuration.
+ *
+ * Each one is a row in `feature_flags` that an admin flips from
+ * Admin → Settings → Features. Nothing here is hard-coded into the apps: a
+ * screen checks `isEnabled('takeaway')` and hides itself if not. Turning a
+ * feature off never deletes its data, so it can be turned back on unchanged.
+ *
+ * `config` holds the per-feature options. Seeded at the group level (blank
+ * venue_id); an admin can override any of it per venue.
+ */
+export const FEATURES = [
+  {
+    key: 'receipts',
+    label: 'Receipts and kitchen slips',
+    enabled: true,
+    config: {
+      // Receipts go out by EMAIL by default rather than being printed.
+      receipt_delivery: 'email', // 'email' | 'print' | 'both' | 'off'
+      ask_email_at_qr_order: true, // guest can type it while ordering
+      allow_staff_enter_email: true, // cashier can add it at payment
+      allow_skip_email: true, // "no receipt, thanks" is always allowed
+      email_subject: 'Your receipt from {{venue}}',
+      attach_pdf: true,
+      // Kitchen slips print separately and can be switched off on their own.
+      print_kitchen_slips: false,
+      kitchen_slip_printer: '',
+      kitchen_slip_copies: 1,
+      // Only relevant when receipt_delivery includes 'print'.
+      receipt_printer: '',
+      receipt_footer: '',
+    },
+  },
+  {
+    key: 'takeaway',
+    label: 'Takeaway and delivery',
+    enabled: true,
+    config: {
+      takeaway_enabled: true,
+      delivery_enabled: false,
+      // Pickup points are rows in `pickup_points` — as many per venue as you
+      // like. This is just the default behaviour around them.
+      require_pickup_point_choice: true,
+      default_pickup_point_id: '',
+      show_pickup_directions_to_guest: true,
+      require_customer_phone: true,
+      default_prep_minutes: 20,
+      allow_scheduled_pickup: true,
+      max_days_ahead: 2,
+    },
+  },
+  {
+    key: 'waste_log',
+    label: 'Waste log',
+    enabled: true,
+    config: { require_photo_above_value: 0, require_manager_above_value: 0, prompt_at_shift_close: true },
+  },
+  {
+    key: 'time_clock',
+    label: 'Staff clock in / out',
+    enabled: true,
+    config: { clock_in_with_pin: true, auto_clock_out_hours: 14, track_labour_cost: true, require_manager_edit_reason: true },
+  },
+  {
+    key: 'customers',
+    label: 'Customer profiles',
+    enabled: true,
+    config: { collect_phone: true, collect_email: true, collect_name: true, optional_always: true, merge_on_matching_phone: true },
+  },
+  {
+    key: 'loyalty',
+    label: 'Loyalty / stamp card',
+    enabled: true,
+    config: { requires: ['customers'], kind: 'stamps', stamp_target: 9, show_progress_on_receipt: true },
+  },
+  {
+    key: 'feedback',
+    label: 'Feedback after paying',
+    enabled: true,
+    config: { prompt_after_payment: true, prompt_on_receipt_email: true, ask_food_and_service: true, alert_managers_below_rating: 3 },
+  },
+  {
+    key: 'multilingual',
+    label: 'Multi-language menu',
+    enabled: true,
+    config: { locales: ['en'], show_language_picker: true, fall_back_to_default: true },
+  },
+  {
+    key: 'purchase_orders',
+    label: 'Purchase orders and receiving',
+    enabled: true,
+    config: { require_approval_above: 0, auto_suggest_from_par_levels: true, flag_price_rise_bp: 1000, block_receive_without_check: true },
+  },
+  {
+    key: 'shift_summary',
+    label: 'Summary sent at shift close',
+    enabled: true,
+    config: {
+      // Sent the moment a shift is closed, not on a nightly timer.
+      send_on_shift_close: true,
+      also_send_daily_digest: false,
+      include_sales: true,
+      include_cash_variance: true,
+      include_voids_and_discounts: true,
+      include_waste: true,
+      // Ingredients low or out for this many shifts running are called out by
+      // name, with how long they've been that way.
+      persistent_stock_threshold: 3,
+      include_persistent_stock: true,
+      channels: ['email'],
+    },
+  },
+  {
+    key: 'busy_mode',
+    label: 'Kitchen busy mode',
+    enabled: true,
+    config: {
+      auto_trip: true,
+      busy_pending_threshold: 12, // tickets waiting
+      pause_pending_threshold: 20,
+      busy_extra_minutes: 15,
+      hold_qr_orders_when_paused: true,
+      message_to_guest: 'The kitchen is very busy — your order may take a little longer.',
+    },
+  },
+  {
+    key: 'time_pricing',
+    label: 'Happy hour / time-based prices',
+    enabled: true,
+    config: { show_original_price: true, apply_to_qr: true, apply_to_pos: true, badge_text: 'Happy hour' },
+  },
+  {
+    key: 'discounts',
+    label: 'Discounts and discount codes',
+    enabled: true,
+    config: {
+      guest_codes_enabled: true, // guests type a code while ordering
+      staff_discounts_enabled: true, // staff apply after accepting the order
+      staff_apply_window: 'before_payment', // no discounting a settled bill
+      manager_pin_above_bp: 2000, // >20% needs a manager
+      max_stacked: 1,
+      show_savings_on_receipt: true,
+      invalid_code_message: "That code isn't valid for this order.",
+    },
+  },
+];
 
 export const SEED_ACCOUNTS = [
   ['1000', 'Cash on hand', 'asset'],

@@ -131,6 +131,30 @@ change, while the menu stays the same.
 
 ---
 
+## Stage 4c — Switch features on or off
+
+`provision.mjs` seeds all twelve features as enabled at group level. Go to
+**Admin → Settings → Features** and turn off anything you don't want yet — you
+can change any of them later without losing data ([doc 13](13-features.md)).
+
+Set at minimum:
+
+- **Receipts** — confirm delivery is `email`, fill in the from-name and
+  from-address under Settings → Email, and decide whether kitchen slips print
+  (off by default).
+- **Takeaway** — add your pickup points under Admin → Venues → [venue] →
+  Pickup points. `Front counter` is created for you; add any others, with their
+  directions and lead times.
+- **Shift summary** — add recipients under Admin → Settings → Reports, and
+  confirm the persistent-stock threshold (default: 3 shifts running).
+- **Discounts** — set each role's discount ceiling in Stage 5, step 11, and the
+  manager-PIN threshold (default: above 20%).
+
+**Verify:** turn one feature off and confirm its screens disappear for staff;
+turn it back on and confirm nothing was lost.
+
+---
+
 ## Stage 5 — Configure the restaurant (no code)
 
 Run the apps locally (`pnpm dev`) and log into `admin` at

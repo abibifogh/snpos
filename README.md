@@ -21,6 +21,8 @@ an accounting/analytics layer.
 | [10 — Decisions log](docs/10-decisions-log.md) | What's been decided, in plain language |
 | [11 — Offline mode](docs/11-offline-mode.md) | Working through an internet outage |
 | [12 — Kitchen app](docs/12-kitchen-app.md) | Native Android app for the alarm |
+| [13 — Features](docs/13-features.md) | The twelve optional features and the admin switchboard |
+| [14 — Discounts](docs/14-discounts.md) | Discounts, codes, and marking a bill paid |
 
 ## Confirmed decisions
 
@@ -34,6 +36,14 @@ an accounting/analytics layer.
    and accounts per location, plus a group-wide comparison view.
 4. **The kitchen screen is a native Android app**, so the alarm works with the
    tablet locked — [doc 12](docs/12-kitchen-app.md).
+5. **All twelve optional features are in, and every one is an admin toggle** —
+   [doc 13](docs/13-features.md). Receipts are emailed rather than printed
+   (kitchen slips print separately and switch off on their own); takeaway
+   supports several pickup points per venue; the shift summary is sent the
+   moment a shift closes and names stock low or out for 3+ shifts running.
+6. **Discounts and discount codes** — guests can type a code while ordering,
+   staff apply discounts before payment, and **staff always mark the bill
+   paid** — [doc 14](docs/14-discounts.md).
 
 Still assumed, not yet confirmed: **Appwrite Cloud** for hosting (the
 provisioning script works unchanged against a self-hosted instance).

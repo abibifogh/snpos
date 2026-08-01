@@ -8,7 +8,7 @@
  */
 import 'dotenv/config';
 import { Client, Databases, Storage, Teams, ID, Permission, Role } from 'node-appwrite';
-import { DB_ID, TEAMS, BUCKETS, COLLECTIONS, SEED_ACCOUNTS, SEED_PAYMENT_METHODS } from './schema.mjs';
+import { DB_ID, TEAMS, BUCKETS, COLLECTIONS, FEATURES, SEED_ACCOUNTS, SEED_PAYMENT_METHODS } from './schema.mjs';
 
 const { APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY } = process.env;
 if (!APPWRITE_ENDPOINT || !APPWRITE_PROJECT_ID || !APPWRITE_API_KEY) {
@@ -228,6 +228,39 @@ async function main() {
         gateway: 'none',
         surcharge_bp: 0,
         ...m,
+      }),
+    );
+  }
+
+  // Feature switchboard. Seeded at group level (blank venue_id) so an admin
+  // can override any of it per venue later without touching these rows.
+  await waitForAttributes('feature_flags', ['key', 'venue_id', 'enabled', 'config']);
+  const haveFlags = (await db.listDocuments(DB_ID, 'feature_flags')).documents.map((d) => d.key);
+  for (const f of FEATURES) {
+    if (haveFlags.includes(f.key)) continue;
+    await ensure(`feature ${f.key}`, () =>
+      db.createDocument(DB_ID, 'feature_flags', ID.unique(), {
+        key: f.key,
+        venue_id: '',
+        enabled: f.enabled,
+        config: JSON.stringify(f.config),
+      }),
+    );
+  }
+
+  // Every venue needs at least one pickup point before takeaway can be used.
+  await waitForAttributes('pickup_points', ['venue_id', 'name', 'kind', 'active']);
+  const havePoints = (await db.listDocuments(DB_ID, 'pickup_points')).documents.length;
+  if (!havePoints) {
+    await ensure('pickup point Front counter', () =>
+      db.createDocument(DB_ID, 'pickup_points', ID.unique(), {
+        venue_id: VENUE_ID,
+        name: 'Front counter',
+        kind: 'counter',
+        lead_minutes: 0,
+        accepts_delivery: false,
+        active: true,
+        sort: 0,
       }),
     );
   }

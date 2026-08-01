@@ -74,8 +74,80 @@ drifts out of step with the rest of the system.
 
 ---
 
+### 5. All twelve optional features are in — and all are switchable
+
+Every feature offered is included, and **each one is an on/off switch an admin
+controls**, per venue if you want. Nothing is welded in. Full list and what each
+does: [doc 13](13-features.md).
+
+*What this changes:* turning something off hides it, it never deletes it — so
+you can start simple, switch things on as you find you want them, and switch
+them back off without losing what you recorded.
+
+### 6. Receipts go by email, not paper
+
+Instead of printing receipts, they're **emailed**. The guest can type their
+address while ordering; if they didn't, the cashier can enter it at payment; if
+neither, staff simply skip it and nothing is held up. Printing is still there as
+an option if you ever want it.
+
+**Kitchen slips print separately, and you can switch that off on its own** —
+it's off by default, since you have the kitchen screen. Turn it on and every
+accepted order also prints a paper docket, which is a useful fallback if a
+tablet dies mid-service.
+
+### 7. Takeaway can have several pickup points
+
+You define as many collection points per venue as you need — front counter,
+side window, a kiosk, kerbside, or a partner site across town. Each has its own
+directions shown to the customer, its own opening hours and its own extra prep
+time. The kitchen ticket shows which one, because handing food to the wrong
+queue is *the* classic takeaway mistake.
+
+### 8. The summary is sent at shift close, and names persistent stock problems
+
+Not a nightly timer — it goes out **the moment a shift is closed**. Alongside
+sales, cash variance, voids and waste, it names any stock item that has been
+reported low or out for **3 or more shifts running**, with how long it's been
+that way.
+
+*Why that matters:* one low reading is noise. The same item low four shifts
+running is either a supplier problem or someone helping themselves — and it's
+exactly the kind of thing that gets normalised and ignored when it only ever
+appears as a dashboard tile. Putting it in a message you actually read is the
+point. The threshold is adjustable if 3 turns out to be too noisy.
+
+### 9. Discounts and discount codes
+
+You can create discounts of any shape — percent, fixed amount, free item, free
+delivery — with limits on dates, times, minimum spend, how many times they can
+be used, and which venues they apply to.
+
+- **Guests** can type a **code** while ordering on their phone.
+- **Staff** apply discounts after accepting the order and **before it's marked
+  paid** — never after. A discount on a bill that's already settled is the
+  oldest way cash walks out of a restaurant, so the system won't allow it;
+  genuine after-the-fact cases go through a refund, which leaves its own trail.
+- Each staff member has a discount ceiling; above it, a manager PIN is needed on
+  the same screen. Everything is logged with who applied and who approved.
+
+### 10. Staff mark bills as paid, always
+
+Customers never settle a bill in the app — this follows from decision 1. Staff
+record how each bill was paid, and only then does the receipt, loyalty and
+feedback prompt fire.
+
+This is enforced, not merely intended: the customer-facing app has no route
+that can mark an order paid, and the permissions exclude guests entirely, so it
+can't be done with a crafted request either. Details in
+[doc 14](14-discounts.md).
+
+---
+
 ## Still open
 
-- Which of the optional features in doc 09 to include.
-- Whether the venue sharing rule above (shared menu / separate operations) is
-  right for your locations.
+- **Hosting**: Appwrite Cloud (assumed) or self-hosted.
+- Whether the venue sharing rule in decision 3 (shared menu / separate
+  operations) is right for your locations.
+- Reservations and table booking — the one feature offered that you didn't pick.
+  Easy to add later if you start taking bookings.
