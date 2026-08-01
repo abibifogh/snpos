@@ -12,6 +12,7 @@ interface SessionValue {
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshSettings: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const Ctx = createContext<SessionValue>({} as SessionValue);
@@ -74,7 +75,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <Ctx.Provider value={{ user, profile, settings, loading, signIn, signOut, refreshSettings: async () => { await loadSettings(); } }}>
+    <Ctx.Provider
+      value={{
+        user,
+        profile,
+        settings,
+        loading,
+        signIn,
+        signOut,
+        refreshSettings: async () => {
+          await loadSettings();
+        },
+        refreshUser: async () => {
+          setUser(await account.get());
+        },
+      }}
+    >
       {children}
     </Ctx.Provider>
   );

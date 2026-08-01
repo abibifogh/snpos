@@ -22,6 +22,7 @@ const NAV: { group: string; links: NavLinkDef[] }[] = [
       { to: '/settings', label: 'Settings' },
     ],
   },
+  { group: 'You', links: [{ to: '/account', label: 'Your account' }] },
 ];
 
 export function Shell({ children }: { children: ReactNode }) {
@@ -47,7 +48,9 @@ export function Shell({ children }: { children: ReactNode }) {
           ))}
         </nav>
         <div className="sidebar-foot">
-          <div style={{ fontWeight: 600 }}>{profile?.display_name ?? user?.name ?? 'Signed in'}</div>
+          <NavLink to="/account" style={{ fontWeight: 600, display: 'block', padding: 0 }}>
+            {profile?.display_name ?? user?.name ?? 'Signed in'}
+          </NavLink>
           <div className="dim small" style={{ marginBottom: '0.5rem' }}>{profile?.role ?? 'no staff profile'}</div>
           <Button size="sm" variant="ghost" onClick={signOut}>Sign out</Button>
         </div>

@@ -9,6 +9,7 @@ import { CategoriesPage } from './pages/Categories';
 import { MenuItemsPage } from './pages/MenuItems';
 import { FeaturesPage } from './pages/Features';
 import { VenuesPage } from './pages/Venues';
+import { AccountPage } from './pages/Account';
 
 export function App() {
   const { user, loading } = useSession();
@@ -32,6 +33,7 @@ export function App() {
         <Route path="/venues" element={<VenuesPage />} />
         <Route path="/features" element={<FeaturesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/account" element={<AccountPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Shell>
