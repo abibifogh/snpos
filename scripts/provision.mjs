@@ -7,7 +7,7 @@
  * Safe to re-run: creates what is missing, skips what exists, never drops.
  */
 import 'dotenv/config';
-import { Client, Databases, Storage, Teams, ID, Permission, Role } from 'node-appwrite';
+import { Client, Databases, Storage, Teams, ID, Permission, Role, Query } from 'node-appwrite';
 import { DB_ID, TEAMS, BUCKETS, COLLECTIONS, FEATURES, SEED_ACCOUNTS, SEED_PAYMENT_METHODS } from './schema.mjs';
 
 const { APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY } = process.env;
@@ -51,6 +51,26 @@ async function retry(fn, label = '', tries = 5) {
     }
   }
 }
+
+/**
+ * Page through a list endpoint.
+ *
+ * Appwrite returns 25 rows by default. Reading only the first page made every
+ * attribute past the 25th look missing, so a wide collection waited forever for
+ * fields that already existed — and re-runs kept recreating them.
+ */
+async function listAll(fetchPage, key) {
+  const out = [];
+  for (let offset = 0; ; offset += 100) {
+    const page = await fetchPage([Query.limit(100), Query.offset(offset)]);
+    out.push(...page[key]);
+    if (page[key].length < 100 || out.length >= page.total) return out;
+  }
+}
+
+const allAttributes = (colId) => listAll((q) => retry(() => db.listAttributes(DB_ID, colId, q), `list ${colId}`), 'attributes');
+const allIndexes = (colId) => listAll((q) => retry(() => db.listIndexes(DB_ID, colId, q), `indexes ${colId}`), 'indexes');
+const allDocuments = (colId) => listAll((q) => retry(() => db.listDocuments(DB_ID, colId, q), `docs ${colId}`), 'documents');
 
 /** True when the failure is a plan/quota ceiling rather than a real fault. */
 const isPlanLimit = (e) => /maximum number of|limit.*reached|upgrade to increase/i.test(e?.message || '');
@@ -152,7 +172,7 @@ async function waitForAttributes(colId, keys, timeoutMs) {
   let lastReport = 0;
 
   while (Date.now() < deadline) {
-    const { attributes } = await retry(() => db.listAttributes(DB_ID, colId), `list ${colId}`);
+    const attributes = await allAttributes(colId);
     const byKey = Object.fromEntries(attributes.map((a) => [a.key, a.status]));
 
     // `failed` and `stuck` never resolve on their own — waiting is pointless.
@@ -176,7 +196,7 @@ async function waitForAttributes(colId, keys, timeoutMs) {
     await sleep(2000);
   }
 
-  const { attributes } = await retry(() => db.listAttributes(DB_ID, colId), `list ${colId}`);
+  const attributes = await allAttributes(colId);
   const byKey = Object.fromEntries(attributes.map((a) => [a.key, a.status]));
   const stuck = keys.filter((k) => byKey[k] !== 'available').map((k) => `${k}(${byKey[k] || 'missing'})`);
   throw new Error(
@@ -226,7 +246,7 @@ async function main() {
       );
     }
 
-    const existing = new Set((await retry(() => db.listAttributes(DB_ID, col.id), `list ${col.id}`)).attributes.map((a) => a.key));
+    const existing = new Set((await allAttributes(col.id)).map((a) => a.key));
     for (const attr of col.attributes) {
       if (existing.has(attr[0])) continue;
       await ensure(`${col.id}.${attr[0]}`, () => createAttribute(col.id, attr));
@@ -234,7 +254,7 @@ async function main() {
 
     if (col.indexes?.length) {
       await waitForAttributes(col.id, col.attributes.map((a) => a[0]));
-      const haveIdx = new Set((await retry(() => db.listIndexes(DB_ID, col.id), `indexes ${col.id}`)).indexes.map((i) => i.key));
+      const haveIdx = new Set((await allIndexes(col.id)).map((i) => i.key));
       for (const [key, type, attrs, orders] of col.indexes) {
         if (haveIdx.has(key)) continue;
         await ensure(`${col.id}#${key}`, () => db.createIndex(DB_ID, col.id, key, type, attrs, orders));
@@ -309,7 +329,7 @@ async function main() {
   );
 
   await waitForAttributes('payment_methods', ['venue_id', 'name', 'kind', 'enabled', 'sort']);
-  const haveMethods = (await db.listDocuments(DB_ID, 'payment_methods')).documents.map((d) => d.name);
+  const haveMethods = (await allDocuments('payment_methods')).map((d) => d.name);
   for (const m of SEED_PAYMENT_METHODS) {
     if (haveMethods.includes(m.name)) continue;
     await ensure(`payment method ${m.name}`, () =>
@@ -329,7 +349,7 @@ async function main() {
   // Feature switchboard. Seeded at group level (blank venue_id) so an admin
   // can override any of it per venue later without touching these rows.
   await waitForAttributes('feature_flags', ['key', 'venue_id', 'enabled', 'config']);
-  const haveFlags = (await db.listDocuments(DB_ID, 'feature_flags')).documents.map((d) => d.key);
+  const haveFlags = (await allDocuments('feature_flags')).map((d) => d.key);
   for (const f of FEATURES) {
     if (haveFlags.includes(f.key)) continue;
     await ensure(`feature ${f.key}`, () =>
@@ -344,7 +364,7 @@ async function main() {
 
   // Every venue needs at least one pickup point before takeaway can be used.
   await waitForAttributes('pickup_points', ['venue_id', 'name', 'kind', 'active']);
-  const havePoints = (await db.listDocuments(DB_ID, 'pickup_points')).documents.length;
+  const havePoints = (await allDocuments('pickup_points')).length;
   if (!havePoints) {
     await ensure('pickup point Front counter', () =>
       db.createDocument(DB_ID, 'pickup_points', ID.unique(), {

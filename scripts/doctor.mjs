@@ -9,7 +9,7 @@
  * building", "wedged", and "rejected".
  */
 import 'dotenv/config';
-import { Client, Databases, Storage, Teams } from 'node-appwrite';
+import { Client, Databases, Storage, Teams, Query } from 'node-appwrite';
 import { DB_ID, TEAMS, BUCKETS, COLLECTIONS } from './schema.mjs';
 
 const { APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY } = process.env;
@@ -35,6 +35,16 @@ async function retry(fn, tries = 4) {
       if (!transient || i >= tries) throw e;
       await sleep(1000 * 2 ** i);
     }
+  }
+}
+
+/** Page through a list endpoint — Appwrite returns only 25 rows by default. */
+async function listAll(fetchPage, key) {
+  const out = [];
+  for (let offset = 0; ; offset += 100) {
+    const page = await fetchPage([Query.limit(100), Query.offset(offset)]);
+    out.push(...page[key]);
+    if (page[key].length < 100 || out.length >= page.total) return out;
   }
 }
 
@@ -83,7 +93,7 @@ for (const col of COLLECTIONS) {
   let attrs;
   try {
     await retry(() => db.getCollection(DB_ID, col.id));
-    attrs = (await retry(() => db.listAttributes(DB_ID, col.id))).attributes;
+    attrs = await listAll((q) => retry(() => db.listAttributes(DB_ID, col.id, q)), 'attributes');
   } catch {
     missing.push(col.id);
     continue;
@@ -100,7 +110,7 @@ for (const col of COLLECTIONS) {
 
   let idxOk = 0;
   try {
-    const have = new Set((await retry(() => db.listIndexes(DB_ID, col.id))).indexes.map((i) => i.key));
+    const have = new Set((await listAll((q) => retry(() => db.listIndexes(DB_ID, col.id, q)), 'indexes')).map((i) => i.key));
     idxOk = (col.indexes || []).filter((i) => have.has(i[0])).length;
   } catch {
     /* leave at 0 */
