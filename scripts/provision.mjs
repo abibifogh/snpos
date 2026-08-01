@@ -198,12 +198,29 @@ async function main() {
     );
   }
 
-  await waitForAttributes('payment_methods', ['name', 'kind', 'enabled', 'sort']);
+  // First venue. Every operational record hangs off a venue, so this must exist
+  // before payment methods, shifts or orders can be created.
+  await waitForAttributes('venues', ['name', 'slug', 'timezone', 'active']);
+  const VENUE_ID = process.env.DEFAULT_VENUE_ID || 'main';
+  await ensure(`venue ${VENUE_ID}`, () =>
+    db.createDocument(DB_ID, 'venues', VENUE_ID, {
+      name: process.env.RESTAURANT_NAME || 'My Restaurant',
+      slug: VENUE_ID,
+      timezone: process.env.TIMEZONE || 'Africa/Accra',
+      active: true,
+      sort: 0,
+      shift_float_policy: 'inherit', // uses the global 'zero' policy
+      shift_float_default: 0,
+    }),
+  );
+
+  await waitForAttributes('payment_methods', ['venue_id', 'name', 'kind', 'enabled', 'sort']);
   const haveMethods = (await db.listDocuments(DB_ID, 'payment_methods')).documents.map((d) => d.name);
   for (const m of SEED_PAYMENT_METHODS) {
     if (haveMethods.includes(m.name)) continue;
     await ensure(`payment method ${m.name}`, () =>
       db.createDocument(DB_ID, 'payment_methods', ID.unique(), {
+        venue_id: VENUE_ID,
         enabled: true,
         opens_cash_drawer: false,
         requires_reference: false,

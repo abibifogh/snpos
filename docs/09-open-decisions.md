@@ -7,6 +7,11 @@ specified. Below is what I'd add, split by how strongly I'd argue for it.
 Reply with the numbers you want and I'll fold them into the specs and the
 provisioning script.
 
+> **Settled so far** (see [doc 10](10-decisions-log.md) for the plain-language
+> version): payments are record-only, offline mode is **in**, multi-venue is
+> **in**, and the kitchen alarm gets a native Android app. Items B1, B3 and C4
+> below are therefore confirmed and no longer open.
+
 ---
 
 ## A. Already folded into core (QR ordering doesn't work without them)
@@ -24,9 +29,9 @@ provisioning script.
 
 | # | Feature | Effort | What it buys you |
 | --- | --- | --- | --- |
-| **B1** | **Offline-first mode** — local queue (IndexedDB) for ordering and billing, syncs to Appwrite on reconnect | High | This is the difference between a demo and a POS. When the internet drops mid-service, service continues. I'd rank this the single highest-value addition |
+| ~~B1~~ | ~~Offline-first mode~~ | High | **CONFIRMED — in scope.** See doc 11 |
 | **B2** | **Thermal receipt printing** (80mm ESC/POS) + kitchen docket printing as a backup to the KDS | Medium | Customers ask for receipts; tax authorities require them; a printed docket saves you when the tablet dies |
-| **B3** | **Native wrapper for the kitchen device only** (Capacitor) | Low–Medium | Guarantees the alarm sounds with the screen off/locked and survives the browser tab being backgrounded. Browsers throttle background audio; this removes that risk entirely |
+| ~~B3~~ | ~~Native wrapper for the kitchen device~~ | Low–Medium | **CONFIRMED — in scope.** See doc 12 |
 | **B4** | **Customer profiles + order history** (phone-identified) | Medium | Enables re-order, "your usual", and turns anonymous QR scans into a marketable customer list |
 | **B5** | **Purchase orders & goods-receiving flow** | Medium | You already have purchases; adding PO → receive → invoice-match closes the loop and makes the variance analysis in doc 06 far more accurate |
 | **B6** | **Daily summary email/push to the owner** (Appwrite Messaging) | Low | Sales, cash variance, flags — in your inbox at close without opening the dashboard |
@@ -40,7 +45,7 @@ provisioning script.
 | C1 | Loyalty (points or digital stamp card) | Natural once B4 exists; drives repeat visits |
 | C2 | Reservations / booking calendar | Only if you take bookings; otherwise skip |
 | C3 | Takeaway & delivery flow with a pickup-time queue | Say yes if you do any off-premise trade |
-| C4 | Multi-branch support | Adds `venue_id` to every collection. **Cheap now, expensive later** — tell me if a second location is plausible within 2 years |
+| ~~C4~~ | ~~Multi-branch support~~ | **CONFIRMED — in scope**, already in the schema. Shared menu, separate operations — see doc 10 |
 | C5 | Staff clock-in/out + labour cost as % of sales | Pairs with the hourly sales heatmap for rostering |
 | C6 | Waste log (record spoilage as it happens) | Materially improves variance accuracy — B5 and this together explain most of your leakage |
 | C7 | Happy-hour / time-based pricing | Reuses the availability engine; low extra cost |
@@ -60,17 +65,15 @@ provisioning script.
 
 ---
 
-## Four questions that change the design
+## Questions that change the design
 
-1. **Payments** — record-only (assumed), or should diners pay in-app? If in-app,
-   **Paystack** is the right choice for Ghana/Nigeria (card + mobile money);
-   Stripe if you're billing in USD/EUR. This decides whether
-   `payment-webhook` ships live or dormant.
-2. **Appwrite Cloud or self-hosted?** I assumed Cloud. Self-hosting is cheaper
-   at scale and keeps data local, but you own uptime — and a POS that's down is
-   a restaurant that's closed.
-3. **One venue or several?** See C4 — retrofitting `venue_id` later means
-   touching every collection and every query.
-4. **B1 (offline mode)** — how bad is your internet? If it drops even weekly,
-   B1 moves from "recommended" to "required", and it's better built into the
-   data layer now than bolted on after.
+1. ~~**Payments**~~ — **Answered: record-only.** The `payment-webhook` function
+   ships dormant; no gateway onboarding needed.
+2. **Appwrite Cloud or self-hosted?** Still open — I assumed Cloud. Self-hosting
+   is cheaper at scale and keeps data local, but you own uptime, and a POS
+   that's down is a restaurant that's closed. Cloud is the right default unless
+   something forces otherwise.
+3. ~~**One venue or several?**~~ — **Answered: several.** Now in the schema.
+   Still open: whether "shared menu, separate operations" is the right sharing
+   rule for your locations (doc 10, decision 3).
+4. ~~**Offline mode**~~ — **Answered: yes.** See doc 11.

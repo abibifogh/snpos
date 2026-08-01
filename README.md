@@ -18,23 +18,25 @@ an accounting/analytics layer.
 | [07 — Roles & access](docs/07-roles-access.md) | Cook / waiter / cashier / manager / admin matrix |
 | [08 — Deployment](docs/08-deployment.md) | **Step-by-step, stage by stage** |
 | [09 — Open decisions](docs/09-open-decisions.md) | Features awaiting your confirmation |
+| [10 — Decisions log](docs/10-decisions-log.md) | What's been decided, in plain language |
+| [11 — Offline mode](docs/11-offline-mode.md) | Working through an internet outage |
+| [12 — Kitchen app](docs/12-kitchen-app.md) | Native Android app for the alarm |
 
-## Assumptions made
+## Confirmed decisions
 
-These were the open questions; defaults chosen so the design is complete. Change
-any of them and only the noted sections move.
+1. **Payments are record-only.** Customers don't pay in the app; the POS records
+   how each bill was settled (cash / card / mobile money / split) for shift
+   reconciliation and accounting. Built so a gateway can be switched on later
+   without redoing anything.
+2. **Offline mode is in.** Service continues through an internet outage and
+   catches up on reconnect — [doc 11](docs/11-offline-mode.md).
+3. **Several venues.** Shared menu and recipes, separate staff/shifts/cash/stock
+   and accounts per location, plus a group-wide comparison view.
+4. **The kitchen screen is a native Android app**, so the alarm works with the
+   tablet locked — [doc 12](docs/12-kitchen-app.md).
 
-1. **Appwrite Cloud** (`cloud.appwrite.io`) for hosting; the provisioning script
-   and `appwrite.json` work unchanged against a self-hosted instance.
-2. **PWA-first**: one React codebase for all four surfaces, installable on
-   Android/iOS tablets. A thin native wrapper is only needed if the kitchen
-   device must alarm with the screen locked (see doc 09).
-3. **Payments are record-only, gateway-ready**: the POS records tender type for
-   reconciliation; the schema and webhook function are shaped so Paystack or
-   Stripe can be switched on without a migration.
-4. **Tables + split bills are in core** (QR-per-table needs a table entity
-   anyway). Loyalty, reservations, offline mode and printer/KDS hardware are in
-   doc 09 pending your call.
+Still assumed, not yet confirmed: **Appwrite Cloud** for hosting (the
+provisioning script works unchanged against a self-hosted instance).
 
 ## Repo layout (target)
 
@@ -43,9 +45,11 @@ apps/
   menu/        Customer QR menu (public, no login)
   pos/         Waiter + cashier terminal
   kitchen/     Kitchen display system
+  kitchen-android/  Capacitor shell around kitchen/ (alarm, wake, boot restart)
   admin/       Admin & manager dashboard
 packages/
   core/        Shared SDK client, types, availability engine, money utils
+  offline/     Local store, outbox queue, sync worker, conflict rules
   ui/          Themed component library (reads branding from settings)
 functions/
   order-guard/          Server-side price + availability validation

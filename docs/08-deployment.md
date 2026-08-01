@@ -112,6 +112,25 @@ the scheduled ones.
 
 ---
 
+## Stage 4b — Venues
+
+`provision.mjs` creates your first venue (`main`) automatically. For each
+additional location: Admin → Venues → Add, then set its name, address,
+timezone, order-number prefix, and optionally its own logo/colours and shift
+float policy.
+
+The menu and recipes are **shared** across venues; each venue can switch an item
+off or set its own price under Admin → Menu → [item] → Per-venue. Staff, shifts,
+cash, stock, expenses and accounts stay completely separate per venue.
+
+Assign every staff member to their venue(s) in Stage 5, step 11. Leaving a
+person's venue list empty means "all venues" — use that only for owners.
+
+**Verify:** switch venues in the admin header; sales, shifts and stock all
+change, while the menu stays the same.
+
+---
+
 ## Stage 5 — Configure the restaurant (no code)
 
 Run the apps locally (`pnpm dev`) and log into `admin` at
@@ -189,6 +208,10 @@ Do this end to end with real people before real customers. Script:
    explicitly.
 10. Kill the KDS tablet's wifi for 60 seconds mid-service, place an order, then
     restore it — the ticket must appear and ping on reconnect.
+11. **Offline drill** (doc 11.6): take 5 orders with wifi off, restore, confirm
+    all 5 arrive exactly once; force-close the app mid-queue and confirm nothing
+    is lost; try to close a shift with one terminal still offline and confirm
+    the close waits and names that terminal.
 
 **Verify:** every item above behaves as described. Fix, redeploy, repeat.
 
@@ -196,10 +219,10 @@ Do this end to end with real people before real customers. Script:
 
 ## Stage 8 — Hardware & devices
 
-- **Kitchen tablet**: 10"+, mains powered, Chrome → install the KDS PWA → Add to
-  Home Screen → enable kiosk/pinned mode → disable screen timeout → set volume
-  to max → tap "Start service" to unlock audio. Pair a loud external speaker;
-  tablet speakers lose to an extractor fan.
+- **Kitchen tablet**: Android, 10"+, mains powered. Install the native kitchen
+  app — full build and setup steps in **[doc 12](12-kitchen-app.md)**, summarised
+  as Stage 8b below. Pair a loud external speaker; tablet speakers lose to an
+  extractor fan.
 - **POS terminals**: install the POS PWA, pin it, disable auto-updates during
   service hours.
 - **Receipt printer**: any 80mm ESC/POS printer. Network printers work from the
@@ -209,6 +232,28 @@ Do this end to end with real people before real customers. Script:
   set. Rotate a token immediately if a card is stolen.
 - **Network**: staff devices on a separate SSID from guest wifi, with the
   kitchen tablet on 5 GHz near the AP. A UPS on the router is cheap insurance.
+
+---
+
+## Stage 8b — Build and install the kitchen app
+
+```bash
+pnpm --filter kitchen build
+npx cap sync android
+npx cap open android          # build a signed APK from Android Studio
+```
+
+Copy the APK to each kitchen tablet, allow installation from unknown sources,
+install. Then work through the tablet checklist in doc 12.4 — especially
+**turning off battery optimisation** for the app, and the two final tests
+(alarm sounds with the screen off; app returns by itself after a reboot).
+
+Back up the signing keystore somewhere safe. Losing it means you can't push
+updates to installed tablets.
+
+**Verify:** lock the tablet, place an order from a phone — the screen wakes and
+the alarm sounds at full volume. Reboot the tablet and confirm it reconnects
+without anyone touching it.
 
 ---
 

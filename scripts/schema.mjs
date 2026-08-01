@@ -48,6 +48,48 @@ const ADMIN = ['team:admins'];
  * An empty create/update array means: functions only (server API key).
  */
 export const COLLECTIONS = [
+  // ------------------------------------------------------------------ venues
+  {
+    id: 'venues',
+    name: 'Venues',
+    perms: { read: ['any'], create: ADMIN, update: ADMIN, delete: ADMIN },
+    attributes: [
+      ['name', 's', 120, true],
+      ['slug', 's', 60, true],
+      ['address', 's', 300, false],
+      ['phone', 's', 40, false],
+      ['timezone', 's', 64, true, 'Africa/Accra'],
+      ['active', 'b', null, true, true],
+      ['sort', 'i', null, true, 0],
+      // Optional per-venue branding; falls back to global settings when blank.
+      ['primary_color', 's', 9, false],
+      ['secondary_color', 's', 9, false],
+      ['logo_light_id', 's', 64, false],
+      // Operational settings that genuinely differ between locations.
+      ['shift_float_policy', 'e', ['inherit', 'zero', 'carry_over', 'prompt'], true, 'inherit'],
+      ['shift_float_default', 'i', null, true, 0],
+      ['order_number_prefix', 's', 8, false],
+      ['tax_rate_bp', 'i', null, false],
+    ],
+    indexes: [['slug_unique', 'unique', ['slug']], ['active_sort', 'key', ['active', 'sort']]],
+  },
+  {
+    // Per-venue price / availability override on the shared menu.
+    // No row means: use the master menu item as-is.
+    id: 'venue_menu_items',
+    name: 'Venue menu overrides',
+    perms: { read: ['any'], create: MGMT, update: MGMT, delete: MGMT },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['menu_item_id', 's', 64, true],
+      ['available', 'b', null, true, true],
+      ['price_override', 'i', null, false],
+      ['sold_out_until', 'd', null, false],
+      ['availability_override', 's', 4000, false],
+    ],
+    indexes: [['venue_item', 'unique', ['venue_id', 'menu_item_id']]],
+  },
+
   // ---------------------------------------------------------------- settings
   {
     id: 'settings',
@@ -256,7 +298,8 @@ export const COLLECTIONS = [
     ],
     indexes: [
       ['idem_unique', 'unique', ['idem_key']],
-      ['order_no_unique', 'unique', ['order_no']],
+      // Order numbers restart per venue, so uniqueness is scoped to the venue.
+      ['order_no_unique', 'unique', ['venue_id', 'order_no']],
       ['shift_status', 'key', ['shift_id', 'status']],
       ['status_created', 'key', ['status', '$createdAt']],
       ['session', 'key', ['session_id']],
@@ -341,7 +384,9 @@ export const COLLECTIONS = [
       ['posted_to_ledger', 'b', null, true, false],
       ['notes', 's', 1000, false],
     ],
-    indexes: [['status_opened', 'key', ['status', 'opened_at']], ['code_unique', 'unique', ['code']]],
+    // Only one shift may be `open` per venue — enforced by the shift functions,
+    // with this index making the check a single fast lookup.
+    indexes: [['venue_status_opened', 'key', ['venue_id', 'status', 'opened_at']], ['code_unique', 'unique', ['venue_id', 'code']]],
   },
   {
     id: 'shift_expenses',
@@ -594,6 +639,37 @@ export const COLLECTIONS = [
     indexes: [['actor_created', 'key', ['actor_id', '$createdAt']], ['action', 'key', ['action']]],
   },
 ];
+
+/**
+ * Multi-venue scoping.
+ *
+ * The menu, recipes and add-ons are SHARED across venues (edit once, use
+ * everywhere) with per-venue price/availability overrides in `venue_menu_items`.
+ * Everything operational is SEPARATE per venue — staff, shifts, cash, stock,
+ * purchases and the ledger never mix between locations.
+ *
+ * `venue_id` is injected here rather than repeated 20 times above, so a venue
+ * can never be accidentally omitted from a collection that needs it.
+ */
+export const VENUE_SCOPED = [
+  'tables', 'dining_sessions', 'orders', 'order_items', 'payments',
+  'shifts', 'shift_expenses', 'shift_stock_checks',
+  'ingredients', 'suppliers', 'purchases', 'purchase_items',
+  'stock_movements', 'stock_flags',
+  'journal_entries', 'journal_lines',
+  'devices', 'audit_log', 'payment_methods',
+];
+
+for (const id of VENUE_SCOPED) {
+  const col = COLLECTIONS.find((c) => c.id === id);
+  if (!col) throw new Error(`VENUE_SCOPED references unknown collection "${id}"`);
+  col.attributes.unshift(['venue_id', 's', 64, true]);
+  col.indexes = col.indexes || [];
+  col.indexes.push([`venue`, 'key', ['venue_id']]);
+}
+
+// Staff belong to one or more venues; an empty list means "all venues" (owner).
+COLLECTIONS.find((c) => c.id === 'staff_profiles').attributes.push(['venue_ids', 's[]', 64, false]);
 
 export const SEED_ACCOUNTS = [
   ['1000', 'Cash on hand', 'asset'],
