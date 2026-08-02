@@ -609,7 +609,7 @@ There are 52 collections. A progress checklist is at the end of this document.
 
 ### 16. `payments` — Payments
 
-**Read**: Team: cashiers, Team: managers, Team: admins · **Create**: _none — server only_ · **Update**: _none — server only_ · **Delete**: _none — server only_
+**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: _none — server only_
 
 **Attributes** (15)
 
@@ -643,7 +643,7 @@ There are 52 collections. A progress checklist is at the end of this document.
 
 ### 17. `shifts` — Shifts
 
-**Read**: Team: cashiers, Team: managers, Team: admins · **Create**: _none — server only_ · **Update**: _none — server only_ · **Delete**: _none — server only_
+**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cashiers, Team: managers, Team: admins · **Update**: Team: cashiers, Team: managers, Team: admins · **Delete**: _none — server only_
 
 **Attributes** (27)
 
@@ -884,7 +884,7 @@ There are 52 collections. A progress checklist is at the end of this document.
 
 ### 25. `stock_movements` — Stock movements
 
-**Read**: Team: managers, Team: admins · **Create**: _none — server only_ · **Update**: _none — server only_ · **Delete**: _none — server only_
+**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: _none — server only_ · **Delete**: _none — server only_
 
 **Attributes** (10)
 
@@ -913,7 +913,7 @@ There are 52 collections. A progress checklist is at the end of this document.
 
 ### 26. `stock_flags` — Stock variance flags
 
-**Read**: Team: managers, Team: admins · **Create**: _none — server only_ · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
+**Read**: Team: managers, Team: admins · **Create**: Team: cashiers, Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
 **Attributes** (14)
 
@@ -968,7 +968,7 @@ There are 52 collections. A progress checklist is at the end of this document.
 
 ### 28. `journal_entries` — Journal entries
 
-**Read**: Team: managers, Team: admins · **Create**: _none — server only_ · **Update**: _none — server only_ · **Delete**: _none — server only_
+**Read**: Team: managers, Team: admins · **Create**: Team: cashiers, Team: managers, Team: admins · **Update**: _none — server only_ · **Delete**: _none — server only_
 
 **Attributes** (8)
 
@@ -995,7 +995,7 @@ There are 52 collections. A progress checklist is at the end of this document.
 
 ### 29. `journal_lines` — Journal lines
 
-**Read**: Team: managers, Team: admins · **Create**: _none — server only_ · **Update**: _none — server only_ · **Delete**: _none — server only_
+**Read**: Team: managers, Team: admins · **Create**: Team: cashiers, Team: managers, Team: admins · **Update**: _none — server only_ · **Delete**: _none — server only_
 
 **Attributes** (6)
 
@@ -1020,7 +1020,7 @@ There are 52 collections. A progress checklist is at the end of this document.
 
 ### 30. `staff_profiles` — Staff profiles
 
-**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: _none — server only_ · **Update**: _none — server only_ · **Delete**: _none — server only_
+**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
 **Attributes** (18)
 
@@ -1082,7 +1082,7 @@ There are 52 collections. A progress checklist is at the end of this document.
 
 ### 32. `audit_log` — Audit log
 
-**Read**: Team: managers, Team: admins · **Create**: _none — server only_ · **Update**: _none — server only_ · **Delete**: _none — server only_
+**Read**: Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: _none — server only_ · **Delete**: _none — server only_
 
 **Attributes** (11)
 
@@ -1221,7 +1221,7 @@ There are 52 collections. A progress checklist is at the end of this document.
 
 ### 37. `preorder_slots` — Pre-order slots
 
-**Read**: Any · **Create**: _none — server only_ · **Update**: _none — server only_ · **Delete**: Team: managers, Team: admins
+**Read**: Any · **Create**: All users · **Update**: All users · **Delete**: Team: managers, Team: admins
 
 **Attributes** (8)
 
@@ -1373,7 +1373,7 @@ There are 52 collections. A progress checklist is at the end of this document.
 
 ### 42. `loyalty_ledger` — Loyalty ledger
 
-**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: _none — server only_ · **Update**: _none — server only_ · **Delete**: _none — server only_
+**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: _none — server only_ · **Delete**: _none — server only_
 
 **Attributes** (10)
 

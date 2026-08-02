@@ -42,6 +42,9 @@ export const BUCKETS = [
 const ALL_STAFF = ['team:cooks', 'team:waiters', 'team:cashiers', 'team:managers', 'team:admins'];
 const MGMT = ['team:managers', 'team:admins'];
 const ADMIN = ['team:admins'];
+// Who may open a till, close a shift and post to the ledger. Narrower than
+// ALL_STAFF on purpose: a cook has no business opening a cash drawer.
+const TILL = ['team:cashiers', 'team:managers', 'team:admins'];
 
 /**
  * perms.read / .create / .update / .delete — arrays of Appwrite role strings.
@@ -461,7 +464,8 @@ export const COLLECTIONS = [
   {
     id: 'payments',
     name: 'Payments',
-    perms: { read: ['team:cashiers', ...MGMT], create: [], update: [], delete: [] },
+    // Taking money is front-line work; reversing it is not.
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: MGMT, delete: [] },
     attributes: [
       ['order_id', 's', 64, true],
       ['shift_id', 's', 64, true],
@@ -485,7 +489,7 @@ export const COLLECTIONS = [
   {
     id: 'shifts',
     name: 'Shifts',
-    perms: { read: ['team:cashiers', ...MGMT], create: [], update: [], delete: [] },
+    perms: { read: ALL_STAFF, create: TILL, update: TILL, delete: [] },
     attributes: [
       ['code', 's', 40, true],
       ['status', 'e', ['open', 'closing', 'closed', 'reopened'], true, 'open'],
@@ -642,7 +646,9 @@ export const COLLECTIONS = [
   {
     id: 'stock_movements',
     name: 'Stock movements',
-    perms: { read: MGMT, create: [], update: [], delete: [] },
+    // A movement is something that happened. It is never edited; a mistake is
+    // corrected by recording the opposite movement, so the trail stays honest.
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: [], delete: [] },
     attributes: [
       ['ingredient_id', 's', 64, true],
       ['type', 'e', ['purchase', 'sale_depletion', 'waste', 'adjustment', 'count_correction', 'transfer'], true],
@@ -659,7 +665,7 @@ export const COLLECTIONS = [
   {
     id: 'stock_flags',
     name: 'Stock variance flags',
-    perms: { read: MGMT, create: [], update: MGMT, delete: ADMIN },
+    perms: { read: MGMT, create: TILL, update: MGMT, delete: ADMIN },
     attributes: [
       ['ingredient_id', 's', 64, true],
       ['period_start', 'd', null, true],
@@ -695,7 +701,9 @@ export const COLLECTIONS = [
   {
     id: 'journal_entries',
     name: 'Journal entries',
-    perms: { read: MGMT, create: [], update: [], delete: [] },
+    // Append-only on purpose: a wrong entry is corrected by posting a reversal,
+    // never by editing history. Books that can be quietly edited are not books.
+    perms: { read: MGMT, create: TILL, update: [], delete: [] },
     attributes: [
       ['date', 'd', null, true],
       ['source', 'e', ['shift_close', 'purchase', 'expense', 'refund', 'adjustment', 'reversal'], true],
@@ -710,7 +718,7 @@ export const COLLECTIONS = [
   {
     id: 'journal_lines',
     name: 'Journal lines',
-    perms: { read: MGMT, create: [], update: [], delete: [] },
+    perms: { read: MGMT, create: TILL, update: [], delete: [] },
     attributes: [
       ['entry_id', 's', 64, true],
       ['account_code', 's', 10, true],
@@ -725,7 +733,9 @@ export const COLLECTIONS = [
   {
     id: 'staff_profiles',
     name: 'Staff profiles',
-    perms: { read: ALL_STAFF, create: [], update: [], delete: [] },
+    // Readable by all staff because the shared terminal and kitchen screen
+    // match a typed PIN against this list.
+    perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: ADMIN },
     attributes: [
       // Optional: a profile is created when someone is invited, before they
       // have accepted and therefore before a user account exists. First sign-in
@@ -767,7 +777,9 @@ export const COLLECTIONS = [
   {
     id: 'audit_log',
     name: 'Audit log',
-    perms: { read: MGMT, create: [], update: [], delete: [] },
+    // Anyone can add to it, nobody can change or remove anything, and only
+    // management can read it. An audit trail the audited can edit is theatre.
+    perms: { read: MGMT, create: ALL_STAFF, update: [], delete: [] },
     attributes: [
       ['actor_id', 's', 64, true],
       ['actor_role', 's', 20, false],
@@ -883,7 +895,7 @@ export const COLLECTIONS = [
     // two simultaneous orders can't both take the last place.
     id: 'preorder_slots',
     name: 'Pre-order slots',
-    perms: { read: ['any'], create: [], update: [], delete: MGMT },
+    perms: { read: ['any'], create: ['users'], update: ['users'], delete: MGMT },
     attributes: [
       ['venue_id', 's', 64, true],
       ['pickup_point_id', 's', 64, false],
@@ -1008,7 +1020,7 @@ export const COLLECTIONS = [
   {
     id: 'loyalty_ledger',
     name: 'Loyalty ledger',
-    perms: { read: ALL_STAFF, create: [], update: [], delete: [] },
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: [], delete: [] },
     attributes: [
       ['venue_id', 's', 64, true],
       ['customer_id', 's', 64, true],
