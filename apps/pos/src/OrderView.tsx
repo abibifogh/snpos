@@ -127,7 +127,7 @@ export function OrderView({
             <Button
               variant="primary"
               onClick={() => setPaying(true)}
-              disabled={!ctx.shift || ctx.profile?.can_mark_paid === false}
+              disabled={!ctx.shift || !ctx.profile?.can_mark_paid}
             >
               Take payment · {formatMoney(billTotal, ctx.settings)}
             </Button>

@@ -42,9 +42,6 @@ export const BUCKETS = [
 const ALL_STAFF = ['team:cooks', 'team:waiters', 'team:cashiers', 'team:managers', 'team:admins'];
 const MGMT = ['team:managers', 'team:admins'];
 const ADMIN = ['team:admins'];
-// Who may open a till, close a shift and post to the ledger. Narrower than
-// ALL_STAFF on purpose: a cook has no business opening a cash drawer.
-const TILL = ['team:cashiers', 'team:managers', 'team:admins'];
 
 /**
  * perms.read / .create / .update / .delete — arrays of Appwrite role strings.
@@ -489,7 +486,11 @@ export const COLLECTIONS = [
   {
     id: 'shifts',
     name: 'Shifts',
-    perms: { read: ALL_STAFF, create: TILL, update: TILL, delete: [] },
+    // ALL_STAFF rather than a cashier-only role because who may open a till is
+    // a decision the restaurant makes per person (can_open_shift on their
+    // profile), not one we make for them by job title. On a quiet shift the
+    // cook IS the cashier.
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: [] },
     attributes: [
       ['code', 's', 40, true],
       ['status', 'e', ['open', 'closing', 'closed', 'reopened'], true, 'open'],
@@ -665,7 +666,7 @@ export const COLLECTIONS = [
   {
     id: 'stock_flags',
     name: 'Stock variance flags',
-    perms: { read: MGMT, create: TILL, update: MGMT, delete: ADMIN },
+    perms: { read: MGMT, create: ALL_STAFF, update: MGMT, delete: ADMIN },
     attributes: [
       ['ingredient_id', 's', 64, true],
       ['period_start', 'd', null, true],
@@ -703,7 +704,8 @@ export const COLLECTIONS = [
     name: 'Journal entries',
     // Append-only on purpose: a wrong entry is corrected by posting a reversal,
     // never by editing history. Books that can be quietly edited are not books.
-    perms: { read: MGMT, create: TILL, update: [], delete: [] },
+    // Created by whoever closes the shift, which may be the cook.
+    perms: { read: MGMT, create: ALL_STAFF, update: [], delete: [] },
     attributes: [
       ['date', 'd', null, true],
       ['source', 'e', ['shift_close', 'purchase', 'expense', 'refund', 'adjustment', 'reversal'], true],
@@ -718,7 +720,7 @@ export const COLLECTIONS = [
   {
     id: 'journal_lines',
     name: 'Journal lines',
-    perms: { read: MGMT, create: TILL, update: [], delete: [] },
+    perms: { read: MGMT, create: ALL_STAFF, update: [], delete: [] },
     attributes: [
       ['entry_id', 's', 64, true],
       ['account_code', 's', 10, true],

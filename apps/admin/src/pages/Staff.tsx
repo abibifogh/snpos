@@ -9,7 +9,10 @@ interface VenueRow extends Doc { name: string }
 
 const ROLES: StaffProfile['role'][] = ['cook', 'waiter', 'cashier', 'manager', 'admin'];
 
-/** Sensible starting permissions per role — an admin can still adjust each. */
+/**
+ * Starting permissions per role. Every one is adjustable per person afterwards
+ * — these are a sensible default, not a rule. A cook can be given the till.
+ */
 const DEFAULTS: Record<StaffProfile['role'], Partial<StaffProfile>> = {
   cook: { can_open_shift: false, can_close_shift: false, can_void: false, can_discount_up_to_bp: 0, can_mark_paid: false, can_record_waste: true },
   waiter: { can_open_shift: false, can_close_shift: false, can_void: false, can_discount_up_to_bp: 0, can_mark_paid: true, can_record_waste: true },
@@ -258,9 +261,31 @@ export function StaffPage() {
           )}
 
           <h3 style={{ margin: '1.1rem 0 0.5rem' }}>What they can do</h3>
-          <Field><Toggle checked={editing.can_open_shift ?? false} onChange={(v) => setEditing({ ...editing, can_open_shift: v })} label="Open a shift" /></Field>
-          <Field><Toggle checked={editing.can_close_shift ?? false} onChange={(v) => setEditing({ ...editing, can_close_shift: v })} label="Close a shift and count the drawer" /></Field>
-          <Field><Toggle checked={editing.can_mark_paid ?? true} onChange={(v) => setEditing({ ...editing, can_mark_paid: v })} label="Mark a bill as paid" /></Field>
+          <p className="small dim" style={{ marginTop: 0 }}>
+            These are per person, not per job title. On a quiet shift the cook is the cashier, so give a cook the till
+            permissions if that is how your restaurant runs — the role above only sets the starting point.
+          </p>
+          <Field hint="Counting the opening float and starting the till.">
+            <Toggle
+              checked={editing.can_open_shift ?? false}
+              onChange={(v) => setEditing({ ...editing, can_open_shift: v })}
+              label="Open a shift and the cash drawer"
+            />
+          </Field>
+          <Field hint="Counting the drawer at the end, which is when the day's figures are settled.">
+            <Toggle
+              checked={editing.can_close_shift ?? false}
+              onChange={(v) => setEditing({ ...editing, can_close_shift: v })}
+              label="Close a shift and count the drawer"
+            />
+          </Field>
+          <Field hint="Recording that a bill was settled — cash, card or mobile money.">
+            <Toggle
+              checked={editing.can_mark_paid ?? true}
+              onChange={(v) => setEditing({ ...editing, can_mark_paid: v })}
+              label="Take payment and mark a bill as paid"
+            />
+          </Field>
           <Field><Toggle checked={editing.can_void ?? false} onChange={(v) => setEditing({ ...editing, can_void: v })} label="Void an order" /></Field>
           <Field><Toggle checked={editing.can_record_waste ?? true} onChange={(v) => setEditing({ ...editing, can_record_waste: v })} label="Record waste" /></Field>
 

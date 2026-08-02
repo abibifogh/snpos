@@ -274,13 +274,16 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           ) : (
             <span className="small" style={{ color: 'var(--warn)' }}>
               No shift open — orders can be taken, but nothing can be marked paid until one is.
+              {!ctx.profile?.can_open_shift && ' Ask someone who can open one, or have an admin grant you the permission.'}
             </span>
           )}
         </div>
         {ctx.shift ? (
-          <Button size="sm" onClick={startClose} disabled={ctx.profile?.can_close_shift === false}>Close shift</Button>
+          <Button size="sm" onClick={startClose} disabled={!ctx.profile?.can_close_shift}>
+            Close shift
+          </Button>
         ) : (
-          <Button size="sm" variant="primary" onClick={startOpen} disabled={ctx.profile?.can_open_shift === false}>
+          <Button size="sm" variant="primary" onClick={startOpen} disabled={!ctx.profile?.can_open_shift}>
             Open shift
           </Button>
         )}

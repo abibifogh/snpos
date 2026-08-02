@@ -643,7 +643,7 @@ There are 52 collections. A progress checklist is at the end of this document.
 
 ### 17. `shifts` — Shifts
 
-**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cashiers, Team: managers, Team: admins · **Update**: Team: cashiers, Team: managers, Team: admins · **Delete**: _none — server only_
+**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: _none — server only_
 
 **Attributes** (27)
 
@@ -913,7 +913,7 @@ There are 52 collections. A progress checklist is at the end of this document.
 
 ### 26. `stock_flags` — Stock variance flags
 
-**Read**: Team: managers, Team: admins · **Create**: Team: cashiers, Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
+**Read**: Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
 **Attributes** (14)
 
@@ -968,7 +968,7 @@ There are 52 collections. A progress checklist is at the end of this document.
 
 ### 28. `journal_entries` — Journal entries
 
-**Read**: Team: managers, Team: admins · **Create**: Team: cashiers, Team: managers, Team: admins · **Update**: _none — server only_ · **Delete**: _none — server only_
+**Read**: Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: _none — server only_ · **Delete**: _none — server only_
 
 **Attributes** (8)
 
@@ -995,7 +995,7 @@ There are 52 collections. A progress checklist is at the end of this document.
 
 ### 29. `journal_lines` — Journal lines
 
-**Read**: Team: managers, Team: admins · **Create**: Team: cashiers, Team: managers, Team: admins · **Update**: _none — server only_ · **Delete**: _none — server only_
+**Read**: Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: _none — server only_ · **Delete**: _none — server only_
 
 **Attributes** (6)
 
