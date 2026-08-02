@@ -19,7 +19,8 @@
     "isolatedModules": true,
     "noEmit": true,
     "types": [
-      "vite/client"
+      "vite/client",
+      "node"
     ],
     "paths": {
       "@snpos/core": [

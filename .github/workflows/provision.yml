@@ -1,0 +1,56 @@
+name: Provision Appwrite
+
+# Applies schema changes to Appwrite. Run it after any change to
+# scripts/schema.mjs.
+#
+# Deliberately NOT automatic on push: this writes to the live database, and a
+# schema change should be a decision someone makes, not a side effect of
+# merging. It is safe to re-run — it creates what is missing and skips the
+# rest — but it is not something to do by accident.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "provision" to confirm'
+        required: true
+        default: ''
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the confirmation
+        if: ${{ inputs.confirm != 'provision' }}
+        run: |
+          echo "Type 'provision' in the confirmation box to run this."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Apply the schema
+        run: npm run provision
+        env:
+          APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT }}
+          APPWRITE_PROJECT_ID: ${{ vars.APPWRITE_PROJECT_ID }}
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+          DB_ID: ${{ vars.DB_ID || 'snpos' }}
+          RESTAURANT_NAME: ${{ vars.RESTAURANT_NAME || 'My Restaurant' }}
+          TIMEZONE: ${{ vars.TIMEZONE || 'Africa/Accra' }}
+          CURRENCY_CODE: ${{ vars.CURRENCY_CODE || 'GHS' }}
+          CURRENCY_SYMBOL: ${{ vars.CURRENCY_SYMBOL || 'GHS ' }}
+
+      - name: Report what exists
+        if: always()
+        run: npm run doctor
+        env:
+          APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT }}
+          APPWRITE_PROJECT_ID: ${{ vars.APPWRITE_PROJECT_ID }}
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+          DB_ID: ${{ vars.DB_ID || 'snpos' }}

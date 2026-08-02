@@ -24,6 +24,7 @@ an accounting/analytics layer.
 | [13 — Features](docs/13-features.md) | Optional features, pre-ordering, and the admin switchboard |
 | [14 — Discounts](docs/14-discounts.md) | Discounts, codes, and marking a bill paid |
 | [15 — Manual console setup](docs/15-manual-console-setup.md) | Every collection, field and index, for building by hand |
+| [16 — Automated deployment](docs/16-automated-deployment.md) | **Deploy from GitHub — no local commands** |
 
 ## Confirmed decisions
 
@@ -57,7 +58,13 @@ Running on Appwrite's **free plan** works, with one adaptation: the plan allows
 a single storage bucket, so all files share one with per-file permissions
 instead of three separate buckets. See [doc 13.8](docs/13-features.md).
 
-## Running the apps
+## Deploying
+
+Set up once (doc 16) and every push builds and publishes all four apps to
+GitHub Pages; schema changes apply to Appwrite from the Actions tab. No local
+commands, no downloads.
+
+## Running the apps locally
 
 ```bash
 npm install
