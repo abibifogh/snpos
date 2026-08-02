@@ -70,35 +70,35 @@ jobs:
           set -e
           FAILED=""
 
-          # Create first, update on conflict. Creating alone fails once a
-          # variable is already there, which used to mean that changing an
-          # email password and re-running this quietly kept the old one.
+          # Create first, update on conflict — so re-running after changing an
+          # email password overwrites it rather than quietly keeping the old
+          # one.
+          #
+          # The id is derived from the function and key rather than generated,
+          # which is what makes the update path possible without going looking
+          # for the row. Appwrite allows 36 characters of [A-Za-z0-9._-];
+          # the longest name here comes to 33.
+          #
+          # Whatever the CLI says on failure is printed. An earlier version of
+          # this sent stderr to /dev/null and turned "required option
+          # --variable-id not specified" into twelve identical warnings with no
+          # cause attached — which cost more time than every other bug here.
           setvar() {
             fn=$1; key=$2; val=$3
-            if appwrite functions create-variable \
-                 --function-id "$fn" --key "$key" --value "$val" >/dev/null 2>&1; then
-              echo "  $fn.$key created"
-              return 0
-            fi
+            vid=$(printf '%s_%s' "$fn" "$key" | tr 'A-Z-' 'a-z_' | cut -c1-36)
 
-            id=$(appwrite functions list-variables --function-id "$fn" --json 2>/dev/null \
-              | node -e '
-                  let s = "";
-                  process.stdin.on("data", (d) => (s += d)).on("end", () => {
-                    try {
-                      const found = (JSON.parse(s).variables || []).find((v) => v.key === process.argv[1]);
-                      if (found) process.stdout.write(found.$id);
-                    } catch { /* nothing to update */ }
-                  });
-                ' "$key")
+            out=$(appwrite functions create-variable \
+                    --function-id "$fn" --variable-id "$vid" \
+                    --key "$key" --value "$val" 2>&1) \
+              && { echo "  $fn.$key created"; return 0; }
 
-            if [ -n "$id" ] && appwrite functions update-variable \
-                 --function-id "$fn" --variable-id "$id" --key "$key" --value "$val" >/dev/null 2>&1; then
-              echo "  $fn.$key updated"
-              return 0
-            fi
+            out=$(appwrite functions update-variable \
+                    --function-id "$fn" --variable-id "$vid" \
+                    --key "$key" --value "$val" 2>&1) \
+              && { echo "  $fn.$key updated"; return 0; }
 
             echo "::warning::Could not set $fn.$key"
+            printf '%s\n' "$out" | sed 's/^/      /'
             FAILED="$FAILED $fn.$key"
           }
 
