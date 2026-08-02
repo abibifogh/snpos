@@ -71,6 +71,35 @@ jobs:
           done
           # Pages runs Jekyll by default, which strips files beginning with _.
           touch site/.nojekyll
+
+      - name: Keep the previous build's files alongside the new ones
+        continue-on-error: true
+        run: |
+          # Why this exists: each build names its files with a content hash, so
+          # a new deploy replaces index-ABC.js with index-XYZ.js and deletes the
+          # old one. A browser holding a cached index.html then asks for a file
+          # that no longer exists; GitHub Pages answers a missing file with the
+          # app's own 404 page, and the browser refuses to run HTML as
+          # JavaScript. The result is a blank screen for anyone who happened to
+          # load the site shortly before the deploy — "the site is down",
+          # despite the deploy having succeeded.
+          #
+          # Copying the live build's files into the new one costs a few
+          # kilobytes and means those requests keep resolving.
+          BASE="${{ steps.base.outputs.url }}"
+          for app in admin menu kitchen pos; do
+            old=$(curl -fsSL --max-time 20 "$BASE/$app/" || true)
+            [ -n "$old" ] || continue
+            echo "$old" \
+              | grep -oE 'assets/[A-Za-z0-9._-]+' \
+              | sed 's|^assets/||' \
+              | sort -u \
+              | while read -r name; do
+                  [ -f "site/$app/assets/$name" ] && continue
+                  curl -fsSL --max-time 20 "$BASE/$app/assets/$name" -o "site/$app/assets/$name" \
+                    && echo "  kept $app/$name" || true
+                done
+          done
           cat > site/index.html <<'HTML'
           <!doctype html>
           <meta charset="utf-8">

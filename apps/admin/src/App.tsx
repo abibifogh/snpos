@@ -10,6 +10,7 @@ import { MenuItemsPage } from './pages/MenuItems';
 import { FeaturesPage } from './pages/Features';
 import { VenuesPage } from './pages/Venues';
 import { AccountPage } from './pages/Account';
+import { HelpPage } from './pages/Help';
 import { AddonsPage } from './pages/Addons';
 import { ExpensesPage } from './pages/Expenses';
 import { TablesPage } from './pages/Tables';
@@ -52,6 +53,7 @@ export function App() {
         <Route path="/features" element={<FeaturesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/account" element={<AccountPage />} />
+        <Route path="/help" element={<HelpPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Shell>

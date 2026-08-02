@@ -11,3 +11,4 @@ export * from './orders';
 export * from './stock';
 export * from './ledger';
 export * from './pin';
+export * from './help';

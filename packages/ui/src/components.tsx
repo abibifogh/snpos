@@ -96,7 +96,7 @@ export const Badge = ({ tone = 'default', children }: { tone?: 'default' | 'ok' 
   <span className={`badge ${tone !== 'default' ? `badge-${tone}` : ''}`}>{children}</span>
 );
 
-export const Notice = ({ tone = 'err', children }: { tone?: 'err' | 'ok' | 'warn'; children: ReactNode }) => (
+export const Notice = ({ tone = 'err', children }: { tone?: 'err' | 'ok' | 'warn' | 'info'; children: ReactNode }) => (
   <div className={`notice notice-${tone}`}>{children}</div>
 );
 
@@ -114,11 +114,14 @@ export function Modal({
   onClose,
   children,
   footer,
+  wide,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  /** For content that genuinely needs the room, like the manual. */
+  wide?: boolean;
 }) {
   // Escape closes: a modal you can only leave with the mouse is a trap on a
   // terminal where staff are working quickly.
@@ -130,7 +133,7 @@ export function Modal({
 
   return (
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title}>
+      <div className={wide ? 'modal modal-wide' : 'modal'} role="dialog" aria-modal="true" aria-label={title}>
         <header className="card-head">
           <h2>{title}</h2>
           <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close">✕</Button>

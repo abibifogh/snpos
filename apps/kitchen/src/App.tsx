@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo } from '@snpos/ui';
+import { Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo, HelpModal } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
   account, db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
-  verifyPin, loadFeatures, isEnabled, featureConfig,
+  verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS,
 } from '@snpos/core';
-import type { Order, OrderItem, Settings, Venue, StaffProfile, Doc, FeatureMap } from '@snpos/core';
+import type { Order, OrderItem, Settings, Venue, StaffProfile, HelpRole, Doc, FeatureMap } from '@snpos/core';
 
 interface Station extends Doc { venue_id: string; key: string; name: string; colour?: string; sort: number; active: boolean }
 import { unlockAudio, setAlarm, stopAlarm } from './alarm';
@@ -36,6 +36,7 @@ export function App() {
   // Who is at the screen. The device holds the session; the PIN says which
   // person is acting, so accepts and rejects have a name against them.
   const [who, setWho] = useState<StaffProfile | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [pinEntry, setPinEntry] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
@@ -304,6 +305,18 @@ export function App() {
         </div>
       )}
 
+      {helpOpen && (
+        <HelpModal
+          articles={articlesFor(
+            (who?.role ?? 'cook') as HelpRole,
+            featureConfig<Record<string, string[]>>(features, 'help', 'audiences', {}),
+          )}
+          areas={HELP_AREAS}
+          title="How this works"
+          onClose={() => setHelpOpen(false)}
+        />
+      )}
+
       <div className="kds-top">
         <div className="row">
           <Logo size={28} />
@@ -328,6 +341,9 @@ export function App() {
           })}
         </div>
         <div className="kds-stats">
+          {isEnabled(features, 'help') && (
+            <button className="kds-help" onClick={() => setHelpOpen(true)} title="How this works">?</button>
+          )}
           <span>New <b>{pending.length}</b></span>
           <span>Cooking <b>{visible.filter((o) => o.status === 'PREPARING').length}</b></span>
           <span>Ready <b>{visible.filter((o) => o.status === 'READY').length}</b></span>

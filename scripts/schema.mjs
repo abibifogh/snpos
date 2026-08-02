@@ -1650,6 +1650,21 @@ export const FEATURES = [
       invalid_code_message: "That code isn't valid for this order.",
     },
   },
+  {
+    key: 'help',
+    label: 'In-app help and user manual',
+    enabled: true,
+    config: {
+      // Who sees which chapter, keyed by article id. Only differences from the
+      // audience each chapter was written for are stored, so a chapter added in
+      // a later version arrives visible to the right people instead of being
+      // invisible to everyone until somebody notices it exists.
+      // Shape: { "<article_id>": ["cook", "waiter", ...] }
+      audiences: {},
+      // Guests see the "ordering from your phone" chapter on the QR menu.
+      show_on_customer_menu: true,
+    },
+  },
 ];
 
 export const SEED_ACCOUNTS = [

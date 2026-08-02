@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Spinner, Card, Field, Input, Notice, useToast, Logo } from '@snpos/ui';
+import { Button, Spinner, Card, Field, Input, Notice, useToast, Logo, HelpModal } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
-import { account, db, DB_ID, Query, listAll, loadMenu, loadFeatures, humanError, isEnabled } from '@snpos/core';
-import type { Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, Doc } from '@snpos/core';
+import {
+  account, db, DB_ID, Query, listAll, loadMenu, loadFeatures, humanError, isEnabled,
+  articlesFor, featureConfig, HELP_AREAS,
+} from '@snpos/core';
+import type { Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc } from '@snpos/core';
 import { TablesView } from './TablesView';
 import { OrderView } from './OrderView';
 import { ShiftBar, type Shift } from './ShiftBar';
@@ -40,6 +43,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [openTable, setOpenTable] = useState<TableRow | null>(null);
   const [tab, setTab] = useState<'tables' | 'takeaway' | 'kitchen'>('tables');
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const loadShift = useCallback(async (venueId: string): Promise<Shift | null> => {
     const res = await db.listDocuments(DB_ID, 'shifts', [
@@ -173,10 +177,29 @@ export function App() {
             <button className={tab === 'kitchen' ? 'on' : ''} onClick={() => setTab('kitchen')}>Kitchen</button>
           )}
         </div>
-        <Button size="sm" variant="ghost" onClick={() => account.deleteSession('current').then(() => location.reload())}>
-          Sign out
-        </Button>
+        <div className="row">
+          {isEnabled(ctx.features, 'help') && (
+            <Button size="sm" variant="ghost" onClick={() => setHelpOpen(true)} title="How this works">
+              Help
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => account.deleteSession('current').then(() => location.reload())}>
+            Sign out
+          </Button>
+        </div>
       </div>
+
+      {helpOpen && (
+        <HelpModal
+          articles={articlesFor(
+            (ctx.profile?.role ?? 'waiter') as HelpRole,
+            featureConfig<Record<string, string[]>>(ctx.features, 'help', 'audiences', {}),
+          )}
+          areas={HELP_AREAS}
+          title="How this works"
+          onClose={() => setHelpOpen(false)}
+        />
+      )}
 
       <ShiftBar ctx={ctx} onToast={(m, tone) => toast(m, tone)} />
 

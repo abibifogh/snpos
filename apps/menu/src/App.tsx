@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Spinner, Notice, useToast, Logo } from '@snpos/ui';
+import { Button, Spinner, Notice, useToast, Logo, HelpModal } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
   account, db, DB_ID, Query, listAll, loadMenu, visibleSections, computeTotals,
   formatMoney, isAvailable, parseWindows, nextAvailable, describeWindows, loadFeatures, isEnabled,
+  articlesFor, HELP_AREAS,
   featureConfig, previewUrl, humanError,
 } from '@snpos/core';
 import type {
@@ -29,6 +30,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [openDish, setOpenDish] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [showCart, setShowCart] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [placed, setPlaced] = useState<{ orderNo: string; scheduled?: string } | null>(null);
@@ -153,6 +155,12 @@ export function App() {
   const canOrderNow = venueOpen || (preordersOn && allowWhenClosed);
 
   const dish = openDish ? menu.byId[openDish] : null;
+  // Guests get only the chapters written for them, and only if the restaurant
+  // wants the link there at all.
+  const guestHelp =
+    isEnabled(features, 'help') && featureConfig(features, 'help', 'show_on_customer_menu', true)
+      ? articlesFor('guest', featureConfig<Record<string, string[]>>(features, 'help', 'audiences', {}))
+      : [];
 
   return (
     <div className="menu-app">
@@ -164,8 +172,23 @@ export function App() {
         <div className="sub">
           {table ? `Table ${table.label}` : walkInToken ? 'Collect at the counter' : 'Takeaway'}
           {venueOpen ? ' · Open now' : ' · Closed'}
+          {guestHelp.length > 0 && (
+            <>
+              {' · '}
+              <button className="linkish" onClick={() => setHelpOpen(true)}>How this works</button>
+            </>
+          )}
         </div>
       </header>
+
+      {helpOpen && (
+        <HelpModal
+          articles={guestHelp}
+          areas={HELP_AREAS}
+          title="How this works"
+          onClose={() => setHelpOpen(false)}
+        />
+      )}
 
       {!venueOpen && (
         <div className={canOrderNow ? 'banner' : 'banner banner-info'}>

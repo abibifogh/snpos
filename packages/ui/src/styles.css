@@ -176,6 +176,8 @@ table.data tbody tr:hover { background: var(--surface-2); }
 .notice-err { background: var(--danger-bg); color: var(--danger); }
 .notice-ok { background: var(--ok-bg); color: var(--ok); }
 .notice-warn { background: var(--warn-bg); color: var(--warn); }
+/* A plain aside. Neither a success nor a problem — just worth knowing. */
+.notice-info { background: var(--surface-2); color: var(--text); border-left: 3px solid var(--brand); }
 
 .spinner {
   width: 18px; height: 18px; border-radius: 50%;
@@ -193,6 +195,7 @@ table.data tbody tr:hover { background: var(--surface-2); }
   background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-lg);
   width: 100%; max-width: 560px; max-height: 90vh; display: flex; flex-direction: column;
 }
+.modal-wide { max-width: 900px; }
 .modal-body { padding: 1.25rem; overflow-y: auto; }
 .modal-foot {
   padding: 0.9rem 1.25rem; border-top: 1px solid var(--border);
@@ -208,3 +211,29 @@ table.data tbody tr:hover { background: var(--surface-2); }
 }
 .toast-err { border-left-color: var(--danger); }
 @keyframes rise { from { transform: translateY(6px); opacity: 0; } }
+
+/* ---- the manual -------------------------------------------------------- */
+
+.help-book { display: grid; grid-template-columns: 15rem 1fr; gap: 1.5rem; align-items: start; }
+.help-contents { position: sticky; top: 0; display: grid; gap: 0.9rem; }
+.help-contents .help-group {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-dim); font-weight: 600; padding: 0 0.5rem 0.3rem;
+}
+.help-contents button {
+  display: block; width: 100%; text-align: left; background: none; border: 0;
+  padding: 0.45rem 0.6rem; border-radius: var(--radius-sm); cursor: pointer;
+  color: var(--text); font: inherit; font-size: 0.88rem; line-height: 1.35;
+}
+.help-contents button:hover { background: var(--surface-2); }
+.help-contents button.on { background: var(--brand); color: var(--brand-ink); }
+.help-article { min-width: 0; line-height: 1.65; }
+.help-article h3 { font-size: 1rem; }
+
+/* One hand, one tablet, one answer being looked for: the contents become a
+   scrolling strip rather than a column that eats half the screen. */
+@media (max-width: 700px) {
+  .help-book { grid-template-columns: 1fr; gap: 1rem; }
+  .help-contents { position: static; grid-auto-flow: row; }
+  .help-contents button.on { position: relative; }
+}

@@ -46,7 +46,7 @@ const NAV: { group: string; links: NavLinkDef[] }[] = [
       { to: '/settings', label: 'Settings' },
     ],
   },
-  { group: 'You', links: [{ to: '/account', label: 'Your account' }] },
+  { group: 'You', links: [{ to: '/account', label: 'Your account' }, { to: '/help', label: 'Help' }] },
 ];
 
 export function Shell({ children }: { children: ReactNode }) {
