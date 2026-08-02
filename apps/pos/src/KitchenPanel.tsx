@@ -61,8 +61,8 @@ export function KitchenPanel({
     return off;
   }, [ctx.venue.$id]);
 
-  const patch = async (order: Order, body: Record<string, unknown>) => {
-    setOrders((prev) => (prev ?? []).map((o) => (o.$id === order.$id ? { ...o, ...(body as Partial<Order>) } : o)));
+  const patch = async (order: Order, body: Partial<Order>) => {
+    setOrders((prev) => (prev ?? []).map((o) => (o.$id === order.$id ? { ...o, ...body } : o)));
     try {
       await db.updateDocument(DB_ID, 'orders', order.$id, body);
     } catch (e) {

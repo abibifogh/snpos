@@ -72,6 +72,35 @@ jobs:
           # Pages runs Jekyll by default, which strips files beginning with _.
           touch site/.nojekyll
 
+          # The public front door. It links to the customer menu and nothing
+          # else: a page that lists the admin app, the till and the kitchen
+          # display is a directory of things to go and try. The staff apps are
+          # still at their own addresses — anybody can type one — which is why
+          # each of them now refuses a session that is not a staff session.
+          # This just stops the site handing out the map.
+          cat > site/index.html <<'HTML'
+          <!doctype html>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <meta name="robots" content="noindex">
+          <title>Menu</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                   max-width: 26rem; margin: 5rem auto; padding: 0 1.25rem; line-height: 1.6;
+                   color: #16202b; text-align: center; }
+            a.go { display: block; padding: 1rem 1.15rem; margin: 1.5rem 0; border-radius: 10px;
+                   text-decoration: none; background: #0f766e; color: #fff; font-weight: 600; }
+            p { color: #5d6b7a; font-size: 0.92rem; }
+            @media (prefers-color-scheme: dark) {
+              body { background: #11161c; color: #e8edf3; } p { color: #98a5b3; }
+            }
+          </style>
+          <h1>Welcome</h1>
+          <a class="go" href="menu/">See the menu</a>
+          <p>Scan the code on your table to order from where you are sitting.</p>
+          <p style="margin-top:2.5rem;font-size:0.8rem">Staff: use the address you were given.</p>
+          HTML
+
       - name: Keep the previous build's files alongside the new ones
         continue-on-error: true
         run: |
@@ -100,30 +129,6 @@ jobs:
                     && echo "  kept $app/$name" || true
                 done
           done
-          cat > site/index.html <<'HTML'
-          <!doctype html>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width,initial-scale=1">
-          <title>SNPOS</title>
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                   max-width: 34rem; margin: 4rem auto; padding: 0 1.25rem; line-height: 1.6; color: #16202b; }
-            a { display: block; padding: 1rem 1.15rem; margin: 0.6rem 0; border: 1px solid #e3e7ec;
-                border-radius: 10px; text-decoration: none; color: inherit; }
-            a:hover { background: #f6f7f9; }
-            b { display: block; font-size: 1.05rem; }
-            span { color: #5d6b7a; font-size: 0.9rem; }
-            @media (prefers-color-scheme: dark) {
-              body { background: #11161c; color: #e8edf3; }
-              a { border-color: #2a333e; } a:hover { background: #171d25; } span { color: #98a5b3; }
-            }
-          </style>
-          <h1>SNPOS</h1>
-          <a href="admin/"><b>Admin</b><span>Menu, settings, staff, shifts, expenses</span></a>
-          <a href="pos/"><b>Terminal</b><span>Tables, orders, payment — for waiters and cashiers</span></a>
-          <a href="kitchen/"><b>Kitchen</b><span>Order display and alarm</span></a>
-          <a href="menu/"><b>Customer menu</b><span>What guests see when they scan a table QR code</span></a>
-          HTML
 
       # enablement turns Pages on if it is not already, so this step cannot
       # fail with "Get Pages site failed" on a repository where nobody has

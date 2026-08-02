@@ -5,6 +5,7 @@ import {
   account, db, DB_ID, Query, listAll, loadMenu, loadFeatures, humanError, isEnabled,
   articlesFor, featureConfig, HELP_AREAS,
   markUnavailable, markAvailable, isUnavailable, loadMenu as reloadMenu,
+  requireStaff, signOutCompletely,
 } from '@snpos/core';
 import type { Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc } from '@snpos/core';
 import { TablesView } from './TablesView';
@@ -58,7 +59,9 @@ export function App() {
   }, []);
 
   const boot = useCallback(async () => {
-    const me = await account.get();
+    // A customer session is not a staff session. The menu signs guests in
+    // anonymously, so "signed in" on its own means nothing here.
+    const me = await requireStaff();
     const settings = (await db.getDocument(DB_ID, 'settings', 'main')) as unknown as Settings;
     applyTheme(settings);
 
@@ -69,7 +72,7 @@ export function App() {
     const [menu, features, profiles, shift] = await Promise.all([
       loadMenu(venue.$id),
       loadFeatures(venue.$id),
-      db.listDocuments(DB_ID, 'staff_profiles', [Query.equal('user_id', me.$id), Query.limit(1)]),
+      db.listDocuments(DB_ID, 'staff_profiles', [Query.equal('user_id', me.userId), Query.limit(1)]),
       loadShift(venue.$id),
     ]);
 
@@ -79,7 +82,7 @@ export function App() {
       menu,
       features,
       profile: (profiles.documents[0] as unknown as StaffProfile) ?? null,
-      userId: me.$id,
+      userId: me.userId,
       shift,
       reloadShift: async () => {
         const s = await loadShift(venue.$id);
@@ -91,13 +94,18 @@ export function App() {
   useEffect(() => {
     (async () => {
       try {
-        await account.get();
-        setSignedIn(true);
         await boot();
-      } catch {
+        setSignedIn(true);
+      } catch (e) {
+        // A guest session reaching this page is signed in, just not as staff.
+        // Clear it so the sign-in form is not fighting an invisible session.
+        if (e instanceof Error && e.name === 'NotStaffError') {
+          await signOutCompletely();
+          setError(e.message);
+        }
         setSignedIn(false);
       }
-    })().catch((e) => setError(humanError(e)));
+    })();
   }, [boot]);
 
   const signIn = async (e: React.FormEvent) => {

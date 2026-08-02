@@ -160,7 +160,9 @@ export const COLLECTIONS = [
   {
     id: 'payment_methods',
     name: 'Payment methods',
-    perms: { read: ['users'], create: ADMIN, update: ADMIN, delete: ADMIN },
+    // Staff only. Guests never settle a bill in the app, so they never needed
+    // to know what the restaurant accepts.
+    perms: { read: ALL_STAFF, create: ADMIN, update: ADMIN, delete: ADMIN },
     attributes: [
       ['name', 's', 40, true],
       ['kind', 'e', ['cash', 'card', 'mobile_money', 'voucher', 'on_account'], true],
@@ -352,7 +354,7 @@ export const COLLECTIONS = [
   {
     id: 'dining_sessions',
     name: 'Dining sessions',
-    perms: { read: ['users'], create: ['users'], update: ALL_STAFF, delete: [] },
+    perms: { read: ALL_STAFF, create: ['users'], update: ALL_STAFF, delete: [] },
     attributes: [
       ['table_id', 's', 64, true],
       ['opened_at', 'd', null, true],
@@ -369,11 +371,17 @@ export const COLLECTIONS = [
   {
     id: 'orders',
     name: 'Orders',
-    // 'users' includes the anonymous sessions the customer menu creates, which
-    // is what lets a guest who has only scanned a sticker place an order.
-    // Prices are re-checked server-side by the order-guard function; a client
-    // is never trusted on what something costs.
-    perms: { read: ['users'], create: ['users'], update: ALL_STAFF, delete: [] },
+    // create by 'users' includes the anonymous sessions the customer menu
+    // makes, which is what lets a guest who has only scanned a sticker place an
+    // order. Prices are re-checked server-side by order-guard; a client is
+    // never trusted on what something costs.
+    //
+    // read is NOT 'users'. It was, and that meant any guest who had scanned a
+    // table code could read every order in the restaurant — the anonymous
+    // session that lets them order is indistinguishable from any other. Staff
+    // read the collection; a guest is granted read on their own order document
+    // as it is created (see createOrder), which is all they ever needed.
+    perms: { read: ALL_STAFF, create: ['users'], update: ALL_STAFF, delete: [] },
     attributes: [
       ['order_no', 's', 20, true],
       ['idem_key', 's', 64, true],
@@ -421,6 +429,12 @@ export const COLLECTIONS = [
       // the app, so no customer-facing route may write these two fields.
       ['marked_paid_by', 's', 64, false],
       ['marked_paid_at', 'd', null, false],
+
+      // When the food left the pass, and when a booked order was released to
+      // it. Separate from payment: a table is served long before it settles,
+      // and a pre-order can be started early without changing when it was for.
+      ['served_at', 'd', null, false],
+      ['fired_at', 'd', null, false],
 
       // --- Who's eating (features 1, 5, 6, 7)
       ['customer_id', 's', 64, false],
@@ -473,7 +487,9 @@ export const COLLECTIONS = [
   {
     id: 'order_items',
     name: 'Order items',
-    perms: { read: ['users'], create: ['users'], update: ALL_STAFF, delete: ALL_STAFF },
+    // Read is staff-only for the same reason as `orders`; the guest gets their
+    // own lines granted per document at creation.
+    perms: { read: ALL_STAFF, create: ['users'], update: ALL_STAFF, delete: ALL_STAFF },
     attributes: [
       ['order_id', 's', 64, true],
       ['menu_item_id', 's', 64, true],

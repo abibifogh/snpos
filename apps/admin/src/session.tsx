@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import type { ReactNode } from 'react';
 import { account, db, DB_ID, Query, applyThemeSettings } from './lib';
 import type { Models } from 'appwrite';
+import { requireStaff, signOutCompletely } from '@snpos/core';
 import type { Settings, StaffProfile } from '@snpos/core';
 
 interface SessionValue {
@@ -46,10 +47,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         /* not provisioned yet — the login screen explains it */
       }
       try {
-        const me = await account.get();
-        setUser(me);
-        await loadProfile(me.$id);
-      } catch {
+        // Being signed in is not enough: the customer menu hands every guest
+        // an anonymous session, and one of those must not open the admin app.
+        const staff = await requireStaff();
+        setUser(await account.get());
+        await loadProfile(staff.userId);
+      } catch (e) {
+        // A guest session here is signed in but has no business being so.
+        // Clear it, or the login screen fights something invisible.
+        if (e instanceof Error && e.name === 'NotStaffError') await signOutCompletely();
         setUser(null);
       } finally {
         setLoading(false);
@@ -58,10 +64,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [loadSettings, loadProfile]);
 
   const signIn = async (email: string, password: string) => {
+    // Any session already on the device — very likely a guest one from the
+    // customer menu on a shared phone — is replaced, not added to.
+    await signOutCompletely();
     await account.createEmailPasswordSession(email, password);
-    const me = await account.get();
-    setUser(me);
-    await loadProfile(me.$id);
+    const staff = await requireStaff();
+    setUser(await account.get());
+    await loadProfile(staff.userId);
     await loadSettings();
   };
 

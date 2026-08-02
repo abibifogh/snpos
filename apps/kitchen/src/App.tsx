@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo, HelpModal, EightySixModal } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
-  account, db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
-  verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney,
+  db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
+  verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
   loadMenu, markUnavailable, markAvailable, isUnavailable,
 } from '@snpos/core';
-import type { Order, OrderItem, Settings, Venue, StaffProfile, HelpRole, MenuItem, Doc, FeatureMap } from '@snpos/core';
+import type {
+  Order, OrderItem, Settings, Venue, StaffProfile, StaffSession, HelpRole, MenuItem, Doc, FeatureMap,
+} from '@snpos/core';
 
 interface Station extends Doc { venue_id: string; key: string; name: string; colour?: string; sort: number; active: boolean }
 import { unlockAudio, setAlarm, stopAlarm, type AlarmKind } from './alarm';
@@ -38,6 +40,7 @@ export function App() {
   // Who is at the screen. The device holds the session; the PIN says which
   // person is acting, so accepts and rejects have a name against them.
   const [who, setWho] = useState<StaffProfile | null>(null);
+  const [session, setSession] = useState<StaffSession | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [offOpen, setOffOpen] = useState(false);
   const [offItems, setOffItems] = useState<MenuItem[]>([]);
@@ -74,9 +77,16 @@ export function App() {
   useEffect(() => {
     (async () => {
       try {
-        await account.get();
-      } catch {
-        setError('Sign in on this device first, from the terminal app.');
+        // Not "is there a session?" — a customer who scanned a table code has
+        // one. This asks whether the session belongs to a member of staff, and
+        // Appwrite answers it, not the browser.
+        setSession(await requireStaff());
+      } catch (e) {
+        setError(
+          e instanceof Error && e.name === 'NotStaffError'
+            ? e.message
+            : 'Sign in on this device first, from the terminal app.',
+        );
         return;
       }
       try {
@@ -217,10 +227,12 @@ export function App() {
     };
   }, [alarm]);
 
-  const patch = async (order: Order, body: Record<string, unknown>) => {
+  // Typed rather than Record<string, unknown>: a field the Order type does not
+  // have is then a build error here instead of a rejection at the pass.
+  const patch = async (order: Order, body: Partial<Order>) => {
     // Optimistic: a cook who taps Accept must see it accepted immediately, or
     // they tap again.
-    setOrders((prev) => prev.map((o) => (o.$id === order.$id ? { ...o, ...(body as Partial<Order>) } : o)));
+    setOrders((prev) => prev.map((o) => (o.$id === order.$id ? { ...o, ...body } : o)));
     try {
       await db.updateDocument(DB_ID, 'orders', order.$id, body);
     } catch (e) {
@@ -328,25 +340,22 @@ export function App() {
                     </button>
                   ))}
                 </div>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  style={{ marginTop: '0.8rem' }}
-                  onClick={() => { unlockAudio(); setReady(true); }}
-                >
-                  Skip — start without signing in
-                </button>
               </>
             ) : (
               <>
+                {/* Nobody has a PIN yet. The device is signed in as staff, so
+                    work goes against that account rather than against nobody —
+                    every Accept still has a name on it. */}
                 <p className="dim" style={{ marginTop: '0.6rem' }}>
-                  Tap to start service. Browsers block sound until the screen is touched, so the alarm cannot work
-                  before you do this.
+                  No cook has a PIN yet, so everything done here will be recorded against{' '}
+                  <strong>{session?.name || session?.email || 'this account'}</strong>.
                 </p>
                 <p className="dim small">
-                  Give your cooks PINs in the admin app and they can sign in here by name.
+                  Give your cooks PINs in the admin app under Staff, and they can identify themselves here by name
+                  instead — which is the only way to tell who accepted what.
                 </p>
                 <Button variant="primary" className="btn" onClick={() => { unlockAudio(); setReady(true); }}>
-                  Start service
+                  Start service as {session?.name || 'this account'}
                 </Button>
               </>
             )}

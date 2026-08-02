@@ -15,3 +15,4 @@ export * from './help';
 export * from './shifts';
 export * from './availability86';
 export * from './payments';
+export * from './auth';

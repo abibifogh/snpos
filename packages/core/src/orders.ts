@@ -1,4 +1,4 @@
-import { db, DB_ID, ID, Query, listAll } from './client';
+import { db, DB_ID, ID, Query, Permission, Role, account, listAll } from './client';
 import { computeTotals, lineUnitPrice, lineTotal } from './pricing';
 import type { CartLine } from './pricing';
 import type { Settings, Doc } from './types';
@@ -19,6 +19,9 @@ export interface Order extends Doc {
   alert_level: number;
   accepted_at?: string;
   accepted_by?: string;
+  /** When the food left the pass, and when a booked order was released to it. */
+  served_at?: string;
+  fired_at?: string;
   rejected_at?: string;
   reject_reason_code?: string;
   reject_reason_note?: string;
@@ -216,9 +219,16 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
   // Strip undefined so Appwrite does not reject the document.
   for (const k of Object.keys(payload)) if (payload[k] === undefined) delete payload[k];
 
+  // The guest is granted read on their own order and its lines. The
+  // collection itself is staff-only: an anonymous session is what lets someone
+  // who scanned a sticker order at all, so "has a session" cannot be allowed
+  // to mean "may read every order in the restaurant".
+  const me = await account.get().catch(() => null);
+  const mine = me ? [Permission.read(Role.user(me.$id))] : [];
+
   let order: Order;
   try {
-    order = (await db.createDocument(DB_ID, 'orders', ID.unique(), payload)) as unknown as Order;
+    order = (await db.createDocument(DB_ID, 'orders', ID.unique(), payload, mine)) as unknown as Order;
   } catch (e) {
     // Two terminals took the same number in the same instant; take the next one.
     const msg = e instanceof Error ? e.message : '';
@@ -250,7 +260,7 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
         status: 'queued',
         course: line.course ?? 1,
         seat_no: line.seat_no,
-      }),
+      }, mine),
     ),
   );
 
