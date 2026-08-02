@@ -94,7 +94,7 @@ export interface FeatureFlag extends Doc {
 }
 
 export interface StaffProfile extends Doc {
-  user_id: string;
+  user_id?: string;
   display_name: string;
   role: 'cook' | 'waiter' | 'cashier' | 'manager' | 'admin';
   active: boolean;
@@ -104,5 +104,9 @@ export interface StaffProfile extends Doc {
   can_void: boolean;
   can_discount_up_to_bp: number;
   can_mark_paid?: boolean;
+  can_apply_discount_codes?: boolean;
+  can_record_waste?: boolean;
+  hourly_rate?: number;
+  email?: string;
   venue_ids?: string[];
 }

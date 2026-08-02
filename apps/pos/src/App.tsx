@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Spinner, Card, Field, Input, Notice, useToast } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
-import { account, db, DB_ID, Query, listAll, loadMenu, loadFeatures } from '@snpos/core';
+import { account, db, DB_ID, Query, listAll, loadMenu, loadFeatures, humanError } from '@snpos/core';
 import type { Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, Doc } from '@snpos/core';
 import { TablesView } from './TablesView';
 import { OrderView } from './OrderView';
@@ -89,7 +89,7 @@ export function App() {
       } catch {
         setSignedIn(false);
       }
-    })().catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    })().catch((e) => setError(humanError(e)));
   }, [boot]);
 
   const signIn = async (e: React.FormEvent) => {
@@ -101,7 +101,7 @@ export function App() {
       setSignedIn(true);
       await boot();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not sign in.');
+      setError(humanError(err));
     } finally {
       setBusy(false);
     }

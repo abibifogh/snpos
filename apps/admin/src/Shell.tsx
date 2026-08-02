@@ -6,7 +6,13 @@ import { useSession } from './session';
 interface NavLinkDef { to: string; label: string; end?: boolean }
 
 const NAV: { group: string; links: NavLinkDef[] }[] = [
-  { group: 'Overview', links: [{ to: '/', label: 'Dashboard', end: true }] },
+  {
+    group: 'Overview',
+    links: [
+      { to: '/', label: 'Dashboard', end: true },
+      { to: '/reports', label: 'Reports' },
+    ],
+  },
   {
     group: 'Menu',
     links: [
@@ -23,10 +29,18 @@ const NAV: { group: string; links: NavLinkDef[] }[] = [
     ],
   },
   {
+    group: 'Kitchen',
+    links: [
+      { to: '/stock', label: 'Stock' },
+      { to: '/waste', label: 'Waste' },
+    ],
+  },
+  {
     group: 'Setup',
     links: [
       { to: '/venues', label: 'Venues' },
       { to: '/tables', label: 'Tables & QR' },
+      { to: '/staff', label: 'Staff' },
       { to: '/features', label: 'Features' },
       { to: '/settings', label: 'Settings' },
     ],

@@ -14,6 +14,10 @@ import { AddonsPage } from './pages/Addons';
 import { ExpensesPage } from './pages/Expenses';
 import { TablesPage } from './pages/Tables';
 import { ShiftsPage } from './pages/Shifts';
+import { StaffPage } from './pages/Staff';
+import { StockPage } from './pages/Stock';
+import { WastePage } from './pages/Waste';
+import { ReportsPage } from './pages/Reports';
 
 export function App() {
   const { user, loading } = useSession();
@@ -39,6 +43,10 @@ export function App() {
         <Route path="/venues" element={<VenuesPage />} />
         <Route path="/tables" element={<TablesPage />} />
         <Route path="/shifts" element={<ShiftsPage />} />
+        <Route path="/staff" element={<StaffPage />} />
+        <Route path="/stock" element={<StockPage />} />
+        <Route path="/waste" element={<WastePage />} />
+        <Route path="/reports" element={<ReportsPage />} />
         <Route path="/features" element={<FeaturesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/account" element={<AccountPage />} />

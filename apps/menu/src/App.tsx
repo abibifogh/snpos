@@ -4,7 +4,7 @@ import { applyTheme } from '@snpos/ui';
 import {
   account, db, DB_ID, Query, listAll, loadMenu, visibleSections, computeTotals,
   formatMoney, isAvailable, parseWindows, nextAvailable, describeWindows, loadFeatures, isEnabled,
-  featureConfig, previewUrl,
+  featureConfig, previewUrl, humanError,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc,
@@ -22,12 +22,6 @@ interface Boot {
   menu: LoadedMenu;
   features: FeatureMap;
 }
-
-const humanError = (e: unknown) => {
-  const m = e instanceof Error ? e.message : String(e);
-  if (/Network|fetch failed|Failed to fetch/i.test(m)) return 'Could not reach the restaurant. Check your connection.';
-  return m;
-};
 
 export function App() {
   const toast = useToast();

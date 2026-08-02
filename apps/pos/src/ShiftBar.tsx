@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { Button, Modal, Field, Input, Notice, Badge } from '@snpos/ui';
-import { db, DB_ID, ID, Query, listAll, formatMoney, parseMoney, toInput } from '@snpos/core';
-import type { Doc } from '@snpos/core';
+import {
+  db, DB_ID, ID, Query, listAll, formatMoney, parseMoney, toInput,
+  depleteForShift, loadIngredients, loadRecipes, updateStockAlerts, postShift, isEnabled, featureConfig,
+} from '@snpos/core';
+import type { Doc, OrderItem, Order } from '@snpos/core';
 import type { PosContext } from './App';
 
 export interface Shift extends Doc {
@@ -95,6 +98,8 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
     setError(null);
     try {
       // Expected = opening float + everything taken through that method.
+      let stockNote = '';
+      const m = await loadMethods();
       const payments = await listAll<{ method_id: string; amount: number; tip: number }>('payments', [
         Query.equal('shift_id', ctx.shift.$id),
       ]);
@@ -113,6 +118,44 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         Object.keys(countedMinor).map((k) => [k, (countedMinor[k] ?? 0) - (expected[k] ?? 0)]),
       );
 
+      // --- what the shift sold, so stock can be depleted against it
+      const shiftOrders = (await listAll<Order>('orders', [Query.equal('shift_id', ctx.shift.$id)]))
+        .filter((o) => o.payment_status === 'paid');
+      const soldItems = shiftOrders.length
+        ? await listAll<OrderItem>('order_items', [Query.equal('order_id', shiftOrders.map((o) => o.$id))])
+        : [];
+
+      let cogs = 0;
+      if (isEnabled(ctx.features, 'waste_log') || soldItems.length) {
+        const [ingredients, recipes] = await Promise.all([loadIngredients(ctx.venue.$id), loadRecipes()]);
+        const usage = await depleteForShift(ctx.venue.$id, ctx.shift.$id, soldItems, recipes, ingredients, ctx.userId);
+        // Cost of what was sold, valued at what the ingredients cost us.
+        for (const [ingredientId, qty] of Object.entries(usage)) {
+          const ing = ingredients.find((i) => i.$id === ingredientId);
+          if (ing) cogs += Math.round(qty * ing.base_unit_cost);
+        }
+
+        // Re-read after depletion so the alerts reflect the new levels.
+        const after = await loadIngredients(ctx.venue.$id);
+        const threshold = featureConfig(ctx.features, 'shift_summary', 'persistent_stock_threshold', 3);
+        const { fresh, persistent } = await updateStockAlerts(
+          after.filter((i) => i.active),
+          ctx.settings.low_stock_default_bp ?? 3000,
+          threshold,
+        );
+        if (fresh.length || persistent.length) {
+          stockNote =
+            `${fresh.length} newly low, ${persistent.length} low for ${threshold}+ shifts` +
+            (persistent.length ? `: ${persistent.map((p) => p.ingredient.name).slice(0, 4).join(', ')}` : '');
+        }
+      }
+
+      const variancePenny = Object.values(variance).reduce((a, b) => a + b, 0);
+      const shiftExpenses = await listAll<{ amount: number }>('shift_expenses', [
+        Query.equal('shift_id', ctx.shift.$id),
+      ]);
+      const expenseTotal = shiftExpenses.reduce((a, e) => a + e.amount, 0);
+
       await db.updateDocument(DB_ID, 'shifts', ctx.shift.$id, {
         status: 'closed',
         closed_by: ctx.userId,
@@ -121,13 +164,50 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         counted: JSON.stringify(countedMinor),
         variance: JSON.stringify(variance),
         sales_total: sales,
+        expense_total: expenseTotal,
+        cogs_total: cogs,
+        tip_total: payments.reduce((a, p) => a + (p.tip ?? 0), 0),
+        tax_total: shiftOrders.reduce((a, o) => a + o.tax_total, 0),
+        discount_total: shiftOrders.reduce((a, o) => a + o.discount_total, 0),
+        covers: shiftOrders.reduce((a, o) => a + (o.guest_count || 1), 0),
       });
+
+      // --- the ledger. Posted last: if it fails, the shift is still closed and
+      // the money is still counted, and the posting can be retried.
+      try {
+        const byKind = { cash: 0, card: 0, mobile_money: 0, other: 0 };
+        for (const p of payments) {
+          const method = m.find((x) => x.$id === p.method_id);
+          const kind = (method?.kind ?? 'other') as keyof typeof byKind;
+          byKind[kind in byKind ? kind : 'other'] += p.amount;
+        }
+        await postShift({
+          venueId: ctx.venue.$id,
+          shiftId: ctx.shift.$id,
+          postedBy: ctx.userId,
+          takings: byKind,
+          tips: payments.reduce((a, p) => a + (p.tip ?? 0), 0),
+          tax: shiftOrders.reduce((a, o) => a + o.tax_total, 0),
+          discounts: shiftOrders.reduce((a, o) => a + o.discount_total, 0),
+          cogs,
+          cashVariance: variancePenny,
+          expenses: shiftExpenses.map((e) => ({ amount: e.amount, accountCode: '6090' })),
+        });
+        await db.updateDocument(DB_ID, 'shifts', ctx.shift.$id, { posted_to_ledger: true });
+      } catch (postErr) {
+        onToast(
+          `Shift closed, but the accounts entry failed: ${postErr instanceof Error ? postErr.message : 'unknown'}`,
+          'err',
+        );
+      }
+
       await ctx.reloadShift();
       setClosing(false);
 
       const off = Object.values(variance).reduce((a, b) => a + Math.abs(b), 0);
+      const base = off === 0 ? 'Shift closed and balanced' : `Shift closed — ${formatMoney(off, ctx.settings)} out`;
       onToast(
-        off === 0 ? 'Shift closed and balanced' : `Shift closed — ${formatMoney(off, ctx.settings)} out`,
+        stockNote ? `${base}. ${stockNote}` : base,
         off > (ctx.settings.cash_variance_tolerance ?? 500) ? 'err' : 'ok',
       );
     } catch (e) {

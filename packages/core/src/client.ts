@@ -40,3 +40,34 @@ export async function listAll<T>(collectionId: string, queries: string[] = []): 
     if (page.documents.length < 100 || out.length >= page.total) return out;
   }
 }
+
+/**
+ * Turn an Appwrite failure into something a person can act on.
+ *
+ * The browser reports a blocked cross-origin request as an ordinary network
+ * failure — it cannot see the response at all — so "could not reach the
+ * server" and "this address is not registered in Appwrite" look identical from
+ * here. Since the second is by far the most common cause during setup, the
+ * message names it rather than leaving someone to check their wifi.
+ */
+export function humanError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+
+  if (/Invalid credentials/i.test(msg)) return 'That email and password combination was not recognised.';
+  if (/User .*not found/i.test(msg)) return 'No account exists for that email address.';
+  if (/missing scopes|not authorized|unauthorized/i.test(msg)) return 'Your account does not have permission to do that.';
+  if (/Document with the requested ID could not be found/i.test(msg)) return 'That record no longer exists — it may have been deleted.';
+  if (/already exists/i.test(msg)) return 'Something with that name or code already exists.';
+  if (/Rate limit/i.test(msg)) return 'Too many attempts. Wait a minute and try again.';
+
+  if (/Network|fetch failed|Failed to fetch|Load failed|NetworkError/i.test(msg)) {
+    return (
+      `Could not reach Appwrite from ${window.location.hostname}. ` +
+      'The usual cause is that this address is not registered: in the Appwrite console open ' +
+      'Settings → Platforms and add a Web app with hostname ' +
+      `"${window.location.hostname}". Otherwise check your connection.`
+    );
+  }
+
+  return msg;
+}

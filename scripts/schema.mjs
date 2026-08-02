@@ -690,7 +690,11 @@ export const COLLECTIONS = [
     name: 'Staff profiles',
     perms: { read: ALL_STAFF, create: [], update: [], delete: [] },
     attributes: [
-      ['user_id', 's', 64, true],
+      // Optional: a profile is created when someone is invited, before they
+      // have accepted and therefore before a user account exists. First sign-in
+      // matches on email and stamps the id.
+      ['user_id', 's', 64, false],
+      ['email', 's', 160, false],
       ['display_name', 's', 120, true],
       ['role', 'e', ['cook', 'waiter', 'cashier', 'manager', 'admin'], true],
       ['pin_hash', 's', 255, false],
@@ -707,7 +711,7 @@ export const COLLECTIONS = [
       ['can_record_waste', 'b', null, false, true],
       ['hourly_rate', 'i', null, false], // feature 4: labour cost
     ],
-    indexes: [['user_unique', 'unique', ['user_id']], ['active_role', 'key', ['active', 'role']]],
+    indexes: [['user_unique', 'unique', ['user_id']], ['email', 'key', ['email']], ['active_role', 'key', ['active', 'role']]],
   },
   {
     id: 'devices',

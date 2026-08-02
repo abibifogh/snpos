@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **51 collections, 621 fields and 119 indexes**. Entered by hand at a
+> This is **51 collections, 622 fields and 120 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -993,11 +993,12 @@ There are 51 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: _none — server only_ · **Update**: _none — server only_ · **Delete**: _none — server only_
 
-**Attributes** (17)
+**Attributes** (18)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
-| `user_id` | String | size 64 | **Yes** | — | No |
+| `user_id` | String | size 64 | No | — | No |
+| `email` | String | size 160 | No | — | No |
 | `display_name` | String | size 120 | **Yes** | — | No |
 | `role` | Enum | cook, waiter, cashier, manager, admin | **Yes** | — | No |
 | `pin_hash` | String | size 255 | No | — | No |
@@ -1015,11 +1016,12 @@ There are 51 collections. A progress checklist is at the end of this document.
 | `hourly_rate` | Integer | — | No | — | No |
 | `venue_ids` | String | size 64 | No | — | Yes |
 
-**Indexes** (2)
+**Indexes** (3)
 
 | Index key | Type | Attributes (in this order) |
 | --- | --- | --- |
 | `user_unique` | unique | `user_id` |
+| `email` | key | `email` |
 | `active_role` | key | `active`, `role` |
 
 ---
@@ -1875,7 +1877,7 @@ way mistakes creep in.
 - [ ] 26. `accounts` (5 fields, 1 indexes)
 - [ ] 27. `journal_entries` (8 fields, 3 indexes)
 - [ ] 28. `journal_lines` (6 fields, 3 indexes)
-- [ ] 29. `staff_profiles` (17 fields, 2 indexes)
+- [ ] 29. `staff_profiles` (18 fields, 3 indexes)
 - [ ] 30. `devices` (7 fields, 2 indexes)
 - [ ] 31. `audit_log` (11 fields, 3 indexes)
 - [ ] 32. `feature_flags` (5 fields, 2 indexes)
