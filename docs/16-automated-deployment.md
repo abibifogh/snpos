@@ -175,6 +175,18 @@ display is no longer running to notice.
 **Actions → Deploy functions → Run workflow**, type `deploy`. Same pattern as
 Provision, and manual for the same reason.
 
+**Four is the limit.** Appwrite's free plan allows four functions, and this
+project has four. A fifth is accepted by `appwrite.json` and pushed happily by
+the CLI; the server rejects it with a single line buried in a wall of
+successful build output, so the deploy looks like it worked and one job
+silently does not exist. CI now refuses a fifth rather than letting it get
+that far.
+
+Anything new that must run on a clock belongs inside `notify`, which already
+runs hourly for exactly this reason and is where the knowledge of how to send
+an email lives. It tells its two jobs apart by whether a document arrived: an
+event brings one, the timer does not.
+
 ### Email
 
 Receipts and summaries need an SMTP account. Any provider works — Brevo,

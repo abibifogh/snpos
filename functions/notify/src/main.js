@@ -2,15 +2,24 @@ import { Client, Databases, Query } from 'node-appwrite';
 import nodemailer from 'nodemailer';
 
 /**
- * Sends receipts and shift summaries.
+ * Everything that sends an email.
  *
- * Triggered by database events rather than run on a timer, so a receipt goes
- * out the moment a bill is marked paid and a summary the moment a shift is
- * closed — with nobody's browser involved.
+ * Mostly event-driven, so a receipt goes out the moment a bill is marked paid
+ * and a summary the moment a shift is closed, with nobody's browser involved.
+ * It also runs hourly for the one thing no event can tell you: that something
+ * has NOT happened.
  *
- * Events:
- *   databases.*.collections.orders.documents.*.update  → receipt
- *   databases.*.collections.shifts.documents.*.update  → shift summary
+ * Events (a document arrives):
+ *   orders.*.update  → group-order alert, accepted/ready notice, receipt
+ *   shifts.*.update  → shift summary
+ *
+ * Schedule, hourly (no document arrives):
+ *   dishes still off the menu past the configured wait
+ *
+ * The hourly sweep lives here rather than in a function of its own because
+ * Appwrite's free plan allows four functions and this project has four. It
+ * also belongs here: this is the file that knows how to send an email, and a
+ * fifth function would have been a second copy of that knowledge.
  */
 
 const money = (minor, s) => {
@@ -42,6 +51,83 @@ const row = (label, value, bold = false) =>
   `<tr><td style="padding:5px 0;color:#5d6b7a">${label}</td>
    <td style="padding:5px 0;text-align:right;${bold ? 'font-weight:700;font-size:17px' : ''}">${value}</td></tr>`;
 
+
+/**
+ * Dishes still off the menu past the configured wait.
+ *
+ * Taking something off mid-service is right and normal. Leaving it off for two
+ * days is either a supply problem nobody escalated or a tap nobody remembered
+ * to press, and both look identical from the kitchen — the only place the
+ * difference shows is a screen nobody is looking at.
+ *
+ * Each one is mentioned once. An admin who has been told will act or decide
+ * not to; repeating it hourly until they do is how a warning becomes noise
+ * that gets filtered.
+ */
+async function sweepUnavailable({ db, DB_ID, settings, transport, log, error }) {
+  const flags = await db.listDocuments(DB_ID, 'feature_flags', [
+    Query.equal('key', 'item_availability'), Query.limit(5),
+  ]);
+  const flag = flags.documents.find((f) => !f.venue_id);
+  if (!flag?.enabled) return { skipped: 'feature off' };
+
+  const config = JSON.parse(flag.config || '{}');
+  const hours = Number(config.alert_after_hours ?? 24);
+  const cutoff = new Date(Date.now() - hours * 3600_000).toISOString();
+
+  const open = await db.listDocuments(DB_ID, 'item_availability', [
+    Query.isNull('restored_at'),
+    Query.isNull('alerted_at'),
+    Query.lessThan('marked_off_at', cutoff),
+    Query.limit(50),
+  ]);
+  if (open.total === 0) return { nothing: true };
+
+  let to = String(config.alert_emails || '').split(/[,;\s]+/).filter(Boolean);
+  if (to.length === 0) {
+    const subs = await db.listDocuments(DB_ID, 'report_subscriptions', [
+      Query.equal('active', true), Query.limit(50),
+    ]).catch(() => ({ documents: [] }));
+    to = subs.documents.map((x) => x.email).filter(Boolean);
+  }
+
+  if (!transport || to.length === 0) {
+    error(`${open.total} dishes off over ${hours}h but ${!transport ? 'SMTP is not configured' : 'no recipients are set'}.`);
+    return { ok: false, error: 'cannot send' };
+  }
+
+  const rows = open.documents
+    .map((r) => {
+      const off = Math.floor((Date.now() - new Date(r.marked_off_at).getTime()) / 3600_000);
+      return `<li><strong>${r.name_snapshot}</strong> — off for ${off} hours${
+        r.reason ? `, "${r.reason}"` : ''
+      }${r.marked_off_name ? ` (${r.marked_off_name})` : ''}</li>`;
+    })
+    .join('');
+
+  await transport.sendMail({
+    from: `"${settings.email_from_name || settings.restaurant_name}" <${settings.email_from_address || process.env.SMTP_USER}>`,
+    to: to.join(','),
+    subject: `${open.total} ${open.total === 1 ? 'dish has' : 'dishes have'} been off the menu over ${hours} hours`,
+    html: shell(
+      'Still off the menu',
+      `<p style="margin:0 0 12px">These were taken off during service and have not been put back:</p>
+       <ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.7">${rows}</ul>
+       <p style="margin:18px 0 0;color:#5d6b7a;font-size:13px">
+         Either the supply has not arrived, or somebody forgot to put them back. Both are worth a minute.
+       </p>`,
+      settings.primary_color || '#0f766e',
+    ),
+  });
+
+  const now = new Date().toISOString();
+  for (const r of open.documents) {
+    await db.updateDocument(DB_ID, 'item_availability', r.$id, { alerted_at: now }).catch(() => undefined);
+  }
+  log(`Alerted about ${open.total} dishes off over ${hours}h.`);
+  return { alerted: open.total };
+}
+
 export default async ({ req, res, log, error }) => {
   const client = new Client()
     .setEndpoint(process.env.APPWRITE_FUNCTION_API_ENDPOINT || process.env.APPWRITE_ENDPOINT)
@@ -51,9 +137,8 @@ export default async ({ req, res, log, error }) => {
   const db = new Databases(client);
   const DB_ID = process.env.DB_ID || 'snpos';
 
-  const events = (req.headers['x-appwrite-event'] || '').split(',');
+  const events = (req.headers['x-appwrite-event'] || '').split(',').filter(Boolean);
   const doc = req.bodyJson ?? (req.body ? JSON.parse(req.body) : null);
-  if (!doc) return res.json({ ok: true, skipped: 'no document' });
 
   const transport = mailer();
   const settings = await db.getDocument(DB_ID, 'settings', 'main');
@@ -70,6 +155,20 @@ export default async ({ req, res, log, error }) => {
       return fallback;
     }
   };
+
+  // ---------------------------------------------- hourly sweep (no document)
+  // Nothing arrived, so this is the timer. The only thing worth checking on a
+  // clock is the absence of an event: a dish taken off the menu that nobody
+  // has put back.
+  if (!doc) {
+    try {
+      const result = await sweepUnavailable({ db, DB_ID, settings, transport, log, error });
+      return res.json({ ok: true, ...result });
+    } catch (e) {
+      error(`Availability sweep failed: ${e.message}`);
+      return res.json({ ok: false, error: e.message });
+    }
+  }
 
   try {
     // ------------------------------------------------- group order placed

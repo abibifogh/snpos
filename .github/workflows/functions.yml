@@ -102,7 +102,7 @@ jobs:
             FAILED="$FAILED $fn.$key"
           }
 
-          for fn in order-guard preorder-fire kitchen-escalate notify stock-watch; do
+          for fn in order-guard preorder-fire kitchen-escalate notify; do
             # A function cannot read the project's API key implicitly; it needs
             # its own copy to write to the database.
             setvar "$fn" APPWRITE_API_KEY "$APPWRITE_API_KEY"
@@ -110,13 +110,10 @@ jobs:
           done
 
           if [ -n "$SMTP_HOST" ]; then
-            # stock-watch emails too, so it needs the same four.
-            for fn in notify stock-watch; do
-              setvar "$fn" SMTP_HOST "$SMTP_HOST"
-              setvar "$fn" SMTP_PORT "${SMTP_PORT:-587}"
-              setvar "$fn" SMTP_USER "$SMTP_USER"
-              setvar "$fn" SMTP_PASS "$SMTP_PASS"
-            done
+            setvar notify SMTP_HOST "$SMTP_HOST"
+            setvar notify SMTP_PORT "${SMTP_PORT:-587}"
+            setvar notify SMTP_USER "$SMTP_USER"
+            setvar notify SMTP_PASS "$SMTP_PASS"
             echo "Email is configured against $SMTP_HOST."
           else
             echo "::warning::No SMTP secrets set — receipts and summaries will be recorded but not emailed."
@@ -138,7 +135,7 @@ jobs:
         run: |
           set -e
           missing=""
-          for fn in order-guard preorder-fire kitchen-escalate notify stock-watch; do
+          for fn in order-guard preorder-fire kitchen-escalate notify; do
             if appwrite functions get --function-id "$fn" >/dev/null 2>&1; then
               echo "  $fn present"
             else

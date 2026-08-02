@@ -60,38 +60,20 @@
     },
     {
       "$id": "notify",
-      "name": "Receipts and summaries",
+      "name": "Receipts, summaries and watches",
       "runtime": "node-18.0",
       "execute": [],
       "events": [
         "databases.snpos.collections.orders.documents.*.update",
         "databases.snpos.collections.shifts.documents.*.update"
       ],
-      "schedule": "",
-      "timeout": 60,
-      "enabled": true,
-      "logging": true,
-      "entrypoint": "src/main.js",
-      "commands": "npm install",
-      "path": "functions/notify",
-      "ignore": [
-        "node_modules",
-        ".npm"
-      ]
-    },
-    {
-      "$id": "stock-watch",
-      "name": "Availability watch",
-      "runtime": "node-18.0",
-      "execute": [],
-      "events": [],
       "schedule": "0 * * * *",
       "timeout": 60,
       "enabled": true,
       "logging": true,
       "entrypoint": "src/main.js",
       "commands": "npm install",
-      "path": "functions/stock-watch",
+      "path": "functions/notify",
       "ignore": [
         "node_modules",
         ".npm"

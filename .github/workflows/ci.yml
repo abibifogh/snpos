@@ -26,6 +26,20 @@ jobs:
         # an enum is malformed, so importing it is a real check.
         run: node -e "import('./scripts/schema.mjs').then(m => console.log('schema ok:', m.COLLECTIONS.length, 'collections'))"
 
+      - name: Check the function count against the plan
+        # Appwrite's free plan allows four functions. A fifth is accepted by
+        # appwrite.json, pushed by the CLI, and rejected by the server with one
+        # line buried in a wall of successful build output — so the deploy
+        # looks like it worked and one job silently does not exist. Cheaper to
+        # fail here.
+        run: |
+          count=$(node -e "console.log(JSON.parse(require('fs').readFileSync('appwrite.json')).functions.length)")
+          echo "appwrite.json declares $count functions"
+          if [ "$count" -gt 4 ]; then
+            echo "::error::$count functions declared, but the Appwrite free plan allows 4. Fold the extra work into an existing function — notify already runs on a schedule for exactly this reason."
+            exit 1
+          fi
+
       - name: Typecheck every app
         run: npm run typecheck
 
