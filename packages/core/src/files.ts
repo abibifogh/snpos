@@ -74,13 +74,54 @@ export interface UploadResult {
   bucketId: string;
 }
 
+/**
+ * Shrink an image before it is uploaded.
+ *
+ * A photo straight off a phone is commonly 4000px and several megabytes. On a
+ * menu it will be shown at a few hundred pixels, so sending the original wastes
+ * the customer's data on a mobile connection and the restaurant's storage
+ * allowance — and since we serve stored files unchanged, whatever is uploaded
+ * is what every diner downloads.
+ *
+ * Falls back to the original file if anything goes wrong: a slightly large
+ * photo is far better than no photo.
+ */
+export async function downscale(file: File, maxEdge = 1400, quality = 0.85): Promise<File> {
+  if (!file.type.startsWith('image/') || file.type === 'image/gif') return file;
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    if (scale === 1 && file.size < 600_000) return file;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', quality),
+    );
+    if (!blob || blob.size >= file.size) return file;
+
+    return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+  } catch {
+    return file;
+  }
+}
+
 export async function uploadFile(
   file: File,
   purpose: FilePurpose,
   settings?: Pick<Settings, 'storage_mode' | 'shared_bucket_id'> | null,
 ): Promise<UploadResult> {
   const bucketId = bucketFor(purpose, settings);
-  const created = await storage.createFile(bucketId, ID.unique(), file, await permissionsFor(purpose));
+  // Receipts are evidence and are kept as sent; menu photos are decoration and
+  // are shrunk to something a phone on mobile data can actually load.
+  const payload = purpose === 'receipt' ? file : await downscale(file);
+  const created = await storage.createFile(bucketId, ID.unique(), payload, await permissionsFor(purpose));
   return { fileId: created.$id, bucketId };
 }
 
@@ -92,16 +133,30 @@ export async function deleteFile(
   await storage.deleteFile(bucketFor(purpose, settings), fileId);
 }
 
-/** A resized preview URL. Full-size originals are wasteful in a list. */
+/**
+ * URL for showing an image.
+ *
+ * Deliberately NOT getFilePreview. Appwrite's preview endpoint resizes and
+ * crops on the fly, which is exactly what a menu wants — but image
+ * transformation is a paid feature on Appwrite Cloud, and on the free plan it
+ * returns an error that the browser renders as a broken image.
+ *
+ * getFileView serves the stored file unchanged and works on every plan. The
+ * cost is bandwidth, which is why uploads are downscaled before they are sent
+ * (see downscale below) rather than served full-size from a phone camera.
+ *
+ * The width and height arguments are kept so callers read naturally and so
+ * switching back to real previews on a paid plan is a one-line change.
+ */
 export function previewUrl(
   fileId: string | undefined,
   purpose: FilePurpose,
   settings?: Pick<Settings, 'storage_mode' | 'shared_bucket_id'> | null,
-  width = 320,
-  height = 320,
+  _width = 320,
+  _height = 320,
 ): string | null {
   if (!fileId) return null;
-  return storage.getFilePreview(bucketFor(purpose, settings), fileId, width, height).toString();
+  return storage.getFileView(bucketFor(purpose, settings), fileId).toString();
 }
 
 export function downloadUrl(
