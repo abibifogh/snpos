@@ -12,7 +12,11 @@
     "dev": "npm run dev -w @snpos/admin",
     "dev:admin": "npm run dev -w @snpos/admin",
     "build:admin": "npm run build -w @snpos/admin",
-    "typecheck": "npm run typecheck -w @snpos/admin"
+    "typecheck": "npm run typecheck -w @snpos/admin && npm run typecheck -w @snpos/menu && npm run typecheck -w @snpos/kitchen && npm run typecheck -w @snpos/pos",
+    "dev:menu": "npm run dev -w @snpos/menu",
+    "dev:kitchen": "npm run dev -w @snpos/kitchen",
+    "dev:pos": "npm run dev -w @snpos/pos",
+    "build": "npm run build -w @snpos/admin && npm run build -w @snpos/menu && npm run build -w @snpos/kitchen && npm run build -w @snpos/pos"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

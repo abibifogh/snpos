@@ -57,12 +57,18 @@ Running on Appwrite's **free plan** works, with one adaptation: the plan allows
 a single storage bucket, so all files share one with per-file permissions
 instead of three separate buckets. See [doc 13.8](docs/13-features.md).
 
-## Running the admin app
+## Running the apps
 
 ```bash
 npm install
-npm run dev          # http://localhost:5174
+npm run dev:admin     # http://localhost:5174  admin & manager dashboard
+npm run dev:menu      # http://localhost:5173  customer QR menu
+npm run dev:kitchen   # http://localhost:5175  kitchen display
+npm run dev:pos       # http://localhost:5176  waiter / cashier terminal
 ```
+
+Each runs in its own terminal window. `npm run build` builds all four;
+`npm run typecheck` checks all four.
 
 Needs `VITE_APPWRITE_ENDPOINT`, `VITE_APPWRITE_PROJECT` and `VITE_DB_ID` in a
 `.env` at the repo root (see `.env.example`), and `localhost` registered as a
@@ -75,9 +81,9 @@ No API key is needed to run the apps; that is only for the provisioning scripts.
 ```
 apps/
   admin/       Admin & manager dashboard                          [built]
-  menu/        Customer QR menu (public, no login)
-  pos/         Waiter + cashier terminal
-  kitchen/     Kitchen display system
+  menu/        Customer QR menu (public, no login)                [built]
+  kitchen/     Kitchen display + escalating alarm                 [built]
+  pos/         Waiter + cashier terminal, shifts, payment         [built]
   kitchen-android/  Capacitor shell around kitchen/
 packages/
   core/        Appwrite client, types, money, feature flags, availability [built]

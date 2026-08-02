@@ -1,0 +1,77 @@
+/*
+ * Kitchen display. Read from two metres away, by someone holding a pan.
+ * Dark by default — a bright white screen in a dim kitchen is unusable.
+ */
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #1f262e;
+  --border: #2b333d;
+  --text: #e9eef4;
+  --text-dim: #93a1b0;
+}
+
+body { background: var(--bg); color: var(--text); }
+
+.kds { min-height: 100vh; display: flex; flex-direction: column; }
+
+.kds-top {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.7rem 1rem; background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.kds-top h1 { font-size: 1.05rem; }
+.kds-stats { display: flex; gap: 1.25rem; font-size: 0.85rem; color: var(--text-dim); }
+.kds-stats b { color: var(--text); font-size: 1.05rem; }
+
+.station-tabs { display: flex; gap: 0.4rem; }
+.station-tabs button {
+  padding: 0.35rem 0.75rem; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text); font: inherit; font-size: 0.82rem; cursor: pointer;
+}
+.station-tabs button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+
+.ticket-grid {
+  flex: 1; display: grid; gap: 0.85rem; padding: 0.85rem;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  align-content: start;
+}
+
+.ticket {
+  background: var(--surface); border: 2px solid var(--border); border-radius: 10px;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.ticket.pending { border-color: var(--accent); }
+.ticket.late { border-color: #d92d20; animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { border-color: #ff6b5e; box-shadow: 0 0 0 4px rgba(217,45,32,0.18); } }
+
+.ticket-head {
+  padding: 0.6rem 0.8rem; background: var(--surface-2);
+  display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem;
+}
+.ticket-head .no { font-size: 1.15rem; font-weight: 700; }
+.ticket-head .where { font-size: 0.85rem; color: var(--text-dim); }
+.ticket-head .age { font-variant-numeric: tabular-nums; font-weight: 650; }
+.ticket-head .age.warn { color: #f5a524; }
+.ticket-head .age.bad { color: #ff6b5e; }
+
+.ticket-items { padding: 0.55rem 0.8rem; flex: 1; }
+.ticket-items li { list-style: none; padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+.ticket-items li:last-child { border-bottom: none; }
+.ticket-items .qty { font-weight: 700; margin-right: 0.4rem; }
+.ticket-items .addons { font-size: 0.83rem; color: var(--text-dim); padding-left: 1.3rem; }
+.ticket-items .note { font-size: 0.83rem; color: #f5a524; padding-left: 1.3rem; }
+
+.ticket-foot { display: flex; gap: 0.5rem; padding: 0.6rem 0.8rem; border-top: 1px solid var(--border); }
+.ticket-foot .btn { flex: 1; padding: 0.65rem; }
+
+.pill {
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 0.12rem 0.45rem; border-radius: 4px; background: var(--surface-2); color: var(--text-dim);
+}
+.pill.preorder { background: #1d2b3a; color: #7cc4ff; }
+.pill.qr { background: #12291f; color: #6ee7a8; }
+
+.kds-empty { flex: 1; display: grid; place-items: center; color: var(--text-dim); text-align: center; padding: 3rem; }
+
+.audio-gate { position: fixed; inset: 0; background: rgba(0,0,0,0.88); display: grid; place-items: center; z-index: 100; text-align: center; padding: 2rem; }
+.audio-gate .btn { margin-top: 1.2rem; padding: 1rem 2rem; font-size: 1.05rem; }

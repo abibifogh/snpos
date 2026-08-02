@@ -15,11 +15,18 @@ const NAV: { group: string; links: NavLinkDef[] }[] = [
       { to: '/menu/options', label: 'Options' },
     ],
   },
-  { group: 'Money', links: [{ to: '/expenses', label: 'Expenses' }] },
+  {
+    group: 'Money',
+    links: [
+      { to: '/shifts', label: 'Shifts' },
+      { to: '/expenses', label: 'Expenses' },
+    ],
+  },
   {
     group: 'Setup',
     links: [
       { to: '/venues', label: 'Venues' },
+      { to: '/tables', label: 'Tables & QR' },
       { to: '/features', label: 'Features' },
       { to: '/settings', label: 'Settings' },
     ],
