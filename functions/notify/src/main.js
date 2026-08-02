@@ -72,6 +72,69 @@ export default async ({ req, res, log, error }) => {
   };
 
   try {
+    // ------------------------------------------------- order progress
+    // Two moments a customer actually wants to hear about: somebody has taken
+    // the order, and the food is ready. Sent before the receipt block because
+    // an order can be accepted and paid in the same breath at a counter, and
+    // "your food is ready" is worth more to them than arriving second.
+    if (events.some((e) => e.includes('collections.orders')) && doc.customer_email) {
+      const stage = doc.status === 'ACCEPTED' ? 'accepted' : doc.status === 'READY' ? 'ready' : null;
+
+      if (stage) {
+        const wanted = await featureConfig('receipts', `notify_on_${stage}`, true);
+        if (wanted === null || wanted === false) {
+          // Feature off, or this particular notification switched off.
+        } else {
+          // One notification per stage per order. The update event fires on
+          // every edit, and a customer told four times that their food is
+          // ready stops reading anything we send.
+          const already = await db.listDocuments(DB_ID, 'order_notices', [
+            Query.equal('order_id', doc.$id),
+            Query.equal('stage', stage),
+            Query.limit(1),
+          ]).catch(() => ({ total: 0 }));
+
+          if (already.total === 0) {
+            await db.createDocument(DB_ID, 'order_notices', 'unique()', {
+              venue_id: doc.venue_id, order_id: doc.$id, stage,
+              to_email: doc.customer_email, status: transport ? 'queued' : 'failed',
+              last_error: transport ? '' : 'No SMTP configured on the function.',
+            }).catch(() => undefined);
+
+            if (transport) {
+              const isGroup = !!doc.group_reference;
+              const body =
+                stage === 'accepted'
+                  ? `<p style="margin:0 0 10px">We have your order and the kitchen has started on it.</p>
+                     <p style="margin:0;color:#5d6b7a;font-size:14px">Order ${doc.order_no}${
+                       doc.eta_minutes ? ` · about ${doc.eta_minutes} minutes` : ''
+                     }</p>`
+                  : `<p style="margin:0 0 10px">Your order is ready.</p>
+                     <p style="margin:0;color:#5d6b7a;font-size:14px">Order ${doc.order_no}${
+                       doc.pickup_point ? ` · collect at ${doc.pickup_point}` : ''
+                     }</p>`;
+              try {
+                await transport.sendMail({
+                  from,
+                  to: doc.customer_email,
+                  subject:
+                    stage === 'accepted'
+                      ? `${settings.restaurant_name}: order ${doc.order_no} accepted${isGroup ? ' (group)' : ''}`
+                      : `${settings.restaurant_name}: order ${doc.order_no} is ready`,
+                  html: shell(settings.restaurant_name, body, brand),
+                });
+                log(`${stage} notice sent for ${doc.order_no}`);
+              } catch (e) {
+                error(`${stage} notice failed for ${doc.order_no}: ${e.message}`);
+              }
+            } else {
+              error('Order notice not sent: SMTP_HOST / SMTP_USER / SMTP_PASS are not set.');
+            }
+          }
+        }
+      }
+    }
+
     // ---------------------------------------------------------- receipt
     if (events.some((e) => e.includes('collections.orders')) && doc.payment_status === 'paid') {
       const already = await db.listDocuments(DB_ID, 'receipts', [

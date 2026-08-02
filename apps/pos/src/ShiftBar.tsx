@@ -1,26 +1,14 @@
 import { useState } from 'react';
-import { Button, Modal, Field, Input, Notice, Badge } from '@snpos/ui';
+import { Button, Modal, Field, Input, Notice, Badge, ShiftCloseForm } from '@snpos/ui';
+import type { BlockerRow, CountRow, StockRow } from '@snpos/ui';
 import {
-  db, DB_ID, ID, Query, listAll, formatMoney, parseMoney, toInput,
-  depleteForShift, loadIngredients, loadRecipes, updateStockAlerts, postShift, isEnabled, featureConfig,
+  formatMoney, parseMoney, toInput, loadIngredients,
+  loadPaymentMethods, openShift as createShift, shiftBlockers, expectedTakings, closeShift,
 } from '@snpos/core';
-import type { Doc, OrderItem, Order } from '@snpos/core';
+import type { PaymentMethod, Shift } from '@snpos/core';
 import type { PosContext } from './App';
 
-export interface Shift extends Doc {
-  venue_id: string;
-  code: string;
-  status: 'open' | 'closing' | 'closed';
-  opened_by: string;
-  opened_at: string;
-  opening_floats: string;
-  float_source: string;
-  sales_total: number;
-  expense_total: number;
-  covers: number;
-}
-
-interface PaymentMethod extends Doc { name: string; kind: string; enabled: boolean; counted_at_close: boolean; venue_id: string }
+export type { Shift } from '@snpos/core';
 
 /**
  * The shift is the boundary that makes cash reconcilable.
@@ -32,50 +20,35 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   const [opening, setOpening] = useState(false);
   const [closing, setClosing] = useState(false);
   const [floats, setFloats] = useState<Record<string, string>>({});
-  const [counted, setCounted] = useState<Record<string, string>>({});
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
-  // Counted at close: one tap per ingredient rather than a number to type,
-  // because a wrong number is worse than an honest "getting low".
+  const [rows, setRows] = useState<CountRow[]>([]);
+  const [blockers, setBlockers] = useState<BlockerRow[]>([]);
+  const [note, setNote] = useState('');
   const [levels, setLevels] = useState<Record<string, 'OK' | 'LOW' | 'OUT'>>({});
-  const [stockList, setStockList] = useState<{ $id: string; name: string; unit: string; critical: boolean }[]>([]);
+  const [stockList, setStockList] = useState<StockRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const decimals = ctx.settings.currency_decimals ?? 2;
-
-  const loadMethods = async () => {
-    const m = (await listAll<PaymentMethod>('payment_methods', [Query.equal('venue_id', ctx.venue.$id)])).filter((x) => x.enabled);
-    setMethods(m);
-    return m;
-  };
+  const tolerance = ctx.settings.cash_variance_tolerance ?? 500;
+  const money = (n: number) => formatMoney(n, ctx.settings);
 
   const startOpen = async () => {
-    const m = await loadMethods();
-    const initial: Record<string, string> = {};
-    for (const x of m) initial[x.$id] = toInput(0, decimals);
-    setFloats(initial);
+    const m = await loadPaymentMethods(ctx.venue.$id);
+    setMethods(m);
+    setFloats(Object.fromEntries(m.map((x) => [x.$id, toInput(0, decimals)])));
     setOpening(true);
     setError(null);
   };
 
-  const openShift = async () => {
+  const doOpen = async () => {
     setBusy(true);
     setError(null);
     try {
-      const code = `S${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).slice(-4)}`;
-      await db.createDocument(DB_ID, 'shifts', ID.unique(), {
-        venue_id: ctx.venue.$id,
-        code,
-        status: 'open',
-        opened_by: ctx.userId,
-        opened_at: new Date().toISOString(),
-        opening_floats: JSON.stringify(
-          Object.fromEntries(Object.entries(floats).map(([k, v]) => [k, parseMoney(v, decimals) ?? 0])),
-        ),
-        float_source: 'zero',
-        sales_total: 0, expense_total: 0, tax_total: 0, tip_total: 0, discount_total: 0,
-        void_total: 0, refund_total: 0, cogs_total: 0, covers: 0,
-        stock_check_status: 'pending', posted_to_ledger: false,
+      await createShift({
+        venueId: ctx.venue.$id,
+        userId: ctx.userId,
+        floats: Object.fromEntries(Object.entries(floats).map(([k, v]) => [k, parseMoney(v, decimals) ?? 0])),
       });
       await ctx.reloadShift();
       setOpening(false);
@@ -88,176 +61,90 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   };
 
   const startClose = async () => {
-    const m = await loadMethods();
-    const initial: Record<string, string> = {};
-    for (const x of m.filter((y) => y.counted_at_close)) initial[x.$id] = toInput(0, decimals);
-    setCounted(initial);
-
-    // Critical items first: if service stops without it, it belongs at the top
-    // of a list somebody is working through at the end of a long day.
-    const ing = await loadIngredients(ctx.venue.$id);
-    const list = ing
-      .filter((i) => i.active)
-      .sort((a, b) => Number(b.critical) - Number(a.critical) || a.name.localeCompare(b.name))
-      .map((i) => ({ $id: i.$id, name: i.name, unit: i.unit, critical: i.critical }));
-    setStockList(list);
-    setLevels(Object.fromEntries(list.map((i) => [i.$id, 'OK' as const])));
-
-    setClosing(true);
-    setError(null);
-  };
-
-  const closeShift = async () => {
     if (!ctx.shift) return;
     setBusy(true);
     setError(null);
     try {
-      // Expected = opening float + everything taken through that method.
-      let stockNote = '';
-      const m = await loadMethods();
-      const payments = await listAll<{ method_id: string; amount: number; tip: number }>('payments', [
-        Query.equal('shift_id', ctx.shift.$id),
+      const [m, blocking] = await Promise.all([
+        loadPaymentMethods(ctx.venue.$id),
+        shiftBlockers(ctx.shift.$id),
       ]);
-      const openingFloats: Record<string, number> = JSON.parse(ctx.shift.opening_floats || '{}');
-      const expected: Record<string, number> = { ...openingFloats };
-      let sales = 0;
-      for (const p of payments) {
-        expected[p.method_id] = (expected[p.method_id] ?? 0) + p.amount;
-        sales += p.amount;
-      }
-
-      const countedMinor = Object.fromEntries(
-        Object.entries(counted).map(([k, v]) => [k, parseMoney(v, decimals) ?? 0]),
-      );
-      const variance = Object.fromEntries(
-        Object.keys(countedMinor).map((k) => [k, (countedMinor[k] ?? 0) - (expected[k] ?? 0)]),
+      setMethods(m);
+      setBlockers(
+        blocking.map((b) => ({
+          id: b.order.$id,
+          label: `${b.order.order_no} · ${money(b.order.total)}`,
+          reason: b.reason,
+        })),
       );
 
-      // --- what the shift sold, so stock can be depleted against it
-      const shiftOrders = (await listAll<Order>('orders', [Query.equal('shift_id', ctx.shift.$id)]))
-        .filter((o) => o.payment_status === 'paid');
-      const soldItems = shiftOrders.length
-        ? await listAll<OrderItem>('order_items', [Query.equal('order_id', shiftOrders.map((o) => o.$id))])
-        : [];
-
-      let cogs = 0;
-      if (isEnabled(ctx.features, 'waste_log') || soldItems.length) {
-        const [ingredients, recipes] = await Promise.all([loadIngredients(ctx.venue.$id), loadRecipes()]);
-        const usage = await depleteForShift(ctx.venue.$id, ctx.shift.$id, soldItems, recipes, ingredients, ctx.userId);
-        // Cost of what was sold, valued at what the ingredients cost us.
-        for (const [ingredientId, qty] of Object.entries(usage)) {
-          const ing = ingredients.find((i) => i.$id === ingredientId);
-          if (ing) cogs += Math.round(qty * ing.base_unit_cost);
-        }
-
-        // What staff actually saw on the shelf, recorded per ingredient. This
-        // is the human check against the theoretical figure — the two
-        // disagreeing is the entire point of asking.
-        for (const [ingredientId, level] of Object.entries(levels)) {
-          const ing = ingredients.find((i) => i.$id === ingredientId);
-          if (!ing) continue;
-          await db.createDocument(DB_ID, 'shift_stock_checks', ID.unique(), {
-            venue_id: ctx.venue.$id,
-            shift_id: ctx.shift.$id,
-            ingredient_id: ingredientId,
-            opening_qty: ing.current_qty,
-            theoretical_qty: Number((ing.current_qty - (usage[ingredientId] ?? 0)).toFixed(4)),
-            status: level,
-            status_source: 'manual_override',
-            variance_qty: 0,
-            variance_value: 0,
-            checked_by: ctx.userId,
-          }).catch(() => undefined);
-
-          // "Out" means out, whatever the book says. Trust the eyes.
-          if (level === 'OUT') {
-            await db.updateDocument(DB_ID, 'ingredients', ingredientId, { current_qty: 0 }).catch(() => undefined);
-          }
-        }
-
-        // Re-read after depletion so the alerts reflect the new levels.
-        const after = await loadIngredients(ctx.venue.$id);
-        const threshold = featureConfig(ctx.features, 'shift_summary', 'persistent_stock_threshold', 3);
-        const { fresh, persistent } = await updateStockAlerts(
-          after.filter((i) => i.active),
-          ctx.settings.low_stock_default_bp ?? 3000,
-          threshold,
-        );
-        if (fresh.length || persistent.length) {
-          stockNote =
-            `${fresh.length} newly low, ${persistent.length} low for ${threshold}+ shifts` +
-            (persistent.length ? `: ${persistent.map((p) => p.ingredient.name).slice(0, 4).join(', ')}` : '');
-        }
-      }
-
-      const variancePenny = Object.values(variance).reduce((a, b) => a + b, 0);
-      const shiftExpenses = await listAll<{ amount: number; category_key?: string; category?: string }>(
-        'shift_expenses',
-        [Query.equal('shift_id', ctx.shift.$id)],
+      // Expected is worked out from the records, never typed. Staff enter only
+      // what is in their hand.
+      const takings = await expectedTakings(ctx.shift as Shift, m);
+      setRows(
+        m
+          .filter((x) => x.counted_at_close)
+          .map((x) => ({ methodId: x.$id, name: x.name, expected: takings.byMethod[x.$id] ?? 0, countedText: '' })),
       );
-      // Each expense category names the account it posts to, so "Gas refill"
-      // can land on utilities rather than everything piling into Other.
-      const expenseCategories = await listAll<{ key: string; account_code?: string }>('expense_categories').catch(
-        () => [],
-      );
-      const accountForExpense = (e: { category_key?: string; category?: string }) =>
-        expenseCategories.find((c) => c.key === (e.category_key || e.category))?.account_code || '6090';
-      const expenseTotal = shiftExpenses.reduce((a, e) => a + e.amount, 0);
 
-      await db.updateDocument(DB_ID, 'shifts', ctx.shift.$id, {
-        status: 'closed',
-        closed_by: ctx.userId,
-        closed_at: new Date().toISOString(),
-        expected: JSON.stringify(expected),
-        counted: JSON.stringify(countedMinor),
-        variance: JSON.stringify(variance),
-        sales_total: sales,
-        expense_total: expenseTotal,
-        cogs_total: cogs,
-        tip_total: payments.reduce((a, p) => a + (p.tip ?? 0), 0),
-        tax_total: shiftOrders.reduce((a, o) => a + o.tax_total, 0),
-        discount_total: shiftOrders.reduce((a, o) => a + o.discount_total, 0),
-        covers: shiftOrders.reduce((a, o) => a + (o.guest_count || 1), 0),
+      // Critical items first: if service stops without it, it belongs at the
+      // top of a list somebody is working through at the end of a long day.
+      const ing = await loadIngredients(ctx.venue.$id);
+      const list = ing
+        .filter((i) => i.active)
+        .sort((a, b) => Number(b.critical) - Number(a.critical) || a.name.localeCompare(b.name))
+        .map((i) => ({ $id: i.$id, name: i.name, critical: i.critical }));
+      setStockList(list);
+      setLevels(Object.fromEntries(list.map((i) => [i.$id, 'OK' as const])));
+      setNote('');
+      setClosing(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not prepare the close.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const countedMinor = () =>
+    Object.fromEntries(rows.map((r) => [r.methodId, parseMoney(r.countedText, decimals) ?? 0]));
+
+  const anythingOff = () =>
+    rows.some((r) => (parseMoney(r.countedText, decimals) ?? 0) !== r.expected);
+  const allCounted = () => rows.every((r) => parseMoney(r.countedText, decimals) !== null);
+
+  const doClose = async () => {
+    if (!ctx.shift) return;
+    if (blockers.length > 0) return;
+    if (!allCounted()) { setError('Enter what you counted for every drawer.'); return; }
+    if (anythingOff() && !note.trim()) {
+      setError('Something is over or short. Say what happened before closing — that answer is gone by tomorrow.');
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await closeShift({
+        venueId: ctx.venue.$id,
+        shift: ctx.shift as Shift,
+        userId: ctx.userId,
+        settings: ctx.settings,
+        features: ctx.features,
+        methods,
+        counted: countedMinor(),
+        varianceNote: note.trim(),
+        levels,
       });
-
-      // --- the ledger. Posted last: if it fails, the shift is still closed and
-      // the money is still counted, and the posting can be retried.
-      try {
-        const byKind = { cash: 0, card: 0, mobile_money: 0, other: 0 };
-        for (const p of payments) {
-          const method = m.find((x) => x.$id === p.method_id);
-          const kind = (method?.kind ?? 'other') as keyof typeof byKind;
-          byKind[kind in byKind ? kind : 'other'] += p.amount;
-        }
-        await postShift({
-          venueId: ctx.venue.$id,
-          shiftId: ctx.shift.$id,
-          postedBy: ctx.userId,
-          takings: byKind,
-          tips: payments.reduce((a, p) => a + (p.tip ?? 0), 0),
-          tax: shiftOrders.reduce((a, o) => a + o.tax_total, 0),
-          discounts: shiftOrders.reduce((a, o) => a + o.discount_total, 0),
-          cogs,
-          cashVariance: variancePenny,
-          expenses: shiftExpenses.map((e) => ({ amount: e.amount, accountCode: accountForExpense(e) })),
-        });
-        await db.updateDocument(DB_ID, 'shifts', ctx.shift.$id, { posted_to_ledger: true });
-      } catch (postErr) {
-        onToast(
-          `Shift closed, but the accounts entry failed: ${postErr instanceof Error ? postErr.message : 'unknown'}`,
-          'err',
-        );
-      }
 
       await ctx.reloadShift();
       setClosing(false);
 
-      const off = Object.values(variance).reduce((a, b) => a + Math.abs(b), 0);
-      const base = off === 0 ? 'Shift closed and balanced' : `Shift closed — ${formatMoney(off, ctx.settings)} out`;
-      onToast(
-        stockNote ? `${base}. ${stockNote}` : base,
-        off > (ctx.settings.cash_variance_tolerance ?? 500) ? 'err' : 'ok',
-      );
+      if (result.ledgerError) {
+        onToast(`Shift closed, but the accounts entry failed: ${result.ledgerError}`, 'err');
+      }
+      const off = Object.values(result.variance).reduce((a, b) => a + Math.abs(b), 0);
+      const base = off === 0 ? 'Shift closed and balanced' : `Shift closed — ${money(off)} out`;
+      onToast(result.stockNote ? `${base}. ${result.stockNote}` : base, off > tolerance ? 'err' : 'ok');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not close the shift.');
     } finally {
@@ -287,7 +174,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           )}
         </div>
         {ctx.shift ? (
-          <Button size="sm" onClick={startClose} disabled={!ctx.profile?.can_close_shift}>
+          <Button size="sm" onClick={startClose} loading={busy && !closing} disabled={!ctx.profile?.can_close_shift}>
             Close shift
           </Button>
         ) : (
@@ -304,7 +191,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           footer={
             <>
               <Button variant="ghost" onClick={() => setOpening(false)}>Cancel</Button>
-              <Button variant="primary" onClick={openShift} loading={busy}>Open shift</Button>
+              <Button variant="primary" onClick={doOpen} loading={busy}>Open shift</Button>
             </>
           }
         >
@@ -328,62 +215,31 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       {closing && (
         <Modal
           title="Close shift"
+          wide
           onClose={() => setClosing(false)}
           footer={
             <>
               <Button variant="ghost" onClick={() => setClosing(false)}>Cancel</Button>
-              <Button variant="primary" onClick={closeShift} loading={busy}>Close shift</Button>
+              <Button variant="primary" onClick={doClose} loading={busy} disabled={blockers.length > 0}>
+                {blockers.length > 0 ? 'Settle those orders first' : 'Close shift'}
+              </Button>
             </>
           }
         >
-          <p className="small dim" style={{ marginTop: 0 }}>
-            Count each drawer and enter what is actually there — not what you expect. The difference is the point of
-            the exercise.
-          </p>
           {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
-          {methods.filter((m) => m.counted_at_close).map((m) => (
-            <Field key={m.$id} label={`${m.name} counted (${ctx.settings.currency_symbol})`}>
-              <Input
-                value={counted[m.$id] ?? ''}
-                inputMode="decimal"
-                onChange={(e) => setCounted({ ...counted, [m.$id]: e.target.value })}
-              />
-            </Field>
-          ))}
-
-          {stockList.length > 0 && (
-            <>
-              <h3 style={{ margin: '1.3rem 0 0.3rem' }}>Stock check</h3>
-              <p className="small dim" style={{ marginTop: 0 }}>
-                A quick look at the shelf, not a full count. Anything marked <strong>low</strong> or <strong>out</strong>{' '}
-                goes into tonight's summary — and if the same thing keeps coming up, that turns into its own warning.
-              </p>
-              {stockList.map((i) => (
-                <div
-                  className="row"
-                  key={i.$id}
-                  style={{ justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px solid var(--border)' }}
-                >
-                  <span>
-                    {i.name}
-                    {i.critical && <Badge tone="warn"> critical</Badge>}
-                  </span>
-                  <div className="row" style={{ gap: '0.3rem' }}>
-                    {(['OK', 'LOW', 'OUT'] as const).map((level) => (
-                      <Button
-                        key={level}
-                        size="sm"
-                        variant={levels[i.$id] === level ? (level === 'OK' ? 'primary' : 'danger') : 'default'}
-                        onClick={() => setLevels({ ...levels, [i.$id]: level })}
-                      >
-                        {level}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </>
-          )}
+          <ShiftCloseForm
+            blockers={blockers}
+            rows={rows}
+            onCount={(id, text) => setRows((r) => r.map((x) => (x.methodId === id ? { ...x, countedText: text } : x)))}
+            stock={stockList}
+            levels={levels}
+            onLevel={(id, level) => setLevels((l) => ({ ...l, [id]: level }))}
+            note={note}
+            onNote={setNote}
+            symbol={ctx.settings.currency_symbol ?? ''}
+            money={money}
+            tolerance={tolerance}
+          />
         </Modal>
       )}
     </>

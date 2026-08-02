@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, Badge, Spinner } from '@snpos/ui';
+import { Card, Badge, Spinner, Notice } from '@snpos/ui';
 import { listAll } from '../lib';
 import { useSession } from '../session';
-import type { Category, MenuItem, Venue } from '@snpos/core';
+import type { Category, MenuItem, Venue, Doc } from '@snpos/core';
+
+interface Receipt extends Doc { status: string }
+interface Notice_ extends Doc { status: string }
+interface OrderRow extends Doc { payment_status: string; status: string }
 
 export function Dashboard() {
   const { settings } = useSession();
   const [counts, setCounts] = useState<{ categories: number; items: number; venues: number } | null>(null);
+  const [jobsAlive, setJobsAlive] = useState<boolean | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -20,9 +25,47 @@ export function Dashboard() {
     })().catch(() => setCounts({ categories: 0, items: 0, venues: 0 }));
   }, []);
 
+  /**
+   * Are the background jobs actually running?
+   *
+   * They are deployed by a separate step that is easy to skip, and when they
+   * are missing nothing errors — emails simply never arrive and pre-orders
+   * never reach the kitchen. Silence that looks like success is the worst
+   * failure mode there is, so it gets checked and said out loud.
+   *
+   * The test: settled orders exist, but not one has produced a receipt row.
+   * The email function writes that row before it tries to send, so its absence
+   * means the function never ran at all — as distinct from running and failing
+   * to send, which shows up in Reports with a reason.
+   */
+  useEffect(() => {
+    (async () => {
+      const [orders, receipts, notices] = await Promise.all([
+        listAll<OrderRow>('orders'),
+        listAll<Receipt>('receipts').catch(() => [] as Receipt[]),
+        listAll<Notice_>('order_notices').catch(() => [] as Notice_[]),
+      ]);
+      const settled = orders.filter((o) => o.payment_status === 'paid');
+      if (settled.length === 0) { setJobsAlive(null); return; }
+      setJobsAlive(receipts.length > 0 || notices.length > 0);
+    })().catch(() => setJobsAlive(null));
+  }, []);
+
   return (
     <>
       <h1>Dashboard</h1>
+
+      {jobsAlive === false && (
+        <Notice>
+          <strong>The background jobs are not running.</strong> Bills have been settled but not one has produced a
+          receipt record, which means the email job has never run. Nothing on the tills is affected, but emails will
+          not send and pre-orders will not reach the kitchen at their time.
+          <br />
+          <br />
+          Fix: GitHub → <strong>Actions</strong> → <strong>Deploy functions</strong> → Run workflow, and type{' '}
+          <code>deploy</code>. This is a separate step from Deploy and is easy to miss.
+        </Notice>
+      )}
 
       <Card title="Getting started">
         <p className="small dim" style={{ marginTop: 0 }}>

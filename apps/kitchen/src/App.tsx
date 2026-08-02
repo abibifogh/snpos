@@ -3,12 +3,13 @@ import { Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo, HelpModa
 import { applyTheme } from '@snpos/ui';
 import {
   account, db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
-  verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS,
+  verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney,
 } from '@snpos/core';
 import type { Order, OrderItem, Settings, Venue, StaffProfile, HelpRole, Doc, FeatureMap } from '@snpos/core';
 
 interface Station extends Doc { venue_id: string; key: string; name: string; colour?: string; sort: number; active: boolean }
-import { unlockAudio, setAlarm, stopAlarm } from './alarm';
+import { unlockAudio, setAlarm, stopAlarm, type AlarmKind } from './alarm';
+import { CombinedBar, SettleModal } from './CombinedBar';
 
 
 
@@ -37,6 +38,8 @@ export function App() {
   // person is acting, so accepts and rejects have a name against them.
   const [who, setWho] = useState<StaffProfile | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [settling, setSettling] = useState<Order | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [pinEntry, setPinEntry] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
@@ -89,9 +92,15 @@ export function App() {
         setStations(st.filter((x) => x.active !== false).sort((a, b) => a.sort - b.sort));
         setFeatures(ft);
         setStaff(sp.filter((p) => p.active && p.pin_hash));
-        const open = await loadOpenOrders(v.$id);
-        setOrders(open);
-        await loadItemsFor(open.map((o) => o.$id));
+        // Pre-orders are loaded alongside the live ones. A kitchen that cannot
+        // see what is booked cannot prepare for it, and the whole point of
+        // taking an order in advance is that somebody can plan around it.
+        const [open, booked] = await Promise.all([
+          loadOpenOrders(v.$id),
+          listAll<Order>('orders', [Query.equal('venue_id', v.$id), Query.equal('status', 'SCHEDULED')]),
+        ]);
+        setOrders([...open, ...booked]);
+        await loadItemsFor([...open, ...booked].map((o) => o.$id));
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not load orders.');
       }
@@ -104,14 +113,29 @@ export function App() {
     const off = subscribeCollection<Order>('orders', (order, events) => {
       if (order.venue_id !== venue.$id) return;
       setOrders((prev) => {
-        const live = ['PENDING', 'ACCEPTED', 'PREPARING', 'READY'].includes(order.status);
+        const live = ['SCHEDULED', 'PENDING', 'ACCEPTED', 'PREPARING', 'READY'].includes(order.status);
         const without = prev.filter((o) => o.$id !== order.$id);
         return live ? [...without, order].sort((a, b) => a.$createdAt.localeCompare(b.$createdAt)) : without;
       });
-      if (isCreate(events) && order.status === 'PENDING') void loadItemsFor([order.$id]);
+      if (isCreate(events) && ['PENDING', 'SCHEDULED'].includes(order.status)) void loadItemsFor([order.$id]);
     });
     return off;
   }, [venue, loadItemsFor]);
+
+  /**
+   * Booked for later, not yet cooking.
+   *
+   * Shown as a quiet strip rather than as tickets: they must not sound the
+   * alarm or crowd the pass, but a cook glancing at the screen at four o'clock
+   * should already know about the party at seven.
+   */
+  const scheduled = useMemo(
+    () =>
+      orders
+        .filter((o) => o.status === 'SCHEDULED')
+        .sort((a, b) => (a.fire_at ?? '').localeCompare(b.fire_at ?? '')),
+    [orders],
+  );
 
   const visible = useMemo(
     () =>
@@ -155,31 +179,39 @@ export function App() {
    * Escalation is driven by the oldest unacknowledged ticket, not by each one
    * separately — three quiet alarms are less useful than one loud one.
    */
+  const combined = isEnabled(features, 'combined_mode');
   const sla = settings?.kitchen_ack_sla_seconds ?? 60;
-  const worstLevel = useMemo(() => {
-    if (!ready) return 0;
+
+  /**
+   * One alarm, and which of the two sounds it should be.
+   *
+   * A late order and a new order need telling apart from the other side of a
+   * kitchen, so they get different sounds rather than different volumes of the
+   * same one. Late wins when both are true: an order already cooking and now
+   * overdue is the more expensive mistake.
+   */
+  const alarm = useMemo<{ level: number; kind: AlarmKind }>(() => {
+    if (!ready) return { level: 0, kind: 'new' };
     const maxLevel = settings?.kitchen_ping_max_level ?? 4;
     let level = 0;
     if (pending.length > 0) {
       const oldest = Math.max(...pending.map((o) => secondsSince(o.$createdAt)));
       level = Math.min(Math.floor(oldest / sla) + 1, maxLevel);
     }
-    // A late order pings even when nothing is waiting to be accepted, but at a
-    // lower urgency than an unseen ticket — it has been seen, it is just slow.
-    if (overdue.length > 0) level = Math.max(level, 2);
-    return level;
+    if (overdue.length > 0) return { level: Math.max(level, 2), kind: 'late' };
+    return { level, kind: 'new' };
   }, [pending, overdue, ready, sla, settings]);
 
-  const lastLevel = useRef(0);
+  const lastAlarm = useRef({ level: 0, kind: 'new' as AlarmKind });
   useEffect(() => {
-    if (worstLevel !== lastLevel.current) {
-      lastLevel.current = worstLevel;
-      setAlarm(worstLevel);
+    if (alarm.level !== lastAlarm.current.level || alarm.kind !== lastAlarm.current.kind) {
+      lastAlarm.current = alarm;
+      setAlarm(alarm.level, alarm.kind);
     }
     return () => {
-      if (worstLevel === 0) stopAlarm();
+      if (alarm.level === 0) stopAlarm();
     };
-  }, [worstLevel]);
+  }, [alarm]);
 
   const patch = async (order: Order, body: Record<string, unknown>) => {
     // Optimistic: a cook who taps Accept must see it accepted immediately, or
@@ -202,6 +234,19 @@ export function App() {
     });
   const start = (o: Order) => patch(o, { status: 'PREPARING' });
   const done = (o: Order) => patch(o, { status: 'READY' });
+
+  /**
+   * The food has left the pass.
+   *
+   * Separate from payment on purpose: a table order is collected long before
+   * the bill is settled, and conflating the two would make one of them a lie.
+   */
+  const collect = (o: Order) =>
+    patch(o, { status: 'SERVED', served_at: new Date().toISOString() });
+
+  /** Release a booked order to the pass now, ahead of its time. */
+  const fireNow = (o: Order) =>
+    patch(o, { status: 'PENDING', fired_at: new Date().toISOString() });
 
   const reject = async () => {
     if (!rejecting) return;
@@ -352,7 +397,32 @@ export function App() {
         </div>
       </div>
 
+      {combined && venue && settings && (
+        <CombinedBar
+          venue={venue}
+          settings={settings}
+          features={features}
+          who={who}
+          onToast={(m) => { setToast(m); window.setTimeout(() => setToast(null), 4000); }}
+        />
+      )}
+
       {error && <div style={{ padding: '0.6rem 1rem' }}><Notice>{error}</Notice></div>}
+      {toast && <div style={{ padding: '0.6rem 1rem' }}><Notice tone="ok">{toast}</Notice></div>}
+
+      {scheduled.length > 0 && (
+        <div className="kds-coming">
+          <span className="kds-coming-label">Booked for later</span>
+          {scheduled.map((o) => (
+            <button key={o.$id} className="kds-coming-item" onClick={() => fireNow(o)} title="Send to the pass now">
+              <b>{o.fire_at ? new Date(o.fire_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'no time'}</b>
+              <span>{o.order_no}</span>
+              <span className="dim">{(items[o.$id] ?? []).reduce((a, i) => a + i.qty, 0) || '·'} items</span>
+              <span className="kds-coming-go">Cook now</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {visible.length === 0 ? (
         <div className="kds-empty">
@@ -370,13 +440,33 @@ export function App() {
               items={items[order.$id] ?? []}
               sla={sla}
               overdue={overdue.some((o) => o.$id === order.$id)}
+              settings={settings}
+              canSettle={combined && (who?.can_mark_paid ?? false)}
               onAccept={() => accept(order)}
               onStart={() => start(order)}
               onDone={() => done(order)}
+              onCollect={() => collect(order)}
+              onSettle={() => setSettling(order)}
               onReject={() => setRejecting(order)}
             />
           ))}
         </div>
+      )}
+
+      {settling && venue && settings && (
+        <SettleModal
+          order={settling}
+          venueId={venue.$id}
+          settings={settings}
+          who={who}
+          onClose={() => setSettling(null)}
+          onDone={(m) => {
+            setSettling(null);
+            setOrders((prev) => prev.filter((o) => o.$id !== settling.$id));
+            setToast(m);
+            window.setTimeout(() => setToast(null), 4000);
+          }}
+        />
       )}
 
       {rejecting && (
@@ -410,15 +500,20 @@ export function App() {
 }
 
 function Ticket({
-  order, items, sla, overdue, onAccept, onStart, onDone, onReject,
+  order, items, sla, overdue, settings, canSettle, onAccept, onStart, onDone, onCollect, onSettle, onReject,
 }: {
   order: Order;
   items: OrderItem[];
   sla: number;
   overdue: boolean;
+  settings: Settings | null;
+  /** Combined mode, and this person is allowed to take money. */
+  canSettle: boolean;
   onAccept: () => void;
   onStart: () => void;
   onDone: () => void;
+  onCollect: () => void;
+  onSettle: () => void;
   onReject: () => void;
 }) {
   const age = secondsSince(order.$createdAt);
@@ -469,7 +564,20 @@ function Ticket({
         )}
         {order.status === 'ACCEPTED' && <Button variant="primary" onClick={onStart}>Start cooking</Button>}
         {order.status === 'PREPARING' && <Button variant="primary" onClick={onDone}>Ready</Button>}
-        {order.status === 'READY' && <Button disabled>Waiting for collection</Button>}
+        {order.status === 'READY' && (
+          <>
+            {/* Handing the food over and taking the money are two different
+                events. Collected always works; settling only when this screen
+                is also the till and this person may take payment. */}
+            <Button onClick={onCollect}>Collected</Button>
+            {order.payment_status !== 'paid' && canSettle && (
+              <Button variant="primary" onClick={onSettle}>
+                Collected &amp; paid{settings ? ` · ${formatMoney(order.total, settings)}` : ''}
+              </Button>
+            )}
+            {order.payment_status === 'paid' && <span className="pill">Paid</span>}
+          </>
+        )}
       </div>
     </div>
   );

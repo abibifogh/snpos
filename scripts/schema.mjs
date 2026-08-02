@@ -554,6 +554,28 @@ export const COLLECTIONS = [
   },
   {
     /**
+     * One row per notification actually sent about an order.
+     *
+     * Exists so that "we told them" is a fact rather than an assumption. The
+     * update event fires on every edit to an order, and without a record here
+     * a customer would be told four times that their food is ready — which is
+     * how people learn to ignore everything you send them.
+     */
+    id: 'order_notices',
+    name: 'Order notices',
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['order_id', 's', 64, true],
+      ['stage', 'e', ['accepted', 'ready', 'group_placed'], true],
+      ['to_email', 's', 160, false],
+      ['status', 'e', ['queued', 'sent', 'failed', 'skipped'], true, 'queued'],
+      ['last_error', 's', 500, false],
+    ],
+    indexes: [['order_stage', 'key', ['order_id', 'stage']]],
+  },
+  {
+    /**
      * Expense categories, defined by the restaurant.
      *
      * `account_code` is what makes a category more than a label: it decides
@@ -1475,6 +1497,12 @@ export const FEATURES = [
       allow_staff_enter_email: true, // cashier can add it at payment
       allow_skip_email: true, // "no receipt, thanks" is always allowed
       email_subject: 'Your receipt from {{venue}}',
+      // Told twice, at the two moments a customer actually wants to hear:
+      // somebody has taken the order, and the food is ready. Each can be
+      // switched off on its own — a sit-down restaurant where the waiter is
+      // standing there anyway has no use for "your food is ready".
+      notify_on_accepted: true,
+      notify_on_ready: true,
       attach_pdf: true,
       // Kitchen slips print separately and can be switched off on their own.
       print_kitchen_slips: false,
