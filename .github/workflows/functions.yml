@@ -47,7 +47,16 @@ jobs:
           sed -i "s|\${APPWRITE_PROJECT_ID}|$APPWRITE_PROJECT_ID|" appwrite.json
 
       - name: Push the functions
-        run: appwrite push functions --all --force
+        # --force answers "create a deployment?"; --activate answers "activate it
+        # once built?". They are two separate questions in the CLI, and the
+        # second one has no default — so without --activate the command stops
+        # dead waiting for a keystroke that will never come, and the job fails
+        # in eighteen seconds having deployed nothing.
+        #
+        # --with-variables is deliberately NOT passed: the API key and SMTP
+        # settings are set in the next step from GitHub Secrets, and pushing
+        # appwrite.json's (empty) variables would wipe them.
+        run: appwrite push functions --all --force --activate
 
       - name: Set their variables
         env:
@@ -59,12 +68,19 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
         run: |
           set -e
+          FAILED=""
 
-          # Overwrite rather than only create. Creating fails once a variable is
-          # already there, which used to mean that changing an email password
-          # and re-running this quietly kept the old one.
+          # Create first, update on conflict. Creating alone fails once a
+          # variable is already there, which used to mean that changing an
+          # email password and re-running this quietly kept the old one.
           setvar() {
             fn=$1; key=$2; val=$3
+            if appwrite functions create-variable \
+                 --function-id "$fn" --key "$key" --value "$val" >/dev/null 2>&1; then
+              echo "  $fn.$key created"
+              return 0
+            fi
+
             id=$(appwrite functions list-variables --function-id "$fn" --json 2>/dev/null \
               | node -e '
                   let s = "";
@@ -72,15 +88,18 @@ jobs:
                     try {
                       const found = (JSON.parse(s).variables || []).find((v) => v.key === process.argv[1]);
                       if (found) process.stdout.write(found.$id);
-                    } catch { /* no variables yet */ }
+                    } catch { /* nothing to update */ }
                   });
                 ' "$key")
-            if [ -n "$id" ]; then
-              appwrite functions update-variable --function-id "$fn" --variable-id "$id" --key "$key" --value "$val" >/dev/null
-            else
-              appwrite functions create-variable --function-id "$fn" --key "$key" --value "$val" >/dev/null
+
+            if [ -n "$id" ] && appwrite functions update-variable \
+                 --function-id "$fn" --variable-id "$id" --key "$key" --value "$val" >/dev/null 2>&1; then
+              echo "  $fn.$key updated"
+              return 0
             fi
-            echo "  $fn.$key set"
+
+            echo "::warning::Could not set $fn.$key"
+            FAILED="$FAILED $fn.$key"
           }
 
           for fn in order-guard preorder-fire kitchen-escalate notify; do
@@ -99,3 +118,32 @@ jobs:
           else
             echo "::warning::No SMTP secrets set — receipts and summaries will be recorded but not emailed."
           fi
+
+          # Fail at the end rather than in the middle, so the log shows every
+          # variable that did or did not land. A function without its API key
+          # runs and does nothing, which is the failure mode this whole job
+          # exists to avoid.
+          if [ -n "$FAILED" ]; then
+            echo "These variables could not be set:$FAILED"
+            exit 1
+          fi
+
+      - name: Confirm they are actually there
+        # The push can succeed and still leave nothing running — a build that
+        # failed, a function that was never created. Checking is three seconds
+        # and turns a silent nothing into a red cross.
+        run: |
+          set -e
+          missing=""
+          for fn in order-guard preorder-fire kitchen-escalate notify; do
+            if appwrite functions get --function-id "$fn" >/dev/null 2>&1; then
+              echo "  $fn present"
+            else
+              missing="$missing $fn"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::These functions are not in the project:$missing"
+            exit 1
+          fi
+          echo "All four background jobs are deployed."
