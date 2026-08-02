@@ -164,3 +164,46 @@ Recipes are optional per dish. A bottled drink you buy in and sell on needs
 none — turn its stock tracking off and it is simply not part of this machinery.
 A dish with stock tracking **on** and no recipe is flagged in the dish list,
 because that combination silently does nothing.
+
+## 5.7 Running out mid-service
+
+Anyone working can take a dish off the menu — the **Run out** button on the
+till, the **86** button on the kitchen screen. The person who discovers the
+chicken has finished is whoever opened the fridge, and making them find a
+manager first is exactly how a sold-out dish keeps being ordered for another
+hour.
+
+What happens:
+
+- The dish disappears from the customer menu and cannot be added on the till.
+- It stays off until somebody puts it back. It does not quietly return at
+  midnight, because nobody checked whether the delivery arrived.
+- The event is logged with who, when and why — so the questions worth asking
+  stay answerable.
+
+Two things read that log:
+
+| Where | What it says |
+| --- | --- |
+| The shift summary | Everything taken off during that shift, with the reason and whether it came back |
+| A daily email | Anything still off after the configured wait, sent once |
+
+The wait defaults to 24 hours and is set under Admin → Features →
+*Staff can mark items unavailable*, along with whether a reason is compulsory
+and who may do it. A dish nobody has restored in a day is either a supply
+problem or a forgotten tap, and both are worth a minute.
+
+## 5.8 Bulk stock entry
+
+Stock → Ingredients → **Import from a spreadsheet**. Download the template
+first — it has the right headings and one example row filled in. Fill it in
+with any spreadsheet program, save as CSV, bring it back.
+
+Nothing is written until the whole file has been read and shown back to you:
+how many will be added, how many already exist, and which rows cannot be read
+and why. An import that half-works leaves a stock list nobody trusts, which is
+worse than one that refused.
+
+Categories, suppliers and expense categories are matched by name, ignoring
+capitals. A name that does not match is reported rather than invented.
+

@@ -72,6 +72,69 @@ export default async ({ req, res, log, error }) => {
   };
 
   try {
+    // ------------------------------------------------- group order placed
+    // A party of twenty is a kitchen planning decision, not just another
+    // ticket, so somebody is told the moment it arrives rather than when the
+    // pass fills up.
+    if (events.some((e) => e.includes('collections.orders')) && doc.is_group) {
+      const wanted = await featureConfig('group_orders', 'notify_on_placed', true);
+      if (wanted) {
+        const already = await db.listDocuments(DB_ID, 'order_notices', [
+          Query.equal('order_id', doc.$id),
+          Query.equal('stage', 'group_placed'),
+          Query.limit(1),
+        ]).catch(() => ({ total: 0 }));
+
+        if (already.total === 0) {
+          const configured = await featureConfig('group_orders', 'notify_emails', '');
+          let to = String(configured || '')
+            .split(/[,;\s]+/)
+            .filter(Boolean);
+          if (to.length === 0) {
+            // Falls back to whoever gets the shift summary, so turning this on
+            // does not require setting up a second list of addresses.
+            const subs = await db.listDocuments(DB_ID, 'report_subscriptions', [
+              Query.equal('active', true), Query.limit(50),
+            ]).catch(() => ({ documents: [] }));
+            to = subs.documents.map((x) => x.email).filter(Boolean);
+          }
+
+          await db.createDocument(DB_ID, 'order_notices', 'unique()', {
+            venue_id: doc.venue_id, order_id: doc.$id, stage: 'group_placed',
+            to_email: to.join(','),
+            status: transport && to.length ? 'queued' : 'failed',
+            last_error: !transport ? 'No SMTP configured on the function.' : to.length ? '' : 'No recipients configured.',
+          }).catch(() => undefined);
+
+          if (transport && to.length) {
+            const label = await featureConfig('group_orders', 'reservation_label', 'Reservation');
+            try {
+              await transport.sendMail({
+                from,
+                to: to.join(','),
+                subject: `Group order ${doc.order_no}${doc.group_size ? ` · ${doc.group_size} people` : ''}`,
+                html: shell(
+                  'A group has ordered',
+                  `<table style="width:100%;border-collapse:collapse;font-size:15px">
+                     ${row('Order', doc.order_no)}
+                     ${row('People', String(doc.group_size || '—'))}
+                     ${row(label, doc.group_reference || '—')}
+                     ${row('Booked by', doc.group_contact_name || doc.customer_name || '—')}
+                     ${row('Total', money(doc.total, settings), true)}
+                   </table>
+                   <p style="margin:18px 0 0;color:#5d6b7a;font-size:13px">The kitchen has it on the pass now.</p>`,
+                  brand,
+                ),
+              });
+              log(`Group notice sent for ${doc.order_no}`);
+            } catch (e) {
+              error(`Group notice failed for ${doc.order_no}: ${e.message}`);
+            }
+          }
+        }
+      }
+    }
+
     // ------------------------------------------------- order progress
     // Two moments a customer actually wants to hear about: somebody has taken
     // the order, and the food is ready. Sent before the receipt block because
@@ -222,11 +285,16 @@ export default async ({ req, res, log, error }) => {
       const threshold = await featureConfig('shift_summary', 'persistent_stock_threshold', 3);
       if (threshold === null) return res.json({ ok: true, skipped: 'summary feature off' });
 
-      const [ingredients, waste, expenses, subs] = await Promise.all([
+      const [ingredients, waste, expenses, subs, offItems] = await Promise.all([
         db.listDocuments(DB_ID, 'ingredients', [Query.equal('venue_id', doc.venue_id), Query.limit(500)]),
         db.listDocuments(DB_ID, 'waste_log', [Query.equal('shift_id', doc.$id), Query.limit(100)]),
         db.listDocuments(DB_ID, 'shift_expenses', [Query.equal('shift_id', doc.$id), Query.limit(100)]),
         db.listDocuments(DB_ID, 'report_subscriptions', [Query.equal('active', true), Query.limit(50)]),
+        // Dishes staff took off the menu during this shift. What ran out is a
+        // different signal from what was merely low: it stopped being sellable.
+        db.listDocuments(DB_ID, 'item_availability', [
+          Query.equal('shift_id', doc.$id), Query.limit(100),
+        ]).catch(() => ({ documents: [] })),
       ]);
 
       // The two stock sections, kept apart on purpose: a first-time flag is
@@ -271,6 +339,16 @@ export default async ({ req, res, log, error }) => {
                }</li>`,
            ),
          )}
+         ${section(
+           'Taken off the menu during this shift',
+           offItems.documents.map(
+             (r) =>
+               `<li><strong>${r.name_snapshot}</strong>${r.reason ? ` — ${r.reason}` : ''}${
+                 r.marked_off_name ? ` <span style="color:#5d6b7a">(${r.marked_off_name})</span>` : ''
+               }${r.restored_at ? ' <span style="color:#12805c">· back on</span>' : ' <span style="color:#b42318">· still off</span>'}</li>`,
+           ),
+         )}
+         ${doc.variance_note ? `<h3 style="margin:20px 0 6px;font-size:15px">Why the drawer was out</h3><p style="margin:0;font-size:14px">${doc.variance_note}</p>` : ''}
          ${persistent.length ? '<p style="margin:14px 0 0;font-size:13px;color:#b54708">Items low this many shifts running are usually a supply problem or stock leaving unrecorded — worth a look rather than another reorder.</p>' : ''}`,
         brand,
       );

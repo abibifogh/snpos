@@ -126,6 +126,15 @@ export const COLLECTIONS = [
       ['require_reject_reason', 'b', null, true, true],
       ['qr_orders_need_approval', 'b', null, true, false],
       ['order_number_prefix', 's', 8, false, 'ORD'],
+      // Numbering the restaurant controls. `continuous` keeps counting
+      // forever; `daily` starts again each morning, which is what most
+      // kitchens shout across a pass. The counter is stored rather than
+      // derived so that resetting it is a decision somebody makes, not a
+      // side effect of deleting an old order.
+      ['order_number_mode', 'e', ['continuous', 'daily'], false, 'continuous'],
+      ['order_number_next', 'i', null, false, 1],
+      ['order_number_padding', 'i', null, false, 4],
+      ['order_number_reset_on', 'd', null, false],
       ['low_stock_default_bp', 'i', null, true, 3000],
       ['stock_variance_threshold_bp', 'i', null, true, 1000],
       ['stock_variance_value_floor', 'i', null, true, 2000],
@@ -184,6 +193,9 @@ export const COLLECTIONS = [
       // so a restaurant can define Grill and Pastry rather than living with
       // whatever four names we happened to pick.
       ['station_key', 's', 40, false],
+      // Shown only on the group-order menu. A hotel party ordering platters
+      // does not want the a la carte list, and vice versa.
+      ['group_only', 'b', null, false, false],
     ],
     indexes: [['active_sort', 'key', ['active', 'sort']]],
   },
@@ -206,6 +218,15 @@ export const COLLECTIONS = [
       ['prep_minutes', 'i', null, true, 10],
       ['station', 'e', ['hot', 'cold', 'bar', 'dessert', 'inherit'], true, 'inherit'],
       ['station_key', 's', 40, false],
+      // Marked off by staff mid-service. `sold_out_until` already existed as a
+      // timed block; these say who did it, when, and why — which is what makes
+      // "this has been off for two days" a question anyone can answer.
+      ['unavailable_since', 'd', null, false],
+      ['unavailable_by', 's', 64, false],
+      ['unavailable_reason', 's', 200, false],
+      // Only shown on the group-order menu. A hotel party ordering platters
+      // does not want the à la carte list, and vice versa.
+      ['group_only', 'b', null, false, false],
       ['tags', 's[]', 40, false],
       ['sort', 'i', null, true, 0],
       ['track_stock', 'b', null, true, false],
@@ -310,8 +331,14 @@ export const COLLECTIONS = [
     name: 'Tables',
     perms: { read: ALL_STAFF, create: MGMT, update: ALL_STAFF, delete: MGMT },
     attributes: [
-      ['label', 's', 20, true],
+      ['label', 's', 40, true],
       ['zone', 's', 60, false],
+      // A place to sit is not always a table. "Poolside" has no number and no
+      // fixed seat count; what the kitchen needs is somewhere to send the
+      // waiter, and an area answers that as well as a table does.
+      ['kind', 'e', ['table', 'area'], false, 'table'],
+      // Whether a customer ordering from their phone may pick this themselves.
+      ['guest_selectable', 'b', null, false, true],
       ['seats', 'i', null, true, 4],
       ['qr_token', 's', 64, true],
       ['status', 'e', ['free', 'seated', 'ordered', 'bill_requested', 'dirty'], true, 'free'],
@@ -378,6 +405,17 @@ export const COLLECTIONS = [
       ['placed_by', 's', 80, true],
       ['guest_count', 'i', null, true, 1],
       ['notes', 's', 500, false],
+      // Where to find them when the food is ready. A table has a number; an
+      // area does not, so the guest can add "by the pool bar, red shirt" and
+      // save a waiter walking the whole terrace.
+      ['seat_note', 's', 200, false],
+
+      // --- Group orders. A hotel party ordering together, identified by the
+      // reservation the kitchen and the front desk both recognise.
+      ['is_group', 'b', null, false, false],
+      ['group_reference', 's', 60, false],
+      ['group_size', 'i', null, false, 0],
+      ['group_contact_name', 's', 120, false],
 
       // --- Payment is always marked by staff. Guests never settle a bill in
       // the app, so no customer-facing route may write these two fields.
@@ -554,6 +592,39 @@ export const COLLECTIONS = [
   },
   {
     /**
+     * Every time an item went off the menu, and when it came back.
+     *
+     * Kept as its own record rather than as a field on the dish, because the
+     * questions worth asking are historical: what did we run out of during
+     * that shift, and what has been off for two days without anyone noticing.
+     * A field can only answer "is it off right now".
+     */
+    id: 'item_availability',
+    name: 'Item availability log',
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: MGMT },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['menu_item_id', 's', 64, true],
+      ['name_snapshot', 's', 160, true],
+      ['shift_id', 's', 64, false],
+      ['marked_off_at', 'd', null, true],
+      ['marked_off_by', 's', 64, false],
+      ['marked_off_name', 's', 120, false],
+      ['reason', 's', 200, false],
+      ['restored_at', 'd', null, false],
+      ['restored_by', 's', 64, false],
+      // Set once the "still off after N hours" email has gone, so the admin is
+      // told once rather than every hour until somebody acts.
+      ['alerted_at', 'd', null, false],
+    ],
+    indexes: [
+      ['item_marked', 'key', ['menu_item_id', 'marked_off_at']],
+      ['shift', 'key', ['shift_id']],
+      ['open_alerts', 'key', ['restored_at', 'alerted_at']],
+    ],
+  },
+  {
+    /**
      * One row per notification actually sent about an order.
      *
      * Exists so that "we told them" is a fact rather than an assumption. The
@@ -665,6 +736,10 @@ export const COLLECTIONS = [
       ['critical', 'b', null, true, false],
       ['supplier_id', 's', 64, false],
       ['category', 's', 80, false],
+      // What buying this counts as, so recording a delivery does not also ask
+      // somebody to classify it. Rice is always Supplies; nobody should have
+      // to say so twice a week.
+      ['expense_category_key', 's', 60, false],
       ['shelf_life_days', 'i', null, false],
       // Persistence tracking for the shift-close summary: how many shifts in a
       // row this has come out low or out of stock. Reset the moment a count
@@ -1676,6 +1751,42 @@ export const FEATURES = [
       max_stacked: 1,
       show_savings_on_receipt: true,
       invalid_code_message: "That code isn't valid for this order.",
+    },
+  },
+  {
+    key: 'item_availability',
+    label: 'Staff can mark items unavailable',
+    enabled: true,
+    config: {
+      // Anyone working can mark a dish off. The person who discovers the
+      // chicken has run out is whoever opened the fridge, and making them find
+      // a manager first is how a sold-out dish keeps being ordered.
+      who_can_mark: 'all', // 'all' | 'management'
+      require_reason: false,
+      // How long a dish may stay off before the admin is emailed about it. A
+      // dish nobody has restored in a day is either a supply problem or a
+      // forgotten tap, and both want looking at.
+      alert_after_hours: 24,
+      alert_emails: '', // blank = the shift summary recipients
+      // Marked-off items are listed in the shift summary by name.
+      include_in_shift_summary: true,
+    },
+  },
+  {
+    key: 'group_orders',
+    label: 'Group orders',
+    enabled: false,
+    config: {
+      // A separate menu for parties — platters and set meals rather than the
+      // a la carte list. Categories and dishes are flagged group_only.
+      require_reservation_number: true,
+      reservation_label: 'Hotel reservation number',
+      min_group_size: 6,
+      // Somebody is told the moment a group order arrives, because a party of
+      // twenty is a kitchen planning decision, not just another ticket.
+      notify_emails: '',
+      notify_on_placed: true,
+      notify_group_on_accepted: true,
     },
   },
   {

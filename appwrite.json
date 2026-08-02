@@ -78,6 +78,24 @@
         "node_modules",
         ".npm"
       ]
+    },
+    {
+      "$id": "stock-watch",
+      "name": "Availability watch",
+      "runtime": "node-18.0",
+      "execute": [],
+      "events": [],
+      "schedule": "0 * * * *",
+      "timeout": 60,
+      "enabled": true,
+      "logging": true,
+      "entrypoint": "src/main.js",
+      "commands": "npm install",
+      "path": "functions/stock-watch",
+      "ignore": [
+        "node_modules",
+        ".npm"
+      ]
     }
   ]
 }

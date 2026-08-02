@@ -4,6 +4,7 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import { formatMoney, parseMoney, toInput, levelOf } from '@snpos/core';
 import type { Ingredient, Recipe, MenuItem, Doc } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
+import { StockImport } from '../components/StockImport';
 import { useSession } from '../session';
 
 interface Supplier extends Doc { venue_id: string; name: string; contact?: string; phone?: string; email?: string; active: boolean }
@@ -21,8 +22,10 @@ export function StockPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [dishes, setDishes] = useState<MenuItem[]>([]);
   const { rows: categories } = useKeyedList('ingredient_categories');
+  const { rows: expenseCategories } = useKeyedList('expense_categories');
   const [editing, setEditing] = useState<Partial<Ingredient> | null>(null);
   const [editingSupplier, setEditingSupplier] = useState<Partial<Supplier> | null>(null);
+  const [importing, setImporting] = useState(false);
   const [costText, setCostText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -76,6 +79,7 @@ export function StockPage() {
         critical: editing.critical ?? false,
         supplier_id: editing.supplier_id ?? '',
         category: editing.category ?? '',
+        expense_category_key: editing.expense_category_key ?? '',
         active: editing.active ?? true,
       };
       Object.keys(payload).forEach((k) => (payload as Record<string, unknown>)[k] === undefined && delete (payload as Record<string, unknown>)[k]);
@@ -142,9 +146,14 @@ export function StockPage() {
       <div className="spread">
         <h1>Stock</h1>
         {tab !== 'categories' && (
-          <Button variant="primary" onClick={() => (tab === 'ingredients' ? open() : setEditingSupplier({ name: '', active: true }))}>
-            {tab === 'ingredients' ? 'Add ingredient' : 'Add supplier'}
-          </Button>
+          <div className="row">
+            {tab === 'ingredients' && (
+              <Button onClick={() => setImporting(true)}>Import from a spreadsheet</Button>
+            )}
+            <Button variant="primary" onClick={() => (tab === 'ingredients' ? open() : setEditingSupplier({ name: '', active: true }))}>
+              {tab === 'ingredients' ? 'Add ingredient' : 'Add supplier'}
+            </Button>
+          </div>
         )}
       </div>
 
@@ -248,6 +257,23 @@ export function StockPage() {
       </Card>
       )}
 
+      {importing && (
+        <StockImport
+          existing={ingredients ?? []}
+          suppliers={suppliers}
+          categories={categories}
+          expenseCategories={expenseCategories}
+          settings={settings}
+          venueId="main"
+          onClose={() => setImporting(false)}
+          onDone={async (m) => {
+            setImporting(false);
+            await load();
+            toast(m);
+          }}
+        />
+      )}
+
       {editing && (
         <Modal
           title={editing.$id ? `Edit ${editing.name}` : 'Add ingredient'}
@@ -290,6 +316,20 @@ export function StockPage() {
               <Select value={editing.supplier_id ?? ''} onChange={(e) => setEditing({ ...editing, supplier_id: e.target.value })}>
                 <option value="">— none —</option>
                 {suppliers.map((s) => <option key={s.$id} value={s.$id}>{s.name}</option>)}
+              </Select>
+            </Field>
+            <Field
+              label="Buying this counts as"
+              hint="Which expense category a delivery of this lands under, so recording one does not also ask somebody to classify it."
+            >
+              <Select
+                value={editing.expense_category_key ?? ''}
+                onChange={(e) => setEditing({ ...editing, expense_category_key: e.target.value })}
+              >
+                <option value="">— ask each time —</option>
+                {(expenseCategories ?? []).filter((c) => c.active !== false).map((c) => (
+                  <option key={c.key} value={c.key}>{c.name}</option>
+                ))}
               </Select>
             </Field>
             <Field

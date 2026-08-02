@@ -50,6 +50,7 @@ export function CategoriesPage() {
       sort: Number(editing.sort ?? 0),
       active: editing.active ?? true,
       unavailable_display: editing.unavailable_display ?? 'grey',
+      group_only: editing.group_only ?? false,
       // `station` is the old built-in enum and is still required by the
       // database; `station_key` is the one the kitchen actually reads.
       station: legacyStationFor(editing.station_key ?? ''),
@@ -196,6 +197,13 @@ export function CategoriesPage() {
 
           <Field>
             <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label="Active" />
+          </Field>
+          <Field hint="Shown only on the group-order menu, and hidden from the ordinary one. For platters and set meals.">
+            <Toggle
+              checked={editing.group_only ?? false}
+              onChange={(v) => setEditing({ ...editing, group_only: v })}
+              label="Group orders only"
+            />
           </Field>
         </Modal>
       )}

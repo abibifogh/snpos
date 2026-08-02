@@ -13,13 +13,24 @@ import type {
 import { DishSheet } from './DishSheet';
 import { CartSheet } from './CartSheet';
 
-interface TableRow extends Doc { venue_id: string; label: string; qr_token: string; active: boolean }
+interface TableRow extends Doc {
+  venue_id: string;
+  label: string;
+  zone?: string;
+  kind?: 'table' | 'area';
+  guest_selectable?: boolean;
+  qr_token: string;
+  active: boolean;
+  sort?: number;
+}
 
 /** Everything the menu needs before it can render a single dish. */
 interface Boot {
   settings: Settings;
   venue: Venue;
   table: TableRow | null;
+  /** Tables and areas the guest may pick when the QR code did not say. */
+  seating: TableRow[];
   menu: LoadedMenu;
   features: FeatureMap;
 }
@@ -31,6 +42,7 @@ export function App() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [openDish, setOpenDish] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [groupMode, setGroupMode] = useState(false);
   const [showCart, setShowCart] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [placed, setPlaced] = useState<{ orderNo: string; scheduled?: string } | null>(null);
@@ -67,8 +79,19 @@ export function App() {
           venues[0];
         if (!venue) throw new Error('This restaurant has no venue set up yet.');
 
-        const [menu, features] = await Promise.all([loadMenu(venue.$id), loadFeatures(venue.$id)]);
-        setBoot({ settings, venue, table, menu, features });
+        const [menu, features, allSeating] = await Promise.all([
+          loadMenu(venue.$id),
+          loadFeatures(venue.$id),
+          listAll<TableRow>('tables', [Query.equal('venue_id', venue.$id)]).catch(() => [] as TableRow[]),
+        ]);
+        // Only what the restaurant is happy for a guest to claim. A table
+        // somebody else is already sitting at is still offered — two parties
+        // choosing the same table is a smaller problem than a guest who cannot
+        // say where they are.
+        const seating = allSeating
+          .filter((t) => t.active !== false && t.guest_selectable !== false)
+          .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.label.localeCompare(b.label));
+        setBoot({ settings, venue, table, seating, menu, features });
         setActiveSection(visibleSections(menu)[0]?.category.$id ?? null);
       } catch (e) {
         setError(humanError(e));
@@ -146,8 +169,16 @@ export function App() {
     );
   }
 
-  const { settings, venue, table, menu, features } = boot;
-  const sections = visibleSections(menu);
+  const { settings, venue, table, seating, menu, features } = boot;
+  const groupOrdersOn = isEnabled(features, 'group_orders');
+
+  // Two menus, one list. Group-only sections are hidden from the ordinary
+  // menu and are the only thing shown on the group one — a hotel party
+  // ordering platters does not want the a la carte list, and a walk-in
+  // should not be offered a set meal for twenty.
+  const sections = visibleSections(menu).filter((sec) =>
+    groupMode ? sec.category.group_only : !sec.category.group_only,
+  );
   const venueHours = parseWindows(venue.opening_hours);
   const venueOpen = isAvailable(venueHours);
   const preordersOn = isEnabled(features, 'preorders');
@@ -188,6 +219,24 @@ export function App() {
           title="How this works"
           onClose={() => setHelpOpen(false)}
         />
+      )}
+
+      {groupOrdersOn && (
+        <div className="menu-modes">
+          <button className={groupMode ? '' : 'on'} onClick={() => { setGroupMode(false); setCart(() => []); }}>
+            Menu
+          </button>
+          <button className={groupMode ? 'on' : ''} onClick={() => { setGroupMode(true); setCart(() => []); }}>
+            Group order
+          </button>
+        </div>
+      )}
+
+      {groupMode && (
+        <div className="banner banner-info">
+          <strong>Ordering for a group.</strong> Set meals and platters, with one bill. We'll ask for your booking
+          reference so the kitchen and the front desk can find you.
+        </div>
       )}
 
       {!venueOpen && (
@@ -264,6 +313,8 @@ export function App() {
           settings={settings}
           venue={venue}
           table={table}
+          seating={seating}
+          groupMode={groupMode}
           features={features}
           venueOpen={venueOpen}
           menu={menu}

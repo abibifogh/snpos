@@ -109,6 +109,7 @@ export function ExpensesPage() {
   };
   useEffect(() => { load().catch((err) => setError(humanError(err))); }, []);
 
+
   const open = async (row?: Expense) => {
     setEditing(
       row ?? {
@@ -156,6 +157,32 @@ export function ExpensesPage() {
       if (fileInput.current) fileInput.current.value = '';
     }
   };
+
+  /**
+   * The category the stock lines imply.
+   *
+   * Ingredients each name what buying them counts as, so listing what was
+   * bought is usually enough to say what the money was. Only claimed when
+   * every line agrees — a trip that bought rice and a new gas bottle is two
+   * categories, and guessing one of them would be worse than asking.
+   */
+  const impliedCategory = (() => {
+    const keys = draftItems
+      .filter((d) => d.ingredient_id)
+      .map((d) => ingredients.find((i) => i.$id === d.ingredient_id)?.expense_category_key)
+      .filter(Boolean) as string[];
+    if (keys.length === 0) return null;
+    return keys.every((k) => k === keys[0]) ? keys[0] : null;
+  })();
+
+  // Follow the stock lines as they are typed. Only ever moves the category to
+  // what the ingredients say; never blanks a choice somebody made by hand.
+  useEffect(() => {
+    if (impliedCategory && editing && editing.category_key !== impliedCategory) {
+      setEditing((e) => (e ? { ...e, category_key: impliedCategory } : e));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [impliedCategory]);
 
   /** What the itemised lines add up to, for comparing against the total paid. */
   const draftTotal = draftItems.reduce((sum, d) => {
@@ -386,7 +413,13 @@ export function ExpensesPage() {
           <div className="grid-2">
             <Field
               label="Category"
-              hint={categories && categories.length === 0 ? 'None set up — add some under the Categories tab.' : undefined}
+              hint={
+                impliedCategory
+                  ? 'Worked out from what you listed below. Change it if this one is different.'
+                  : categories && categories.length === 0
+                    ? 'None set up — add some under the Categories tab.'
+                    : undefined
+              }
             >
               <Select
                 value={editing.category_key ?? ''}

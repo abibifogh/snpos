@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import type { Doc } from '@snpos/core';
 import { useSession } from '../session';
@@ -8,6 +8,8 @@ interface TableRow extends Doc {
   venue_id: string;
   label: string;
   zone?: string;
+  kind?: 'table' | 'area';
+  guest_selectable?: boolean;
   seats: number;
   qr_token: string;
   status: string;
@@ -72,6 +74,8 @@ export function TablesPage() {
         venue_id: editing.venue_id ?? 'main',
         label: editing.label.trim(),
         zone: editing.zone ?? '',
+        kind: editing.kind ?? 'table',
+        guest_selectable: editing.guest_selectable ?? true,
         seats: Number(editing.seats ?? 4),
         // Keep the existing token on edit: regenerating it would silently break
         // every QR sticker already printed and stuck to a table.
@@ -214,7 +218,22 @@ export function TablesPage() {
         >
           {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
           <div className="grid-2">
-            <Field label="Name or number" hint="What staff call it: 12, A3, Terrace 2.">
+            <Field
+              label="Is this a table or an area?"
+              hint="An area is somewhere people sit without a table number — the poolside, the lounge, the terrace. The kitchen gets told where to send the waiter rather than a number that does not exist."
+            >
+              <Select
+                value={editing.kind ?? 'table'}
+                onChange={(e) => setEditing({ ...editing, kind: e.target.value as 'table' | 'area' })}
+              >
+                <option value="table">A table</option>
+                <option value="area">An area</option>
+              </Select>
+            </Field>
+            <Field
+              label={editing.kind === 'area' ? 'Name' : 'Name or number'}
+              hint={editing.kind === 'area' ? 'Poolside, Lounge, Terrace.' : 'What staff call it: 12, A3, Terrace 2.'}
+            >
               <Input value={editing.label ?? ''} autoFocus onChange={(e) => setEditing({ ...editing, label: e.target.value })} />
             </Field>
             <Field label="Zone" hint="Optional. Garden, Upstairs, Bar.">
@@ -229,6 +248,13 @@ export function TablesPage() {
           </div>
           <Field>
             <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label="Active" />
+          </Field>
+          <Field hint="Off means only a scanned QR code can put an order here — useful for a staff-only or reserved area.">
+            <Toggle
+              checked={editing.guest_selectable ?? true}
+              onChange={(v) => setEditing({ ...editing, guest_selectable: v })}
+              label="Customers can choose this themselves"
+            />
           </Field>
         </Modal>
       )}

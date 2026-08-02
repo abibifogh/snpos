@@ -41,6 +41,11 @@ export function SettingsPage() {
         kitchen_ack_sla_seconds: Number(form.kitchen_ack_sla_seconds),
         require_reject_reason: form.require_reject_reason,
         qr_orders_need_approval: form.qr_orders_need_approval,
+        order_number_prefix: form.order_number_prefix ?? '',
+        order_number_mode: form.order_number_mode ?? 'continuous',
+        order_number_padding: Number(form.order_number_padding ?? 4),
+        order_number_next: Number(form.order_number_next ?? 1),
+        order_number_reset_on: form.order_number_reset_on || undefined,
         email_from_name: form.email_from_name ?? '',
         email_from_address: form.email_from_address ?? '',
       });
@@ -143,6 +148,77 @@ export function SettingsPage() {
             White text on this primary colour has a contrast ratio of {brandContrast.toFixed(1)}:1. Buttons will be hard
             to read — the app will use dark text instead, but a deeper colour would look better.
           </Notice>
+        )}
+      </Card>
+
+      <Card title="Order numbers">
+        <p className="small dim" style={{ marginTop: 0 }}>
+          These get shouted across a pass, so they are yours to shape. The number shown is{' '}
+          <strong>
+            {(form.order_number_prefix ?? '') +
+              String(form.order_number_next ?? 1).padStart(Math.max(1, Number(form.order_number_padding ?? 4)), '0')}
+          </strong>
+          .
+        </p>
+        <div className="grid-2">
+          <Field label="Prefix" hint="Letters before the number. Leave blank for none.">
+            <Input
+              value={form.order_number_prefix ?? ''}
+              maxLength={8}
+              onChange={(e) => set('order_number_prefix', e.target.value.toUpperCase())}
+            />
+          </Field>
+          <Field label="Digits" hint="4 gives ORD0001. 3 gives ORD001.">
+            <Input
+              type="number"
+              min="1"
+              max="8"
+              value={form.order_number_padding ?? 4}
+              onChange={(e) => set('order_number_padding', Number(e.target.value))}
+            />
+          </Field>
+        </div>
+        <Field label="Counting">
+          <Select
+            value={form.order_number_mode ?? 'continuous'}
+            onChange={(e) => set('order_number_mode', e.target.value as 'continuous' | 'daily')}
+          >
+            <option value="continuous">Keep counting — numbers never repeat</option>
+            <option value="daily">Start again each morning — lower numbers, repeated daily</option>
+          </Select>
+        </Field>
+
+        <Field
+          label="Start counting again from"
+          hint="Changing this does not touch any order already placed; it only decides what the next one is called."
+        >
+          <div className="row">
+            <Input
+              type="number"
+              min="1"
+              style={{ maxWidth: '9rem' }}
+              value={form.order_number_next ?? 1}
+              onChange={(e) => set('order_number_next', Number(e.target.value))}
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                if (!confirm('Restart the numbering from here? Existing orders keep the numbers they already have.')) return;
+                // The reset moment is what makes the restart stick: numbering
+                // counts from the last order placed AFTER this, so yesterday's
+                // ORD0450 does not drag the next one back up to 451.
+                set('order_number_reset_on', new Date().toISOString());
+              }}
+            >
+              Restart from here
+            </Button>
+          </div>
+        </Field>
+        {form.order_number_reset_on && (
+          <p className="small dim" style={{ marginTop: 0 }}>
+            Numbering was last restarted on {new Date(form.order_number_reset_on).toLocaleString()}.
+            {' '}Remember to press Save.
+          </p>
         )}
       </Card>
 

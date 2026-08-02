@@ -149,3 +149,43 @@ close, and an optional surcharge.
   removing the item from every diner's phone.
 - **Receipts**: print-ready HTML receipt (58/80mm CSS) plus a QR to a hosted
   receipt page; email/SMS is available via Appwrite Messaging if enabled.
+
+## Group orders
+
+Off by default. Turned on, the customer menu gains a **Group order** switch
+beside the ordinary menu.
+
+- Categories and dishes flagged **group orders only** appear on that menu and
+  nowhere else. A hotel party ordering platters does not want the à la carte
+  list, and a walk-in should not be offered a set meal for twenty.
+- The guest is asked for a booking reference — labelled "Hotel reservation
+  number" by default, changeable — and how many people. Both are configurable
+  as required or optional under Admin → Features.
+- When the order arrives, an email goes out immediately to whoever is listed
+  (falling back to the shift-summary recipients). A party of twenty is a
+  kitchen planning decision, not just another ticket.
+- The kitchen ticket carries the reference and the head count.
+- The guest is emailed again when the kitchen accepts, which is the ordinary
+  accepted-order email doing its job.
+
+## Tables and areas
+
+Somewhere to sit is not always a table. Under Admin → Tables & QR each entry
+is either a **table** or an **area** — poolside, lounge, terrace. An area has
+no number and no fixed seat count; what the kitchen needs is somewhere to send
+the waiter, and an area answers that as well as a table does.
+
+A guest who arrives without scanning a table QR code is asked where they are
+sitting, choosing from anything marked selectable. When they pick an area they
+can add a line of their own — "by the pool bar, blue umbrella" — which is the
+only thing that gets the food to the right people, and it prints on the ticket.
+
+## Order numbers
+
+Under Admin → Settings → Order numbers: the prefix, how many digits, and
+whether numbering runs continuously or starts again each morning. **Restart
+from here** sets the next number without touching any order already placed.
+
+These get shouted across a pass. A kitchen counting to four digits forever is
+being made to work around the software rather than the other way round.
+

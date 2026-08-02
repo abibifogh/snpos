@@ -91,3 +91,13 @@
   background: none; border: 0; padding: 0; font: inherit; color: inherit;
   text-decoration: underline; cursor: pointer;
 }
+
+/* Ordinary menu against group menu. A switch rather than a separate page:
+   somebody who taps the wrong one should be one tap from the right one. */
+.menu-modes { display: flex; gap: 0.4rem; padding: 0.6rem 1rem 0; }
+.menu-modes button {
+  flex: 1; padding: 0.5rem; border-radius: 999px; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: inherit; font: inherit; font-size: 0.9rem;
+}
+.menu-modes button.on { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); font-weight: 600; }

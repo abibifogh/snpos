@@ -126,3 +126,4 @@ body { background: var(--bg); color: var(--text); }
 .kds-coming-item b { font-variant-numeric: tabular-nums; }
 .kds-coming-go { opacity: 0.6; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .kds-coming-item:hover .kds-coming-go { opacity: 1; color: var(--brand); }
+.kds-86 { width: auto; padding: 0 0.55rem; border-radius: 999px; letter-spacing: 0.03em; }

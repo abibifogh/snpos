@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { formatMoney, parseMoney, toInput, Query } from '@snpos/core';
-import type { Doc } from '@snpos/core';
+import { formatMoney, parseMoney, toInput, Query, listAll as listAllCore } from '@snpos/core';
+import type { Doc, Ingredient, Recipe } from '@snpos/core';
 import { useSession } from '../session';
 
 interface AddonGroup extends Doc {
@@ -31,6 +31,10 @@ interface DraftOption {
   priceText: string;
   active: boolean;
   default_selected: boolean;
+  /** What this choice takes off the shelf. Blank ingredient = nothing. */
+  ingredientId: string;
+  qtyText: string;
+  recipeId?: string;
 }
 
 export function AddonsPage() {
@@ -40,6 +44,8 @@ export function AddonsPage() {
 
   const [groups, setGroups] = useState<AddonGroup[] | null>(null);
   const [options, setOptions] = useState<Record<string, AddonOption[]>>({});
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [editing, setEditing] = useState<Partial<AddonGroup> | null>(null);
   const [draftOptions, setDraftOptions] = useState<DraftOption[]>([]);
   const [removedOptionIds, setRemovedOptionIds] = useState<string[]>([]);
@@ -49,6 +55,15 @@ export function AddonsPage() {
   const load = async () => {
     const g = await listAll<AddonGroup>('addon_groups');
     const o = await listAll<AddonOption>('addon_options');
+    // An extra portion of chicken is real chicken: choices come off the shelf
+    // exactly as the dish does, and the stock engine already understood that
+    // long before there was anywhere to say so.
+    const [ing, rec] = await Promise.all([
+      listAllCore<Ingredient>('ingredients').catch(() => [] as Ingredient[]),
+      listAllCore<Recipe>('recipes').catch(() => [] as Recipe[]),
+    ]);
+    setIngredients(ing.filter((x) => x.active).sort((a, b) => a.name.localeCompare(b.name)));
+    setRecipes(rec.filter((r) => r.addon_option_id));
     setGroups(g.sort((a, b) => a.sort - b.sort));
     const grouped: Record<string, AddonOption[]> = {};
     for (const opt of o.sort((a, b) => a.sort - b.sort)) (grouped[opt.group_id] ??= []).push(opt);
@@ -69,14 +84,20 @@ export function AddonsPage() {
     );
     setDraftOptions(
       g
-        ? (options[g.$id] ?? []).map((o) => ({
-            $id: copy ? undefined : o.$id,
-            name: o.name,
-            priceText: toInput(o.price_delta, decimals),
-            active: o.active,
-            default_selected: o.default_selected,
-          }))
-        : [{ name: '', priceText: toInput(0, decimals), active: true, default_selected: false }],
+        ? (options[g.$id] ?? []).map((o) => {
+            const r = recipes.find((x) => x.addon_option_id === o.$id);
+            return {
+              $id: copy ? undefined : o.$id,
+              name: o.name,
+              priceText: toInput(o.price_delta, decimals),
+              active: o.active,
+              default_selected: o.default_selected,
+              ingredientId: r?.ingredient_id ?? '',
+              qtyText: r ? String(r.qty_per_unit) : '',
+              recipeId: copy ? undefined : r?.$id,
+            };
+          })
+        : [{ name: '', priceText: toInput(0, decimals), active: true, default_selected: false, ingredientId: '', qtyText: '' }],
     );
     setRemovedOptionIds([]);
     setError(null);
@@ -112,22 +133,35 @@ export function AddonsPage() {
         await db.deleteDocument(DB_ID, 'addon_options', id).catch(() => undefined);
       }
 
-      await Promise.all(
-        filled.map((o, i) => {
-          const body = {
-            group_id: groupId,
-            name: o.name.trim(),
-            price_delta: parseMoney(o.priceText, decimals) as number,
-            active: o.active,
-            sort: i + 1,
-            default_selected: o.default_selected,
-            max_qty: 1,
-          };
-          return o.$id
-            ? db.updateDocument(DB_ID, 'addon_options', o.$id, body)
-            : db.createDocument(DB_ID, 'addon_options', ID.unique(), body);
-        }),
-      );
+      for (const [i, o] of filled.entries()) {
+        const body = {
+          group_id: groupId,
+          name: o.name.trim(),
+          price_delta: parseMoney(o.priceText, decimals) as number,
+          active: o.active,
+          sort: i + 1,
+          default_selected: o.default_selected,
+          max_qty: 1,
+        };
+        const optionId = o.$id
+          ? (await db.updateDocument(DB_ID, 'addon_options', o.$id, body)).$id
+          : (await db.createDocument(DB_ID, 'addon_options', ID.unique(), body)).$id;
+
+        // What this choice takes off the shelf, written as a recipe against the
+        // option rather than the dish — which is what the stock engine already
+        // reads when it works out what a shift should have used.
+        const wants = o.ingredientId && Number(o.qtyText) > 0;
+        const recipeBody = {
+          menu_item_id: '',
+          addon_option_id: optionId,
+          ingredient_id: o.ingredientId,
+          qty_per_unit: Number(o.qtyText || 0),
+          wastage_bp: 0,
+        };
+        if (wants && o.recipeId) await db.updateDocument(DB_ID, 'recipes', o.recipeId, recipeBody);
+        else if (wants) await db.createDocument(DB_ID, 'recipes', ID.unique(), recipeBody);
+        else if (o.recipeId) await db.deleteDocument(DB_ID, 'recipes', o.recipeId).catch(() => undefined);
+      }
 
       setEditing(null);
       await load();
@@ -278,6 +312,7 @@ export function AddonsPage() {
                   <th>Name</th>
                   <th style={{ width: '7.5rem' }}>Extra cost</th>
                   <th style={{ width: '5rem' }}>Default</th>
+                  <th style={{ width: '10rem' }}>Takes from stock</th>
                   <th style={{ width: '5rem' }} />
                 </tr>
               </thead>
@@ -300,6 +335,36 @@ export function AddonsPage() {
                     </td>
                     <td>
                       <Toggle checked={o.default_selected} onChange={(v) => setOption(i, { default_selected: v })} />
+                    </td>
+                    <td>
+                      {ingredients.length === 0 ? (
+                        <span className="small dim">No ingredients yet</span>
+                      ) : (
+                        <div className="row" style={{ gap: '0.3rem' }}>
+                          <Select
+                            value={o.ingredientId}
+                            onChange={(e) => setOption(i, { ingredientId: e.target.value })}
+                          >
+                            <option value="">— none —</option>
+                            {ingredients.map((x) => <option key={x.$id} value={x.$id}>{x.name}</option>)}
+                          </Select>
+                          {o.ingredientId && (
+                            <>
+                              <Input
+                                type="number"
+                                step="any"
+                                min="0"
+                                style={{ maxWidth: '4.5rem' }}
+                                value={o.qtyText}
+                                onChange={(e) => setOption(i, { qtyText: e.target.value })}
+                              />
+                              <span className="small dim">
+                                {ingredients.find((x) => x.$id === o.ingredientId)?.unit}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="num">
                       <Button
@@ -339,13 +404,20 @@ export function AddonsPage() {
             size="sm"
             type="button"
             style={{ marginTop: '0.7rem' }}
-            onClick={() => setDraftOptions((d) => [...d, { name: '', priceText: toInput(0, decimals), active: true, default_selected: false }])}
+            onClick={() =>
+              setDraftOptions((d) => [
+                ...d,
+                { name: '', priceText: toInput(0, decimals), active: true, default_selected: false, ingredientId: '', qtyText: '' },
+              ])
+            }
           >
             Add choice
           </Button>
           <p className="hint" style={{ marginTop: '0.6rem' }}>
             Extra cost is what this choice adds to the dish price. Leave it at {toInput(0, decimals)} for choices
-            included in the price.
+            included in the price. <strong>Takes from stock</strong> is how much of an ingredient the choice actually
+            uses — an extra portion of chicken is real chicken, and it comes off the shelf whether or not it was
+            charged for.
           </p>
         </Modal>
       )}

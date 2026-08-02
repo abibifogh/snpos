@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo, HelpModal } from '@snpos/ui';
+import { Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo, HelpModal, EightySixModal } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
   account, db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
   verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney,
+  loadMenu, markUnavailable, markAvailable, isUnavailable,
 } from '@snpos/core';
-import type { Order, OrderItem, Settings, Venue, StaffProfile, HelpRole, Doc, FeatureMap } from '@snpos/core';
+import type { Order, OrderItem, Settings, Venue, StaffProfile, HelpRole, MenuItem, Doc, FeatureMap } from '@snpos/core';
 
 interface Station extends Doc { venue_id: string; key: string; name: string; colour?: string; sort: number; active: boolean }
 import { unlockAudio, setAlarm, stopAlarm, type AlarmKind } from './alarm';
@@ -38,6 +39,9 @@ export function App() {
   // person is acting, so accepts and rejects have a name against them.
   const [who, setWho] = useState<StaffProfile | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [offOpen, setOffOpen] = useState(false);
+  const [offItems, setOffItems] = useState<MenuItem[]>([]);
+  const [offBusy, setOffBusy] = useState<string | null>(null);
   const [settling, setSettling] = useState<Order | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
@@ -350,6 +354,51 @@ export function App() {
         </div>
       )}
 
+      {offOpen && venue && (
+        <EightySixModal
+          items={offItems.map((i) => ({
+            $id: i.$id,
+            name: i.name,
+            off: isUnavailable(i),
+            offSince: i.unavailable_since,
+            reason: i.unavailable_reason,
+          }))}
+          requireReason={featureConfig(features, 'item_availability', 'require_reason', false)}
+          busyId={offBusy}
+          onClose={() => setOffOpen(false)}
+          onMarkOff={async (i, reason) => {
+            setOffBusy(i.$id);
+            try {
+              await markUnavailable({
+                venueId: venue.$id,
+                item: { $id: i.$id, name: i.name },
+                userId: who?.user_id || who?.$id,
+                userName: who?.display_name,
+                reason,
+              });
+              const m = await loadMenu(venue.$id);
+              setOffItems(Object.values(m.byId).map((e) => e.item));
+            } catch (e) {
+              setError(e instanceof Error ? e.message : 'Could not take that off the menu.');
+            } finally {
+              setOffBusy(null);
+            }
+          }}
+          onRestore={async (i) => {
+            setOffBusy(i.$id);
+            try {
+              await markAvailable({ item: { $id: i.$id }, userId: who?.user_id || who?.$id });
+              const m = await loadMenu(venue.$id);
+              setOffItems(Object.values(m.byId).map((e) => e.item));
+            } catch (e) {
+              setError(e instanceof Error ? e.message : 'Could not put that back.');
+            } finally {
+              setOffBusy(null);
+            }
+          }}
+        />
+      )}
+
       {helpOpen && (
         <HelpModal
           articles={articlesFor(
@@ -386,6 +435,19 @@ export function App() {
           })}
         </div>
         <div className="kds-stats">
+          {isEnabled(features, 'item_availability') && (
+            <button
+              className="kds-help kds-86"
+              title="Mark a dish as run out"
+              onClick={async () => {
+                const m = await loadMenu(venue?.$id ?? '');
+                setOffItems(Object.values(m.byId).map((e) => e.item));
+                setOffOpen(true);
+              }}
+            >
+              86
+            </button>
+          )}
           {isEnabled(features, 'help') && (
             <button className="kds-help" onClick={() => setHelpOpen(true)} title="How this works">?</button>
           )}
@@ -529,6 +591,15 @@ function Ticket({
             {order.table_id ? 'Table order' : order.fulfilment === 'delivery' ? 'Delivery' : 'Takeaway'}
             {order.guest_count > 1 && ` · ${order.guest_count} guests`}
           </div>
+          {/* An area has no number, so where in it they are sitting is the
+              only thing that gets the food to the right people. */}
+          {order.seat_note && <div className="where" style={{ color: 'var(--warn)' }}>{order.seat_note}</div>}
+          {order.is_group && (
+            <div className="where">
+              <span className="pill">Group{order.group_size ? ` · ${order.group_size}` : ''}</span>
+              {order.group_reference && ` ${order.group_reference}`}
+            </div>
+          )}
         </div>
         <div style={{ textAlign: 'right' }}>
           <div className={`age ${ageClass}`}>{mmss(age)}</div>

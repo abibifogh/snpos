@@ -32,6 +32,11 @@ export interface Order extends Doc {
   payment_status: 'unpaid' | 'partial' | 'paid' | 'refunded';
   placed_by: string;
   guest_count: number;
+  seat_note?: string;
+  is_group?: boolean;
+  group_reference?: string;
+  group_size?: number;
+  group_contact_name?: string;
   notes?: string;
   marked_paid_by?: string;
   marked_paid_at?: string;
@@ -79,20 +84,42 @@ export const newIdempotencyKey = (): string =>
 /**
  * Next order number for a venue.
  *
+ * The prefix, the width and whether numbering restarts each day are the
+ * restaurant's to decide — these numbers get shouted across a pass, and a
+ * kitchen that counts to four digits forever is being made to work around the
+ * software rather than the other way round.
+ *
+ * Still derived from the last order rather than from a counter document.
  * Read-then-write is not safe against two terminals ordering in the same
  * instant, but the unique index on (venue_id, order_no) catches the collision
- * and createOrder retries — which is cheaper and simpler than a counter
- * document that every order must serialise through.
+ * and createOrder retries — cheaper and simpler than a counter every order
+ * must serialise through.
  */
-async function nextOrderNo(venueId: string, prefix: string): Promise<string> {
-  const latest = await db.listDocuments(DB_ID, 'orders', [
-    Query.equal('venue_id', venueId),
-    Query.orderDesc('$createdAt'),
-    Query.limit(1),
-  ]);
+async function nextOrderNo(venueId: string, settings: Settings): Promise<string> {
+  const prefix = settings.order_number_prefix ?? '';
+  const padding = Math.max(1, settings.order_number_padding ?? 4);
+  const daily = settings.order_number_mode === 'daily';
+
+  const queries = [Query.equal('venue_id', venueId), Query.orderDesc('$createdAt'), Query.limit(1)];
+  if (daily) {
+    // Only today's orders count, so tomorrow starts at one again.
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    queries.push(Query.greaterThanEqual('$createdAt', midnight.toISOString()));
+  } else if (settings.order_number_reset_on) {
+    // An admin reset the numbering: orders from before that moment are not
+    // part of this run, so the count starts again from where they said.
+    queries.push(Query.greaterThanEqual('$createdAt', settings.order_number_reset_on));
+  }
+
+  const latest = await db.listDocuments(DB_ID, 'orders', queries);
   const last = (latest.documents[0] as unknown as Order | undefined)?.order_no ?? '';
-  const n = Number(last.replace(/\D/g, '')) || 0;
-  return `${prefix}${String(n + 1).padStart(4, '0')}`;
+  // Strip the prefix before reading the number, so a prefix containing digits
+  // ("B2-") does not get counted as part of it.
+  const digits = (prefix && last.startsWith(prefix) ? last.slice(prefix.length) : last).replace(/\D/g, '');
+  const n = Number(digits) || 0;
+  const from = latest.total === 0 ? Math.max(1, settings.order_number_next ?? 1) : n + 1;
+  return `${prefix}${String(from).padStart(padding, '0')}`;
 }
 
 export interface CreateOrderInput {
@@ -110,6 +137,9 @@ export interface CreateOrderInput {
   customer?: { name?: string; phone?: string; email?: string };
   fulfilment?: Order['fulfilment'];
   pickupPointId?: string;
+  /** Free text for an area with no table number: "by the pool bar, red shirt". */
+  seatNote?: string;
+  group?: { reference?: string; size?: number; contactName?: string };
   /** Set for a pre-order; the kitchen sees nothing until fire_at. */
   scheduledFor?: Date;
   placedWhileClosed?: boolean;
@@ -137,7 +167,7 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
   const totals = computeTotals({ lines, discount: input.discount ?? 0, settings });
   const isPreorder = !!input.scheduledFor;
   const prepById: Record<string, number> = {};
-  const orderNo = await nextOrderNo(venueId, settings.order_number_prefix || 'ORD');
+  const orderNo = await nextOrderNo(venueId, settings);
 
   const payload: Record<string, unknown> = {
     venue_id: venueId,
@@ -162,6 +192,11 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
     placed_by: placedBy,
     guest_count: input.guestCount ?? 1,
     notes: input.notes ?? '',
+    seat_note: input.seatNote ?? '',
+    is_group: !!input.group,
+    group_reference: input.group?.reference ?? '',
+    group_size: input.group?.size ?? 0,
+    group_contact_name: input.group?.contactName ?? '',
     fulfilment: input.fulfilment ?? 'dine_in',
     pickup_point_id: input.pickupPointId ?? '',
     customer_name: input.customer?.name ?? '',

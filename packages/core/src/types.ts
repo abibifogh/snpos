@@ -28,6 +28,10 @@ export interface Settings extends Doc {
   require_reject_reason: boolean;
   qr_orders_need_approval: boolean;
   order_number_prefix?: string;
+  order_number_mode?: 'continuous' | 'daily';
+  order_number_next?: number;
+  order_number_padding?: number;
+  order_number_reset_on?: string;
   low_stock_default_bp: number;
   cash_variance_tolerance: number;
   terminal_idle_lock_seconds: number;
@@ -80,6 +84,7 @@ export interface Category extends Doc {
   active: boolean;
   availability?: string;
   unavailable_display: 'grey' | 'hide';
+  group_only?: boolean;
   station: Station;
   station_key?: string;
 }
@@ -97,6 +102,10 @@ export interface MenuItem extends Doc {
   availability?: string;
   sold_out_until?: string;
   prep_minutes: number;
+  unavailable_since?: string;
+  unavailable_by?: string;
+  unavailable_reason?: string;
+  group_only?: boolean;
   station: Station | 'inherit';
   station_key?: string;
   tags?: string[];

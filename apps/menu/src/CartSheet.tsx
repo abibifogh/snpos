@@ -6,7 +6,15 @@ import {
 } from '@snpos/core';
 import type { CartLine, Settings, Venue, FeatureMap, LoadedMenu, Doc } from '@snpos/core';
 
-interface TableRow extends Doc { venue_id: string; label: string }
+interface TableRow extends Doc {
+  venue_id: string;
+  label: string;
+  zone?: string;
+  kind?: 'table' | 'area';
+  guest_selectable?: boolean;
+  active?: boolean;
+  sort?: number;
+}
 
 /**
  * Slots the kitchen can actually serve.
@@ -50,13 +58,18 @@ function buildSlots(venue: Venue, features: FeatureMap, from = new Date()): Date
 }
 
 export function CartSheet({
-  cart, setCart, settings, venue, table, features, venueOpen, menu, onClose, onPlaced, onError,
+  cart, setCart, settings, venue, table, seating, groupMode, features, venueOpen, menu,
+  onClose, onPlaced, onError,
 }: {
   cart: CartLine[];
   setCart: (fn: (c: CartLine[]) => CartLine[]) => void;
   settings: Settings;
   venue: Venue;
+  /** Set when the QR code named a table; then there is nothing to ask. */
   table: TableRow | null;
+  /** Tables and areas a guest may pick from when the QR code did not say. */
+  seating: TableRow[];
+  groupMode: boolean;
   features: FeatureMap;
   venueOpen: boolean;
   menu: LoadedMenu;
@@ -64,6 +77,14 @@ export function CartSheet({
   onPlaced: (orderNo: string, scheduled?: string) => void;
   onError: (message: string) => void;
 }) {
+  // The QR sticker wins; only when it says nothing does the guest get asked.
+  const chosenSeat = table ?? seating.find((x) => x.$id === seatId) ?? null;
+  const needReference = featureConfig(features, 'group_orders', 'require_reservation_number', true);
+  const reservationLabel = featureConfig<string>(
+    features, 'group_orders', 'reservation_label', 'Hotel reservation number',
+  );
+  const minGroup = featureConfig(features, 'group_orders', 'min_group_size', 0);
+
   const preordersOn = isEnabled(features, 'preorders');
   const collectEmail = isEnabled(features, 'receipts') && featureConfig(features, 'receipts', 'ask_email_at_qr_order', true);
   const discountsOn = isEnabled(features, 'discounts') && featureConfig(features, 'discounts', 'guest_codes_enabled', true);
@@ -77,6 +98,10 @@ export function CartSheet({
   const [slot, setSlot] = useState<string>(venueOpen ? '' : (slots[0]?.toISOString() ?? ''));
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [seatId, setSeatId] = useState('');
+  const [seatNote, setSeatNote] = useState('');
+  const [groupRef, setGroupRef] = useState('');
+  const [groupSize, setGroupSize] = useState('');
   const [code, setCode] = useState('');
   const [codeState, setCodeState] = useState<{ id: string; amount: number; label: string } | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
@@ -129,6 +154,18 @@ export function CartSheet({
       onError('Please choose a collection time.');
       return;
     }
+    // A group order the kitchen cannot tie to a booking is a party nobody can
+    // find at the front desk, so the reference is asked for before it is sent
+    // rather than chased afterwards.
+    if (groupMode && needReference && !groupRef.trim()) {
+      onError(`Please enter your ${reservationLabel.toLowerCase()}.`);
+      return;
+    }
+    if (groupMode && minGroup > 0 && Number(groupSize || 0) < minGroup) {
+      onError(`Group orders are for ${minGroup} people or more.`);
+      return;
+    }
+
     setBusy(true);
     try {
       const prepById: Record<string, number> = {};
@@ -138,12 +175,20 @@ export function CartSheet({
         venueId: venue.$id,
         lines: cart,
         settings,
-        channel: table ? 'qr' : 'takeaway',
-        placedBy: name.trim() || (table ? `Table ${table.label}` : 'Guest'),
-        tableId: table?.$id,
+        channel: chosenSeat ? 'qr' : 'takeaway',
+        placedBy: name.trim() || (chosenSeat ? chosenSeat.label : 'Guest'),
+        tableId: chosenSeat?.$id,
+        seatNote: seatNote.trim() || undefined,
+        group: groupMode
+          ? {
+              reference: groupRef.trim(),
+              size: Number(groupSize || 0),
+              contactName: name.trim(),
+            }
+          : undefined,
         discount: codeState?.amount ?? 0,
         customer: { name: name.trim() || undefined, email: email.trim() || undefined },
-        fulfilment: table ? 'dine_in' : 'takeaway',
+        fulfilment: chosenSeat ? 'dine_in' : 'takeaway',
         scheduledFor: slot ? new Date(slot) : undefined,
         placedWhileClosed: !venueOpen,
       });
@@ -198,6 +243,54 @@ export function CartSheet({
           <div style={{ fontWeight: 600 }}>{formatMoney(lineTotal(line), settings)}</div>
         </div>
       ))}
+
+      {!table && seating.length > 0 && (
+        <Field
+          label="Where are you sitting?"
+          hint="So we know where to bring it."
+        >
+          <Select value={seatId} onChange={(e) => setSeatId(e.target.value)}>
+            <option value="">I'll collect it myself</option>
+            {seating.map((t) => (
+              <option key={t.$id} value={t.$id}>
+                {t.kind === 'area' ? t.label : `Table ${t.label}`}
+                {t.zone ? ` · ${t.zone}` : ''}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
+
+      {/* An area has no table number, so the only way to be found is to say
+          where in it you are. Asked only when it would actually help. */}
+      {chosenSeat?.kind === 'area' && (
+        <Field label="Whereabouts?" hint="Optional, but it saves us walking the whole area.">
+          <Input
+            value={seatNote}
+            placeholder="By the pool bar, blue umbrella"
+            onChange={(e) => setSeatNote(e.target.value)}
+          />
+        </Field>
+      )}
+
+      {groupMode && (
+        <>
+          <Field
+            label={reservationLabel}
+            hint={needReference ? 'Required for a group order.' : 'Optional.'}
+          >
+            <Input value={groupRef} onChange={(e) => setGroupRef(e.target.value)} />
+          </Field>
+          <Field label="How many people?" hint={minGroup > 0 ? `Group orders are for ${minGroup} or more.` : undefined}>
+            <Input
+              type="number"
+              min={minGroup || 1}
+              value={groupSize}
+              onChange={(e) => setGroupSize(e.target.value)}
+            />
+          </Field>
+        </>
+      )}
 
       {!venueOpen && preordersOn && (
         <Field

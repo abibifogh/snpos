@@ -13,6 +13,8 @@ export interface Ingredient extends Doc {
   critical: boolean;
   supplier_id?: string;
   category?: string;
+  /** Which expense category a delivery of this counts as. */
+  expense_category_key?: string;
   consecutive_low_count?: number;
   consecutive_low_since?: string;
   last_low_severity?: 'low' | 'out';

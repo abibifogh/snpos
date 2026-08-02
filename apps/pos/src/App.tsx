@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Spinner, Card, Field, Input, Notice, useToast, Logo, HelpModal } from '@snpos/ui';
+import { Button, Spinner, Card, Field, Input, Notice, useToast, Logo, HelpModal, EightySixModal } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
   account, db, DB_ID, Query, listAll, loadMenu, loadFeatures, humanError, isEnabled,
   articlesFor, featureConfig, HELP_AREAS,
+  markUnavailable, markAvailable, isUnavailable, loadMenu as reloadMenu,
 } from '@snpos/core';
 import type { Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc } from '@snpos/core';
 import { TablesView } from './TablesView';
@@ -44,6 +45,8 @@ export function App() {
   const [openTable, setOpenTable] = useState<TableRow | null>(null);
   const [tab, setTab] = useState<'tables' | 'takeaway' | 'kitchen'>('tables');
   const [helpOpen, setHelpOpen] = useState(false);
+  const [offOpen, setOffOpen] = useState(false);
+  const [offBusy, setOffBusy] = useState<string | null>(null);
 
   const loadShift = useCallback(async (venueId: string): Promise<Shift | null> => {
     const res = await db.listDocuments(DB_ID, 'shifts', [
@@ -178,6 +181,11 @@ export function App() {
           )}
         </div>
         <div className="row">
+          {isEnabled(ctx.features, 'item_availability') && (
+            <Button size="sm" variant="ghost" onClick={() => setOffOpen(true)} title="Mark a dish as run out">
+              Run out
+            </Button>
+          )}
           {isEnabled(ctx.features, 'help') && (
             <Button size="sm" variant="ghost" onClick={() => setHelpOpen(true)} title="How this works">
               Help
@@ -188,6 +196,56 @@ export function App() {
           </Button>
         </div>
       </div>
+
+      {offOpen && (
+        <EightySixModal
+          items={Object.values(ctx.menu.byId).map((e) => ({
+            $id: e.item.$id,
+            name: e.item.name,
+            off: isUnavailable(e.item),
+            offSince: e.item.unavailable_since,
+            reason: e.item.unavailable_reason,
+          }))}
+          requireReason={featureConfig(ctx.features, 'item_availability', 'require_reason', false)}
+          busyId={offBusy}
+          onClose={() => setOffOpen(false)}
+          onMarkOff={async (i, reason) => {
+            setOffBusy(i.$id);
+            try {
+              await markUnavailable({
+                venueId: ctx.venue.$id,
+                item: { $id: i.$id, name: i.name },
+                userId: ctx.userId,
+                userName: ctx.profile?.display_name,
+                shiftId: ctx.shift?.$id,
+                reason,
+              });
+              // Reload so the dish disappears from the ordering screen at once
+              // — a waiter who can still tap it will still sell it.
+              const fresh = await reloadMenu(ctx.venue.$id);
+              setCtx((c) => (c ? { ...c, menu: fresh } : c));
+              toast(`${i.name} taken off the menu`);
+            } catch (e) {
+              toast(humanError(e), 'err');
+            } finally {
+              setOffBusy(null);
+            }
+          }}
+          onRestore={async (i) => {
+            setOffBusy(i.$id);
+            try {
+              await markAvailable({ item: { $id: i.$id }, userId: ctx.userId });
+              const fresh = await reloadMenu(ctx.venue.$id);
+              setCtx((c) => (c ? { ...c, menu: fresh } : c));
+              toast(`${i.name} back on the menu`);
+            } catch (e) {
+              toast(humanError(e), 'err');
+            } finally {
+              setOffBusy(null);
+            }
+          }}
+        />
+      )}
 
       {helpOpen && (
         <HelpModal
