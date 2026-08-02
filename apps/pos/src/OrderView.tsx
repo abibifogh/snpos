@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Field, Input, Modal, Notice, Select, Badge, Spinner } from '@snpos/ui';
 import {
-  db, DB_ID, ID, Query, listAll, createOrder, computeTotals, lineTotal, formatMoney,
-  parseMoney, toInput, isEnabled, featureConfig, splitEvenly, visibleSections,
+  db, DB_ID, Query, listAll, createOrder, computeTotals, lineTotal, formatMoney,
+  parseMoney, toInput, isEnabled, featureConfig, splitEvenly, visibleSections, recordPayment,
 } from '@snpos/core';
 import type { CartLine, Order, OrderItem, Doc } from '@snpos/core';
 import type { PosContext, TableRow } from './App';
@@ -370,28 +370,23 @@ function PaymentModal({
     setBusy(true);
     setError(null);
     try {
+      const billTotal = Math.max(1, orders.reduce((s, o) => s + o.total, 0));
       for (const order of orders) {
-        await db.createDocument(DB_ID, 'payments', ID.unique(), {
-          venue_id: ctx.venue.$id,
-          order_id: order.$id,
-          shift_id: ctx.shift.$id,
-          method_id: methodId,
-          method_kind_snapshot: method?.kind ?? 'cash',
+        await recordPayment({
+          venueId: ctx.venue.$id,
+          order,
+          shiftId: ctx.shift.$id,
+          methodId,
+          methodKind: method?.kind ?? 'cash',
           // Each order carries its share; splitting the tender across the bill
           // keeps every order individually reconcilable.
-          amount: Math.round((order.total / Math.max(1, orders.reduce((s, o) => s + o.total, 0))) * amountDue),
+          amount: Math.round((order.total / billTotal) * amountDue),
           tip: parseMoney(tip, decimals) ?? 0,
-          change_given: change,
+          changeGiven: change,
           reference: reference.trim(),
-          status: 'captured',
-          taken_by: ctx.userId,
-        });
-        await db.updateDocument(DB_ID, 'orders', order.$id, {
-          payment_status: 'paid',
-          status: 'CLOSED',
-          marked_paid_by: ctx.userId,
-          marked_paid_at: new Date().toISOString(),
-          customer_email: email.trim() || order.customer_email || '',
+          takenBy: ctx.userId,
+          orderStatus: 'CLOSED',
+          customerEmail: email,
         });
       }
       onDone();

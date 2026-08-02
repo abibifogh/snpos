@@ -40,6 +40,12 @@ jobs:
             exit 1
           fi
 
+      - name: Check every write against the schema
+        # A typecheck cannot see this: the shape of an Appwrite document lives
+        # in schema.mjs, not in a TypeScript type. A missing required field
+        # fails for the person using the app, never for the person who wrote it.
+        run: node scripts/check-writes.mjs
+
       - name: Typecheck every app
         run: npm run typecheck
 

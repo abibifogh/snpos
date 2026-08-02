@@ -14,3 +14,4 @@ export * from './pin';
 export * from './help';
 export * from './shifts';
 export * from './availability86';
+export * from './payments';

@@ -4,6 +4,7 @@ import type { BlockerRow, CountRow, StockRow } from '@snpos/ui';
 import {
   db, DB_ID, ID, listAll, formatMoney, parseMoney, toInput, loadIngredients,
   loadPaymentMethods, openShift, loadOpenShift, shiftBlockers, expectedTakings, closeShift,
+  recordPayment,
 } from '@snpos/core';
 import type { PaymentMethod, Shift, Settings, Venue, StaffProfile, FeatureMap, Order } from '@snpos/core';
 
@@ -383,10 +384,16 @@ export function SettleModal({
   const [methodId, setMethodId] = useState('');
   const [shift, setShift] = useState<Shift | null>(null);
   const [tipText, setTipText] = useState('');
+  const [cashText, setCashText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const decimals = settings.currency_decimals ?? 2;
+  const method = methods.find((m) => m.$id === methodId);
+  // Cash means change, and change is a number somebody has to get right while
+  // holding a plate. Working it out here is one fewer thing to do in the head.
+  const tendered = parseMoney(cashText, decimals) ?? 0;
+  const change = method?.kind === 'cash' ? Math.max(0, tendered - order.total) : 0;
 
   useEffect(() => {
     (async () => {
@@ -403,23 +410,18 @@ export function SettleModal({
     setBusy(true);
     setError(null);
     try {
-      const method = methods.find((m) => m.$id === methodId);
-      await db.createDocument(DB_ID, 'payments', ID.unique(), {
-        venue_id: venueId,
-        order_id: order.$id,
-        shift_id: shift.$id,
-        method_id: methodId,
-        method_kind_snapshot: method?.kind ?? 'other',
+      await recordPayment({
+        venueId,
+        order,
+        shiftId: shift.$id,
+        methodId,
+        methodKind: method?.kind ?? 'other',
         amount: order.total,
         tip: parseMoney(tipText, decimals) ?? 0,
-        status: 'captured',
-        taken_by: who?.user_id || who?.$id || '',
-      });
-      await db.updateDocument(DB_ID, 'orders', order.$id, {
-        payment_status: 'paid',
-        status: 'SERVED',
-        served_at: new Date().toISOString(),
-        shift_id: shift.$id,
+        changeGiven: change,
+        takenBy: who?.user_id || who?.$id || '',
+        // The pass has handed the food over; it has not closed the table.
+        orderStatus: 'SERVED',
       });
       onDone(`${order.order_no} collected and paid`);
     } catch (e) {
@@ -449,6 +451,16 @@ export function SettleModal({
           {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
         </Select>
       </Field>
+      {method?.kind === 'cash' && (
+        <Field label={`Cash handed over (${settings.currency_symbol ?? ''})`} hint="Optional. Fill it in and the change is worked out for you.">
+          <Input value={cashText} inputMode="decimal" onChange={(e) => setCashText(e.target.value)} />
+        </Field>
+      )}
+      {change > 0 && (
+        <p style={{ margin: '-0.4rem 0 1rem', fontSize: '1.05rem' }}>
+          Change to give: <strong>{formatMoney(change, settings)}</strong>
+        </p>
+      )}
       <Field label={`Tip (${settings.currency_symbol ?? ''})`} hint="Optional. Kept separate from sales — it is not yours.">
         <Input value={tipText} inputMode="decimal" onChange={(e) => setTipText(e.target.value)} />
       </Field>
