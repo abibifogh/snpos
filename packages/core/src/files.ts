@@ -1,4 +1,4 @@
-import { storage, ID, Permission, Role } from './client';
+import { storage, teams, account, ID, Permission, Role } from './client';
 import type { Settings } from './types';
 
 /**
@@ -22,18 +22,51 @@ export const bucketFor = (purpose: FilePurpose, settings?: Pick<Settings, 'stora
     ? settings.shared_bucket_id
     : BUCKET_BY_PURPOSE[purpose];
 
-/** Who may read a file of this purpose once uploaded. */
-function permissionsFor(purpose: FilePurpose): string[] {
-  const managers = [Permission.read(Role.team('managers')), Permission.read(Role.team('admins'))];
-  const writers = [
-    Permission.update(Role.team('managers')),
-    Permission.update(Role.team('admins')),
-    Permission.delete(Role.team('managers')),
-    Permission.delete(Role.team('admins')),
-  ];
-  // Menu photos and branding are shown to anyone with the QR code, so they are
-  // public by necessity. Receipts are money records and never are.
-  return purpose === 'receipt' ? [...managers, ...writers] : [Permission.read(Role.any()), ...writers];
+/**
+ * Roles the signed-in user actually holds.
+ *
+ * Appwrite refuses to let anyone grant a permission they do not have
+ * themselves — an admin who is not also in `managers` cannot hand a file to
+ * `team:managers`. So ask, rather than assume, and grant only what is really
+ * available.
+ */
+let cachedTeams: string[] | null = null;
+
+async function myTeams(): Promise<string[]> {
+  if (cachedTeams) return cachedTeams;
+  try {
+    const res = await teams.list();
+    cachedTeams = res.teams.map((t) => t.$id);
+  } catch {
+    cachedTeams = [];
+  }
+  return cachedTeams;
+}
+
+/**
+ * Who may read a file of this purpose once uploaded.
+ *
+ * Menu photos and branding are shown to anyone holding a QR code, so they are
+ * public by necessity. Receipts are money records and never are.
+ *
+ * Write permissions are deliberately NOT set per file: the bucket already
+ * decides who may upload and delete, and repeating it here only creates a way
+ * for the two to disagree.
+ */
+async function permissionsFor(purpose: FilePurpose): Promise<string[]> {
+  if (purpose !== 'receipt') return [Permission.read(Role.any())];
+
+  const mine = await myTeams();
+  const perms = ['managers', 'admins']
+    .filter((t) => mine.includes(t))
+    .map((t) => Permission.read(Role.team(t)));
+
+  // Always include the uploader. Without at least one reader a restricted file
+  // becomes unreadable by everyone, including the person who just attached it.
+  const me = await account.get().catch(() => null);
+  if (me) perms.push(Permission.read(Role.user(me.$id)));
+
+  return perms;
 }
 
 export interface UploadResult {
@@ -47,7 +80,7 @@ export async function uploadFile(
   settings?: Pick<Settings, 'storage_mode' | 'shared_bucket_id'> | null,
 ): Promise<UploadResult> {
   const bucketId = bucketFor(purpose, settings);
-  const created = await storage.createFile(bucketId, ID.unique(), file, permissionsFor(purpose));
+  const created = await storage.createFile(bucketId, ID.unique(), file, await permissionsFor(purpose));
   return { fileId: created.$id, bucketId };
 }
 
