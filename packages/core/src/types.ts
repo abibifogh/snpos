@@ -51,6 +51,7 @@ export interface Venue extends Doc {
   secondary_color?: string;
   opening_hours?: string;
   holiday_closures?: string;
+  walkin_token?: string;
   order_number_prefix?: string;
 }
 
@@ -65,6 +66,7 @@ export interface Category extends Doc {
   availability?: string;
   unavailable_display: 'grey' | 'hide';
   station: Station;
+  station_key?: string;
 }
 
 export interface MenuItem extends Doc {
@@ -81,6 +83,7 @@ export interface MenuItem extends Doc {
   sold_out_until?: string;
   prep_minutes: number;
   station: Station | 'inherit';
+  station_key?: string;
   tags?: string[];
   sort: number;
   track_stock: boolean;
@@ -105,6 +108,8 @@ export interface StaffProfile extends Doc {
   can_discount_up_to_bp: number;
   can_mark_paid?: boolean;
   can_apply_discount_codes?: boolean;
+  pin_hash?: string;
+  pin_set_at?: string;
   can_record_waste?: boolean;
   hourly_rate?: number;
   email?: string;

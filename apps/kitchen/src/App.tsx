@@ -3,12 +3,14 @@ import { Button, Spinner, Modal, Select, Textarea, Field, Notice } from '@snpos/
 import { applyTheme } from '@snpos/ui';
 import {
   account, db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
+  verifyPin, loadFeatures, isEnabled, featureConfig,
 } from '@snpos/core';
-import type { Order, OrderItem, Settings, Venue } from '@snpos/core';
+import type { Order, OrderItem, Settings, Venue, StaffProfile, Doc, FeatureMap } from '@snpos/core';
+
+interface Station extends Doc { venue_id: string; key: string; name: string; colour?: string; sort: number; active: boolean }
 import { unlockAudio, setAlarm, stopAlarm } from './alarm';
 
-const STATIONS = ['all', 'hot', 'cold', 'bar', 'dessert'] as const;
-type Station = (typeof STATIONS)[number];
+
 
 const REJECT_REASONS: { code: string; label: string }[] = [
   { code: 'out_of_stock', label: 'Out of stock' },
@@ -28,7 +30,15 @@ export function App() {
   const [venue, setVenue] = useState<Venue | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [items, setItems] = useState<Record<string, OrderItem[]>>({});
-  const [station, setStation] = useState<Station>(() => (localStorage.getItem('kds-station') as Station) || 'all');
+  const [stations, setStations] = useState<Station[]>([]);
+  const [station, setStation] = useState<string>(() => localStorage.getItem('kds-station') || 'all');
+  const [features, setFeatures] = useState<FeatureMap>({});
+  // Who is at the screen. The device holds the session; the PIN says which
+  // person is acting, so accepts and rejects have a name against them.
+  const [who, setWho] = useState<StaffProfile | null>(null);
+  const [staff, setStaff] = useState<StaffProfile[]>([]);
+  const [pinEntry, setPinEntry] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<Order | null>(null);
@@ -69,6 +79,15 @@ export function App() {
         const v = venues[0];
         setVenue(v ?? null);
         if (!v) return;
+
+        const [st, ft, sp] = await Promise.all([
+          listAll<Station>('stations', [Query.equal('venue_id', v.$id)]),
+          loadFeatures(v.$id),
+          listAll<StaffProfile>('staff_profiles'),
+        ]);
+        setStations(st.filter((x) => x.active !== false).sort((a, b) => a.sort - b.sort));
+        setFeatures(ft);
+        setStaff(sp.filter((p) => p.active && p.pin_hash));
         const open = await loadOpenOrders(v.$id);
         setOrders(open);
         await loadItemsFor(open.map((o) => o.$id));
@@ -99,7 +118,7 @@ export function App() {
         .filter((o) => ['PENDING', 'ACCEPTED', 'PREPARING', 'READY'].includes(o.status))
         .filter((o) => {
           if (station === 'all') return true;
-          return (items[o.$id] ?? []).some((i) => i.station === station);
+          return (items[o.$id] ?? []).some((i) => (i.station_key || i.station) === station);
         }),
     [orders, station, items],
   );
@@ -107,15 +126,48 @@ export function App() {
   const pending = visible.filter((o) => o.status === 'PENDING');
 
   /**
+   * Orders that should have been out by now.
+   *
+   * This is a different question from the acknowledgement alarm. That one asks
+   * "has anybody SEEN this?"; this asks "should this have left the pass?" — an
+   * order can be accepted promptly and still be forgotten on the shelf.
+   */
+  const overdueOn = isEnabled(features, 'overdue_alerts');
+  const graceMinutes = featureConfig(features, 'overdue_alerts', 'grace_minutes', 5);
+
+  const overdue = useMemo(() => {
+    if (!overdueOn) return [];
+    return visible.filter((o) => {
+      if (!['ACCEPTED', 'PREPARING'].includes(o.status)) return false;
+      const lines = items[o.$id] ?? [];
+      if (lines.length === 0) return false;
+      const due = Math.max(...lines.map((i) => (i.due_at ? new Date(i.due_at).getTime() : 0)), 0);
+      const started = new Date(o.accepted_at || o.$createdAt).getTime();
+      // Fall back to the longest prep time on the ticket when no due time was
+      // stamped, rather than never pinging at all.
+      const deadline = due || started + 20 * 60_000;
+      return Date.now() > deadline + graceMinutes * 60_000;
+    });
+  }, [visible, items, overdueOn, graceMinutes]);
+
+  /**
    * Escalation is driven by the oldest unacknowledged ticket, not by each one
    * separately — three quiet alarms are less useful than one loud one.
    */
   const sla = settings?.kitchen_ack_sla_seconds ?? 60;
   const worstLevel = useMemo(() => {
-    if (!ready || pending.length === 0) return 0;
-    const oldest = Math.max(...pending.map((o) => secondsSince(o.$createdAt)));
-    return Math.min(Math.floor(oldest / sla) + 1, settings?.kitchen_ping_max_level ?? 4);
-  }, [pending, ready, sla, settings]);
+    if (!ready) return 0;
+    const maxLevel = settings?.kitchen_ping_max_level ?? 4;
+    let level = 0;
+    if (pending.length > 0) {
+      const oldest = Math.max(...pending.map((o) => secondsSince(o.$createdAt)));
+      level = Math.min(Math.floor(oldest / sla) + 1, maxLevel);
+    }
+    // A late order pings even when nothing is waiting to be accepted, but at a
+    // lower urgency than an unseen ticket — it has been seen, it is just slow.
+    if (overdue.length > 0) level = Math.max(level, 2);
+    return level;
+  }, [pending, overdue, ready, sla, settings]);
 
   const lastLevel = useRef(0);
   useEffect(() => {
@@ -141,7 +193,12 @@ export function App() {
   };
 
   const accept = (o: Order) =>
-    patch(o, { status: 'ACCEPTED', accepted_at: new Date().toISOString(), alert_level: 0 });
+    patch(o, {
+      status: 'ACCEPTED',
+      accepted_at: new Date().toISOString(),
+      accepted_by: who?.$id ?? '',
+      alert_level: 0,
+    });
   const start = (o: Order) => patch(o, { status: 'PREPARING' });
   const done = (o: Order) => patch(o, { status: 'READY' });
 
@@ -178,22 +235,71 @@ export function App() {
     <div className="kds">
       {!ready && (
         <div className="audio-gate">
-          <div>
+          <div style={{ maxWidth: '22rem' }}>
             <h1>Kitchen display</h1>
-            <p className="dim" style={{ maxWidth: '28rem', marginTop: '0.6rem' }}>
-              Tap to start service. Browsers block sound until the screen is touched, so the alarm cannot work before
-              you do this.
-            </p>
-            <Button
-              variant="primary"
-              className="btn"
-              onClick={() => {
-                unlockAudio();
-                setReady(true);
-              }}
-            >
-              Start service
-            </Button>
+            {staff.length > 0 ? (
+              <>
+                <p className="dim" style={{ marginTop: '0.6rem' }}>
+                  Enter your PIN to start. Tapping also lets the alarm sound — browsers keep a page silent until
+                  someone touches it.
+                </p>
+                <div
+                  style={{
+                    fontSize: '1.8rem', letterSpacing: '0.5rem', margin: '1rem 0',
+                    minHeight: '2.2rem', fontFamily: 'monospace',
+                  }}
+                >
+                  {'•'.repeat(pinEntry.length)}
+                </div>
+                {pinError && <div style={{ color: '#ff6b5e', fontSize: '0.9rem' }}>{pinError}</div>}
+                <div className="pin-pad">
+                  {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'ok'].map((k) => (
+                    <button
+                      key={k}
+                      onClick={async () => {
+                        unlockAudio();
+                        setPinError(null);
+                        if (k === 'clear') return setPinEntry('');
+                        if (k !== 'ok') return setPinEntry((p) => (p.length < 6 ? p + k : p));
+
+                        for (const person of staff) {
+                          if (await verifyPin(pinEntry, person.pin_hash)) {
+                            setWho(person);
+                            setPinEntry('');
+                            setReady(true);
+                            return;
+                          }
+                        }
+                        setPinError('PIN not recognised.');
+                        setPinEntry('');
+                      }}
+                    >
+                      {k === 'clear' ? '✕' : k === 'ok' ? '→' : k}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ marginTop: '0.8rem' }}
+                  onClick={() => { unlockAudio(); setReady(true); }}
+                >
+                  Skip — start without signing in
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="dim" style={{ marginTop: '0.6rem' }}>
+                  Tap to start service. Browsers block sound until the screen is touched, so the alarm cannot work
+                  before you do this.
+                </p>
+                <p className="dim small">
+                  Give your cooks PINs in the admin app and they can sign in here by name.
+                </p>
+                <Button variant="primary" className="btn" onClick={() => { unlockAudio(); setReady(true); }}>
+                  Start service
+                </Button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -203,23 +309,29 @@ export function App() {
           <h1>{venue.name}</h1>
         </div>
         <div className="station-tabs">
-          {STATIONS.map((s) => (
-            <button
-              key={s}
-              className={station === s ? 'on' : ''}
-              onClick={() => {
-                setStation(s);
-                localStorage.setItem('kds-station', s);
-              }}
-            >
-              {s === 'all' ? 'All' : s}
-            </button>
-          ))}
+          {['all', ...stations.map((s) => s.key)].map((key) => {
+            const st = stations.find((x) => x.key === key);
+            return (
+              <button
+                key={key}
+                className={station === key ? 'on' : ''}
+                style={st?.colour && station === key ? { background: st.colour, borderColor: st.colour } : undefined}
+                onClick={() => {
+                  setStation(key);
+                  localStorage.setItem('kds-station', key);
+                }}
+              >
+                {key === 'all' ? 'All' : st?.name ?? key}
+              </button>
+            );
+          })}
         </div>
         <div className="kds-stats">
           <span>New <b>{pending.length}</b></span>
           <span>Cooking <b>{visible.filter((o) => o.status === 'PREPARING').length}</b></span>
           <span>Ready <b>{visible.filter((o) => o.status === 'READY').length}</b></span>
+          {overdue.length > 0 && <span style={{ color: '#ff6b5e' }}>Late <b>{overdue.length}</b></span>}
+          {who && <span>· {who.display_name}</span>}
         </div>
       </div>
 
@@ -240,6 +352,7 @@ export function App() {
               order={order}
               items={items[order.$id] ?? []}
               sla={sla}
+              overdue={overdue.some((o) => o.$id === order.$id)}
               onAccept={() => accept(order)}
               onStart={() => start(order)}
               onDone={() => done(order)}
@@ -280,18 +393,19 @@ export function App() {
 }
 
 function Ticket({
-  order, items, sla, onAccept, onStart, onDone, onReject,
+  order, items, sla, overdue, onAccept, onStart, onDone, onReject,
 }: {
   order: Order;
   items: OrderItem[];
   sla: number;
+  overdue: boolean;
   onAccept: () => void;
   onStart: () => void;
   onDone: () => void;
   onReject: () => void;
 }) {
   const age = secondsSince(order.$createdAt);
-  const late = order.status === 'PENDING' && age > sla;
+  const late = (order.status === 'PENDING' && age > sla) || overdue;
   const ageClass = age > sla * 2 ? 'bad' : age > sla ? 'warn' : '';
 
   return (
@@ -309,6 +423,7 @@ function Ticket({
           <div style={{ marginTop: '0.2rem' }}>
             {order.channel === 'qr' && <span className="pill qr">QR</span>}
             {order.is_preorder && <span className="pill preorder">Pre-order</span>}
+            {overdue && <span className="pill" style={{ background: '#3a1714', color: '#ff9b90' }}>Late</span>}
           </div>
         </div>
       </div>

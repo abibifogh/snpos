@@ -33,8 +33,11 @@ export function App() {
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [placed, setPlaced] = useState<{ orderNo: string; scheduled?: string } | null>(null);
 
-  // The table token comes from the QR code: /?t=<token>
-  const token = new URLSearchParams(window.location.search).get('t');
+  // Two kinds of QR: /?t=<token> is a specific table, /?v=<token> is a walk-in
+  // code that belongs to the venue rather than to anywhere to sit.
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('t');
+  const walkInToken = params.get('v');
 
   useEffect(() => {
     (async () => {
@@ -56,7 +59,10 @@ export function App() {
           const found = await db.listDocuments(DB_ID, 'tables', [Query.equal('qr_token', token), Query.limit(1)]);
           table = (found.documents[0] as unknown as TableRow) ?? null;
         }
-        const venue = venues.find((v) => v.$id === table?.venue_id) ?? venues[0];
+        const venue =
+          venues.find((v) => v.$id === table?.venue_id) ??
+          (walkInToken ? venues.find((v) => v.walkin_token === walkInToken) : undefined) ??
+          venues[0];
         if (!venue) throw new Error('This restaurant has no venue set up yet.');
 
         const [menu, features] = await Promise.all([loadMenu(venue.$id), loadFeatures(venue.$id)]);
@@ -66,7 +72,7 @@ export function App() {
         setError(humanError(e));
       }
     })();
-  }, [token]);
+  }, [token, walkInToken]);
 
   const addLine = useCallback((line: CartLine) => {
     setCart((c) => {
@@ -153,7 +159,7 @@ export function App() {
       <header className="menu-header">
         <h1>{venue.name || settings.restaurant_name}</h1>
         <div className="sub">
-          {table ? `Table ${table.label}` : 'Takeaway'}
+          {table ? `Table ${table.label}` : walkInToken ? 'Collect at the counter' : 'Takeaway'}
           {venueOpen ? ' · Open now' : ' · Closed'}
         </div>
       </header>

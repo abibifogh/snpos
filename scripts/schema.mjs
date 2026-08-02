@@ -75,6 +75,9 @@ export const COLLECTIONS = [
       // customer may pre-order into.
       ['opening_hours', 's', 4000, false],
       ['holiday_closures', 's', 4000, false], // dated exceptions
+      // A QR for people not sitting at a table — the counter queue, a poster
+      // in the window, a flyer. Opens the menu in takeaway mode.
+      ['walkin_token', 's', 64, false],
     ],
     indexes: [['slug_unique', 'unique', ['slug']], ['active_sort', 'key', ['active', 'sort']]],
   },
@@ -177,6 +180,10 @@ export const COLLECTIONS = [
       ['availability', 's', 4000, false],
       ['unavailable_display', 'e', ['grey', 'hide'], true, 'grey'],
       ['station', 'e', ['hot', 'cold', 'bar', 'dessert'], true, 'hot'],
+      // Replaces `station` over time: a free-form key referencing `stations`,
+      // so a restaurant can define Grill and Pastry rather than living with
+      // whatever four names we happened to pick.
+      ['station_key', 's', 40, false],
     ],
     indexes: [['active_sort', 'key', ['active', 'sort']]],
   },
@@ -198,6 +205,7 @@ export const COLLECTIONS = [
       ['sold_out_until', 'd', null, false],
       ['prep_minutes', 'i', null, true, 10],
       ['station', 'e', ['hot', 'cold', 'bar', 'dessert', 'inherit'], true, 'inherit'],
+      ['station_key', 's', 40, false],
       ['tags', 's[]', 40, false],
       ['sort', 'i', null, true, 0],
       ['track_stock', 'b', null, true, false],
@@ -232,6 +240,27 @@ export const COLLECTIONS = [
       ['category', 'key', ['category_id', 'sort']],
       ['item', 'key', ['menu_item_id']],
     ],
+  },
+  {
+    /**
+     * Kitchen stations, defined by the restaurant rather than by us.
+     *
+     * A station is WHERE FOOD IS COOKED — hot line, grill, bar, pastry. It is
+     * not a pickup point, which is where a customer collects. One kitchen with
+     * three stations can serve four pickup points, and often does.
+     */
+    id: 'stations',
+    name: 'Stations',
+    perms: { read: ['any'], create: MGMT, update: MGMT, delete: MGMT },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['key', 's', 40, true], // stable id used on items and tickets
+      ['name', 's', 80, true], // what staff see
+      ['colour', 's', 9, false],
+      ['sort', 'i', null, false, 0],
+      ['active', 'b', null, false, true],
+    ],
+    indexes: [['venue_key', 'unique', ['venue_id', 'key']], ['venue_sort', 'key', ['venue_id', 'sort']]],
   },
   {
     id: 'addon_groups',
@@ -296,7 +325,7 @@ export const COLLECTIONS = [
   {
     id: 'dining_sessions',
     name: 'Dining sessions',
-    perms: { read: ALL_STAFF, create: [], update: [], delete: [] },
+    perms: { read: ['users'], create: ['users'], update: ALL_STAFF, delete: [] },
     attributes: [
       ['table_id', 's', 64, true],
       ['opened_at', 'd', null, true],
@@ -313,7 +342,11 @@ export const COLLECTIONS = [
   {
     id: 'orders',
     name: 'Orders',
-    perms: { read: ALL_STAFF, create: [], update: [], delete: [] },
+    // 'users' includes the anonymous sessions the customer menu creates, which
+    // is what lets a guest who has only scanned a sticker place an order.
+    // Prices are re-checked server-side by the order-guard function; a client
+    // is never trusted on what something costs.
+    perms: { read: ['users'], create: ['users'], update: ALL_STAFF, delete: [] },
     attributes: [
       ['order_no', 's', 20, true],
       ['idem_key', 's', 64, true],
@@ -402,7 +435,7 @@ export const COLLECTIONS = [
   {
     id: 'order_items',
     name: 'Order items',
-    perms: { read: ALL_STAFF, create: [], update: [], delete: [] },
+    perms: { read: ['users'], create: ['users'], update: ALL_STAFF, delete: ALL_STAFF },
     attributes: [
       ['order_id', 's', 64, true],
       ['menu_item_id', 's', 64, true],
@@ -413,7 +446,11 @@ export const COLLECTIONS = [
       ['line_total', 'i', null, true, 0],
       ['notes', 's', 300, false],
       ['station', 'e', ['hot', 'cold', 'bar', 'dessert'], true, 'hot'],
+      ['station_key', 's', 40, false],
       ['status', 'e', ['queued', 'preparing', 'ready', 'served', 'void'], true, 'queued'],
+      // When the kitchen should have this out by, so an overdue ticket can
+      // ping without anyone doing mental arithmetic mid-service.
+      ['due_at', 'd', null, false],
       ['void_reason', 's', 300, false],
       ['voided_by', 's', 64, false],
       ['course', 'i', null, true, 1],
@@ -1236,7 +1273,10 @@ export const COLLECTIONS = [
     // trail for the single easiest way to steal from a restaurant.
     id: 'discount_redemptions',
     name: 'Discount redemptions',
-    perms: { read: MGMT, create: ALL_STAFF, update: MGMT, delete: [] },
+    // Guests apply codes themselves, so they must be able to write the record.
+    // Reading stays management-only: a customer has no business seeing the
+    // history of everyone else's discounts.
+    perms: { read: MGMT, create: ['users'], update: MGMT, delete: [] },
     attributes: [
       ['venue_id', 's', 64, true],
       ['discount_id', 's', 64, true],
@@ -1405,6 +1445,32 @@ export const FEATURES = [
       require_staff_confirmation: false,
       auto_cancel_unconfirmed_hours: 0,
       closed_message: "We're closed right now — order ahead and pick a time.",
+    },
+  },
+  {
+    key: 'combined_mode',
+    label: 'One screen for kitchen and front of house',
+    enabled: false,
+    config: {
+      // For shifts with no waiter or cashier on: the cook takes the order,
+      // cooks it and settles the bill from one screen rather than walking
+      // between two devices.
+      show_kitchen_in_terminal: true,
+      show_ordering_in_kitchen: true,
+      // A cook covering the till still needs to be able to take money.
+      allow_cook_to_mark_paid: true,
+    },
+  },
+  {
+    key: 'overdue_alerts',
+    label: 'Ping when an order runs late',
+    enabled: true,
+    config: {
+      // Separate from the acknowledgement alarm: that one asks "has anyone
+      // SEEN this?", this one asks "should this have been out by now?".
+      grace_minutes: 5,
+      repeat_minutes: 3,
+      escalate_to_manager_after_minutes: 15,
     },
   },
   {

@@ -18,6 +18,7 @@ import { StaffPage } from './pages/Staff';
 import { StockPage } from './pages/Stock';
 import { WastePage } from './pages/Waste';
 import { ReportsPage } from './pages/Reports';
+import { StationsPage } from './pages/Stations';
 
 export function App() {
   const { user, loading } = useSession();
@@ -45,6 +46,7 @@ export function App() {
         <Route path="/shifts" element={<ShiftsPage />} />
         <Route path="/staff" element={<StaffPage />} />
         <Route path="/stock" element={<StockPage />} />
+        <Route path="/stations" element={<StationsPage />} />
         <Route path="/waste" element={<WastePage />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/features" element={<FeaturesPage />} />

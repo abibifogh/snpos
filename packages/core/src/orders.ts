@@ -58,6 +58,8 @@ export interface OrderItem extends Doc {
   line_total: number;
   notes?: string;
   station: string;
+  station_key?: string;
+  due_at?: string;
   status: 'queued' | 'preparing' | 'ready' | 'served' | 'void';
   void_reason?: string;
   course: number;
@@ -206,6 +208,10 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
         line_total: lineTotal(line),
         notes: line.notes ?? '',
         station: line.station ?? 'hot',
+        station_key: line.station_key ?? '',
+        // When this should be out by, so an overdue ticket can ping without
+        // anyone doing the arithmetic mid-service.
+        due_at: new Date(Date.now() + (line.prep_minutes ?? 15) * 60_000).toISOString(),
         status: 'queued',
         course: line.course ?? 1,
         seat_no: line.seat_no,

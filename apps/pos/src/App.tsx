@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Spinner, Card, Field, Input, Notice, useToast } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
-import { account, db, DB_ID, Query, listAll, loadMenu, loadFeatures, humanError } from '@snpos/core';
+import { account, db, DB_ID, Query, listAll, loadMenu, loadFeatures, humanError, isEnabled } from '@snpos/core';
 import type { Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, Doc } from '@snpos/core';
 import { TablesView } from './TablesView';
 import { OrderView } from './OrderView';
 import { ShiftBar, type Shift } from './ShiftBar';
+import { KitchenPanel } from './KitchenPanel';
 
 export interface TableRow extends Doc {
   venue_id: string;
@@ -38,7 +39,7 @@ export function App() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [openTable, setOpenTable] = useState<TableRow | null>(null);
-  const [tab, setTab] = useState<'tables' | 'takeaway'>('tables');
+  const [tab, setTab] = useState<'tables' | 'takeaway' | 'kitchen'>('tables');
 
   const loadShift = useCallback(async (venueId: string): Promise<Shift | null> => {
     const res = await db.listDocuments(DB_ID, 'shifts', [
@@ -162,6 +163,9 @@ export function App() {
         <div className="pos-tabs">
           <button className={tab === 'tables' ? 'on' : ''} onClick={() => setTab('tables')}>Tables</button>
           <button className={tab === 'takeaway' ? 'on' : ''} onClick={() => setTab('takeaway')}>Takeaway</button>
+          {isEnabled(ctx.features, 'combined_mode') && (
+            <button className={tab === 'kitchen' ? 'on' : ''} onClick={() => setTab('kitchen')}>Kitchen</button>
+          )}
         </div>
         <Button size="sm" variant="ghost" onClick={() => account.deleteSession('current').then(() => location.reload())}>
           Sign out
@@ -173,8 +177,10 @@ export function App() {
       <div className="pos-body">
         {tab === 'tables' ? (
           <TablesView ctx={ctx} onOpen={setOpenTable} />
-        ) : (
+        ) : tab === 'takeaway' ? (
           <TakeawayList ctx={ctx} onOpen={setOpenTable} />
+        ) : (
+          <KitchenPanel ctx={ctx} onToast={(m, t) => toast(m, t)} />
         )}
       </div>
     </div>

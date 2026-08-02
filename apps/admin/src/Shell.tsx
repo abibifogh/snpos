@@ -31,6 +31,7 @@ const NAV: { group: string; links: NavLinkDef[] }[] = [
   {
     group: 'Kitchen',
     links: [
+      { to: '/stations', label: 'Stations' },
       { to: '/stock', label: 'Stock' },
       { to: '/waste', label: 'Waste' },
     ],

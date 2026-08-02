@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError, teams } from '../lib';
+import { encodePin, pinProblem } from '@snpos/core';
 import type { StaffProfile } from '@snpos/core';
 import type { Doc } from '@snpos/core';
 
@@ -26,9 +27,12 @@ export function StaffPage() {
   const [rows, setRows] = useState<StaffProfile[] | null>(null);
   const [venues, setVenues] = useState<VenueRow[]>([]);
   const [editing, setEditing] = useState<Partial<StaffProfile> | null>(null);
-  const [invite, setInvite] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pin, setPin] = useState('');
+  // Kitchen staff usually have no email at all. A profile with a PIN and no
+  // login is a complete, working staff record — not a half-finished one.
+  const [wantsLogin, setWantsLogin] = useState(false);
 
   const load = async () => {
     const [s, v] = await Promise.all([listAll<StaffProfile>('staff_profiles'), listAll<VenueRow>('venues')]);
@@ -39,13 +43,22 @@ export function StaffPage() {
 
   const open = (p?: StaffProfile, asInvite = false) => {
     setEditing(p ?? { display_name: '', email: '', role: 'waiter', active: true, ...DEFAULTS.waiter, venue_ids: [] });
-    setInvite(asInvite);
+    setWantsLogin(asInvite ? false : !!p?.email);
+    setPin('');
     setError(null);
   };
 
   const save = async () => {
     if (!editing?.display_name?.trim()) { setError('Enter their name.'); return; }
-    if (invite && !editing.email?.trim()) { setError('Enter their email address — the invitation goes there.'); return; }
+    if (wantsLogin && !editing.email?.trim()) { setError('Enter their email address — the invitation goes there.'); return; }
+    if (pin) {
+      const problem = pinProblem(pin);
+      if (problem) { setError(problem); return; }
+    }
+    if (!editing.$id && !wantsLogin && !pin) {
+      setError('Set a PIN, or tick "give them a login" and enter an email. Otherwise they cannot identify themselves.');
+      return;
+    }
 
     setBusy(true);
     setError(null);
@@ -65,13 +78,14 @@ export function StaffPage() {
         can_mark_paid: editing.can_mark_paid ?? true,
         can_record_waste: editing.can_record_waste ?? true,
         venue_ids: editing.venue_ids ?? [],
+        ...(pin ? { pin_hash: await encodePin(pin), pin_set_at: new Date().toISOString() } : {}),
       };
 
       if (editing.$id) {
         await db.updateDocument(DB_ID, 'staff_profiles', editing.$id, payload);
       } else {
         await db.createDocument(DB_ID, 'staff_profiles', ID.unique(), payload);
-        if (invite) {
+        if (wantsLogin && payload.email) {
           // Appwrite emails the invitation and the person sets their own
           // password. Nobody types a colleague's password, and no shared
           // account exists to make "who authorised this" unanswerable.
@@ -88,8 +102,9 @@ export function StaffPage() {
       }
 
       setEditing(null);
+      setPin('');
       await load();
-      toast(invite ? `Invitation sent to ${payload.email}` : 'Saved');
+      toast(wantsLogin && !editing.$id ? `Invitation sent to ${payload.email}` : pin ? 'Saved — PIN set' : 'Saved');
     } catch (e) {
       const msg = humanError(e);
       setError(
@@ -117,12 +132,13 @@ export function StaffPage() {
     <>
       <div className="spread">
         <h1>Staff</h1>
-        <Button variant="primary" onClick={() => open(undefined, true)}>Invite someone</Button>
+        <Button variant="primary" onClick={() => open(undefined, false)}>Add someone</Button>
       </div>
 
       <p className="dim small" style={{ marginTop: 0 }}>
-        Everyone gets their own login. That is what makes “who authorised this discount” an answerable question —
-        with a shared account it never is.
+        Kitchen and floor staff sign in with a <strong>PIN</strong> on the shared device — no email, no password.
+        Only people who need the admin dashboard on their own device get a login. Either way each person is
+        identified individually, which is what makes “who authorised this discount” answerable at all.
       </p>
 
       {error && !editing && <Notice>{error}</Notice>}
@@ -131,7 +147,9 @@ export function StaffPage() {
         {!rows ? (
           <div className="card-pad"><Spinner /></div>
         ) : rows.length === 0 ? (
-          <Empty title="No staff yet">Invite your first team member — they set their own password from the email.</Empty>
+          <Empty title="No staff yet">
+            Add your team. Cooks and waiters just need a name and a PIN.
+          </Empty>
         ) : (
           <div className="table-wrap">
             <table className="data">
@@ -143,15 +161,17 @@ export function StaffPage() {
                   <tr key={p.$id}>
                     <td>
                       <div style={{ fontWeight: 550 }}>{p.display_name}</div>
-                      <div className="small dim">{p.email || '—'}</div>
+                      <div className="small dim">{p.email || (p.pin_hash ? 'PIN only — no login' : 'no PIN set')}</div>
                     </td>
                     <td className="dim">{p.role}</td>
                     <td className="dim small">
                       {p.can_discount_up_to_bp ? `up to ${(p.can_discount_up_to_bp / 100).toFixed(0)}%` : 'none'}
                     </td>
                     <td>
-                      {!p.user_id ? (
+                      {!p.user_id && p.email ? (
                         <Badge tone="warn">Invited</Badge>
+                      ) : !p.user_id && p.pin_hash ? (
+                        <Badge tone="ok">PIN only</Badge>
                       ) : p.active ? (
                         <Badge tone="ok">Active</Badge>
                       ) : (
@@ -172,13 +192,13 @@ export function StaffPage() {
 
       {editing && (
         <Modal
-          title={editing.$id ? `Edit ${editing.display_name}` : 'Invite someone'}
+          title={editing.$id ? `Edit ${editing.display_name}` : 'Add someone'}
           onClose={() => setEditing(null)}
           footer={
             <>
               <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
               <Button variant="primary" onClick={save} loading={busy}>
-                {invite ? 'Send invitation' : 'Save'}
+                {!editing.$id && wantsLogin ? 'Add and send invitation' : 'Save'}
               </Button>
             </>
           }
@@ -189,10 +209,7 @@ export function StaffPage() {
             <Field label="Name">
               <Input value={editing.display_name ?? ''} autoFocus onChange={(e) => setEditing({ ...editing, display_name: e.target.value })} />
             </Field>
-            <Field label="Email" hint={invite ? 'The invitation goes here.' : undefined}>
-              <Input type="email" value={editing.email ?? ''} disabled={!!editing.$id} onChange={(e) => setEditing({ ...editing, email: e.target.value })} />
-            </Field>
-            <Field label="Phone">
+            <Field label="Phone" hint="Optional.">
               <Input value={editing.phone ?? ''} onChange={(e) => setEditing({ ...editing, phone: e.target.value })} />
             </Field>
             <Field label="Role" hint="Changing this resets the permissions below to that role's defaults.">
@@ -207,6 +224,38 @@ export function StaffPage() {
               </Select>
             </Field>
           </div>
+
+          <h3 style={{ margin: '1.1rem 0 0.5rem' }}>How they sign in</h3>
+          <Field
+            label={editing.$id && editing.pin_hash ? 'Change PIN' : 'PIN'}
+            hint="4 to 6 digits. They tap this on the shared terminal or kitchen screen — no email, no password. Leave blank when editing to keep the current one."
+          >
+            <Input
+              value={pin}
+              inputMode="numeric"
+              maxLength={6}
+              placeholder={editing.pin_hash ? '••••' : '4–6 digits'}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+            />
+          </Field>
+          <Field hint="Only needed for people who use the admin dashboard on their own device. Cooks and waiters do not need one.">
+            <Toggle
+              checked={wantsLogin}
+              disabled={!!editing.$id}
+              onChange={setWantsLogin}
+              label="Also give them an email login"
+            />
+          </Field>
+          {wantsLogin && (
+            <Field label="Email" hint="The invitation goes here; they set their own password.">
+              <Input
+                type="email"
+                value={editing.email ?? ''}
+                disabled={!!editing.$id}
+                onChange={(e) => setEditing({ ...editing, email: e.target.value })}
+              />
+            </Field>
+          )}
 
           <h3 style={{ margin: '1.1rem 0 0.5rem' }}>What they can do</h3>
           <Field><Toggle checked={editing.can_open_shift ?? false} onChange={(v) => setEditing({ ...editing, can_open_shift: v })} label="Open a shift" /></Field>

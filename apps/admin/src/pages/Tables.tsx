@@ -15,7 +15,7 @@ interface TableRow extends Doc {
   sort: number;
 }
 
-interface VenueRow extends Doc { name: string }
+interface VenueRow extends Doc { name: string; walkin_token?: string }
 
 /**
  * The QR token is the table's identity to a customer who has scanned nothing
@@ -116,6 +116,23 @@ export function TablesPage() {
 
   const urlFor = (t: TableRow) => `${menuBase}/?t=${t.qr_token}`;
 
+  /**
+   * A QR that belongs to nobody's table — the counter queue, a window poster,
+   * a flyer. It opens the menu in takeaway mode.
+   */
+  const walkInUrl = (v: VenueRow) => (v.walkin_token ? `${menuBase}/?v=${v.walkin_token}` : null);
+
+  const makeWalkIn = async (v: VenueRow) => {
+    try {
+      const token = newToken();
+      await db.updateDocument(DB_ID, 'venues', v.$id, { walkin_token: token });
+      await load();
+      toast('Walk-in QR created');
+    } catch (e) {
+      toast(humanError(e), 'err');
+    }
+  };
+
   return (
     <>
       <div className="spread">
@@ -129,6 +146,29 @@ export function TablesPage() {
       </p>
 
       {error && !editing && <Notice>{error}</Notice>}
+
+      <Card title="Walk-in QR">
+        <p className="small dim" style={{ marginTop: 0 }}>
+          For people who are not sitting down — the counter queue, a poster in the window, a flyer. Same menu, opened
+          as a takeaway order rather than against a table.
+        </p>
+        {venues.map((v) => {
+          const url = walkInUrl(v);
+          return (
+            <div className="row" key={v.$id} style={{ justifyContent: 'space-between', padding: '0.4rem 0' }}>
+              <span>{v.name}</span>
+              {url ? (
+                <div className="row">
+                  <Input readOnly value={url} style={{ width: '22rem' }} onFocus={(e) => e.currentTarget.select()} />
+                  <Button size="sm" onClick={() => { navigator.clipboard.writeText(url); toast('Link copied'); }}>Copy</Button>
+                </div>
+              ) : (
+                <Button size="sm" onClick={() => makeWalkIn(v)}>Create walk-in QR</Button>
+              )}
+            </div>
+          );
+        })}
+      </Card>
 
       <Card pad={false}>
         {!rows ? (

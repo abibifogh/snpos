@@ -59,7 +59,7 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
         run: |
           set -e
-          for fn in preorder-fire kitchen-escalate notify; do
+          for fn in order-guard preorder-fire kitchen-escalate notify; do
             # A function cannot read the project's API key implicitly; it needs
             # its own copy to write to the database.
             appwrite functions create-variable --function-id "$fn" --key APPWRITE_API_KEY --value "$APPWRITE_API_KEY" 2>/dev/null || true

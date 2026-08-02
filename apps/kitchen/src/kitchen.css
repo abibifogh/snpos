@@ -75,3 +75,12 @@ body { background: var(--bg); color: var(--text); }
 
 .audio-gate { position: fixed; inset: 0; background: rgba(0,0,0,0.88); display: grid; place-items: center; z-index: 100; text-align: center; padding: 2rem; }
 .audio-gate .btn { margin-top: 1.2rem; padding: 1rem 2rem; font-size: 1.05rem; }
+
+/* PIN keypad — thumb-sized, because it is used with wet or gloved hands. */
+.pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
+.pin-pad button {
+  padding: 1.1rem 0; font-size: 1.35rem; font-weight: 600;
+  border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text); cursor: pointer;
+}
+.pin-pad button:active { background: var(--brand); border-color: var(--brand); color: #fff; }

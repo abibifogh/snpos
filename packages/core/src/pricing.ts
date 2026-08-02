@@ -27,6 +27,8 @@ export interface CartLine {
   addons: CartAddon[];
   notes?: string;
   station?: string;
+  station_key?: string;
+  prep_minutes?: number;
   seat_no?: number;
   course?: number;
 }

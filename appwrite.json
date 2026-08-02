@@ -3,6 +3,26 @@
   "projectName": "SNPOS",
   "functions": [
     {
+      "$id": "order-guard",
+      "name": "Order guard",
+      "runtime": "node-18.0",
+      "execute": [],
+      "events": [
+        "databases.snpos.collections.orders.documents.*.create"
+      ],
+      "schedule": "",
+      "timeout": 30,
+      "enabled": true,
+      "logging": true,
+      "entrypoint": "src/main.js",
+      "commands": "npm install",
+      "path": "functions/order-guard",
+      "ignore": [
+        "node_modules",
+        ".npm"
+      ]
+    },
+    {
       "$id": "preorder-fire",
       "name": "Pre-order fire",
       "runtime": "node-18.0",

@@ -34,6 +34,10 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   const [floats, setFloats] = useState<Record<string, string>>({});
   const [counted, setCounted] = useState<Record<string, string>>({});
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  // Counted at close: one tap per ingredient rather than a number to type,
+  // because a wrong number is worse than an honest "getting low".
+  const [levels, setLevels] = useState<Record<string, 'OK' | 'LOW' | 'OUT'>>({});
+  const [stockList, setStockList] = useState<{ $id: string; name: string; unit: string; critical: boolean }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,6 +92,17 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
     const initial: Record<string, string> = {};
     for (const x of m.filter((y) => y.counted_at_close)) initial[x.$id] = toInput(0, decimals);
     setCounted(initial);
+
+    // Critical items first: if service stops without it, it belongs at the top
+    // of a list somebody is working through at the end of a long day.
+    const ing = await loadIngredients(ctx.venue.$id);
+    const list = ing
+      .filter((i) => i.active)
+      .sort((a, b) => Number(b.critical) - Number(a.critical) || a.name.localeCompare(b.name))
+      .map((i) => ({ $id: i.$id, name: i.name, unit: i.unit, critical: i.critical }));
+    setStockList(list);
+    setLevels(Object.fromEntries(list.map((i) => [i.$id, 'OK' as const])));
+
     setClosing(true);
     setError(null);
   };
@@ -133,6 +148,31 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         for (const [ingredientId, qty] of Object.entries(usage)) {
           const ing = ingredients.find((i) => i.$id === ingredientId);
           if (ing) cogs += Math.round(qty * ing.base_unit_cost);
+        }
+
+        // What staff actually saw on the shelf, recorded per ingredient. This
+        // is the human check against the theoretical figure — the two
+        // disagreeing is the entire point of asking.
+        for (const [ingredientId, level] of Object.entries(levels)) {
+          const ing = ingredients.find((i) => i.$id === ingredientId);
+          if (!ing) continue;
+          await db.createDocument(DB_ID, 'shift_stock_checks', ID.unique(), {
+            venue_id: ctx.venue.$id,
+            shift_id: ctx.shift.$id,
+            ingredient_id: ingredientId,
+            opening_qty: ing.current_qty,
+            theoretical_qty: Number((ing.current_qty - (usage[ingredientId] ?? 0)).toFixed(4)),
+            status: level,
+            status_source: 'manual_override',
+            variance_qty: 0,
+            variance_value: 0,
+            checked_by: ctx.userId,
+          }).catch(() => undefined);
+
+          // "Out" means out, whatever the book says. Trust the eyes.
+          if (level === 'OUT') {
+            await db.updateDocument(DB_ID, 'ingredients', ingredientId, { current_qty: 0 }).catch(() => undefined);
+          }
         }
 
         // Re-read after depletion so the alerts reflect the new levels.
@@ -299,6 +339,40 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
               />
             </Field>
           ))}
+
+          {stockList.length > 0 && (
+            <>
+              <h3 style={{ margin: '1.3rem 0 0.3rem' }}>Stock check</h3>
+              <p className="small dim" style={{ marginTop: 0 }}>
+                A quick look at the shelf, not a full count. Anything marked <strong>low</strong> or <strong>out</strong>{' '}
+                goes into tonight's summary — and if the same thing keeps coming up, that turns into its own warning.
+              </p>
+              {stockList.map((i) => (
+                <div
+                  className="row"
+                  key={i.$id}
+                  style={{ justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px solid var(--border)' }}
+                >
+                  <span>
+                    {i.name}
+                    {i.critical && <Badge tone="warn"> critical</Badge>}
+                  </span>
+                  <div className="row" style={{ gap: '0.3rem' }}>
+                    {(['OK', 'LOW', 'OUT'] as const).map((level) => (
+                      <Button
+                        key={level}
+                        size="sm"
+                        variant={levels[i.$id] === level ? (level === 'OK' ? 'primary' : 'danger') : 'default'}
+                        onClick={() => setLevels({ ...levels, [i.$id]: level })}
+                      >
+                        {level}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
         </Modal>
       )}
     </>
