@@ -59,17 +59,43 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
         run: |
           set -e
+
+          # Overwrite rather than only create. Creating fails once a variable is
+          # already there, which used to mean that changing an email password
+          # and re-running this quietly kept the old one.
+          setvar() {
+            fn=$1; key=$2; val=$3
+            id=$(appwrite functions list-variables --function-id "$fn" --json 2>/dev/null \
+              | node -e '
+                  let s = "";
+                  process.stdin.on("data", (d) => (s += d)).on("end", () => {
+                    try {
+                      const found = (JSON.parse(s).variables || []).find((v) => v.key === process.argv[1]);
+                      if (found) process.stdout.write(found.$id);
+                    } catch { /* no variables yet */ }
+                  });
+                ' "$key")
+            if [ -n "$id" ]; then
+              appwrite functions update-variable --function-id "$fn" --variable-id "$id" --key "$key" --value "$val" >/dev/null
+            else
+              appwrite functions create-variable --function-id "$fn" --key "$key" --value "$val" >/dev/null
+            fi
+            echo "  $fn.$key set"
+          }
+
           for fn in order-guard preorder-fire kitchen-escalate notify; do
             # A function cannot read the project's API key implicitly; it needs
             # its own copy to write to the database.
-            appwrite functions create-variable --function-id "$fn" --key APPWRITE_API_KEY --value "$APPWRITE_API_KEY" 2>/dev/null || true
-            appwrite functions create-variable --function-id "$fn" --key DB_ID --value "$DB_ID" 2>/dev/null || true
+            setvar "$fn" APPWRITE_API_KEY "$APPWRITE_API_KEY"
+            setvar "$fn" DB_ID "$DB_ID"
           done
+
           if [ -n "$SMTP_HOST" ]; then
-            appwrite functions create-variable --function-id notify --key SMTP_HOST --value "$SMTP_HOST" 2>/dev/null || true
-            appwrite functions create-variable --function-id notify --key SMTP_PORT --value "${SMTP_PORT:-587}" 2>/dev/null || true
-            appwrite functions create-variable --function-id notify --key SMTP_USER --value "$SMTP_USER" 2>/dev/null || true
-            appwrite functions create-variable --function-id notify --key SMTP_PASS --value "$SMTP_PASS" 2>/dev/null || true
+            setvar notify SMTP_HOST "$SMTP_HOST"
+            setvar notify SMTP_PORT "${SMTP_PORT:-587}"
+            setvar notify SMTP_USER "$SMTP_USER"
+            setvar notify SMTP_PASS "$SMTP_PASS"
+            echo "Email is configured against $SMTP_HOST."
           else
             echo "::warning::No SMTP secrets set — receipts and summaries will be recorded but not emailed."
           fi

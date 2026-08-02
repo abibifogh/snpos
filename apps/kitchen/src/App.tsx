@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Spinner, Modal, Select, Textarea, Field, Notice } from '@snpos/ui';
+import { Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
   account, db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
@@ -305,7 +305,8 @@ export function App() {
       )}
 
       <div className="kds-top">
-        <div>
+        <div className="row">
+          <Logo size={28} />
           <h1>{venue.name}</h1>
         </div>
         <div className="station-tabs">

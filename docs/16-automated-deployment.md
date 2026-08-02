@@ -191,6 +191,48 @@ Mailgun, SendGrid, or a Gmail app password for low volume. Add these as
 Then set the sender name and address in Admin → Settings → Email, and add
 recipients for the shift summary under report subscriptions.
 
+#### Brevo, step by step
+
+Brevo's free plan sends 300 emails a day, which is more receipts than most
+single restaurants issue. Two things about it trip people up, so they are
+called out here rather than left to be discovered.
+
+1. In Brevo, go to **SMTP & API → SMTP**. It shows a **login** and a **master
+   password** (Brevo calls it an SMTP key). The login looks like an email
+   address ending in `@smtp-brevo.com` — it is *not* the address you signed up
+   with, and it is *not* the address your receipts will come from. It is only
+   the username for the connection.
+2. In Brevo, go to **Senders, Domains & Dedicated IPs → Senders** and add the
+   address you want receipts to come *from*, then click the link Brevo emails
+   you to verify it. Brevo refuses to send from an address it has not verified,
+   so skipping this makes every receipt fail.
+
+Then, in GitHub → your repository → **Settings → Secrets and variables →
+Actions → New repository secret**, add four secrets:
+
+| Name | Value |
+| --- | --- |
+| `SMTP_HOST` | `smtp-relay.brevo.com` |
+| `SMTP_PORT` | `587` |
+| `SMTP_USER` | the Brevo login, e.g. `8a1b2c001@smtp-brevo.com` |
+| `SMTP_PASS` | the Brevo SMTP key |
+
+Finally:
+
+- **Actions → Deploy functions → Run workflow**, type `deploy`. This is what
+  hands the settings to the email function; adding the secrets alone does
+  nothing until this runs.
+- **Admin → Settings → Email**: set the from-name to the restaurant's name and
+  the from-address to the sender you verified in step 2.
+
+Send yourself a test order and check that the receipt arrives. If it does not,
+Admin → Reports shows the receipt row with the reason it failed — Brevo's
+rejection message is passed straight through rather than swallowed.
+
+Rotating the SMTP key later is the same four secrets and the same **Deploy
+functions** run; the workflow overwrites the old values rather than keeping
+them.
+
 **Without SMTP configured**, nothing breaks and nothing is silently lost: the
 receipt and summary are still written to the database with a status of
 `failed` and a reason, so they can be sent later or read in the admin app. A

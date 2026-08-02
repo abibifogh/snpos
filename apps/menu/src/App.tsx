@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Spinner, Notice, useToast } from '@snpos/ui';
+import { Button, Spinner, Notice, useToast, Logo } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
   account, db, DB_ID, Query, listAll, loadMenu, visibleSections, computeTotals,
@@ -157,7 +157,10 @@ export function App() {
   return (
     <div className="menu-app">
       <header className="menu-header">
-        <h1>{venue.name || settings.restaurant_name}</h1>
+        <div className="row" style={{ justifyContent: 'center', gap: '0.55rem' }}>
+          <Logo size={26} />
+          <h1 style={{ margin: 0 }}>{venue.name || settings.restaurant_name}</h1>
+        </div>
         <div className="sub">
           {table ? `Table ${table.label}` : walkInToken ? 'Collect at the counter' : 'Takeaway'}
           {venueOpen ? ' · Open now' : ' · Closed'}

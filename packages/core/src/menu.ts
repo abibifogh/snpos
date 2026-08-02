@@ -48,6 +48,25 @@ export interface MenuEntry {
   price: number;
   soldOut: boolean;
   groups: { group: AddonGroup; options: AddonOption[] }[];
+  /** Where this is cooked, already worked out — see `resolveStation`. */
+  station: string;
+  stationKey: string;
+}
+
+/**
+ * Work out which station cooks a dish.
+ *
+ * A dish either names its own station or inherits its main category's. Doing it
+ * here means the till, the customer menu and the kitchen can never disagree
+ * about where a ticket belongs.
+ */
+export function resolveStation(
+  item: Pick<MenuItem, 'station' | 'station_key'>,
+  category?: Pick<Category, 'station' | 'station_key'>,
+): { station: string; stationKey: string } {
+  const own = item.station_key || (item.station !== 'inherit' ? item.station : '');
+  if (own) return { station: item.station === 'inherit' ? 'hot' : item.station, stationKey: own };
+  return { station: category?.station ?? 'hot', stationKey: category?.station_key || category?.station || '' };
 }
 
 export interface MenuSection {
@@ -89,13 +108,19 @@ export async function loadMenu(venueId: string, at: Date = new Date()): Promise<
     optionsByGroup.set(o.group_id, list);
   }
   const groupById = new Map(groups.map((g) => [g.$id, g]));
+  const categoryById = new Map(categories.map((c) => [c.$id, c]));
 
   const buildEntry = (item: MenuItem): MenuEntry => {
     const ov = overrideFor.get(item.$id);
     const soldOutUntil = ov?.sold_out_until || item.sold_out_until;
+    // The dish's main category decides the station when the dish itself does
+    // not name one, so it is settled once here rather than at each till.
+    const where = resolveStation(item, categoryById.get(item.category_id));
     return {
       item,
       price: ov?.price_override ?? item.price,
+      station: where.station,
+      stationKey: where.stationKey,
       soldOut: (ov ? ov.available === false : false) || (!!soldOutUntil && new Date(soldOutUntil) > at),
       groups: itemGroups
         .filter((ig) => ig.menu_item_id === item.$id)

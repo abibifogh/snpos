@@ -55,7 +55,22 @@ export interface Venue extends Doc {
   order_number_prefix?: string;
 }
 
+/**
+ * The four stations the system shipped with, kept only so that existing rows
+ * still validate. What the kitchen actually uses is `station_key`, pointing at
+ * a row the restaurant created in `stations`.
+ */
 export type Station = 'hot' | 'cold' | 'bar' | 'dessert';
+
+/** A station as the restaurant defined it. */
+export interface StationDoc extends Doc {
+  venue_id: string;
+  key: string;
+  name: string;
+  colour?: string;
+  sort: number;
+  active: boolean;
+}
 
 export interface Category extends Doc {
   name: string;

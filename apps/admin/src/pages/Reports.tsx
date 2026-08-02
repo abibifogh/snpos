@@ -9,6 +9,12 @@ interface Payment extends Doc { order_id: string; method_id: string; method_kind
 interface PaymentMethod extends Doc { name: string }
 interface Expense extends Doc { amount: number; category: string }
 interface AccountRow extends Doc { code: string; name: string; type: string }
+interface Receipt extends Doc {
+  to_email?: string;
+  status: 'queued' | 'sent' | 'failed' | 'skipped' | 'bounced';
+  last_error?: string;
+  sent_at?: string;
+}
 
 const RANGES = [
   { v: 7, l: 'Last 7 days' },
@@ -26,20 +32,23 @@ export function ReportsPage() {
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [tb, setTb] = useState<{ rows: TrialBalanceRow[]; balanced: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
-      const [o, i, p, m, e, a] = await Promise.all([
+      const [o, i, p, m, e, a, r] = await Promise.all([
         listAll<Order>('orders'),
         listAll<OrderItem>('order_items'),
         listAll<Payment>('payments'),
         listAll<PaymentMethod>('payment_methods'),
         listAll<Expense>('shift_expenses'),
         listAll<AccountRow>('accounts'),
+        listAll<Receipt>('receipts'),
       ]);
       setOrders(o); setItems(i); setPayments(p); setMethods(m); setExpenses(e); setAccounts(a);
+      setReceipts(r);
       setTb(await trialBalance('main').catch(() => null));
     })().catch((err) => setError(humanError(err)));
   }, []);
@@ -204,6 +213,61 @@ export function ReportsPage() {
           </>
         )}
       </Card>
+
+      <EmailPanel receipts={receipts} />
     </>
+  );
+}
+
+/**
+ * Whether the emails actually went out.
+ *
+ * Sending is done by a function you cannot watch, so a receipt that fails would
+ * otherwise be invisible — the customer just never gets it. The provider's own
+ * rejection message is shown as it came back, because that message is usually
+ * the whole answer (an unverified sender address, most often).
+ */
+function EmailPanel({ receipts }: { receipts: Receipt[] }) {
+  const recent = [...receipts].sort((a, b) => b.$createdAt.localeCompare(a.$createdAt)).slice(0, 15);
+  const failed = receipts.filter((r) => r.status === 'failed' || r.status === 'bounced').length;
+
+  return (
+    <Card title="Emailed receipts">
+      {recent.length === 0 ? (
+        <Empty title="No receipts sent yet">
+          A receipt is created whenever a bill is settled and the customer gave an email address.
+        </Empty>
+      ) : (
+        <>
+          {failed > 0 && (
+            <div style={{ marginBottom: '0.7rem' }}>
+              <Notice>
+                {failed} {failed === 1 ? 'receipt has' : 'receipts have'} failed to send. The reason from the email
+                provider is in the last column.
+              </Notice>
+            </div>
+          )}
+          <div className="table-wrap">
+            <table className="data">
+              <thead><tr><th>When</th><th>To</th><th>Status</th><th>Detail</th></tr></thead>
+              <tbody>
+                {recent.map((r) => (
+                  <tr key={r.$id}>
+                    <td className="dim small">{new Date(r.$createdAt).toLocaleString()}</td>
+                    <td className="small">{r.to_email || '—'}</td>
+                    <td>
+                      <Badge tone={r.status === 'sent' ? 'ok' : r.status === 'failed' || r.status === 'bounced' ? 'danger' : 'warn'}>
+                        {r.status}
+                      </Badge>
+                    </td>
+                    <td className="small dim">{r.last_error || (r.status === 'sent' ? 'Delivered to the provider' : '')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </Card>
   );
 }

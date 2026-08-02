@@ -76,7 +76,8 @@ export function DishSheet({
       qty,
       addons,
       notes: notes.trim() || undefined,
-      station: entry.item.station === 'inherit' ? undefined : entry.item.station,
+      station: entry.station,
+      station_key: entry.stationKey,
     });
   };
 

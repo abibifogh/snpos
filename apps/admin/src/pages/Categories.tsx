@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import { parseWindows, describeWindows, isAvailable } from '@snpos/core';
-import type { Category, Station, Windows } from '@snpos/core';
+import type { Category, Windows } from '@snpos/core';
 import { HoursEditor } from '../components/HoursEditor';
 import { ImageField } from '../components/ImageField';
+import { StationPicker, useStations, legacyStationFor } from '../components/StationPicker';
 import { useSession } from '../session';
 
-const STATIONS: Station[] = ['hot', 'cold', 'bar', 'dessert'];
 const blank = (sort: number): Partial<Category> => ({
   name: '', description: '', sort, active: true, unavailable_display: 'grey', station: 'hot',
 });
@@ -15,6 +15,7 @@ const blank = (sort: number): Partial<Category> => ({
 export function CategoriesPage() {
   const { settings } = useSession();
   const toast = useToast();
+  const stations = useStations();
   const [hours, setHours] = useState<Windows>({});
   const [rows, setRows] = useState<Category[] | null>(null);
   const [editing, setEditing] = useState<Partial<Category> | null>(null);
@@ -23,6 +24,21 @@ export function CategoriesPage() {
 
   const load = () => listAll<Category>('categories').then((r) => setRows(r.sort((a, b) => a.sort - b.sort)));
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
+
+  const nameOfStation = (c: Category) => {
+    const key = c.station_key || c.station;
+    return stations?.find((s) => s.key === key)?.name ?? key;
+  };
+
+  const open = (c?: Category) => {
+    const base = c ? { ...c } : blank((rows?.length ?? 0) + 1);
+    // An older category has only the built-in `station`; a new one starts at the
+    // restaurant's first station rather than at a name they never chose.
+    base.station_key = c ? c.station_key || c.station : stations?.[0]?.key ?? '';
+    setEditing(base);
+    setHours(c ? parseWindows(c.availability) ?? {} : {});
+    setError(null);
+  };
 
   const save = async () => {
     if (!editing?.name?.trim()) { setError('A category needs a name.'); return; }
@@ -34,7 +50,10 @@ export function CategoriesPage() {
       sort: Number(editing.sort ?? 0),
       active: editing.active ?? true,
       unavailable_display: editing.unavailable_display ?? 'grey',
-      station: editing.station ?? 'hot',
+      // `station` is the old built-in enum and is still required by the
+      // database; `station_key` is the one the kitchen actually reads.
+      station: legacyStationFor(editing.station_key ?? ''),
+      station_key: editing.station_key ?? '',
       availability: Object.keys(hours).length ? JSON.stringify(hours) : '',
       image_id: editing.image_id ?? '',
     };
@@ -68,7 +87,7 @@ export function CategoriesPage() {
     <>
       <div className="spread">
         <h1>Categories</h1>
-        <Button variant="primary" onClick={() => { setEditing(blank((rows?.length ?? 0) + 1)); setHours({}); }}>Add category</Button>
+        <Button variant="primary" onClick={() => open()}>Add category</Button>
       </div>
 
       {error && !editing && <Notice>{error}</Notice>}
@@ -101,7 +120,7 @@ export function CategoriesPage() {
                       <div style={{ fontWeight: 550 }}>{c.name}</div>
                       {c.description && <div className="small dim">{c.description}</div>}
                     </td>
-                    <td className="dim">{c.station}</td>
+                    <td className="dim">{nameOfStation(c)}</td>
                     <td className="small dim">
                       {(() => {
                         const w = parseWindows(c.availability);
@@ -111,7 +130,7 @@ export function CategoriesPage() {
                     </td>
                     <td>{c.active ? <Badge tone="ok">Active</Badge> : <Badge>Hidden</Badge>}</td>
                     <td className="num">
-                      <Button size="sm" variant="ghost" onClick={() => { setEditing(c); setHours(parseWindows(c.availability) ?? {}); }}>Edit</Button>
+                      <Button size="sm" variant="ghost" onClick={() => open(c)}>Edit</Button>
                       <Button size="sm" variant="ghost" onClick={() => remove(c)}>Delete</Button>
                     </td>
                   </tr>
@@ -141,11 +160,12 @@ export function CategoriesPage() {
             <Textarea value={editing.description ?? ''} onChange={(e) => setEditing({ ...editing, description: e.target.value })} />
           </Field>
           <div className="grid-2">
-            <Field label="Kitchen station" hint="Where these are prepared. Dishes can override it.">
-              <Select value={editing.station ?? 'hot'} onChange={(e) => setEditing({ ...editing, station: e.target.value as Station })}>
-                {STATIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-              </Select>
-            </Field>
+            <StationPicker
+              stations={stations}
+              value={editing.station_key ?? ''}
+              onChange={(key) => setEditing({ ...editing, station_key: key })}
+              hint="Where these are prepared. A dish can override it."
+            />
             <Field label="Sort order" hint="Lower numbers appear first.">
               <Input type="number" value={editing.sort ?? 0} onChange={(e) => setEditing({ ...editing, sort: Number(e.target.value) })} />
             </Field>

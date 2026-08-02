@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Button } from '@snpos/ui';
+import { Button, Logo } from '@snpos/ui';
 import { useSession } from './session';
 
 interface NavLinkDef { to: string; label: string; end?: boolean }
@@ -56,7 +56,7 @@ export function Shell({ children }: { children: ReactNode }) {
     <div className="shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="dot" />
+          <Logo size={24} />
           <span>{settings?.restaurant_name ?? 'SNPOS'}</span>
         </div>
         <nav>

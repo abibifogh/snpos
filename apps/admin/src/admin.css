@@ -19,7 +19,6 @@
   align-items: center;
   gap: 0.6rem;
 }
-.sidebar-brand .dot { width: 22px; height: 22px; border-radius: 6px; background: var(--brand); flex: none; }
 .sidebar nav { padding: 0.6rem; overflow-y: auto; flex: 1; }
 .sidebar .group {
   font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em;

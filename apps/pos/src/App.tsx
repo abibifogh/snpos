@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Spinner, Card, Field, Input, Notice, useToast } from '@snpos/ui';
+import { Button, Spinner, Card, Field, Input, Notice, useToast, Logo } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import { account, db, DB_ID, Query, listAll, loadMenu, loadFeatures, humanError, isEnabled } from '@snpos/core';
 import type { Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, Doc } from '@snpos/core';
@@ -114,6 +114,9 @@ export function App() {
     return (
       <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: '1.5rem' }}>
         <div style={{ width: '100%', maxWidth: 380 }}>
+          <div style={{ display: 'grid', placeItems: 'center', marginBottom: '1rem' }}>
+            <Logo size={52} />
+          </div>
           <Card title="Terminal sign in">
             <form onSubmit={signIn}>
               <Field label="Email">
@@ -156,9 +159,12 @@ export function App() {
   return (
     <div className="pos">
       <div className="pos-top">
-        <div>
-          <strong>{ctx.venue.name}</strong>
-          <div className="who">{ctx.profile?.display_name ?? 'Staff'} · {ctx.profile?.role ?? 'no profile'}</div>
+        <div className="row">
+          <Logo size={26} />
+          <div>
+            <strong>{ctx.venue.name}</strong>
+            <div className="who">{ctx.profile?.display_name ?? 'Staff'} · {ctx.profile?.role ?? 'no profile'}</div>
+          </div>
         </div>
         <div className="pos-tabs">
           <button className={tab === 'tables' ? 'on' : ''} onClick={() => setTab('tables')}>Tables</button>

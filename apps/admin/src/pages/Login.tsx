@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Card, Field, Input, Notice } from '@snpos/ui';
+import { Button, Card, Field, Input, Notice, Logo } from '@snpos/ui';
 import { useSession } from '../session';
 import { humanError } from '../lib';
 
@@ -26,6 +26,9 @@ export function Login() {
   return (
     <div className="login-wrap">
       <div className="login-card">
+        <div style={{ display: 'grid', placeItems: 'center', marginBottom: '1rem' }}>
+          <Logo size={52} />
+        </div>
         <Card title={settings?.restaurant_name ?? 'SNPOS Admin'}>
           <form onSubmit={submit}>
             <Field label="Email">

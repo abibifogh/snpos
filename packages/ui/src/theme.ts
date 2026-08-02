@@ -4,6 +4,8 @@
  * Colours live in the settings document rather than in the build, so an admin
  * changing them takes effect on the next load without anyone redeploying.
  */
+import { applyFavicon } from './logo';
+
 export interface ThemeInput {
   primary_color?: string;
   secondary_color?: string;
@@ -34,4 +36,6 @@ export function applyTheme(t: ThemeInput): void {
   if (t.accent_color || t.secondary_color) {
     root.style.setProperty('--accent', (t.accent_color || t.secondary_color) as string);
   }
+  // The tab icon is drawn from these same colours, so it changes with them.
+  applyFavicon();
 }

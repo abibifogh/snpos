@@ -74,7 +74,8 @@ export function OrderView({
           unit_price: entry.price,
           qty: 1,
           addons: [],
-          station: entry.item.station === 'inherit' ? undefined : entry.item.station,
+          station: entry.station,
+          station_key: entry.stationKey,
         },
       ];
     });

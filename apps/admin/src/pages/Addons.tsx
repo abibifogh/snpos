@@ -56,12 +56,21 @@ export function AddonsPage() {
   };
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
 
-  const open = (g?: AddonGroup) => {
-    setEditing(g ?? { name: '', description: '', min_select: 0, max_select: 1, required: false, sort: (groups?.length ?? 0) + 1 });
+  /**
+   * Open the editor. `copy` starts a brand new group from an existing one —
+   * every choice comes across, but none of them keep their id, so saving writes
+   * a second group instead of overwriting the first.
+   */
+  const open = (g?: AddonGroup, copy = false) => {
+    setEditing(
+      g
+        ? { ...g, ...(copy ? { $id: undefined, name: `${g.name} (copy)`, sort: (groups?.length ?? 0) + 1 } : {}) }
+        : { name: '', description: '', min_select: 0, max_select: 1, required: false, sort: (groups?.length ?? 0) + 1 },
+    );
     setDraftOptions(
       g
         ? (options[g.$id] ?? []).map((o) => ({
-            $id: o.$id,
+            $id: copy ? undefined : o.$id,
             name: o.name,
             priceText: toInput(o.price_delta, decimals),
             active: o.active,
@@ -176,6 +185,9 @@ export function AddonsPage() {
               actions={
                 <div className="row">
                   <Button size="sm" variant="ghost" onClick={() => open(g)}>Edit</Button>
+                  <Button size="sm" variant="ghost" onClick={() => open(g, true)} title="Copy this group and all its choices">
+                    Duplicate
+                  </Button>
                   <Button size="sm" variant="ghost" onClick={() => remove(g)}>Delete</Button>
                 </div>
               }
@@ -266,7 +278,7 @@ export function AddonsPage() {
                   <th>Name</th>
                   <th style={{ width: '7.5rem' }}>Extra cost</th>
                   <th style={{ width: '5rem' }}>Default</th>
-                  <th style={{ width: '2rem' }} />
+                  <th style={{ width: '5rem' }} />
                 </tr>
               </thead>
               <tbody>
@@ -294,6 +306,22 @@ export function AddonsPage() {
                         size="sm"
                         variant="ghost"
                         type="button"
+                        title="Duplicate this choice"
+                        onClick={() =>
+                          setDraftOptions((d) => [
+                            ...d.slice(0, i + 1),
+                            { ...d[i], $id: undefined, name: `${d[i].name} (copy)` },
+                            ...d.slice(i + 1),
+                          ])
+                        }
+                      >
+                        ⧉
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        type="button"
+                        title="Remove this choice"
                         onClick={() => {
                           if (o.$id) setRemovedOptionIds((r) => [...r, o.$id as string]);
                           setDraftOptions((d) => d.filter((_, idx) => idx !== i));

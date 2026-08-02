@@ -1,20 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Notice, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import { formatMoney, parseMoney, toInput, previewUrl, Query } from '@snpos/core';
-import type { Category, MenuItem, Station, Doc } from '@snpos/core';
+import type { Category, MenuItem, Doc } from '@snpos/core';
 import { ImageField } from '../components/ImageField';
+import { StationPicker, useStations, legacyStationFor } from '../components/StationPicker';
 import { useSession } from '../session';
 
 interface ItemCategory extends Doc { menu_item_id: string; category_id: string; sort: number; active: boolean }
 interface AddonGroup extends Doc { name: string; required: boolean; sort: number }
 interface ItemAddonGroup extends Doc { menu_item_id: string; group_id: string; sort: number }
 
-const STATIONS: (Station | 'inherit')[] = ['inherit', 'hot', 'cold', 'bar', 'dessert'];
-
 export function MenuItemsPage() {
   const { settings } = useSession();
   const toast = useToast();
+  const stations = useStations();
   const [items, setItems] = useState<MenuItem[] | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [links, setLinks] = useState<ItemCategory[]>([]);
@@ -59,12 +59,25 @@ export function MenuItemsPage() {
     return [...new Set([item.category_id, ...extra].filter(Boolean))];
   };
 
-  const open = (item?: MenuItem) => {
-    const base: Partial<MenuItem> = item ?? {
-      name: '', description: '', price: 0, category_id: categories[0]?.$id ?? '',
-      active: true, prep_minutes: 10, station: 'inherit', sort: (items?.length ?? 0) + 1,
-      track_stock: false, image_focal_x: 0.5, image_focal_y: 0.5,
-    };
+  /**
+   * Open the editor.
+   *
+   * A copy is deliberately opened rather than saved straight away: two dishes
+   * called "Jollof (copy)" on the live menu is worse than one extra tap, and it
+   * gives you the chance to change the one thing that differs before customers
+   * ever see it.
+   */
+  const open = (item?: MenuItem, copy = false) => {
+    const base: Partial<MenuItem> = item
+      ? { ...item, ...(copy ? { $id: undefined, name: `${item.name} (copy)` } : {}) }
+      : {
+          name: '', description: '', price: 0, category_id: categories[0]?.$id ?? '',
+          active: true, prep_minutes: 10, station: 'inherit', sort: (items?.length ?? 0) + 1,
+          track_stock: false, image_focal_x: 0.5, image_focal_y: 0.5,
+        };
+    // An older dish only has the built-in `station`; carry it across so opening
+    // a dish to change its price cannot silently move it to another station.
+    base.station_key = item ? item.station_key || (item.station !== 'inherit' ? item.station : '') : '';
     setEditing(base);
     setPriceText(toInput(base.price ?? 0, decimals));
     setPickedCategories(item ? categoriesFor(item) : categories[0] ? [categories[0].$id] : []);
@@ -119,7 +132,11 @@ export function MenuItemsPage() {
       price,
       active: editing.active ?? true,
       prep_minutes: Number(editing.prep_minutes ?? 10),
-      station: editing.station ?? 'inherit',
+      // Blank means "wherever its main category goes". `station` is the old
+      // built-in enum the database still requires; `station_key` is the one the
+      // kitchen screen actually reads.
+      station: editing.station_key ? legacyStationFor(editing.station_key) : 'inherit',
+      station_key: editing.station_key ?? '',
       sort: Number(editing.sort ?? 0),
       track_stock: editing.track_stock ?? false,
       image_id: editing.image_id ?? '',
@@ -231,6 +248,9 @@ export function MenuItemsPage() {
                     <td>{i.active ? <Badge tone="ok">Active</Badge> : <Badge>Hidden</Badge>}</td>
                     <td className="num">
                       <Button size="sm" variant="ghost" onClick={() => open(i)}>Edit</Button>
+                      <Button size="sm" variant="ghost" onClick={() => open(i, true)} title="Copy this dish, options and all">
+                        Duplicate
+                      </Button>
                       <Button size="sm" variant="ghost" onClick={() => remove(i)}>Delete</Button>
                     </td>
                   </tr>
@@ -297,11 +317,12 @@ export function MenuItemsPage() {
             <Field label="Prep time (minutes)" hint="Used to estimate waits and to time pre-orders.">
               <Input type="number" min="0" value={editing.prep_minutes ?? 10} onChange={(e) => setEditing({ ...editing, prep_minutes: Number(e.target.value) })} />
             </Field>
-            <Field label="Kitchen station">
-              <Select value={editing.station ?? 'inherit'} onChange={(e) => setEditing({ ...editing, station: e.target.value as Station | 'inherit' })}>
-                {STATIONS.map((s) => <option key={s} value={s}>{s === 'inherit' ? 'Same as category' : s}</option>)}
-              </Select>
-            </Field>
+            <StationPicker
+              stations={stations}
+              value={editing.station_key ?? ''}
+              onChange={(key) => setEditing({ ...editing, station_key: key })}
+              inheritLabel="Same as its main category"
+            />
           </div>
           <Field>
             <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label="Active — shown on the menu" />
