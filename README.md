@@ -97,12 +97,9 @@ packages/
   ui/          Themed components + runtime branding                      [built]
   offline/     Local store, outbox queue, sync worker, conflict rules
 functions/
-  order-guard/          Server-side price + availability validation
-  preorder-fire/        Releases scheduled orders to the kitchen at fire time
-  kitchen-escalate/     Re-ping unacknowledged orders
-  shift-close/          Post shift to ledger, depletion, variance flags
-  stock-variance/       Nightly theoretical-vs-actual analysis
-  payment-webhook/      Gateway callback (dormant until enabled)
+  preorder-fire/        Releases scheduled orders at fire time        [built]
+  kitchen-escalate/     Escalates unacknowledged orders               [built]
+  notify/               Emails receipts and shift summaries           [built]
 scripts/
   provision.mjs         Creates every collection, attribute, index, bucket, team
   gen-manual-setup.mjs  Regenerates doc 15 from the schema (npm run gen:manual)

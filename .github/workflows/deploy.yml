@@ -96,7 +96,12 @@ jobs:
           <a href="menu/"><b>Customer menu</b><span>What guests see when they scan a table QR code</span></a>
           HTML
 
+      # enablement turns Pages on if it is not already, so this step cannot
+      # fail with "Get Pages site failed" on a repository where nobody has
+      # visited the Pages settings yet.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

@@ -1,0 +1,75 @@
+name: Deploy functions
+
+# Ships the Appwrite Functions — the parts that must keep running when no
+# screen is open: releasing pre-orders at their time, escalating an order the
+# kitchen has not acknowledged, emailing receipts and shift summaries.
+#
+# Manual, like Provision: these run against the live project.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy" to confirm'
+        required: true
+        default: ''
+
+jobs:
+  functions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the confirmation
+        if: ${{ inputs.confirm != 'deploy' }}
+        run: |
+          echo "Type 'deploy' in the confirmation box to run this."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install the Appwrite CLI
+        run: npm install -g appwrite-cli
+
+      - name: Point the CLI at the project
+        env:
+          APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT }}
+          APPWRITE_PROJECT_ID: ${{ vars.APPWRITE_PROJECT_ID }}
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+        run: |
+          appwrite client \
+            --endpoint "$APPWRITE_ENDPOINT" \
+            --project-id "$APPWRITE_PROJECT_ID" \
+            --key "$APPWRITE_API_KEY"
+          # appwrite.json carries the project id as a placeholder so the file
+          # is not tied to one project; fill it in for this run only.
+          sed -i "s|\${APPWRITE_PROJECT_ID}|$APPWRITE_PROJECT_ID|" appwrite.json
+
+      - name: Push the functions
+        run: appwrite push functions --all --force
+
+      - name: Set their variables
+        env:
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+          DB_ID: ${{ vars.DB_ID || 'snpos' }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+        run: |
+          set -e
+          for fn in preorder-fire kitchen-escalate notify; do
+            # A function cannot read the project's API key implicitly; it needs
+            # its own copy to write to the database.
+            appwrite functions create-variable --function-id "$fn" --key APPWRITE_API_KEY --value "$APPWRITE_API_KEY" 2>/dev/null || true
+            appwrite functions create-variable --function-id "$fn" --key DB_ID --value "$DB_ID" 2>/dev/null || true
+          done
+          if [ -n "$SMTP_HOST" ]; then
+            appwrite functions create-variable --function-id notify --key SMTP_HOST --value "$SMTP_HOST" 2>/dev/null || true
+            appwrite functions create-variable --function-id notify --key SMTP_PORT --value "${SMTP_PORT:-587}" 2>/dev/null || true
+            appwrite functions create-variable --function-id notify --key SMTP_USER --value "$SMTP_USER" 2>/dev/null || true
+            appwrite functions create-variable --function-id notify --key SMTP_PASS --value "$SMTP_PASS" 2>/dev/null || true
+          else
+            echo "::warning::No SMTP secrets set — receipts and summaries will be recorded but not emailed."
+          fi

@@ -135,9 +135,6 @@ Being straight about the limits:
   **Settings → Pages**; add the domain to Appwrite's platforms too.
 - **The kitchen tablet still needs its app installed** (doc 12). Deploying does
   not put software on a tablet.
-- **Appwrite Functions** — emailing receipts, firing pre-orders, escalating a
-  dead kitchen screen — are not built yet. When they are, they deploy through
-  Appwrite's own GitHub connection rather than through Pages.
 
 ---
 
@@ -153,3 +150,54 @@ Being straight about the limits:
 
 Every failed run keeps its full log under the **Actions** tab. Paste it to me
 and I can usually tell you the cause from the first few lines.
+
+
+---
+
+## 16.7 Server-side functions
+
+Three things must happen whether or not anyone has a screen open. They run on
+Appwrite as **Functions**, deployed from GitHub like everything else:
+
+| Function | When it runs | What it does |
+| --- | --- | --- |
+| `preorder-fire` | Every minute | Releases pre-orders to the kitchen at their fire time, re-checking availability first |
+| `kitchen-escalate` | Every minute | Raises the alarm level on unacknowledged orders and flags a manager past the top level |
+| `notify` | On payment, on shift close | Emails the receipt; emails the shift summary |
+
+The first two exist precisely because a screen cannot be relied on. A tablet
+that has crashed, been unplugged, or had its battery optimised into silence is
+exactly the moment an order gets forgotten — and it is the moment the kitchen
+display is no longer running to notice.
+
+### Deploying them
+
+**Actions → Deploy functions → Run workflow**, type `deploy`. Same pattern as
+Provision, and manual for the same reason.
+
+### Email
+
+Receipts and summaries need an SMTP account. Any provider works — Brevo,
+Mailgun, SendGrid, or a Gmail app password for low volume. Add these as
+**Secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Example |
+| --- | --- |
+| `SMTP_HOST` | `smtp-relay.brevo.com` |
+| `SMTP_PORT` | `587` |
+| `SMTP_USER` | your SMTP username |
+| `SMTP_PASS` | your SMTP password or app password |
+
+Then set the sender name and address in Admin → Settings → Email, and add
+recipients for the shift summary under report subscriptions.
+
+**Without SMTP configured**, nothing breaks and nothing is silently lost: the
+receipt and summary are still written to the database with a status of
+`failed` and a reason, so they can be sent later or read in the admin app. A
+missing configuration should be visible, not invisible.
+
+### Watching them
+
+Appwrite console → **Functions** → pick one → **Executions**. Every run is
+logged with what it did. `preorder-fire` and `kitchen-escalate` run every
+minute, so a healthy project shows a steady stream of quick, boring successes.

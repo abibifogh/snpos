@@ -1,0 +1,63 @@
+{
+  "projectId": "${APPWRITE_PROJECT_ID}",
+  "projectName": "SNPOS",
+  "functions": [
+    {
+      "$id": "preorder-fire",
+      "name": "Pre-order fire",
+      "runtime": "node-18.0",
+      "execute": [],
+      "events": [],
+      "schedule": "* * * * *",
+      "timeout": 60,
+      "enabled": true,
+      "logging": true,
+      "entrypoint": "src/main.js",
+      "commands": "npm install",
+      "path": "functions/preorder-fire",
+      "ignore": [
+        "node_modules",
+        ".npm"
+      ]
+    },
+    {
+      "$id": "kitchen-escalate",
+      "name": "Kitchen escalation",
+      "runtime": "node-18.0",
+      "execute": [],
+      "events": [],
+      "schedule": "* * * * *",
+      "timeout": 30,
+      "enabled": true,
+      "logging": true,
+      "entrypoint": "src/main.js",
+      "commands": "npm install",
+      "path": "functions/kitchen-escalate",
+      "ignore": [
+        "node_modules",
+        ".npm"
+      ]
+    },
+    {
+      "$id": "notify",
+      "name": "Receipts and summaries",
+      "runtime": "node-18.0",
+      "execute": [],
+      "events": [
+        "databases.snpos.collections.orders.documents.*.update",
+        "databases.snpos.collections.shifts.documents.*.update"
+      ],
+      "schedule": "",
+      "timeout": 60,
+      "enabled": true,
+      "logging": true,
+      "entrypoint": "src/main.js",
+      "commands": "npm install",
+      "path": "functions/notify",
+      "ignore": [
+        "node_modules",
+        ".npm"
+      ]
+    }
+  ]
+}
