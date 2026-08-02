@@ -108,6 +108,68 @@ export async function depleteForShift(
   return usage;
 }
 
+/**
+ * Put bought stock on the shelf.
+ *
+ * The counterpart to depletion, and written the same way: a movement recording
+ * that it happened, then the running quantity. The movement is the record; the
+ * quantity on the ingredient is a convenience that can always be rebuilt from
+ * the movements if it ever drifts.
+ *
+ * When a unit cost is given it becomes the ingredient's cost from now on. What
+ * you last paid is the honest basis for valuing what is on the shelf and for
+ * telling you what a dish costs to make.
+ */
+export async function receiveStock(opts: {
+  venueId: string;
+  ingredient: Ingredient;
+  qty: number;
+  unitCost?: number;
+  refType: string;
+  refId: string;
+  shiftId?: string;
+  createdBy?: string;
+  note?: string;
+}): Promise<void> {
+  const { venueId, ingredient, qty, unitCost, refType, refId, shiftId, createdBy, note } = opts;
+  if (qty <= 0) return;
+
+  await db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
+    venue_id: venueId,
+    ingredient_id: ingredient.$id,
+    type: 'purchase',
+    qty_delta: qty,
+    unit_cost: unitCost ?? ingredient.base_unit_cost,
+    ref_type: refType,
+    ref_id: refId,
+    shift_id: shiftId ?? '',
+    created_by: createdBy ?? '',
+    note: note ?? '',
+  });
+
+  await db.updateDocument(DB_ID, 'ingredients', ingredient.$id, {
+    current_qty: Number((ingredient.current_qty + qty).toFixed(4)),
+    ...(unitCost && unitCost > 0 ? { base_unit_cost: unitCost } : {}),
+  });
+}
+
+/**
+ * What one portion of a dish costs in ingredients.
+ *
+ * Wastage counts: the part of an onion you throw away was still bought and
+ * paid for, so leaving it out would flatter every margin on the menu.
+ */
+export function recipeCost(recipes: Recipe[], ingredients: Ingredient[]): number {
+  const byId = new Map(ingredients.map((i) => [i.$id, i]));
+  return Math.round(
+    recipes.reduce((sum, r) => {
+      const ing = byId.get(r.ingredient_id);
+      if (!ing) return sum;
+      return sum + r.qty_per_unit * (1 + (r.wastage_bp || 0) / 10000) * ing.base_unit_cost;
+    }, 0),
+  );
+}
+
 export type StockLevel = 'ok' | 'low' | 'out';
 
 /** Where an ingredient sits against its own thresholds. */

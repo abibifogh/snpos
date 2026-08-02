@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import { formatMoney, parseMoney, toInput, previewUrl, Query } from '@snpos/core';
-import type { Category, MenuItem, Doc } from '@snpos/core';
+import type { Category, MenuItem, Ingredient, Recipe, Doc } from '@snpos/core';
 import { ImageField } from '../components/ImageField';
+import { RecipeEditor, draftFrom, type DraftRecipe } from '../components/RecipeEditor';
 import { StationPicker, useStations, legacyStationFor } from '../components/StationPicker';
 import { useSession } from '../session';
 
@@ -20,6 +21,10 @@ export function MenuItemsPage() {
   const [links, setLinks] = useState<ItemCategory[]>([]);
   const [addonGroups, setAddonGroups] = useState<AddonGroup[]>([]);
   const [itemAddons, setItemAddons] = useState<ItemAddonGroup[]>([]);
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [draftRecipes, setDraftRecipes] = useState<DraftRecipe[]>([]);
+  const [removedRecipeIds, setRemovedRecipeIds] = useState<string[]>([]);
   // Chosen in the editor; written as join rows on save.
   const [pickedCategories, setPickedCategories] = useState<string[]>([]);
   const [pickedAddons, setPickedAddons] = useState<string[]>([]);
@@ -32,18 +37,22 @@ export function MenuItemsPage() {
   const decimals = settings?.currency_decimals ?? 2;
 
   const load = async () => {
-    const [i, c, l, g, ia] = await Promise.all([
+    const [i, c, l, g, ia, ing, r] = await Promise.all([
       listAll<MenuItem>('menu_items'),
       listAll<Category>('categories'),
       listAll<ItemCategory>('menu_item_categories'),
       listAll<AddonGroup>('addon_groups'),
       listAll<ItemAddonGroup>('menu_item_addon_groups'),
+      listAll<Ingredient>('ingredients'),
+      listAll<Recipe>('recipes'),
     ]);
     setItems(i.sort((a, b) => a.sort - b.sort));
     setCategories(c.sort((a, b) => a.sort - b.sort));
     setLinks(l);
     setAddonGroups(g.sort((a, b) => a.sort - b.sort));
     setItemAddons(ia);
+    setIngredients(ing.filter((x) => x.active).sort((a, b) => a.name.localeCompare(b.name)));
+    setRecipes(r);
   };
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
 
@@ -82,6 +91,17 @@ export function MenuItemsPage() {
     setPriceText(toInput(base.price ?? 0, decimals));
     setPickedCategories(item ? categoriesFor(item) : categories[0] ? [categories[0].$id] : []);
     setPickedAddons(item ? itemAddons.filter((a) => a.menu_item_id === item.$id).map((a) => a.group_id) : []);
+    // A copy takes the recipe with it but none of the row ids, so saving writes
+    // a second recipe rather than moving the original's.
+    setDraftRecipes(
+      item
+        ? recipes
+            .filter((r) => r.menu_item_id === item.$id)
+            .map(draftFrom)
+            .map((d) => (copy ? { ...d, $id: undefined } : d))
+        : [],
+    );
+    setRemovedRecipeIds([]);
     setError(null);
   };
 
@@ -112,6 +132,26 @@ export function MenuItemsPage() {
         .filter((h) => !pickedAddons.includes(h.group_id))
         .map((h) => db.deleteDocument(DB_ID, 'menu_item_addon_groups', h.$id)),
     ]);
+
+    for (const id of removedRecipeIds) {
+      await db.deleteDocument(DB_ID, 'recipes', id).catch(() => undefined);
+    }
+    await Promise.all(
+      draftRecipes
+        .filter((d) => d.ingredient_id && Number(d.qtyText) > 0)
+        .map((d) => {
+          const body = {
+            menu_item_id: itemId,
+            addon_option_id: '',
+            ingredient_id: d.ingredient_id,
+            qty_per_unit: Number(d.qtyText),
+            wastage_bp: Math.round(Number(d.wastageText || 0) * 100),
+          };
+          return d.$id
+            ? db.updateDocument(DB_ID, 'recipes', d.$id, body)
+            : db.createDocument(DB_ID, 'recipes', ID.unique(), body);
+        }),
+    );
   };
 
   const save = async () => {
@@ -233,6 +273,13 @@ export function MenuItemsPage() {
                     <td>
                       <div style={{ fontWeight: 550 }}>{i.name}</div>
                       {i.description && <div className="small dim">{i.description.slice(0, 70)}{i.description.length > 70 ? '…' : ''}</div>}
+                      {(() => {
+                        const n = recipes.filter((r) => r.menu_item_id === i.$id).length;
+                        if (n > 0) return <span className="small dim">{n} ingredient{n > 1 ? 's' : ''}</span>;
+                        // Only worth flagging when the dish claims to track stock:
+                        // a bottled drink has no recipe and needs none.
+                        return i.track_stock ? <Badge tone="warn">No recipe</Badge> : null;
+                      })()}
                     </td>
                     <td className="dim small">
                       {categoriesFor(i).length === 0 ? (
@@ -330,6 +377,32 @@ export function MenuItemsPage() {
           <Field hint="Only for items made from ingredients you count. Leave off for drinks you buy in.">
             <Toggle checked={editing.track_stock ?? false} onChange={(v) => setEditing({ ...editing, track_stock: v })} label="Track ingredient stock for this item" />
           </Field>
+
+          <RecipeEditor
+            ingredients={ingredients}
+            draft={draftRecipes}
+            setDraft={(f) =>
+              setDraftRecipes((d) => {
+                const next = f(d);
+                // Anything that disappeared and had been saved must be deleted
+                // on save, not merely forgotten about.
+                const gone = d.filter((x) => x.$id && !next.some((y) => y.$id === x.$id));
+                if (gone.length) setRemovedRecipeIds((r) => [...r, ...gone.map((x) => x.$id as string)]);
+                return next;
+              })
+            }
+            price={parseMoney(priceText, decimals) ?? 0}
+            settings={settings}
+          />
+
+          {editing.track_stock && draftRecipes.length === 0 && (
+            <div style={{ marginBottom: '1rem' }}>
+              <Notice tone="warn">
+                Stock tracking is on but nothing is listed above, so selling this will take nothing off the shelf. Add
+                what a portion uses, or turn the tracking off.
+              </Notice>
+            </div>
+          )}
 
           <Field
             label="Option groups"

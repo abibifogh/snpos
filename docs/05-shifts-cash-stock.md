@@ -41,6 +41,19 @@ Recorded against the open shift, from the POS or admin:
 - Category, payee, amount, which payment method it was paid from (usually cash
   — which reduces expected drawer), note, and a **photo of the receipt**
   uploaded to the `receipts` bucket.
+- **Categories are the restaurant's own**, managed under Admin → Expenses →
+  Categories. Each one names the account it posts to, which is what decides
+  where the money lands in Reports — "Gas refill" can sit under Utilities
+  rather than everything piling into Other. The old fixed seven are seeded as a
+  starting point.
+- **Paid to** is one of: a supplier, a member of staff, the open market, or
+  someone else. Not every purchase has a supplier behind it, and a field that
+  insists otherwise is how "market" ends up typed into a supplier list forever.
+- **Stock bought** may be itemised on the expense: ingredient, quantity, unit
+  cost. Each line is added to stock as it is saved, so the shopping trip and the
+  delivery are one piece of work rather than two. The unit cost becomes the
+  ingredient's cost from then on — what you last paid is the honest basis for
+  valuing the shelf.
 - Expenses above a configurable threshold require manager approval before the
   shift can close; unapproved ones block closing and are listed by name.
 - Petty-cash expenses paid from the till reduce `expected` cash automatically —
@@ -115,3 +128,39 @@ percentage fallback in settings, so you can say "500g of saffron is LOW" and
 Output of the step: a stock status summary in the shift report, an auto-drafted
 **purchase list** of everything LOW or OUT grouped by supplier, and any variance
 flags.
+
+## 5.6 How ingredients connect to dishes
+
+The link is the **recipe**, and it is the piece that makes everything else in
+this document work. Without it, selling food and counting stock are two
+unrelated activities that happen to occur in the same building.
+
+A recipe says how much of an ingredient one portion of a dish uses. It is
+edited in Admin → Menu → the dish → **What it's made from**, and each line is:
+
+| Field | Meaning |
+| --- | --- |
+| Ingredient | One of the ingredients under Stock |
+| Per portion | How much of it one portion uses, in that ingredient's own unit |
+| Wastage % | What is bought but never reaches the plate — trim, peel, spillage |
+
+Wastage is not padding. The skin of an onion was bought and paid for; leaving it
+out flatters every margin on the menu by a few percent, consistently, in the
+same direction.
+
+With recipes in place:
+
+- Closing a shift deducts what should have been used (`sale_depletion`), so the
+  expected figure at the next stock check is a real number rather than whatever
+  was last typed in.
+- The dish editor shows what a portion **costs you** and the margin at the
+  current price. A dish whose ingredients cost more than it sells for is called
+  out on the spot — usually grams entered where kilos were meant.
+- Stock → Ingredients shows, per ingredient, **which dishes use it**, and marks
+  the ones no dish uses. An ingredient in no recipe will never be depleted by a
+  sale, which is nearly always a recipe nobody has written yet.
+
+Recipes are optional per dish. A bottled drink you buy in and sell on needs
+none — turn its stock tracking off and it is simply not part of this machinery.
+A dish with stock tracking **on** and no recipe is flagged in the dish list,
+because that combination silently does nothing.

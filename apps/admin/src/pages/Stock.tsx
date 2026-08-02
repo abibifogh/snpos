@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import { formatMoney, parseMoney, toInput, levelOf } from '@snpos/core';
-import type { Ingredient, Doc } from '@snpos/core';
+import type { Ingredient, Recipe, MenuItem, Doc } from '@snpos/core';
+import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
 import { useSession } from '../session';
 
 interface Supplier extends Doc { venue_id: string; name: string; contact?: string; phone?: string; email?: string; active: boolean }
@@ -14,9 +15,12 @@ export function StockPage() {
   const toast = useToast();
   const decimals = settings?.currency_decimals ?? 2;
 
-  const [tab, setTab] = useState<'ingredients' | 'suppliers'>('ingredients');
+  const [tab, setTab] = useState<'ingredients' | 'suppliers' | 'categories'>('ingredients');
   const [ingredients, setIngredients] = useState<Ingredient[] | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [dishes, setDishes] = useState<MenuItem[]>([]);
+  const { rows: categories } = useKeyedList('ingredient_categories');
   const [editing, setEditing] = useState<Partial<Ingredient> | null>(null);
   const [editingSupplier, setEditingSupplier] = useState<Partial<Supplier> | null>(null);
   const [costText, setCostText] = useState('');
@@ -24,9 +28,16 @@ export function StockPage() {
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
-    const [i, s] = await Promise.all([listAll<Ingredient>('ingredients'), listAll<Supplier>('suppliers')]);
+    const [i, s, r, d] = await Promise.all([
+      listAll<Ingredient>('ingredients'),
+      listAll<Supplier>('suppliers'),
+      listAll<Recipe>('recipes'),
+      listAll<MenuItem>('menu_items'),
+    ]);
     setIngredients(i.sort((a, b) => a.name.localeCompare(b.name)));
     setSuppliers(s.sort((a, b) => a.name.localeCompare(b.name)));
+    setRecipes(r);
+    setDishes(d);
   };
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
 
@@ -107,18 +118,40 @@ export function StockPage() {
 
   const supplierName = (id?: string) => suppliers.find((s) => s.$id === id)?.name ?? '—';
 
+  /**
+   * Which dishes this ingredient goes into.
+   *
+   * The link between stock and the menu is invisible until you can see it from
+   * both ends, so it is shown here as well as in the dish editor. An
+   * ingredient used in nothing is called out: it will never be depleted by a
+   * sale, which is usually a recipe someone has not written yet rather than a
+   * deliberate choice.
+   */
+  const usedIn = (ingredientId: string) => {
+    const names = recipes
+      .filter((r) => r.ingredient_id === ingredientId && r.menu_item_id)
+      .map((r) => dishes.find((d) => d.$id === r.menu_item_id)?.name)
+      .filter(Boolean) as string[];
+    if (names.length === 0) return <span className="dim">No dish yet</span>;
+    if (names.length <= 2) return <span className="dim">{names.join(', ')}</span>;
+    return <span className="dim" title={names.join(', ')}>{names.slice(0, 2).join(', ')} +{names.length - 2}</span>;
+  };
+
   return (
     <>
       <div className="spread">
         <h1>Stock</h1>
-        <Button variant="primary" onClick={() => (tab === 'ingredients' ? open() : setEditingSupplier({ name: '', active: true }))}>
-          {tab === 'ingredients' ? 'Add ingredient' : 'Add supplier'}
-        </Button>
+        {tab !== 'categories' && (
+          <Button variant="primary" onClick={() => (tab === 'ingredients' ? open() : setEditingSupplier({ name: '', active: true }))}>
+            {tab === 'ingredients' ? 'Add ingredient' : 'Add supplier'}
+          </Button>
+        )}
       </div>
 
       <div className="pos-tabs" style={{ display: 'flex', gap: '0.4rem' }}>
         <Button size="sm" variant={tab === 'ingredients' ? 'primary' : 'default'} onClick={() => setTab('ingredients')}>Ingredients</Button>
         <Button size="sm" variant={tab === 'suppliers' ? 'primary' : 'default'} onClick={() => setTab('suppliers')}>Suppliers</Button>
+        <Button size="sm" variant={tab === 'categories' ? 'primary' : 'default'} onClick={() => setTab('categories')}>Categories</Button>
       </div>
 
       {error && !editing && !editingSupplier && <Notice>{error}</Notice>}
@@ -138,6 +171,13 @@ export function StockPage() {
         </Notice>
       )}
 
+      {tab === 'categories' ? (
+        <KeyedListManager
+          collection="ingredient_categories"
+          singular="category"
+          hint="Your own groupings — Produce, Dry goods, Drinks, whatever suits how you shop. Used to sort the ingredient list; nothing breaks if you leave them alone."
+        />
+      ) : (
       <Card pad={false}>
         {!ingredients ? (
           <div className="card-pad"><Spinner /></div>
@@ -152,8 +192,9 @@ export function StockPage() {
               <table className="data">
                 <thead>
                   <tr>
-                    <th>Ingredient</th><th>Supplier</th><th className="num">In stock</th>
-                    <th className="num">Par</th><th className="num">Unit cost</th><th>Level</th><th />
+                    <th>Ingredient</th><th>Category</th><th>Supplier</th><th>Used in</th>
+                    <th className="num">In stock</th><th className="num">Par</th>
+                    <th className="num">Unit cost</th><th>Level</th><th />
                   </tr>
                 </thead>
                 <tbody>
@@ -166,7 +207,9 @@ export function StockPage() {
                           <div style={{ fontWeight: 550 }}>{i.name}</div>
                           {i.critical && <span className="badge badge-warn">Critical</span>}
                         </td>
+                        <td className="dim small">{nameForKey(categories, i.category) === '—' ? '' : nameForKey(categories, i.category)}</td>
                         <td className="dim small">{supplierName(i.supplier_id)}</td>
+                        <td className="small">{usedIn(i.$id)}</td>
                         <td className="num">{i.current_qty} {i.unit}</td>
                         <td className="num dim">{i.par_level} {i.unit}</td>
                         <td className="num">{settings ? formatMoney(i.base_unit_cost, settings) : i.base_unit_cost}</td>
@@ -203,6 +246,7 @@ export function StockPage() {
           </div>
         )}
       </Card>
+      )}
 
       {editing && (
         <Modal
@@ -248,8 +292,19 @@ export function StockPage() {
                 {suppliers.map((s) => <option key={s.$id} value={s.$id}>{s.name}</option>)}
               </Select>
             </Field>
-            <Field label="Category" hint="Optional. Produce, Dry goods, Drinks.">
-              <Input value={editing.category ?? ''} onChange={(e) => setEditing({ ...editing, category: e.target.value })} />
+            <Field
+              label="Category"
+              hint={categories && categories.length === 0 ? 'None set up — add some under the Categories tab.' : 'Optional. Groups the shopping list.'}
+            >
+              <Select value={editing.category ?? ''} onChange={(e) => setEditing({ ...editing, category: e.target.value })}>
+                <option value="">— none —</option>
+                {(categories ?? []).filter((c) => c.active !== false).map((c) => (
+                  <option key={c.key} value={c.key}>{c.name}</option>
+                ))}
+                {editing.category && !(categories ?? []).some((c) => c.key === editing.category) && (
+                  <option value={editing.category}>{editing.category} (typed in before)</option>
+                )}
+              </Select>
             </Field>
           </div>
           <Field hint="Critical items are called out first when they run low, ahead of everything else.">

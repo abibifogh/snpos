@@ -529,8 +529,19 @@ export const COLLECTIONS = [
     perms: { read: ['team:cashiers', ...MGMT], create: ['team:cashiers', ...MGMT], update: MGMT, delete: ADMIN },
     attributes: [
       ['shift_id', 's', 64, false], // blank = recorded outside a shift
+      // The old fixed list. Kept because an enum cannot be widened in place
+      // without dropping the column and the data with it; `category_key` is
+      // what the app reads and writes now, and it points at a row the
+      // restaurant created in `expense_categories`.
       ['category', 'e', ['supplies', 'transport', 'utilities', 'repairs', 'staff_advance', 'petty_cash', 'other'], true],
+      ['category_key', 's', 60, false],
       ['payee', 's', 160, false],
+      // Who the money went to. Often there is no supplier at all — a driver, a
+      // cook sent to the market, a one-off stall — and pretending otherwise is
+      // what makes people type "market" into a supplier field forever.
+      ['paid_to_kind', 'e', ['supplier', 'staff', 'open_market', 'other'], false, 'other'],
+      ['supplier_id', 's', 64, false],
+      ['paid_to_staff_id', 's', 64, false],
       ['amount', 'i', null, true, 0],
       ['paid_from_method_id', 's', 64, true],
       ['note', 's', 500, false],
@@ -539,7 +550,63 @@ export const COLLECTIONS = [
       ['approved_by', 's', 64, false],
       ['approval_status', 'e', ['not_required', 'pending', 'approved', 'rejected'], true, 'not_required'],
     ],
-    indexes: [['shift', 'key', ['shift_id']]],
+    indexes: [['shift', 'key', ['shift_id']], ['supplier', 'key', ['supplier_id']]],
+  },
+  {
+    /**
+     * Expense categories, defined by the restaurant.
+     *
+     * `account_code` is what makes a category more than a label: it decides
+     * which line of the accounts the money lands on when the shift is closed.
+     */
+    id: 'expense_categories',
+    name: 'Expense categories',
+    perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['key', 's', 60, true],
+      ['name', 's', 80, true],
+      ['account_code', 's', 10, false, '6090'],
+      ['sort', 'i', null, false, 0],
+      ['active', 'b', null, false, true],
+    ],
+    indexes: [['key_unique', 'unique', ['key']]],
+  },
+  {
+    /**
+     * What was actually bought on an expense.
+     *
+     * An expense of GHS 400 tells you money left. These lines tell you it was
+     * 20kg of rice and 5kg of onions, which is what lets the same trip raise
+     * stock instead of being typed in twice.
+     */
+    id: 'expense_items',
+    name: 'Expense items',
+    perms: { read: ['team:cashiers', ...MGMT], create: ['team:cashiers', ...MGMT], update: MGMT, delete: MGMT },
+    attributes: [
+      ['expense_id', 's', 64, true],
+      ['ingredient_id', 's', 64, true],
+      ['name_snapshot', 's', 160, true],
+      ['qty', 'f', null, true, 0],
+      ['unit_cost', 'i', null, false, 0],
+      ['line_total', 'i', null, false, 0],
+      // Whether this line has already been added to stock. Set once, so
+      // editing an expense cannot deliver the same sack of rice twice.
+      ['stocked', 'b', null, false, false],
+    ],
+    indexes: [['expense', 'key', ['expense_id']], ['ingredient', 'key', ['ingredient_id']]],
+  },
+  {
+    /** Ingredient groupings — Produce, Dry goods, Drinks — the restaurant's own. */
+    id: 'ingredient_categories',
+    name: 'Ingredient categories',
+    perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['key', 's', 60, true],
+      ['name', 's', 80, true],
+      ['sort', 'i', null, false, 0],
+      ['active', 'b', null, false, true],
+    ],
+    indexes: [['key_unique', 'unique', ['key']]],
   },
   {
     id: 'shift_stock_checks',
@@ -1606,6 +1673,35 @@ export const SEED_ACCOUNTS = [
   ['6050', 'Petty cash', 'expense'],
   ['6090', 'Other expenses', 'expense'],
   ['7000', 'Cash over / short', 'expense'],
+];
+
+/**
+ * A starting set of expense categories, each pointed at a real account.
+ *
+ * Seeded so that recording an expense works on day one, and editable so that a
+ * restaurant with "Gas refill" and "Okada runs" is not forced to file both
+ * under Other. `key` is what gets written onto every expense, so it is fixed
+ * once created; the name can change freely.
+ */
+export const SEED_EXPENSE_CATEGORIES = [
+  { key: 'supplies', name: 'Supplies', account_code: '6000', sort: 1 },
+  { key: 'transport', name: 'Transport', account_code: '6010', sort: 2 },
+  { key: 'utilities', name: 'Utilities', account_code: '6020', sort: 3 },
+  { key: 'repairs', name: 'Repairs & maintenance', account_code: '6030', sort: 4 },
+  { key: 'staff_advance', name: 'Staff advances', account_code: '6040', sort: 5 },
+  { key: 'petty_cash', name: 'Petty cash', account_code: '6050', sort: 6 },
+  { key: 'other', name: 'Other', account_code: '6090', sort: 7 },
+];
+
+/** Ingredient groupings to start from. Rename or delete any of them. */
+export const SEED_INGREDIENT_CATEGORIES = [
+  { key: 'produce', name: 'Produce', sort: 1 },
+  { key: 'protein', name: 'Meat & fish', sort: 2 },
+  { key: 'dry_goods', name: 'Dry goods', sort: 3 },
+  { key: 'dairy', name: 'Dairy & eggs', sort: 4 },
+  { key: 'drinks', name: 'Drinks', sort: 5 },
+  { key: 'packaging', name: 'Packaging', sort: 6 },
+  { key: 'cleaning', name: 'Cleaning', sort: 7 },
 ];
 
 export const SEED_PAYMENT_METHODS = [

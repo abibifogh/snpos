@@ -8,7 +8,10 @@
  */
 import 'dotenv/config';
 import { Client, Databases, Storage, Teams, ID, Permission, Role, Query } from 'node-appwrite';
-import { DB_ID, TEAMS, BUCKETS, COLLECTIONS, FEATURES, SEED_ACCOUNTS, SEED_PAYMENT_METHODS } from './schema.mjs';
+import {
+  DB_ID, TEAMS, BUCKETS, COLLECTIONS, FEATURES,
+  SEED_ACCOUNTS, SEED_PAYMENT_METHODS, SEED_EXPENSE_CATEGORIES, SEED_INGREDIENT_CATEGORIES,
+} from './schema.mjs';
 
 const { APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY } = process.env;
 if (!APPWRITE_ENDPOINT || !APPWRITE_PROJECT_ID || !APPWRITE_API_KEY) {
@@ -396,6 +399,27 @@ async function main() {
         surcharge_bp: 0,
         ...m,
       }),
+    );
+  }
+
+  // Lists the restaurant will edit: seeded so the app works on day one, keyed
+  // so that renaming one later does not orphan the records already filed
+  // under it.
+  await waitForAttributes('expense_categories', ['key', 'name', 'account_code', 'sort', 'active']);
+  const haveExpenseCats = (await allDocuments('expense_categories')).map((d) => d.key);
+  for (const c of SEED_EXPENSE_CATEGORIES) {
+    if (haveExpenseCats.includes(c.key)) continue;
+    await ensure(`expense category ${c.key}`, () =>
+      db.createDocument(DB_ID, 'expense_categories', ID.unique(), { ...c, active: true }),
+    );
+  }
+
+  await waitForAttributes('ingredient_categories', ['key', 'name', 'sort', 'active']);
+  const haveIngredientCats = (await allDocuments('ingredient_categories')).map((d) => d.key);
+  for (const c of SEED_INGREDIENT_CATEGORIES) {
+    if (haveIngredientCats.includes(c.key)) continue;
+    await ensure(`ingredient category ${c.key}`, () =>
+      db.createDocument(DB_ID, 'ingredient_categories', ID.unique(), { ...c, active: true }),
     );
   }
 

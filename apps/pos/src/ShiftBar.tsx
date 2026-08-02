@@ -191,9 +191,17 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       }
 
       const variancePenny = Object.values(variance).reduce((a, b) => a + b, 0);
-      const shiftExpenses = await listAll<{ amount: number }>('shift_expenses', [
-        Query.equal('shift_id', ctx.shift.$id),
-      ]);
+      const shiftExpenses = await listAll<{ amount: number; category_key?: string; category?: string }>(
+        'shift_expenses',
+        [Query.equal('shift_id', ctx.shift.$id)],
+      );
+      // Each expense category names the account it posts to, so "Gas refill"
+      // can land on utilities rather than everything piling into Other.
+      const expenseCategories = await listAll<{ key: string; account_code?: string }>('expense_categories').catch(
+        () => [],
+      );
+      const accountForExpense = (e: { category_key?: string; category?: string }) =>
+        expenseCategories.find((c) => c.key === (e.category_key || e.category))?.account_code || '6090';
       const expenseTotal = shiftExpenses.reduce((a, e) => a + e.amount, 0);
 
       await db.updateDocument(DB_ID, 'shifts', ctx.shift.$id, {
@@ -231,7 +239,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           discounts: shiftOrders.reduce((a, o) => a + o.discount_total, 0),
           cogs,
           cashVariance: variancePenny,
-          expenses: shiftExpenses.map((e) => ({ amount: e.amount, accountCode: '6090' })),
+          expenses: shiftExpenses.map((e) => ({ amount: e.amount, accountCode: accountForExpense(e) })),
         });
         await db.updateDocument(DB_ID, 'shifts', ctx.shift.$id, { posted_to_ledger: true });
       } catch (postErr) {
