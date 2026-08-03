@@ -64,13 +64,53 @@ jobs:
           mkdir -p site
           for app in admin menu kitchen pos; do
             cp -r "apps/$app/dist" "site/$app"
-            # These are single-page apps: a deep link like /admin/settings has
-            # no file behind it, and Pages would serve a 404. Copying index.html
-            # to 404.html makes Pages hand the app its own router instead.
-            cp "site/$app/index.html" "site/$app/404.html"
           done
           # Pages runs Jekyll by default, which strips files beginning with _.
           touch site/.nojekyll
+
+          # The one 404 page GitHub Pages actually uses.
+          #
+          # Pages honours 404.html at the ROOT of the site and nowhere else —
+          # a copy inside /admin/ is simply never served. That is why a refresh
+          # on an address with no file behind it landed on GitHub's own
+          # "There isn't a GitHub Pages site here" instead of the app.
+          #
+          # So the root page catches everything and sends it where it belongs.
+          # /snpos/admin           → /snpos/admin/
+          # /snpos/admin/settings  → /snpos/admin/#/settings   (an old-style
+          #                          link or bookmark from before hash routing)
+          # anything else          → the front door
+          cat > site/404.html <<'HTML'
+          <!doctype html>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <title>One moment…</title>
+          <script>
+            (function () {
+              var apps = ['admin', 'menu', 'kitchen', 'pos'];
+              // The repository folder this site is published under.
+              var root = location.pathname.split('/')[1] || '';
+              var rest = location.pathname.split('/').slice(2).filter(Boolean);
+              var app = rest.shift();
+              var base = '/' + root + '/';
+              // A missing file is not a missing route. Redirecting a stale
+              // /assets/index-OLD.js into the app would answer a script request
+              // with HTML, which the browser refuses to run — a blank screen
+              // instead of an honest 404.
+              var last = rest[rest.length - 1] || '';
+              if (last.indexOf('.') !== -1) return;
+              if (apps.indexOf(app) === -1) {
+                location.replace(base);
+                return;
+              }
+              // Whatever followed the app name was a route, not a file. Hand it
+              // back to the app as a hash, where its own router can read it.
+              var route = rest.join('/');
+              location.replace(base + app + '/' + location.search + (route ? '#/' + route : ''));
+            })();
+          </script>
+          <noscript>This page has moved. Please go back to the address you were given.</noscript>
+          HTML
 
           # The public front door. It links to the customer menu and nothing
           # else: a page that lists the admin app, the till and the kitchen
