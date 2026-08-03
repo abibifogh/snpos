@@ -10,6 +10,54 @@ import type { Settings, Doc } from '@snpos/core';
 
 import { useSession } from '../session';
 
+/**
+ * Save the settings, and say exactly what did not save.
+ *
+ * Appwrite refuses a whole document update if one field on it does not exist
+ * yet, so a single setting added since the last time provisioning was run took
+ * every other setting down with it — you switched tips off, the save failed as
+ * a whole, and the only clue was one line of error text that read like a
+ * general problem rather than "that switch did nothing".
+ *
+ * So unknown fields are dropped one at a time and everything else is saved.
+ * What was dropped is returned, by name, to be reported plainly.
+ */
+async function saveSettings(patch: Record<string, unknown>): Promise<string[]> {
+  const payload = { ...patch };
+  const dropped: string[] = [];
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      await db.updateDocument(DB_ID, 'settings', 'main', payload);
+      return dropped;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      const unknown = /unknown attribute:?\s*"?([A-Za-z0-9_]+)"?/i.exec(message);
+      if (!unknown || !(unknown[1] in payload)) throw e;
+      dropped.push(unknown[1]);
+      delete payload[unknown[1]];
+    }
+  }
+  throw new Error('Too many settings could not be saved. Run Provision Appwrite, then try again.');
+}
+
+/** Field names as somebody would recognise them on this page. */
+const FIELD_LABELS: Record<string, string> = {
+  tips_enabled: 'Tips',
+  role_access: 'Who can see what',
+  daily_report_hour: 'When the daily reports go out',
+  shift_float_policy: 'What a shift starts with',
+  shift_float_default: 'The fixed float',
+  allow_negative_cash: 'Allow a drawer to close below nothing',
+  order_number_prefix: 'Order number prefix',
+  order_number_mode: 'Order numbering',
+  order_number_padding: 'Order number length',
+  order_number_next: 'Next order number',
+  order_number_reset_on: 'Order numbering reset',
+  email_from_name: 'Email from name',
+  email_from_address: 'Email from address',
+};
+
 interface ReportSub extends Doc {
   channel: string;
   destination: string;
@@ -111,7 +159,7 @@ export function SettingsPage() {
     setBusy(true);
     setError(null);
     try {
-      await db.updateDocument(DB_ID, 'settings', 'main', {
+      const dropped = await saveSettings({
         restaurant_name: form.restaurant_name,
         timezone: form.timezone,
         currency_code: form.currency_code,
@@ -141,7 +189,18 @@ export function SettingsPage() {
         allow_negative_cash: !!form.allow_negative_cash,
       });
       await refreshSettings();
-      toast('Settings saved');
+
+      if (dropped.length > 0) {
+        const names = dropped.map((d) => FIELD_LABELS[d] ?? d);
+        setError(
+          `Everything else was saved, but ${names.join(', ')} could not be — ` +
+          `${dropped.length === 1 ? 'that setting does' : 'those settings do'} not exist in the database yet. ` +
+          'Run "Provision Appwrite" from the Actions tab on GitHub, then save again.',
+        );
+        toast(`${names.length} setting${names.length === 1 ? '' : 's'} could not be saved`, 'err');
+      } else {
+        toast('Settings saved');
+      }
     } catch (e) {
       setError(humanError(e));
     } finally {
@@ -251,6 +310,14 @@ export function SettingsPage() {
         <p className="small dim" style={{ marginBottom: 0 }}>
           Off removes the box entirely rather than defaulting it to zero — a field staff have to look at and skip
           past on every bill is worse than no field.
+        </p>
+        {/* What the database currently holds, not what this form is showing.
+            The two disagreeing is the whole reason this switch appeared not to
+            work, and the difference was invisible. */}
+        <p className="small" style={{ marginBottom: 0 }}>
+          Right now the till and the kitchen are{' '}
+          <strong>{settings?.tips_enabled === false ? 'not asking for a tip' : 'asking for a tip'}</strong>.
+          {settings?.tips_enabled !== form.tips_enabled && ' Unsaved change — press Save changes.'}
         </p>
       </Card>
 
