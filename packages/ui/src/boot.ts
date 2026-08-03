@@ -54,3 +54,20 @@ export function bootedOk(): void {
     window.history.replaceState(null, '', url.pathname + (url.search || '') + url.hash);
   }
 }
+
+/**
+ * Turn on offline support for this app.
+ *
+ * Registered from the app's own folder so its scope covers that app and
+ * nothing else. Failures are swallowed on purpose: a browser that refuses
+ * service workers, or a page opened over plain http during development, should
+ * lose the offline behaviour and keep everything else.
+ */
+export function enableOffline(): void {
+  if (!('serviceWorker' in navigator)) return;
+  window.addEventListener('load', () => {
+    // Relative to the document, which is what scopes it to /admin/, /pos/ and
+    // so on rather than to the whole site.
+    navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => undefined);
+  });
+}

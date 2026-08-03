@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, Field, FormError, Input, Modal, Notice, Select, Textarea, ShiftCloseForm } from '@snpos/ui';
 import type { BlockerRow, CountRow, StockRow } from '@snpos/ui';
+import { ShiftHistory } from './ShiftHistory';
 import {
   db, DB_ID, ID, formatMoney, parseMoney, toInput, loadIngredients,
   loadPaymentMethods, openShift, loadOpenShift, shiftBlockers, expectedTakings, closeShift, openingFloats,
@@ -39,6 +40,7 @@ export function CombinedBar({
   const [opening, setOpening] = useState(false);
   const [closing, setClosing] = useState(false);
   const [spending, setSpending] = useState(false);
+  const [history, setHistory] = useState(false);
   const [floats, setFloats] = useState<Record<string, string>>({});
   const [floatSource, setFloatSource] = useState('zero');
   const [floatNote, setFloatNote] = useState('');
@@ -208,7 +210,10 @@ export function CombinedBar({
         )}
         <span style={{ flex: 1 }} />
         {shift && (
-          <Button size="sm" onClick={() => { setSpending(true); setError(null); }}>Record spend</Button>
+          <>
+            <Button size="sm" onClick={() => setHistory(true)}>This shift</Button>
+            <Button size="sm" onClick={() => { setSpending(true); setError(null); }}>Record spend</Button>
+          </>
         )}
         {shift ? (
           <Button size="sm" onClick={startClose} loading={busy && !closing} disabled={!who?.can_close_shift}>
@@ -220,6 +225,10 @@ export function CombinedBar({
           </Button>
         )}
       </div>
+
+      {history && shift && (
+        <ShiftHistory shift={shift} venueId={venue.$id} settings={settings} onClose={() => setHistory(false)} />
+      )}
 
       {opening && (
         <Modal

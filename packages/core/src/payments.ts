@@ -1,4 +1,5 @@
-import { db, DB_ID, ID, Query, listAll } from './client';
+import { ID, Query, listAll } from './client';
+import { createOrQueue, updateOrQueue } from './offline';
 import type { Doc } from './types';
 import type { Order } from './orders';
 
@@ -69,7 +70,7 @@ export interface RecordPaymentInput {
 export async function recordPayment(input: RecordPaymentInput): Promise<number> {
   const now = new Date().toISOString();
 
-  await db.createDocument(DB_ID, 'payments', ID.unique(), {
+  await createOrQueue('payments', ID.unique(), {
     venue_id: input.venueId,
     order_id: input.order.$id,
     shift_id: input.shiftId,
@@ -91,7 +92,7 @@ export async function recordPayment(input: RecordPaymentInput): Promise<number> 
   const remaining = await amountOutstanding(input.order);
   const settled = remaining <= 0;
 
-  await db.updateDocument(DB_ID, 'orders', input.order.$id, {
+  await updateOrQueue('orders', input.order.$id, {
     payment_status: settled ? 'paid' : 'partial',
     // A part-paid order keeps its place: still on the pass, still blocking the
     // shift close, still visibly owed. Only a cleared bill moves on.

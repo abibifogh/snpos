@@ -1,5 +1,7 @@
 import { Client, Databases, Query } from 'node-appwrite';
 import nodemailer from 'nodemailer';
+import { receiptPdf } from './receipt-pdf.js';
+import { dailyDigest, nightlyBackup } from './daily.js';
 
 /**
  * Everything that sends an email.
@@ -168,13 +170,23 @@ export default async ({ req, res, log, error }) => {
   // clock is the absence of an event: a dish taken off the menu that nobody
   // has put back.
   if (!doc) {
-    try {
-      const result = await sweepUnavailable({ db, DB_ID, settings, transport, log, error });
-      return res.json({ ok: true, ...result });
-    } catch (e) {
-      error(`Availability sweep failed: ${e.message}`);
-      return res.json({ ok: false, error: e.message });
+    const results = {};
+    // Each is tried on its own. A failing backup must not stop the daily
+    // summary going out, and neither must stop the availability sweep — three
+    // unrelated jobs sharing a timer because the plan allows four functions.
+    for (const [name, job] of [
+      ['availability', () => sweepUnavailable({ db, DB_ID, settings, transport, log, error })],
+      ['daily', () => dailyDigest({ db, DB_ID, settings, transport, from, shell, row, money, log, error })],
+      ['backup', () => nightlyBackup({ db, DB_ID, settings, transport, from, shell, log, error })],
+    ]) {
+      try {
+        results[name] = await job();
+      } catch (e) {
+        error(`${name} sweep failed: ${e.message}`);
+        results[name] = { ok: false, error: e.message };
+      }
     }
+    return res.json({ ok: true, ...results });
   }
 
   try {
@@ -346,9 +358,38 @@ export default async ({ req, res, log, error }) => {
          <p style="margin:0 0 16px;color:#5d6b7a;font-size:14px">Order ${doc.order_no} · ${new Date(doc.$createdAt).toLocaleString()}</p>
          <table style="width:100%;border-collapse:collapse;font-size:15px">${lines}
          <tr><td colspan="2" style="border-top:1px solid #e3e7ec;padding-top:8px"></td></tr>${totals}</table>
-         <p style="margin:20px 0 0;color:#5d6b7a;font-size:13px">Paid in person. This is a record of your order, not a request for payment.</p>`,
+         <p style="margin:20px 0 0;color:#5d6b7a;font-size:13px">A printable copy is attached.</p>
+         <p style="margin:8px 0 0;color:#5d6b7a;font-size:13px">Paid in person. This is a record of your order, not a request for payment.</p>`,
         brand,
       );
+
+      // The same receipt the till prints, as a real PDF attachment. An email
+      // body is fine to glance at; a PDF is what somebody forwards to their
+      // accountant or keeps for an expense claim.
+      let attachments;
+      try {
+        const [paid, allMethods] = await Promise.all([
+          db.listDocuments(DB_ID, 'payments', [Query.equal('order_id', doc.$id), Query.limit(20)]),
+          db.listDocuments(DB_ID, 'payment_methods', [Query.limit(50)]),
+        ]);
+        const venue = await db.getDocument(DB_ID, 'venues', doc.venue_id).catch(() => null);
+        attachments = [{
+          filename: `receipt-${doc.order_no}.pdf`,
+          content: receiptPdf({
+            settings,
+            venue,
+            order: doc,
+            items: items.documents,
+            payments: paid.documents,
+            methods: allMethods.documents,
+          }),
+          contentType: 'application/pdf',
+        }];
+      } catch (e) {
+        // A receipt that arrives without its attachment is worth far more than
+        // one that never arrives because building a PDF went wrong.
+        error(`Receipt PDF failed for ${doc.order_no}, sending without it: ${e.message}`);
+      }
 
       const receipt = await db.createDocument(DB_ID, 'receipts', 'unique()', {
         venue_id: doc.venue_id, order_id: doc.$id, channel: 'email',
@@ -369,6 +410,7 @@ export default async ({ req, res, log, error }) => {
           from, to: doc.customer_email,
           subject: `Your receipt from ${settings.restaurant_name} · ${doc.order_no}`,
           html,
+          attachments,
         });
         await db.updateDocument(DB_ID, 'receipts', receipt.$id, {
           status: 'sent', sent_at: new Date().toISOString(), provider_ref: info.messageId || '',

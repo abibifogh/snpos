@@ -293,3 +293,30 @@ table.data tbody tr:hover { background: var(--surface-2); }
   color: var(--text-dim);
 }
 .stock-key .badge { margin-right: 0.4rem; }
+
+/* ---- offline ----------------------------------------------------------- */
+/* Full width and unmissable. Offline support that nobody notices is offline
+   support that loses a service to one forgotten device. */
+.offline-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 1rem;
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: 0.88rem;
+  line-height: 1.4;
+  border-bottom: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+}
+.offline-bar.syncing { background: var(--ok-bg); color: var(--ok); border-bottom-color: color-mix(in srgb, var(--ok) 30%, transparent); }
+.offline-bar .dot {
+  width: 9px; height: 9px; border-radius: 50%; background: currentColor; flex: none;
+  animation: offline-pulse 1.6s ease-in-out infinite;
+}
+@keyframes offline-pulse { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .offline-bar .dot { animation: none; } }
+.offline-retry {
+  margin-left: auto; padding: 0.3rem 0.7rem; font: inherit; font-size: 0.82rem; font-weight: 600;
+  color: inherit; background: transparent; border: 1px solid currentColor;
+  border-radius: var(--radius-sm); cursor: pointer;
+}

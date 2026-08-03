@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **57 collections, 692 fields and 132 indexes**. Entered by hand at a
+> This is **57 collections, 694 fields and 132 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -149,7 +149,7 @@ There are 57 collections. A progress checklist is at the end of this document.
 | `primary_color` | String | size 9 | No | — | No |
 | `secondary_color` | String | size 9 | No | — | No |
 | `logo_light_id` | String | size 64 | No | — | No |
-| `shift_float_policy` | Enum | inherit, zero, carry_over, prompt | **Yes** | — | No |
+| `shift_float_policy` | Enum | inherit, zero, carry_over, fixed, prompt | **Yes** | — | No |
 | `shift_float_default` | Integer | — | **Yes** | — | No |
 | `order_number_prefix` | String | size 8 | No | — | No |
 | `tax_rate_bp` | Integer | — | No | — | No |
@@ -193,7 +193,7 @@ There are 57 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: _none — server only_ · **Update**: Team: admins · **Delete**: _none — server only_
 
-**Attributes** (41)
+**Attributes** (43)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -212,8 +212,9 @@ There are 57 collections. A progress checklist is at the end of this document.
 | `tax_rate_bp` | Integer | — | **Yes** | — | No |
 | `tax_inclusive` | Boolean | — | **Yes** | — | No |
 | `service_charge_bp` | Integer | — | **Yes** | — | No |
-| `shift_float_policy` | Enum | zero, carry_over, prompt | **Yes** | — | No |
+| `shift_float_policy` | Enum | zero, carry_over, fixed, prompt | **Yes** | — | No |
 | `shift_float_default` | Integer | — | **Yes** | — | No |
+| `allow_negative_cash` | Boolean | — | No | false | No |
 | `kitchen_ack_sla_seconds` | Integer | — | **Yes** | — | No |
 | `kitchen_ping_max_level` | Integer | — | **Yes** | — | No |
 | `require_reject_reason` | Boolean | — | **Yes** | — | No |
@@ -238,6 +239,7 @@ There are 57 collections. A progress checklist is at the end of this document.
 | `storage_mode` | Enum | multi, single | No | multi | No |
 | `shared_bucket_id` | String | size 64 | No | — | No |
 | `role_access` | String | size 2000 | No | — | No |
+| `daily_report_hour` | Integer | — | No | 23 | No |
 
 **Indexes**: none.
 
@@ -1702,7 +1704,7 @@ There are 57 collections. A progress checklist is at the end of this document.
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
 | `venue_id` | String | size 64 | **Yes** | — | No |
-| `kind` | Enum | shift_close, daily_digest | **Yes** | — | No |
+| `kind` | Enum | shift_close, daily_digest, backup | **Yes** | — | No |
 | `shift_id` | String | size 64 | No | — | No |
 | `period_start` | Datetime | — | **Yes** | — | No |
 | `period_end` | Datetime | — | **Yes** | — | No |
@@ -2034,7 +2036,7 @@ way mistakes creep in.
 
 - [ ]  1. `venues` (17 fields, 2 indexes)
 - [ ]  2. `venue_menu_items` (6 fields, 1 indexes)
-- [ ]  3. `settings` (41 fields, 0 indexes)
+- [ ]  3. `settings` (43 fields, 0 indexes)
 - [ ]  4. `payment_methods` (10 fields, 2 indexes)
 - [ ]  5. `categories` (10 fields, 1 indexes)
 - [ ]  6. `menu_items` (21 fields, 2 indexes)

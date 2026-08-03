@@ -42,6 +42,7 @@ export interface Settings extends Doc {
   email_from_name?: string;
   email_from_address?: string;
   role_access?: string;
+  daily_report_hour?: number;
   storage_mode?: 'multi' | 'single';
   shared_bucket_id?: string;
 }

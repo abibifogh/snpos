@@ -175,6 +175,11 @@ export const COLLECTIONS = [
       // and never restricted — a switch that can lock the owner out of their
       // own settings is a switch that eventually will.
       ['role_access', 's', 2000, false],
+      // The hour, in the restaurant's own timezone, at which the once-a-day
+      // report and the nightly backup go out. After close, not at midnight —
+      // a kitchen still serving at 00:30 would otherwise get yesterday's
+      // figures while it is still making today's.
+      ['daily_report_hour', 'i', null, false, 23],
     ],
   },
   {
@@ -1364,7 +1369,8 @@ export const COLLECTIONS = [
       ['user_id', 's', 64, false],
       ['channel', 'e', ['email', 'whatsapp', 'sms', 'push'], true, 'email'],
       ['destination', 's', 200, true],
-      ['events', 's[]', 40, true], // 'shift_close', 'daily_digest', 'stock_alert'
+      // 'shift_close' | 'daily_digest' | 'backup' | 'stock_alert'
+      ['events', 's[]', 40, true],
       ['active', 'b', null, true, true],
     ],
     indexes: [['active', 'key', ['active']]],
@@ -1376,7 +1382,7 @@ export const COLLECTIONS = [
     perms: { read: MGMT, create: [], update: [], delete: [] },
     attributes: [
       ['venue_id', 's', 64, true],
-      ['kind', 'e', ['shift_close', 'daily_digest'], true],
+      ['kind', 'e', ['shift_close', 'daily_digest', 'backup'], true],
       ['shift_id', 's', 64, false],
       ['period_start', 'd', null, true],
       ['period_end', 'd', null, true],

@@ -101,3 +101,44 @@
   color: inherit; font: inherit; font-size: 0.9rem;
 }
 .menu-modes button.on { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); font-weight: 600; }
+
+/* ---- order status ------------------------------------------------------ */
+.status-page { max-width: 30rem; margin: 0 auto; padding: 0 1rem 3rem; }
+
+/* A vertical track rather than a row of ticks: on a phone held in one hand,
+   reading top to bottom is the only thing that fits without shrinking the
+   text to the point where nobody bothers. */
+.steps { list-style: none; margin: 1.4rem 0; padding: 0 0 0 0.4rem; }
+.steps li { display: flex; gap: 0.85rem; padding-bottom: 1.3rem; position: relative; opacity: 0.45; }
+.steps li:last-child { padding-bottom: 0; }
+.steps li::before {
+  content: ''; position: absolute; left: 6px; top: 16px; bottom: -2px;
+  width: 2px; background: var(--border);
+}
+.steps li:last-child::before { display: none; }
+.steps .dot {
+  width: 14px; height: 14px; border-radius: 50%; flex: none; margin-top: 3px;
+  background: var(--border);
+}
+.steps li.past, .steps li.now { opacity: 1; }
+.steps li.past .dot, .steps li.now .dot { background: var(--brand); }
+.steps li.past::before { background: var(--brand); }
+.steps .label { font-weight: 600; }
+.steps .says { font-size: 0.88rem; color: var(--text-dim); }
+
+/* The current step breathes, so a glance from across a table tells you the
+   page is alive and not a screenshot of itself. */
+.steps li.now .dot { box-shadow: 0 0 0 0 var(--brand); animation: pulse 2s infinite; }
+@keyframes pulse {
+  70% { box-shadow: 0 0 0 9px rgba(0, 0, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .steps li.now .dot { animation: none; }
+}
+
+.status-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 1rem 1.1rem; margin-bottom: 1.2rem;
+}
+.status-card .line { display: flex; justify-content: space-between; gap: 1rem; padding: 0.25rem 0; }

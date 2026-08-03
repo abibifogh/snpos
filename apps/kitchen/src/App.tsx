@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo, HelpModal, EightySixModal } from '@snpos/ui';
+import {
+  Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo, HelpModal, EightySixModal,
+  OfflineBar, useOfflineQueue,
+} from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
   db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
   verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
+  onQueueChange, startOfflineSync, flushQueue, loadWithFallback,
 } from '@snpos/core';
 import type {
   Order, OrderItem, Settings, Venue, StaffProfile, StaffSession, HelpRole, MenuItem, Doc, FeatureMap,
@@ -56,6 +60,7 @@ export function App() {
   const [rejectCode, setRejectCode] = useState(REJECT_REASONS[0].code);
   const [rejectNote, setRejectNote] = useState('');
   const [, forceTick] = useState(0);
+  const queued = useOfflineQueue(onQueueChange, startOfflineSync);
 
   // Re-render once a second so the age counters climb without a subscription.
   useEffect(() => {
@@ -65,7 +70,9 @@ export function App() {
 
   const loadItemsFor = useCallback(async (orderIds: string[]) => {
     if (orderIds.length === 0) return;
-    const rows = await listAll<OrderItem>('order_items', [Query.equal('order_id', orderIds.slice(0, 100))]);
+    const rows = await loadWithFallback(`items:${orderIds.slice(0, 100).join(',').slice(0, 120)}`, () =>
+      listAll<OrderItem>('order_items', [Query.equal('order_id', orderIds.slice(0, 100))]),
+    );
     setItems((prev) => {
       const next = { ...prev };
       for (const id of orderIds) next[id] = [];
@@ -90,10 +97,17 @@ export function App() {
         return;
       }
       try {
-        const s = (await db.getDocument(DB_ID, 'settings', 'main')) as unknown as Settings;
+        // Every read that the screen cannot start without is remembered, so a
+        // kitchen display reloaded during an outage comes back with tonight's
+        // tickets rather than an error page.
+        const s = await loadWithFallback('settings', async () =>
+          (await db.getDocument(DB_ID, 'settings', 'main')) as unknown as Settings,
+        );
         applyTheme(s);
         setSettings(s);
-        const venues = await listAll<Venue>('venues', [Query.equal('active', true)]);
+        const venues = await loadWithFallback('venues', () =>
+          listAll<Venue>('venues', [Query.equal('active', true)]),
+        );
         const v = venues[0];
         setVenue(v ?? null);
         if (!v) return;
@@ -110,8 +124,10 @@ export function App() {
         // see what is booked cannot prepare for it, and the whole point of
         // taking an order in advance is that somebody can plan around it.
         const [open, booked] = await Promise.all([
-          loadOpenOrders(v.$id),
-          listAll<Order>('orders', [Query.equal('venue_id', v.$id), Query.equal('status', 'SCHEDULED')]),
+          loadWithFallback(`open:${v.$id}`, () => loadOpenOrders(v.$id)),
+          loadWithFallback(`booked:${v.$id}`, () =>
+            listAll<Order>('orders', [Query.equal('venue_id', v.$id), Query.equal('status', 'SCHEDULED')]),
+          ),
         ]);
         setOrders([...open, ...booked]);
         await loadItemsFor([...open, ...booked].map((o) => o.$id));
@@ -451,6 +467,10 @@ export function App() {
           onClose={() => setHelpOpen(false)}
         />
       )}
+
+      {/* Loud on purpose. Offline support nobody notices is how a service ends
+          up sitting on one iPad that never got put back on the wifi. */}
+      <OfflineBar queued={queued} onRetry={() => void flushQueue()} />
 
       <div className="kds-top">
         <div className="row">

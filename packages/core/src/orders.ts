@@ -1,4 +1,5 @@
 import { db, DB_ID, ID, Query, Permission, Role, account, listAll } from './client';
+import { createOrQueue, isOffline } from './offline';
 import { computeTotals, lineUnitPrice, lineTotal } from './pricing';
 import type { CartLine } from './pricing';
 import type { Settings, Doc } from './types';
@@ -267,7 +268,17 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
   const totals = computeTotals({ lines, discount: input.discount ?? 0, settings });
   const isPreorder = !!input.scheduledFor;
   const prepById: Record<string, number> = {};
-  const orderNo = input.guest ? provisionalOrderNo() : await nextOrderNo(venueId, settings);
+  // Guests never number their own orders, and neither can anybody with no
+  // connection — working out the next number means reading the last one. Both
+  // get a placeholder, and the server settles it on arrival. The same mechanism
+  // covers both cases, so an order taken during an outage is numbered properly
+  // the moment it lands rather than needing anything special.
+  const orderNo = input.guest
+    ? provisionalOrderNo()
+    : await nextOrderNo(venueId, settings).catch((e) => {
+        if (isOffline(e)) return provisionalOrderNo();
+        throw e;
+      });
 
   const payload: Record<string, unknown> = {
     venue_id: venueId,
@@ -323,9 +334,13 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
   const me = await account.get().catch(() => null);
   const mine = me ? [Permission.read(Role.user(me.$id))] : [];
 
+  // The id is decided here, not by the server, which is what lets an order
+  // created with no connection still have its items attached to it.
+  const orderId = ID.unique();
+
   let order: Order;
   try {
-    order = (await db.createDocument(DB_ID, 'orders', ID.unique(), payload, mine)) as unknown as Order;
+    order = await createOrQueue<Order>('orders', orderId, payload, mine);
   } catch (e) {
     // Two terminals took the same number in the same instant; take the next one.
     const msg = e instanceof Error ? e.message : '';
@@ -337,7 +352,7 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
 
   const items = await Promise.all(
     lines.map((line) =>
-      db.createDocument(DB_ID, 'order_items', ID.unique(), {
+      createOrQueue<OrderItem>('order_items', ID.unique(), {
         venue_id: venueId,
         order_id: order.$id,
         menu_item_id: line.menu_item_id,

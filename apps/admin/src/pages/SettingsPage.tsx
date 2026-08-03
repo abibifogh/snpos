@@ -27,6 +27,7 @@ export function SettingsPage() {
   // Report recipients live in their own collection rather than in settings, so
   // they are edited and saved separately from everything else on this page.
   const [reportEmails, setReportEmails] = useState('');
+  const [reportKinds, setReportKinds] = useState<string[]>(['shift_close']);
   const [subs, setSubs] = useState<ReportSub[]>([]);
   const [savingSubs, setSavingSubs] = useState(false);
   const [subsError, setSubsError] = useState<string | null>(null);
@@ -36,9 +37,12 @@ export function SettingsPage() {
   useEffect(() => {
     listAll<ReportSub>('report_subscriptions')
       .then((rows) => {
-        const mine = rows.filter((r) => r.channel === 'email' && (r.events ?? []).includes('shift_close'));
+        const mine = rows.filter((r) => r.channel === 'email');
         setSubs(mine);
-        setReportEmails(mine.filter((r) => r.active !== false).map((r) => r.destination).join('\n'));
+        const live = mine.filter((r) => r.active !== false);
+        setReportEmails(live.map((r) => r.destination).join('\n'));
+        const kinds = [...new Set(live.flatMap((r) => r.events ?? []))];
+        if (kinds.length) setReportKinds(kinds);
       })
       .catch(() => undefined);
   }, []);
@@ -64,21 +68,22 @@ export function SettingsPage() {
       for (const email of wanted) {
         const existing = subs.find((r) => r.destination === email);
         if (existing) {
-          if (existing.active === false) {
-            await db.updateDocument(DB_ID, 'report_subscriptions', existing.$id, { active: true });
-          }
+          await db.updateDocument(DB_ID, 'report_subscriptions', existing.$id, {
+            active: true,
+            events: reportKinds,
+          });
         } else {
           await db.createDocument(DB_ID, 'report_subscriptions', ID.unique(), {
             channel: 'email',
             destination: email,
-            events: ['shift_close'],
+            events: reportKinds,
             active: true,
           });
         }
       }
 
       const rows = await listAll<ReportSub>('report_subscriptions');
-      setSubs(rows.filter((r) => r.channel === 'email' && (r.events ?? []).includes('shift_close')));
+      setSubs(rows.filter((r) => r.channel === 'email'));
       toast(wanted.length ? `${wanted.length} recipient${wanted.length === 1 ? '' : 's'} saved` : 'Recipients cleared');
     } catch (e) {
       setSubsError(humanError(e));
@@ -130,6 +135,7 @@ export function SettingsPage() {
         email_from_name: form.email_from_name ?? '',
         email_from_address: form.email_from_address ?? '',
         role_access: JSON.stringify(access),
+        daily_report_hour: Number(form.daily_report_hour ?? 23),
         shift_float_policy: form.shift_float_policy ?? 'zero',
         shift_float_default: Number(form.shift_float_default ?? 0),
         allow_negative_cash: !!form.allow_negative_cash,
@@ -406,14 +412,58 @@ export function SettingsPage() {
         </p>
       </Card>
 
-      <Card title="Who gets the end-of-shift report">
+      <Card title="Reports and backups by email">
         <p className="small dim" style={{ marginTop: 0 }}>
-          Sent the moment a shift is closed — the takings, what was short, what ran out and who did what. One address
-          per line.
+          One address per line. Everyone listed gets whichever reports are ticked below.
         </p>
+
+        {[
+          {
+            key: 'shift_close',
+            label: 'End-of-shift report',
+            hint: 'The moment a shift closes: takings, anything short, what ran out, who did what.',
+          },
+          {
+            key: 'daily_digest',
+            label: 'Daily summary',
+            hint: 'Once a day after close. A day with two shifts produces two shift reports and no figure for the day — this is that figure.',
+          },
+          {
+            key: 'backup',
+            label: 'Nightly backup',
+            hint: 'Every record as spreadsheets, attached. This hosting plan keeps no backups of its own, so this is your only copy — keep one somewhere other than your inbox.',
+          },
+        ].map((k) => (
+          <label key={k.key} className="check-row" style={{ display: 'block', marginBottom: '0.6rem' }}>
+            <input
+              type="checkbox"
+              checked={reportKinds.includes(k.key)}
+              onChange={() =>
+                setReportKinds((r) => (r.includes(k.key) ? r.filter((x) => x !== k.key) : [...r, k.key]))
+              }
+            />{' '}
+            <strong>{k.label}</strong>
+            <div className="small dim" style={{ marginLeft: '1.6rem' }}>{k.hint}</div>
+          </label>
+        ))}
+
+        <Field
+          label="When the daily ones go out"
+          hint="In your own timezone, after service. Midnight would catch a kitchen still serving."
+        >
+          <Select
+            value={form.daily_report_hour ?? 23}
+            onChange={(e) => set('daily_report_hour', Number(e.target.value))}
+          >
+            {Array.from({ length: 24 }, (_, h) => (
+              <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>
+            ))}
+          </Select>
+        </Field>
+
         <Field
           label="Email addresses"
-          hint="With none of these set, the report is still worked out and saved, but nobody is sent it. That is the usual reason for a report that never arrives."
+          hint="With none of these set, reports are still worked out and saved, but nobody is sent them. That is the usual reason for a report that never arrives."
         >
           <Textarea
             rows={4}

@@ -13,6 +13,10 @@ export interface Shift extends Doc {
   opened_at: string;
   opening_floats: string;
   float_source: string;
+  closed_at?: string;
+  closed_by?: string;
+  /** JSON, per method, written at close. */
+  counted?: string;
   sales_total: number;
   expense_total: number;
   covers: number;

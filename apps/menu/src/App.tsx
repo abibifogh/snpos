@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Spinner, Notice, useToast, Logo, HelpModal } from '@snpos/ui';
+import { Button, Spinner, Notice, useToast, Logo, HelpModal, OfflineBar, useOfflineQueue } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
   account, db, DB_ID, Query, listAll, loadMenu, visibleSections, computeTotals,
   formatMoney, isAvailable, parseWindows, nextAvailable, describeWindows, loadFeatures, isEnabled,
   articlesFor, HELP_AREAS,
   featureConfig, previewUrl, humanError,
+  onQueueChange, startOfflineSync, flushQueue, loadWithFallback,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc,
 } from '@snpos/core';
 import { DishSheet } from './DishSheet';
 import { CartSheet } from './CartSheet';
+import { OrderStatus } from './OrderStatus';
 
 interface TableRow extends Doc {
   venue_id: string;
@@ -46,6 +48,7 @@ export function App() {
   const [showCart, setShowCart] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [placed, setPlaced] = useState<{ orderNo: string; orderId: string; scheduled?: string } | null>(null);
+  const queued = useOfflineQueue(onQueueChange, startOfflineSync);
 
   // Two kinds of QR: /?t=<token> is a specific table, /?v=<token> is a walk-in
   // code that belongs to the venue rather than to anywhere to sit.
@@ -64,7 +67,9 @@ export function App() {
           await account.createAnonymousSession();
         }
 
-        const settings = (await db.getDocument(DB_ID, 'settings', 'main')) as unknown as Settings;
+        const settings = await loadWithFallback('settings', async () =>
+          (await db.getDocument(DB_ID, 'settings', 'main')) as unknown as Settings,
+        );
         applyTheme(settings);
 
         const venues = await listAll<Venue>('venues', [Query.equal('active', true)]);
@@ -79,10 +84,14 @@ export function App() {
           venues[0];
         if (!venue) throw new Error('This restaurant has no venue set up yet.');
 
+        // Remembered on the device, so a guest whose signal drops between the
+        // car park and the table still gets a menu rather than a spinner.
         const [menu, features, allSeating] = await Promise.all([
-          loadMenu(venue.$id),
-          loadFeatures(venue.$id),
-          listAll<TableRow>('tables', [Query.equal('venue_id', venue.$id)]).catch(() => [] as TableRow[]),
+          loadWithFallback(`menu:${venue.$id}`, () => loadMenu(venue.$id)),
+          loadWithFallback(`features:${venue.$id}`, () => loadFeatures(venue.$id)),
+          loadWithFallback(`tables:${venue.$id}`, () =>
+            listAll<TableRow>('tables', [Query.equal('venue_id', venue.$id)]),
+          ).catch(() => [] as TableRow[]),
         ]);
         // Only what the restaurant is happy for a guest to claim. A table
         // somebody else is already sitting at is still offered — two parties
@@ -141,41 +150,20 @@ export function App() {
     );
   }
 
+  // Straight to the live status page rather than a dead confirmation screen.
+  // "Sent to the kitchen" answers the question for about ninety seconds; this
+  // keeps answering it.
   if (placed) {
     return (
-      <div className="centered">
-        <div>
-          {/* An empty number means it never settled — rare, and not the
-              customer's problem. Their order is placed either way, so say that
-              rather than showing them a blank. */}
-          <h1 style={{ marginBottom: '0.6rem' }}>
-            {placed.orderNo ? `Order ${placed.orderNo}` : 'Order placed'}
-          </h1>
-          <p style={{ fontSize: '1.05rem' }}>
-            {placed.scheduled
-              ? `Booked for ${new Date(placed.scheduled).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}.`
-              : 'Sent to the kitchen.'}
-          </p>
-          <p className="dim small" style={{ marginTop: '0.8rem' }}>
-            {placed.scheduled
-              ? 'We will start cooking in time for your slot. Pay when you collect.'
-              : 'Your server will bring it over. Pay at the end of your meal.'}
-          </p>
-          {/* No receipt offered here. Nothing has been paid for yet, so a
-              "receipt" at this point is a bill for food that has not arrived —
-              the real one is emailed once the bill is settled. */}
-          <Button
-            variant="primary"
-            style={{ marginTop: '1.5rem' }}
-            onClick={() => {
-              setPlaced(null);
-              setCart([]);
-            }}
-          >
-            Order something else
-          </Button>
-        </div>
-      </div>
+      <OrderStatus
+        orderId={placed.orderId}
+        settings={boot.settings}
+        venue={boot.venue}
+        onBack={() => {
+          setPlaced(null);
+          setCart([]);
+        }}
+      />
     );
   }
 
@@ -205,6 +193,7 @@ export function App() {
 
   return (
     <div className="menu-app">
+      <OfflineBar queued={queued} onRetry={() => void flushQueue()} />
       <header className="menu-header">
         <div className="row" style={{ justifyContent: 'center', gap: '0.55rem' }}>
           <Logo size={26} />

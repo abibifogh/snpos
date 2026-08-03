@@ -6,3 +6,4 @@ dist/
 .DS_Store
 .appwrite/
 .admin-login-preview.png
+apps/*/public/sw.js

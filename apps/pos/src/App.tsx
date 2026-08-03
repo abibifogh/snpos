@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Spinner, Card, Field, Input, Notice, useToast, Logo, HelpModal, EightySixModal } from '@snpos/ui';
+import {
+  Button, Spinner, Card, Field, Input, Notice, useToast, Logo, HelpModal, EightySixModal,
+  OfflineBar, useOfflineQueue,
+} from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
   account, db, DB_ID, Query, listAll, loadMenu, loadFeatures, humanError, isEnabled,
   articlesFor, featureConfig, HELP_AREAS,
   markUnavailable, markAvailable, isUnavailable, loadMenu as reloadMenu,
   requireStaff, signOutCompletely,
+  onQueueChange, startOfflineSync, flushQueue,
 } from '@snpos/core';
 import type { Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc } from '@snpos/core';
 import { TablesView } from './TablesView';
@@ -44,6 +48,7 @@ export function App() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [openTable, setOpenTable] = useState<TableRow | null>(null);
+  const queued = useOfflineQueue(onQueueChange, startOfflineSync);
   const [tab, setTab] = useState<'tables' | 'takeaway' | 'kitchen'>('tables');
   const [helpOpen, setHelpOpen] = useState(false);
   const [offOpen, setOffOpen] = useState(false);
@@ -173,6 +178,7 @@ export function App() {
 
   return (
     <div className="pos">
+      <OfflineBar queued={queued} onRetry={() => void flushQueue()} />
       <div className="pos-top">
         <div className="row">
           <Logo size={26} />
