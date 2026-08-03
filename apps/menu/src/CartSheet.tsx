@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Button, Modal, Input, Field, Notice, Select, FormError } from '@snpos/ui';
 import {
   computeTotals, formatMoney, lineTotal, createOrder, parseWindows,
-  isEnabled, featureConfig, db, DB_ID, Query, isProvisionalOrderNo,
+  isEnabled, featureConfig, db, DB_ID, ID, Query, isProvisionalOrderNo,
 } from '@snpos/core';
 import type { CartLine, Settings, Venue, FeatureMap, LoadedMenu, Doc, Order } from '@snpos/core';
 
@@ -216,6 +216,25 @@ export function CartSheet({
 
     setBusy(true);
     try {
+      // Checked again here, not only when the code was typed. A guest can sit
+      // with the sheet open for twenty minutes, and the last use of a code can
+      // go to somebody else in that time. The server refuses it either way;
+      // this is so they find out before they order rather than after.
+      if (codeState) {
+        const fresh = await db.getDocument(DB_ID, 'discounts', codeState.id).catch(() => null);
+        const v = fresh as unknown as
+          | { active: boolean; ends_at?: string; usage_limit_total?: number; used_count?: number }
+          | null;
+        const usedUp = !!v?.usage_limit_total && (v.used_count ?? 0) >= v.usage_limit_total;
+        if (!v || v.active === false || usedUp || (v.ends_at && new Date(v.ends_at) < new Date())) {
+          setCodeState(null);
+          setCodeError('That code is no longer available. Your order has been updated to the full price.');
+          setProblem('The discount code is no longer available — check the total and send again.');
+          setBusy(false);
+          return;
+        }
+      }
+
       const prepById: Record<string, number> = {};
       for (const line of cart) prepById[line.menu_item_id] = menu.byId[line.menu_item_id]?.item.prep_minutes ?? 10;
 
@@ -245,7 +264,7 @@ export function CartSheet({
         // Recorded even for guest-applied codes: discounts are the easiest way
         // for money to leave a restaurant unnoticed, so every one is on file.
         await db
-          .createDocument(DB_ID, 'discount_redemptions', 'unique()', {
+          .createDocument(DB_ID, 'discount_redemptions', ID.unique(), {
             venue_id: venue.$id,
             discount_id: codeState.id,
             code_snapshot: code.trim().toUpperCase(),

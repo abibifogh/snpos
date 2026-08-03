@@ -8,7 +8,8 @@
       "runtime": "node-18.0",
       "execute": [],
       "events": [
-        "databases.snpos.collections.orders.documents.*.create"
+        "databases.snpos.collections.orders.documents.*.create",
+        "databases.snpos.collections.discount_redemptions.documents.*.create"
       ],
       "schedule": "",
       "timeout": 30,

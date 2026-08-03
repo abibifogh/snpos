@@ -14,8 +14,138 @@ import { Client, Databases, Query } from 'node-appwrite';
  * because an attempt to pay less than the menu price is worth knowing about
  * even after it has been stopped.
  *
- * Triggered on order creation.
+ * Triggered on order creation, and on a discount redemption being recorded.
  */
+
+/**
+ * Service, tax and the total, from a subtotal and a discount.
+ *
+ * One copy, used by the re-pricing on a new order and by the re-pricing after
+ * a voucher is refused. Two copies of tax arithmetic is two answers to the
+ * same question, and the one that is wrong is always the one nobody looks at.
+ */
+function totalsFor(subtotal, discount, settings) {
+  const discounted = subtotal - discount;
+  const service = Math.round((discounted * (settings.service_charge_bp || 0)) / 10000);
+  const taxable = discounted + service;
+  const rate = settings.tax_rate_bp || 0;
+  const tax = settings.tax_inclusive
+    ? Math.round(taxable - (taxable * 10000) / (10000 + rate))
+    : Math.round((taxable * rate) / 10000);
+  return { service, tax, total: settings.tax_inclusive ? taxable : taxable + tax };
+}
+
+/**
+ * Put an order back to what it should cost.
+ *
+ * Called when a voucher is refused after the fact. Recomputed from the items
+ * and whatever redemptions survived rather than by subtracting the discount
+ * back off, because the service charge and the tax were worked out on the
+ * discounted figure too.
+ */
+async function reprice({ db, DB_ID, orderId, settings }) {
+  const [order, items, redemptions] = await Promise.all([
+    db.getDocument(DB_ID, 'orders', orderId),
+    db.listDocuments(DB_ID, 'order_items', [Query.equal('order_id', orderId), Query.limit(100)]),
+    db.listDocuments(DB_ID, 'discount_redemptions', [Query.equal('order_id', orderId), Query.limit(10)]),
+  ]);
+
+  // A bill already settled is not re-priced. Changing what somebody paid after
+  // they paid it is worse than the discount they should not have had.
+  if (order.payment_status === 'paid') return { skipped: 'already paid' };
+
+  const subtotal = items.documents
+    .filter((i) => i.status !== 'void')
+    .reduce((sum, i) => sum + (i.line_total || 0), 0);
+  const discount = redemptions.documents
+    .filter((r) => r.status === 'applied')
+    .reduce((sum, r) => sum + r.amount, 0);
+
+  const { service, tax, total } = totalsFor(subtotal, Math.min(discount, subtotal), settings);
+  await db.updateDocument(DB_ID, 'orders', orderId, {
+    subtotal,
+    discount_total: Math.min(discount, subtotal),
+    service_total: service,
+    tax_total: tax,
+    total,
+  });
+  return { subtotal, total };
+}
+
+/**
+ * Decide whether a voucher was actually allowed to be used, and count it.
+ *
+ * Runs on the redemption's own creation, which is the only moment the row is
+ * guaranteed to exist. Everything about a voucher that can run out — the dates,
+ * the switch, the number of uses — is decided here and nowhere else, so there
+ * is exactly one place the count is kept and exactly one place it is checked.
+ *
+ * The customer's phone checks the same things before letting a code be typed,
+ * but that is a courtesy: a client check cannot stop two people using the last
+ * one at the same instant, and it cannot stop anybody who does not want to be
+ * stopped.
+ */
+async function redeem({ db, DB_ID, doc, settings, log, error }) {
+  if (doc.status !== 'applied') return { ok: true, skipped: 'not an applied redemption' };
+
+  const voucher = await db.getDocument(DB_ID, 'discounts', doc.discount_id).catch(() => null);
+  const now = new Date();
+  const spent = voucher?.used_count || 0;
+  const cap = voucher?.usage_limit_total;
+
+  const refuse =
+    !voucher ? 'no longer exists'
+    : voucher.active === false ? 'switched off'
+    : voucher.starts_at && new Date(voucher.starts_at) > now ? 'has not started'
+    : voucher.ends_at && new Date(voucher.ends_at) < now ? 'expired'
+    : cap && spent >= cap ? `used up (${spent} of ${cap})`
+    : null;
+
+  if (refuse) {
+    await db.updateDocument(DB_ID, 'discount_redemptions', doc.$id, {
+      status: 'reversed',
+      reverse_reason: `Refused automatically: voucher ${refuse}`,
+    }).catch(() => undefined);
+
+    // The order was priced as though the discount applied, so put it back.
+    // Re-priced from the order rather than by subtracting, because the tax and
+    // service on a smaller subtotal were wrong too.
+    await reprice({ db, DB_ID, orderId: doc.order_id, settings }).catch((e) =>
+      error(`Could not re-price ${doc.order_id} after refusing a voucher: ${e.message}`),
+    );
+
+    await db.createDocument(DB_ID, 'audit_log', 'unique()', {
+      venue_id: doc.venue_id,
+      actor_id: doc.applied_by || 'guest',
+      actor_role: doc.applied_by ? 'staff' : 'guest',
+      action: 'voucher_refused',
+      entity_type: 'discount_redemptions',
+      entity_id: doc.$id,
+      after: JSON.stringify({ code: doc.code_snapshot, amount: doc.amount, refuse }).slice(0, 3900),
+      reason: `Voucher ${refuse}`,
+    }).catch(() => undefined);
+
+    log(`Refused ${doc.code_snapshot || doc.discount_id}: ${refuse}`);
+    return { ok: true, refused: refuse };
+  }
+
+  // Counted only once it has been allowed, so a refused attempt never uses up
+  // somebody else's turn.
+  const used = spent + 1;
+  await db.updateDocument(DB_ID, 'discounts', voucher.$id, { used_count: used });
+
+  // A voucher that has just reached its limit is switched off, so it stops
+  // being offered and stops being typed. The count already prevents it being
+  // honoured; this is so the admin list shows the truth at a glance.
+  if (cap && used >= cap) {
+    await db.updateDocument(DB_ID, 'discounts', voucher.$id, { active: false }).catch(() => undefined);
+    log(`${voucher.code || voucher.name} has reached its limit of ${cap} and is now off`);
+  }
+
+  log(`${voucher.code || voucher.name} used ${used}${cap ? ` of ${cap}` : ''}`);
+  return { ok: true, used, cap: cap || null };
+}
+
 export default async ({ req, res, log, error }) => {
   const client = new Client()
     .setEndpoint(process.env.APPWRITE_FUNCTION_API_ENDPOINT || process.env.APPWRITE_ENDPOINT)
@@ -25,8 +155,32 @@ export default async ({ req, res, log, error }) => {
   const db = new Databases(client);
   const DB_ID = process.env.DB_ID || 'snpos';
 
-  const order = req.bodyJson ?? (req.body ? JSON.parse(req.body) : null);
-  if (!order?.$id) return res.json({ ok: true, skipped: 'no order' });
+  const doc = req.bodyJson ?? (req.body ? JSON.parse(req.body) : null);
+  if (!doc?.$id) return res.json({ ok: true, skipped: 'nothing sent' });
+
+  const events = (req.headers['x-appwrite-event'] || '').split(',').filter(Boolean);
+
+  // ------------------------------------------------------ voucher redeemed
+  //
+  // Triggered by the redemption row itself, not by the order.
+  //
+  // It used to be done on the order's own event, and that was a race it lost
+  // more often than it won: the browser writes the order first and the
+  // redemption a moment later, so this function ran, found no redemption, and
+  // moved on — which is why a code with five uses could be typed for ever and
+  // the count never moved. The row exists by definition when its own creation
+  // is the trigger.
+  if (events.some((e) => e.includes('collections.discount_redemptions'))) {
+    try {
+      const settings = await db.getDocument(DB_ID, 'settings', 'main');
+      return res.json(await redeem({ db, DB_ID, doc, settings, log, error }));
+    } catch (e) {
+      error(`Redemption check failed for ${doc.$id}: ${e.message}`);
+      return res.json({ ok: false, error: e.message }, 500);
+    }
+  }
+
+  const order = doc;
 
   try {
     const settings = await db.getDocument(DB_ID, 'settings', 'main');
@@ -159,63 +313,35 @@ export default async ({ req, res, log, error }) => {
     }
 
     // Discounts are only honoured if a matching redemption exists.
-    const redemptions = await db.listDocuments(DB_ID, 'discount_redemptions', [
-      Query.equal('order_id', order.$id),
-      Query.limit(10),
-    ]);
-    // ...and only if the voucher itself still has uses left.
     //
-    // The customer's phone checks this too, for a quick answer, but a client
-    // check is a courtesy rather than a control: nothing stops two people
-    // typing the last use of a code in the same second, and nothing stopped
-    // the tenth person using a code limited to five. This is where it is
-    // actually enforced, and where the count is kept.
-    let allowedDiscount = 0;
-    for (const r of redemptions.documents) {
-      if (r.status !== 'applied') continue;
-
-      const voucher = await db.getDocument(DB_ID, 'discounts', r.discount_id).catch(() => null);
-      const now = new Date();
-      const spent = voucher?.used_count || 0;
-      const cap = voucher?.usage_limit_total;
-
-      const refuse =
-        !voucher ? 'no longer exists'
-        : !voucher.active ? 'switched off'
-        : voucher.starts_at && new Date(voucher.starts_at) > now ? 'has not started'
-        : voucher.ends_at && new Date(voucher.ends_at) < now ? 'expired'
-        : cap && spent >= cap ? `used up (${spent} of ${cap})`
-        : null;
-
-      if (refuse) {
-        corrections.push(`voucher ${r.code_snapshot || r.discount_id}: ${refuse}`);
-        await db.updateDocument(DB_ID, 'discount_redemptions', r.$id, {
-          status: 'reversed',
-          reverse_reason: `Refused automatically: voucher ${refuse}`,
-        }).catch(() => undefined);
-        continue;
-      }
-
-      allowedDiscount += r.amount;
-      // Counted only once it has actually been allowed, so a refused attempt
-      // never eats somebody else's use.
-      await db.updateDocument(DB_ID, 'discounts', voucher.$id, { used_count: spent + 1 })
-        .catch(() => undefined);
+    // Given a moment to arrive when the order claims one: the browser writes
+    // the order and its redemption as two calls, and stripping a legitimate
+    // discount because the second had not landed yet would overcharge a
+    // customer who did nothing wrong.
+    //
+    // Whether the voucher was still allowed to be used is decided on the
+    // redemption's own event, not here — see redeem() below. This only totals
+    // up what survived that check.
+    let redemptions = { documents: [] };
+    for (let attempt = 0; attempt < 5; attempt++) {
+      redemptions = await db.listDocuments(DB_ID, 'discount_redemptions', [
+        Query.equal('order_id', order.$id),
+        Query.limit(10),
+      ]);
+      if (redemptions.total > 0 || !order.discount_total) break;
+      await new Promise((r) => setTimeout(r, 600));
     }
+
+    const allowedDiscount = redemptions.documents
+      .filter((r) => r.status === 'applied')
+      .reduce((sum, r) => sum + r.amount, 0);
 
     const discount = Math.min(order.discount_total || 0, allowedDiscount, subtotal);
     if ((order.discount_total || 0) > allowedDiscount) {
       corrections.push(`discount: claimed ${order.discount_total}, allowed ${allowedDiscount}`);
     }
 
-    const discounted = subtotal - discount;
-    const service = Math.round((discounted * (settings.service_charge_bp || 0)) / 10000);
-    const taxable = discounted + service;
-    const rate = settings.tax_rate_bp || 0;
-    const tax = settings.tax_inclusive
-      ? Math.round(taxable - (taxable * 10000) / (10000 + rate))
-      : Math.round((taxable * rate) / 10000);
-    const total = settings.tax_inclusive ? taxable : taxable + tax;
+    const { service, tax, total } = totalsFor(subtotal, discount, settings);
 
     if (
       corrections.length ||

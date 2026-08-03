@@ -155,6 +155,47 @@ export function VouchersPage() {
     }
   };
 
+  /**
+   * Count the uses again from the redemption records.
+   *
+   * The count is kept by the server as vouchers are redeemed, so this normally
+   * does nothing. It exists because it did not always work: for a while the
+   * check ran before the redemption row had been written, so nothing was
+   * counted. This puts the figures right from the records that were kept
+   * correctly all along, rather than asking anybody to guess.
+   */
+  const recount = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const redemptions = await listAll<{ discount_id: string; status: string }>('discount_redemptions');
+      const used = new Map<string, number>();
+      for (const r of redemptions) {
+        if (r.status !== 'applied') continue;
+        used.set(r.discount_id, (used.get(r.discount_id) ?? 0) + 1);
+      }
+
+      let changed = 0;
+      for (const v of rows ?? []) {
+        const real = used.get(v.$id) ?? 0;
+        if (real === v.used_count) continue;
+        // A voucher already past its limit is switched off at the same time, so
+        // the list and the behaviour agree from here on.
+        const patch: Record<string, unknown> = { used_count: real };
+        if (v.usage_limit_total && real >= v.usage_limit_total) patch.active = false;
+        await db.updateDocument(DB_ID, 'discounts', v.$id, patch);
+        changed += 1;
+      }
+
+      await load();
+      toast(changed === 0 ? 'All counts were already right' : `${changed} voucher${changed === 1 ? '' : 's'} corrected`);
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const remove = async (row: Voucher) => {
     if (row.used_count > 0) {
       // Deleting a used voucher would orphan the redemption records that show
@@ -182,12 +223,15 @@ export function VouchersPage() {
 
   const state = (v: Voucher) => {
     const now = new Date().toISOString();
-    if (!v.active) return { tone: 'default' as const, label: 'Off' };
-    if (v.starts_at && v.starts_at > now) return { tone: 'warn' as const, label: 'Not started' };
-    if (v.ends_at && v.ends_at < now) return { tone: 'danger' as const, label: 'Expired' };
+    // Checked before `active`, because a voucher that hit its limit is
+    // switched off automatically — and "Off" would make that look like
+    // somebody's decision rather than the limit doing its job.
     if (v.usage_limit_total && v.used_count >= v.usage_limit_total) {
       return { tone: 'danger' as const, label: 'Used up' };
     }
+    if (v.ends_at && v.ends_at < now) return { tone: 'danger' as const, label: 'Expired' };
+    if (!v.active) return { tone: 'default' as const, label: 'Off' };
+    if (v.starts_at && v.starts_at > now) return { tone: 'warn' as const, label: 'Not started' };
     return { tone: 'ok' as const, label: 'Live' };
   };
 
@@ -197,7 +241,10 @@ export function VouchersPage() {
     <>
       <div className="spread">
         <h1>Discount vouchers</h1>
-        <Button variant="primary" onClick={() => open()}>New voucher</Button>
+        <div className="row" style={{ gap: '0.4rem' }}>
+          <Button onClick={() => void recount()} loading={busy && !editing}>Recount uses</Button>
+          <Button variant="primary" onClick={() => open()}>New voucher</Button>
+        </div>
       </div>
       <p className="dim" style={{ maxWidth: '46rem' }}>
         A voucher with a code can be typed by a customer while ordering. One without a code is a button staff press.
