@@ -3,8 +3,8 @@ import { Badge, Button, Field, FormError, Input, Modal, Notice, Select, Textarea
 import type { BlockerRow, CountRow, StockRow } from '@snpos/ui';
 import {
   db, DB_ID, ID, formatMoney, parseMoney, toInput, loadIngredients,
-  loadPaymentMethods, openShift, loadOpenShift, shiftBlockers, expectedTakings, closeShift,
-  recordPayment, PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions,
+  loadPaymentMethods, openShift, loadOpenShift, shiftBlockers, expectedTakings, closeShift, openingFloats,
+  recordPayment, amountOutstanding, PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions,
   receiveStock, uploadFile,
 } from '@snpos/core';
 import type {
@@ -40,6 +40,8 @@ export function CombinedBar({
   const [closing, setClosing] = useState(false);
   const [spending, setSpending] = useState(false);
   const [floats, setFloats] = useState<Record<string, string>>({});
+  const [floatSource, setFloatSource] = useState('zero');
+  const [floatNote, setFloatNote] = useState('');
   const [rows, setRows] = useState<CountRow[]>([]);
   const [blockers, setBlockers] = useState<BlockerRow[]>([]);
   const [note, setNote] = useState('');
@@ -61,7 +63,16 @@ export function CombinedBar({
   const startOpen = async () => {
     const m = await loadPaymentMethods(venue.$id);
     setMethods(m);
-    setFloats(Object.fromEntries(m.map((x) => [x.$id, toInput(0, decimals)])));
+    // Filled in from the restaurant's float policy rather than always starting
+    // at zero, which turns yesterday's float into today's takings.
+    const opening = await openingFloats(venue.$id, settings, m);
+    setFloatSource(opening.source);
+    setFloatNote(opening.note);
+    setFloats(
+      Object.fromEntries(
+        m.map((x) => [x.$id, opening.source === 'prompt' ? '' : toInput(opening.floats[x.$id] ?? 0, decimals)]),
+      ),
+    );
     setOpening(true);
     setError(null);
   };
@@ -74,6 +85,7 @@ export function CombinedBar({
         venueId: venue.$id,
         userId: who?.user_id || who?.$id || '',
         floats: Object.fromEntries(Object.entries(floats).map(([k, v]) => [k, parseMoney(v, decimals) ?? 0])),
+        floatSource,
       });
       await reload();
       setOpening(false);
@@ -109,7 +121,15 @@ export function CombinedBar({
       const list = ing
         .filter((i) => i.active)
         .sort((a, b) => Number(b.critical) - Number(a.critical) || a.name.localeCompare(b.name))
-        .map((i) => ({ $id: i.$id, name: i.name, critical: i.critical }));
+        .map((i) => ({
+          $id: i.$id,
+          name: i.name,
+          critical: i.critical,
+          unit: i.unit,
+          lowAt: i.low_threshold ?? undefined,
+          parLevel: i.par_level || undefined,
+          onHand: Math.round(i.current_qty * 100) / 100,
+        }));
       setStockList(list);
       setLevels(Object.fromEntries(list.map((i) => [i.$id, 'OK' as const])));
       setNote('');
@@ -126,6 +146,19 @@ export function CombinedBar({
     if (rows.some((r) => parseMoney(r.countedText, decimals) === null)) {
       setError('Enter what you counted for every drawer.');
       return;
+    }
+    // A drawer cannot hold less than nothing. When one counts negative it is
+    // not a variance, it is a missing expense — so say that rather than
+    // recording an impossible figure.
+    if (!settings.allow_negative_cash) {
+      const short = rows.find((r) => (parseMoney(r.countedText, decimals) ?? 0) < 0);
+      if (short) {
+        setError(
+          `${short.name} cannot finish below nothing. That almost always means money was paid out and not ` +
+          'recorded — add the expense first, then close.',
+        );
+        return;
+      }
     }
     const off = rows.some((r) => (parseMoney(r.countedText, decimals) ?? 0) !== r.expected);
     if (off && !note.trim()) {
@@ -202,6 +235,7 @@ export function CombinedBar({
           <p className="small dim" style={{ marginTop: 0 }}>
             Count what is in the drawer now. A guess here becomes a false discrepancy at the end of the night.
           </p>
+          {floatNote && <p className="small dim">{floatNote}</p>}
           {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
           {methods.map((m) => (
             <Field key={m.$id} label={`${m.name} float (${settings.currency_symbol})`}>
@@ -514,14 +548,24 @@ function ExpenseModal({
         </div>
       </Field>
 
-      <Field
-        label="What for"
-        hint={filledLines.length > 0 ? 'Taken from the items above. Change it if it belongs somewhere else.' : undefined}
-      >
-        <Select value={categoryKey} onChange={(e) => setCategoryKey(e.target.value)}>
-          {categories.map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}
-        </Select>
-      </Field>
+      {/* Not asked once items are chosen. Each ingredient already carries the
+          category it belongs to, set when an admin added it, so asking again
+          is asking the same question twice and inviting two answers.
+          Still asked for spending with nothing to stock — a taxi, gas, a
+          repair — because there is nothing to take the answer from. */}
+      {filledLines.length === 0 && (
+        <Field label="What for">
+          <Select value={categoryKey} onChange={(e) => setCategoryKey(e.target.value)}>
+            {categories.map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}
+          </Select>
+        </Field>
+      )}
+      {filledLines.length > 0 && (
+        <p className="small dim">
+          Filed under <strong>{categories.find((c) => c.key === categoryKey)?.name ?? categoryKey}</strong>, from the
+          items above.
+        </p>
+      )}
 
       {filledLines.length > 0 ? (
         <Field label={`Amount (${settings.currency_symbol ?? ''})`} hint="Added up from the items above.">
@@ -621,44 +665,74 @@ export function SettleModal({
   const [shift, setShift] = useState<Shift | null>(null);
   const [tipText, setTipText] = useState('');
   const [cashText, setCashText] = useState('');
+  const [payText, setPayText] = useState('');
+  const [reference, setReference] = useState('');
+  const [owed, setOwed] = useState(order.total);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const decimals = settings.currency_decimals ?? 2;
   const method = methods.find((m) => m.$id === methodId);
+  // A blank box means "all of it" — the overwhelmingly common case, and it
+  // should not need typing.
+  const paying = payText.trim() === '' ? owed : parseMoney(payText, decimals) ?? 0;
   // Cash means change, and change is a number somebody has to get right while
   // holding a plate. Working it out here is one fewer thing to do in the head.
   const tendered = parseMoney(cashText, decimals) ?? 0;
-  const change = method?.kind === 'cash' ? Math.max(0, tendered - order.total) : 0;
+  const change = method?.kind === 'cash' ? Math.max(0, tendered - paying) : 0;
+  const leftAfter = Math.max(0, owed - paying);
 
   useEffect(() => {
     (async () => {
-      const [m, s] = await Promise.all([loadPaymentMethods(venueId), loadOpenShift(venueId)]);
+      const [m, s, out] = await Promise.all([
+        loadPaymentMethods(venueId),
+        loadOpenShift(venueId),
+        amountOutstanding(order),
+      ]);
       setMethods(m);
       setMethodId(m[0]?.$id ?? '');
       setShift(s);
+      setOwed(out);
     })().catch(() => undefined);
-  }, [venueId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [venueId, order.$id]);
 
   const settle = async () => {
     if (!methodId) { setError('Choose how they paid.'); return; }
     if (!shift) { setError('No shift is open. Open one first, or the money has nothing to be counted against.'); return; }
+    if (paying <= 0) { setError('Enter how much they are paying.'); return; }
+    if (paying > owed) {
+      setError(`That is more than the ${formatMoney(owed, settings)} outstanding. Put the extra in the tip box if it is a tip.`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await recordPayment({
+      const remaining = await recordPayment({
         venueId,
         order,
         shiftId: shift.$id,
         methodId,
         methodKind: method?.kind ?? 'other',
-        amount: order.total,
+        amount: paying,
         tip: parseMoney(tipText, decimals) ?? 0,
         changeGiven: change,
+        reference: reference.trim(),
         takenBy: who?.user_id || who?.$id || '',
         // The pass has handed the food over; it has not closed the table.
         orderStatus: 'SERVED',
       });
+      if (remaining > 0) {
+        // Still owed, so the modal stays open ready for the next person to pay.
+        setOwed(remaining);
+        setPayText('');
+        setCashText('');
+        setTipText('');
+        setReference('');
+        setBusy(false);
+        onDone(`${formatMoney(paying, settings)} taken · ${formatMoney(remaining, settings)} still to pay`, 'ok');
+        return;
+      }
       onDone(`${order.order_no} collected and paid`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not record that payment.');
@@ -673,20 +747,51 @@ export function SettleModal({
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={settle} loading={busy}>Mark collected and paid</Button>
+          <Button variant="primary" onClick={settle} loading={busy}>
+            {leftAfter > 0 && payText.trim() !== '' ? 'Take part payment' : 'Mark collected and paid'}
+          </Button>
         </>
       }
     >
-      {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
-      <p style={{ marginTop: 0, fontSize: '1.3rem', fontWeight: 650 }}>{formatMoney(order.total, settings)}</p>
+      <FormError message={error} />
+      <p style={{ marginTop: 0, fontSize: '1.3rem', fontWeight: 650 }}>{formatMoney(owed, settings)}</p>
       <p className="small dim" style={{ marginTop: '-0.5rem' }}>
-        The guest pays you as usual. This records which way they paid.
+        {owed < order.total
+          ? `Still to pay, of ${formatMoney(order.total, settings)}. The guest pays you as usual; this records which way.`
+          : 'The guest pays you as usual. This records which way they paid.'}
       </p>
       <Field label="How they paid">
         <Select value={methodId} onChange={(e) => setMethodId(e.target.value)}>
           {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
         </Select>
       </Field>
+      {/* Blank means the whole balance. Filled in, it takes part of it and the
+          bill stays open for whoever is paying the rest — a table splitting
+          the bill should not need one person to front the lot. */}
+      <Field
+        label={`Amount paid now (${settings.currency_symbol ?? ''})`}
+        hint="Leave blank if they are paying all of it."
+      >
+        <Input
+          value={payText}
+          inputMode="decimal"
+          placeholder={toInput(owed, decimals)}
+          onChange={(e) => setPayText(e.target.value)}
+        />
+      </Field>
+      {leftAfter > 0 && payText.trim() !== '' && (
+        <p className="small" style={{ margin: '-0.5rem 0 0.9rem', color: 'var(--warn)' }}>
+          {formatMoney(leftAfter, settings)} will still be owed after this.
+        </p>
+      )}
+      {method?.requires_reference && (
+        <Field
+          label="Reference"
+          hint="The number from the card machine or the mobile money message. Without it this payment cannot be matched to your statement."
+        >
+          <Input value={reference} onChange={(e) => setReference(e.target.value)} />
+        </Field>
+      )}
       {method?.kind === 'cash' && (
         <Field label={`Cash handed over (${settings.currency_symbol ?? ''})`} hint="Optional. Fill it in and the change is worked out for you.">
           <Input value={cashText} inputMode="decimal" onChange={(e) => setCashText(e.target.value)} />

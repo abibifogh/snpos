@@ -147,7 +147,11 @@ export function CartSheet({
     try {
       const found = await db.listDocuments(DB_ID, 'discounts', [Query.equal('code', typed), Query.limit(1)]);
       const d = found.documents[0] as unknown as
-        | { $id: string; name: string; kind: string; value: number; active: boolean; guest_applicable: boolean; min_order_total: number; max_discount_amount?: number; starts_at?: string; ends_at?: string }
+        | {
+            $id: string; name: string; kind: string; value: number; active: boolean;
+            guest_applicable: boolean; min_order_total: number; max_discount_amount?: number;
+            starts_at?: string; ends_at?: string; usage_limit_total?: number; used_count?: number;
+          }
         | undefined;
 
       // A code that does not exist and one that is not for customers get the
@@ -158,8 +162,19 @@ export function CartSheet({
         return;
       }
       const now = new Date();
-      if ((d.starts_at && new Date(d.starts_at) > now) || (d.ends_at && new Date(d.ends_at) < now)) {
+      if (d.starts_at && new Date(d.starts_at) > now) {
+        setCodeError('That code is not active yet.');
+        return;
+      }
+      if (d.ends_at && new Date(d.ends_at) < now) {
         setCodeError('That code has expired.');
+        return;
+      }
+      // Told here for a quick answer; enforced on the server, which is the
+      // only place that can be sure two people did not use the last one at
+      // the same moment.
+      if (d.usage_limit_total && (d.used_count ?? 0) >= d.usage_limit_total) {
+        setCodeError('That code has been used the maximum number of times.');
         return;
       }
       const subtotal = cart.reduce((s, l) => s + lineTotal(l), 0);
@@ -362,7 +377,10 @@ export function CartSheet({
       </Field>
 
       {collectEmail && (
-        <Field label="Email for your receipt" hint="Optional — leave blank if you'd rather not.">
+        <Field
+          label="Your email"
+          hint="We'll tell you when your order is accepted and when it's ready, and send your receipt once you've paid. Optional — leave blank if you'd rather not."
+        >
           <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
       )}

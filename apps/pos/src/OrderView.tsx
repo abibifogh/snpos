@@ -364,30 +364,51 @@ function PaymentModal({
   const confirm = async () => {
     if (!ctx.shift) { setError('No shift is open.'); return; }
     if (!methodId) { setError('Choose how it was paid.'); return; }
-    if (paid < amountDue) { setError(`That is less than the ${formatMoney(amountDue, ctx.settings)} due.`); return; }
+    // Less than the full amount is allowed and is not an error: a table
+    // splitting the bill pays it in pieces. What is not allowed is nothing.
+    if (paid <= 0) { setError('Enter how much is being paid.'); return; }
     if (method?.requires_reference && !reference.trim()) { setError('Enter the reference from the card machine.'); return; }
 
     setBusy(true);
     setError(null);
     try {
       const billTotal = Math.max(1, orders.reduce((s, o) => s + o.total, 0));
-      for (const order of orders) {
+      // What was actually handed over, not what the bill came to — the two
+      // differ whenever somebody pays part of it, and recording the bill total
+      // against a part payment would mark the whole thing settled.
+      const taken = Math.min(paid, amountDue);
+
+      // Shared across the orders in proportion, with the rounding remainder
+      // going to the last one so the pieces add up to exactly what was taken.
+      let allocated = 0;
+      for (const [index, order] of orders.entries()) {
+        const share =
+          index === orders.length - 1
+            ? taken - allocated
+            : Math.round((order.total / billTotal) * taken);
+        allocated += share;
         await recordPayment({
           venueId: ctx.venue.$id,
           order,
           shiftId: ctx.shift.$id,
           methodId,
           methodKind: method?.kind ?? 'cash',
-          // Each order carries its share; splitting the tender across the bill
-          // keeps every order individually reconcilable.
-          amount: Math.round((order.total / billTotal) * amountDue),
-          tip: parseMoney(tip, decimals) ?? 0,
-          changeGiven: change,
+          amount: share,
+          // The tip belongs to the tender, not to each order, so it goes on
+          // the first row only rather than being counted once per order.
+          tip: index === 0 ? parseMoney(tip, decimals) ?? 0 : 0,
+          changeGiven: index === 0 ? change : 0,
           reference: reference.trim(),
           takenBy: ctx.userId,
           orderStatus: 'CLOSED',
           customerEmail: email,
         });
+      }
+      if (paid < amountDue) {
+        onError(
+          `${formatMoney(paid, ctx.settings)} taken · ` +
+          `${formatMoney(amountDue - paid, ctx.settings)} still to pay on this bill.`,
+        );
       }
       onDone();
     } catch (e) {
@@ -405,7 +426,9 @@ function PaymentModal({
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={confirm} loading={busy}>Mark as paid</Button>
+          <Button variant="primary" onClick={confirm} loading={busy}>
+            {paid > 0 && paid < amountDue ? 'Take part payment' : 'Mark as paid'}
+          </Button>
         </>
       }
     >
@@ -413,6 +436,11 @@ function PaymentModal({
         <span>Due</span>
         <span>{formatMoney(amountDue, ctx.settings)}</span>
       </div>
+      {paid > 0 && paid < amountDue && (
+        <p className="small" style={{ color: 'var(--warn)', marginTop: '0.3rem' }}>
+          {formatMoney(amountDue - paid, ctx.settings)} will still be owed after this.
+        </p>
+      )}
 
       <Field label="Paid by">
         <Select value={methodId} onChange={(e) => setMethodId(e.target.value)}>
@@ -421,7 +449,10 @@ function PaymentModal({
       </Field>
 
       <div className="grid-2">
-        <Field label={`Amount taken (${ctx.settings.currency_symbol})`}>
+        <Field
+          label={`Amount taken (${ctx.settings.currency_symbol})`}
+          hint="Less than the total is fine — the bill stays open for whoever is paying the rest."
+        >
           <Input value={amount} inputMode="decimal" onChange={(e) => setAmount(e.target.value)} />
         </Field>
         {ctx.settings.tips_enabled !== false && (

@@ -400,14 +400,18 @@ export function ExpensesPage() {
           {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
 
           <div className="grid-2">
+            {/* Hidden once the stock lines answer it. Each ingredient already
+                carries its category, set when it was added, so asking again
+                invites a second and different answer for the same purchase.
+                Still asked when there is nothing listed — a taxi or a repair
+                has no ingredient to take the answer from. */}
             <Field
               label="Category"
+              hidden={!!impliedCategory}
               hint={
-                impliedCategory
-                  ? 'Worked out from what you listed below. Change it if this one is different.'
-                  : categories && categories.length === 0
-                    ? 'None set up — add some under the Categories tab.'
-                    : undefined
+                categories && categories.length === 0
+                  ? 'None set up — add some under the Categories tab.'
+                  : undefined
               }
             >
               <Select

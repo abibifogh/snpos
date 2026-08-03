@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Notice, Spinner, Badge, Select, Field } from '@snpos/ui';
+import { Button, Card, Empty, Notice, Spinner, Badge, Input, Field } from '@snpos/ui';
 import { listAll, humanError } from '../lib';
 import {
   formatMoney, trialBalance, buildReportHtml, openPrintable, downloadUrl,
@@ -19,16 +19,21 @@ interface Receipt extends Doc {
   sent_at?: string;
 }
 
-const RANGES = [
-  { v: 7, l: 'Last 7 days' },
-  { v: 30, l: 'Last 30 days' },
-  { v: 90, l: 'Last 90 days' },
-  { v: 3650, l: 'All time' },
+const SHORTCUTS = [
+  { days: 7, label: 'Last 7 days' },
+  { days: 30, label: 'Last 30 days' },
+  { days: 90, label: 'Last 90 days' },
+  { days: 3650, label: 'All time' },
 ];
+
+/** Local midnight, so "today" means today here rather than in UTC. */
+const todayStr = () => new Date().toLocaleDateString('en-CA');
+const daysAgoStr = (n: number) => new Date(Date.now() - n * 86400_000).toLocaleDateString('en-CA');
 
 export function ReportsPage() {
   const { settings, profile } = useSession();
-  const [days, setDays] = useState(30);
+  const [from, setFrom] = useState(daysAgoStr(30));
+  const [to, setTo] = useState(todayStr());
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [items, setItems] = useState<OrderItem[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -56,21 +61,30 @@ export function ReportsPage() {
     })().catch((err) => setError(humanError(err)));
   }, []);
 
-  const since = useMemo(() => new Date(Date.now() - days * 86400_000), [days]);
+  // Both ends, both days included. A report that silently stops at midnight
+  // yesterday is one somebody quotes a wrong figure from.
+  const since = useMemo(() => new Date(`${from}T00:00:00`), [from]);
+  const until = useMemo(() => new Date(`${to}T23:59:59.999`), [to]);
+  const inRange = (iso: string) => {
+    const d = new Date(iso);
+    return d >= since && d <= until;
+  };
 
   const paid = useMemo(
-    () => (orders ?? []).filter((o) => o.payment_status === 'paid' && new Date(o.$createdAt) >= since),
-    [orders, since],
+    () => (orders ?? []).filter((o) => o.payment_status === 'paid' && inRange(o.$createdAt)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [orders, since, until],
   );
   const periodPayments = useMemo(
-    () => payments.filter((p) => new Date(p.$createdAt) >= since),
-    [payments, since],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () => payments.filter((p) => inRange(p.$createdAt)),
+    [payments, since, until],
   );
 
   const sales = paid.reduce((s, o) => s + o.total, 0);
   const discounts = paid.reduce((s, o) => s + o.discount_total, 0);
   const tips = periodPayments.reduce((s, p) => s + (p.tip ?? 0), 0);
-  const spend = expenses.filter((e) => new Date(e.$createdAt) >= since).reduce((s, e) => s + e.amount, 0);
+  const spend = expenses.filter((e) => inRange(e.$createdAt)).reduce((s, e) => s + e.amount, 0);
   const covers = paid.reduce((s, o) => s + (o.guest_count || 1), 0);
 
   /** Best sellers by revenue, which is the number that pays the rent. */
@@ -105,7 +119,7 @@ export function ReportsPage() {
   const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? 'Unknown';
   const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
 
-  const periodLabel = `${since.toLocaleDateString()} – ${new Date().toLocaleDateString()}`;
+  const periodLabel = `${since.toLocaleDateString()} – ${until.toLocaleDateString()}`;
 
   /**
    * The report as an A4 document, for saving as a PDF.
@@ -189,7 +203,7 @@ export function ReportsPage() {
       ['Hour', 'Taken'],
       ...byHour.filter((h) => h.value > 0).map((h) => [`${String(h.hour).padStart(2, '0')}:00`, (h.value / 100).toFixed(2)]),
     ];
-    downloadCsv(`report-${days}-days`, toCsv(['Sales report', periodLabel], rows));
+    downloadCsv(`report-${from}-to-${to}`, toCsv(['Sales report', periodLabel], rows));
   };
 
   if (error) return <Notice>{error}</Notice>;
@@ -202,13 +216,30 @@ export function ReportsPage() {
         <div className="row" style={{ gap: '0.5rem' }}>
           <Button onClick={exportPdf} disabled={paid.length === 0}>Download PDF</Button>
           <Button onClick={exportCsv} disabled={paid.length === 0}>Spreadsheet</Button>
-          <Field>
-            <Select value={days} onChange={(e) => setDays(Number(e.target.value))}>
-              {RANGES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
-            </Select>
-          </Field>
         </div>
       </div>
+
+      <Card title="Which dates">
+        <div className="grid-2">
+          <Field label="From">
+            <Input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
+          </Field>
+          <Field label="To" hint="Both days included.">
+            <Input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} />
+          </Field>
+        </div>
+        <div className="row row-wrap" style={{ gap: '0.4rem' }}>
+          {SHORTCUTS.map(({ days, label }) => (
+            <Button
+              key={days}
+              size="sm"
+              onClick={() => { setFrom(daysAgoStr(days)); setTo(todayStr()); }}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      </Card>
 
       {paid.length === 0 ? (
         <Card><Empty title="No paid orders in this period">Figures appear once bills start being settled on the terminal.</Empty></Card>

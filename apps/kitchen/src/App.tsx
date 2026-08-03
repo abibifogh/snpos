@@ -133,6 +133,23 @@ export function App() {
     })();
   }, [loadItemsFor]);
 
+  /**
+   * Keep settings current while the screen stays open.
+   *
+   * A kitchen display is opened once and left running for weeks. Without this,
+   * an admin switching something off — tips, say — has no effect until somebody
+   * thinks to reload a screen nobody ever touches.
+   */
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      void db
+        .getDocument(DB_ID, 'settings', 'main')
+        .then((s2) => setSettings(s2 as unknown as Settings))
+        .catch(() => undefined);
+    }, 120_000);
+    return () => window.clearInterval(t);
+  }, []);
+
   // Live updates. Without this the kitchen is a page someone has to refresh.
   useEffect(() => {
     if (!venue) return;

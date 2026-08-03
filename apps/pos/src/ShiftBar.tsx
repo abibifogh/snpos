@@ -4,6 +4,7 @@ import type { BlockerRow, CountRow, StockRow } from '@snpos/ui';
 import {
   formatMoney, parseMoney, toInput, loadIngredients,
   loadPaymentMethods, openShift as createShift, shiftBlockers, expectedTakings, closeShift,
+  openingFloats,
 } from '@snpos/core';
 import type { PaymentMethod, Shift } from '@snpos/core';
 import type { PosContext } from './App';
@@ -28,6 +29,8 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   const [stockList, setStockList] = useState<StockRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [floatSource, setFloatSource] = useState('zero');
+  const [floatNote, setFloatNote] = useState('');
 
   const decimals = ctx.settings.currency_decimals ?? 2;
   const tolerance = ctx.settings.cash_variance_tolerance ?? 500;
@@ -36,7 +39,17 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   const startOpen = async () => {
     const m = await loadPaymentMethods(ctx.venue.$id);
     setMethods(m);
-    setFloats(Object.fromEntries(m.map((x) => [x.$id, toInput(0, decimals)])));
+    // Filled in from whatever the restaurant said its float policy is, rather
+    // than always starting at zero and quietly turning yesterday's float into
+    // today's takings.
+    const opening = await openingFloats(ctx.venue.$id, ctx.settings, m);
+    setFloatSource(opening.source);
+    setFloatNote(opening.note);
+    setFloats(
+      Object.fromEntries(
+        m.map((x) => [x.$id, opening.source === 'prompt' ? '' : toInput(opening.floats[x.$id] ?? 0, decimals)]),
+      ),
+    );
     setOpening(true);
     setError(null);
   };
@@ -49,6 +62,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         venueId: ctx.venue.$id,
         userId: ctx.userId,
         floats: Object.fromEntries(Object.entries(floats).map(([k, v]) => [k, parseMoney(v, decimals) ?? 0])),
+        floatSource: floatSource,
       });
       await ctx.reloadShift();
       setOpening(false);
@@ -93,7 +107,15 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       const list = ing
         .filter((i) => i.active)
         .sort((a, b) => Number(b.critical) - Number(a.critical) || a.name.localeCompare(b.name))
-        .map((i) => ({ $id: i.$id, name: i.name, critical: i.critical }));
+        .map((i) => ({
+          $id: i.$id,
+          name: i.name,
+          critical: i.critical,
+          unit: i.unit,
+          lowAt: i.low_threshold ?? undefined,
+          parLevel: i.par_level || undefined,
+          onHand: Math.round(i.current_qty * 100) / 100,
+        }));
       setStockList(list);
       setLevels(Object.fromEntries(list.map((i) => [i.$id, 'OK' as const])));
       setNote('');
@@ -110,12 +132,34 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
 
   const anythingOff = () =>
     rows.some((r) => (parseMoney(r.countedText, decimals) ?? 0) !== r.expected);
+
+  /**
+   * A drawer counted below nothing, when that is not allowed.
+   *
+   * You cannot hand over less than no money, so a negative count is not a
+   * variance — it is a missing record, usually an expense paid out of the till
+   * that nobody entered. Blocked by default, with a switch for the places that
+   * genuinely need to close short and explain it.
+   */
+  const negativeDrawer = () => {
+    if (ctx.settings.allow_negative_cash) return null;
+    const bad = rows.find((r) => (parseMoney(r.countedText, decimals) ?? 0) < 0);
+    return bad ? bad.name : null;
+  };
   const allCounted = () => rows.every((r) => parseMoney(r.countedText, decimals) !== null);
 
   const doClose = async () => {
     if (!ctx.shift) return;
     if (blockers.length > 0) return;
     if (!allCounted()) { setError('Enter what you counted for every drawer.'); return; }
+    const short = negativeDrawer();
+    if (short) {
+      setError(
+        `${short} cannot finish below nothing. A drawer that counts negative almost always means money was paid ` +
+        'out and not recorded — add the expense first, then close.',
+      );
+      return;
+    }
     if (anythingOff() && !note.trim()) {
       setError('Something is over or short. Say what happened before closing — that answer is gone by tomorrow.');
       return;
@@ -199,6 +243,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
             Count what is in the drawer now. This is the figure the close will measure against, so a guess here becomes
             a false discrepancy later.
           </p>
+          {floatNote && <p className="small dim">{floatNote}</p>}
           {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
           {methods.map((m) => (
             <Field key={m.$id} label={`${m.name} float (${ctx.settings.currency_symbol})`}>

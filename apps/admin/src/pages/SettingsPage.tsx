@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import { Button, Card, Field, Input, Select, Notice, Textarea, Toggle, useToast } from '@snpos/ui';
 import { contrastRatio } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { bpToPercent, percentToBp, ADMIN_SECTIONS, GRANTABLE_ROLES, parseAccess } from '@snpos/core';
+import {
+  bpToPercent, percentToBp, toInput, parseMoney,
+  ADMIN_SECTIONS, GRANTABLE_ROLES, parseAccess,
+} from '@snpos/core';
 import type { Settings, Doc } from '@snpos/core';
 
 import { useSession } from '../session';
@@ -127,6 +130,9 @@ export function SettingsPage() {
         email_from_name: form.email_from_name ?? '',
         email_from_address: form.email_from_address ?? '',
         role_access: JSON.stringify(access),
+        shift_float_policy: form.shift_float_policy ?? 'zero',
+        shift_float_default: Number(form.shift_float_default ?? 0),
+        allow_negative_cash: !!form.allow_negative_cash,
       });
       await refreshSettings();
       toast('Settings saved');
@@ -358,6 +364,46 @@ export function SettingsPage() {
           so receipts show as <em>sent</em> here and never arrive. If that is happening, this is almost always why.
           Check Brevo → Senders, Domains &amp; Dedicated IPs → Senders, and put exactly that address here.
         </Notice>
+      </Card>
+
+      <Card title="Cash and shifts">
+        <Field
+          label="What a shift starts with in the drawer"
+          hint="Starting at nothing every time only makes sense if somebody physically empties the till at the end of each shift."
+        >
+          <Select
+            value={form.shift_float_policy ?? 'zero'}
+            onChange={(e) => set('shift_float_policy', e.target.value as Settings['shift_float_policy'])}
+          >
+            <option value="zero">Nothing — count in whatever is there</option>
+            <option value="carry_over">Carry over what the last shift counted</option>
+            <option value="fixed">A fixed float, the same every time</option>
+            <option value="prompt">Ask, with nothing filled in</option>
+          </Select>
+        </Field>
+
+        {form.shift_float_policy === 'fixed' && (
+          <Field label={`The fixed float (${form.currency_symbol})`}>
+            <Input
+              inputMode="decimal"
+              value={toInput(form.shift_float_default ?? 0, form.currency_decimals ?? 2)}
+              onChange={(e) =>
+                set('shift_float_default', parseMoney(e.target.value, form.currency_decimals ?? 2) ?? 0)
+              }
+            />
+          </Field>
+        )}
+
+        <Toggle
+          checked={!!form.allow_negative_cash}
+          onChange={(v) => set('allow_negative_cash', v)}
+          label="Allow a drawer to close below nothing"
+        />
+        <p className="small dim" style={{ marginBottom: 0 }}>
+          Off is the safer setting and the default. A drawer cannot physically hold less than no money, so a negative
+          count nearly always means cash was paid out and never recorded — blocking it makes somebody enter the missing
+          expense instead of closing over it.
+        </p>
       </Card>
 
       <Card title="Who gets the end-of-shift report">

@@ -25,13 +25,18 @@ export function Field({
   label,
   hint,
   error,
+  hidden,
   children,
 }: {
   label?: string;
   hint?: ReactNode;
   error?: string | null;
+  /** Drops the field entirely rather than dimming it — a control that is
+      visible but inert is one people keep trying to use. */
+  hidden?: boolean;
   children?: ReactNode;
 }) {
+  if (hidden) return null;
   return (
     <div className="field">
       {label && <label>{label}</label>}

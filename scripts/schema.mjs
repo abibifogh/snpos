@@ -66,7 +66,7 @@ export const COLLECTIONS = [
       ['secondary_color', 's', 9, false],
       ['logo_light_id', 's', 64, false],
       // Operational settings that genuinely differ between locations.
-      ['shift_float_policy', 'e', ['inherit', 'zero', 'carry_over', 'prompt'], true, 'inherit'],
+      ['shift_float_policy', 'e', ['inherit', 'zero', 'carry_over', 'fixed', 'prompt'], true, 'inherit'],
       ['shift_float_default', 'i', null, true, 0],
       ['order_number_prefix', 's', 8, false],
       ['tax_rate_bp', 'i', null, false],
@@ -119,8 +119,19 @@ export const COLLECTIONS = [
       ['tax_rate_bp', 'i', null, true, 0],
       ['tax_inclusive', 'b', null, true, true],
       ['service_charge_bp', 'i', null, true, 0],
-      ['shift_float_policy', 'e', ['zero', 'carry_over', 'prompt'], true, 'zero'],
+      // What a shift starts with in the drawer.
+      //   zero       nothing carried over; count it in each time
+      //   carry_over what the last shift counted at close
+      //   fixed      always shift_float_default
+      //   prompt     ask, with nothing filled in
+      ['shift_float_policy', 'e', ['zero', 'carry_over', 'fixed', 'prompt'], true, 'zero'],
       ['shift_float_default', 'i', null, true, 0],
+      // Whether a drawer may finish the night below nothing. It should not be
+      // possible — you cannot hand over less than no money — so a negative
+      // count almost always means an expense went unrecorded. Left as a switch
+      // because a restaurant that pays out of the till all evening may
+      // genuinely need to close short and explain it.
+      ['allow_negative_cash', 'b', null, false, false],
       ['kitchen_ack_sla_seconds', 'i', null, true, 60],
       ['kitchen_ping_max_level', 'i', null, true, 4],
       ['require_reject_reason', 'b', null, true, true],

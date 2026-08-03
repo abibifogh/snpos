@@ -21,7 +21,8 @@ export interface Settings extends Doc {
   tax_rate_bp: number;
   tax_inclusive: boolean;
   service_charge_bp: number;
-  shift_float_policy: 'zero' | 'carry_over' | 'prompt';
+  shift_float_policy: 'zero' | 'carry_over' | 'fixed' | 'prompt';
+  allow_negative_cash?: boolean;
   shift_float_default: number;
   kitchen_ack_sla_seconds: number;
   kitchen_ping_max_level: number;

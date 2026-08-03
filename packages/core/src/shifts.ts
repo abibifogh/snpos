@@ -25,6 +25,9 @@ export interface PaymentMethod extends Doc {
   enabled: boolean;
   counted_at_close: boolean;
   venue_id: string;
+  /** Card machines and mobile money leave a number; without it the payment
+      cannot be matched against the provider's statement. */
+  requires_reference?: boolean;
 }
 
 export interface ShiftPayment extends Doc {
@@ -36,10 +39,82 @@ export interface ShiftPayment extends Doc {
 export const loadPaymentMethods = async (venueId: string): Promise<PaymentMethod[]> =>
   (await listAll<PaymentMethod>('payment_methods', [Query.equal('venue_id', venueId)])).filter((m) => m.enabled);
 
+/**
+ * What each drawer should start the shift holding.
+ *
+ * Starting every shift at zero means somebody physically empties the till
+ * every night, and most places do not — the float stays in the drawer and gets
+ * counted again in the morning, at which point the system calls it takings.
+ * So the restaurant says which it is once, and this works it out.
+ *
+ * Returns minor units per payment method, ready to fill the form in. Whatever
+ * comes back is still editable: the shelf wins over the book here too.
+ */
+export async function openingFloats(
+  venueId: string,
+  settings: Settings,
+  methods: PaymentMethod[],
+): Promise<{ floats: Record<string, number>; source: string; note: string }> {
+  const policy = settings.shift_float_policy ?? 'zero';
+
+  if (policy === 'carry_over') {
+    // What the last shift actually counted, not what it expected — the drawer
+    // holds what it holds.
+    const previous = await db.listDocuments(DB_ID, 'shifts', [
+      Query.equal('venue_id', venueId),
+      Query.equal('status', 'closed'),
+      Query.orderDesc('$createdAt'),
+      Query.limit(1),
+    ]);
+    const last = previous.documents[0] as unknown as (Shift & { counted?: string }) | undefined;
+    if (last?.counted) {
+      try {
+        const counted = JSON.parse(last.counted) as Record<string, number>;
+        return {
+          floats: Object.fromEntries(methods.map((m) => [m.$id, counted[m.$id] ?? 0])),
+          source: 'carry_over',
+          note: `Carried over from ${last.code}. Count it to be sure.`,
+        };
+      } catch {
+        // A malformed count is not worth failing an open over.
+      }
+    }
+    return {
+      floats: Object.fromEntries(methods.map((m) => [m.$id, 0])),
+      source: 'carry_over',
+      note: 'No previous shift to carry over from — starting at nothing.',
+    };
+  }
+
+  if (policy === 'fixed') {
+    // The fixed amount is a cash float; putting it against a card terminal
+    // would invent money that was never there.
+    return {
+      floats: Object.fromEntries(
+        methods.map((m) => [m.$id, m.kind === 'cash' ? settings.shift_float_default ?? 0 : 0]),
+      ),
+      source: 'fixed',
+      note: 'The standard opening float. Change it if the drawer holds something else.',
+    };
+  }
+
+  if (policy === 'prompt') {
+    return { floats: {}, source: 'prompt', note: 'Count each drawer and enter what is in it.' };
+  }
+
+  return {
+    floats: Object.fromEntries(methods.map((m) => [m.$id, 0])),
+    source: 'zero',
+    note: 'Starting at nothing. Enter anything already in the drawer.',
+  };
+}
+
 export async function openShift(opts: {
   venueId: string;
   userId: string;
   floats: Record<string, number>;
+  /** Where the opening figure came from, for the record. */
+  floatSource?: string;
 }): Promise<Shift> {
   const code = `S${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).slice(-4)}`;
   const doc = await db.createDocument(DB_ID, 'shifts', ID.unique(), {
@@ -49,7 +124,7 @@ export async function openShift(opts: {
     opened_by: opts.userId,
     opened_at: new Date().toISOString(),
     opening_floats: JSON.stringify(opts.floats),
-    float_source: 'zero',
+    float_source: opts.floatSource ?? 'zero',
     sales_total: 0, expense_total: 0, tax_total: 0, tip_total: 0, discount_total: 0,
     void_total: 0, refund_total: 0, cogs_total: 0, covers: 0,
     stock_check_status: 'pending', posted_to_ledger: false,

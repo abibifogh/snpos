@@ -163,9 +163,45 @@ export default async ({ req, res, log, error }) => {
       Query.equal('order_id', order.$id),
       Query.limit(10),
     ]);
-    const allowedDiscount = redemptions.documents
-      .filter((r) => r.status === 'applied')
-      .reduce((sum, r) => sum + r.amount, 0);
+    // ...and only if the voucher itself still has uses left.
+    //
+    // The customer's phone checks this too, for a quick answer, but a client
+    // check is a courtesy rather than a control: nothing stops two people
+    // typing the last use of a code in the same second, and nothing stopped
+    // the tenth person using a code limited to five. This is where it is
+    // actually enforced, and where the count is kept.
+    let allowedDiscount = 0;
+    for (const r of redemptions.documents) {
+      if (r.status !== 'applied') continue;
+
+      const voucher = await db.getDocument(DB_ID, 'discounts', r.discount_id).catch(() => null);
+      const now = new Date();
+      const spent = voucher?.used_count || 0;
+      const cap = voucher?.usage_limit_total;
+
+      const refuse =
+        !voucher ? 'no longer exists'
+        : !voucher.active ? 'switched off'
+        : voucher.starts_at && new Date(voucher.starts_at) > now ? 'has not started'
+        : voucher.ends_at && new Date(voucher.ends_at) < now ? 'expired'
+        : cap && spent >= cap ? `used up (${spent} of ${cap})`
+        : null;
+
+      if (refuse) {
+        corrections.push(`voucher ${r.code_snapshot || r.discount_id}: ${refuse}`);
+        await db.updateDocument(DB_ID, 'discount_redemptions', r.$id, {
+          status: 'reversed',
+          reverse_reason: `Refused automatically: voucher ${refuse}`,
+        }).catch(() => undefined);
+        continue;
+      }
+
+      allowedDiscount += r.amount;
+      // Counted only once it has actually been allowed, so a refused attempt
+      // never eats somebody else's use.
+      await db.updateDocument(DB_ID, 'discounts', voucher.$id, { used_count: spent + 1 })
+        .catch(() => undefined);
+    }
 
     const discount = Math.min(order.discount_total || 0, allowedDiscount, subtotal);
     if ((order.discount_total || 0) > allowedDiscount) {

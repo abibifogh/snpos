@@ -31,6 +31,13 @@ export interface StockRow {
   $id: string;
   name: string;
   critical: boolean;
+  /** What the shelf should hold when it is properly stocked. */
+  parLevel?: number;
+  /** At or below this, it counts as low. */
+  lowAt?: number;
+  unit?: string;
+  /** What the system believes is left, for comparison against the shelf. */
+  onHand?: number;
 }
 
 export function ShiftCloseForm({
@@ -196,9 +203,20 @@ export function ShiftCloseForm({
               key={i.$id}
               style={{ justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px solid var(--border)' }}
             >
+              {/* The numbers, next to the name. Asking somebody to judge "low"
+                  against nothing means judging it against memory, and memory at
+                  the end of a fourteen-hour day is not a measurement. */}
               <span>
-                {i.name}
+                <span>{i.name}</span>
                 {i.critical && <Badge tone="warn"> critical</Badge>}
+                {(i.lowAt !== undefined || i.parLevel !== undefined) && (
+                  <div className="small dim">
+                    {i.lowAt !== undefined && <>low at {i.lowAt}{i.unit ? ` ${i.unit}` : ''}</>}
+                    {i.lowAt !== undefined && i.parLevel !== undefined && ' · '}
+                    {i.parLevel !== undefined && <>full shelf {i.parLevel}{i.unit ? ` ${i.unit}` : ''}</>}
+                    {i.onHand !== undefined && <> · system says {i.onHand}{i.unit ? ` ${i.unit}` : ''}</>}
+                  </div>
+                )}
               </span>
               <div className="row" style={{ gap: '0.3rem' }}>
                 {(['OK', 'LOW', 'OUT'] as const).map((level) => (
