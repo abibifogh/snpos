@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Spinner, Notice, useToast, Logo, HelpModal, OfflineBar, useOfflineQueue } from '@snpos/ui';
+import { Button, Modal, Spinner, Notice, useToast, Logo, HelpModal, OfflineBar, useOfflineQueue } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
   account, db, DB_ID, Query, listAll, loadMenu, visibleSections, computeTotals,
@@ -14,6 +14,8 @@ import type {
 import { DishSheet } from './DishSheet';
 import { CartSheet } from './CartSheet';
 import { OrderStatus } from './OrderStatus';
+import { myOrders, rememberOrder, orderIdFromHash, showOrderInAddress } from './myOrders';
+import type { MyOrder } from './myOrders';
 
 interface TableRow extends Doc {
   venue_id: string;
@@ -44,10 +46,15 @@ export function App() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [openDish, setOpenDish] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  // Set from the address, never from a button. See the note by `groupToken`.
   const [groupMode, setGroupMode] = useState(false);
   const [showCart, setShowCart] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
-  const [placed, setPlaced] = useState<{ orderNo: string; orderId: string; scheduled?: string } | null>(null);
+  // Which order's status is on screen, taken from the address so a refresh
+  // comes back to it rather than dumping the guest back on the menu.
+  const [viewing, setViewing] = useState<string | null>(() => orderIdFromHash());
+  const [mine, setMine] = useState<MyOrder[]>(() => myOrders());
+  const [historyOpen, setHistoryOpen] = useState(false);
   const queued = useOfflineQueue(onQueueChange, startOfflineSync);
 
   // Two kinds of QR: /?t=<token> is a specific table, /?v=<token> is a walk-in
@@ -55,6 +62,15 @@ export function App() {
   const params = new URLSearchParams(window.location.search);
   const token = params.get('t');
   const walkInToken = params.get('v');
+  /**
+   * Group ordering has its own address, and is invisible without it.
+   *
+   * It used to be a tab on the ordinary menu, which meant every walk-in could
+   * see the party platters and what a hotel pays for them. Neither is for the
+   * dining room to read. The link goes to whoever books groups — a front desk,
+   * an events contact — and nobody else has a way in.
+   */
+  const groupToken = params.get('g');
 
   useEffect(() => {
     (async () => {
@@ -81,8 +97,14 @@ export function App() {
         const venue =
           venues.find((v) => v.$id === table?.venue_id) ??
           (walkInToken ? venues.find((v) => v.walkin_token === walkInToken) : undefined) ??
+          (groupToken ? venues.find((v) => v.group_token === groupToken) : undefined) ??
           venues[0];
         if (!venue) throw new Error('This restaurant has no venue set up yet.');
+
+        // Only a token that actually matches this venue opens group ordering.
+        // A guessed or stale one quietly gets the ordinary menu rather than an
+        // error, which tells somebody poking at addresses nothing at all.
+        setGroupMode(!!groupToken && venue.group_token === groupToken);
 
         // Remembered on the device, so a guest whose signal drops between the
         // car park and the table still gets a menu rather than a spinner.
@@ -106,7 +128,15 @@ export function App() {
         setError(humanError(e));
       }
     })();
-  }, [token, walkInToken]);
+  }, [token, walkInToken, groupToken]);
+
+  // The phone's own back and forward buttons move between the menu and an
+  // order, so the address stays the single source of truth for which is shown.
+  useEffect(() => {
+    const onHash = () => setViewing(orderIdFromHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
 
   const addLine = useCallback((line: CartLine) => {
     setCart((c) => {
@@ -152,15 +182,17 @@ export function App() {
 
   // Straight to the live status page rather than a dead confirmation screen.
   // "Sent to the kitchen" answers the question for about ninety seconds; this
-  // keeps answering it.
-  if (placed) {
+  // keeps answering it — and now survives a refresh, because it is in the
+  // address rather than only in memory.
+  if (viewing) {
     return (
       <OrderStatus
-        orderId={placed.orderId}
+        orderId={viewing}
         settings={boot.settings}
         venue={boot.venue}
         onBack={() => {
-          setPlaced(null);
+          showOrderInAddress(null);
+          setViewing(null);
           setCart([]);
         }}
       />
@@ -168,14 +200,17 @@ export function App() {
   }
 
   const { settings, venue, table, seating, menu, features } = boot;
-  const groupOrdersOn = isEnabled(features, 'group_orders');
+  // The link opens group ordering; the feature switch still decides whether
+  // group ordering exists at all. An old link doing something an admin has
+  // since turned off would be the worst of both.
+  const inGroupMode = groupMode && isEnabled(features, 'group_orders');
 
   // Two menus, one list. Group-only sections are hidden from the ordinary
   // menu and are the only thing shown on the group one — a hotel party
   // ordering platters does not want the a la carte list, and a walk-in
   // should not be offered a set meal for twenty.
   const sections = visibleSections(menu).filter((sec) =>
-    groupMode ? sec.category.group_only : !sec.category.group_only,
+    inGroupMode ? sec.category.group_only : !sec.category.group_only,
   );
   const venueHours = parseWindows(venue.opening_hours);
   const venueOpen = isAvailable(venueHours);
@@ -200,8 +235,25 @@ export function App() {
           <h1 style={{ margin: 0 }}>{venue.name || settings.restaurant_name}</h1>
         </div>
         <div className="sub">
-          {table ? `Table ${table.label}` : walkInToken ? 'Collect at the counter' : 'Takeaway'}
+          {inGroupMode
+            ? 'Group ordering'
+            : table
+              ? `Table ${table.label}`
+              : walkInToken
+                ? 'Collect at the counter'
+                : 'Takeaway'}
           {venueOpen ? ' · Open now' : ' · Closed'}
+          {/* The way back to an order already placed. Only shown when there is
+              one, and it is the only route back after a refresh — without it a
+              guest who reloads has no way to reach their own order again. */}
+          {mine.length > 0 && (
+            <>
+              {' · '}
+              <button className="linkish" onClick={() => setHistoryOpen(true)}>
+                {mine.length === 1 ? 'Your order' : `Your orders (${mine.length})`}
+              </button>
+            </>
+          )}
           {guestHelp.length > 0 && (
             <>
               {' · '}
@@ -210,6 +262,34 @@ export function App() {
           )}
         </div>
       </header>
+
+      {historyOpen && (
+        <Modal
+          title="Your orders"
+          onClose={() => setHistoryOpen(false)}
+          footer={<Button onClick={() => setHistoryOpen(false)} style={{ width: '100%' }}>Close</Button>}
+        >
+          <p className="dim small" style={{ marginTop: 0 }}>
+            Placed from this phone today. Tap one to see where it has got to.
+          </p>
+          {mine.map((o) => (
+            <button
+              key={o.id}
+              className="my-order"
+              onClick={() => {
+                setHistoryOpen(false);
+                showOrderInAddress(o.id);
+                setViewing(o.id);
+              }}
+            >
+              <span style={{ fontWeight: 600 }}>{o.no ? `Order ${o.no}` : 'Your order'}</span>
+              <span className="dim small">
+                {new Date(o.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </button>
+          ))}
+        </Modal>
+      )}
 
       {helpOpen && (
         <HelpModal
@@ -220,18 +300,7 @@ export function App() {
         />
       )}
 
-      {groupOrdersOn && (
-        <div className="menu-modes">
-          <button className={groupMode ? '' : 'on'} onClick={() => { setGroupMode(false); setCart(() => []); }}>
-            Menu
-          </button>
-          <button className={groupMode ? 'on' : ''} onClick={() => { setGroupMode(true); setCart(() => []); }}>
-            Group order
-          </button>
-        </div>
-      )}
-
-      {groupMode && (
+      {inGroupMode && (
         <div className="banner banner-info">
           <strong>Ordering for a group.</strong> Set meals and platters, with one bill. We'll ask for your booking
           reference so the kitchen and the front desk can find you.
@@ -283,7 +352,11 @@ export function App() {
 
       {sections.length === 0 && (
         <div style={{ padding: '2rem 1rem' }}>
-          <Notice tone="warn">The menu is not ready yet. Please ask a member of staff.</Notice>
+          <Notice tone="warn">
+            {inGroupMode
+              ? 'No group menu has been set up yet. Ask an admin to mark a category as group-only.'
+              : 'The menu is not ready yet. Please ask a member of staff.'}
+          </Notice>
         </div>
       )}
 
@@ -313,14 +386,17 @@ export function App() {
           venue={venue}
           table={table}
           seating={seating}
-          groupMode={groupMode}
+          groupMode={inGroupMode}
           features={features}
           venueOpen={venueOpen}
           menu={menu}
           onClose={() => setShowCart(false)}
-          onPlaced={(orderNo, orderId, scheduled) => {
+          onPlaced={(orderNo, orderId) => {
             setShowCart(false);
-            setPlaced({ orderNo, orderId, scheduled });
+            rememberOrder({ id: orderId, no: orderNo, at: new Date().toISOString(), venueId: venue.$id });
+            setMine(myOrders());
+            showOrderInAddress(orderId);
+            setViewing(orderId);
           }}
           onError={(m) => toast(m, 'err')}
         />

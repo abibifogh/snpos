@@ -60,6 +60,7 @@ export interface Venue extends Doc {
   opening_hours?: string;
   holiday_closures?: string;
   walkin_token?: string;
+  group_token?: string;
   order_number_prefix?: string;
 }
 

@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **57 collections, 696 fields and 132 indexes**. Entered by hand at a
+> This is **57 collections, 697 fields and 132 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -135,7 +135,7 @@ There are 57 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: Team: admins · **Update**: Team: admins · **Delete**: Team: admins
 
-**Attributes** (17)
+**Attributes** (18)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -156,6 +156,7 @@ There are 57 collections. A progress checklist is at the end of this document.
 | `opening_hours` | String | size 4000 | No | — | No |
 | `holiday_closures` | String | size 4000 | No | — | No |
 | `walkin_token` | String | size 64 | No | — | No |
+| `group_token` | String | size 64 | No | — | No |
 
 **Indexes** (2)
 
@@ -2036,7 +2037,7 @@ way mistakes creep in.
 
 **Stage 5 — collections**
 
-- [ ]  1. `venues` (17 fields, 2 indexes)
+- [ ]  1. `venues` (18 fields, 2 indexes)
 - [ ]  2. `venue_menu_items` (6 fields, 1 indexes)
 - [ ]  3. `settings` (43 fields, 0 indexes)
 - [ ]  4. `payment_methods` (10 fields, 2 indexes)

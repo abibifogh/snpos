@@ -92,16 +92,6 @@
   text-decoration: underline; cursor: pointer;
 }
 
-/* Ordinary menu against group menu. A switch rather than a separate page:
-   somebody who taps the wrong one should be one tap from the right one. */
-.menu-modes { display: flex; gap: 0.4rem; padding: 0.6rem 1rem 0; }
-.menu-modes button {
-  flex: 1; padding: 0.5rem; border-radius: 999px; cursor: pointer;
-  background: var(--surface-2); border: 1px solid var(--border);
-  color: inherit; font: inherit; font-size: 0.9rem;
-}
-.menu-modes button.on { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); font-weight: 600; }
-
 /* ---- order status ------------------------------------------------------ */
 .status-page { max-width: 30rem; margin: 0 auto; padding: 0 1rem 3rem; }
 
@@ -142,3 +132,23 @@
   border-radius: var(--radius); padding: 1rem 1.1rem; margin-bottom: 1.2rem;
 }
 .status-card .line { display: flex; justify-content: space-between; gap: 1rem; padding: 0.25rem 0; }
+
+/* A row in "Your orders". Full width and tall enough to hit reliably with a
+   thumb, because this is the only route back to an order after a refresh. */
+.my-order {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.85rem 0.9rem;
+  margin-bottom: 0.5rem;
+  text-align: left;
+  cursor: pointer;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  font: inherit;
+}
+.my-order:active { filter: brightness(0.96); }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Spinner } from '@snpos/ui';
 import { db, DB_ID, Query, listAll, formatMoney, subscribeCollection, isProvisionalOrderNo } from '@snpos/core';
 import type { Order, OrderItem, Settings, Venue } from '@snpos/core';
+import { rememberOrder } from './myOrders';
 
 /**
  * Where a customer's order has got to.
@@ -63,7 +64,14 @@ export function OrderStatus({
       const fresh = await db.getDocument(DB_ID, 'orders', orderId).catch(() => null);
       if (!alive) return;
       if (!fresh) { setGone(true); return; }
-      setOrder(fresh as unknown as Order);
+      const live = fresh as unknown as Order;
+      setOrder(live);
+      // Keep the saved copy's number in step. A guest order is placed with a
+      // placeholder and numbered a moment later by the server, so the number
+      // stored when it was sent is usually not the one they will be asked for.
+      if (!isProvisionalOrderNo(live.order_no)) {
+        rememberOrder({ id: live.$id, no: live.order_no, at: live.$createdAt, venueId: live.venue_id });
+      }
     };
 
     void read().then(async () => {

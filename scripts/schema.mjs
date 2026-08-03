@@ -78,6 +78,10 @@ export const COLLECTIONS = [
       // A QR for people not sitting at a table — the counter queue, a poster
       // in the window, a flyer. Opens the menu in takeaway mode.
       ['walkin_token', 's', 64, false],
+      // A separate address for group and party ordering. Kept off the ordinary
+      // menu entirely: a walk-in should not be offered a set meal for twenty,
+      // and a hotel's platter prices are not for the whole dining room to read.
+      ['group_token', 's', 64, false],
     ],
     indexes: [['slug_unique', 'unique', ['slug']], ['active_sort', 'key', ['active', 'sort']]],
   },

@@ -17,7 +17,7 @@ interface TableRow extends Doc {
   sort: number;
 }
 
-interface VenueRow extends Doc { name: string; walkin_token?: string }
+interface VenueRow extends Doc { name: string; walkin_token?: string; group_token?: string }
 
 /**
  * The QR token is the table's identity to a customer who has scanned nothing
@@ -137,6 +137,29 @@ export function TablesPage() {
     }
   };
 
+  /**
+   * The address for group and party ordering.
+   *
+   * A private link rather than a tab on the menu. Group prices and set meals
+   * are not for the whole dining room to read, and a walk-in should not be
+   * offered a platter for twenty. Give it to whoever books groups.
+   */
+  const groupUrl = (v: VenueRow) => (v.group_token ? `${menuBase}/?g=${v.group_token}` : null);
+
+  const makeGroupLink = async (v: VenueRow, replacing = false) => {
+    if (replacing && !confirm(
+      `Create a new group ordering link for ${v.name}? The old one stops working immediately, so anybody still `
+      + 'using it will need the new one.',
+    )) return;
+    try {
+      await db.updateDocument(DB_ID, 'venues', v.$id, { group_token: newToken() });
+      await load();
+      toast(replacing ? 'New group link created — the old one no longer works' : 'Group ordering link created');
+    } catch (e) {
+      toast(humanError(e), 'err');
+    }
+  };
+
   return (
     <>
       <div className="spread">
@@ -168,6 +191,31 @@ export function TablesPage() {
                 </div>
               ) : (
                 <Button size="sm" onClick={() => makeWalkIn(v)}>Create walk-in QR</Button>
+              )}
+            </div>
+          );
+        })}
+      </Card>
+
+      <Card title="Group ordering link">
+        <p className="small dim" style={{ marginTop: 0 }}>
+          A separate, private address for parties and hotel bookings. It shows only the categories you have marked
+          group-only, and it does not appear anywhere on the ordinary menu — the only way in is this link. Send it to
+          whoever takes group bookings, and replace it if it ends up somewhere it should not be.
+        </p>
+        {venues.map((v) => {
+          const url = groupUrl(v);
+          return (
+            <div className="row" key={v.$id} style={{ justifyContent: 'space-between', padding: '0.4rem 0' }}>
+              <span>{v.name}</span>
+              {url ? (
+                <div className="row">
+                  <Input readOnly value={url} style={{ width: '22rem' }} onFocus={(e) => e.currentTarget.select()} />
+                  <Button size="sm" onClick={() => { navigator.clipboard.writeText(url); toast('Link copied'); }}>Copy</Button>
+                  <Button size="sm" variant="ghost" onClick={() => makeGroupLink(v, true)}>Replace</Button>
+                </div>
+              ) : (
+                <Button size="sm" onClick={() => makeGroupLink(v)}>Create group link</Button>
               )}
             </div>
           );
