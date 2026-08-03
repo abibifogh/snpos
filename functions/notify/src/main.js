@@ -320,20 +320,36 @@ export default async ({ req, res, log, error }) => {
     if (events.some((e) => e.includes('collections.orders')) && doc.payment_status === 'paid') {
       const already = await db.listDocuments(DB_ID, 'receipts', [
         Query.equal('order_id', doc.$id),
-        Query.limit(1),
+        Query.limit(10),
       ]);
-      // An update event fires on every edit; without this a customer would be
-      // emailed their receipt again each time the order is touched.
-      if (already.total > 0) return res.json({ ok: true, skipped: 'receipt already handled' });
+
+      // An update event fires on every edit, so without a guard a customer
+      // would be emailed their receipt again every time the order is touched.
+      //
+      // Two things get past the guard, both deliberate:
+      //   - somebody asked for it to be sent again, which is a request rather
+      //     than a deletion because staff cannot delete a receipt record;
+      //   - nothing was ever actually sent. A row saying "skipped, no email"
+      //     is a record of not sending, and treating it as "done" is why an
+      //     order that later gained an address never got its receipt.
+      const resendRows = already.documents.filter((r) => r.resend_requested_at);
+      const sentAlready = already.documents.some((r) => r.status === 'sent');
+      if (sentAlready && resendRows.length === 0) {
+        return res.json({ ok: true, skipped: 'receipt already sent' });
+      }
 
       const delivery = await featureConfig('receipts', 'receipt_delivery', 'email');
       if (delivery === null) return res.json({ ok: true, skipped: 'receipts feature off' });
 
       if (!doc.customer_email) {
-        await db.createDocument(DB_ID, 'receipts', 'unique()', {
-          venue_id: doc.venue_id, order_id: doc.$id, channel: 'none',
-          status: 'skipped', skip_reason: 'no_email', attempts: 0,
-        });
+        // Recorded once, not once per edit — otherwise an order touched twenty
+        // times leaves twenty rows saying the same thing.
+        if (already.total === 0) {
+          await db.createDocument(DB_ID, 'receipts', 'unique()', {
+            venue_id: doc.venue_id, order_id: doc.$id, channel: 'none',
+            status: 'skipped', skip_reason: 'no_email', attempts: 0,
+          });
+        }
         return res.json({ ok: true, skipped: 'no email given' });
       }
 
@@ -415,7 +431,13 @@ export default async ({ req, res, log, error }) => {
         await db.updateDocument(DB_ID, 'receipts', receipt.$id, {
           status: 'sent', sent_at: new Date().toISOString(), provider_ref: info.messageId || '',
         });
-        log(`Receipt sent for ${doc.order_no}`);
+        // The request has been honoured; clearing it stops the next edit to
+        // this order sending the receipt all over again.
+        for (const r of resendRows) {
+          await db.updateDocument(DB_ID, 'receipts', r.$id, { resend_requested_at: null })
+            .catch(() => undefined);
+        }
+        log(`Receipt ${resendRows.length ? 're-sent' : 'sent'} for ${doc.order_no}`);
       } catch (e) {
         await db.updateDocument(DB_ID, 'receipts', receipt.$id, { status: 'failed', last_error: e.message });
         error(`Receipt failed for ${doc.order_no}: ${e.message}`);

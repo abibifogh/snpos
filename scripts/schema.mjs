@@ -1059,6 +1059,12 @@ export const COLLECTIONS = [
       ['provider_ref', 's', 200, false],
       ['pdf_file_id', 's', 64, false],
       ['requested_by', 's', 64, false],
+      // Set when somebody asks for a receipt to be sent again. Staff can update
+      // a receipt row but not delete one — an audit trail the audited can
+      // remove is not one — so a resend is a request rather than a deletion.
+      // Cleared once it has gone.
+      ['resend_requested_at', 'd', null, false],
+      ['resend_requested_by', 's', 64, false],
       ['email_source', 'e', ['guest_at_order', 'staff_entered', 'customer_profile'], false],
     ],
     indexes: [

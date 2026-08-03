@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Badge, Button, Empty, Modal, Spinner } from '@snpos/ui';
-import { Query, formatMoney, listAll, displayOrderNo } from '@snpos/core';
-import type { Order, OrderItem, Settings, Shift, Doc } from '@snpos/core';
+import { Badge, Button, Empty, Field, FormError, Input, Modal, Spinner } from '@snpos/ui';
+import {
+  Query, formatMoney, listAll, displayOrderNo, requestReceipt,
+  receiptForOrder, buildReceiptHtml, openPrintable,
+} from '@snpos/core';
+import type { Order, OrderItem, Settings, Shift, Doc, Venue, StaffProfile } from '@snpos/core';
 
 interface ExpenseRow extends Doc {
   shift_id?: string;
@@ -26,21 +29,77 @@ interface ExpenseRow extends Doc {
  */
 export function ShiftHistory({
   shift,
-  venueId,
+  venue,
   settings,
+  who,
   onClose,
+  onToast,
 }: {
   shift: Shift;
-  venueId: string;
+  venue: Venue;
   settings: Settings;
+  who: StaffProfile | null;
   onClose: () => void;
+  onToast: (message: string, tone?: 'ok' | 'err') => void;
 }) {
+  const venueId = venue.$id;
   const [tab, setTab] = useState<'orders' | 'spend'>('orders');
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [items, setItems] = useState<Record<string, OrderItem[]>>({});
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Sending a receipt again, and asking for an address when the order has none.
+  const [sending, setSending] = useState<Order | null>(null);
+  const [emailText, setEmailText] = useState('');
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const startSend = (o: Order) => {
+    setSending(o);
+    setEmailText(o.customer_email ?? '');
+    setSendError(null);
+  };
+
+  const send = async () => {
+    if (!sending) return;
+    setBusy(true);
+    setSendError(null);
+    try {
+      await requestReceipt({
+        order: sending,
+        email: emailText,
+        requestedBy: who?.user_id || who?.$id || '',
+      });
+      // Kept on the order in memory too, so the row stops offering to collect
+      // an address it already has.
+      setOrders((prev) =>
+        (prev ?? []).map((o) => (o.$id === sending.$id ? { ...o, customer_email: emailText.trim() } : o)),
+      );
+      setSending(null);
+      onToast(`Receipt on its way to ${emailText.trim()}`);
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : 'Could not send that receipt.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** A copy to print or hand over, for a customer standing at the counter. */
+  const print = async (o: Order) => {
+    try {
+      const data = await receiptForOrder({
+        order: o,
+        settings,
+        venue,
+        items: items[o.$id],
+        staffName: who?.display_name,
+      });
+      openPrintable(buildReceiptHtml(data), `Receipt ${o.order_no}`);
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : 'Could not open that receipt.', 'err');
+    }
+  };
 
   const money = (n: number) => formatMoney(n, settings);
 
@@ -107,7 +166,10 @@ export function ShiftHistory({
           <div className="table-wrap">
             <table className="data">
               <thead>
-                <tr><th>Time</th><th>Order</th><th>Where</th><th>Status</th><th>Paid</th><th className="num">Total</th></tr>
+                <tr>
+                  <th>Time</th><th>Order</th><th>Where</th><th>Status</th><th>Paid</th>
+                  <th className="num">Total</th><th>Receipt</th>
+                </tr>
               </thead>
               <tbody>
                 {orders.map((o) => (
@@ -125,10 +187,16 @@ export function ShiftHistory({
                         <Badge tone={o.payment_status === 'paid' ? 'ok' : 'warn'}>{o.payment_status}</Badge>
                       </td>
                       <td className="num">{money(o.total)}</td>
+                      <td onClick={(e) => e.stopPropagation()} style={{ whiteSpace: 'nowrap' }}>
+                        <Button size="sm" variant="ghost" onClick={() => startSend(o)}>
+                          {o.customer_email ? 'Send again' : 'Email it'}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => void print(o)}>Print</Button>
+                      </td>
                     </tr>
                     {openId === o.$id && (
                       <tr key={`${o.$id}-lines`}>
-                        <td colSpan={6} style={{ background: 'var(--surface-2)' }}>
+                        <td colSpan={7} style={{ background: 'var(--surface-2)' }}>
                           <ul style={{ margin: 0, paddingLeft: '1.1rem' }} className="small">
                             {(items[o.$id] ?? []).map((i) => (
                               <li key={i.$id}>
@@ -171,6 +239,41 @@ export function ShiftHistory({
             </tbody>
           </table>
         </div>
+      )}
+      {sending && (
+        <Modal
+          title={`Receipt for ${displayOrderNo(sending.order_no)}`}
+          onClose={() => setSending(null)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setSending(null)}>Cancel</Button>
+              <Button variant="primary" onClick={() => void send()} loading={busy}>
+                {sending.customer_email ? 'Send again' : 'Send receipt'}
+              </Button>
+            </>
+          }
+        >
+          <FormError message={sendError} />
+          <p className="small dim" style={{ marginTop: 0 }}>
+            {sending.customer_email
+              ? 'Already sent once. Sending again is fine — change the address first if they gave you a different one.'
+              : 'This order was placed without an email address. Enter one and the receipt will go out, with the printable copy attached.'}
+          </p>
+          <Field label="Email address">
+            <Input
+              type="email"
+              value={emailText}
+              autoFocus
+              placeholder="name@example.com"
+              onChange={(e) => setEmailText(e.target.value)}
+            />
+          </Field>
+          {sending.payment_status !== 'paid' && (
+            <p className="small" style={{ color: 'var(--warn)' }}>
+              This bill has not been settled yet, so the receipt will say so.
+            </p>
+          )}
+        </Modal>
       )}
     </Modal>
   );

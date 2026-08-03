@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **57 collections, 694 fields and 132 indexes**. Entered by hand at a
+> This is **57 collections, 696 fields and 132 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -1288,7 +1288,7 @@ There are 57 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: Team: admins
 
-**Attributes** (13)
+**Attributes** (15)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -1304,6 +1304,8 @@ There are 57 collections. A progress checklist is at the end of this document.
 | `provider_ref` | String | size 200 | No | — | No |
 | `pdf_file_id` | String | size 64 | No | — | No |
 | `requested_by` | String | size 64 | No | — | No |
+| `resend_requested_at` | Datetime | — | No | — | No |
+| `resend_requested_by` | String | size 64 | No | — | No |
 | `email_source` | Enum | guest_at_order, staff_entered, customer_profile | No | — | No |
 
 **Indexes** (3)
@@ -2072,7 +2074,7 @@ way mistakes creep in.
 - [ ] 36. `devices` (7 fields, 2 indexes)
 - [ ] 37. `audit_log` (12 fields, 3 indexes)
 - [ ] 38. `feature_flags` (5 fields, 2 indexes)
-- [ ] 39. `receipts` (13 fields, 3 indexes)
+- [ ] 39. `receipts` (15 fields, 3 indexes)
 - [ ] 40. `pickup_points` (12 fields, 1 indexes)
 - [ ] 41. `delivery_zones` (8 fields, 1 indexes)
 - [ ] 42. `preorder_slots` (8 fields, 2 indexes)

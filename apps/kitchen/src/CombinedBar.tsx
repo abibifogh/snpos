@@ -227,7 +227,14 @@ export function CombinedBar({
       </div>
 
       {history && shift && (
-        <ShiftHistory shift={shift} venueId={venue.$id} settings={settings} onClose={() => setHistory(false)} />
+        <ShiftHistory
+          shift={shift}
+          venue={venue}
+          settings={settings}
+          who={who}
+          onClose={() => setHistory(false)}
+          onToast={onToast}
+        />
       )}
 
       {opening && (

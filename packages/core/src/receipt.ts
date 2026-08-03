@@ -1,4 +1,4 @@
-import { Query, listAll } from './client';
+import { db, DB_ID, Query, listAll } from './client';
 import { formatMoney } from './money';
 import { downloadUrl } from './files';
 import type { Settings, Venue, Doc } from './types';
@@ -339,4 +339,58 @@ export async function receiptForOrder(opts: {
     unpaid: order.payment_status !== 'paid',
     footer: 'Thank you.',
   };
+}
+
+export interface ReceiptRow extends Doc {
+  venue_id: string;
+  order_id: string;
+  channel: string;
+  to_email?: string;
+  status: 'queued' | 'sent' | 'failed' | 'skipped' | 'bounced';
+  sent_at?: string;
+  resend_requested_at?: string;
+}
+
+/**
+ * Ask for a receipt to be sent, or sent again.
+ *
+ * Staff can update a receipt row but not delete one, deliberately — an audit
+ * trail the audited can remove is not an audit trail. So a resend is recorded
+ * as a request against the existing rows, and the notify function acts on it
+ * and clears it. An order that never had a receipt has no row to mark, and the
+ * order update alone is enough for one to be made.
+ *
+ * The email is written to the order because that is where every other part of
+ * the system looks for it, and because a customer who gives their address at
+ * the counter should not have to give it again next time.
+ */
+export async function requestReceipt(opts: {
+  order: Pick<Order, '$id' | 'customer_email'>;
+  email: string;
+  requestedBy: string;
+}): Promise<void> {
+  const email = opts.email.trim();
+  if (!email) throw new Error('An email address is needed to send a receipt.');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error(`"${email}" does not look like an email address.`);
+  }
+
+  const existing = await listAll<ReceiptRow>('receipts', [Query.equal('order_id', opts.order.$id)]).catch(
+    () => [] as ReceiptRow[],
+  );
+  const now = new Date().toISOString();
+  for (const row of existing) {
+    await db
+      .updateDocument(DB_ID, 'receipts', row.$id, {
+        resend_requested_at: now,
+        resend_requested_by: opts.requestedBy,
+        to_email: email,
+      })
+      .catch(() => undefined);
+  }
+
+  // Written last, because this is the update the notify function listens for.
+  // Doing it first would risk the function running before the rows above were
+  // marked, and deciding there was nothing to resend.
+  await db.updateDocument(DB_ID, 'orders', opts.order.$id, { customer_email: email });
 }
