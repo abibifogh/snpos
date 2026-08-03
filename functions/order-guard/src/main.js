@@ -47,10 +47,19 @@ export default async ({ req, res, log, error }) => {
     if ((order.order_no || '').startsWith('~')) {
       const prefix = settings.order_number_prefix || '';
       const padding = Math.max(1, settings.order_number_padding || 4);
+      // A window rather than just the last order. Several placeholders can be
+      // in flight at once on a busy night, and the newest row is quite likely
+      // to be one of them — including this order itself.
+      //
+      // Filtering happens below rather than in the query on purpose:
+      // `order_no` is only the second half of the composite unique index, so
+      // Appwrite refuses to query it on its own. Asking anyway threw here,
+      // killed the function, and left every order stuck on its placeholder —
+      // which is exactly what "Order ~msciu67tsi36" was.
       const queries = [
         Query.equal('venue_id', order.venue_id),
         Query.orderDesc('$createdAt'),
-        Query.limit(1),
+        Query.limit(50),
       ];
       if (settings.order_number_mode === 'daily') {
         const midnight = new Date();
@@ -59,12 +68,12 @@ export default async ({ req, res, log, error }) => {
       } else if (settings.order_number_reset_on) {
         queries.push(Query.greaterThanEqual('$createdAt', settings.order_number_reset_on));
       }
+      const latest = await db.listDocuments(DB_ID, 'orders', queries);
       // Placeholders are not numbers; counting one as the last order would
       // send the next guest back to the start.
-      queries.push(Query.notEqual('order_no', order.order_no));
-
-      const latest = await db.listDocuments(DB_ID, 'orders', queries);
-      const previous = latest.documents.filter((d) => !(d.order_no || '').startsWith('~'));
+      const previous = latest.documents.filter(
+        (d) => d.$id !== order.$id && !(d.order_no || '').startsWith('~'),
+      );
       const last = previous[0]?.order_no || '';
       const digits = (prefix && last.startsWith(prefix) ? last.slice(prefix.length) : last).replace(/\D/g, '');
       let next = previous.length === 0

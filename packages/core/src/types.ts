@@ -40,6 +40,7 @@ export interface Settings extends Doc {
   enabled_locales?: string[];
   email_from_name?: string;
   email_from_address?: string;
+  role_access?: string;
   storage_mode?: 'multi' | 'single';
   shared_bucket_id?: string;
 }

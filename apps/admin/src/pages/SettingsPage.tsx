@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Field, Input, Select, Notice, Toggle, useToast } from '@snpos/ui';
+import { Button, Card, Field, Input, Select, Notice, Textarea, Toggle, useToast } from '@snpos/ui';
 import { contrastRatio } from '@snpos/ui';
-import { db, DB_ID, humanError } from '../lib';
-import { bpToPercent, percentToBp } from '@snpos/core';
-import type { Settings } from '@snpos/core';
+import { db, DB_ID, ID, listAll, humanError } from '../lib';
+import { bpToPercent, percentToBp, ADMIN_SECTIONS, GRANTABLE_ROLES, parseAccess } from '@snpos/core';
+import type { Settings, Doc } from '@snpos/core';
+
 import { useSession } from '../session';
+
+interface ReportSub extends Doc {
+  channel: string;
+  destination: string;
+  events?: string[];
+  active?: boolean;
+}
 
 export function SettingsPage() {
   const { settings, refreshSettings } = useSession();
@@ -13,10 +21,79 @@ export function SettingsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Report recipients live in their own collection rather than in settings, so
+  // they are edited and saved separately from everything else on this page.
+  const [reportEmails, setReportEmails] = useState('');
+  const [subs, setSubs] = useState<ReportSub[]>([]);
+  const [savingSubs, setSavingSubs] = useState(false);
+  const [subsError, setSubsError] = useState<string | null>(null);
+
   useEffect(() => setForm(settings), [settings]);
+
+  useEffect(() => {
+    listAll<ReportSub>('report_subscriptions')
+      .then((rows) => {
+        const mine = rows.filter((r) => r.channel === 'email' && (r.events ?? []).includes('shift_close'));
+        setSubs(mine);
+        setReportEmails(mine.filter((r) => r.active !== false).map((r) => r.destination).join('\n'));
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const saveRecipients = async () => {
+    setSavingSubs(true);
+    setSubsError(null);
+    try {
+      const wanted = reportEmails
+        .split(/[\n,;]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const bad = wanted.find((e) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+      if (bad) throw new Error(`"${bad}" does not look like an email address.`);
+
+      // Rows that are gone from the box are switched off rather than deleted,
+      // so a report that already went to somebody still names a real record.
+      for (const row of subs) {
+        if (!wanted.includes(row.destination) && row.active !== false) {
+          await db.updateDocument(DB_ID, 'report_subscriptions', row.$id, { active: false });
+        }
+      }
+      for (const email of wanted) {
+        const existing = subs.find((r) => r.destination === email);
+        if (existing) {
+          if (existing.active === false) {
+            await db.updateDocument(DB_ID, 'report_subscriptions', existing.$id, { active: true });
+          }
+        } else {
+          await db.createDocument(DB_ID, 'report_subscriptions', ID.unique(), {
+            channel: 'email',
+            destination: email,
+            events: ['shift_close'],
+            active: true,
+          });
+        }
+      }
+
+      const rows = await listAll<ReportSub>('report_subscriptions');
+      setSubs(rows.filter((r) => r.channel === 'email' && (r.events ?? []).includes('shift_close')));
+      toast(wanted.length ? `${wanted.length} recipient${wanted.length === 1 ? '' : 's'} saved` : 'Recipients cleared');
+    } catch (e) {
+      setSubsError(humanError(e));
+    } finally {
+      setSavingSubs(false);
+    }
+  };
+
   if (!form) return <Notice>Settings could not be loaded.</Notice>;
 
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => setForm({ ...form, [key]: value });
+
+  const access = parseAccess(form);
+  const toggleAccess = (role: string, section: string) => {
+    const current = access[role] ?? [];
+    const next = current.includes(section) ? current.filter((s) => s !== section) : [...current, section];
+    set('role_access', JSON.stringify({ ...access, [role]: next }));
+  };
 
   // A pale brand colour with white text is unreadable at a glance on a busy
   // terminal, so warn rather than let it ship silently.
@@ -49,6 +126,7 @@ export function SettingsPage() {
         order_number_reset_on: form.order_number_reset_on || undefined,
         email_from_name: form.email_from_name ?? '',
         email_from_address: form.email_from_address ?? '',
+        role_access: JSON.stringify(access),
       });
       await refreshSettings();
       toast('Settings saved');
@@ -280,6 +358,74 @@ export function SettingsPage() {
           so receipts show as <em>sent</em> here and never arrive. If that is happening, this is almost always why.
           Check Brevo → Senders, Domains &amp; Dedicated IPs → Senders, and put exactly that address here.
         </Notice>
+      </Card>
+
+      <Card title="Who gets the end-of-shift report">
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Sent the moment a shift is closed — the takings, what was short, what ran out and who did what. One address
+          per line.
+        </p>
+        <Field
+          label="Email addresses"
+          hint="With none of these set, the report is still worked out and saved, but nobody is sent it. That is the usual reason for a report that never arrives."
+        >
+          <Textarea
+            rows={4}
+            value={reportEmails}
+            placeholder={'owner@restaurant.com\nmanager@restaurant.com'}
+            onChange={(e) => setReportEmails(e.target.value)}
+          />
+        </Field>
+        {subsError && <Notice>{subsError}</Notice>}
+        <Button onClick={() => void saveRecipients()} loading={savingSubs}>
+          Save recipients
+        </Button>
+      </Card>
+
+      <Card title="Who can see what">
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Which parts of this admin app each role can open. Admins always see everything — there is no switch for that
+          on purpose, because a checkbox that can lock the owner out of their own settings eventually will.
+        </p>
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th style={{ minWidth: '11rem' }}>Page</th>
+                {GRANTABLE_ROLES.map((r) => (
+                  <th key={r} style={{ textAlign: 'center', textTransform: 'capitalize' }}>{r}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {ADMIN_SECTIONS.map((section) => (
+                <tr key={section.key}>
+                  <td>
+                    {section.label}
+                    <div className="small dim">{section.group}</div>
+                  </td>
+                  {GRANTABLE_ROLES.map((role) => (
+                    <td key={role} style={{ textAlign: 'center' }}>
+                      {section.ownerOnly ? (
+                        <span className="small dim" title="Admins only">—</span>
+                      ) : (
+                        <input
+                          type="checkbox"
+                          checked={(access[role] ?? []).includes(section.key)}
+                          onChange={() => toggleAccess(role, section.key)}
+                          aria-label={`${role} can open ${section.label}`}
+                        />
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="small dim">
+          Changes take effect the next time that person loads the app.
+        </p>
       </Card>
     </>
   );

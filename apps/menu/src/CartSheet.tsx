@@ -92,7 +92,7 @@ export function CartSheet({
   venueOpen: boolean;
   menu: LoadedMenu;
   onClose: () => void;
-  onPlaced: (orderNo: string, scheduled?: string) => void;
+  onPlaced: (orderNo: string, orderId: string, scheduled?: string) => void;
   onError: (message: string) => void;
 }) {
   const needReference = featureConfig(features, 'group_orders', 'require_reservation_number', true);
@@ -246,7 +246,7 @@ export function CartSheet({
       // counter, so it has to be the real one. It is settled server-side a
       // moment after the order lands; wait for it rather than showing the
       // placeholder. The guest can read their own order, and nothing else.
-      onPlaced(await settledOrderNo(order), slot || undefined);
+      onPlaced(await settledOrderNo(order), order.$id, slot || undefined);
       setCart(() => []);
     } catch (e) {
       setProblem(e instanceof Error ? e.message : 'Could not send your order. Please try again.');

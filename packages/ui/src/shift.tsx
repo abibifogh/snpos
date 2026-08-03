@@ -90,6 +90,21 @@ export function ShiftCloseForm({
     );
   }
 
+  /**
+   * Is anything over or short right now?
+   *
+   * Worked out the same way each row's badge is, so the explanation box and
+   * the red numbers can never disagree. A drawer nobody has counted yet is not
+   * a difference — it is an unanswered question, and the close is blocked on it
+   * separately.
+   */
+  const anythingOff = rows.some((r) => {
+    const typed = r.countedText.trim();
+    if (typed === '') return false;
+    const counted = Math.round(Number(typed.replace(/[^0-9.-]/g, '')) * 100);
+    return !Number.isNaN(counted) && counted !== r.expected;
+  });
+
   return (
     <>
       <p className="small dim" style={{ marginTop: 0 }}>
@@ -141,18 +156,24 @@ export function ShiftCloseForm({
         </table>
       </div>
 
-      <div style={{ marginTop: '0.9rem' }}>
-        <Field
-          label="Explain the difference"
-          hint="Required whenever anything is over or short. A short answer now is worth more than a perfect one tomorrow."
-        >
-          <Textarea
-            value={note}
-            placeholder="Gave change from the wrong drawer, one card payment recorded twice, …"
-            onChange={(e) => onNote(e.target.value)}
-          />
-        </Field>
-      </div>
+      {/* Only when something is actually out.
+          A box asking you to explain a difference that is not there is a box
+          you learn to scroll past, which is the last thing it should be on the
+          night it does appear. */}
+      {anythingOff && (
+        <div style={{ marginTop: '0.9rem' }}>
+          <Field
+            label="Explain the difference"
+            hint="A short answer now is worth more than a perfect one tomorrow."
+          >
+            <Textarea
+              value={note}
+              placeholder="Gave change from the wrong drawer, one card payment recorded twice, …"
+              onChange={(e) => onNote(e.target.value)}
+            />
+          </Field>
+        </div>
+      )}
 
       {stock.length > 0 && (
         <>
@@ -161,6 +182,14 @@ export function ShiftCloseForm({
             A quick look at the shelf, not a full count. Anything marked <strong>low</strong> or <strong>out</strong>{' '}
             goes into tonight's summary — and if the same thing keeps coming up, that becomes its own warning.
           </p>
+          {/* Three people will otherwise use three different meanings of "low",
+              and the report that comes out the other end is worth nothing.
+              One sentence each, phrased as the question to ask yourself. */}
+          <div className="stock-key">
+            <div><Badge tone="ok">OK</Badge> Enough to get through tomorrow's service without thinking about it.</div>
+            <div><Badge tone="warn">LOW</Badge> Enough for tonight, but it needs ordering — you would not want to start another service on what is left.</div>
+            <div><Badge tone="danger">OUT</Badge> None left, or too little to serve. Mark this even if the system thinks there is some — the shelf wins.</div>
+          </div>
           {stock.map((i) => (
             <div
               className="row"

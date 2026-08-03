@@ -6,9 +6,10 @@ import {
   formatMoney, isAvailable, parseWindows, nextAvailable, describeWindows, loadFeatures, isEnabled,
   articlesFor, HELP_AREAS,
   featureConfig, previewUrl, humanError,
+  receiptForOrder, buildReceiptHtml, openPrintable,
 } from '@snpos/core';
 import type {
-  Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc,
+  Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc, Order,
 } from '@snpos/core';
 import { DishSheet } from './DishSheet';
 import { CartSheet } from './CartSheet';
@@ -45,7 +46,7 @@ export function App() {
   const [groupMode, setGroupMode] = useState(false);
   const [showCart, setShowCart] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
-  const [placed, setPlaced] = useState<{ orderNo: string; scheduled?: string } | null>(null);
+  const [placed, setPlaced] = useState<{ orderNo: string; orderId: string; scheduled?: string } | null>(null);
 
   // Two kinds of QR: /?t=<token> is a specific table, /?v=<token> is a walk-in
   // code that belongs to the venue rather than to anywhere to sit.
@@ -121,6 +122,27 @@ export function App() {
     [cart, boot],
   );
 
+  /**
+   * The customer's own copy of the bill.
+   *
+   * Read back from the database rather than built from the cart, so it shows
+   * what was actually recorded — including any correction the server made to
+   * the prices on the way in.
+   */
+  const downloadReceipt = useCallback(
+    async (orderId: string) => {
+      if (!boot) return;
+      try {
+        const order = (await db.getDocument(DB_ID, 'orders', orderId)) as unknown as Order;
+        const data = await receiptForOrder({ order, settings: boot.settings, venue: boot.venue });
+        openPrintable(buildReceiptHtml(data), `Receipt ${order.order_no}`);
+      } catch {
+        toast('Could not open the receipt. Please ask a member of staff.', 'err');
+      }
+    },
+    [boot, toast],
+  );
+
   if (error) {
     return (
       <div className="centered">
@@ -160,15 +182,20 @@ export function App() {
               ? 'We will start cooking in time for your slot. Pay when you collect.'
               : 'Your server will bring it over. Pay at the end of your meal.'}
           </p>
-          <Button
-            style={{ marginTop: '1.5rem' }}
-            onClick={() => {
-              setPlaced(null);
-              setCart([]);
-            }}
-          >
-            Order something else
-          </Button>
+          <div className="row" style={{ marginTop: '1.5rem', justifyContent: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {/* The bill, before it is settled. A guest who wants a copy on
+                their phone should not have to ask somebody for one. */}
+            <Button onClick={() => void downloadReceipt(placed.orderId)}>Receipt (PDF)</Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setPlaced(null);
+                setCart([]);
+              }}
+            >
+              Order something else
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -324,9 +351,9 @@ export function App() {
           venueOpen={venueOpen}
           menu={menu}
           onClose={() => setShowCart(false)}
-          onPlaced={(orderNo, scheduled) => {
+          onPlaced={(orderNo, orderId, scheduled) => {
             setShowCart(false);
-            setPlaced({ orderNo, scheduled });
+            setPlaced({ orderNo, orderId, scheduled });
           }}
           onError={(m) => toast(m, 'err')}
         />

@@ -28,8 +28,17 @@
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
+/*
+ * Dark colours, defined once and applied two ways.
+ *
+ * `prefers-color-scheme` covers the default, which is to follow the device.
+ * `[data-theme="dark"]` covers somebody who has chosen dark explicitly — and
+ * because it is an attribute on the element rather than a media query, it also
+ * wins over a device set to light. The light block below does the mirror
+ * image, which is what makes "always light" possible on a phone in dark mode.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #11161c;
     --surface: #171d25;
     --surface-2: #1e262f;
@@ -40,6 +49,18 @@
     --ok-bg: #10231a;
     --warn-bg: #241a0c;
   }
+}
+
+:root[data-theme='dark'] {
+  --bg: #11161c;
+  --surface: #171d25;
+  --surface-2: #1e262f;
+  --border: #2a333e;
+  --text: #e8edf3;
+  --text-dim: #98a5b3;
+  --danger-bg: #2a1614;
+  --ok-bg: #10231a;
+  --warn-bg: #241a0c;
 }
 
 * { box-sizing: border-box; }
@@ -242,3 +263,33 @@ table.data tbody tr:hover { background: var(--surface-2); }
    because the reason an order stopped is worth more than the two lines of
    space it costs. */
 .form-error { position: sticky; top: 0; z-index: 5; margin-bottom: 0.9rem; }
+
+/* The light/dark picker in the sidebar foot. Small and quiet — it is a
+   preference, not a setting anyone needs to find twice. */
+.theme-pick {
+  width: 100%;
+  margin-bottom: 0.5rem;
+  padding: 0.35rem 0.4rem;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+/* The OK / LOW / OUT key in the shift close. Quiet, but readable at the end of
+   a long night — which is the only time anybody reads it. */
+.stock-key {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0 0 0.9rem;
+  padding: 0.7rem 0.85rem;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.stock-key .badge { margin-right: 0.4rem; }

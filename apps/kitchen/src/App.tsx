@@ -4,7 +4,7 @@ import { applyTheme } from '@snpos/ui';
 import {
   db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
   verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
-  loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo,
+  loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
 } from '@snpos/core';
 import type {
   Order, OrderItem, Settings, Venue, StaffProfile, StaffSession, HelpRole, MenuItem, Doc, FeatureMap,
@@ -115,6 +115,18 @@ export function App() {
         ]);
         setOrders([...open, ...booked]);
         await loadItemsFor([...open, ...booked].map((o) => o.$id));
+
+        // Heal any order still on a placeholder number. The server normally
+        // settles these instantly; this is what saves the pass on the night it
+        // does not. Silent, because a cook can do nothing about it either way.
+        settleOrderNumbers(v.$id, s)
+          .then((n) => {
+            if (n > 0) void loadOpenOrders(v.$id).then((fresh) => setOrders((prev) => [
+              ...fresh,
+              ...prev.filter((o) => o.status === 'SCHEDULED' && !fresh.some((f) => f.$id === o.$id)),
+            ]));
+          })
+          .catch(() => undefined);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not load orders.');
       }
@@ -156,10 +168,13 @@ export function App() {
       orders
         .filter((o) => ['PENDING', 'ACCEPTED', 'PREPARING', 'READY'].includes(o.status))
         .filter((o) => {
-          if (station === 'all') return true;
+          // With the tab strip hidden there is no way back to "all", so a
+          // station saved on this device from before must not silently hide
+          // every ticket.
+          if (station === 'all' || stations.length < 2) return true;
           return (items[o.$id] ?? []).some((i) => (i.station_key || i.station) === station);
         }),
-    [orders, station, items],
+    [orders, station, items, stations],
   );
 
   const pending = visible.filter((o) => o.status === 'PENDING');
@@ -425,7 +440,10 @@ export function App() {
           <Logo size={28} />
           <h1>{venue.name}</h1>
         </div>
-        <div className="station-tabs">
+        {/* Only worth showing when there is a choice to make. With one station
+            "All" and that station are the same list of tickets, and a tab bar
+            that never changes anything is just something else on the screen. */}
+        <div className="station-tabs" hidden={stations.length < 2}>
           {['all', ...stations.map((s) => s.key)].map((key) => {
             const st = stations.find((x) => x.key === key);
             return (

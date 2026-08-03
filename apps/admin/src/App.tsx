@@ -1,5 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Spinner } from '@snpos/ui';
+import { Spinner, Notice } from '@snpos/ui';
+import { canOpen } from '@snpos/core';
+import type { ReactElement } from 'react';
 import { useSession } from './session';
 import { Login } from './pages/Login';
 import { Shell } from './Shell';
@@ -19,12 +21,13 @@ import { StaffPage } from './pages/Staff';
 import { StockPage } from './pages/Stock';
 import { WastePage } from './pages/Waste';
 import { ReportsPage } from './pages/Reports';
+import { StationsPage } from './pages/Stations';
 import { OrdersPage } from './pages/Orders';
 import { PurgePage } from './pages/Purge';
-import { StationsPage } from './pages/Stations';
+import { VouchersPage } from './pages/Vouchers';
 
 export function App() {
-  const { user, loading } = useSession();
+  const { user, profile, settings, loading } = useSession();
 
   if (loading) {
     return (
@@ -36,26 +39,45 @@ export function App() {
 
   if (!user) return <Login />;
 
+  /**
+   * A page this person is not allowed to open.
+   *
+   * Refused here as well as hidden in the navigation. Hiding a link stops it
+   * being clicked; it does nothing about the address being typed, pasted or
+   * still sitting in somebody's history from before their access changed.
+   */
+  const guard = (section: string, element: ReactElement) =>
+    canOpen(section, profile, settings) ? element : (
+      <>
+        <h1>Not available</h1>
+        <Notice>
+          Your account does not have access to this page. Ask an admin if you think it should.
+        </Notice>
+      </>
+    );
+
   return (
     <Shell>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/menu/categories" element={<CategoriesPage />} />
-        <Route path="/menu/items" element={<MenuItemsPage />} />
-        <Route path="/menu/options" element={<AddonsPage />} />
-        <Route path="/expenses" element={<ExpensesPage />} />
-        <Route path="/venues" element={<VenuesPage />} />
-        <Route path="/tables" element={<TablesPage />} />
-        <Route path="/shifts" element={<ShiftsPage />} />
-        <Route path="/staff" element={<StaffPage />} />
-        <Route path="/stock" element={<StockPage />} />
-        <Route path="/stations" element={<StationsPage />} />
-        <Route path="/waste" element={<WastePage />} />
-        <Route path="/reports" element={<ReportsPage />} />
-        <Route path="/orders" element={<OrdersPage />} />
-        <Route path="/features" element={<FeaturesPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/erase" element={<PurgePage />} />
+        <Route path="/" element={guard('dashboard', <Dashboard />)} />
+        <Route path="/orders" element={guard('orders', <OrdersPage />)} />
+        <Route path="/reports" element={guard('reports', <ReportsPage />)} />
+        <Route path="/menu/categories" element={guard('menu_categories', <CategoriesPage />)} />
+        <Route path="/menu/items" element={guard('menu_items', <MenuItemsPage />)} />
+        <Route path="/menu/options" element={guard('menu_options', <AddonsPage />)} />
+        <Route path="/expenses" element={guard('expenses', <ExpensesPage />)} />
+        <Route path="/vouchers" element={guard('vouchers', <VouchersPage />)} />
+        <Route path="/venues" element={guard('venues', <VenuesPage />)} />
+        <Route path="/tables" element={guard('tables', <TablesPage />)} />
+        <Route path="/shifts" element={guard('shifts', <ShiftsPage />)} />
+        <Route path="/staff" element={guard('staff', <StaffPage />)} />
+        <Route path="/stock" element={guard('stock', <StockPage />)} />
+        <Route path="/stations" element={guard('stations', <StationsPage />)} />
+        <Route path="/waste" element={guard('waste', <WastePage />)} />
+        <Route path="/features" element={guard('features', <FeaturesPage />)} />
+        <Route path="/settings" element={guard('settings', <SettingsPage />)} />
+        <Route path="/erase" element={guard('erase', <PurgePage />)} />
+        {/* Always yours, whatever your role. */}
         <Route path="/account" element={<AccountPage />} />
         <Route path="/help" element={<HelpPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

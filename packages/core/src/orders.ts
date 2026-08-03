@@ -108,7 +108,11 @@ async function nextOrderNo(venueId: string, settings: Settings): Promise<string>
   const padding = Math.max(1, settings.order_number_padding ?? 4);
   const daily = settings.order_number_mode === 'daily';
 
-  const queries = [Query.equal('venue_id', venueId), Query.orderDesc('$createdAt'), Query.limit(1)];
+  // A window rather than the single newest row. Guest orders sit on a
+  // placeholder for a second or so before the server settles them, and the
+  // newest order is quite often one of those — reading it as "the last number"
+  // would send the count back to the beginning.
+  const queries = [Query.equal('venue_id', venueId), Query.orderDesc('$createdAt'), Query.limit(50)];
   if (daily) {
     // Only today's orders count, so tomorrow starts at one again.
     const midnight = new Date();
@@ -121,13 +125,72 @@ async function nextOrderNo(venueId: string, settings: Settings): Promise<string>
   }
 
   const latest = await db.listDocuments(DB_ID, 'orders', queries);
-  const last = (latest.documents[0] as unknown as Order | undefined)?.order_no ?? '';
+  const numbered = (latest.documents as unknown as Order[]).filter((o) => !isProvisionalOrderNo(o.order_no));
+  const last = numbered[0]?.order_no ?? '';
   // Strip the prefix before reading the number, so a prefix containing digits
   // ("B2-") does not get counted as part of it.
   const digits = (prefix && last.startsWith(prefix) ? last.slice(prefix.length) : last).replace(/\D/g, '');
   const n = Number(digits) || 0;
-  const from = latest.total === 0 ? Math.max(1, settings.order_number_next ?? 1) : n + 1;
+  const from = numbered.length === 0 ? Math.max(1, settings.order_number_next ?? 1) : n + 1;
   return `${prefix}${String(from).padStart(padding, '0')}`;
+}
+
+/**
+ * Give a real number to any order still sitting on a placeholder.
+ *
+ * The server settles these the moment an order lands, and normally there is
+ * nothing here to do. This exists because "normally" is doing a lot of work in
+ * that sentence: if the function is mid-deploy, erroring, or simply has not
+ * been redeployed yet, an order keeps its placeholder forever and no screen in
+ * the building can put it right.
+ *
+ * Staff can read and update orders, so any staff screen that is open can heal
+ * them. Safe to call often — it does nothing when there is nothing to fix.
+ */
+export async function settleOrderNumbers(venueId: string, settings: Settings): Promise<number> {
+  const byPrefix = [
+    Query.equal('venue_id', venueId),
+    Query.orderAsc('$createdAt'),
+    Query.limit(100),
+    Query.startsWith('order_no', PROVISIONAL_MARK),
+  ];
+  // The narrow query needs the plain index on order_no. If provisioning has
+  // not run since that index was added, fall back to reading recent orders and
+  // filtering here — slower, but it still heals them.
+  const stuck = (await db
+    .listDocuments(DB_ID, 'orders', byPrefix)
+    .catch(() =>
+      db.listDocuments(DB_ID, 'orders', [
+        Query.equal('venue_id', venueId),
+        Query.orderAsc('$createdAt'),
+        Query.limit(100),
+      ]),
+    )
+    .then((r) => (r.documents as unknown as Order[]).filter((o) => isProvisionalOrderNo(o.order_no))));
+  if (stuck.length === 0) return 0;
+
+  let fixed = 0;
+  // Oldest first, one at a time: each has to see the number the one before it
+  // just took, or they all claim the same one.
+  for (const order of stuck) {
+    const wanted = await nextOrderNo(venueId, settings);
+    const base = Number(wanted.replace(/\D/g, '')) || 1;
+    const prefix = settings.order_number_prefix ?? '';
+    const padding = Math.max(1, settings.order_number_padding ?? 4);
+    for (let i = 0; i < 25; i++) {
+      try {
+        await db.updateDocument(DB_ID, 'orders', order.$id, {
+          order_no: `${prefix}${String(base + i).padStart(padding, '0')}`,
+        });
+        fixed += 1;
+        break;
+      } catch (e) {
+        // Somebody else took it in the meantime; try the next one along.
+        if (!/already exists|unique/i.test(e instanceof Error ? e.message : '')) break;
+      }
+    }
+  }
+  return fixed;
 }
 
 /**

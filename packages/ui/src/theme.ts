@@ -26,7 +26,43 @@ export function contrastRatio(a: string, b: string): number {
   return (l1 + 0.05) / (l2 + 0.05);
 }
 
+/**
+ * Light, dark, or whatever the device says.
+ *
+ * "System" is the default and stays the default: a phone that switches to dark
+ * at sunset should take the app with it. Choosing explicitly is an override,
+ * kept on the device rather than in the settings document — one person
+ * preferring dark is not a decision for the whole restaurant.
+ */
+export type ThemeMode = 'system' | 'light' | 'dark';
+const THEME_KEY = 'snpos-theme';
+
+export function themeMode(): ThemeMode {
+  const saved = localStorage.getItem(THEME_KEY);
+  return saved === 'light' || saved === 'dark' ? saved : 'system';
+}
+
+export function setThemeMode(mode: ThemeMode): void {
+  if (mode === 'system') localStorage.removeItem(THEME_KEY);
+  else localStorage.setItem(THEME_KEY, mode);
+  applyThemeMode();
+}
+
+/** Put the choice on the root element, where the stylesheet can see it. */
+export function applyThemeMode(): void {
+  const mode = themeMode();
+  if (mode === 'system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', mode);
+}
+
+export const THEME_MODES: { v: ThemeMode; l: string; hint: string }[] = [
+  { v: 'system', l: 'Match my device', hint: 'Switches with your phone or computer.' },
+  { v: 'light', l: 'Always light', hint: 'Bright, whatever the device is set to.' },
+  { v: 'dark', l: 'Always dark', hint: 'Easier on the eyes in a dim room.' },
+];
+
 export function applyTheme(t: ThemeInput): void {
+  applyThemeMode();
   const root = document.documentElement;
   if (t.primary_color) {
     root.style.setProperty('--brand', t.primary_color);

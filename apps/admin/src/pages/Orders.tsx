@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { formatMoney, Query } from '@snpos/core';
-import type { Order, OrderItem, StaffProfile, Doc } from '@snpos/core';
+import {
+  formatMoney, Query, toCsv, downloadCsv, buildReceiptHtml, openPrintable, receiptForOrder,
+  settleOrderNumbers,
+} from '@snpos/core';
+import type { Order, OrderItem, StaffProfile, Doc, Venue } from '@snpos/core';
 import { useSession } from '../session';
 
 interface Payment extends Doc {
@@ -52,6 +55,7 @@ export function OrdersPage() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
+  const [venues, setVenues] = useState<Venue[]>([]);
   const [open, setOpen] = useState<Order | null>(null);
   const [editing, setEditing] = useState<Order | null>(null);
   const [newStatus, setNewStatus] = useState('');
@@ -64,7 +68,7 @@ export function OrdersPage() {
 
   const load = async () => {
     setOrders(null);
-    const [o, p, m, s] = await Promise.all([
+    const [o, p, m, s, v] = await Promise.all([
       listAll<Order>('orders', [
         Query.greaterThanEqual('$createdAt', dayStart(from)),
         Query.lessThanEqual('$createdAt', dayEnd(to)),
@@ -72,13 +76,99 @@ export function OrdersPage() {
       listAll<Payment>('payments'),
       listAll<PaymentMethod>('payment_methods'),
       listAll<StaffProfile>('staff_profiles'),
+      listAll<Venue>('venues'),
     ]);
     setOrders(o.sort((a, b) => b.$createdAt.localeCompare(a.$createdAt)));
     setPayments(p);
     setMethods(m);
     setStaff(s.filter((x) => x.active !== false));
+    setVenues(v);
+
+    // Anything still on a placeholder number gets its real one. The server
+    // does this the moment an order lands; this is the safety net for the
+    // night it did not, and it is the screen most likely to be looking.
+    if (settings && o.some((x) => x.order_no?.startsWith('~'))) {
+      const venueId = o.find((x) => x.order_no?.startsWith('~'))?.venue_id;
+      if (venueId) {
+        const fixed = await settleOrderNumbers(venueId, settings).catch(() => 0);
+        if (fixed > 0) {
+          toast(`${fixed} order${fixed === 1 ? '' : 's'} given their proper number`);
+          void load();
+        }
+      }
+    }
   };
   useEffect(() => { load().catch((e) => setError(humanError(e))); /* eslint-disable-next-line */ }, [from, to]);
+
+  /**
+   * The order history, as a spreadsheet.
+   *
+   * One row per order rather than per line: this is the file somebody pivots
+   * to answer "how much did we take on Fridays", and an order split across
+   * five rows makes every total wrong unless they notice. The items are in a
+   * column so nothing is actually lost.
+   */
+  const exportCsv = async () => {
+    const rows = visible.map((o) => {
+      const lines = items[o.$id];
+      const paid = payments.filter((p) => p.order_id === o.$id);
+      return [
+        o.order_no,
+        new Date(o.$createdAt).toLocaleDateString(),
+        new Date(o.$createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        o.status,
+        o.payment_status,
+        o.channel,
+        o.fulfilment ?? '',
+        o.placed_by ?? '',
+        o.customer_name ?? '',
+        o.guest_count ?? 1,
+        // Money as plain decimals, not formatted — a spreadsheet has to be
+        // able to add this column up, and "GH₵12.00" is text.
+        (o.subtotal / 100).toFixed(2),
+        (o.discount_total / 100).toFixed(2),
+        (o.service_total / 100).toFixed(2),
+        (o.tax_total / 100).toFixed(2),
+        (o.tip_total / 100).toFixed(2),
+        (o.total / 100).toFixed(2),
+        paid.map((p) => methods.find((m) => m.$id === p.method_id)?.name ?? '').filter(Boolean).join(' + '),
+        nameOf(o.accepted_by),
+        nameOf(o.marked_paid_by),
+        lines ? lines.map((i) => `${i.qty}× ${i.name_snapshot}`).join('; ') : '(open the order to include items)',
+        o.notes ?? '',
+      ];
+    });
+
+    downloadCsv(
+      `orders-${from}-to-${to}`,
+      toCsv(
+        [
+          'Order', 'Date', 'Time', 'Status', 'Payment', 'Channel', 'Fulfilment', 'Placed by', 'Customer',
+          'Guests', 'Subtotal', 'Discount', 'Service', 'Tax', 'Tip', 'Total', 'Paid by',
+          'Accepted by', 'Settled by', 'Items', 'Notes',
+        ],
+        rows,
+      ),
+    );
+    toast(`${rows.length} order${rows.length === 1 ? '' : 's'} exported`);
+  };
+
+  /** The same receipt the customer gets, reprinted from here. */
+  const printReceipt = async (o: Order) => {
+    try {
+      const venue = venues.find((v) => v.$id === o.venue_id) ?? null;
+      const data = await receiptForOrder({
+        order: o,
+        settings: settings!,
+        venue,
+        items: items[o.$id],
+        staffName: o.marked_paid_by ? nameOf(o.marked_paid_by) : undefined,
+      });
+      openPrintable(buildReceiptHtml(data), `Receipt ${o.order_no}`);
+    } catch (e) {
+      toast(humanError(e), 'err');
+    }
+  };
 
   /** Everyone who touched an order, so the staff filter can mean something. */
   const touchedBy = (o: Order): string[] => {
@@ -172,7 +262,12 @@ export function OrdersPage() {
     <>
       <div className="spread">
         <h1>Orders</h1>
-        <Button onClick={() => load().catch((e) => setError(humanError(e)))}>Refresh</Button>
+        <div className="row" style={{ gap: '0.4rem' }}>
+          <Button onClick={() => void exportCsv()} disabled={visible.length === 0}>
+            Export to spreadsheet
+          </Button>
+          <Button onClick={() => load().catch((e) => setError(humanError(e)))}>Refresh</Button>
+        </div>
       </div>
 
       <Card title="Which orders">
@@ -251,6 +346,7 @@ export function OrdersPage() {
                     <td className="num">{money(o.total)}</td>
                     <td className="num">
                       <Button size="sm" variant="ghost" onClick={() => openOrder(o)}>Details</Button>
+                      <Button size="sm" variant="ghost" onClick={() => void printReceipt(o)}>Receipt</Button>
                       <Button size="sm" variant="ghost" onClick={() => startEdit(o)}>Change</Button>
                     </td>
                   </tr>

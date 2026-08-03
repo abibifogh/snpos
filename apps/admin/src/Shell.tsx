@@ -1,58 +1,24 @@
 import type { ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Button, Logo } from '@snpos/ui';
+import { Button, Logo, THEME_MODES, themeMode, setThemeMode } from '@snpos/ui';
+import { sectionsFor } from '@snpos/core';
 import { useSession } from './session';
-
-interface NavLinkDef { to: string; label: string; end?: boolean }
-
-const NAV: { group: string; links: NavLinkDef[] }[] = [
-  {
-    group: 'Overview',
-    links: [
-      { to: '/', label: 'Dashboard', end: true },
-      { to: '/orders', label: 'Orders' },
-      { to: '/reports', label: 'Reports' },
-    ],
-  },
-  {
-    group: 'Menu',
-    links: [
-      { to: '/menu/categories', label: 'Categories' },
-      { to: '/menu/items', label: 'Dishes & drinks' },
-      { to: '/menu/options', label: 'Options' },
-    ],
-  },
-  {
-    group: 'Money',
-    links: [
-      { to: '/shifts', label: 'Shifts' },
-      { to: '/expenses', label: 'Expenses' },
-    ],
-  },
-  {
-    group: 'Kitchen',
-    links: [
-      { to: '/stations', label: 'Stations' },
-      { to: '/stock', label: 'Stock' },
-      { to: '/waste', label: 'Waste' },
-    ],
-  },
-  {
-    group: 'Setup',
-    links: [
-      { to: '/venues', label: 'Venues' },
-      { to: '/tables', label: 'Tables & QR' },
-      { to: '/staff', label: 'Staff' },
-      { to: '/features', label: 'Features' },
-      { to: '/settings', label: 'Settings' },
-      { to: '/erase', label: 'Erase records' },
-    ],
-  },
-  { group: 'You', links: [{ to: '/account', label: 'Your account' }, { to: '/help', label: 'Help' }] },
-];
 
 export function Shell({ children }: { children: ReactNode }) {
   const { settings, profile, user, signOut } = useSession();
+
+  // The navigation is built from what this person may actually open, not from
+  // a fixed list with some entries hidden. One source, so a link can never
+  // appear for a page the router will refuse.
+  const sections = sectionsFor(profile, settings);
+  const groups: { group: string; links: { to: string; label: string; end?: boolean }[] }[] = [];
+  for (const s of sections) {
+    const existing = groups.find((g) => g.group === s.group);
+    const link = { to: s.path, label: s.label, end: s.path === '/' };
+    if (existing) existing.links.push(link);
+    else groups.push({ group: s.group, links: [link] });
+  }
+  groups.push({ group: 'You', links: [{ to: '/account', label: 'Your account' }, { to: '/help', label: 'Help' }] });
 
   return (
     <div className="shell">
@@ -62,7 +28,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <span>{settings?.restaurant_name ?? 'SNPOS'}</span>
         </div>
         <nav>
-          {NAV.map((section) => (
+          {groups.map((section) => (
             <div key={section.group}>
               <div className="group">{section.group}</div>
               {section.links.map((l) => (
@@ -78,6 +44,14 @@ export function Shell({ children }: { children: ReactNode }) {
             {profile?.display_name ?? user?.name ?? 'Signed in'}
           </NavLink>
           <div className="dim small" style={{ marginBottom: '0.5rem' }}>{profile?.role ?? 'no staff profile'}</div>
+          <select
+            className="theme-pick"
+            value={themeMode()}
+            onChange={(e) => setThemeMode(e.target.value as ReturnType<typeof themeMode>)}
+            aria-label="Appearance"
+          >
+            {THEME_MODES.map((m) => <option key={m.v} value={m.v}>{m.l}</option>)}
+          </select>
           <Button size="sm" variant="ghost" onClick={signOut}>Sign out</Button>
         </div>
       </aside>

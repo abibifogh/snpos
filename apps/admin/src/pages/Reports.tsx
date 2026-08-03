@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, Empty, Notice, Spinner, Badge, Select, Field } from '@snpos/ui';
+import { Button, Card, Empty, Notice, Spinner, Badge, Select, Field } from '@snpos/ui';
 import { listAll, humanError } from '../lib';
-import { formatMoney, trialBalance } from '@snpos/core';
+import {
+  formatMoney, trialBalance, buildReportHtml, openPrintable, downloadUrl,
+  toCsv, downloadCsv,
+} from '@snpos/core';
 import type { Order, OrderItem, Doc, TrialBalanceRow } from '@snpos/core';
 import { useSession } from '../session';
 
@@ -24,7 +27,7 @@ const RANGES = [
 ];
 
 export function ReportsPage() {
-  const { settings } = useSession();
+  const { settings, profile } = useSession();
   const [days, setDays] = useState(30);
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [items, setItems] = useState<OrderItem[]>([]);
@@ -102,6 +105,93 @@ export function ReportsPage() {
   const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? 'Unknown';
   const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
 
+  const periodLabel = `${since.toLocaleDateString()} – ${new Date().toLocaleDateString()}`;
+
+  /**
+   * The report as an A4 document, for saving as a PDF.
+   *
+   * Built from the same figures the page is showing rather than from the page
+   * itself, so what comes out is laid out for paper — and so a column that is
+   * cut off on a narrow screen is not cut off in the file somebody files.
+   */
+  const exportPdf = () => {
+    if (!settings) return;
+    const gross = sales + discounts;
+    const html = buildReportHtml({
+      title: 'Sales report',
+      restaurantName: settings.restaurant_name,
+      period: periodLabel,
+      generatedBy: profile?.display_name,
+      logoUrl: settings.logo_light_id ? downloadUrl(settings.logo_light_id, 'branding', settings) : undefined,
+      brandColor: settings.primary_color,
+      stats: [
+        { label: 'Sales', value: money(sales), note: `${paid.length} orders · ${covers} covers` },
+        { label: 'Average order', value: money(Math.round(sales / paid.length)) },
+        {
+          label: 'Discounts',
+          value: money(discounts),
+          note: gross ? `${((discounts / gross) * 100).toFixed(1)}% of gross` : undefined,
+        },
+        { label: 'Tips', value: money(tips) },
+        { label: 'Expenses', value: money(spend) },
+      ],
+      tables: [
+        {
+          title: 'Where the money came from',
+          headers: ['Method', 'Taken', 'Share'],
+          numeric: [1, 2],
+          bars: byMethod.map(([, v]) => (sales ? v / sales : 0)),
+          rows: byMethod.map(([id, v]) => [
+            methodName(id),
+            money(v),
+            sales ? `${((v / sales) * 100).toFixed(1)}%` : '—',
+          ]),
+        },
+        {
+          title: 'Best sellers',
+          headers: ['Item', 'Sold', 'Revenue'],
+          numeric: [1, 2],
+          bars: topItems.map((t) => (topItems[0]?.revenue ? t.revenue / topItems[0].revenue : 0)),
+          rows: topItems.map((t) => [t.name, String(t.qty), money(t.revenue)]),
+          footnote: 'By revenue rather than by count — that is the number that pays the rent.',
+        },
+        {
+          title: 'Busiest hours',
+          headers: ['Hour', 'Taken'],
+          numeric: [1],
+          bars: byHour.filter((h) => h.value > 0).map((h) => h.share),
+          rows: byHour
+            .filter((h) => h.value > 0)
+            .map((h) => [`${String(h.hour).padStart(2, '0')}:00`, money(h.value)]),
+        },
+      ],
+      note: 'Figures cover settled bills only.',
+    });
+    openPrintable(html, `Sales report ${periodLabel}`);
+  };
+
+  /** The same figures as rows somebody can pivot. */
+  const exportCsv = () => {
+    const rows: string[][] = [
+      ['Sales', (sales / 100).toFixed(2)],
+      ['Orders', String(paid.length)],
+      ['Covers', String(covers)],
+      ['Discounts', (discounts / 100).toFixed(2)],
+      ['Tips', (tips / 100).toFixed(2)],
+      ['Expenses', (spend / 100).toFixed(2)],
+      [],
+      ['Payment method', 'Taken'],
+      ...byMethod.map(([id, v]) => [methodName(id), (v / 100).toFixed(2)]),
+      [],
+      ['Item', 'Sold', 'Revenue'],
+      ...topItems.map((t) => [t.name, String(t.qty), (t.revenue / 100).toFixed(2)]),
+      [],
+      ['Hour', 'Taken'],
+      ...byHour.filter((h) => h.value > 0).map((h) => [`${String(h.hour).padStart(2, '0')}:00`, (h.value / 100).toFixed(2)]),
+    ];
+    downloadCsv(`report-${days}-days`, toCsv(['Sales report', periodLabel], rows));
+  };
+
   if (error) return <Notice>{error}</Notice>;
   if (!orders) return <Spinner />;
 
@@ -109,11 +199,15 @@ export function ReportsPage() {
     <>
       <div className="spread">
         <h1>Reports</h1>
-        <Field>
-          <Select value={days} onChange={(e) => setDays(Number(e.target.value))}>
-            {RANGES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
-          </Select>
-        </Field>
+        <div className="row" style={{ gap: '0.5rem' }}>
+          <Button onClick={exportPdf} disabled={paid.length === 0}>Download PDF</Button>
+          <Button onClick={exportCsv} disabled={paid.length === 0}>Spreadsheet</Button>
+          <Field>
+            <Select value={days} onChange={(e) => setDays(Number(e.target.value))}>
+              {RANGES.map((r) => <option key={r.v} value={r.v}>{r.l}</option>)}
+            </Select>
+          </Field>
+        </div>
       </div>
 
       {paid.length === 0 ? (

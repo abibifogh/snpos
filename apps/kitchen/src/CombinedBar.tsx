@@ -5,10 +5,11 @@ import {
   db, DB_ID, ID, formatMoney, parseMoney, toInput, loadIngredients,
   loadPaymentMethods, openShift, loadOpenShift, shiftBlockers, expectedTakings, closeShift,
   recordPayment, PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions,
+  receiveStock, uploadFile,
 } from '@snpos/core';
 import type {
   PaymentMethod, Shift, Settings, Venue, StaffProfile, FeatureMap, Order,
-  PaidToKind, Supplier, ExpenseCategoryDoc,
+  PaidToKind, Supplier, ExpenseCategoryDoc, Ingredient,
 } from '@snpos/core';
 
 /**
@@ -259,6 +260,9 @@ export function CombinedBar({
   );
 }
 
+/** One item on a shop run, while it is being typed. */
+interface DraftLine { ingredientId: string; qtyText: string; costText: string }
+
 /**
  * Money out, recorded where it was spent rather than remembered until later.
  *
@@ -281,6 +285,7 @@ function ExpenseModal({
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [categoryKey, setCategoryKey] = useState('');
   const [methodId, setMethodId] = useState('');
   const [amountText, setAmountText] = useState('');
@@ -289,6 +294,11 @@ function ExpenseModal({
   const [staffId, setStaffId] = useState('');
   const [payee, setPayee] = useState('');
   const [noteText, setNoteText] = useState('');
+  // What was actually bought. A shop run is rarely one thing, and an expense
+  // recorded as a single number tells you money left without telling you what
+  // came back with it.
+  const [lines, setLines] = useState<DraftLine[]>([{ ingredientId: '', qtyText: '', costText: '' }]);
+  const [receipt, setReceipt] = useState<{ file: File; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -296,26 +306,85 @@ function ExpenseModal({
 
   useEffect(() => {
     (async () => {
-      const [opts, m] = await Promise.all([loadPaidToOptions(), loadPaymentMethods(venueId)]);
+      const [opts, m, ing] = await Promise.all([
+        loadPaidToOptions(),
+        loadPaymentMethods(venueId),
+        loadIngredients(venueId).catch(() => [] as Ingredient[]),
+      ]);
       setCategories(opts.categories);
       setSuppliers(opts.suppliers);
       setStaff(opts.staff);
       setCategoryKey(opts.categories[0]?.key ?? 'other');
       setMethods(m);
       setMethodId(m.find((x) => x.kind === 'cash')?.$id ?? m[0]?.$id ?? '');
+      setIngredients(ing.filter((i) => i.active).sort((a, b) => a.name.localeCompare(b.name)));
     })().catch(() => undefined);
   }, [venueId]);
 
+  const filledLines = lines.filter((l) => l.ingredientId && Number(l.qtyText) > 0);
+
+  /**
+   * Lines add up to the total, so nobody types it twice.
+   *
+   * Kept editable when there are no lines at all — plenty of spending (a taxi,
+   * a gas refill) has nothing to put into stock.
+   */
+  const linesTotal = filledLines.reduce(
+    (sum, l) => sum + Math.round(Number(l.qtyText) * (parseMoney(l.costText, decimals) ?? 0)),
+    0,
+  );
+
+  const setLine = (index: number, patch: Partial<DraftLine>) =>
+    setLines((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+
+  /**
+   * Choosing an ingredient answers the category question by itself.
+   *
+   * Rice is always Supplies. Asking somebody to say so on every delivery is how
+   * you end up with half the shop runs filed under "other".
+   */
+  const pickIngredient = (index: number, ingredientId: string) => {
+    const ing = ingredients.find((i) => i.$id === ingredientId);
+    setLine(index, {
+      ingredientId,
+      costText: ing && !lines[index].costText ? toInput(ing.base_unit_cost, decimals) : lines[index].costText,
+    });
+    if (ing?.expense_category_key) setCategoryKey(ing.expense_category_key);
+    // Always keep one blank row at the end, so adding another is just typing.
+    setLines((rows) =>
+      rows.some((r, i) => i !== index && !r.ingredientId)
+        ? rows
+        : [...rows, { ingredientId: '', qtyText: '', costText: '' }],
+    );
+  };
+
   const save = async () => {
-    const amount = parseMoney(amountText, decimals);
+    // The lines win when there are any: they are the itemised truth, and a
+    // total that disagrees with them is a total somebody mistyped.
+    const amount = filledLines.length > 0 ? linesTotal : parseMoney(amountText, decimals);
     if (amount === null || amount <= 0) { setError('Enter the amount spent.'); return; }
     if (!methodId) { setError('Choose how it was paid.'); return; }
     if (paidToKind === 'supplier' && !supplierId) { setError('Choose which supplier was paid.'); return; }
     if (paidToKind === 'staff' && !staffId) { setError('Choose which member of staff took the money.'); return; }
+    for (const l of filledLines) {
+      if (parseMoney(l.costText, decimals) === null) {
+        setError('One of the items does not have a valid unit cost.');
+        return;
+      }
+    }
+
     setBusy(true);
     setError(null);
     try {
-      await db.createDocument(DB_ID, 'shift_expenses', ID.unique(), {
+      // The receipt goes up first. If the upload fails the expense is still
+      // recorded — a missing photo is a nuisance, a missing expense is a hole
+      // in the drawer nobody can explain.
+      let receiptFileId = '';
+      if (receipt) {
+        receiptFileId = (await uploadFile(receipt.file, 'receipt', settings).catch(() => null))?.fileId ?? '';
+      }
+
+      const expense = await db.createDocument(DB_ID, 'shift_expenses', ID.unique(), {
         venue_id: venueId,
         shift_id: shiftId,
         category: legacyExpenseCategory(categoryKey),
@@ -331,10 +400,53 @@ function ExpenseModal({
         amount,
         paid_from_method_id: methodId,
         note: noteText.trim(),
+        receipt_file_id: receiptFileId,
         created_by: userId,
         approval_status: 'pending',
       });
-      onDone('Spend recorded');
+
+      // Each line is recorded and then delivered into stock. From where the
+      // person is standing these are one action, so a line that fails to stock
+      // says so rather than disappearing quietly.
+      let stockFailures = 0;
+      for (const l of filledLines) {
+        const ing = ingredients.find((i) => i.$id === l.ingredientId);
+        if (!ing) continue;
+        const qty = Number(l.qtyText);
+        const unitCost = parseMoney(l.costText, decimals) ?? ing.base_unit_cost;
+        try {
+          await db.createDocument(DB_ID, 'expense_items', ID.unique(), {
+            expense_id: expense.$id,
+            ingredient_id: ing.$id,
+            name_snapshot: ing.name,
+            qty,
+            unit_cost: unitCost,
+            line_total: Math.round(qty * unitCost),
+            stocked: true,
+          });
+          await receiveStock({
+            venueId,
+            ingredient: ing,
+            qty,
+            unitCost,
+            refType: 'expense',
+            refId: expense.$id,
+            shiftId,
+            createdBy: userId,
+            note: payee.trim() ? `Bought from ${payee.trim()}` : 'Expense',
+          });
+        } catch {
+          stockFailures += 1;
+        }
+      }
+
+      onDone(
+        stockFailures > 0
+          ? `Spend recorded, but ${stockFailures} item${stockFailures > 1 ? 's' : ''} did not reach stock`
+          : filledLines.length
+            ? `Spend recorded and ${filledLines.length} item${filledLines.length > 1 ? 's' : ''} added to stock`
+            : 'Spend recorded',
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not record that.');
     } finally {
@@ -355,17 +467,71 @@ function ExpenseModal({
     >
       <FormError message={error} />
       <p className="small dim" style={{ marginTop: 0 }}>
-        Cash paid out of the drawer now, so the drawer still balances at the end of the night. Attach the receipt later
-        from the admin app if there is one.
+        Cash paid out of the drawer now, so the drawer still balances at the end of the night.
       </p>
-      <Field label="What for">
+
+      {/* What was bought, before what it cost. A shop run is several things,
+          and listing them here is what puts them into stock — otherwise
+          somebody has to enter the same delivery twice. */}
+      <Field
+        label="What was bought"
+        hint="Leave empty for spending with nothing to stock — transport, gas, repairs."
+      >
+        <div className="stack" style={{ gap: '0.45rem' }}>
+          {lines.map((l, i) => (
+            <div className="row" key={i} style={{ gap: '0.35rem', alignItems: 'flex-start' }}>
+              <Select
+                value={l.ingredientId}
+                onChange={(e) => pickIngredient(i, e.target.value)}
+                style={{ flex: 2 }}
+              >
+                <option value="">— item —</option>
+                {ingredients.map((ing) => (
+                  <option key={ing.$id} value={ing.$id}>{ing.name} ({ing.unit})</option>
+                ))}
+              </Select>
+              <Input
+                value={l.qtyText}
+                inputMode="decimal"
+                placeholder="Qty"
+                style={{ flex: 1 }}
+                onChange={(e) => setLine(i, { qtyText: e.target.value })}
+              />
+              <Input
+                value={l.costText}
+                inputMode="decimal"
+                placeholder={`Cost / ${ingredients.find((x) => x.$id === l.ingredientId)?.unit ?? 'unit'}`}
+                style={{ flex: 1 }}
+                onChange={(e) => setLine(i, { costText: e.target.value })}
+              />
+              {lines.length > 1 && (
+                <Button size="sm" variant="ghost" onClick={() => setLines((r) => r.filter((_, x) => x !== i))}>
+                  ×
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      </Field>
+
+      <Field
+        label="What for"
+        hint={filledLines.length > 0 ? 'Taken from the items above. Change it if it belongs somewhere else.' : undefined}
+      >
         <Select value={categoryKey} onChange={(e) => setCategoryKey(e.target.value)}>
           {categories.map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}
         </Select>
       </Field>
-      <Field label={`Amount (${settings.currency_symbol ?? ''})`}>
-        <Input value={amountText} inputMode="decimal" autoFocus onChange={(e) => setAmountText(e.target.value)} />
-      </Field>
+
+      {filledLines.length > 0 ? (
+        <Field label={`Amount (${settings.currency_symbol ?? ''})`} hint="Added up from the items above.">
+          <Input value={toInput(linesTotal, decimals)} disabled />
+        </Field>
+      ) : (
+        <Field label={`Amount (${settings.currency_symbol ?? ''})`}>
+          <Input value={amountText} inputMode="decimal" autoFocus onChange={(e) => setAmountText(e.target.value)} />
+        </Field>
+      )}
       <Field label="Paid from">
         <Select value={methodId} onChange={(e) => setMethodId(e.target.value)}>
           {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
@@ -402,6 +568,30 @@ function ExpenseModal({
           <Input value={payee} onChange={(e) => setPayee(e.target.value)} />
         </Field>
       )}
+      {/* Photographed here, at the moment the money changes hands. A receipt
+          "attached later from the admin app" is a receipt in somebody's
+          pocket at the end of the night. */}
+      <Field label="Receipt" hint="Optional. Take a photo of it now if there is one.">
+        {receipt ? (
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <span className="small">{receipt.name}</span>
+            <Button size="sm" variant="ghost" onClick={() => setReceipt(null)}>Remove</Button>
+          </div>
+        ) : (
+          <input
+            type="file"
+            accept="image/*,application/pdf"
+            capture="environment"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              if (file.size > 10 * 1024 * 1024) { setError('That photo is over 10MB. Take a smaller one.'); return; }
+              setReceipt({ file, name: file.name });
+            }}
+          />
+        )}
+      </Field>
+
       <Field label="Note" hint="Optional.">
         <Textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} />
       </Field>

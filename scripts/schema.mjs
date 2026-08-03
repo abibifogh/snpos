@@ -159,6 +159,11 @@ export const COLLECTIONS = [
       // to upload and must set explicit file permissions in 'single' mode.
       ['storage_mode', 'e', ['multi', 'single'], false, 'multi'],
       ['shared_bucket_id', 's', 64, false],
+      // Which parts of the admin app each role may open, as JSON:
+      // {"manager":["orders","reports"],"cashier":[]}. Admins are not listed
+      // and never restricted — a switch that can lock the owner out of their
+      // own settings is a switch that eventually will.
+      ['role_access', 's', 2000, false],
     ],
   },
   {
@@ -484,6 +489,10 @@ export const COLLECTIONS = [
       ['idem_unique', 'unique', ['idem_key']],
       // Order numbers restart per venue, so uniqueness is scoped to the venue.
       ['order_no_unique', 'unique', ['venue_id', 'order_no']],
+      // The unique index above cannot be queried on its own: order_no is its
+      // second column, and Appwrite will only use an index from the left. A
+      // plain index makes "which orders are still on a placeholder" answerable.
+      ['order_no', 'key', ['order_no']],
       ['shift_status', 'key', ['shift_id', 'status']],
       ['status_created', 'key', ['status', '$createdAt']],
       ['session', 'key', ['session_id']],
