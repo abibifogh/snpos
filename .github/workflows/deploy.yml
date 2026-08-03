@@ -38,10 +38,30 @@ jobs:
 
       - name: Work out the base URL
         id: base
+        env:
+          SITE_DOMAIN: ${{ vars.SITE_DOMAIN }}
         run: |
-          REPO="${GITHUB_REPOSITORY#*/}"
-          echo "root=/$REPO" >> "$GITHUB_OUTPUT"
-          echo "url=https://${GITHUB_REPOSITORY%%/*}.github.io/$REPO" >> "$GITHUB_OUTPUT"
+          # Two ways this site can be reached, and they need different builds.
+          #
+          # On github.io it lives in a subfolder named after the repository, so
+          # every asset path has to start with it. On a domain of its own it
+          # lives at the root, and those same paths would all 404.
+          #
+          # Set a repository variable SITE_DOMAIN (Settings -> Secrets and
+          # variables -> Actions -> Variables) to the bare hostname, with no
+          # https:// and no trailing slash, e.g. order.myrestaurant.com
+          if [ -n "$SITE_DOMAIN" ]; then
+            echo "root=" >> "$GITHUB_OUTPUT"
+            echo "url=https://$SITE_DOMAIN" >> "$GITHUB_OUTPUT"
+            echo "domain=$SITE_DOMAIN" >> "$GITHUB_OUTPUT"
+            echo "Building for https://$SITE_DOMAIN (site root)"
+          else
+            REPO="${GITHUB_REPOSITORY#*/}"
+            echo "root=/$REPO" >> "$GITHUB_OUTPUT"
+            echo "url=https://${GITHUB_REPOSITORY%%/*}.github.io/$REPO" >> "$GITHUB_OUTPUT"
+            echo "domain=" >> "$GITHUB_OUTPUT"
+            echo "Building for github.io under /$REPO"
+          fi
 
       - name: Build each app
         env:
@@ -68,6 +88,14 @@ jobs:
           # Pages runs Jekyll by default, which strips files beginning with _.
           touch site/.nojekyll
 
+          # Tells GitHub which domain this site answers on. Written into the
+          # artifact rather than left to the Pages settings alone, so a deploy
+          # can never quietly drop the custom domain and send everybody back to
+          # the github.io address.
+          if [ -n "${{ steps.base.outputs.domain }}" ]; then
+            echo "${{ steps.base.outputs.domain }}" > site/CNAME
+          fi
+
           # The one 404 page GitHub Pages actually uses.
           #
           # Pages honours 404.html at the ROOT of the site and nowhere else —
@@ -88,11 +116,14 @@ jobs:
           <script>
             (function () {
               var apps = ['admin', 'menu', 'kitchen', 'pos'];
-              // The repository folder this site is published under.
-              var root = location.pathname.split('/')[1] || '';
-              var rest = location.pathname.split('/').slice(2).filter(Boolean);
+              // Where this site's root actually is. On github.io that is the
+              // repository folder; on a domain of its own it is "/", and
+              // assuming a folder here would treat "admin" as the folder name
+              // and never find the app.
+              var base = '__BASE__';
+              var parts = location.pathname.slice(base.length).split('/').filter(Boolean);
+              var rest = parts.slice();
               var app = rest.shift();
-              var base = '/' + root + '/';
               // A missing file is not a missing route. Redirecting a stale
               // /assets/index-OLD.js into the app would answer a script request
               // with HTML, which the browser refuses to run — a blank screen
@@ -111,6 +142,9 @@ jobs:
           </script>
           <noscript>This page has moved. Please go back to the address you were given.</noscript>
           HTML
+          # The base is known only at build time, so it is stamped in here.
+          BASE="${{ steps.base.outputs.root }}/"
+          sed -i "s|__BASE__|$BASE|" site/404.html
 
           # The public front door. It links to the customer menu and nothing
           # else: a page that lists the admin app, the till and the kitchen
