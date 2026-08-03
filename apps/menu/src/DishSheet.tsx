@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Modal, Textarea, Notice } from '@snpos/ui';
+import { Button, Modal, Textarea, FormError } from '@snpos/ui';
 import { formatMoney, previewUrl } from '@snpos/core';
 import type { MenuEntry, Settings, CartLine, CartAddon } from '@snpos/core';
 
@@ -98,6 +98,7 @@ export function DishSheet({
         </div>
       }
     >
+      <FormError message={error} />
       {img && (
         <img
           src={img}
@@ -146,7 +147,6 @@ export function DishSheet({
         />
       </div>
 
-      {error && <div style={{ marginTop: '1rem' }}><Notice>{error}</Notice></div>}
     </Modal>
   );
 }

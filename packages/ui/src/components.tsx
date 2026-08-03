@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode, InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes, ButtonHTMLAttributes } from 'react';
 
 /* ---- primitives -------------------------------------------------------- */
@@ -171,5 +171,29 @@ export function ToastHost({ children }: { children: ReactNode }) {
         ))}
       </div>
     </ToastCtx.Provider>
+  );
+}
+
+/**
+ * An error where the person will actually see it.
+ *
+ * Put at the TOP of a form, not the bottom. A customer who taps "Add to order"
+ * and gets a red line below the fold has been given no reason at all — the
+ * button simply appeared not to work, which is how an order gets abandoned.
+ * This also scrolls itself into view when the message changes, because on a
+ * phone the top of a long dish sheet is off screen too.
+ */
+export function FormError({ message }: { message: string | null }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (message) ref.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [message]);
+
+  if (!message) return null;
+  return (
+    <div ref={ref} className="form-error" role="alert" aria-live="assertive">
+      <Notice>{message}</Notice>
+    </div>
   );
 }

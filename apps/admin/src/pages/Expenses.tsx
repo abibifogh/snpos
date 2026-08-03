@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { formatMoney, parseMoney, toInput, uploadFile, downloadUrl, deleteFile, receiveStock, Query } from '@snpos/core';
-import type { Doc, Ingredient } from '@snpos/core';
+import {
+  formatMoney, parseMoney, toInput, uploadFile, downloadUrl, deleteFile, receiveStock, Query,
+  PAID_TO_KINDS, payeeLabel as sharedPayeeLabel, legacyExpenseCategory as legacyFor,
+} from '@snpos/core';
+import type { Doc, Ingredient, PaidToKind } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
 import { useSession } from '../session';
 
@@ -45,21 +48,6 @@ interface DraftItem {
   qtyText: string;
   costText: string;
 }
-
-/**
- * The seven categories the system shipped with, and the one the database still
- * insists on. Anything the restaurant adds beyond these files itself under
- * "other" in the old column while `category_key` carries the real answer.
- */
-const LEGACY_CATEGORIES = ['supplies', 'transport', 'utilities', 'repairs', 'staff_advance', 'petty_cash', 'other'];
-const legacyFor = (key: string) => (LEGACY_CATEGORIES.includes(key) ? key : 'other');
-
-const PAID_TO_KINDS = [
-  { v: 'supplier', l: 'A supplier' },
-  { v: 'open_market', l: 'Open market — no fixed supplier' },
-  { v: 'staff', l: 'A member of staff' },
-  { v: 'other', l: 'Someone else' },
-] as const;
 
 /** Receipts may be photographed or scanned, so accept images and PDFs. */
 const RECEIPT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
@@ -298,12 +286,13 @@ export function ExpensesPage() {
 
   const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? '—';
 
-  /** A readable "paid to", whichever way the money went out. */
-  function payeeLabel(kind: string, e: Partial<Expense>): string {
-    if (kind === 'supplier') return suppliers.find((s) => s.$id === e.supplier_id)?.name ?? '';
-    if (kind === 'staff') return staff.find((s) => s.$id === e.paid_to_staff_id)?.display_name ?? '';
-    if (kind === 'open_market') return e.payee?.trim() || 'Open market';
-    return e.payee?.trim() ?? '';
+  /** A readable "paid to", worked out the same way the kitchen works it out. */
+  function payeeLabel(kind: PaidToKind, e: Partial<Expense>): string {
+    return sharedPayeeLabel(kind, {
+      supplierName: suppliers.find((s) => s.$id === e.supplier_id)?.name,
+      staffName: staff.find((s) => s.$id === e.paid_to_staff_id)?.display_name,
+      payee: e.payee,
+    });
   }
 
   return (

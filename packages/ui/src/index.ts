@@ -5,3 +5,4 @@ export * from './help';
 export * from './boot';
 export * from './shift';
 export * from './eightysix';
+export * from './ErrorBoundary';

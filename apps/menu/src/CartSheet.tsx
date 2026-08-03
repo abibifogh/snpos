@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Button, Modal, Input, Field, Notice, Select } from '@snpos/ui';
+import { Button, Modal, Input, Field, Notice, Select, FormError } from '@snpos/ui';
 import {
   computeTotals, formatMoney, lineTotal, createOrder, parseWindows,
   isEnabled, featureConfig, db, DB_ID, Query,
@@ -77,8 +77,6 @@ export function CartSheet({
   onPlaced: (orderNo: string, scheduled?: string) => void;
   onError: (message: string) => void;
 }) {
-  // The QR sticker wins; only when it says nothing does the guest get asked.
-  const chosenSeat = table ?? seating.find((x) => x.$id === seatId) ?? null;
   const needReference = featureConfig(features, 'group_orders', 'require_reservation_number', true);
   const reservationLabel = featureConfig<string>(
     features, 'group_orders', 'reservation_label', 'Hotel reservation number',
@@ -98,6 +96,7 @@ export function CartSheet({
   const [slot, setSlot] = useState<string>(venueOpen ? '' : (slots[0]?.toISOString() ?? ''));
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
   const [seatId, setSeatId] = useState('');
   const [seatNote, setSeatNote] = useState('');
   const [groupRef, setGroupRef] = useState('');
@@ -106,6 +105,16 @@ export function CartSheet({
   const [codeState, setCodeState] = useState<{ id: string; amount: number; label: string } | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // The QR sticker wins; only when it says nothing does the guest get asked.
+  //
+  // Kept below the state it reads, deliberately. Sitting above `seatId` this
+  // threw on every single render of the sheet — the cart button did nothing and
+  // no order could be sent, with nothing on screen to say why.
+  const chosenSeat = table ?? seating.find((x) => x.$id === seatId) ?? null;
+  const areasFirst = [...seating].sort(
+    (a, b) => Number(b.kind === 'area') - Number(a.kind === 'area') || a.label.localeCompare(b.label),
+  );
 
   const totals = computeTotals({ lines: cart, discount: codeState?.amount ?? 0, settings });
 
@@ -151,18 +160,25 @@ export function CartSheet({
 
   const place = async () => {
     if (!venueOpen && !slot) {
-      onError('Please choose a collection time.');
+      setProblem('Please choose a collection time.');
       return;
     }
+    // Somebody eating in has to be findable. Guessing "takeaway" because the
+    // question went unanswered is how food goes cold on a pass.
+    if (!table && seating.length > 0 && !seatId) {
+      setProblem('Please say where you are sitting, or choose "I\'m taking it away".');
+      return;
+    }
+
     // A group order the kitchen cannot tie to a booking is a party nobody can
     // find at the front desk, so the reference is asked for before it is sent
     // rather than chased afterwards.
     if (groupMode && needReference && !groupRef.trim()) {
-      onError(`Please enter your ${reservationLabel.toLowerCase()}.`);
+      setProblem(`Please enter your ${reservationLabel.toLowerCase()}.`);
       return;
     }
     if (groupMode && minGroup > 0 && Number(groupSize || 0) < minGroup) {
-      onError(`Group orders are for ${minGroup} people or more.`);
+      setProblem(`Group orders are for ${minGroup} people or more.`);
       return;
     }
 
@@ -212,6 +228,7 @@ export function CartSheet({
       onPlaced(order.order_no, slot || undefined);
       setCart(() => []);
     } catch (e) {
+      setProblem(e instanceof Error ? e.message : 'Could not send your order. Please try again.');
       onError(e instanceof Error ? e.message : 'Could not send your order. Please try again.');
     } finally {
       setBusy(false);
@@ -228,6 +245,36 @@ export function CartSheet({
         </Button>
       }
     >
+      <FormError message={problem} />
+
+      {/* Asked first, and asked plainly. Somebody eating in has to be findable
+          when the food is ready, and burying this under the bill is how an
+          order ends up marked takeaway by accident. */}
+      {!table && seating.length > 0 && (
+        <Field label="Where are you sitting?" hint="So we can bring your food to you.">
+          <Select value={seatId} onChange={(e) => { setSeatId(e.target.value); setProblem(null); }}>
+            <option value="">— please choose —</option>
+            {areasFirst.map((t) => (
+              <option key={t.$id} value={t.$id}>
+                {t.kind === 'area' ? t.label : `Table ${t.label}`}
+                {t.zone ? ` · ${t.zone}` : ''}
+              </option>
+            ))}
+            <option value="takeaway">I'm taking it away</option>
+          </Select>
+        </Field>
+      )}
+
+      {chosenSeat?.kind === 'area' && (
+        <Field label="Whereabouts?" hint="Optional, but it saves us walking the whole area.">
+          <Input
+            value={seatNote}
+            placeholder="By the pool bar, blue umbrella"
+            onChange={(e) => setSeatNote(e.target.value)}
+          />
+        </Field>
+      )}
+
       {cart.map((line) => (
         <div className="line" key={line.key}>
           <div>
@@ -244,34 +291,8 @@ export function CartSheet({
         </div>
       ))}
 
-      {!table && seating.length > 0 && (
-        <Field
-          label="Where are you sitting?"
-          hint="So we know where to bring it."
-        >
-          <Select value={seatId} onChange={(e) => setSeatId(e.target.value)}>
-            <option value="">I'll collect it myself</option>
-            {seating.map((t) => (
-              <option key={t.$id} value={t.$id}>
-                {t.kind === 'area' ? t.label : `Table ${t.label}`}
-                {t.zone ? ` · ${t.zone}` : ''}
-              </option>
-            ))}
-          </Select>
-        </Field>
-      )}
-
       {/* An area has no table number, so the only way to be found is to say
           where in it you are. Asked only when it would actually help. */}
-      {chosenSeat?.kind === 'area' && (
-        <Field label="Whereabouts?" hint="Optional, but it saves us walking the whole area.">
-          <Input
-            value={seatNote}
-            placeholder="By the pool bar, blue umbrella"
-            onChange={(e) => setSeatNote(e.target.value)}
-          />
-        </Field>
-      )}
 
       {groupMode && (
         <>

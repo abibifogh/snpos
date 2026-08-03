@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Badge, Button, Field, Input, Modal, Notice, Select, Textarea, ShiftCloseForm } from '@snpos/ui';
+import { Badge, Button, Field, FormError, Input, Modal, Notice, Select, Textarea, ShiftCloseForm } from '@snpos/ui';
 import type { BlockerRow, CountRow, StockRow } from '@snpos/ui';
 import {
-  db, DB_ID, ID, listAll, formatMoney, parseMoney, toInput, loadIngredients,
+  db, DB_ID, ID, formatMoney, parseMoney, toInput, loadIngredients,
   loadPaymentMethods, openShift, loadOpenShift, shiftBlockers, expectedTakings, closeShift,
-  recordPayment,
+  recordPayment, PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions,
 } from '@snpos/core';
-import type { PaymentMethod, Shift, Settings, Venue, StaffProfile, FeatureMap, Order } from '@snpos/core';
+import type {
+  PaymentMethod, Shift, Settings, Venue, StaffProfile, FeatureMap, Order,
+  PaidToKind, Supplier, ExpenseCategoryDoc,
+} from '@snpos/core';
 
 /**
  * The till, on the kitchen screen.
@@ -86,7 +89,7 @@ export function CombinedBar({
     setBusy(true);
     setError(null);
     try {
-      const [m, blocking] = await Promise.all([loadPaymentMethods(venue.$id), shiftBlockers(shift.$id)]);
+      const [m, blocking] = await Promise.all([loadPaymentMethods(venue.$id), shiftBlockers(venue.$id)]);
       setMethods(m);
       setBlockers(
         blocking.map((b) => ({
@@ -256,9 +259,14 @@ export function CombinedBar({
   );
 }
 
-interface KeyedRow { $id: string; key: string; name: string; active?: boolean }
-
-/** Money out, recorded where it was spent rather than remembered until later. */
+/**
+ * Money out, recorded where it was spent rather than remembered until later.
+ *
+ * Asks the same "paid to" question the admin form asks, from the same shared
+ * list. It used to ask for a name in a box and file everything as "other",
+ * which meant the same purchase looked like two different things depending on
+ * which screen it was entered from.
+ */
 function ExpenseModal({
   venueId, shiftId, settings, userId, onClose, onDone,
 }: {
@@ -269,11 +277,16 @@ function ExpenseModal({
   onClose: () => void;
   onDone: (message: string) => void;
 }) {
-  const [categories, setCategories] = useState<KeyedRow[]>([]);
+  const [categories, setCategories] = useState<ExpenseCategoryDoc[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [categoryKey, setCategoryKey] = useState('');
   const [methodId, setMethodId] = useState('');
   const [amountText, setAmountText] = useState('');
+  const [paidToKind, setPaidToKind] = useState<PaidToKind>('open_market');
+  const [supplierId, setSupplierId] = useState('');
+  const [staffId, setStaffId] = useState('');
   const [payee, setPayee] = useState('');
   const [noteText, setNoteText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -283,13 +296,11 @@ function ExpenseModal({
 
   useEffect(() => {
     (async () => {
-      const [c, m] = await Promise.all([
-        listAll<KeyedRow>('expense_categories').catch(() => [] as KeyedRow[]),
-        loadPaymentMethods(venueId),
-      ]);
-      const active = c.filter((x) => x.active !== false);
-      setCategories(active);
-      setCategoryKey(active[0]?.key ?? 'other');
+      const [opts, m] = await Promise.all([loadPaidToOptions(), loadPaymentMethods(venueId)]);
+      setCategories(opts.categories);
+      setSuppliers(opts.suppliers);
+      setStaff(opts.staff);
+      setCategoryKey(opts.categories[0]?.key ?? 'other');
       setMethods(m);
       setMethodId(m.find((x) => x.kind === 'cash')?.$id ?? m[0]?.$id ?? '');
     })().catch(() => undefined);
@@ -299,17 +310,24 @@ function ExpenseModal({
     const amount = parseMoney(amountText, decimals);
     if (amount === null || amount <= 0) { setError('Enter the amount spent.'); return; }
     if (!methodId) { setError('Choose how it was paid.'); return; }
+    if (paidToKind === 'supplier' && !supplierId) { setError('Choose which supplier was paid.'); return; }
+    if (paidToKind === 'staff' && !staffId) { setError('Choose which member of staff took the money.'); return; }
     setBusy(true);
     setError(null);
     try {
-      const LEGACY = ['supplies', 'transport', 'utilities', 'repairs', 'staff_advance', 'petty_cash', 'other'];
       await db.createDocument(DB_ID, 'shift_expenses', ID.unique(), {
         venue_id: venueId,
         shift_id: shiftId,
-        category: LEGACY.includes(categoryKey) ? categoryKey : 'other',
+        category: legacyExpenseCategory(categoryKey),
         category_key: categoryKey,
-        paid_to_kind: 'other',
-        payee: payee.trim(),
+        paid_to_kind: paidToKind,
+        supplier_id: paidToKind === 'supplier' ? supplierId : '',
+        paid_to_staff_id: paidToKind === 'staff' ? staffId : '',
+        payee: payeeLabel(paidToKind, {
+          supplierName: suppliers.find((s) => s.$id === supplierId)?.name,
+          staffName: staff.find((s) => s.$id === staffId)?.display_name,
+          payee,
+        }),
         amount,
         paid_from_method_id: methodId,
         note: noteText.trim(),
@@ -335,7 +353,7 @@ function ExpenseModal({
         </>
       }
     >
-      {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
+      <FormError message={error} />
       <p className="small dim" style={{ marginTop: 0 }}>
         Cash paid out of the drawer now, so the drawer still balances at the end of the night. Attach the receipt later
         from the admin app if there is one.
@@ -353,9 +371,37 @@ function ExpenseModal({
           {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
         </Select>
       </Field>
-      <Field label="Paid to" hint="Optional.">
-        <Input value={payee} onChange={(e) => setPayee(e.target.value)} />
+      <Field label="Paid to" hint="Not every purchase has a supplier behind it.">
+        <Select value={paidToKind} onChange={(e) => setPaidToKind(e.target.value as PaidToKind)}>
+          {PAID_TO_KINDS.map((k) => <option key={k.v} value={k.v}>{k.l}</option>)}
+        </Select>
       </Field>
+      {paidToKind === 'supplier' && (
+        <Field label="Which supplier" hint="Suppliers are added by an admin under Stock.">
+          <Select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+            <option value="">— choose —</option>
+            {suppliers.map((s) => <option key={s.$id} value={s.$id}>{s.name}</option>)}
+          </Select>
+        </Field>
+      )}
+      {paidToKind === 'staff' && (
+        <Field label="Which member of staff" hint="For money handed to someone to go and buy, or a staff advance.">
+          <Select value={staffId} onChange={(e) => setStaffId(e.target.value)}>
+            <option value="">— choose —</option>
+            {staff.map((s) => <option key={s.$id} value={s.$id}>{s.display_name}</option>)}
+          </Select>
+        </Field>
+      )}
+      {(paidToKind === 'open_market' || paidToKind === 'other') && (
+        <Field
+          label="Name"
+          hint={paidToKind === 'open_market'
+            ? 'The market or stall, if it is worth recording. Leave blank for just "Open market".'
+            : 'Whoever received the money.'}
+        >
+          <Input value={payee} onChange={(e) => setPayee(e.target.value)} />
+        </Field>
+      )}
       <Field label="Note" hint="Optional.">
         <Textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} />
       </Field>
@@ -461,9 +507,11 @@ export function SettleModal({
           Change to give: <strong>{formatMoney(change, settings)}</strong>
         </p>
       )}
-      <Field label={`Tip (${settings.currency_symbol ?? ''})`} hint="Optional. Kept separate from sales — it is not yours.">
-        <Input value={tipText} inputMode="decimal" onChange={(e) => setTipText(e.target.value)} />
-      </Field>
+      {settings.tips_enabled !== false && (
+        <Field label={`Tip (${settings.currency_symbol ?? ''})`} hint="Optional. Kept separate from sales — it is not yours.">
+          <Input value={tipText} inputMode="decimal" onChange={(e) => setTipText(e.target.value)} />
+        </Field>
+      )}
     </Modal>
   );
 }

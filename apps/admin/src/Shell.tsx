@@ -10,6 +10,7 @@ const NAV: { group: string; links: NavLinkDef[] }[] = [
     group: 'Overview',
     links: [
       { to: '/', label: 'Dashboard', end: true },
+      { to: '/orders', label: 'Orders' },
       { to: '/reports', label: 'Reports' },
     ],
   },
@@ -44,6 +45,7 @@ const NAV: { group: string; links: NavLinkDef[] }[] = [
       { to: '/staff', label: 'Staff' },
       { to: '/features', label: 'Features' },
       { to: '/settings', label: 'Settings' },
+      { to: '/erase', label: 'Erase records' },
     ],
   },
   { group: 'You', links: [{ to: '/account', label: 'Your account' }, { to: '/help', label: 'Help' }] },

@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { applyFavicon, guardStaleBuild, bootedOk } from '@snpos/ui';
+import { ErrorBoundary, applyFavicon, guardStaleBuild, bootedOk } from '@snpos/ui';
 import '@snpos/ui/src/styles.css';
 import './kitchen.css';
 import { App } from './App';
@@ -14,7 +14,9 @@ applyFavicon();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary label="kitchen">
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );
 

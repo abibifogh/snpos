@@ -81,13 +81,21 @@ export interface ShiftBlocker {
  * problem one step earlier. Both are answerable in a minute at the time and
  * unanswerable the next morning, which is why they are asked now.
  */
-export async function shiftBlockers(shiftId: string): Promise<ShiftBlocker[]> {
-  const orders = await listAll<Order>('orders', [Query.equal('shift_id', shiftId)]);
+export async function shiftBlockers(venueId: string, _shiftId?: string): Promise<ShiftBlocker[]> {
+  // Every live order for the venue, not only those stamped with this shift.
+  //
+  // That distinction is what let a shift close over an unpaid order: a
+  // customer ordering from their phone has no shift to be stamped with — the
+  // menu does not know one is open — so `shift_id` is blank and a query by
+  // shift never saw it. The question is not "which orders belong to this
+  // shift", it is "is anything still owed or still on the pass".
+  const orders = await listAll<Order>('orders', [Query.equal('venue_id', venueId)]);
   const blockers: ShiftBlocker[] = [];
   for (const o of orders) {
-    if (['CANCELLED', 'REJECTED'].includes(o.status)) continue;
+    // A pre-order for tomorrow is not this shift's problem.
+    if (['CANCELLED', 'REJECTED', 'CLOSED', 'SCHEDULED'].includes(o.status)) continue;
     if (o.payment_status !== 'paid') blockers.push({ order: o, reason: 'unpaid' });
-    else if (!['SERVED', 'CLOSED'].includes(o.status)) blockers.push({ order: o, reason: 'uncollected' });
+    else if (o.status !== 'SERVED') blockers.push({ order: o, reason: 'uncollected' });
   }
   return blockers;
 }

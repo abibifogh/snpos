@@ -142,6 +142,13 @@ export default async ({ req, res, log, error }) => {
 
   const transport = mailer();
   const settings = await db.getDocument(DB_ID, 'settings', 'main');
+  // No silent fallback to SMTP_USER. On Brevo that login is something like
+  // 9a1b2c001@smtp-brevo.com — never a verified sender — so falling back to it
+  // produces mail the provider accepts and then drops, which looks like
+  // success everywhere except the customer's inbox.
+  if (!settings.email_from_address) {
+    error('No from-address set. Admin -> Settings -> Email. Nothing will send until it is, and it must be an address the provider has verified.');
+  }
   const from = `"${settings.email_from_name || settings.restaurant_name}" <${settings.email_from_address || process.env.SMTP_USER}>`;
   const brand = settings.primary_color || '#0f766e';
 
@@ -384,7 +391,14 @@ export default async ({ req, res, log, error }) => {
       const threshold = await featureConfig('shift_summary', 'persistent_stock_threshold', 3);
       if (threshold === null) return res.json({ ok: true, skipped: 'summary feature off' });
 
-      const [ingredients, waste, expenses, subs, offItems] = await Promise.all([
+      // The shift's own clock, used for anything a customer could have started.
+      // A QR order has no shift stamped on it — the phone that placed it has no
+      // idea one is open — so scoping "what happened tonight" by shift_id alone
+      // would leave the busiest orders out of the count.
+      const openedAt = doc.opened_at;
+      const closedAt = doc.closed_at || new Date().toISOString();
+
+      const [ingredients, waste, expenses, subs, offItems, orders, payments, staff] = await Promise.all([
         db.listDocuments(DB_ID, 'ingredients', [Query.equal('venue_id', doc.venue_id), Query.limit(500)]),
         db.listDocuments(DB_ID, 'waste_log', [Query.equal('shift_id', doc.$id), Query.limit(100)]),
         db.listDocuments(DB_ID, 'shift_expenses', [Query.equal('shift_id', doc.$id), Query.limit(100)]),
@@ -394,6 +408,16 @@ export default async ({ req, res, log, error }) => {
         db.listDocuments(DB_ID, 'item_availability', [
           Query.equal('shift_id', doc.$id), Query.limit(100),
         ]).catch(() => ({ documents: [] })),
+        db.listDocuments(DB_ID, 'orders', [
+          Query.equal('venue_id', doc.venue_id),
+          Query.greaterThanEqual('$createdAt', openedAt),
+          Query.lessThanEqual('$createdAt', closedAt),
+          Query.limit(500),
+        ]).catch(() => ({ documents: [] })),
+        db.listDocuments(DB_ID, 'payments', [
+          Query.equal('shift_id', doc.$id), Query.limit(500),
+        ]).catch(() => ({ documents: [] })),
+        db.listDocuments(DB_ID, 'staff_profiles', [Query.limit(200)]).catch(() => ({ documents: [] })),
       ]);
 
       // The two stock sections, kept apart on purpose: a first-time flag is
@@ -406,6 +430,71 @@ export default async ({ req, res, log, error }) => {
       const variance = Object.values(JSON.parse(doc.variance || '{}')).reduce((a, b) => a + b, 0);
       const wasteValue = waste.documents.reduce((a, w) => a + (w.value || 0), 0);
       const expenseTotal = expenses.documents.reduce((a, e) => a + e.amount, 0);
+
+      // ------------------------------------------------- who did what
+      //
+      // The totals say how the night went; this says who was in it. Not to
+      // rank anybody — a cook on the pass and a cashier on the till leave very
+      // different traces — but so that a question about one order has a name
+      // attached to it the next morning, when nobody remembers.
+      //
+      // Staff are recorded by their Appwrite user id in some places and by
+      // their profile row in others, so both are accepted as keys.
+      const nameOf = (id) => {
+        if (!id) return null;
+        const p = staff.documents.find((s) => s.user_id === id || s.$id === id);
+        return p ? p.display_name : null;
+      };
+
+      const activity = new Map();
+      const rowFor = (id) => {
+        const name = nameOf(id);
+        if (!name) return null;
+        if (!activity.has(name)) {
+          activity.set(name, { accepted: 0, settled: 0, taken: 0, spent: 0, wasted: 0, off: 0 });
+        }
+        return activity.get(name);
+      };
+
+      for (const o of orders.documents) {
+        const a = rowFor(o.accepted_by);
+        if (a) a.accepted += 1;
+        const s = rowFor(o.marked_paid_by);
+        if (s) s.settled += 1;
+      }
+      for (const p of payments.documents) {
+        const r = rowFor(p.taken_by);
+        if (r) r.taken += (p.amount || 0) + (p.tip || 0);
+      }
+      for (const e of expenses.documents) {
+        const r = rowFor(e.created_by);
+        if (r) r.spent += e.amount || 0;
+      }
+      for (const w of waste.documents) {
+        const r = rowFor(w.recorded_by);
+        if (r) r.wasted += 1;
+      }
+      for (const o of offItems.documents) {
+        const r = rowFor(o.marked_off_by);
+        if (r) r.off += 1;
+      }
+      // Opening and closing are activity too, and the person who did them is
+      // often the one with the answer about the drawer.
+      rowFor(doc.opened_by);
+      rowFor(doc.closed_by);
+
+      const staffRows = [...activity.entries()]
+        .sort((a, b) => b[1].taken - a[1].taken || a[0].localeCompare(b[0]))
+        .map(([name, r]) => {
+          const bits = [];
+          if (r.accepted) bits.push(`${r.accepted} order${r.accepted === 1 ? '' : 's'} accepted`);
+          if (r.settled) bits.push(`${r.settled} bill${r.settled === 1 ? '' : 's'} settled`);
+          if (r.taken) bits.push(`${money(r.taken, settings)} taken`);
+          if (r.spent) bits.push(`${money(r.spent, settings)} paid out`);
+          if (r.wasted) bits.push(`${r.wasted} waste entr${r.wasted === 1 ? 'y' : 'ies'}`);
+          if (r.off) bits.push(`${r.off} item${r.off === 1 ? '' : 's'} taken off`);
+          return `<li><strong>${name}</strong> — ${bits.join(' · ') || 'on shift, nothing recorded against them'}</li>`;
+        });
 
       const section = (title, rows) =>
         rows.length
@@ -423,6 +512,7 @@ export default async ({ req, res, log, error }) => {
            ${row('Waste', money(wasteValue, settings))}
            ${row('Cash difference', variance === 0 ? 'Balanced' : `${variance > 0 ? '+' : ''}${money(variance, settings)}`, variance !== 0)}
          </table>
+         ${section('Who did what', staffRows)}
          ${section(
            'Stock flagged for the first time',
            fresh.map((i) => `<li>${i.name} — ${i.current_qty} ${i.unit} left</li>`),

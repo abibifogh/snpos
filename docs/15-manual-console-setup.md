@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **57 collections, 689 fields and 131 indexes**. Entered by hand at a
+> This is **57 collections, 691 fields and 131 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -193,7 +193,7 @@ There are 57 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: _none — server only_ · **Update**: Team: admins · **Delete**: _none — server only_
 
-**Attributes** (39)
+**Attributes** (40)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -223,6 +223,7 @@ There are 57 collections. A progress checklist is at the end of this document.
 | `order_number_next` | Integer | — | No | 1 | No |
 | `order_number_padding` | Integer | — | No | 4 | No |
 | `order_number_reset_on` | Datetime | — | No | — | No |
+| `tips_enabled` | Boolean | — | No | true | No |
 | `low_stock_default_bp` | Integer | — | **Yes** | — | No |
 | `stock_variance_threshold_bp` | Integer | — | **Yes** | — | No |
 | `stock_variance_value_floor` | Integer | — | **Yes** | — | No |
@@ -447,9 +448,9 @@ There are 57 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 12. `tables` — Tables
+### 12. `tables` — Tables and areas
 
-**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: Team: managers, Team: admins
+**Read**: Any · **Create**: Team: managers, Team: admins · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: Team: managers, Team: admins
 
 **Attributes** (12)
 
@@ -1229,7 +1230,7 @@ There are 57 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: _none — server only_ · **Delete**: _none — server only_
 
-**Attributes** (11)
+**Attributes** (12)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -1241,6 +1242,7 @@ There are 57 collections. A progress checklist is at the end of this document.
 | `entity_id` | String | size 64 | No | — | No |
 | `before` | String | size 4000 | No | — | No |
 | `after` | String | size 4000 | No | — | No |
+| `reason` | String | size 500 | No | — | No |
 | `ip` | String | size 60 | No | — | No |
 | `device` | String | size 120 | No | — | No |
 | `shift_id` | String | size 64 | No | — | No |
@@ -2030,7 +2032,7 @@ way mistakes creep in.
 
 - [ ]  1. `venues` (17 fields, 2 indexes)
 - [ ]  2. `venue_menu_items` (6 fields, 1 indexes)
-- [ ]  3. `settings` (39 fields, 0 indexes)
+- [ ]  3. `settings` (40 fields, 0 indexes)
 - [ ]  4. `payment_methods` (10 fields, 2 indexes)
 - [ ]  5. `categories` (10 fields, 1 indexes)
 - [ ]  6. `menu_items` (21 fields, 2 indexes)
@@ -2064,7 +2066,7 @@ way mistakes creep in.
 - [ ] 34. `journal_lines` (6 fields, 3 indexes)
 - [ ] 35. `staff_profiles` (18 fields, 3 indexes)
 - [ ] 36. `devices` (7 fields, 2 indexes)
-- [ ] 37. `audit_log` (11 fields, 3 indexes)
+- [ ] 37. `audit_log` (12 fields, 3 indexes)
 - [ ] 38. `feature_flags` (5 fields, 2 indexes)
 - [ ] 39. `receipts` (13 fields, 3 indexes)
 - [ ] 40. `pickup_points` (12 fields, 1 indexes)

@@ -646,16 +646,24 @@ function Ticket({
         {order.status === 'PREPARING' && <Button variant="primary" onClick={onDone}>Ready</Button>}
         {order.status === 'READY' && (
           <>
-            {/* Handing the food over and taking the money are two different
-                events. Collected always works; settling only when this screen
-                is also the till and this person may take payment. */}
-            <Button onClick={onCollect}>Collected</Button>
-            {order.payment_status !== 'paid' && canSettle && (
+            {/* Food does not leave the pass before it is paid for. An order
+                marked collected while still owing is money nobody can chase:
+                the customer has gone and the shift balances as if nothing
+                happened. */}
+            {order.payment_status === 'paid' ? (
+              <>
+                <span className="pill">Paid</span>
+                <Button variant="primary" onClick={onCollect}>Collected</Button>
+              </>
+            ) : canSettle ? (
               <Button variant="primary" onClick={onSettle}>
-                Collected &amp; paid{settings ? ` · ${formatMoney(order.total, settings)}` : ''}
+                Collect &amp; take payment{settings ? ` · ${formatMoney(order.total, settings)}` : ''}
               </Button>
+            ) : (
+              <span className="small" style={{ opacity: 0.75 }}>
+                Waiting for payment{settings ? ` · ${formatMoney(order.total, settings)}` : ''}
+              </span>
             )}
-            {order.payment_status === 'paid' && <span className="pill">Paid</span>}
           </>
         )}
       </div>

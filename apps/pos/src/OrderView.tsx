@@ -424,9 +424,11 @@ function PaymentModal({
         <Field label={`Amount taken (${ctx.settings.currency_symbol})`}>
           <Input value={amount} inputMode="decimal" onChange={(e) => setAmount(e.target.value)} />
         </Field>
-        <Field label={`Tip (${ctx.settings.currency_symbol})`} hint="Not taxed as sales.">
-          <Input value={tip} inputMode="decimal" onChange={(e) => setTip(e.target.value)} />
-        </Field>
+        {ctx.settings.tips_enabled !== false && (
+          <Field label={`Tip (${ctx.settings.currency_symbol})`} hint="Not taxed as sales.">
+            <Input value={tip} inputMode="decimal" onChange={(e) => setTip(e.target.value)} />
+          </Field>
+        )}
       </div>
 
       {method?.kind === 'cash' && change > 0 && (

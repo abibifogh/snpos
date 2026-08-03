@@ -41,6 +41,7 @@ export function SettingsPage() {
         kitchen_ack_sla_seconds: Number(form.kitchen_ack_sla_seconds),
         require_reject_reason: form.require_reject_reason,
         qr_orders_need_approval: form.qr_orders_need_approval,
+        tips_enabled: form.tips_enabled ?? true,
         order_number_prefix: form.order_number_prefix ?? '',
         order_number_mode: form.order_number_mode ?? 'continuous',
         order_number_padding: Number(form.order_number_padding ?? 4),
@@ -151,6 +152,18 @@ export function SettingsPage() {
         )}
       </Card>
 
+      <Card title="Tips">
+        <Toggle
+          checked={form.tips_enabled ?? true}
+          onChange={(v) => set('tips_enabled', v)}
+          label="Ask for a tip when taking payment"
+        />
+        <p className="small dim" style={{ marginBottom: 0 }}>
+          Off removes the box entirely rather than defaulting it to zero — a field staff have to look at and skip
+          past on every bill is worse than no field.
+        </p>
+      </Card>
+
       <Card title="Order numbers">
         <p className="small dim" style={{ marginTop: 0 }}>
           These get shouted across a pass, so they are yours to shape. The number shown is{' '}
@@ -254,10 +267,19 @@ export function SettingsPage() {
           <Field label="From name" hint="Shown as the sender on emailed receipts.">
             <Input value={form.email_from_name ?? ''} onChange={(e) => set('email_from_name', e.target.value)} />
           </Field>
-          <Field label="From address">
+          <Field
+            label="From address"
+            hint="Must be an address your email provider has verified as a sender."
+          >
             <Input type="email" value={form.email_from_address ?? ''} onChange={(e) => set('email_from_address', e.target.value)} />
           </Field>
         </div>
+        <Notice tone="warn">
+          <strong>This address has to be verified with your email provider.</strong> Brevo and the others accept the
+          message, report success, and then quietly drop it if the from-address is not one of their verified senders —
+          so receipts show as <em>sent</em> here and never arrive. If that is happening, this is almost always why.
+          Check Brevo → Senders, Domains &amp; Dedicated IPs → Senders, and put exactly that address here.
+        </Notice>
       </Card>
     </>
   );

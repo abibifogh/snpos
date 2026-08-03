@@ -136,7 +136,11 @@ export function KitchenPanel({
                       Ready
                     </Button>
                   )}
-                  {o.status === 'READY' && <Badge tone="ok">Waiting to be collected</Badge>}
+                  {o.status === 'READY' && (
+                    o.payment_status === 'paid'
+                      ? <Badge tone="ok">Paid — waiting to be collected</Badge>
+                      : <Badge tone="warn">Not paid yet — settle before it goes out</Badge>
+                  )}
                 </div>
               </Card>
             );

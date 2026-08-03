@@ -67,7 +67,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
     try {
       const [m, blocking] = await Promise.all([
         loadPaymentMethods(ctx.venue.$id),
-        shiftBlockers(ctx.shift.$id),
+        shiftBlockers(ctx.venue.$id),
       ]);
       setMethods(m);
       setBlockers(

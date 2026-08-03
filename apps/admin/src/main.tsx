@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
-import { ToastHost, applyFavicon, guardStaleBuild, bootedOk } from '@snpos/ui';
+import { HashRouter } from 'react-router-dom';
+import { ErrorBoundary, ToastHost, applyFavicon, guardStaleBuild, bootedOk } from '@snpos/ui';
 import '@snpos/ui/src/styles.css';
 import './admin.css';
 import { App } from './App';
@@ -16,13 +16,19 @@ applyFavicon();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <ToastHost>
-        <SessionProvider>
-          <App />
-        </SessionProvider>
-      </ToastHost>
-    </BrowserRouter>
+    <ErrorBoundary label="admin">
+      {/* Hash routing, not path routing. GitHub Pages serves files, so a refresh
+          on /admin/settings asks for a file that does not exist and gets GitHub's
+          own "There isn't a GitHub Pages site here". A #/settings never leaves
+          the server, so refresh, back and bookmarks all work. */}
+      <HashRouter>
+        <ToastHost>
+          <SessionProvider>
+            <App />
+          </SessionProvider>
+        </ToastHost>
+      </HashRouter>
+    </ErrorBoundary>
   </StrictMode>,
 );
 

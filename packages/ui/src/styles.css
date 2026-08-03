@@ -237,3 +237,8 @@ table.data tbody tr:hover { background: var(--surface-2); }
   .help-contents { position: static; grid-auto-flow: row; }
   .help-contents button.on { position: relative; }
 }
+
+/* An error at the top of a form, held there while the page scrolls under it,
+   because the reason an order stopped is worth more than the two lines of
+   space it costs. */
+.form-error { position: sticky; top: 0; z-index: 5; margin-bottom: 0.9rem; }

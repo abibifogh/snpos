@@ -19,6 +19,8 @@ import { StaffPage } from './pages/Staff';
 import { StockPage } from './pages/Stock';
 import { WastePage } from './pages/Waste';
 import { ReportsPage } from './pages/Reports';
+import { OrdersPage } from './pages/Orders';
+import { PurgePage } from './pages/Purge';
 import { StationsPage } from './pages/Stations';
 
 export function App() {
@@ -50,8 +52,10 @@ export function App() {
         <Route path="/stations" element={<StationsPage />} />
         <Route path="/waste" element={<WastePage />} />
         <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/orders" element={<OrdersPage />} />
         <Route path="/features" element={<FeaturesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/erase" element={<PurgePage />} />
         <Route path="/account" element={<AccountPage />} />
         <Route path="/help" element={<HelpPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -135,6 +135,10 @@ export const COLLECTIONS = [
       ['order_number_next', 'i', null, false, 1],
       ['order_number_padding', 'i', null, false, 4],
       ['order_number_reset_on', 'd', null, false],
+      // Some restaurants do not take tips and do not want a box asking for one
+      // on every bill. Off hides it on every screen rather than defaulting it
+      // to zero, which staff still have to look at and skip past.
+      ['tips_enabled', 'b', null, false, true],
       ['low_stock_default_bp', 'i', null, true, 3000],
       ['stock_variance_threshold_bp', 'i', null, true, 1000],
       ['stock_variance_value_floor', 'i', null, true, 2000],
@@ -330,8 +334,14 @@ export const COLLECTIONS = [
   // ------------------------------------------------------------------- floor
   {
     id: 'tables',
-    name: 'Tables',
-    perms: { read: ALL_STAFF, create: MGMT, update: ALL_STAFF, delete: MGMT },
+    name: 'Tables and areas',
+    // Readable by guests, deliberately. A customer ordering from their phone
+    // has to be able to say where they are sitting, and the qr_token stopped
+    // being a meaningful secret the moment that list existed — anyone can pick
+    // any seat from a dropdown whether or not they can read a token. Nothing
+    // here is worth protecting: labels, zones and seat counts. Orders are
+    // never paid by the customer and every one lands in front of staff.
+    perms: { read: ['any'], create: MGMT, update: ALL_STAFF, delete: MGMT },
     attributes: [
       ['label', 's', 40, true],
       ['zone', 's', 60, false],
@@ -970,6 +980,9 @@ export const COLLECTIONS = [
       ['entity_id', 's', 64, false],
       ['before', 's', 4000, false],
       ['after', 's', 4000, false],
+      // Why a human did it. A before/after pair says what changed; only this
+      // says whether it was a correction, a comp or a mistake being covered.
+      ['reason', 's', 500, false],
       ['ip', 's', 60, false],
       ['device', 's', 120, false],
       ['shift_id', 's', 64, false],

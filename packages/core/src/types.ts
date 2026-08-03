@@ -32,6 +32,7 @@ export interface Settings extends Doc {
   order_number_next?: number;
   order_number_padding?: number;
   order_number_reset_on?: string;
+  tips_enabled?: boolean;
   low_stock_default_bp: number;
   cash_variance_tolerance: number;
   terminal_idle_lock_seconds: number;

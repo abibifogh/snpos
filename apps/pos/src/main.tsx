@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ToastHost, applyFavicon, guardStaleBuild, bootedOk } from '@snpos/ui';
+import { ErrorBoundary, ToastHost, applyFavicon, guardStaleBuild, bootedOk } from '@snpos/ui';
 import '@snpos/ui/src/styles.css';
 import './pos.css';
 import { App } from './App';
@@ -14,9 +14,11 @@ applyFavicon();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ToastHost>
-      <App />
-    </ToastHost>
+    <ErrorBoundary label="pos">
+      <ToastHost>
+        <App />
+      </ToastHost>
+    </ErrorBoundary>
   </StrictMode>,
 );
 
