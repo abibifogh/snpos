@@ -144,7 +144,12 @@ export function App() {
     return (
       <div className="centered">
         <div>
-          <h1 style={{ marginBottom: '0.6rem' }}>Order {placed.orderNo}</h1>
+          {/* An empty number means it never settled — rare, and not the
+              customer's problem. Their order is placed either way, so say that
+              rather than showing them a blank. */}
+          <h1 style={{ marginBottom: '0.6rem' }}>
+            {placed.orderNo ? `Order ${placed.orderNo}` : 'Order placed'}
+          </h1>
           <p style={{ fontSize: '1.05rem' }}>
             {placed.scheduled
               ? `Booked for ${new Date(placed.scheduled).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}.`

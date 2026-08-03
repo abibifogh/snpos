@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Badge, Spinner, Notice } from '@snpos/ui';
-import { db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection } from '@snpos/core';
+import { db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, displayOrderNo } from '@snpos/core';
 import type { Order, OrderItem } from '@snpos/core';
 import type { PosContext } from './App';
 
@@ -93,7 +93,7 @@ export function KitchenPanel({
               ['ACCEPTED', 'PREPARING'].includes(o.status) &&
               lines.some((i) => i.due_at && new Date(i.due_at).getTime() < Date.now());
             return (
-              <Card key={o.$id} title={o.order_no}>
+              <Card key={o.$id} title={displayOrderNo(o.order_no)}>
                 <div className="row" style={{ marginBottom: '0.5rem' }}>
                   <Badge tone={o.status === 'PENDING' ? 'warn' : o.status === 'READY' ? 'ok' : 'default'}>
                     {o.status.toLowerCase()}

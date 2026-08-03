@@ -4,7 +4,7 @@ import { applyTheme } from '@snpos/ui';
 import {
   db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
   verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
-  loadMenu, markUnavailable, markAvailable, isUnavailable,
+  loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo,
 } from '@snpos/core';
 import type {
   Order, OrderItem, Settings, Venue, StaffProfile, StaffSession, HelpRole, MenuItem, Doc, FeatureMap,
@@ -487,7 +487,7 @@ export function App() {
           {scheduled.map((o) => (
             <button key={o.$id} className="kds-coming-item" onClick={() => fireNow(o)} title="Send to the pass now">
               <b>{o.fire_at ? new Date(o.fire_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'no time'}</b>
-              <span>{o.order_no}</span>
+              <span>{displayOrderNo(o.order_no)}</span>
               <span className="dim">{(items[o.$id] ?? []).reduce((a, i) => a + i.qty, 0) || '·'} items</span>
               <span className="kds-coming-go">Cook now</span>
             </button>
@@ -595,7 +595,7 @@ function Ticket({
     <div className={`ticket ${order.status === 'PENDING' ? 'pending' : ''} ${late ? 'late' : ''}`}>
       <div className="ticket-head">
         <div>
-          <div className="no">{order.order_no}</div>
+          <div className="no">{displayOrderNo(order.order_no)}</div>
           <div className="where">
             {order.table_id ? 'Table order' : order.fulfilment === 'delivery' ? 'Delivery' : 'Takeaway'}
             {order.guest_count > 1 && ` · ${order.guest_count} guests`}

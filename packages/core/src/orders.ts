@@ -97,6 +97,11 @@ export const newIdempotencyKey = (): string =>
  * instant, but the unique index on (venue_id, order_no) catches the collision
  * and createOrder retries — cheaper and simpler than a counter every order
  * must serialise through.
+ *
+ * Only staff can do this. Reading the last order means reading orders, and a
+ * guest deliberately cannot — see the note on the collection. Guests get
+ * `provisionalOrderNo` instead and order-guard settles the real number the
+ * moment the order lands.
  */
 async function nextOrderNo(venueId: string, settings: Settings): Promise<string> {
   const prefix = settings.order_number_prefix ?? '';
@@ -125,6 +130,26 @@ async function nextOrderNo(venueId: string, settings: Settings): Promise<string>
   return `${prefix}${String(from).padStart(padding, '0')}`;
 }
 
+/**
+ * A number that cannot collide, for an order whose real number has to be
+ * worked out somewhere the guest cannot see.
+ *
+ * The leading marker is what tells everything downstream that this is not a
+ * real order number yet: order-guard replaces it, the kitchen hides it, and
+ * the customer's confirmation screen waits for the settled one.
+ */
+export const PROVISIONAL_MARK = '~';
+export const isProvisionalOrderNo = (no: string | undefined) => !!no && no.startsWith(PROVISIONAL_MARK);
+/**
+ * What to put on a ticket. A placeholder is not a number anyone should read
+ * out, and it is replaced within a second or so — a quiet ellipsis is better
+ * than a string of characters somebody might try to shout across a pass.
+ */
+export const displayOrderNo = (no: string | undefined) =>
+  isProvisionalOrderNo(no) ? '…' : (no ?? '');
+const provisionalOrderNo = () =>
+  `${PROVISIONAL_MARK}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
 export interface CreateOrderInput {
   venueId: string;
   lines: CartLine[];
@@ -143,6 +168,15 @@ export interface CreateOrderInput {
   /** Free text for an area with no table number: "by the pool bar, red shirt". */
   seatNote?: string;
   group?: { reference?: string; size?: number; contactName?: string };
+  /**
+   * Placed by a customer rather than by staff.
+   *
+   * Guests cannot read the order list, so they cannot work out what the next
+   * number is. Saying so here is more honest than guessing from whether a read
+   * happened to come back empty — which is exactly what used to happen, and it
+   * handed every guest order the number 0001 until the unique index refused it.
+   */
+  guest?: boolean;
   /** Set for a pre-order; the kitchen sees nothing until fire_at. */
   scheduledFor?: Date;
   placedWhileClosed?: boolean;
@@ -170,7 +204,7 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
   const totals = computeTotals({ lines, discount: input.discount ?? 0, settings });
   const isPreorder = !!input.scheduledFor;
   const prepById: Record<string, number> = {};
-  const orderNo = await nextOrderNo(venueId, settings);
+  const orderNo = input.guest ? provisionalOrderNo() : await nextOrderNo(venueId, settings);
 
   const payload: Record<string, unknown> = {
     venue_id: venueId,

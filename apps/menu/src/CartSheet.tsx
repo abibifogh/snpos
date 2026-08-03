@@ -2,9 +2,9 @@ import { useMemo, useState } from 'react';
 import { Button, Modal, Input, Field, Notice, Select, FormError } from '@snpos/ui';
 import {
   computeTotals, formatMoney, lineTotal, createOrder, parseWindows,
-  isEnabled, featureConfig, db, DB_ID, Query,
+  isEnabled, featureConfig, db, DB_ID, Query, isProvisionalOrderNo,
 } from '@snpos/core';
-import type { CartLine, Settings, Venue, FeatureMap, LoadedMenu, Doc } from '@snpos/core';
+import type { CartLine, Settings, Venue, FeatureMap, LoadedMenu, Doc, Order } from '@snpos/core';
 
 interface TableRow extends Doc {
   venue_id: string;
@@ -57,6 +57,24 @@ function buildSlots(venue: Venue, features: FeatureMap, from = new Date()): Date
   return slots.slice(0, 60);
 }
 
+/**
+ * Wait for the order to be given its real number.
+ *
+ * Roughly six seconds, then give up gracefully. A number that never settles is
+ * annoying; a confirmation screen that never appears is a customer who orders
+ * the same food twice.
+ */
+async function settledOrderNo(order: Order): Promise<string> {
+  if (!isProvisionalOrderNo(order.order_no)) return order.order_no;
+  for (let i = 0; i < 12; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    const fresh = await db.getDocument(DB_ID, 'orders', order.$id).catch(() => null);
+    const no = (fresh as unknown as Order | null)?.order_no;
+    if (no && !isProvisionalOrderNo(no)) return no;
+  }
+  return '';
+}
+
 export function CartSheet({
   cart, setCart, settings, venue, table, seating, groupMode, features, venueOpen, menu,
   onClose, onPlaced, onError,
@@ -98,7 +116,6 @@ export function CartSheet({
   const [email, setEmail] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const [seatId, setSeatId] = useState('');
-  const [seatNote, setSeatNote] = useState('');
   const [groupRef, setGroupRef] = useState('');
   const [groupSize, setGroupSize] = useState('');
   const [code, setCode] = useState('');
@@ -163,10 +180,10 @@ export function CartSheet({
       setProblem('Please choose a collection time.');
       return;
     }
-    // Somebody eating in has to be findable. Guessing "takeaway" because the
-    // question went unanswered is how food goes cold on a pass.
+    // Somebody eating in has to be findable. Guessing because the question
+    // went unanswered is how food goes cold on a pass.
     if (!table && seating.length > 0 && !seatId) {
-      setProblem('Please say where you are sitting, or choose "I\'m taking it away".');
+      setProblem('Please say where you are sitting.');
       return;
     }
 
@@ -191,10 +208,10 @@ export function CartSheet({
         venueId: venue.$id,
         lines: cart,
         settings,
+        guest: true,
         channel: chosenSeat ? 'qr' : 'takeaway',
         placedBy: name.trim() || (chosenSeat ? chosenSeat.label : 'Guest'),
         tableId: chosenSeat?.$id,
-        seatNote: seatNote.trim() || undefined,
         group: groupMode
           ? {
               reference: groupRef.trim(),
@@ -225,7 +242,11 @@ export function CartSheet({
           .catch(() => undefined);
       }
 
-      onPlaced(order.order_no, slot || undefined);
+      // The number on screen is the one the customer will say out loud at the
+      // counter, so it has to be the real one. It is settled server-side a
+      // moment after the order lands; wait for it rather than showing the
+      // placeholder. The guest can read their own order, and nothing else.
+      onPlaced(await settledOrderNo(order), slot || undefined);
       setCart(() => []);
     } catch (e) {
       setProblem(e instanceof Error ? e.message : 'Could not send your order. Please try again.');
@@ -249,7 +270,7 @@ export function CartSheet({
 
       {/* Asked first, and asked plainly. Somebody eating in has to be findable
           when the food is ready, and burying this under the bill is how an
-          order ends up marked takeaway by accident. */}
+          order goes out with nowhere to take it. */}
       {!table && seating.length > 0 && (
         <Field label="Where are you sitting?" hint="So we can bring your food to you.">
           <Select value={seatId} onChange={(e) => { setSeatId(e.target.value); setProblem(null); }}>
@@ -260,18 +281,7 @@ export function CartSheet({
                 {t.zone ? ` · ${t.zone}` : ''}
               </option>
             ))}
-            <option value="takeaway">I'm taking it away</option>
           </Select>
-        </Field>
-      )}
-
-      {chosenSeat?.kind === 'area' && (
-        <Field label="Whereabouts?" hint="Optional, but it saves us walking the whole area.">
-          <Input
-            value={seatNote}
-            placeholder="By the pool bar, blue umbrella"
-            onChange={(e) => setSeatNote(e.target.value)}
-          />
         </Field>
       )}
 

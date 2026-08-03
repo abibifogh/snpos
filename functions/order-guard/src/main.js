@@ -31,6 +31,69 @@ export default async ({ req, res, log, error }) => {
   try {
     const settings = await db.getDocument(DB_ID, 'settings', 'main');
 
+    // ------------------------------------------------ the real order number
+    //
+    // A guest cannot read the order list — that is the whole point of the
+    // permissions on the collection — so they cannot work out what number
+    // comes next. They send a placeholder starting with "~" and it is settled
+    // here, where the server can see every order.
+    //
+    // Done first, before the re-pricing below, because a customer is staring
+    // at a screen waiting for this number.
+    //
+    // The rule itself mirrors nextOrderNo() in packages/core/src/orders.ts.
+    // Two copies because a browser bundle and a function bundle cannot share
+    // one; if you change the numbering, change it in both.
+    if ((order.order_no || '').startsWith('~')) {
+      const prefix = settings.order_number_prefix || '';
+      const padding = Math.max(1, settings.order_number_padding || 4);
+      const queries = [
+        Query.equal('venue_id', order.venue_id),
+        Query.orderDesc('$createdAt'),
+        Query.limit(1),
+      ];
+      if (settings.order_number_mode === 'daily') {
+        const midnight = new Date();
+        midnight.setHours(0, 0, 0, 0);
+        queries.push(Query.greaterThanEqual('$createdAt', midnight.toISOString()));
+      } else if (settings.order_number_reset_on) {
+        queries.push(Query.greaterThanEqual('$createdAt', settings.order_number_reset_on));
+      }
+      // Placeholders are not numbers; counting one as the last order would
+      // send the next guest back to the start.
+      queries.push(Query.notEqual('order_no', order.order_no));
+
+      const latest = await db.listDocuments(DB_ID, 'orders', queries);
+      const previous = latest.documents.filter((d) => !(d.order_no || '').startsWith('~'));
+      const last = previous[0]?.order_no || '';
+      const digits = (prefix && last.startsWith(prefix) ? last.slice(prefix.length) : last).replace(/\D/g, '');
+      let next = previous.length === 0
+        ? Math.max(1, settings.order_number_next || 1)
+        : (Number(digits) || 0) + 1;
+
+      // Two guests ordering in the same second land on the same number. The
+      // unique index on (venue_id, order_no) refuses the second, so take the
+      // one after it rather than failing an order that is already paid for in
+      // the customer's mind.
+      let assigned = null;
+      for (let i = 0; i < 25; i++) {
+        const candidate = `${prefix}${String(next + i).padStart(padding, '0')}`;
+        try {
+          await db.updateDocument(DB_ID, 'orders', order.$id, { order_no: candidate });
+          assigned = candidate;
+          break;
+        } catch (e) {
+          if (!/already exists|unique/i.test(e.message || '')) throw e;
+        }
+      }
+      if (assigned) {
+        order.order_no = assigned;
+        log(`Numbered ${order.$id} as ${assigned}`);
+      } else {
+        error(`Could not find a free order number for ${order.$id}; it keeps its placeholder`);
+      }
+    }
+
     // Order items are written just after the order, so give them a moment
     // rather than judging an order that only looks empty.
     let items = { documents: [], total: 0 };
