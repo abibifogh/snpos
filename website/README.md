@@ -16,7 +16,7 @@ The things most likely to need changing:
 | The contact address | `mailto:hello@niceoperation.com` — appears once |
 | A tool's description | Inside the `<div class="entry-body">` for that tool |
 | A tool's address | The `href` on that tool's `<a class="entry">` |
-| Adding a fifth tool | Copy a whole `<a class="entry">…</a>` block and edit it |
+| Adding another tool | Copy a whole `<a class="entry">…</a>` block and edit it — and change the count in the heading above the list |
 
 ## Publishing
 
