@@ -162,6 +162,48 @@ async function createAttribute(colId, tuple) {
 }
 
 /**
+ * Make an attribute optional when the schema says it should be.
+ *
+ * Attributes that already exist are otherwise left alone — Appwrite will not
+ * rebuild one, and re-creating it would throw the column's data away. That is
+ * right for size, type and defaults, but it left one kind of drift stuck:
+ * a field that used to be required and no longer is.
+ *
+ * `staff_profiles.user_id` is the case that mattered. A profile is written when
+ * somebody is invited, before an account exists to point at, so the field has
+ * to be allowed to stay empty. On a database provisioned while it was still
+ * required, adding anybody at all failed with "Missing required attribute".
+ *
+ * Only ever relaxed, never tightened. Making a field required would fail on any
+ * row that has left it empty, and taking a whole provisioning run down for it
+ * would be worse than the drift.
+ */
+async function relaxIfNowOptional(colId, tuple, live) {
+  const [key, type, arg, required = false, def] = tuple;
+  if (required || !live.required) return false;
+  if (type.endsWith('[]')) return false;
+
+  const base = type.replace('[]', '');
+  const d = def ?? null;
+  try {
+    switch (base) {
+      case 's': await db.updateStringAttribute(DB_ID, colId, key, false, d, arg); break;
+      case 'i': await db.updateIntegerAttribute(DB_ID, colId, key, false, live.min, live.max, d); break;
+      case 'f': await db.updateFloatAttribute(DB_ID, colId, key, false, live.min, live.max, d); break;
+      case 'b': await db.updateBooleanAttribute(DB_ID, colId, key, false, d); break;
+      case 'd': await db.updateDatetimeAttribute(DB_ID, colId, key, false, d); break;
+      case 'e': await db.updateEnumAttribute(DB_ID, colId, key, arg, false, d); break;
+      default: return false;
+    }
+    log('  ~', `${colId}.${key} is no longer required`);
+    return true;
+  } catch (e) {
+    log('  !', `could not relax ${colId}.${key}: ${e.message}`);
+    return false;
+  }
+}
+
+/**
  * Poll until every listed attribute reports status "available".
  *
  * Appwrite builds attributes in a background queue, so a wide collection on a
@@ -249,9 +291,13 @@ async function main() {
       );
     }
 
-    const existing = new Set((await allAttributes(col.id)).map((a) => a.key));
+    const live = Object.fromEntries((await allAttributes(col.id)).map((a) => [a.key, a]));
     for (const attr of col.attributes) {
-      if (existing.has(attr[0])) continue;
+      const already = live[attr[0]];
+      if (already) {
+        if (await relaxIfNowOptional(col.id, attr, already)) created++;
+        continue;
+      }
       await ensure(`${col.id}.${attr[0]}`, () => createAttribute(col.id, attr));
     }
 

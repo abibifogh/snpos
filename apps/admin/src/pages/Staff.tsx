@@ -21,6 +21,16 @@ const DEFAULTS: Record<StaffProfile['role'], Partial<StaffProfile>> = {
   admin: { can_open_shift: true, can_close_shift: true, can_void: true, can_discount_up_to_bp: 10000, can_mark_paid: true, can_record_waste: true },
 };
 
+/**
+ * Whether a profile is joined to a real account yet.
+ *
+ * Not simply "has a user_id": on a database that still insists on one, a
+ * profile with no account points at itself, so the field is set but nothing is
+ * behind it. Someone invited yesterday should read as Invited until they have
+ * actually signed in.
+ */
+const linked = (p: Pick<StaffProfile, '$id' | 'user_id'>) => !!p.user_id && p.user_id !== p.$id;
+
 const TEAM_FOR: Record<StaffProfile['role'], string> = {
   cook: 'cooks', waiter: 'waiters', cashier: 'cashiers', manager: 'managers', admin: 'admins',
 };
@@ -109,12 +119,33 @@ export function StaffPage() {
         // Explicitly cleared rather than left alone, so a profile saved by the
         // older version — which wrote "" — is tidied the next time it is
         // edited, instead of sitting there blocking the one empty slot.
-        await db.updateDocument(DB_ID, 'staff_profiles', editing.$id, {
-          ...payload,
-          user_id: editing.user_id || null,
-        });
+        const id = editing.$id;
+        try {
+          await db.updateDocument(DB_ID, 'staff_profiles', id, { ...payload, user_id: editing.user_id || null });
+        } catch (e) {
+          const raw = e instanceof Error ? e.message : String(e);
+          if (!/missing required attribute.*user_id/i.test(raw)) throw e;
+          await db.updateDocument(DB_ID, 'staff_profiles', id, { ...payload, user_id: editing.user_id || id });
+        }
       } else {
-        await db.createDocument(DB_ID, 'staff_profiles', ID.unique(), payload);
+        const id = ID.unique();
+        try {
+          await db.createDocument(DB_ID, 'staff_profiles', id, payload);
+        } catch (e) {
+          // A database set up before this field was made optional still insists
+          // on a value. It cannot be blank — the field is unique, so the second
+          // person without a login would collide with the first — so the
+          // profile points at itself until a real account claims it. Every
+          // place that reads an actor already falls back to the profile id, so
+          // that is the one value it can safely hold.
+          //
+          // Running Provision Appwrite relaxes the field and this stops being
+          // needed. It stays because there is no telling when that happens, and
+          // "you cannot add staff until you run a workflow" is not an answer.
+          const raw = e instanceof Error ? e.message : String(e);
+          if (!/missing required attribute.*user_id/i.test(raw)) throw e;
+          await db.createDocument(DB_ID, 'staff_profiles', id, { ...payload, user_id: id });
+        }
       }
 
       // The profile is saved either way. What follows is the login, which is a
@@ -237,9 +268,9 @@ export function StaffPage() {
                       {p.can_discount_up_to_bp ? `up to ${(p.can_discount_up_to_bp / 100).toFixed(0)}%` : 'none'}
                     </td>
                     <td>
-                      {!p.user_id && p.email ? (
+                      {!linked(p) && p.email ? (
                         <Badge tone="warn">Invited</Badge>
-                      ) : !p.user_id && p.pin_hash ? (
+                      ) : !linked(p) && p.pin_hash ? (
                         <Badge tone="ok">PIN only</Badge>
                       ) : p.active ? (
                         <Badge tone="ok">Active</Badge>
