@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NiceOps — operations systems for hospitality</title>
+<meta name="description" content="NiceOps is a set of operations systems for hotels and hospitality: point of sale, maintenance, team tasks, and a directory of the tools a property runs on.">
+<meta property="og:title" content="NiceOps — operations systems for hospitality">
+<meta property="og:description" content="Point of sale, maintenance, team tasks, and the tools a property runs on. Built inside a working operation.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://niceoperation.com/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230E1A1C'/%3E%3Cpath d='M9 22V10l14 12V10' fill='none' stroke='%23C8A15A' stroke-width='2.6' stroke-linecap='square'/%3E%3C/svg%3E">
+
+<style>
+/* ============================================================
+   Tokens
+   Brass on petrol. The material vocabulary of a hotel — key
+   fobs, lift plates, uniform buttons — rather than the teal the
+   POS itself wears, so the suite reads as the parent of it.
+   ============================================================ */
+:root {
+  --ink:        #0E1A1C;
+  --surface:    #14262A;
+  --surface-2:  #1B3136;
+  --line:       #24444A;
+  --text:       #DEE6E3;
+  --text-dim:   #94A9A5;
+  --brass:      #C8A15A;
+  --brass-lit:  #E2C285;
+  --sage:       #7FA093;
+  --focus:      #E2C285;
+
+  --measure: 62ch;
+  --gutter: clamp(1.25rem, 5vw, 4rem);
+
+  --step--1: clamp(0.78rem, 0.76rem + 0.1vw, 0.84rem);
+  --step-0:  clamp(1rem, 0.97rem + 0.16vw, 1.09rem);
+  --step-1:  clamp(1.2rem, 1.12rem + 0.4vw, 1.45rem);
+  --step-2:  clamp(1.55rem, 1.35rem + 0.95vw, 2.15rem);
+  --step-3:  clamp(2.1rem, 1.6rem + 2.4vw, 3.6rem);
+  --step-4:  clamp(2.6rem, 1.7rem + 4.2vw, 5.2rem);
+
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+/* Light. Brass has to darken considerably to hold contrast on paper —
+   the same hue, not a different accent. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --ink:       #EEF1EF;
+    --surface:   #FFFFFF;
+    --surface-2: #E4E9E6;
+    --line:      #C8D2CE;
+    --text:      #10201F;
+    --text-dim:  #4F6461;
+    --brass:     #8A6626;
+    --brass-lit: #6E511C;
+    --sage:      #4A6A5E;
+    --focus:     #8A6626;
+  }
+}
+:root[data-theme="light"] {
+  --ink:       #EEF1EF;
+  --surface:   #FFFFFF;
+  --surface-2: #E4E9E6;
+  --line:      #C8D2CE;
+  --text:      #10201F;
+  --text-dim:  #4F6461;
+  --brass:     #8A6626;
+  --brass-lit: #6E511C;
+  --sage:      #4A6A5E;
+  --focus:     #8A6626;
+}
+:root[data-theme="dark"] {
+  --ink:       #0E1A1C;
+  --surface:   #14262A;
+  --surface-2: #1B3136;
+  --line:      #24444A;
+  --text:      #DEE6E3;
+  --text-dim:  #94A9A5;
+  --brass:     #C8A15A;
+  --brass-lit: #E2C285;
+  --sage:      #7FA093;
+  --focus:     #E2C285;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: var(--step-0);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+h1, h2, h3 {
+  margin: 0;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+p { margin: 0; max-width: var(--measure); }
+
+a { color: inherit; }
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.wrap {
+  width: 100%;
+  max-width: 74rem;
+  margin: 0 auto;
+  padding-inline: var(--gutter);
+}
+
+/* The utility face. Dockets, work orders, key registers — the
+   written language of back-of-house, used for every label. */
+.mono {
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+
+/* ---------- masthead ---------- */
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-block: 1.5rem;
+  border-bottom: 1px solid var(--line);
+}
+.mark {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  font-size: var(--step-1);
+  text-decoration: none;
+}
+.mark svg { display: block; flex: none; }
+.mark .light { color: var(--text-dim); font-weight: 450; }
+
+/* ---------- hero ---------- */
+.hero {
+  position: relative;
+  padding-block: clamp(3.5rem, 9vw, 8rem) clamp(3rem, 7vw, 6rem);
+  overflow: hidden;
+}
+/* Ledger ruling. A logbook page, at the threshold of visibility —
+   the surface a hotel's operations have always been written on. */
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0 2.19rem,
+    var(--line) 2.19rem 2.2rem
+  );
+  opacity: 0.4;
+  mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 62%, transparent);
+  pointer-events: none;
+}
+.hero > * { position: relative; }
+
+.hero h1 {
+  font-size: var(--step-4);
+  margin-block: 1.4rem 1.6rem;
+  max-width: 17ch;
+}
+.hero h1 em {
+  font-style: normal;
+  color: var(--brass);
+}
+.hero .lede {
+  font-size: var(--step-1);
+  color: var(--text-dim);
+  max-width: 54ch;
+  line-height: 1.5;
+}
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 2.5rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.8rem 1.4rem;
+  font: inherit;
+  font-weight: 600;
+  font-size: var(--step--1);
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.btn:hover { border-color: var(--brass); transform: translateY(-1px); }
+.btn-primary {
+  background: var(--brass);
+  border-color: var(--brass);
+  color: var(--ink);
+}
+:root[data-theme="light"] .btn-primary,
+:root:not([data-theme="dark"]) .btn-primary { color: #FFFFFF; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .btn-primary { color: #0E1A1C; }
+}
+.btn-primary:hover { background: var(--brass-lit); border-color: var(--brass-lit); }
+
+/* ---------- sections ---------- */
+section { padding-block: clamp(3rem, 7vw, 6rem); }
+.rule { border: 0; border-top: 1px solid var(--line); margin: 0; }
+
+.section-head { margin-bottom: 3rem; }
+.section-head h2 {
+  font-size: var(--step-3);
+  margin-top: 0.9rem;
+  max-width: 20ch;
+}
+.section-head p { margin-top: 1rem; color: var(--text-dim); }
+
+/* ---------- the register ----------
+   Ruled rows, not a grid of cards. A duty board or key rack:
+   each tool listed with the address it actually answers on. */
+.register { display: flex; flex-direction: column; }
+
+.entry {
+  display: grid;
+  grid-template-columns: 12rem 1fr auto;
+  gap: 1rem 2.5rem;
+  align-items: start;
+  padding-block: 2.25rem;
+  border-top: 1px solid var(--line);
+  text-decoration: none;
+  transition: background 0.18s ease;
+}
+.entry:last-child { border-bottom: 1px solid var(--line); }
+.entry:hover { background: var(--surface); }
+.entry:hover .entry-go { color: var(--brass-lit); gap: 0.85rem; }
+.entry:hover .entry-name { color: var(--brass); }
+
+.entry-code {
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  letter-spacing: 0.06em;
+  color: var(--sage);
+  padding-top: 0.4rem;
+  word-break: break-all;
+}
+.entry-name {
+  font-size: var(--step-2);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  transition: color 0.18s ease;
+}
+.entry-body p { margin-top: 0.7rem; color: var(--text-dim); max-width: 56ch; }
+.entry-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.5rem;
+  margin-top: 1rem;
+  list-style: none;
+  padding: 0;
+}
+.entry-tags li {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 0.25rem 0.5rem;
+}
+.entry-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--brass);
+  padding-top: 0.5rem;
+  white-space: nowrap;
+  transition: gap 0.18s ease, color 0.18s ease;
+}
+
+@media (max-width: 60rem) {
+  .entry { grid-template-columns: 1fr; gap: 0.35rem; padding-block: 1.9rem; }
+  .entry-code { padding-top: 0; }
+  .entry-go { padding-top: 1rem; }
+}
+
+/* ---------- principles ---------- */
+.principles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 2.5rem 3rem;
+}
+.principle h3 {
+  font-size: var(--step-1);
+  margin-bottom: 0.6rem;
+  padding-top: 1.1rem;
+  border-top: 2px solid var(--brass);
+}
+.principle p { color: var(--text-dim); font-size: var(--step--1); line-height: 1.65; }
+
+/* ---------- closing ---------- */
+.closing {
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.closing h2 { font-size: var(--step-3); max-width: 18ch; }
+.closing p { margin-top: 1.1rem; color: var(--text-dim); }
+
+/* ---------- footer ---------- */
+footer { padding-block: 3rem 4rem; }
+.foot-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem 3rem;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.foot-links { display: flex; flex-wrap: wrap; gap: 1.25rem; list-style: none; margin: 0; padding: 0; }
+.foot-links a {
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  text-decoration: none;
+}
+.foot-links a:hover { color: var(--brass); }
+.foot-note { color: var(--text-dim); font-size: var(--step--1); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="masthead">
+    <a class="mark" href="/">
+      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" fill="currentColor" opacity="0.08"></rect>
+        <path d="M9 22V10l14 12V10" fill="none" stroke="var(--brass)" stroke-width="2.6" stroke-linecap="square"></path>
+      </svg>
+      NiceOps
+    </a>
+    <span class="mono">Hospitality operations</span>
+  </header>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <span class="mono">Operations systems for hotels</span>
+    <h1>The work between the <em>guest</em> and the <em>ledger</em>.</h1>
+    <p class="lede">
+      A property runs on hundreds of small routines — a shift handover, a broken air conditioner, a cash
+      count, a file somebody needs before Monday. Most of them live in notebooks, WhatsApp groups and
+      somebody's memory. NiceOps is a set of systems that hold them instead.
+    </p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="#tools">See the systems</a>
+      <a class="btn" href="#approach">How they are built</a>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <section id="tools">
+    <div class="section-head">
+      <span class="mono">The systems</span>
+      <h2>Four tools, each for a job somebody is already doing.</h2>
+      <p>
+        They run independently. A property can take one, or all of them, and each answers on its own
+        address.
+      </p>
+    </div>
+
+    <div class="register">
+
+      <a class="entry" href="https://pos.niceoperation.com/">
+        <span class="entry-code">pos.niceoperation.com</span>
+        <div class="entry-body">
+          <div class="entry-name">NiceOps POS</div>
+          <p>
+            Point of sale for restaurants and bars. Guests order from a code on the table, the kitchen
+            works from a live screen, and every shift closes with the cash counted against what the
+            system says should be there. It keeps taking orders when the internet drops.
+          </p>
+          <ul class="entry-tags">
+            <li>QR ordering</li>
+            <li>Kitchen display</li>
+            <li>Shifts &amp; cash</li>
+            <li>Stock</li>
+            <li>Works offline</li>
+          </ul>
+        </div>
+        <span class="entry-go">Open <span aria-hidden="true">→</span></span>
+      </a>
+
+      <a class="entry" href="https://tasks.niceoperation.com/maintenance/">
+        <span class="entry-code">tasks.niceoperation.com/maintenance</span>
+        <div class="entry-body">
+          <div class="entry-name">NiceOps Maintenance</div>
+          <p>
+            Maintenance schedules and issue reporting. Planned work is on a calendar rather than in
+            somebody's head, and anything that breaks gets reported once, to a place where it can be
+            picked up and closed out.
+          </p>
+          <ul class="entry-tags">
+            <li>Schedules</li>
+            <li>Issue reporting</li>
+          </ul>
+        </div>
+        <span class="entry-go">Open <span aria-hidden="true">→</span></span>
+      </a>
+
+      <a class="entry" href="https://tasks.niceoperation.com/teamtasks/">
+        <span class="entry-code">tasks.niceoperation.com/teamtasks</span>
+        <div class="entry-body">
+          <div class="entry-name">NiceOps Tasks</div>
+          <p>
+            Task and project tracking for team leads. What each department owes, who is carrying it and
+            where it has got to — visible without a meeting to find out.
+          </p>
+          <ul class="entry-tags">
+            <li>Team tasks</li>
+            <li>Projects</li>
+          </ul>
+        </div>
+        <span class="entry-go">Open <span aria-hidden="true">→</span></span>
+      </a>
+
+      <a class="entry" href="https://tools.niceoperation.com/">
+        <span class="entry-code">tools.niceoperation.com</span>
+        <div class="entry-body">
+          <div class="entry-name">NiceOps Tools</div>
+          <p>
+            The directory. Every file, document, system and small utility a property runs on, in one
+            findable place — including transaction reconciliation and attendance reporting.
+          </p>
+          <ul class="entry-tags">
+            <li>Files &amp; documents</li>
+            <li>Reconciliation</li>
+            <li>Attendance</li>
+          </ul>
+        </div>
+        <span class="entry-go">Open <span aria-hidden="true">→</span></span>
+      </a>
+
+    </div>
+  </section>
+</div>
+
+<hr class="rule">
+
+<div class="wrap">
+  <section id="approach">
+    <div class="section-head">
+      <span class="mono">The approach</span>
+      <h2>Built inside a working operation, not around a demo.</h2>
+    </div>
+
+    <div class="principles">
+      <div class="principle">
+        <h3>Written where the work happens</h3>
+        <p>
+          Every one of these started as a problem on a real floor — a drawer that would not balance, a
+          fault nobody logged, a file three people were looking for. They are shaped by the shift, not by
+          a feature list.
+        </p>
+      </div>
+      <div class="principle">
+        <h3>Usable at the end of a long day</h3>
+        <p>
+          The people using these are not at a desk. They are at a pass, on a corridor, closing a till at
+          one in the morning. Screens are built to be read at a glance and operated with one hand.
+        </p>
+      </div>
+      <div class="principle">
+        <h3>Honest about the money</h3>
+        <p>
+          Cash is counted against what the records say, differences have to be explained while somebody
+          still remembers, and anything corrected afterwards leaves a trail with a name on it.
+        </p>
+      </div>
+      <div class="principle">
+        <h3>Standing up to a bad connection</h3>
+        <p>
+          Hospitality happens on mobile data and hotel wifi. Work carries on when the signal goes, and
+          catches up when it returns, rather than stopping until somebody finds the router.
+        </p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="closing">
+  <div class="wrap">
+    <section>
+      <span class="mono">Get in touch</span>
+      <h2 style="margin-top:0.9rem">Want one of these running in your property?</h2>
+      <p>
+        Tell us what the operation looks like and which part is costing you the most time. We would rather
+        start with the one problem that is actually hurting than roll out four systems at once.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="mailto:hello@niceoperation.com">hello@niceoperation.com</a>
+        <a class="btn" href="https://pos.niceoperation.com/">See NiceOps POS</a>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="wrap">
+  <footer>
+    <div class="foot-grid">
+      <div>
+        <div class="mark" style="font-size:var(--step-0)">
+          <svg width="20" height="20" viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M9 22V10l14 12V10" fill="none" stroke="var(--brass)" stroke-width="2.6" stroke-linecap="square"></path>
+          </svg>
+          NiceOps
+        </div>
+        <p class="foot-note" style="margin-top:0.6rem">Operations systems for hospitality.</p>
+      </div>
+      <ul class="foot-links">
+        <li><a href="https://pos.niceoperation.com/">POS</a></li>
+        <li><a href="https://tasks.niceoperation.com/maintenance/">Maintenance</a></li>
+        <li><a href="https://tasks.niceoperation.com/teamtasks/">Tasks</a></li>
+        <li><a href="https://tools.niceoperation.com/">Tools</a></li>
+      </ul>
+    </div>
+  </footer>
+</div>
+
+</body>
+</html>
