@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
-import { db, DB_ID, ID, listAll, humanError, teams } from '../lib';
+import { account, db, DB_ID, ID, listAll, humanError, teams } from '../lib';
 import { encodePin, pinProblem } from '@snpos/core';
+import { passwordSetupUrl } from './Login';
 import type { StaffProfile } from '@snpos/core';
 import type { Doc } from '@snpos/core';
 
@@ -170,7 +171,7 @@ export function StaffPage() {
             window.location.origin,
             payload.display_name,
           );
-          outcome = `Invitation sent to ${payload.email}`;
+          outcome = `Invitation sent to ${payload.email} — tell them to check spam`;
         } catch (e) {
           const why = humanError(e);
           if (/already|exists|conflict/i.test(why)) {
@@ -178,7 +179,7 @@ export function StaffPage() {
             // usually because they were on the team before and their profile
             // was deleted, or because it is the owner's own address. Sending a
             // second invitation would achieve nothing.
-            outcome = `Saved. ${payload.email} could already sign in, so no new invitation was sent.`;
+            outcome = `Saved. ${payload.email} already had access, so no new invitation was sent — use "Send sign-in link" if they need a password.`;
           } else {
             // A real failure, but the profile is saved and the modal is about
             // to close — say both things, or it reads as "nothing happened".
@@ -208,6 +209,31 @@ export function StaffPage() {
       );
     } finally {
       setBusy(false);
+    }
+  };
+
+  /**
+   * Get somebody in when the invitation did not arrive.
+   *
+   * The invitation email is sent by Appwrite, not by this system, so it does
+   * not go through the restaurant's own mail provider and cannot be resent from
+   * here. This sends a set-a-password link instead: same result, different
+   * email, and it works no matter how many times it is needed. Their access is
+   * already in place — it is only the password that is missing.
+   */
+  const sendLink = async (p: StaffProfile) => {
+    if (!p.email) return;
+    try {
+      await account.createRecovery(p.email, passwordSetupUrl());
+      toast(`Link sent to ${p.email}`);
+    } catch (e) {
+      const msg = humanError(e);
+      toast(
+        /rate limit|too many/i.test(msg)
+          ? 'Too many links sent to that address just now. Wait a few minutes and try again.'
+          : msg,
+        'err',
+      );
     }
   };
 
@@ -279,6 +305,11 @@ export function StaffPage() {
                       )}
                     </td>
                     <td className="num">
+                      {p.email && (
+                        <Button size="sm" variant="ghost" onClick={() => sendLink(p)}>
+                          {linked(p) ? 'Send reset link' : 'Send sign-in link'}
+                        </Button>
+                      )}
                       <Button size="sm" variant="ghost" onClick={() => open(p)}>Edit</Button>
                       <Button size="sm" variant="ghost" onClick={() => remove(p)}>Remove</Button>
                     </td>
@@ -347,7 +378,10 @@ export function StaffPage() {
             />
           </Field>
           {wantsLogin && (
-            <Field label="Email" hint="The invitation goes here; they set their own password.">
+            <Field
+              label="Email"
+              hint="The invitation goes here and they set their own password. It is sent by Appwrite rather than by this system, so it often lands in spam — if it never turns up, use “Send sign-in link” on their row."
+            >
               <Input
                 type="email"
                 value={editing.email ?? ''}
