@@ -1,4 +1,4 @@
-# SNPOS — Restaurant POS on Appwrite
+# NiceOps POS — Restaurant POS on Appwrite
 
 A multi-surface restaurant point-of-sale built entirely on Appwrite (Database,
 Auth, Teams, Storage, Realtime, Functions). Covers QR self-ordering, kitchen

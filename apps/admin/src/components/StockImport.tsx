@@ -102,7 +102,7 @@ export function StockImport({
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'snpos-stock-template.csv';
+    a.download = 'stock-template.csv';
     a.click();
     URL.revokeObjectURL(url);
   };

@@ -29,7 +29,7 @@ export function Login() {
         <div style={{ display: 'grid', placeItems: 'center', marginBottom: '1rem' }}>
           <Logo size={52} />
         </div>
-        <Card title={settings?.restaurant_name ?? 'SNPOS Admin'}>
+        <Card title={settings?.restaurant_name ?? 'NiceOps POS'}>
           <form onSubmit={submit}>
             <Field label="Email">
               <Input

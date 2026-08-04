@@ -107,7 +107,7 @@ below refer to it.
 
 ## Stage 4 — Database
 
-**Databases → Create database** → Name `SNPOS`, **Database ID `snpos`**.
+**Databases → Create database** → Name `NiceOps POS`, **Database ID `snpos`**.
 
 The ID must be exactly this — the apps read it from `DB_ID` in the settings
 file and will not find anything otherwise.

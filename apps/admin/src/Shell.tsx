@@ -25,7 +25,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <aside className="sidebar">
         <div className="sidebar-brand">
           <Logo size={24} />
-          <span>{settings?.restaurant_name ?? 'SNPOS'}</span>
+          <span>{settings?.restaurant_name ?? 'NiceOps POS'}</span>
         </div>
         <nav>
           {groups.map((section) => (

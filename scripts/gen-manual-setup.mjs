@@ -156,7 +156,7 @@ p('');
 // ---------------------------------------------------------------- Stage 4
 p('## Stage 4 — Database');
 p('');
-p(`**Databases → Create database** → Name \`SNPOS\`, **Database ID \`${DB_ID}\`**.`);
+p(`**Databases → Create database** → Name \`NiceOps POS\`, **Database ID \`${DB_ID}\`**.`);
 p('');
 p('The ID must be exactly this — the apps read it from `DB_ID` in the settings');
 p('file and will not find anything otherwise.');

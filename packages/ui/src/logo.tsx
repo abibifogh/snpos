@@ -82,7 +82,7 @@ export function applyFavicon(c: BrandColours = currentBrand()): void {
 export function Logo({
   size = 32,
   tile = true,
-  title = 'SNPOS',
+  title = 'NiceOps POS',
 }: {
   size?: number;
   /** Draw the brand-coloured tile behind the cloche. */
