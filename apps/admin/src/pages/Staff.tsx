@@ -63,6 +63,19 @@ export function StaffPage() {
       return;
     }
 
+    // The one case where "edit their existing profile instead" is both true and
+    // useful: somebody on this list already has that address. Caught here,
+    // before anything is written, so the message names the person to go and
+    // edit rather than leaving the admin to hunt for them.
+    const typed = (editing.email ?? '').trim().toLowerCase();
+    if (!editing.$id && typed) {
+      const clash = (rows ?? []).find((r) => (r.email ?? '').trim().toLowerCase() === typed);
+      if (clash) {
+        setError(`${clash.display_name} already has a profile with that email address. Edit theirs rather than adding a second one.`);
+        return;
+      }
+    }
+
     setBusy(true);
     setError(null);
     try {
@@ -88,7 +101,18 @@ export function StaffPage() {
         await db.updateDocument(DB_ID, 'staff_profiles', editing.$id, payload);
       } else {
         await db.createDocument(DB_ID, 'staff_profiles', ID.unique(), payload);
-        if (wantsLogin && payload.email) {
+      }
+
+      // The profile is saved either way. What follows is the login, which is a
+      // separate thing that can fail on its own — and used to take the whole
+      // save down with it, leaving a profile created, an error on screen, and
+      // an admin pressing Save again to make a second one.
+      //
+      // Attempted on edit as well as on create, so ticking "give them a login"
+      // for somebody who started on a PIN actually sends the invitation.
+      let outcome = pin ? 'Saved — PIN set' : 'Saved';
+      if (wantsLogin && payload.email) {
+        try {
           // Appwrite emails the invitation and the person sets their own
           // password. Nobody types a colleague's password, and no shared
           // account exists to make "who authorised this" unanswerable.
@@ -101,27 +125,43 @@ export function StaffPage() {
             window.location.origin,
             payload.display_name,
           );
+          outcome = `Invitation sent to ${payload.email}`;
+        } catch (e) {
+          const why = humanError(e);
+          if (/already|exists|conflict/i.test(why)) {
+            // Not a failure. That address can already sign in with this role —
+            // usually because they were on the team before and their profile
+            // was deleted, or because it is the owner's own address. Sending a
+            // second invitation would achieve nothing.
+            outcome = `Saved. ${payload.email} could already sign in, so no new invitation was sent.`;
+          } else {
+            // A real failure, but the profile is saved and the modal is about
+            // to close — say both things, or it reads as "nothing happened".
+            setEditing(null);
+            setPin('');
+            await load();
+            toast(`Profile saved, but the invitation could not be sent: ${why}`, 'err');
+            return;
+          }
         }
       }
 
       setEditing(null);
       setPin('');
       await load();
-      toast(wantsLogin && !editing.$id ? `Invitation sent to ${payload.email}` : pin ? 'Saved — PIN set' : 'Saved');
+      toast(outcome);
     } catch (e) {
-      const msg = humanError(e);
-      setError(
-        /already/i.test(msg)
-          ? 'That person is already on this team. Edit their existing profile instead.'
-          : msg,
-      );
+      setError(humanError(e));
     } finally {
       setBusy(false);
     }
   };
 
   const remove = async (p: StaffProfile) => {
-    if (!confirm(`Remove ${p.display_name}? Their past orders, discounts and shifts stay on record — that history is what makes the audit trail worth having.`)) return;
+    const warnLogin = p.email
+      ? '\n\nIf they had a login, it is not cancelled by this — untick "active" instead if you want to stop them working, or remove them from the team in Appwrite.'
+      : '';
+    if (!confirm(`Remove ${p.display_name}? Their past orders, discounts and shifts stay on record — that history is what makes the audit trail worth having.${warnLogin}`)) return;
     try {
       await db.deleteDocument(DB_ID, 'staff_profiles', p.$id);
       await load();
