@@ -22,14 +22,20 @@ The things most likely to need changing:
 
 Hosted separately from the POS. GitHub Pages serves one site per repository and
 that one is already `pos.niceoperation.com`, so the marketing site is published
-from this folder by **Cloudflare Pages**:
+from this folder by **Cloudflare**, connected to this repository:
 
+- Project name: `niceops-site`
 - Build command: *(leave empty)*
-- Build output directory: `website`
-- Custom domain: `niceoperation.com`
+- Deploy command: `npx wrangler deploy`
+- Custom domains: `niceoperation.com` and `www.niceoperation.com`
 
-Cloudflare Pages is not the same thing as Cloudflare Workers. Pages serves
-files; Workers runs code. This is files.
+The settings live in `wrangler.jsonc` at the top of the repository, which says
+the site is the files in `website/` and nothing else. That is why there is no
+"build output directory" to fill in — the file already answers that question.
+
+If Cloudflare ever offers the older **Pages** flow instead (Workers & Pages →
+Create → Pages → Connect to Git), it works just as well: leave the build
+command empty and set the build output directory to `website`.
 
 ## What is deliberately not here
 
