@@ -2,6 +2,7 @@ import { Client, Databases, Query } from 'node-appwrite';
 import nodemailer from 'nodemailer';
 import { receiptPdf } from './receipt-pdf.js';
 import { dailyDigest, nightlyBackup } from './daily.js';
+import { revokeLogin } from './staff.js';
 
 /**
  * Everything that sends an email.
@@ -12,8 +13,9 @@ import { dailyDigest, nightlyBackup } from './daily.js';
  * has NOT happened.
  *
  * Events (a document arrives):
- *   orders.*.update  → group-order alert, accepted/ready notice, receipt
- *   shifts.*.update  → shift summary
+ *   orders.*.update          → group-order alert, accepted/ready notice, receipt
+ *   shifts.*.update          → shift summary
+ *   staff_profiles.*.delete  → cancel that person's login
  *
  * Schedule, hourly (no document arrives):
  *   dishes still off the menu past the configured wait
@@ -190,6 +192,14 @@ export default async ({ req, res, log, error }) => {
   }
 
   try {
+    // ------------------------------------------------ staff member removed
+    // Nothing to email — this one takes an access away rather than sending
+    // anything. It lives here because the plan allows four functions and a
+    // fifth would exist only to hold twenty lines.
+    if (events.some((e) => e.includes('collections.staff_profiles'))) {
+      return res.json(await revokeLogin({ client, db, DB_ID, doc, log, error }));
+    }
+
     // ------------------------------------------------- group order placed
     // A party of twenty is a kitchen planning decision, not just another
     // ticket, so somebody is told the moment it arrives rather than when the

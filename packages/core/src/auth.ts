@@ -1,4 +1,5 @@
-import { account, teams } from './client';
+import { account, db, teams, DB_ID, Query } from './client';
+import type { StaffProfile } from './types';
 
 /**
  * Telling a member of staff apart from a customer.
@@ -67,6 +68,48 @@ export async function requireStaff(): Promise<StaffSession> {
   }
 
   return { userId: me.$id, email: me.email, name: me.name, teams: mine };
+}
+
+/**
+ * The staff profile behind a session, joining the two up on first sign-in.
+ *
+ * A profile is written when somebody is invited, which is before they have an
+ * account for it to point at — so on their very first sign-in nothing matches
+ * on the account id. Matching on the email address they were invited with, and
+ * stamping the id onto the profile, is what closes that gap. Every sign-in
+ * after this one matches directly.
+ *
+ * Without it, an invitation could be accepted and the sign-in succeed, only for
+ * the app to open with no name, no role and no permissions — which reads as a
+ * broken account rather than a blank field.
+ */
+export async function staffProfileFor(session: {
+  userId: string;
+  email?: string;
+}): Promise<StaffProfile | null> {
+  const byId = await db.listDocuments(DB_ID, 'staff_profiles', [
+    Query.equal('user_id', session.userId),
+    Query.limit(1),
+  ]);
+  if (byId.documents[0]) return byId.documents[0] as unknown as StaffProfile;
+
+  const email = (session.email ?? '').trim().toLowerCase();
+  if (!email) return null;
+
+  const byEmail = await db.listDocuments(DB_ID, 'staff_profiles', [
+    Query.equal('email', email),
+    Query.limit(1),
+  ]);
+  const found = byEmail.documents[0];
+  if (!found) return null;
+
+  // The stamp is a convenience, not a requirement. A role with no write access
+  // to staff_profiles simply matches on email again next time, which costs one
+  // extra query and nothing else.
+  const claimed = await db
+    .updateDocument(DB_ID, 'staff_profiles', found.$id, { user_id: session.userId })
+    .catch(() => found);
+  return claimed as unknown as StaffProfile;
 }
 
 /** Drop whatever session is on this device, guest or staff. */

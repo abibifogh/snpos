@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { account, db, DB_ID, Query, applyThemeSettings } from './lib';
+import { account, db, DB_ID, applyThemeSettings } from './lib';
 import type { Models } from 'appwrite';
-import { requireStaff, signOutCompletely } from '@snpos/core';
+import { requireStaff, signOutCompletely, staffProfileFor } from '@snpos/core';
 import type { Settings, StaffProfile } from '@snpos/core';
 
 interface SessionValue {
@@ -32,9 +32,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return doc;
   }, []);
 
-  const loadProfile = useCallback(async (userId: string) => {
-    const res = await db.listDocuments(DB_ID, 'staff_profiles', [Query.equal('user_id', userId), Query.limit(1)]);
-    setProfile((res.documents[0] as unknown as StaffProfile) ?? null);
+  const loadProfile = useCallback(async (userId: string, email?: string) => {
+    setProfile(await staffProfileFor({ userId, email }));
   }, []);
 
   // Settings are readable without a session so the login screen can already be
@@ -50,8 +49,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         // Being signed in is not enough: the customer menu hands every guest
         // an anonymous session, and one of those must not open the admin app.
         const staff = await requireStaff();
-        setUser(await account.get());
-        await loadProfile(staff.userId);
+        const me = await account.get();
+        setUser(me);
+        await loadProfile(staff.userId, me.email);
       } catch (e) {
         // A guest session here is signed in but has no business being so.
         // Clear it, or the login screen fights something invisible.
@@ -69,8 +69,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await signOutCompletely();
     await account.createEmailPasswordSession(email, password);
     const staff = await requireStaff();
-    setUser(await account.get());
-    await loadProfile(staff.userId);
+    const me = await account.get();
+    setUser(me);
+    await loadProfile(staff.userId, me.email);
     await loadSettings();
   };
 

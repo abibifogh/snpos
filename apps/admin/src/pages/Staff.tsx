@@ -81,7 +81,15 @@ export function StaffPage() {
     try {
       const role = editing.role ?? 'waiter';
       const payload = {
-        user_id: editing.user_id ?? '',
+        // Left out entirely until there is a real one, never written as "".
+        //
+        // user_id carries a unique index — one profile per login, which is the
+        // point of it. An empty string is a value like any other, so the first
+        // person without a login took "" and the next one collided with them:
+        // "Something with that name or code already exists" on the second cook
+        // you ever added. Absent means null, and a unique index lets nulls
+        // repeat.
+        ...(editing.user_id ? { user_id: editing.user_id } : {}),
         email: (editing.email ?? '').trim().toLowerCase(),
         display_name: editing.display_name.trim(),
         role,
@@ -98,7 +106,13 @@ export function StaffPage() {
       };
 
       if (editing.$id) {
-        await db.updateDocument(DB_ID, 'staff_profiles', editing.$id, payload);
+        // Explicitly cleared rather than left alone, so a profile saved by the
+        // older version — which wrote "" — is tidied the next time it is
+        // edited, instead of sitting there blocking the one empty slot.
+        await db.updateDocument(DB_ID, 'staff_profiles', editing.$id, {
+          ...payload,
+          user_id: editing.user_id || null,
+        });
       } else {
         await db.createDocument(DB_ID, 'staff_profiles', ID.unique(), payload);
       }
@@ -151,7 +165,16 @@ export function StaffPage() {
       await load();
       toast(outcome);
     } catch (e) {
-      setError(humanError(e));
+      const msg = humanError(e);
+      // A clash here is no longer expected — profiles without a login are
+      // written with that field left empty rather than blank, which the
+      // database allows any number of. If one turns up anyway, say so plainly
+      // instead of leaving "something already exists" to be guessed at.
+      setError(
+        /already exists/i.test(msg)
+          ? 'The database refused to save this person, and nothing was saved. Nothing you typed is wrong — an old record is holding a slot this one needs. Send this to whoever set the system up: staff_profiles / user_unique.'
+          : msg,
+      );
     } finally {
       setBusy(false);
     }
@@ -159,13 +182,16 @@ export function StaffPage() {
 
   const remove = async (p: StaffProfile) => {
     const warnLogin = p.email
-      ? '\n\nIf they had a login, it is not cancelled by this — untick "active" instead if you want to stop them working, or remove them from the team in Appwrite.'
+      ? `\n\nTheir login (${p.email}) is cancelled with them — they will not be able to sign in to anything. To stop somebody working without going that far, untick "active" instead.`
       : '';
     if (!confirm(`Remove ${p.display_name}? Their past orders, discounts and shifts stay on record — that history is what makes the audit trail worth having.${warnLogin}`)) return;
     try {
       await db.deleteDocument(DB_ID, 'staff_profiles', p.$id);
       await load();
-      toast('Removed');
+      // The login is cancelled by the server a moment later, off the back of
+      // this deletion — a browser is not allowed to delete somebody else's
+      // account, and should not be.
+      toast(p.email ? 'Removed — their login is being cancelled' : 'Removed');
     } catch (e) {
       toast(humanError(e), 'err');
     }

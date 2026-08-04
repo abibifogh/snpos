@@ -8,7 +8,7 @@ import {
   account, db, DB_ID, Query, listAll, loadMenu, loadFeatures, humanError, isEnabled,
   articlesFor, featureConfig, HELP_AREAS,
   markUnavailable, markAvailable, isUnavailable, loadMenu as reloadMenu,
-  requireStaff, signOutCompletely,
+  requireStaff, signOutCompletely, staffProfileFor,
   onQueueChange, startOfflineSync, flushQueue,
 } from '@snpos/core';
 import type { Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc } from '@snpos/core';
@@ -74,10 +74,10 @@ export function App() {
     const venue = venues[0];
     if (!venue) throw new Error('No venue is set up yet. Add one in the admin app.');
 
-    const [menu, features, profiles, shift] = await Promise.all([
+    const [menu, features, profile, shift] = await Promise.all([
       loadMenu(venue.$id),
       loadFeatures(venue.$id),
-      db.listDocuments(DB_ID, 'staff_profiles', [Query.equal('user_id', me.userId), Query.limit(1)]),
+      staffProfileFor(me),
       loadShift(venue.$id),
     ]);
 
@@ -86,7 +86,7 @@ export function App() {
       venue,
       menu,
       features,
-      profile: (profiles.documents[0] as unknown as StaffProfile) ?? null,
+      profile,
       userId: me.userId,
       shift,
       reloadShift: async () => {

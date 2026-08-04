@@ -1,6 +1,6 @@
 {
   "projectId": "${APPWRITE_PROJECT_ID}",
-  "projectName": "SNPOS",
+  "projectName": "NiceOps POS",
   "functions": [
     {
       "$id": "order-guard",
@@ -66,7 +66,8 @@
       "execute": [],
       "events": [
         "databases.snpos.collections.orders.documents.*.update",
-        "databases.snpos.collections.shifts.documents.*.update"
+        "databases.snpos.collections.shifts.documents.*.update",
+        "databases.snpos.collections.staff_profiles.documents.*.delete"
       ],
       "schedule": "0 * * * *",
       "timeout": 60,
