@@ -4,9 +4,11 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, uploadFile, downloadUrl, deleteFile, receiveStock, Query,
   PAID_TO_KINDS, payeeLabel as sharedPayeeLabel, legacyExpenseCategory as legacyFor,
+  isPostableExpenseAccount,
 } from '@snpos/core';
 import type { Doc, Ingredient, PaidToKind } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
+import { AccountsManager } from '../components/AccountsManager';
 import { useSession } from '../session';
 
 interface Expense extends Doc {
@@ -59,7 +61,7 @@ export function ExpensesPage() {
   const decimals = settings?.currency_decimals ?? 2;
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const [tab, setTab] = useState<'expenses' | 'categories'>('expenses');
+  const [tab, setTab] = useState<'expenses' | 'categories' | 'accounts'>('expenses');
   const [rows, setRows] = useState<Expense[] | null>(null);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [venues, setVenues] = useState<VenueRow[]>([]);
@@ -93,7 +95,10 @@ export function ExpensesPage() {
     setSuppliers(s.filter((x) => x.active !== false).sort((a2, b) => a2.name.localeCompare(b.name)));
     setStaff(p.filter((x) => x.active !== false).sort((a2, b) => a2.display_name.localeCompare(b.display_name)));
     setIngredients(i.filter((x) => x.active).sort((a2, b) => a2.name.localeCompare(b.name)));
-    setAccounts(a.filter((x) => x.type === 'expense').sort((a2, b) => a2.code.localeCompare(b.code)));
+    // Expense lines only, minus the two the system fills in by itself. See
+    // isPostableExpenseAccount — offering "Food sales" as a destination for a
+    // gas refill is offering a way to make the books wrong.
+    setAccounts(a.filter(isPostableExpenseAccount).sort((a2, b) => a2.code.localeCompare(b.code)));
   };
   useEffect(() => { load().catch((err) => setError(humanError(err))); }, []);
 
@@ -313,15 +318,20 @@ export function ExpensesPage() {
         <Button size="sm" variant={tab === 'categories' ? 'primary' : 'default'} onClick={() => setTab('categories')}>
           Categories
         </Button>
+        <Button size="sm" variant={tab === 'accounts' ? 'primary' : 'default'} onClick={() => setTab('accounts')}>
+          Accounts
+        </Button>
       </div>
 
-      {tab === 'categories' ? (
+      {tab === 'accounts' ? (
+        <AccountsManager />
+      ) : tab === 'categories' ? (
         <KeyedListManager
           collection="expense_categories"
           singular="category"
           accounts={accounts.map((a) => ({ code: a.code, name: a.name }))}
           onChanged={reloadCategories}
-          hint="Your own list. Each one points at a line of the accounts, which is what decides where the money shows up in Reports. Rename freely; expenses already filed under a category stay with it."
+          hint="Your own list. Each one posts to a line of the accounts, which is what decides where the money shows up in Reports. Nothing there that fits? Add it under the Accounts tab. Rename freely; expenses already filed under a category stay with it."
         />
       ) : (
         <>

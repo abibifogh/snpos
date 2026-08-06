@@ -174,13 +174,20 @@ export function KeyedListManager({
           {accounts && (
             <Field
               label="Posts to"
-              hint="Which line of the accounts this lands on. If you are not sure, leave it on Other expenses — it can be changed later."
+              hint="Which line of the accounts money spent on this lands on — that is what Reports adds up by. Not sure? Leave it on Other expenses; it can be changed whenever. Nothing here that fits? Add it under the Accounts tab."
             >
               <Select
                 value={editing.account_code ?? '6090'}
                 onChange={(e) => setEditing({ ...editing, account_code: e.target.value })}
               >
                 {accounts.map((a) => <option key={a.code} value={a.code}>{a.name}</option>)}
+                {/* A category already pointed somewhere that is no longer
+                    offered keeps pointing there until somebody changes it on
+                    purpose. Dropping it from the list would silently re-file
+                    the category on the next save of an unrelated field. */}
+                {editing.account_code && !accounts.some((a) => a.code === editing.account_code) && (
+                  <option value={editing.account_code}>{editing.account_code} (set previously)</option>
+                )}
               </Select>
             </Field>
           )}

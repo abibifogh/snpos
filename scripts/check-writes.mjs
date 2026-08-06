@@ -22,7 +22,7 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { COLLECTIONS } from './schema.mjs';
+import { COLLECTIONS, SYSTEM_ACCOUNT_CODES } from './schema.mjs';
 
 const ROOTS = ['apps', 'packages', 'functions'];
 
@@ -196,6 +196,30 @@ for (const root of ROOTS) {
         if (missing.length) problems.push({ file, line, collection, kind: 'missing', fields: missing });
       }
     }
+  }
+}
+
+// The two lists of account codes have to agree.
+//
+// schema.mjs marks accounts as system so provisioning knows which ones an admin
+// must not delete; ledger.ts names them so postings can refer to them by
+// meaning. They live in different languages and cannot import each other, so
+// the only thing keeping them together is this check. Drift here would let an
+// admin remove an account a shift close writes to — and it would surface as a
+// shift that will not close, not as an error anybody could act on.
+{
+  const ledger = readFileSync(new URL('../packages/core/src/ledger.ts', import.meta.url), 'utf8');
+  const block = /export const ACCOUNTS = \{([\s\S]*?)\} as const;/.exec(ledger);
+  const inCode = new Set([...(block?.[1] ?? '').matchAll(/'(\d+)'/g)].map((m) => m[1]));
+  const inSchema = new Set(SYSTEM_ACCOUNT_CODES);
+  const onlyCode = [...inCode].filter((c) => !inSchema.has(c));
+  const onlySchema = [...inSchema].filter((c) => !inCode.has(c));
+  if (onlyCode.length || onlySchema.length) {
+    console.error('SYSTEM_ACCOUNT_CODES and ACCOUNTS disagree:\n');
+    if (onlyCode.length) console.error(`  posted to in ledger.ts but not protected in schema.mjs: ${onlyCode.join(', ')}`);
+    if (onlySchema.length) console.error(`  protected in schema.mjs but not posted to in ledger.ts: ${onlySchema.join(', ')}`);
+    console.error('\nAn account the code posts to must be protected, or an admin can delete it.');
+    process.exit(1);
   }
 }
 

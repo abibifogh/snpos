@@ -35,6 +35,32 @@ export const ACCOUNTS = {
   cashOverShort: '7000',
 } as const;
 
+/**
+ * Accounts the system itself posts to, which therefore cannot be removed.
+ *
+ * Everything else in the chart is the restaurant's own and can be renamed,
+ * added to or retired. These ten are named in code — a shift close writes to
+ * them by number — so deleting one would not produce an error message, it
+ * would produce a shift that fails to balance at eleven at night.
+ *
+ * Derived from ACCOUNTS rather than listed again, so the protected set cannot
+ * drift away from the set actually in use.
+ */
+export const SYSTEM_ACCOUNT_CODES: readonly string[] = Object.values(ACCOUNTS);
+export const isSystemAccount = (code: string) => SYSTEM_ACCOUNT_CODES.includes(code);
+
+/**
+ * Accounts an expense category may be pointed at.
+ *
+ * Expense lines only — money going out lands on an expense account, and
+ * offering "Food sales" as a destination for a gas refill is offering a way to
+ * make the books wrong. Cost of goods sold and cash over/short are left out
+ * too: both are posted automatically at shift close from the stock count and
+ * the drawer count, and an expense filed there would be double-counted.
+ */
+export const isPostableExpenseAccount = (a: { code: string; type: string }) =>
+  a.type === 'expense' && a.code !== ACCOUNTS.cogs && a.code !== ACCOUNTS.cashOverShort;
+
 export interface PostingLine {
   account_code: string;
   debit: number;

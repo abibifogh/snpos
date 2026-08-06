@@ -11,6 +11,7 @@ import { Client, Databases, Storage, Teams, ID, Permission, Role, Query } from '
 import {
   DB_ID, TEAMS, BUCKETS, COLLECTIONS, FEATURES,
   SEED_ACCOUNTS, SEED_PAYMENT_METHODS, SEED_EXPENSE_CATEGORIES, SEED_INGREDIENT_CATEGORIES,
+  SYSTEM_ACCOUNT_CODES,
 } from './schema.mjs';
 
 const { APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY } = process.env;
@@ -408,9 +409,15 @@ async function main() {
   );
 
   await waitForAttributes('accounts', ['code', 'name', 'type', 'system']);
+  // `system` marks the accounts the code itself posts to at shift close. The
+  // rest are a convenient starting set — Supplies, Transport, Repairs — and a
+  // restaurant whose real outgoings are gas refills and okada runs should be
+  // able to rename or retire them without asking anybody.
   for (const [code, name, type] of SEED_ACCOUNTS) {
     await ensure(`account ${code}`, () =>
-      db.createDocument(DB_ID, 'accounts', ID.unique(), { code, name, type, system: true }),
+      db.createDocument(DB_ID, 'accounts', ID.unique(), {
+        code, name, type, system: SYSTEM_ACCOUNT_CODES.includes(code),
+      }),
     );
   }
 

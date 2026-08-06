@@ -1892,6 +1892,17 @@ export const FEATURES = [
   },
 ];
 
+/**
+ * The accounts the system posts to by number when a shift closes.
+ *
+ * Mirrors ACCOUNTS in packages/core/src/ledger.ts. Kept as plain strings here
+ * because the provisioning script cannot import TypeScript, and checked by
+ * scripts/check-writes.mjs so the two cannot drift apart unnoticed.
+ */
+export const SYSTEM_ACCOUNT_CODES = [
+  '1000', '1010', '1020', '1200', '2100', '2200', '4000', '4900', '5000', '7000',
+];
+
 export const SEED_ACCOUNTS = [
   ['1000', 'Cash on hand', 'asset'],
   ['1010', 'Card clearing', 'asset'],
