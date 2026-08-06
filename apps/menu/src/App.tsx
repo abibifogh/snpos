@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Modal, Spinner, Notice, useToast, Logo, HelpModal, OfflineBar, useOfflineQueue } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
@@ -50,6 +50,10 @@ export function App() {
   const [groupMode, setGroupMode] = useState(false);
   const [showCart, setShowCart] = useState(false);
   const [activeSection, setActiveSection] = useState<string | null>(null);
+  // Set while a tap is scrolling the page, so the sections flying past on the
+  // way do not each take a turn at being "current". Without it, tapping the
+  // last tab lights up every tab in between.
+  const jumping = useRef(0);
   // Which order's status is on screen, taken from the address so a refresh
   // comes back to it rather than dumping the guest back on the menu.
   const [viewing, setViewing] = useState<string | null>(() => orderIdFromHash());
@@ -159,6 +163,54 @@ export function App() {
     () => (boot ? computeTotals({ lines: cart, settings: boot.settings }) : null),
     [cart, boot],
   );
+
+  /**
+   * Keep the tab bar honest while somebody scrolls.
+   *
+   * The tabs used to change only when tapped, so a guest who scrolled — which
+   * is how anybody actually reads a menu — was told they were still in the
+   * first section three sections later. The bar became decoration.
+   *
+   * The current section is the last one whose heading has passed under the
+   * bar. Not "the most visible": on a long section the heading is off screen
+   * for most of the reading, and on a short one two headings share the view.
+   * Where the reader has got to is a position, not an area.
+   */
+  useEffect(() => {
+    if (!boot) return;
+    const bar = 56; // the sticky tab bar, in px
+
+    const pick = () => {
+      if (Date.now() < jumping.current) return;
+      const seen = Array.from(document.querySelectorAll<HTMLElement>('section.section[id^="sec-"]'));
+      if (seen.length === 0) return;
+      let current = seen[0];
+      for (const el of seen) {
+        if (el.getBoundingClientRect().top - bar <= 1) current = el;
+      }
+      setActiveSection(current.id.slice(4));
+    };
+
+    pick();
+    // Plain scroll rather than IntersectionObserver: the question is "which
+    // heading is above the line", and a scroll position answers it directly
+    // instead of being reconstructed from a dozen intersection callbacks.
+    window.addEventListener('scroll', pick, { passive: true });
+    window.addEventListener('resize', pick);
+    return () => {
+      window.removeEventListener('scroll', pick);
+      window.removeEventListener('resize', pick);
+    };
+  }, [boot, groupMode]);
+
+  // Follow the highlighted tab along the bar, or the section a guest has
+  // scrolled to sits off the right-hand edge and the bar looks stuck.
+  useEffect(() => {
+    if (!activeSection) return;
+    document
+      .querySelector<HTMLElement>(`.cat-nav button[data-cat="${activeSection}"]`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }, [activeSection]);
 
 
   if (error) {
@@ -330,8 +382,13 @@ export function App() {
         {sections.map((s) => (
           <button
             key={s.category.$id}
+            data-cat={s.category.$id}
             className={`${activeSection === s.category.$id ? 'on' : ''} ${s.open ? '' : 'shut'}`}
             onClick={() => {
+              // Held for the length of the smooth scroll. Everything the page
+              // flies past on the way would otherwise claim the highlight in
+              // turn, and the tab you tapped would light up last.
+              jumping.current = Date.now() + 900;
               setActiveSection(s.category.$id);
               document.getElementById(`sec-${s.category.$id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }}

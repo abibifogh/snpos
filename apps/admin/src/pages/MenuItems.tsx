@@ -80,7 +80,7 @@ export function MenuItemsPage() {
     const base: Partial<MenuItem> = item
       ? { ...item, ...(copy ? { $id: undefined, name: `${item.name} (copy)` } : {}) }
       : {
-          name: '', description: '', price: 0, category_id: categories[0]?.$id ?? '',
+          name: '', description: '', price: 0, category_id: '',
           active: true, prep_minutes: 10, station: 'inherit', sort: (items?.length ?? 0) + 1,
           track_stock: false, image_focal_x: 0.5, image_focal_y: 0.5,
         };
@@ -89,7 +89,14 @@ export function MenuItemsPage() {
     base.station_key = item ? item.station_key || (item.station !== 'inherit' ? item.station : '') : '';
     setEditing(base);
     setPriceText(toInput(base.price ?? 0, decimals));
-    setPickedCategories(item ? categoriesFor(item) : categories[0] ? [categories[0].$id] : []);
+    // Nothing pre-ticked on a new dish.
+    //
+    // It used to tick whichever category sorted first, which quietly filed
+    // every new dish under "Everyday" — and because a pre-ticked box is one
+    // nobody reads, a Thursday special added on Thursday ended up in both,
+    // showing every day of the week. Choosing where a dish goes is the whole
+    // job here; it should not have a default.
+    setPickedCategories(item ? categoriesFor(item) : []);
     setPickedAddons(item ? itemAddons.filter((a) => a.menu_item_id === item.$id).map((a) => a.group_id) : []);
     // A copy takes the recipe with it but none of the row ids, so saving writes
     // a second recipe rather than moving the original's.
@@ -156,7 +163,10 @@ export function MenuItemsPage() {
 
   const save = async () => {
     if (!editing?.name?.trim()) { setError('This dish needs a name.'); return; }
-    if (pickedCategories.length === 0) { setError('Choose at least one category.'); return; }
+    if (pickedCategories.length === 0) {
+      setError('Tick at least one category — that is where this dish appears on the menu.');
+      return;
+    }
     const price = parseMoney(priceText, decimals);
     if (price === null || price < 0) { setError('Enter a valid price, for example 25.00'); return; }
 
@@ -335,7 +345,7 @@ export function MenuItemsPage() {
 
           <Field
             label="Categories"
-            hint="A dish can sit in several. It shows in each one during that category's own available hours, so the same dish can appear at lunch and again at dinner. The first one ticked is its main category and sets the default kitchen station."
+            hint="A dish appears under every category ticked here. Tick two and it shows twice — so a Thursday special should be ticked for Thursday only, not for Thursday and Everyday. The first one ticked is its main category and sets the default kitchen station."
           >
             <div className="stack" style={{ gap: '0.35rem', marginTop: '0.2rem' }}>
               {categories.map((c) => {

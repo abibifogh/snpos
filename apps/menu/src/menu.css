@@ -35,9 +35,22 @@
 .cat-nav button.on { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
 .cat-nav button.shut { opacity: 0.55; }
 
-.section { padding: 1.1rem 1rem 0.4rem; }
-.section h2 { font-size: 1.05rem; }
-.section .when { font-size: 0.8rem; color: var(--text-dim); margin-top: 0.15rem; }
+/* A section has to announce itself.
+   The heading was 1.05rem against dish names at 0.97rem — eight hundredths of
+   a rem apart, both dark, both semibold. Scrolling past, a customer could not
+   tell where "Everyday" ended and "Thursday" began, so the whole menu read as
+   one long list. Bigger, heavier, and with air above it and a rule beneath. */
+.section { padding: 1.6rem 1rem 0.4rem; scroll-margin-top: 3.4rem; }
+.section:first-of-type { padding-top: 1rem; }
+.section h2 {
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--brand);
+}
+.section .when { font-size: 0.8rem; color: var(--text-dim); margin-top: 0.35rem; }
 
 .dish {
   display: flex; gap: 0.85rem; width: 100%; text-align: left;
