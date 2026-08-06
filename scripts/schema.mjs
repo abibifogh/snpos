@@ -791,6 +791,17 @@ export const COLLECTIONS = [
       ['critical', 'b', null, true, false],
       ['supplier_id', 's', 64, false],
       ['category', 's', 80, false],
+      // The sentence a cook reads at the end of a shift, in the restaurant's
+      // own words: "OK = 10pcs or more . Low = under 10pcs".
+      //
+      // Par levels and thresholds are numbers in a unit the system understands
+      // — kilograms, litres, each. The shelf does not hold kilograms, it holds
+      // buckets, crates, half a bottle and a tubber of yam. Asking somebody to
+      // convert at eleven at night is how three people end up with three
+      // different meanings of "low", and the report that comes out is worth
+      // nothing. So the rule is written once, by whoever knows, in the units
+      // actually on the shelf.
+      ['check_guide', 's', 160, false],
       // What buying this counts as, so recording a delivery does not also ask
       // somebody to classify it. Rice is always Supplies; nobody should have
       // to say so twice a week.

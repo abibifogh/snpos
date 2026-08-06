@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { formatMoney, parseMoney, toInput, levelOf } from '@snpos/core';
+import { formatMoney, parseMoney, toInput, levelOf, saveDropping } from '@snpos/core';
 import type { Ingredient, Recipe, MenuItem, Doc } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
 import { StockImport } from '../components/StockImport';
@@ -10,6 +10,21 @@ import { useSession } from '../session';
 interface Supplier extends Doc { venue_id: string; name: string; contact?: string; phone?: string; email?: string; active: boolean }
 
 const UNITS = ['g', 'kg', 'ml', 'l', 'each', 'pack'];
+
+/**
+ * A worked example in the placeholder, chosen to suit the unit.
+ *
+ * An empty box with the word "guide" over it gets left empty. An empty box
+ * showing "OK = 10 pcs or more · Low = under 10 pcs" gets filled in, because
+ * the shape of the answer is already there and only the numbers have to be
+ * thought about.
+ */
+const guideExample = (unit?: string) => {
+  if (unit === 'kg' || unit === 'g') return 'OK = half a bucket or more · Low = under half';
+  if (unit === 'l' || unit === 'ml') return 'OK = 1 bottle or more · Low = under 1 bottle';
+  if (unit === 'pack') return 'OK = 3 packs or more · Low = under 3 packs';
+  return 'OK = 10 pcs or more · Low = under 10 pcs';
+};
 
 export function StockPage() {
   const { settings } = useSession();
@@ -80,15 +95,20 @@ export function StockPage() {
         supplier_id: editing.supplier_id ?? '',
         category: editing.category ?? '',
         expense_category_key: editing.expense_category_key ?? '',
+        check_guide: (editing.check_guide ?? '').trim(),
         active: editing.active ?? true,
       };
       Object.keys(payload).forEach((k) => (payload as Record<string, unknown>)[k] === undefined && delete (payload as Record<string, unknown>)[k]);
 
-      if (editing.$id) await db.updateDocument(DB_ID, 'ingredients', editing.$id, payload);
-      else await db.createDocument(DB_ID, 'ingredients', ID.unique(), payload);
+      const { dropped } = await saveDropping('ingredients', editing.$id ?? null, payload);
       setEditing(null);
       await load();
-      toast('Saved');
+      toast(
+        dropped.includes('check_guide')
+          ? 'Saved, but the shift-check guide needs one more field in the database. Run "Provision Appwrite" in GitHub Actions, then set it again.'
+          : 'Saved',
+        dropped.length ? 'err' : undefined,
+      );
     } catch (e) {
       setError(humanError(e));
     } finally {
@@ -347,6 +367,23 @@ export function StockPage() {
               </Select>
             </Field>
           </div>
+
+          {/* Written in the units on the shelf, not the units in the database.
+              Par levels are kilograms and litres; shelves hold buckets, crates
+              and half a bottle. Whoever knows the kitchen writes the rule once,
+              and everybody closing a shift reads the same one. */}
+          <Field
+            label="Shift-check guide"
+            hint="Shown under this ingredient when staff close a shift, so “low” means the same thing to everybody. Leave blank to show the numbers above instead."
+          >
+            <Input
+              value={editing.check_guide ?? ''}
+              maxLength={160}
+              placeholder={guideExample(editing.unit)}
+              onChange={(e) => setEditing({ ...editing, check_guide: e.target.value })}
+            />
+          </Field>
+
           <Field hint="Critical items are called out first when they run low, ahead of everything else.">
             <Toggle checked={editing.critical ?? false} onChange={(v) => setEditing({ ...editing, critical: v })} label="Critical — service stops without it" />
           </Field>

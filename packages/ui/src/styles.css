@@ -294,6 +294,25 @@ table.data tbody tr:hover { background: var(--surface-2); }
 }
 .stock-key .badge { margin-right: 0.4rem; }
 
+/* The shelf heading — Sauces, Protein, Staples.
+   Spaced out and small rather than large and bold: it has to be findable while
+   scrolling past forty rows without competing with the ingredient names, which
+   are the thing actually being read. */
+.stock-group {
+  margin: 1.1rem 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.stock-group:first-child { margin-top: 0.4rem; }
+
+/* Keeps the three buttons from being pushed off a narrow phone by a long
+   guide line. The name and its rule wrap; OK/LOW/OUT never do. */
+.stock-line > span:first-child { min-width: 0; padding-right: 0.6rem; }
+.stock-line > .row { flex: none; }
+
 /* ---- offline ----------------------------------------------------------- */
 /* Full width and unmissable. Offline support that nobody notices is offline
    support that loses a service to one forgotten device. */

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button, Modal, Field, Input, Notice, Badge, ShiftCloseForm } from '@snpos/ui';
 import type { BlockerRow, CountRow, StockRow } from '@snpos/ui';
 import {
-  formatMoney, parseMoney, toInput, loadIngredients,
+  formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift as createShift, shiftBlockers, expectedTakings, closeShift,
   openingFloats,
 } from '@snpos/core';
@@ -101,21 +101,10 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           .map((x) => ({ methodId: x.$id, name: x.name, expected: takings.byMethod[x.$id] ?? 0, countedText: '' })),
       );
 
-      // Critical items first: if service stops without it, it belongs at the
-      // top of a list somebody is working through at the end of a long day.
-      const ing = await loadIngredients(ctx.venue.$id);
-      const list = ing
-        .filter((i) => i.active)
-        .sort((a, b) => Number(b.critical) - Number(a.critical) || a.name.localeCompare(b.name))
-        .map((i) => ({
-          $id: i.$id,
-          name: i.name,
-          critical: i.critical,
-          unit: i.unit,
-          lowAt: i.low_threshold ?? undefined,
-          parLevel: i.par_level || undefined,
-          onHand: Math.round(i.current_qty * 100) / 100,
-        }));
+      // Grouped the way the shelves are, with the written guide under each
+      // name. Built in one place so the till and the kitchen screen cannot
+      // show a cook two different lists.
+      const list = await stockCheckRows(ctx.venue.$id);
       setStockList(list);
       setLevels(Object.fromEntries(list.map((i) => [i.$id, 'OK' as const])));
       setNote('');

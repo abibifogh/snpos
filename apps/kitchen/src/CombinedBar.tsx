@@ -3,7 +3,7 @@ import { Badge, Button, Field, FormError, Input, Modal, Notice, Select, Textarea
 import type { BlockerRow, CountRow, StockRow } from '@snpos/ui';
 import { ShiftHistory } from './ShiftHistory';
 import {
-  db, DB_ID, ID, formatMoney, parseMoney, toInput, loadIngredients,
+  db, DB_ID, ID, formatMoney, parseMoney, toInput, loadIngredients, stockCheckRows,
   loadPaymentMethods, openShift, loadOpenShift, shiftBlockers, expectedTakings, closeShift, openingFloats,
   recordPayment, amountOutstanding, PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions,
   receiveStock, uploadFile,
@@ -119,19 +119,7 @@ export function CombinedBar({
           .filter((x) => x.counted_at_close)
           .map((x) => ({ methodId: x.$id, name: x.name, expected: takings.byMethod[x.$id] ?? 0, countedText: '' })),
       );
-      const ing = await loadIngredients(venue.$id);
-      const list = ing
-        .filter((i) => i.active)
-        .sort((a, b) => Number(b.critical) - Number(a.critical) || a.name.localeCompare(b.name))
-        .map((i) => ({
-          $id: i.$id,
-          name: i.name,
-          critical: i.critical,
-          unit: i.unit,
-          lowAt: i.low_threshold ?? undefined,
-          parLevel: i.par_level || undefined,
-          onHand: Math.round(i.current_qty * 100) / 100,
-        }));
+      const list = await stockCheckRows(venue.$id);
       setStockList(list);
       setLevels(Object.fromEntries(list.map((i) => [i.$id, 'OK' as const])));
       setNote('');

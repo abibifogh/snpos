@@ -38,6 +38,31 @@ export interface StockRow {
   unit?: string;
   /** What the system believes is left, for comparison against the shelf. */
   onHand?: number;
+  /** The heading this belongs under — Sauces, Protein, Staples. */
+  group?: string;
+  /** The rule in the restaurant's own words, written by an admin. */
+  guide?: string;
+}
+
+/**
+ * What to put under an item's name.
+ *
+ * The written rule wins whenever there is one. It is in the units on the
+ * shelf — buckets, crates, half a bottle — and it says the same thing to
+ * everybody, which is the entire point of having written it down.
+ *
+ * Falling back to the numbers is better than falling back to nothing, but only
+ * just: "low at 4 kg" is a conversion somebody has to do in their head while
+ * looking at a bucket.
+ */
+function guideFor(i: StockRow): string {
+  if (i.guide) return i.guide;
+  const unit = i.unit ? ` ${i.unit}` : '';
+  const bits: string[] = [];
+  if (i.lowAt !== undefined) bits.push(`OK = more than ${i.lowAt}${unit} · Low = ${i.lowAt}${unit} or less`);
+  else if (i.parLevel !== undefined) bits.push(`A full shelf is ${i.parLevel}${unit}`);
+  if (i.onHand !== undefined) bits.push(`system says ${i.onHand}${unit}`);
+  return bits.join(' · ');
 }
 
 export function ShiftCloseForm({
@@ -197,41 +222,44 @@ export function ShiftCloseForm({
             <div><Badge tone="warn">LOW</Badge> Enough for tonight, but it needs ordering — you would not want to start another service on what is left.</div>
             <div><Badge tone="danger">OUT</Badge> None left, or too little to serve. Mark this even if the system thinks there is some — the shelf wins.</div>
           </div>
-          {stock.map((i) => (
-            <div
-              className="row"
-              key={i.$id}
-              style={{ justifyContent: 'space-between', padding: '0.4rem 0', borderBottom: '1px solid var(--border)' }}
-            >
-              {/* The numbers, next to the name. Asking somebody to judge "low"
-                  against nothing means judging it against memory, and memory at
-                  the end of a fourteen-hour day is not a measurement. */}
-              <span>
-                <span>{i.name}</span>
-                {i.critical && <Badge tone="warn"> critical</Badge>}
-                {(i.lowAt !== undefined || i.parLevel !== undefined) && (
-                  <div className="small dim">
-                    {i.lowAt !== undefined && <>low at {i.lowAt}{i.unit ? ` ${i.unit}` : ''}</>}
-                    {i.lowAt !== undefined && i.parLevel !== undefined && ' · '}
-                    {i.parLevel !== undefined && <>full shelf {i.parLevel}{i.unit ? ` ${i.unit}` : ''}</>}
-                    {i.onHand !== undefined && <> · system says {i.onHand}{i.unit ? ` ${i.unit}` : ''}</>}
+          {stock.map((i, n) => {
+            // A heading whenever the group changes. The list arrives already
+            // in group order, so this is a comparison with the row above
+            // rather than a second pass that could disagree with the first.
+            const heading = i.group && i.group !== stock[n - 1]?.group ? i.group : null;
+            const guide = guideFor(i);
+            return (
+              <div key={i.$id}>
+                {heading && <div className="stock-group">{heading}</div>}
+                <div
+                  className="row stock-line"
+                  style={{ justifyContent: 'space-between', padding: '0.45rem 0', borderBottom: '1px solid var(--border)' }}
+                >
+                  {/* The rule, under the name. Asking somebody to judge "low"
+                      against nothing means judging it against memory, and
+                      memory at the end of a fourteen-hour day is not a
+                      measurement. */}
+                  <span>
+                    <span>{i.name}</span>
+                    {i.critical && <Badge tone="warn"> critical</Badge>}
+                    {guide && <div className="small dim">{guide}</div>}
+                  </span>
+                  <div className="row" style={{ gap: '0.3rem' }}>
+                    {(['OK', 'LOW', 'OUT'] as const).map((level) => (
+                      <Button
+                        key={level}
+                        size="sm"
+                        variant={levels[i.$id] === level ? (level === 'OK' ? 'primary' : 'danger') : 'default'}
+                        onClick={() => onLevel(i.$id, level)}
+                      >
+                        {level}
+                      </Button>
+                    ))}
                   </div>
-                )}
-              </span>
-              <div className="row" style={{ gap: '0.3rem' }}>
-                {(['OK', 'LOW', 'OUT'] as const).map((level) => (
-                  <Button
-                    key={level}
-                    size="sm"
-                    variant={levels[i.$id] === level ? (level === 'OK' ? 'primary' : 'danger') : 'default'}
-                    onClick={() => onLevel(i.$id, level)}
-                  >
-                    {level}
-                  </Button>
-                ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </>
       )}
     </>

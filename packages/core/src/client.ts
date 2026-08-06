@@ -42,6 +42,44 @@ export async function listAll<T>(collectionId: string, queries: string[] = []): 
 }
 
 /**
+ * Write a document, dropping fields the database has never heard of.
+ *
+ * Appwrite refuses an entire document when one attribute is unknown. That is
+ * the right call for a typo, and the wrong one for a field added in this
+ * release against a database that has not been provisioned since the last one:
+ * a new option nobody has switched on yet takes the whole save down with it,
+ * and the failure names a field the person saving has never heard of either.
+ *
+ * So the unknown fields are shed one at a time and the rest is saved. What was
+ * dropped comes back, for the caller to mention if it matters — a note that is
+ * missing is worth saying out loud; a field the admin never filled in is not.
+ */
+export async function saveDropping(
+  collectionId: string,
+  id: string | null,
+  payload: Record<string, unknown>,
+): Promise<{ id: string; dropped: string[] }> {
+  const body = { ...payload };
+  const dropped: string[] = [];
+
+  for (let attempt = 0; attempt < 16; attempt++) {
+    try {
+      const doc = id
+        ? await db.updateDocument(DB_ID, collectionId, id, body)
+        : await db.createDocument(DB_ID, collectionId, ID.unique(), body);
+      return { id: doc.$id, dropped };
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e);
+      const unknown = /unknown attribute:?\s*"?([A-Za-z0-9_]+)"?/i.exec(raw);
+      if (!unknown || !(unknown[1] in body)) throw e;
+      dropped.push(unknown[1]);
+      delete body[unknown[1]];
+    }
+  }
+  throw new Error(`Could not save to ${collectionId}.`);
+}
+
+/**
  * Turn an Appwrite failure into something a person can act on.
  *
  * The browser reports a blocked cross-origin request as an ordinary network

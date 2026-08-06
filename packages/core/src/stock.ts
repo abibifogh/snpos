@@ -13,6 +13,8 @@ export interface Ingredient extends Doc {
   critical: boolean;
   supplier_id?: string;
   category?: string;
+  /** The rule a cook reads at the shift-end check, in the restaurant's words. */
+  check_guide?: string;
   /** Which expense category a delivery of this counts as. */
   expense_category_key?: string;
   consecutive_low_count?: number;
@@ -321,3 +323,66 @@ export const loadIngredients = (venueId: string) =>
   listAll<Ingredient>('ingredients', [Query.equal('venue_id', venueId)]);
 
 export const loadRecipes = () => listAll<Recipe>('recipes');
+
+export interface StockCheckRow {
+  $id: string;
+  name: string;
+  critical: boolean;
+  unit?: string;
+  parLevel?: number;
+  lowAt?: number;
+  onHand?: number;
+  /** Heading this sits under. Blank for anything uncategorised. */
+  group?: string;
+  /** The written rule, if somebody has set one. */
+  guide?: string;
+}
+
+/**
+ * The shift-end stock list, in the order it should be worked through.
+ *
+ * Grouped the way the shelves are, because that is the order somebody walks
+ * the kitchen in. A single alphabetical list of forty ingredients means
+ * crossing the room for the letter B and crossing back for the letter C, and
+ * the thing that gets skipped is whatever is furthest away.
+ *
+ * Built here rather than in each screen. The terminal and the kitchen display
+ * both ask this question, and two copies of it is two chances for the list a
+ * cook sees to depend on which device they picked up.
+ */
+export async function stockCheckRows(venueId: string): Promise<StockCheckRow[]> {
+  const [ingredients, categories] = await Promise.all([
+    loadIngredients(venueId),
+    listAll<{ key: string; name: string; sort?: number; active?: boolean }>('ingredient_categories').catch(() => []),
+  ]);
+
+  const order = new Map(categories.map((c, i) => [c.key, c.sort ?? i]));
+  const label = new Map(categories.map((c) => [c.key, c.name]));
+  // Anything uncategorised goes last under its own heading, rather than
+  // silently at the top where it reads as belonging to nothing.
+  const rank = (key?: string) => (key && order.has(key) ? (order.get(key) as number) : 9999);
+
+  return ingredients
+    .filter((i) => i.active)
+    .sort(
+      (a, b) =>
+        rank(a.category) - rank(b.category) ||
+        (a.category ?? '').localeCompare(b.category ?? '') ||
+        // Critical items lead their group: if service stops without it, it
+        // belongs at the top of a list somebody is working through at the end
+        // of a long day.
+        Number(b.critical) - Number(a.critical) ||
+        a.name.localeCompare(b.name),
+    )
+    .map((i) => ({
+      $id: i.$id,
+      name: i.name,
+      critical: i.critical,
+      unit: i.unit,
+      lowAt: i.low_threshold ?? undefined,
+      parLevel: i.par_level || undefined,
+      onHand: Math.round(i.current_qty * 100) / 100,
+      group: i.category ? label.get(i.category) ?? i.category : '',
+      guide: i.check_guide?.trim() || undefined,
+    }));
+}
