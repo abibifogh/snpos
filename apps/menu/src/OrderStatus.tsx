@@ -32,8 +32,8 @@ interface Step {
  * they are not a stage of progress, they are the end of it.
  */
 const STEPS: Step[] = [
-  { key: 'PENDING', label: 'Sent', says: 'The kitchen has your order.' },
-  { key: 'ACCEPTED', label: 'Accepted', says: 'They have started on it.' },
+  { key: 'PENDING', label: 'Sent', says: 'Your order has gone through to the kitchen.' },
+  { key: 'ACCEPTED', label: 'Accepted', says: 'The kitchen has your order and will start shortly.' },
   { key: 'PREPARING', label: 'Cooking', says: 'Your food is being cooked.' },
   { key: 'READY', label: 'Ready', says: "It's ready — someone is bringing it over." },
 ];
@@ -136,7 +136,20 @@ export function OrderStatus({
             : 'We will start it in time for your slot.'}
         </div>
       ) : (
-        <ol className="steps">
+        <>
+          {/* Said once, near the top, where somebody who has just pressed
+              "send" is looking. A wait nobody has named is a wait that feels
+              twice as long, and it is the question a guest otherwise gets up
+              and asks a waiter. */}
+          {order.eta_minutes && !done && (
+            <div className="eta">
+              <strong>About {order.eta_minutes} minutes</strong>
+              <div className="small dim">
+                An estimate from what you ordered. We will tell you the moment it is ready.
+              </div>
+            </div>
+          )}
+          <ol className="steps">
           {STEPS.map((step, i) => (
             <li key={step.key} className={i < at ? 'past' : i === at ? 'now' : ''}>
               <span className="dot" aria-hidden="true" />
@@ -152,7 +165,8 @@ export function OrderStatus({
               <div><div className="label">With you</div></div>
             </li>
           )}
-        </ol>
+          </ol>
+        </>
       )}
 
       <div className="status-card">

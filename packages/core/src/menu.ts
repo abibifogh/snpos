@@ -156,3 +156,29 @@ export async function loadMenu(venueId: string, at: Date = new Date()): Promise<
 /** Sections a customer should actually see right now. */
 export const visibleSections = (menu: LoadedMenu): MenuSection[] =>
   menu.sections.filter((s) => s.open || s.category.unavailable_display !== 'hide');
+
+/**
+ * Dishes that are actually on today, in menu order, each listed once.
+ *
+ * What the "we've run out" screen should offer. It used to list the entire
+ * menu, so a cook looking for the thing in front of them scrolled past every
+ * Sunday roast and every breakfast item on a Tuesday evening — and could take
+ * one off, which does nothing useful because the dish was not orderable today
+ * anyway. The list is long enough with only the dishes that are on.
+ *
+ * A dish in two categories appears once. It is the same dish and the same
+ * empty container.
+ */
+export function itemsAvailableNow(menu: LoadedMenu): MenuItem[] {
+  const seen = new Set<string>();
+  const out: MenuItem[] = [];
+  for (const section of menu.sections) {
+    if (!section.open) continue;
+    for (const entry of section.entries) {
+      if (seen.has(entry.item.$id)) continue;
+      seen.add(entry.item.$id);
+      out.push(entry.item);
+    }
+  }
+  return out;
+}

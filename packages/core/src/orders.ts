@@ -54,6 +54,8 @@ export interface Order extends Doc {
   fire_at?: string;
   placed_while_closed?: boolean;
   quoted_wait_minutes?: number;
+  /** How long the whole order should take, from the prep time on each dish. */
+  eta_minutes?: number;
 }
 
 export interface OrderItem extends Doc {
@@ -253,6 +255,23 @@ export interface CreatedOrder {
 }
 
 /**
+ * How long an order should take, from the moment it is placed.
+ *
+ * The prep times are added up rather than the slowest one taken. A kitchen is
+ * not three kitchens: a cook who has a curry and a grill on the same ticket
+ * does them one after the other, and quoting the longer of the two is how a
+ * customer ends up waiting twice what they were told. Better to say twenty and
+ * hand it over in fifteen than the other way round.
+ *
+ * Extra portions of the same dish are not multiplied — three of one thing goes
+ * in one pan, and doubling it produces a number nobody believes.
+ */
+export function estimateMinutes(lines: CartLine[]): number {
+  const total = lines.reduce((sum, l) => sum + (l.prep_minutes ?? 15), 0);
+  return Math.max(1, Math.round(total));
+}
+
+/**
  * Work back from when the customer wants it to when the kitchen must start,
  * using the slowest dish on the order plus a small buffer.
  */
@@ -317,6 +336,7 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
     is_preorder: isPreorder,
     placed_while_closed: input.placedWhileClosed ?? false,
     quoted_wait_minutes: input.quotedWaitMinutes ?? undefined,
+    eta_minutes: estimateMinutes(lines),
   };
 
   if (input.scheduledFor) {

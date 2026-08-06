@@ -7,7 +7,7 @@ import { applyTheme } from '@snpos/ui';
 import {
   account, db, DB_ID, Query, listAll, loadMenu, loadFeatures, humanError, isEnabled,
   articlesFor, featureConfig, HELP_AREAS,
-  markUnavailable, markAvailable, isUnavailable, loadMenu as reloadMenu,
+  markUnavailable, markAvailable, isUnavailable, loadMenu as reloadMenu, itemsAvailableNow,
   requireStaff, signOutCompletely, staffProfileFor,
   onQueueChange, startOfflineSync, flushQueue,
 } from '@snpos/core';
@@ -213,12 +213,12 @@ export function App() {
 
       {offOpen && (
         <EightySixModal
-          items={Object.values(ctx.menu.byId).map((e) => ({
-            $id: e.item.$id,
-            name: e.item.name,
-            off: isUnavailable(e.item),
-            offSince: e.item.unavailable_since,
-            reason: e.item.unavailable_reason,
+          items={itemsAvailableNow(ctx.menu).map((item) => ({
+            $id: item.$id,
+            name: item.name,
+            off: isUnavailable(item),
+            offSince: item.unavailable_since,
+            reason: item.unavailable_reason,
           }))}
           requireReason={featureConfig(ctx.features, 'item_availability', 'require_reason', false)}
           busyId={offBusy}

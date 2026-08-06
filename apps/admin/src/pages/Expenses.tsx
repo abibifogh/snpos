@@ -115,7 +115,11 @@ export function ExpensesPage() {
         approval_status: 'pending',
       },
     );
-    setAmountText(toInput(row?.amount ?? 0, decimals));
+    // Blank for a new expense, not "0.00". A pre-filled zero has to be cleared
+    // before anything can be typed, and on a phone that means a long-press and
+    // a select-all — so what actually gets recorded is 250.00 turned into
+    // 0.00250 by somebody in a hurry.
+    setAmountText(row ? toInput(row.amount, decimals) : '');
     setDraftItems([]);
     setError(null);
 

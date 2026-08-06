@@ -69,7 +69,8 @@
         "databases.snpos.collections.shifts.documents.*.update",
         "databases.snpos.collections.staff_profiles.documents.*.create",
         "databases.snpos.collections.staff_profiles.documents.*.update",
-        "databases.snpos.collections.staff_profiles.documents.*.delete"
+        "databases.snpos.collections.staff_profiles.documents.*.delete",
+        "databases.snpos.collections.item_availability.documents.*.create"
       ],
       "schedule": "0 * * * *",
       "timeout": 60,

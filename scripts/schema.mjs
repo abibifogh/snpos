@@ -516,6 +516,11 @@ export const COLLECTIONS = [
       ['delivery_status', 'e', ['pending', 'ready', 'dispatched', 'delivered', 'failed'], false],
       ['driver_name', 's', 120, false],
       ['quoted_wait_minutes', 'i', null, false], // set by busy mode (feature 11)
+      // How long the whole order should take, worked out when it is placed from
+      // the prep time on each dish. Stored rather than recomputed so the figure
+      // a customer was told is the figure the kitchen is measured against —
+      // a menu edited at seven must not quietly change what was promised at six.
+      ['eta_minutes', 'i', null, false],
 
       // --- Discounts and loyalty
       ['discounts_applied', 's', 4000, false], // JSON snapshot of each redemption

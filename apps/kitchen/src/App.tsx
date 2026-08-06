@@ -8,6 +8,7 @@ import {
   db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
   verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
+  itemsAvailableNow,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback,
 } from '@snpos/core';
 import type {
@@ -38,6 +39,11 @@ export function App() {
   const [venue, setVenue] = useState<Venue | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [items, setItems] = useState<Record<string, OrderItem[]>>({});
+  // Read by the reconcile timer without making it depend on `items` — that
+  // dependency would tear down and rebuild the timer every time a ticket
+  // loaded, which is most of the reason a timer like this stops firing.
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   const [stations, setStations] = useState<Station[]>([]);
   const [station, setStation] = useState<string>(() => localStorage.getItem('kds-station') || 'all');
   const [features, setFeatures] = useState<FeatureMap>({});
@@ -182,6 +188,63 @@ export function App() {
   }, [venue, loadItemsFor]);
 
   /**
+   * A net under the live connection.
+   *
+   * The live socket drops without saying so — a wifi blip, a router restart, a
+   * screen left running for a fortnight — and the page carries on looking
+   * exactly as healthy as it did a minute ago. A cook has no way to tell the
+   * difference between "no new orders" and "no new orders reaching me", and the
+   * first they know of it is a customer asking about food that was ordered
+   * twenty minutes ago. Somebody then reloads the page and everything appears.
+   *
+   * So the list is reconciled from the server on a slow timer regardless, and
+   * again the moment the tab is looked at or the network comes back. It costs
+   * one small read a minute and removes the only failure in this system that is
+   * completely invisible while it is happening.
+   */
+  useEffect(() => {
+    if (!venue) return;
+    let alive = true;
+
+    const reconcile = async () => {
+      if (!alive || document.hidden) return;
+      try {
+        const [open, booked] = await Promise.all([
+          loadOpenOrders(venue.$id),
+          listAll<Order>('orders', [Query.equal('venue_id', venue.$id), Query.equal('status', 'SCHEDULED')]),
+        ]);
+        if (!alive) return;
+        const fresh = [...open, ...booked];
+        setOrders((prev) => {
+          // Only touched when it actually differs, so a re-render every minute
+          // does not restart animations or fight a cook mid-tap.
+          const same =
+            prev.length === fresh.length &&
+            fresh.every((o) => prev.some((p) => p.$id === o.$id && p.status === o.status && p.$updatedAt === o.$updatedAt));
+          return same ? prev : fresh;
+        });
+        const missing = fresh.filter((o) => !itemsRef.current[o.$id]).map((o) => o.$id);
+        if (missing.length) void loadItemsFor(missing);
+      } catch {
+        // Offline, most likely. The next tick tries again.
+      }
+    };
+
+    const timer = window.setInterval(reconcile, 60_000);
+    const wake = () => void reconcile();
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('online', wake);
+    window.addEventListener('focus', wake);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('online', wake);
+      window.removeEventListener('focus', wake);
+    };
+  }, [venue, loadItemsFor]);
+
+  /**
    * Booked for later, not yet cooking.
    *
    * Shown as a quiet strip rather than as tickets: they must not sound the
@@ -222,20 +285,69 @@ export function App() {
   const overdueOn = isEnabled(features, 'overdue_alerts');
   const graceMinutes = featureConfig(features, 'overdue_alerts', 'grace_minutes', 5);
 
+  /**
+   * A coarse clock, and the reason this list works at all.
+   *
+   * Being late is a fact about the time, not about the orders — and the orders
+   * were the only thing this was memoised on. So the clock inside it froze at
+   * whatever moment a ticket last arrived: an order could sail past its time
+   * with nothing else happening and never appear here, never show the Late
+   * pill, never ring. The alarm only went off if some *other* order turned up
+   * and knocked the list loose, which is precisely when it was least needed.
+   *
+   * Ten-second granularity: often enough that nobody notices the delay, coarse
+   * enough that the list is not rebuilt on every one of the ticks that drive
+   * the age counters.
+   */
+  const nowSlice = Math.floor(Date.now() / 10_000);
+
+  /** How long the whole order was expected to take, in minutes. */
+  const promisedMinutes = useCallback(
+    (o: Order) => {
+      if (o.eta_minutes) return o.eta_minutes;
+      // Older orders, placed before an estimate was stored. Each line's due
+      // time was stamped as "now plus its prep", so the difference gives that
+      // prep time back — and they add up the same way a new order's would.
+      // Twenty minutes if even that is missing, rather than never pinging.
+      const placed = new Date(o.$createdAt).getTime();
+      const summed = (items[o.$id] ?? []).reduce((sum, i) => {
+        const due = i.due_at ? new Date(i.due_at).getTime() : 0;
+        return sum + (due > placed ? Math.round((due - placed) / 60_000) : 0);
+      }, 0);
+      return summed || 20;
+    },
+    [items],
+  );
+
   const overdue = useMemo(() => {
     if (!overdueOn) return [];
+    void nowSlice; // the clock this depends on
+    const now = Date.now();
+    const grace = graceMinutes * 60_000;
+
     return visible.filter((o) => {
-      if (!['ACCEPTED', 'PREPARING'].includes(o.status)) return false;
-      const lines = items[o.$id] ?? [];
-      if (lines.length === 0) return false;
-      const due = Math.max(...lines.map((i) => (i.due_at ? new Date(i.due_at).getTime() : 0)), 0);
-      const started = new Date(o.accepted_at || o.$createdAt).getTime();
-      // Fall back to the longest prep time on the ticket when no due time was
-      // stamped, rather than never pinging at all.
-      const deadline = due || started + 20 * 60_000;
-      return Date.now() > deadline + graceMinutes * 60_000;
+      // Two different late moments, both worth a noise.
+      //
+      // Still cooking, past the time the customer was given. Measured from
+      // when the kitchen took it, not from when it was placed — an order that
+      // sat unacknowledged for ten minutes is a different failure, and the
+      // acknowledgement alarm has already been shouting about that one.
+      if (['ACCEPTED', 'PREPARING'].includes(o.status)) {
+        const started = new Date(o.accepted_at || o.$createdAt).getTime();
+        return now > started + promisedMinutes(o) * 60_000 + grace;
+      }
+
+      // Ready, and still sitting there. Food going cold on the pass is the
+      // quietest failure in a kitchen: the screen says done, the cook has moved
+      // on, and the only person who knows is the customer who is still waiting.
+      if (o.status === 'READY') {
+        const since = new Date(o.$updatedAt).getTime();
+        return now > since + grace;
+      }
+
+      return false;
     });
-  }, [visible, items, overdueOn, graceMinutes]);
+  }, [visible, overdueOn, graceMinutes, promisedMinutes, nowSlice]);
 
   /**
    * Escalation is driven by the oldest unacknowledged ticket, not by each one
@@ -434,7 +546,7 @@ export function App() {
                 reason,
               });
               const m = await loadMenu(venue.$id);
-              setOffItems(Object.values(m.byId).map((e) => e.item));
+              setOffItems(itemsAvailableNow(m));
             } catch (e) {
               setError(e instanceof Error ? e.message : 'Could not take that off the menu.');
             } finally {
@@ -446,7 +558,7 @@ export function App() {
             try {
               await markAvailable({ item: { $id: i.$id }, userId: who?.user_id || who?.$id });
               const m = await loadMenu(venue.$id);
-              setOffItems(Object.values(m.byId).map((e) => e.item));
+              setOffItems(itemsAvailableNow(m));
             } catch (e) {
               setError(e instanceof Error ? e.message : 'Could not put that back.');
             } finally {
@@ -505,7 +617,7 @@ export function App() {
               title="Mark a dish as run out"
               onClick={async () => {
                 const m = await loadMenu(venue?.$id ?? '');
-                setOffItems(Object.values(m.byId).map((e) => e.item));
+                setOffItems(itemsAvailableNow(m));
                 setOffOpen(true);
               }}
             >

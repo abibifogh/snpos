@@ -136,8 +136,15 @@ export function Modal({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // Clicking the background does NOT close.
+  //
+  // It used to, and it threw away everything typed. A cook recording gas money
+  // with the amount, the payee and three lines filled in taps a millimetre
+  // outside the panel and the whole form is gone, with no warning and nothing
+  // to undo. That is not a dialog, it is a trapdoor. Escape and the ✕ are both
+  // deliberate acts; a stray tap is not.
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="modal-backdrop">
       <div className={wide ? 'modal modal-wide' : 'modal'} role="dialog" aria-modal="true" aria-label={title}>
         <header className="card-head">
           <h2>{title}</h2>

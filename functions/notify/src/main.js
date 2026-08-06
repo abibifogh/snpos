@@ -18,6 +18,7 @@ import { ensureLogin, revokeLogin } from './staff.js';
  *   staff_profiles.*.create  → make their account, send a sign-in link
  *   staff_profiles.*.update  → keep their team in step, resend a link if asked
  *   staff_profiles.*.delete  → cancel that person's login
+ *   item_availability.*.create → a dish has run out, tell an admin now
  *
  * Schedule, hourly (no document arrives):
  *   dishes still off the menu past the configured wait
@@ -59,6 +60,38 @@ const row = (label, value, bold = false) =>
 
 
 /**
+ * Who to tell about stock.
+ *
+ * The addresses typed into the feature's own box win. Otherwise it falls back
+ * to the report recipients — the people who already get the shift summary are
+ * the people who care that the chicken has run out.
+ *
+ * This used to read `x.email` from those rows. The field is called
+ * `destination`, so the fallback quietly returned nobody: unless somebody had
+ * filled in the feature box, every stock alert this system ever produced was
+ * addressed to an empty list and reported as sent.
+ */
+async function alertRecipients({ db, DB_ID, configured }) {
+  const explicit = String(configured || '').split(/[,;\s]+/).filter(Boolean);
+  if (explicit.length) return explicit;
+
+  const subs = await db
+    .listDocuments(DB_ID, 'report_subscriptions', [
+      Query.equal('channel', 'email'),
+      Query.equal('active', true),
+      Query.limit(100),
+    ])
+    .catch(() => ({ documents: [] }));
+
+  const rows = subs.documents.filter((r) => r.destination);
+  // Anybody who asked for stock alerts specifically; everybody on the list if
+  // nobody did. Sending to the whole list is the recoverable mistake here —
+  // sending to nobody is the one that goes unnoticed for a month.
+  const asked = rows.filter((r) => (r.events || []).includes('stock_alert'));
+  return [...new Set((asked.length ? asked : rows).map((r) => r.destination))];
+}
+
+/**
  * Dishes still off the menu past the configured wait.
  *
  * Taking something off mid-service is right and normal. Leaving it off for two
@@ -89,13 +122,7 @@ async function sweepUnavailable({ db, DB_ID, settings, transport, log, error }) 
   ]);
   if (open.total === 0) return { nothing: true };
 
-  let to = String(config.alert_emails || '').split(/[,;\s]+/).filter(Boolean);
-  if (to.length === 0) {
-    const subs = await db.listDocuments(DB_ID, 'report_subscriptions', [
-      Query.equal('active', true), Query.limit(50),
-    ]).catch(() => ({ documents: [] }));
-    to = subs.documents.map((x) => x.email).filter(Boolean);
-  }
+  const to = await alertRecipients({ db, DB_ID, configured: config.alert_emails });
 
   if (!transport || to.length === 0) {
     error(`${open.total} dishes off over ${hours}h but ${!transport ? 'SMTP is not configured' : 'no recipients are set'}.`);
@@ -207,6 +234,48 @@ export default async ({ req, res, log, error }) => {
       );
     }
 
+    // -------------------------------------------------- a dish has run out
+    // Sent the moment it happens, not on the hourly sweep.
+    //
+    // The sweep exists for the opposite problem — something that has been off
+    // for two days and nobody noticed. This is the other end: a dish going off
+    // during service is a buying decision somebody may still be able to act on
+    // within the hour, and by the time an hourly job runs, the trip to the
+    // market has been missed.
+    if (events.some((e) => e.includes('collections.item_availability')) && events.some((e) => e.endsWith('.create'))) {
+      const configured = await featureConfig('item_availability', 'alert_emails', '');
+      if (configured === null) return res.json({ sent: false, why: 'feature off' });
+      const to = await alertRecipients({ db, DB_ID, configured });
+      if (!transport || to.length === 0) {
+        error(`${doc.name_snapshot} is off the menu but ${!transport ? 'SMTP is not configured' : 'no recipients are set'}.`);
+        return res.json({ sent: false, why: 'nowhere to send it' });
+      }
+      const when = new Date(doc.marked_off_at || Date.now()).toLocaleString('en-GB', {
+        timeZone: settings.timezone || 'UTC', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short',
+      });
+      await transport.sendMail({
+        from,
+        to: to.join(','),
+        subject: `Off the menu: ${doc.name_snapshot}`,
+        html: shell(
+          'A dish has run out',
+          `<p style="margin:0 0 14px;font-size:17px"><strong>${doc.name_snapshot}</strong> has been taken off the menu.</p>
+           <table style="width:100%;border-collapse:collapse;font-size:14px">
+             ${row('Taken off by', doc.marked_off_name || 'a member of staff')}
+             ${row('At', when)}
+             ${doc.reason ? row('Reason', doc.reason) : ''}
+           </table>
+           <p style="margin:18px 0 0;color:#5d6b7a;font-size:13px">
+             Customers can no longer order it and it will not appear on the kitchen screen. It stays off until
+             somebody puts it back.
+           </p>`,
+          brand,
+        ),
+      });
+      log(`Run-out alert sent for ${doc.name_snapshot}.`);
+      return res.json({ sent: true, item: doc.name_snapshot });
+    }
+
     // ------------------------------------------------- group order placed
     // A party of twenty is a kitchen planning decision, not just another
     // ticket, so somebody is told the moment it arrives rather than when the
@@ -303,7 +372,7 @@ export default async ({ req, res, log, error }) => {
               const isGroup = !!doc.group_reference;
               const body =
                 stage === 'accepted'
-                  ? `<p style="margin:0 0 10px">We have your order and the kitchen has started on it.</p>
+                  ? `<p style="margin:0 0 10px">We have your order. The kitchen will start on it shortly.</p>
                      <p style="margin:0;color:#5d6b7a;font-size:14px">Order ${doc.order_no}${
                        doc.eta_minutes ? ` · about ${doc.eta_minutes} minutes` : ''
                      }</p>`
