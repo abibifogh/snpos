@@ -35,6 +35,10 @@ export interface Settings extends Doc {
   order_number_reset_on?: string;
   tips_enabled?: boolean;
   low_stock_default_bp: number;
+  /** How the shift-end check asks: tap a level, or type what is there. */
+  stock_check_mode?: 'levels' | 'counts';
+  /** Whether a counted amount may be a part — 0.5, 0.25 — or whole only. */
+  stock_count_decimals?: boolean;
   cash_variance_tolerance: number;
   terminal_idle_lock_seconds: number;
   default_locale?: string;

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Modal, Field, Input, Notice, Badge, ShiftCloseForm } from '@snpos/ui';
+import { Button, Modal, Field, Input, Notice, Badge, ShiftCloseForm, resolveCounts } from '@snpos/ui';
 import type { BlockerRow, CountRow, StockRow } from '@snpos/ui';
 import {
   formatMoney, parseMoney, toInput, stockCheckRows,
@@ -27,12 +27,21 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   const [note, setNote] = useState('');
   const [levels, setLevels] = useState<Record<string, 'OK' | 'LOW' | 'OUT'>>({});
   const [stockList, setStockList] = useState<StockRow[]>([]);
+  // Typed amounts, kept as text so a half-finished "0." is not read as zero.
+  const [stockCounts, setStockCounts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [floatSource, setFloatSource] = useState('zero');
   const [floatNote, setFloatNote] = useState('');
 
   const decimals = ctx.settings.currency_decimals ?? 2;
+  // Which question the restaurant has chosen to ask, and what the answers come
+  // to. Worked out here rather than in the form so the close button and the
+  // boxes on screen can never be judging different things.
+  const counting = ctx.settings.stock_check_mode === 'counts';
+  const stockDecimals = ctx.settings.stock_count_decimals !== false;
+  const resolved = resolveCounts(stockList, stockCounts, stockDecimals);
+
   const tolerance = ctx.settings.cash_variance_tolerance ?? 500;
   const money = (n: number) => formatMoney(n, ctx.settings);
 
@@ -107,6 +116,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       const list = await stockCheckRows(ctx.venue.$id);
       setStockList(list);
       setLevels(Object.fromEntries(list.map((i) => [i.$id, 'OK' as const])));
+      setStockCounts({});
       setNote('');
       setClosing(true);
     } catch (e) {
@@ -149,6 +159,14 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       );
       return;
     }
+    if (counting && resolved.missing.length > 0) {
+      const names = resolved.missing.slice(0, 3).map((i) => i.name).join(', ');
+      setError(
+        `Still to count: ${names}${resolved.missing.length > 3 ? ` and ${resolved.missing.length - 3} more` : ''}. ` +
+        'Type 0 for anything that has run out — a blank row would be saved as if it were fine.',
+      );
+      return;
+    }
     if (anythingOff() && !note.trim()) {
       setError('Something is over or short. Say what happened before closing — that answer is gone by tomorrow.');
       return;
@@ -166,7 +184,8 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         methods,
         counted: countedMinor(),
         varianceNote: note.trim(),
-        levels,
+        levels: counting ? resolved.levels : levels,
+        stockCounts: counting ? resolved.counts : undefined,
       });
 
       await ctx.reloadShift();
@@ -268,6 +287,10 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
             stock={stockList}
             levels={levels}
             onLevel={(id, level) => setLevels((l) => ({ ...l, [id]: level }))}
+            stockMode={counting ? 'counts' : 'levels'}
+            stockCounts={stockCounts}
+            onStockCount={(id, text) => setStockCounts((c) => ({ ...c, [id]: text }))}
+            stockDecimals={stockDecimals}
             note={note}
             onNote={setNote}
             symbol={ctx.settings.currency_symbol ?? ''}

@@ -176,11 +176,33 @@ export function recipeCost(recipes: Recipe[], ingredients: Ingredient[]): number
 
 export type StockLevel = 'ok' | 'low' | 'out';
 
+/**
+ * The amount at or below which something counts as low.
+ *
+ * Either set explicitly on the ingredient, or a share of its par level. Named
+ * so the shift-end count can show the same number the alerts are judged
+ * against, rather than working it out a second time and disagreeing.
+ */
+export const lowThresholdFor = (ing: Pick<Ingredient, 'low_threshold' | 'par_level'>, lowDefaultBp = 3000) =>
+  ing.low_threshold ?? (ing.par_level * lowDefaultBp) / 10000;
+
 /** Where an ingredient sits against its own thresholds. */
 export function levelOf(ing: Ingredient, lowDefaultBp = 3000): StockLevel {
   if (ing.current_qty <= 0) return 'out';
-  const threshold = ing.low_threshold ?? (ing.par_level * lowDefaultBp) / 10000;
-  return ing.current_qty <= threshold ? 'low' : 'ok';
+  return ing.current_qty <= lowThresholdFor(ing, lowDefaultBp) ? 'low' : 'ok';
+}
+
+/**
+ * The same judgement, made from a number somebody has just counted.
+ *
+ * The point of counting rather than tapping is that the answer stops being an
+ * opinion. Two cooks looking at the same four crates should file the same
+ * status, and they will if the status comes from the number rather than from
+ * how the night went.
+ */
+export function statusFromCount(qty: number, lowAt: number): 'OK' | 'LOW' | 'OUT' {
+  if (!(qty > 0)) return 'OUT';
+  return qty <= lowAt ? 'LOW' : 'OK';
 }
 
 export interface StockAlert {

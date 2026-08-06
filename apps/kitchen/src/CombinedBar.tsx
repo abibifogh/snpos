@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, Field, FormError, Input, Modal, Notice, Select, Textarea, ShiftCloseForm } from '@snpos/ui';
 import type { BlockerRow, CountRow, StockRow } from '@snpos/ui';
+import { resolveCounts } from '@snpos/ui';
 import { ShiftHistory } from './ShiftHistory';
 import {
   db, DB_ID, ID, formatMoney, parseMoney, toInput, loadIngredients, stockCheckRows,
@@ -49,10 +50,19 @@ export function CombinedBar({
   const [note, setNote] = useState('');
   const [levels, setLevels] = useState<Record<string, 'OK' | 'LOW' | 'OUT'>>({});
   const [stockList, setStockList] = useState<StockRow[]>([]);
+  // Typed amounts, kept as text so a half-finished "0." is not read as zero.
+  const [stockCounts, setStockCounts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const decimals = settings.currency_decimals ?? 2;
+
+  // Which question the restaurant has chosen to ask, and what the answers come
+  // to. Worked out here rather than in the form so the close button and the
+  // boxes on screen can never be judging different things.
+  const counting = settings.stock_check_mode === 'counts';
+  const stockDecimals = settings.stock_count_decimals !== false;
+  const resolved = resolveCounts(stockList, stockCounts, stockDecimals);
   const tolerance = settings.cash_variance_tolerance ?? 500;
   const money = (n: number) => formatMoney(n, settings);
 
@@ -122,6 +132,7 @@ export function CombinedBar({
       const list = await stockCheckRows(venue.$id);
       setStockList(list);
       setLevels(Object.fromEntries(list.map((i) => [i.$id, 'OK' as const])));
+      setStockCounts({});
       setNote('');
       setClosing(true);
     } catch (e) {
@@ -150,6 +161,14 @@ export function CombinedBar({
         return;
       }
     }
+    if (counting && resolved.missing.length > 0) {
+      const names = resolved.missing.slice(0, 3).map((i) => i.name).join(', ');
+      setError(
+        `Still to count: ${names}${resolved.missing.length > 3 ? ` and ${resolved.missing.length - 3} more` : ''}. ` +
+        'Type 0 for anything that has run out — a blank row would be saved as if it were fine.',
+      );
+      return;
+    }
     const off = rows.some((r) => (parseMoney(r.countedText, decimals) ?? 0) !== r.expected);
     if (off && !note.trim()) {
       setError('Something is over or short. Say what happened before closing — that answer is gone by tomorrow.');
@@ -168,7 +187,8 @@ export function CombinedBar({
         methods,
         counted: Object.fromEntries(rows.map((r) => [r.methodId, parseMoney(r.countedText, decimals) ?? 0])),
         varianceNote: note.trim(),
-        levels,
+        levels: counting ? resolved.levels : levels,
+        stockCounts: counting ? resolved.counts : undefined,
       });
       await reload();
       setClosing(false);
@@ -275,6 +295,10 @@ export function CombinedBar({
             stock={stockList}
             levels={levels}
             onLevel={(id, level) => setLevels((l) => ({ ...l, [id]: level }))}
+            stockMode={counting ? 'counts' : 'levels'}
+            stockCounts={stockCounts}
+            onStockCount={(id, text) => setStockCounts((c) => ({ ...c, [id]: text }))}
+            stockDecimals={stockDecimals}
             note={note}
             onNote={setNote}
             symbol={settings.currency_symbol ?? ''}

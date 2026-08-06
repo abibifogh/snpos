@@ -313,6 +313,12 @@ table.data tbody tr:hover { background: var(--surface-2); }
 .stock-line > span:first-child { min-width: 0; padding-right: 0.6rem; }
 .stock-line > .row { flex: none; }
 
+/* The counted-amount box. Narrow on purpose — an amount is two or three
+   characters, and a wide field on a phone pushes the unit and the status badge
+   onto a second line. */
+.stock-count input { width: 5.2rem; text-align: right; }
+.stock-count .badge { min-width: 3.1rem; justify-content: center; }
+
 /* ---- offline ----------------------------------------------------------- */
 /* Full width and unmissable. Offline support that nobody notices is offline
    support that loses a service to one forgotten device. */

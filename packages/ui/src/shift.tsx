@@ -44,20 +44,86 @@ export interface StockRow {
   guide?: string;
 }
 
+const TONE = { OK: 'ok', LOW: 'warn', OUT: 'danger' } as const;
+
+/**
+ * Read a typed amount, or nothing.
+ *
+ * A blank box is genuinely different from a zero: one means "not counted yet",
+ * the other means "there is none left". Returning null for blank keeps the two
+ * apart all the way through, so a shift cannot close on an unanswered row by
+ * treating it as empty shelf.
+ */
+export function readCount(text?: string, allowDecimals = true): number | null {
+  const raw = (text ?? '').trim();
+  if (raw === '') return null;
+  const n = Number(raw.replace(/[^0-9.]/g, ''));
+  if (!Number.isFinite(n) || n < 0) return null;
+  return allowDecimals ? n : Math.round(n);
+}
+
+/**
+ * Turn what was typed into what gets saved.
+ *
+ * One implementation for both screens. The terminal and the kitchen display
+ * ask the same question, and two copies of "is 0.5 low?" is two chances for
+ * the same shelf to be filed differently depending on which device was nearest.
+ *
+ * `missing` is what has not been answered yet, so a shift cannot close on a
+ * half-finished count — a blank row would otherwise be saved as OK and the
+ * ingredient nobody looked at is exactly the one that runs out.
+ */
+export function resolveCounts(
+  stock: StockRow[],
+  text: Record<string, string>,
+  allowDecimals = true,
+): {
+  counts: Record<string, number>;
+  levels: Record<string, 'OK' | 'LOW' | 'OUT'>;
+  missing: StockRow[];
+} {
+  const counts: Record<string, number> = {};
+  const levels: Record<string, 'OK' | 'LOW' | 'OUT'> = {};
+  const missing: StockRow[] = [];
+
+  for (const i of stock) {
+    const qty = readCount(text[i.$id], allowDecimals);
+    if (qty === null) { missing.push(i); continue; }
+    counts[i.$id] = qty;
+    levels[i.$id] = qty <= 0 ? 'OUT' : i.lowAt !== undefined && qty <= i.lowAt ? 'LOW' : 'OK';
+  }
+  return { counts, levels, missing };
+}
+
 /**
  * What to put under an item's name.
  *
- * The written rule wins whenever there is one. It is in the units on the
- * shelf — buckets, crates, half a bottle — and it says the same thing to
- * everybody, which is the entire point of having written it down.
- *
+ * When staff tap a level, the written rule wins whenever there is one. It is in
+ * the units on the shelf — buckets, crates, half a bottle — and it says the
+ * same thing to everybody, which is the entire point of having written it down.
  * Falling back to the numbers is better than falling back to nothing, but only
  * just: "low at 4 kg" is a conversion somebody has to do in their head while
  * looking at a bucket.
+ *
+ * When staff type an amount, that reverses: the box takes a number in the
+ * ingredient's own unit, so the number has to lead.
  */
-function guideFor(i: StockRow): string {
-  if (i.guide) return i.guide;
+function guideFor(i: StockRow, counting = false): string {
   const unit = i.unit ? ` ${i.unit}` : '';
+
+  // When the answer is a number, the written rule leads with the number too.
+  // A guide that says "half a bucket" above a box measured in kilograms invites
+  // somebody to type 0.5, and the shelf and the system stop agreeing.
+  if (counting) {
+    const parts = [
+      i.lowAt !== undefined ? `low at ${i.lowAt}${unit} or less` : null,
+      i.parLevel !== undefined ? `full shelf ${i.parLevel}${unit}` : null,
+      i.guide || null,
+    ].filter(Boolean);
+    return parts.join(' · ');
+  }
+
+  if (i.guide) return i.guide;
   const bits: string[] = [];
   if (i.lowAt !== undefined) bits.push(`OK = more than ${i.lowAt}${unit} · Low = ${i.lowAt}${unit} or less`);
   else if (i.parLevel !== undefined) bits.push(`A full shelf is ${i.parLevel}${unit}`);
@@ -72,6 +138,10 @@ export function ShiftCloseForm({
   stock,
   levels,
   onLevel,
+  stockMode = 'levels',
+  stockCounts = {},
+  onStockCount,
+  stockDecimals = true,
   note,
   onNote,
   symbol,
@@ -84,6 +154,12 @@ export function ShiftCloseForm({
   stock: StockRow[];
   levels: Record<string, 'OK' | 'LOW' | 'OUT'>;
   onLevel: (id: string, level: 'OK' | 'LOW' | 'OUT') => void;
+  /** Tap a level, or type what is on the shelf and let the thresholds decide. */
+  stockMode?: 'levels' | 'counts';
+  stockCounts?: Record<string, string>;
+  onStockCount?: (id: string, text: string) => void;
+  /** Whether half and quarter amounts may be typed, or whole numbers only. */
+  stockDecimals?: boolean;
   note: string;
   onNote: (v: string) => void;
   symbol: string;
@@ -121,6 +197,24 @@ export function ShiftCloseForm({
       </>
     );
   }
+
+  const counting = stockMode === 'counts';
+
+  /**
+   * The status a typed amount lands on, or null while the box is empty.
+   *
+   * Worked out from the same threshold the alerts use, so what a cook sees at
+   * the pass and what the morning report says can never disagree.
+   */
+  const countStatus = (i: StockRow, text?: string): 'OK' | 'LOW' | 'OUT' | null => {
+    const qty = readCount(text, stockDecimals);
+    if (qty === null) return null;
+    if (qty <= 0) return 'OUT';
+    // No threshold set is not a reason to refuse an answer. Anything present
+    // is better than out, and the admin can sharpen it later.
+    if (i.lowAt === undefined) return 'OK';
+    return qty <= i.lowAt ? 'LOW' : 'OK';
+  };
 
   /**
    * Is anything over or short right now?
@@ -210,24 +304,43 @@ export function ShiftCloseForm({
       {stock.length > 0 && (
         <>
           <h3 style={{ margin: '1.3rem 0 0.3rem' }}>Stock check</h3>
-          <p className="small dim" style={{ marginTop: 0 }}>
-            A quick look at the shelf, not a full count. Anything marked <strong>low</strong> or <strong>out</strong>{' '}
-            goes into tonight's summary — and if the same thing keeps coming up, that becomes its own warning.
-          </p>
-          {/* Three people will otherwise use three different meanings of "low",
-              and the report that comes out the other end is worth nothing.
-              One sentence each, phrased as the question to ask yourself. */}
-          <div className="stock-key">
-            <div><Badge tone="ok">OK</Badge> Enough to get through tomorrow's service without thinking about it.</div>
-            <div><Badge tone="warn">LOW</Badge> Enough for tonight, but it needs ordering — you would not want to start another service on what is left.</div>
-            <div><Badge tone="danger">OUT</Badge> None left, or too little to serve. Mark this even if the system thinks there is some — the shelf wins.</div>
-          </div>
+          {counting ? (
+            <>
+              <p className="small dim" style={{ marginTop: 0 }}>
+                Count what is actually on the shelf and type it in. The system decides whether that is low from the
+                levels set for each ingredient, so nobody has to judge it — and what you count is measured against what
+                the recipes say should have gone, which is where waste shows up.
+              </p>
+              <div className="stock-key">
+                <div>
+                  Type the amount you can see, in the unit shown. A blank is not the same as zero — if there is none
+                  left, type <strong>0</strong>.
+                  {stockDecimals && ' Part amounts are fine: 0.5 for half, 0.25 for a quarter.'}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="small dim" style={{ marginTop: 0 }}>
+                A quick look at the shelf, not a full count. Anything marked <strong>low</strong> or <strong>out</strong>{' '}
+                goes into tonight's summary — and if the same thing keeps coming up, that becomes its own warning.
+              </p>
+              {/* Three people will otherwise use three different meanings of "low",
+                  and the report that comes out the other end is worth nothing.
+                  One sentence each, phrased as the question to ask yourself. */}
+              <div className="stock-key">
+                <div><Badge tone="ok">OK</Badge> Enough to get through tomorrow's service without thinking about it.</div>
+                <div><Badge tone="warn">LOW</Badge> Enough for tonight, but it needs ordering — you would not want to start another service on what is left.</div>
+                <div><Badge tone="danger">OUT</Badge> None left, or too little to serve. Mark this even if the system thinks there is some — the shelf wins.</div>
+              </div>
+            </>
+          )}
           {stock.map((i, n) => {
             // A heading whenever the group changes. The list arrives already
             // in group order, so this is a comparison with the row above
             // rather than a second pass that could disagree with the first.
             const heading = i.group && i.group !== stock[n - 1]?.group ? i.group : null;
-            const guide = guideFor(i);
+            const guide = guideFor(i, counting);
             return (
               <div key={i.$id}>
                 {heading && <div className="stock-group">{heading}</div>}
@@ -244,18 +357,51 @@ export function ShiftCloseForm({
                     {i.critical && <Badge tone="warn"> critical</Badge>}
                     {guide && <div className="small dim">{guide}</div>}
                   </span>
-                  <div className="row" style={{ gap: '0.3rem' }}>
-                    {(['OK', 'LOW', 'OUT'] as const).map((level) => (
-                      <Button
-                        key={level}
-                        size="sm"
-                        variant={levels[i.$id] === level ? (level === 'OK' ? 'primary' : 'danger') : 'default'}
-                        onClick={() => onLevel(i.$id, level)}
-                      >
-                        {level}
-                      </Button>
-                    ))}
-                  </div>
+                  {counting ? (
+                    <div className="row stock-count" style={{ gap: '0.45rem' }}>
+                      <Input
+                        value={stockCounts[i.$id] ?? ''}
+                        inputMode="decimal"
+                        placeholder="—"
+                        aria-label={`How much ${i.name} is left`}
+                        onChange={(e) =>
+                          onStockCount?.(
+                            i.$id,
+                            // Filtered as it is typed rather than corrected on
+                            // save, so a till with a numeric keypad and no
+                            // decimal point cannot produce a figure the
+                            // restaurant has said it does not use.
+                            stockDecimals
+                              ? e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')
+                              : e.target.value.replace(/\D/g, ''),
+                          )
+                        }
+                      />
+                      {i.unit && <span className="small dim">{i.unit}</span>}
+                      {/* Shown as they type, not after saving. A cook who can
+                          see the count land on LOW while the crate is in front
+                          of them will recount; one who finds out tomorrow
+                          cannot. */}
+                      {countStatus(i, stockCounts[i.$id]) && (
+                        <Badge tone={TONE[countStatus(i, stockCounts[i.$id])!]}>
+                          {countStatus(i, stockCounts[i.$id])}
+                        </Badge>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="row" style={{ gap: '0.3rem' }}>
+                      {(['OK', 'LOW', 'OUT'] as const).map((level) => (
+                        <Button
+                          key={level}
+                          size="sm"
+                          variant={levels[i.$id] === level ? (level === 'OK' ? 'primary' : 'danger') : 'default'}
+                          onClick={() => onLevel(i.$id, level)}
+                        >
+                          {level}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             );

@@ -155,6 +155,23 @@ export const COLLECTIONS = [
       // to zero, which staff still have to look at and skip past.
       ['tips_enabled', 'b', null, false, true],
       ['low_stock_default_bp', 'i', null, true, 3000],
+      // How the shift-end stock check asks its question.
+      //
+      // 'levels' — a cook taps OK, Low or Out. Fast, and honest about being a
+      // glance at a shelf rather than a measurement.
+      //
+      // 'counts' — a cook types how much is actually there, and the system
+      // works out the status from the ingredient's own thresholds. Slower, but
+      // the answer stops being an opinion: two cooks looking at the same four
+      // crates file the same status, and the number can be set against what the
+      // recipes say should have been used, which is where waste and
+      // over-portioning show up at all.
+      ['stock_check_mode', 'e', ['levels', 'counts'], false, 'levels'],
+      // Half a bucket, a quarter of a bottle. Real for anything measured, and
+      // nonsense for anything counted in pieces — nobody has 2.5 eggs, and a
+      // till with a numeric keypad will produce one by accident if the decimal
+      // point is there to be pressed.
+      ['stock_count_decimals', 'b', null, false, true],
       ['stock_variance_threshold_bp', 'i', null, true, 1000],
       ['stock_variance_value_floor', 'i', null, true, 2000],
       ['expense_approval_threshold', 'i', null, true, 20000],

@@ -260,8 +260,16 @@ export async function closeShift(opts: {
   varianceNote?: string;
   /** OK / LOW / OUT as tapped during the stock check. */
   levels: Record<string, 'OK' | 'LOW' | 'OUT'>;
+  /**
+   * What was physically counted, per ingredient, when the restaurant asks for
+   * amounts rather than levels. Present alongside `levels` rather than instead
+   * of it: the level is still what the summary and the alerts read, it has just
+   * been worked out from the number instead of tapped.
+   */
+  stockCounts?: Record<string, number>;
 }): Promise<CloseShiftResult> {
   const { venueId, shift, userId, settings, features, methods, counted, levels } = opts;
+  const stockCounts = opts.stockCounts ?? {};
 
   const takings = await expectedTakings(shift, methods);
   const variance = Object.fromEntries(
@@ -290,21 +298,39 @@ export async function closeShift(opts: {
     for (const [ingredientId, level] of Object.entries(levels)) {
       const ing = ingredients.find((i) => i.$id === ingredientId);
       if (!ing) continue;
+      const theoretical = Number((ing.current_qty - (usage[ingredientId] ?? 0)).toFixed(4));
+      const countedQty = stockCounts[ingredientId];
+      const wasCounted = typeof countedQty === 'number' && Number.isFinite(countedQty);
+
+      // The gap between what the recipes say should be left and what is
+      // actually on the shelf. This is the number the whole stock system exists
+      // to produce — it is where over-portioning, waste and theft show up — and
+      // it can only be worked out when somebody has counted. A tapped level
+      // cannot produce it, which is the real argument for counting.
+      const varianceQty = wasCounted ? Number((countedQty - theoretical).toFixed(4)) : 0;
+
       await db.createDocument(DB_ID, 'shift_stock_checks', ID.unique(), {
         venue_id: venueId,
         shift_id: shift.$id,
         ingredient_id: ingredientId,
         opening_qty: ing.current_qty,
-        theoretical_qty: Number((ing.current_qty - (usage[ingredientId] ?? 0)).toFixed(4)),
+        theoretical_qty: theoretical,
+        counted_qty: wasCounted ? countedQty : undefined,
         status: level,
-        status_source: 'manual_override',
-        variance_qty: 0,
-        variance_value: 0,
+        // 'auto' when the status came from a number, because it did: nobody
+        // overrode anything, the thresholds decided.
+        status_source: wasCounted ? 'auto' : 'manual_override',
+        variance_qty: varianceQty,
+        variance_value: Math.round(varianceQty * ing.base_unit_cost),
         checked_by: userId,
       }).catch(() => undefined);
 
-      // "Out" means out, whatever the book says. Trust the eyes.
-      if (level === 'OUT') {
+      // A real count is the best truth there is, so it replaces the running
+      // figure outright. Otherwise "out" still means out, whatever the book
+      // says — trust the eyes.
+      if (wasCounted) {
+        await db.updateDocument(DB_ID, 'ingredients', ingredientId, { current_qty: countedQty }).catch(() => undefined);
+      } else if (level === 'OUT') {
         await db.updateDocument(DB_ID, 'ingredients', ingredientId, { current_qty: 0 }).catch(() => undefined);
       }
     }

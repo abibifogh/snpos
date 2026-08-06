@@ -49,6 +49,8 @@ const FIELD_LABELS: Record<string, string> = {
   shift_float_policy: 'What a shift starts with',
   shift_float_default: 'The fixed float',
   allow_negative_cash: 'Allow a drawer to close below nothing',
+  stock_check_mode: 'How the stock check asks',
+  stock_count_decimals: 'Part amounts in the stock count',
   order_number_prefix: 'Order number prefix',
   order_number_mode: 'Order numbering',
   order_number_padding: 'Order number length',
@@ -187,6 +189,8 @@ export function SettingsPage() {
         shift_float_policy: form.shift_float_policy ?? 'zero',
         shift_float_default: Number(form.shift_float_default ?? 0),
         allow_negative_cash: !!form.allow_negative_cash,
+        stock_check_mode: form.stock_check_mode ?? 'levels',
+        stock_count_decimals: form.stock_count_decimals !== false,
       });
       await refreshSettings();
 
@@ -477,6 +481,54 @@ export function SettingsPage() {
           count nearly always means cash was paid out and never recorded — blocking it makes somebody enter the missing
           expense instead of closing over it.
         </p>
+      </Card>
+
+      <Card title="The stock check at the end of a shift">
+        <Field
+          label="What staff are asked"
+          hint="Both end up in the same place — an OK, Low or Out against every ingredient. The difference is who decides which."
+        >
+          <Select
+            value={form.stock_check_mode ?? 'levels'}
+            onChange={(e) => set('stock_check_mode', e.target.value as Settings['stock_check_mode'])}
+          >
+            <option value="levels">Tap OK, Low or Out</option>
+            <option value="counts">Type how much is left, and let the system decide</option>
+          </Select>
+        </Field>
+
+        <p className="small dim">
+          {form.stock_check_mode === 'counts' ? (
+            <>
+              Staff type what is actually on the shelf and the system reads it against each ingredient's low level. It
+              takes longer, and it buys two things a tapped level cannot: the same shelf gets filed the same way
+              whoever is closing, and what was counted can be set against what the recipes say should have gone —
+              which is the only way over-portioning, waste and theft ever show up. Set the low level for each
+              ingredient under <strong>Stock</strong>, or nothing above zero can be called low.
+            </>
+          ) : (
+            <>
+              Quick, and honest about being a glance at a shelf rather than a measurement. Fine for a small kitchen
+              where the same person closes most nights. Write a guide under each ingredient in <strong>Stock</strong>
+              {' '}so “low” means the same thing to everybody.
+            </>
+          )}
+        </p>
+
+        {form.stock_check_mode === 'counts' && (
+          <>
+            <Toggle
+              checked={form.stock_count_decimals !== false}
+              onChange={(v) => set('stock_count_decimals', v)}
+              label="Allow part amounts — 0.5, 0.25"
+            />
+            <p className="small dim" style={{ marginBottom: 0 }}>
+              On for anything measured: half a bucket of rice, a quarter bottle of oil. Off for anything counted in
+              pieces — nobody has 2.5 eggs, and a till with a numeric keypad will produce one by accident if the
+              decimal point is there to be pressed.
+            </p>
+          </>
+        )}
       </Card>
 
       <Card title="Reports and backups by email">
