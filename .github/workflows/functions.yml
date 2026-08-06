@@ -66,9 +66,21 @@ jobs:
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SITE_DOMAIN: ${{ vars.SITE_DOMAIN }}
         run: |
           set -e
           FAILED=""
+
+          # Where the apps are served from, so an email sent by a function can
+          # contain a link somebody can actually click. Same rule as the site
+          # build: a domain of its own if one is set, otherwise github.io under
+          # the repository name.
+          if [ -n "$SITE_DOMAIN" ]; then
+            APP_URL="https://$SITE_DOMAIN"
+          else
+            APP_URL="https://${GITHUB_REPOSITORY%%/*}.github.io/${GITHUB_REPOSITORY#*/}"
+          fi
+          echo "Links in emails will point at $APP_URL"
 
           # Create first, update on conflict — so re-running after changing an
           # email password overwrites it rather than quietly keeping the old
@@ -114,6 +126,7 @@ jobs:
             setvar notify SMTP_PORT "${SMTP_PORT:-587}"
             setvar notify SMTP_USER "$SMTP_USER"
             setvar notify SMTP_PASS "$SMTP_PASS"
+            setvar notify APP_URL "$APP_URL"
             echo "Email is configured against $SMTP_HOST."
           else
             echo "::warning::No SMTP secrets set — receipts and summaries will be recorded but not emailed."

@@ -2,7 +2,7 @@ import { Client, Databases, Query } from 'node-appwrite';
 import nodemailer from 'nodemailer';
 import { receiptPdf } from './receipt-pdf.js';
 import { dailyDigest, nightlyBackup } from './daily.js';
-import { revokeLogin } from './staff.js';
+import { ensureLogin, revokeLogin } from './staff.js';
 
 /**
  * Everything that sends an email.
@@ -15,6 +15,8 @@ import { revokeLogin } from './staff.js';
  * Events (a document arrives):
  *   orders.*.update          → group-order alert, accepted/ready notice, receipt
  *   shifts.*.update          → shift summary
+ *   staff_profiles.*.create  → make their account, send a sign-in link
+ *   staff_profiles.*.update  → keep their team in step, resend a link if asked
  *   staff_profiles.*.delete  → cancel that person's login
  *
  * Schedule, hourly (no document arrives):
@@ -197,7 +199,12 @@ export default async ({ req, res, log, error }) => {
     // anything. It lives here because the plan allows four functions and a
     // fifth would exist only to hold twenty lines.
     if (events.some((e) => e.includes('collections.staff_profiles'))) {
-      return res.json(await revokeLogin({ client, db, DB_ID, doc, log, error }));
+      const gone = events.some((e) => e.endsWith('.delete'));
+      return res.json(
+        gone
+          ? await revokeLogin({ client, db, DB_ID, doc, log, error })
+          : await ensureLogin({ client, db, DB_ID, doc, settings, transport, from, shell, log, error }),
+      );
     }
 
     // ------------------------------------------------- group order placed

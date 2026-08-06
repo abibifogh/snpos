@@ -978,6 +978,16 @@ export const COLLECTIONS = [
       ['can_apply_discount_codes', 'b', null, false, true],
       ['can_record_waste', 'b', null, false, true],
       ['hourly_rate', 'i', null, false], // feature 4: labour cost
+      // Getting somebody their first sign-in.
+      //
+      // An admin sets `requested`; the server notices, makes sure the account
+      // and the team membership exist, and emails a link through the
+      // restaurant's own mail provider — the one that already delivers
+      // receipts — rather than Appwrite's shared sender, which is throttled and
+      // lands in spam. `sent` is stamped afterwards so an ordinary edit to
+      // somebody's phone number does not post them another one.
+      ['login_link_requested_at', 'd', null, false],
+      ['login_link_sent_at', 'd', null, false],
     ],
     indexes: [['user_unique', 'unique', ['user_id']], ['email', 'key', ['email']], ['active_role', 'key', ['active', 'role']]],
   },

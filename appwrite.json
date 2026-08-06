@@ -67,6 +67,8 @@
       "events": [
         "databases.snpos.collections.orders.documents.*.update",
         "databases.snpos.collections.shifts.documents.*.update",
+        "databases.snpos.collections.staff_profiles.documents.*.create",
+        "databases.snpos.collections.staff_profiles.documents.*.update",
         "databases.snpos.collections.staff_profiles.documents.*.delete"
       ],
       "schedule": "0 * * * *",

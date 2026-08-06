@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
-import { account, db, DB_ID, ID, listAll, humanError, teams } from '../lib';
+import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import { encodePin, pinProblem } from '@snpos/core';
-import { passwordSetupUrl } from './Login';
 import type { StaffProfile } from '@snpos/core';
 import type { Doc } from '@snpos/core';
 
@@ -32,9 +31,50 @@ const DEFAULTS: Record<StaffProfile['role'], Partial<StaffProfile>> = {
  */
 const linked = (p: Pick<StaffProfile, '$id' | 'user_id'>) => !!p.user_id && p.user_id !== p.$id;
 
-const TEAM_FOR: Record<StaffProfile['role'], string> = {
-  cook: 'cooks', waiter: 'waiters', cashier: 'cashiers', manager: 'managers', admin: 'admins',
-};
+/**
+ * Save a profile against whatever shape the database actually has.
+ *
+ * Two kinds of drift are survived here rather than turned into a dead end.
+ *
+ * A field the database has never heard of is dropped and the save retried:
+ * asking for a sign-in link is a field, and a database provisioned before that
+ * field existed would otherwise refuse the whole document — so adding staff
+ * would break again for anybody who had not re-run provisioning.
+ *
+ * A user_id the database still insists on is filled with the profile's own id.
+ * It cannot be blank, because the field is unique and the second person without
+ * a login would collide with the first.
+ *
+ * Both stop mattering once Provision Appwrite has run. Neither is worth telling
+ * an admin about while they are trying to add a cook.
+ */
+async function writeProfile(editing: boolean, id: string, payload: Record<string, unknown>): Promise<string[]> {
+  const body = { ...payload };
+  const dropped: string[] = [];
+
+  for (let attempt = 0; attempt < 12; attempt++) {
+    try {
+      if (editing) await db.updateDocument(DB_ID, 'staff_profiles', id, body);
+      else await db.createDocument(DB_ID, 'staff_profiles', id, body);
+      return dropped;
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e);
+
+      const unknown = /unknown attribute:?\s*"?([A-Za-z0-9_]+)"?/i.exec(raw);
+      if (unknown && unknown[1] in body) {
+        dropped.push(unknown[1]);
+        delete body[unknown[1]];
+        continue;
+      }
+      if (/missing required attribute.*user_id/i.test(raw) && !body.user_id) {
+        body.user_id = id;
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw new Error('Could not save this profile.');
+}
 
 export function StaffPage() {
   const toast = useToast();
@@ -114,83 +154,29 @@ export function StaffPage() {
         can_record_waste: editing.can_record_waste ?? true,
         venue_ids: editing.venue_ids ?? [],
         ...(pin ? { pin_hash: await encodePin(pin), pin_set_at: new Date().toISOString() } : {}),
+        // Asking for the sign-in link is a field on the profile, not a call
+        // from here. Creating an account and adding somebody to a team needs a
+        // server key — a browser is not allowed to, which is exactly why the
+        // old version saved the profile and then quietly failed to invite
+        // anybody.
+        ...(wantsLogin && editing.email?.trim() ? { login_link_requested_at: new Date().toISOString() } : {}),
       };
 
-      if (editing.$id) {
-        // Explicitly cleared rather than left alone, so a profile saved by the
-        // older version — which wrote "" — is tidied the next time it is
-        // edited, instead of sitting there blocking the one empty slot.
-        const id = editing.$id;
-        try {
-          await db.updateDocument(DB_ID, 'staff_profiles', id, { ...payload, user_id: editing.user_id || null });
-        } catch (e) {
-          const raw = e instanceof Error ? e.message : String(e);
-          if (!/missing required attribute.*user_id/i.test(raw)) throw e;
-          await db.updateDocument(DB_ID, 'staff_profiles', id, { ...payload, user_id: editing.user_id || id });
-        }
-      } else {
-        const id = ID.unique();
-        try {
-          await db.createDocument(DB_ID, 'staff_profiles', id, payload);
-        } catch (e) {
-          // A database set up before this field was made optional still insists
-          // on a value. It cannot be blank — the field is unique, so the second
-          // person without a login would collide with the first — so the
-          // profile points at itself until a real account claims it. Every
-          // place that reads an actor already falls back to the profile id, so
-          // that is the one value it can safely hold.
-          //
-          // Running Provision Appwrite relaxes the field and this stops being
-          // needed. It stays because there is no telling when that happens, and
-          // "you cannot add staff until you run a workflow" is not an answer.
-          const raw = e instanceof Error ? e.message : String(e);
-          if (!/missing required attribute.*user_id/i.test(raw)) throw e;
-          await db.createDocument(DB_ID, 'staff_profiles', id, { ...payload, user_id: id });
-        }
-      }
+      const id = editing.$id ?? ID.unique();
+      // On an edit the link is cleared outright, so a profile saved by an
+      // older version — which wrote "" — is tidied rather than left holding the
+      // one empty slot the unique index allows.
+      const dropped = await writeProfile(
+        !!editing.$id,
+        id,
+        editing.$id ? { ...payload, user_id: editing.user_id || null } : payload,
+      );
 
-      // The profile is saved either way. What follows is the login, which is a
-      // separate thing that can fail on its own — and used to take the whole
-      // save down with it, leaving a profile created, an error on screen, and
-      // an admin pressing Save again to make a second one.
-      //
-      // Attempted on edit as well as on create, so ticking "give them a login"
-      // for somebody who started on a PIN actually sends the invitation.
-      let outcome = pin ? 'Saved — PIN set' : 'Saved';
-      if (wantsLogin && payload.email) {
-        try {
-          // Appwrite emails the invitation and the person sets their own
-          // password. Nobody types a colleague's password, and no shared
-          // account exists to make "who authorised this" unanswerable.
-          await teams.createMembership(
-            TEAM_FOR[role],
-            ['member'],
-            payload.email,
-            undefined,
-            undefined,
-            window.location.origin,
-            payload.display_name,
-          );
-          outcome = `Invitation sent to ${payload.email} — tell them to check spam`;
-        } catch (e) {
-          const why = humanError(e);
-          if (/already|exists|conflict/i.test(why)) {
-            // Not a failure. That address can already sign in with this role —
-            // usually because they were on the team before and their profile
-            // was deleted, or because it is the owner's own address. Sending a
-            // second invitation would achieve nothing.
-            outcome = `Saved. ${payload.email} already had access, so no new invitation was sent — use "Send sign-in link" if they need a password.`;
-          } else {
-            // A real failure, but the profile is saved and the modal is about
-            // to close — say both things, or it reads as "nothing happened".
-            setEditing(null);
-            setPin('');
-            await load();
-            toast(`Profile saved, but the invitation could not be sent: ${why}`, 'err');
-            return;
-          }
-        }
-      }
+      const outcome = !(wantsLogin && payload.email)
+        ? pin ? 'Saved — PIN set' : 'Saved'
+        : dropped.includes('login_link_requested_at')
+          ? 'Saved, but no sign-in link can be sent yet. Run "Provision Appwrite" in GitHub Actions, then use "Send sign-in link" on their row.'
+          : `Saved — a sign-in link is on its way to ${payload.email}`;
 
       setEditing(null);
       setPin('');
@@ -213,25 +199,26 @@ export function StaffPage() {
   };
 
   /**
-   * Get somebody in when the invitation did not arrive.
+   * Send somebody their way in, again.
    *
-   * The invitation email is sent by Appwrite, not by this system, so it does
-   * not go through the restaurant's own mail provider and cannot be resent from
-   * here. This sends a set-a-password link instead: same result, different
-   * email, and it works no matter how many times it is needed. Their access is
-   * already in place — it is only the password that is missing.
+   * Asking is a field on their profile; the sending is done by the server, over
+   * the restaurant's own mail provider — the one already delivering receipts.
+   * Nothing here talks to Appwrite's invitation mail, which is throttled, lands
+   * in spam, and cannot be resent at all.
    */
   const sendLink = async (p: StaffProfile) => {
     if (!p.email) return;
     try {
-      await account.createRecovery(p.email, passwordSetupUrl());
-      toast(`Link sent to ${p.email}`);
+      await db.updateDocument(DB_ID, 'staff_profiles', p.$id, {
+        login_link_requested_at: new Date().toISOString(),
+      });
+      toast(`Sending a sign-in link to ${p.email}`);
     } catch (e) {
-      const msg = humanError(e);
+      const raw = e instanceof Error ? e.message : String(e);
       toast(
-        /rate limit|too many/i.test(msg)
-          ? 'Too many links sent to that address just now. Wait a few minutes and try again.'
-          : msg,
+        /unknown attribute/i.test(raw)
+          ? 'Sign-in links need one more field in the database. Run "Provision Appwrite" in GitHub Actions, then try again.'
+          : humanError(e),
         'err',
       );
     }
@@ -380,7 +367,7 @@ export function StaffPage() {
           {wantsLogin && (
             <Field
               label="Email"
-              hint="The invitation goes here and they set their own password. It is sent by Appwrite rather than by this system, so it often lands in spam — if it never turns up, use “Send sign-in link” on their row."
+              hint="A sign-in link goes here and they choose their own password. If it does not arrive, use “Send sign-in link” on their row to send another."
             >
               <Input
                 type="email"
