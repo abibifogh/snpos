@@ -223,3 +223,14 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          # Twenty minutes rather than the default ten.
+          #
+          # The build was never the slow part — this step only waits for
+          # GitHub's own publishing to report finished, and that occasionally
+          # crawls. When it does, the action gives up and CANCELS the
+          # deployment, so a perfectly good build is thrown away and the live
+          # site stays on yesterday's code. Waiting longer costs nothing; a
+          # false failure costs a re-run and a worried email.
+          timeout: 1200000
+          error_count: 10
