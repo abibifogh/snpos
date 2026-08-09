@@ -1,4 +1,5 @@
 import { Client, Account, Databases, Storage, Teams, ID, Query, Permission, Role } from 'appwrite';
+import { scopedQueries, scopedPayload, scopedPermissions } from './org';
 
 /**
  * One Appwrite client per app, configured from build-time env vars.
@@ -20,9 +21,63 @@ export const DB_ID = import.meta.env.VITE_DB_ID || 'snpos';
 
 export const client = new Client().setEndpoint(endpoint).setProject(project);
 export const account = new Account(client);
-export const db = new Databases(client);
 export const storage = new Storage(client);
 export const teams = new Teams(client);
+
+const rawDb = new Databases(client);
+
+/**
+ * The database, with the current hotel applied to everything.
+ *
+ * One database holds every hotel, so a query that forgets to say whose rows it
+ * wants is not a slow query — it is one hotel reading another's takings. There
+ * are 117 places in this codebase that read data, and the honest assessment of
+ * "remember to add a filter in all of them, and in everything written from
+ * here on" is that it will be forgotten, once, quietly, in a year.
+ *
+ * So it is not remembered. Every read is filtered and every write is stamped
+ * and permissioned here, in the one place they all pass through, and a call
+ * site cannot opt out by accident because there is nothing to opt out of.
+ *
+ * `rawDb` is deliberately not exported. Reaching past this wrapper has to be a
+ * decision somebody makes on purpose in this file, in view of this comment.
+ */
+export const db = {
+  listDocuments: (databaseId: string, collectionId: string, queries: string[] = []) =>
+    rawDb.listDocuments(databaseId, collectionId, scopedQueries(collectionId, queries)),
+
+  getDocument: (databaseId: string, collectionId: string, documentId: string, queries?: string[]) =>
+    rawDb.getDocument(databaseId, collectionId, documentId, queries),
+
+  createDocument: (
+    databaseId: string,
+    collectionId: string,
+    documentId: string,
+    data: Record<string, unknown>,
+    permissions?: string[],
+  ) =>
+    rawDb.createDocument(
+      databaseId,
+      collectionId,
+      documentId,
+      scopedPayload(collectionId, data),
+      scopedPermissions(collectionId, permissions ?? []),
+    ),
+
+  // Update and delete are left alone on purpose. Both name one document by id,
+  // and Appwrite will not hand over a document this session's team cannot read
+  // — so the permissions written at creation are already the whole answer.
+  updateDocument: (
+    databaseId: string,
+    collectionId: string,
+    documentId: string,
+    data?: Record<string, unknown>,
+    permissions?: string[],
+  ) => rawDb.updateDocument(databaseId, collectionId, documentId, data, permissions),
+
+  deleteDocument: (databaseId: string, collectionId: string, documentId: string) =>
+    rawDb.deleteDocument(databaseId, collectionId, documentId),
+};
 
 export { ID, Query, Permission, Role };
 

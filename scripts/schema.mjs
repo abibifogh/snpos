@@ -102,6 +102,83 @@ export const COLLECTIONS = [
     indexes: [['venue_item', 'unique', ['venue_id', 'menu_item_id']]],
   },
 
+  // ------------------------------------------------------------ the hotels
+  {
+    /**
+     * One row per hotel using the system.
+     *
+     * Everything else in this database belongs to one of these. The row is
+     * created by the owner of the platform when a request is approved — not by
+     * whoever is signing up — which is why nobody but a platform owner may
+     * write here.
+     *
+     * `team_id` is the Appwrite team that owns this hotel's data. Every
+     * document written for this organisation is created readable by that team
+     * and nobody else, so isolation is enforced by the database rather than by
+     * every query remembering to ask for it.
+     */
+    id: 'organisations',
+    name: 'Organisations',
+    // Readable by any signed-in user: an app has to be able to look up which
+    // organisation the person signing in belongs to before it knows anything
+    // else. The row holds a name and a status, never anything operational.
+    perms: { read: ['users'], create: [], update: [], delete: [] },
+    attributes: [
+      ['name', 's', 160, true],
+      // Used in addresses and in support conversations. Never changes.
+      ['slug', 's', 60, true],
+      ['team_id', 's', 64, true],
+      // trial   — using it, not paying yet, ends on trial_ends_at
+      // active  — paying
+      // overdue — payment failed; still working, being chased
+      // suspended — read-only; nobody can take an order
+      // closed  — gone, kept only so their history still reads
+      ['status', 'e', ['trial', 'active', 'overdue', 'suspended', 'closed'], true, 'trial'],
+      ['plan', 's', 40, false],
+      ['trial_ends_at', 'd', null, false],
+      ['owner_email', 's', 160, true],
+      ['owner_name', 's', 160, false],
+      ['country', 's', 60, false],
+      ['phone', 's', 40, false],
+      // Which of the six tools this hotel has asked for. The POS reads its own
+      // name here and refuses to open if it is not listed.
+      ['tools', 's[]', 40, false],
+      ['note', 's', 1000, false],
+      ['suspended_reason', 's', 300, false],
+    ],
+    indexes: [
+      ['slug_unique', 'unique', ['slug']],
+      ['team', 'key', ['team_id']],
+      ['status', 'key', ['status']],
+    ],
+  },
+  {
+    /**
+     * Somebody asking to be set up.
+     *
+     * Written by the public website, read only by a platform owner. Deliberately
+     * a separate collection from `organisations`: a request is a stranger's
+     * typing, and it must not be able to become a hotel without somebody
+     * pressing a button.
+     */
+    id: 'org_requests',
+    name: 'Setup requests',
+    perms: { read: [], create: ['any'], update: [], delete: [] },
+    attributes: [
+      ['hotel_name', 's', 160, true],
+      ['contact_name', 's', 160, true],
+      ['email', 's', 160, true],
+      ['phone', 's', 40, false],
+      ['country', 's', 60, false],
+      ['rooms', 's', 40, false],
+      ['tools', 's[]', 40, false],
+      ['message', 's', 2000, false],
+      ['status', 'e', ['new', 'contacted', 'approved', 'declined'], true, 'new'],
+      ['org_id_created', 's', 64, false],
+    ],
+    indexes: [['status_new', 'key', ['status']]],
+  },
+
   // ---------------------------------------------------------------- settings
   {
     id: 'settings',
@@ -1663,6 +1740,34 @@ for (const id of VENUE_SCOPED) {
   col.attributes.unshift(['venue_id', 's', 64, true]);
   col.indexes = col.indexes || [];
   col.indexes.push([`venue`, 'key', ['venue_id']]);
+}
+
+/**
+ * One database, many hotels.
+ *
+ * `org_id` goes on every collection without exception — not on a list of the
+ * ones that seemed to need it. A list is a thing somebody forgets to add to,
+ * and the collection left off it is the one that shows one hotel's figures to
+ * another. There is no collection here whose rows are not owned by somebody.
+ *
+ * The field is deliberately NOT required. Every row that already exists
+ * predates it, and making it required would refuse to save a single one of
+ * them until the migration had finished — turning a careful, resumable
+ * backfill into an outage. `scripts/migrate-org.mjs` stamps them; the apps
+ * treat a blank as belonging to the first organisation.
+ *
+ * It is also not the real defence. Appwrite document permissions are: every row
+ * is written readable only by its own organisation's team, so a query that
+ * forgets to filter returns nothing rather than somebody else's takings. The
+ * field is what makes the queries efficient and the migration checkable.
+ */
+export const ORG_EXEMPT = ['organisations', 'org_requests'];
+
+for (const col of COLLECTIONS) {
+  if (ORG_EXEMPT.includes(col.id)) continue;
+  col.attributes.unshift(['org_id', 's', 64, false]);
+  col.indexes = col.indexes || [];
+  col.indexes.push(['org', 'key', ['org_id']]);
 }
 
 // Staff belong to one or more venues; an empty list means "all venues" (owner).
