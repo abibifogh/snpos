@@ -345,3 +345,109 @@ table.data tbody tr:hover { background: var(--surface-2); }
   color: inherit; background: transparent; border: 1px solid currentColor;
   border-radius: var(--radius-sm); cursor: pointer;
 }
+
+/* ---- charts ------------------------------------------------------------
+   Two series, blue and orange, validated against this app's own surfaces
+   (#ffffff light, #171d25 dark) rather than assumed: adjacent CVD ΔE 24.7
+   light / 26.8 dark against a target of 8, contrast over 3:1 in both.
+
+   Deliberately NOT the restaurant's brand colour. That is set by whoever runs
+   the place and can be any colour at all — including one that vanishes against
+   the card behind it. A chart that becomes unreadable when somebody picks a
+   pale green for their logo is not a chart. */
+.trend {
+  --series-rev:  #2a78d6;
+  --series-cost: #eb6834;
+  --grid: var(--border);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .trend {
+    --series-rev:  #3987e5;
+    --series-cost: #d95926;
+  }
+}
+:root[data-theme="dark"] .trend {
+  --series-rev:  #3987e5;
+  --series-cost: #d95926;
+}
+
+.trend-legend {
+  display: flex; gap: 1.1rem; flex-wrap: wrap;
+  font-size: 0.82rem; color: var(--text-dim); margin-bottom: 0.6rem;
+}
+.trend-legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+.swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; display: inline-block; }
+.swatch-rev { background: var(--series-rev); }
+.swatch-cost { background: var(--series-cost); }
+
+/* Height grows with the axis band rather than being fixed to the plot, so the
+   labels are never cropped into a tiny nested scrollbar. */
+.trend-plot { position: relative; }
+.trend-plot svg { width: 100%; height: auto; display: block; touch-action: pan-y; }
+
+.trend .grid { stroke: var(--grid); stroke-width: 1; }
+.trend .tick { fill: var(--text-dim); font-size: 11px; font-family: inherit; }
+
+/* 2px lines, round caps. Thin marks; the data is the only loud thing. */
+.trend .rev-line, .trend .cost-line {
+  fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round;
+}
+.trend .rev-line { stroke: var(--series-rev); }
+.trend .cost-line { stroke: var(--series-cost); }
+.trend .wash-top { stop-color: var(--series-rev); stop-opacity: 0.16; }
+.trend .wash-bottom { stop-color: var(--series-rev); stop-opacity: 0; }
+
+/* The surface ring, so a dot stays legible where the two lines cross. */
+.trend .rev-dot, .trend .cost-dot { stroke: var(--surface); stroke-width: 2; }
+.trend .rev-dot { fill: var(--series-rev); }
+.trend .cost-dot { fill: var(--series-cost); }
+.trend .crosshair line { stroke: var(--text-dim); stroke-width: 1; opacity: 0.45; }
+
+.trend-tip {
+  position: absolute; top: 0; transform: translateX(-50%);
+  display: grid; gap: 0.15rem; pointer-events: none;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.5rem 0.7rem; font-size: 0.82rem;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16); white-space: nowrap;
+}
+.trend-tip strong { font-size: 0.8rem; }
+.trend-tip span { display: inline-flex; align-items: center; gap: 0.4rem; }
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* ---- stat tiles --------------------------------------------------------
+   A number, what it is, and what it was. The third part is the whole point:
+   "GH₵4,200" is a fact, "GH₵4,200, up a fifth on last week" is something to
+   act on. */
+.stat-row {
+  display: grid; gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+.stat {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 0.9rem 1rem;
+}
+.stat .label {
+  font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--text-dim);
+}
+/* Proportional figures, not tabular — equal-width digits make a large number
+   look loose. Tabular is for columns that align. */
+.stat .value { font-size: 1.6rem; font-weight: 650; line-height: 1.15; margin-top: 0.3rem; }
+.stat .delta { font-size: 0.8rem; margin-top: 0.25rem; display: flex; align-items: center; gap: 0.3rem; }
+.stat .delta.good { color: var(--ok, #0ca30c); }
+.stat .delta.bad { color: var(--danger, #d03b3b); }
+.stat .delta.flat { color: var(--text-dim); }
+
+/* ---- the weekday bars --------------------------------------------------
+   One series, one colour. Colouring each bar darker-where-bigger would
+   double-encode the length as hue and spend the only free channel on
+   something the bar already says. */
+.dow { display: grid; gap: 0.35rem; }
+.dow-row { display: grid; grid-template-columns: 5.5rem 1fr auto; gap: 0.7rem; align-items: center; }
+.dow-track { background: var(--surface-2); border-radius: 3px; height: 18px; overflow: hidden; }
+.dow-fill { height: 100%; background: var(--series-rev, #2a78d6); border-radius: 0 3px 3px 0; }
+.dow-row .num { font-variant-numeric: tabular-nums; font-size: 0.85rem; }

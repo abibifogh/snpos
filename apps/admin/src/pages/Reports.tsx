@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Empty, Notice, Spinner, Badge, Input, Field } from '@snpos/ui';
 import { listAll, humanError } from '../lib';
 import {
-  formatMoney, trialBalance, buildReportHtml, openPrintable, downloadUrl,
+  formatMoney, axisMoney, trialBalance, buildReportHtml, openPrintable, downloadUrl,
   toCsv, downloadCsv,
 } from '@snpos/core';
 import type { Order, OrderItem, Doc, TrialBalanceRow } from '@snpos/core';
 import { useSession } from '../session';
+import { Insights } from '../components/Insights';
 
 interface Payment extends Doc { order_id: string; method_id: string; method_kind_snapshot: string; amount: number; tip: number; shift_id: string }
 interface PaymentMethod extends Doc { name: string }
@@ -115,9 +116,28 @@ export function ReportsPage() {
     return hours.map((v, h) => ({ hour: h, value: v, share: v / peak }));
   }, [paid]);
 
+  /**
+   * The two series, from rows already in memory.
+   *
+   * Deliberately NOT filtered to the visible range: the panel compares this
+   * period with the one before it, so it needs the days before `since` too.
+   * Filtering here would silently make every comparison read "no earlier data".
+   */
+  const insightRevenue = useMemo(
+    () => (orders ?? [])
+      .filter((o) => o.payment_status === 'paid')
+      .map((o) => ({ at: o.$createdAt, amount: o.total, covers: o.guest_count || 1 })),
+    [orders],
+  );
+  const insightCost = useMemo(
+    () => expenses.map((e) => ({ at: e.$createdAt, amount: e.amount })),
+    [expenses],
+  );
+
   const accountName = (code: string) => accounts.find((a) => a.code === code)?.name ?? code;
   const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? 'Unknown';
   const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const tickMoney = (n: number) => (settings ? axisMoney(n, settings) : String(n));
 
   const periodLabel = `${since.toLocaleDateString()} – ${until.toLocaleDateString()}`;
 
@@ -245,11 +265,21 @@ export function ReportsPage() {
         <Card><Empty title="No paid orders in this period">Figures appear once bills start being settled on the terminal.</Empty></Card>
       ) : (
         <>
+          {/* The comparisons come first. A total on its own gets read as
+              whatever mood the reader arrived in; the same total next to last
+              period's is the thing you can act on. */}
+          <Insights
+            revenue={insightRevenue}
+            cost={insightCost}
+            from={since}
+            to={until}
+            money={money}
+            tickMoney={tickMoney}
+          />
+
           <div className="grid-2">
-            <Card title="Sales"><p style={{ margin: 0, fontSize: '1.7rem', fontWeight: 650 }}>{money(sales)}</p><span className="dim small">{paid.length} orders · {covers} covers</span></Card>
-            <Card title="Average order"><p style={{ margin: 0, fontSize: '1.7rem', fontWeight: 650 }}>{money(Math.round(sales / paid.length))}</p><span className="dim small">per bill</span></Card>
             <Card title="Discounts given"><p style={{ margin: 0, fontSize: '1.7rem', fontWeight: 650 }}>{money(discounts)}</p><span className="dim small">{sales ? ((discounts / (sales + discounts)) * 100).toFixed(1) : '0'}% of gross</span></Card>
-            <Card title="Expenses"><p style={{ margin: 0, fontSize: '1.7rem', fontWeight: 650 }}>{money(spend)}</p><span className="dim small">recorded in this period</span></Card>
+            <Card title="Covers"><p style={{ margin: 0, fontSize: '1.7rem', fontWeight: 650 }}>{covers}</p><span className="dim small">{paid.length} bills · {money(paid.length ? Math.round(sales / covers) : 0)} a head</span></Card>
           </div>
 
           <Card title="Where the money came from">

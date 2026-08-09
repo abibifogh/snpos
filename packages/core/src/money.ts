@@ -59,3 +59,16 @@ export function asksForTip(
   if (on === 'none') return false;
   return on === 'both' || on === where;
 }
+
+/**
+ * Money for an axis tick: whole units, thousands separated, no decimals.
+ *
+ * `formatMoney` is right everywhere a figure is quoted — a bill of GH₵1,000.00
+ * is not GH₵1,000. On an axis it is noise: three ticks reading .00 add nothing
+ * a reader wanted and crowd out the label they did.
+ */
+export function axisMoney(minor: number, settings: { currency_symbol: string; currency_decimals?: number; symbol_position?: 'before' | 'after' }): string {
+  const whole = Math.round(minor / 10 ** (settings.currency_decimals ?? 2));
+  const text = whole.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  return settings.symbol_position === 'after' ? `${text}${settings.currency_symbol}` : `${settings.currency_symbol}${text}`;
+}

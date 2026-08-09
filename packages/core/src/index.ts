@@ -1,5 +1,6 @@
 export * from './client';
 export * from './org';
+export * from './insights';
 export * from './types';
 export * from './money';
 export * from './features';
