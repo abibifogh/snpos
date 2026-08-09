@@ -7,7 +7,7 @@ import {
   db, DB_ID, ID, formatMoney, parseMoney, toInput, loadIngredients, stockCheckRows,
   loadPaymentMethods, openShift, loadOpenShift, shiftBlockers, expectedTakings, closeShift, openingFloats,
   recordPayment, amountOutstanding, PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions,
-  receiveStock, uploadFile,
+  receiveStock, uploadFile, asksForTip,
 } from '@snpos/core';
 import type {
   PaymentMethod, Shift, Settings, Venue, StaffProfile, FeatureMap, Order,
@@ -830,7 +830,7 @@ export function SettleModal({
           Change to give: <strong>{formatMoney(change, settings)}</strong>
         </p>
       )}
-      {settings.tips_enabled !== false && (
+      {asksForTip(settings, 'kitchen') && (
         <Field label={`Tip (${settings.currency_symbol ?? ''})`} hint="Optional. Kept separate from sales — it is not yours.">
           <Input value={tipText} inputMode="decimal" onChange={(e) => setTipText(e.target.value)} />
         </Field>

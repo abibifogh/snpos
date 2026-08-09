@@ -38,3 +38,24 @@ export function applyBp(minor: number, bp: number): number {
 
 export const bpToPercent = (bp: number): string => (bp / 100).toFixed(2).replace(/\.00$/, '');
 export const percentToBp = (pct: string): number => Math.round(Number(pct || 0) * 100);
+
+/**
+ * Does this screen ask for a tip?
+ *
+ * One rule, read by both the till and the kitchen, because the alternative is
+ * two `settings.tips_enabled !== false` checks that drift apart — and a tip box
+ * that is gone from one screen and still on the other is indistinguishable,
+ * from the far side of a kitchen, from a setting that did not save.
+ *
+ * `tips_enabled: false` wins over everything. It is the older switch, it means
+ * "no tips here", and a database that only has that one must still be obeyed.
+ */
+export function asksForTip(
+  settings: { tips_enabled?: boolean; tips_ask_on?: 'both' | 'till' | 'kitchen' | 'none' },
+  where: 'till' | 'kitchen',
+): boolean {
+  if (settings.tips_enabled === false) return false;
+  const on = settings.tips_ask_on ?? 'both';
+  if (on === 'none') return false;
+  return on === 'both' || on === where;
+}

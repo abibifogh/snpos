@@ -154,6 +154,17 @@ export const COLLECTIONS = [
       // on every bill. Off hides it on every screen rather than defaulting it
       // to zero, which staff still have to look at and skip past.
       ['tips_enabled', 'b', null, false, true],
+      // Where the tip box appears, which is not one question.
+      //
+      // A waiter closing a table and a cook handing food over a counter are
+      // different moments: one has had ten minutes of service to justify the
+      // ask, the other is a person collecting a bag. A restaurant can
+      // reasonably want the box on one screen and not the other, and
+      // `tips_enabled` alone could only say all or nothing.
+      //
+      // `tips_enabled` is still honoured as a master switch so an older build,
+      // or a database provisioned before this existed, keeps working.
+      ['tips_ask_on', 'e', ['both', 'till', 'kitchen', 'none'], false, 'both'],
       ['low_stock_default_bp', 'i', null, true, 3000],
       // How the shift-end stock check asks its question.
       //

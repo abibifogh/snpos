@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Field, Input, Modal, Notice, Select, Badge, Spinner } from '@snpos/ui';
 import {
   db, DB_ID, Query, listAll, createOrder, computeTotals, lineTotal, formatMoney,
-  parseMoney, toInput, isEnabled, featureConfig, splitEvenly, visibleSections, recordPayment,
+  parseMoney, toInput, isEnabled, featureConfig, splitEvenly, visibleSections, recordPayment, asksForTip,
 } from '@snpos/core';
 import type { CartLine, Order, OrderItem, Doc } from '@snpos/core';
 import type { PosContext, TableRow } from './App';
@@ -455,7 +455,7 @@ function PaymentModal({
         >
           <Input value={amount} inputMode="decimal" onChange={(e) => setAmount(e.target.value)} />
         </Field>
-        {ctx.settings.tips_enabled !== false && (
+        {asksForTip(ctx.settings, 'till') && (
           <Field label={`Tip (${ctx.settings.currency_symbol})`} hint="Not taxed as sales.">
             <Input value={tip} inputMode="decimal" onChange={(e) => setTip(e.target.value)} />
           </Field>

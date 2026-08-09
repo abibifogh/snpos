@@ -4,7 +4,7 @@ import { contrastRatio } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   bpToPercent, percentToBp, toInput, parseMoney,
-  ADMIN_SECTIONS, GRANTABLE_ROLES, parseAccess,
+  ADMIN_SECTIONS, GRANTABLE_ROLES, parseAccess, asksForTip,
 } from '@snpos/core';
 import type { Settings, Doc } from '@snpos/core';
 
@@ -44,6 +44,7 @@ async function saveSettings(patch: Record<string, unknown>): Promise<string[]> {
 /** Field names as somebody would recognise them on this page. */
 const FIELD_LABELS: Record<string, string> = {
   tips_enabled: 'Tips',
+  tips_ask_on: 'Where to ask for a tip',
   role_access: 'Who can see what',
   daily_report_hour: 'When the daily reports go out',
   shift_float_policy: 'What a shift starts with',
@@ -146,6 +147,12 @@ export function SettingsPage() {
 
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => setForm({ ...form, [key]: value });
 
+  // The tip question, read the same way the till and the kitchen read it, so
+  // this page cannot claim one thing while the screens do another.
+  const savedAskOn = settings?.tips_enabled === false ? 'none' : settings?.tips_ask_on ?? 'both';
+  const askOn = form.tips_enabled === false ? 'none' : form.tips_ask_on ?? 'both';
+  const savedAsks = (where: 'till' | 'kitchen') => asksForTip(settings ?? {}, where);
+
   const access = parseAccess(form);
   const toggleAccess = (role: string, section: string) => {
     const current = access[role] ?? [];
@@ -177,6 +184,7 @@ export function SettingsPage() {
         require_reject_reason: form.require_reject_reason,
         qr_orders_need_approval: form.qr_orders_need_approval,
         tips_enabled: form.tips_enabled ?? true,
+        tips_ask_on: askOn,
         order_number_prefix: form.order_number_prefix ?? '',
         order_number_mode: form.order_number_mode ?? 'continuous',
         order_number_padding: Number(form.order_number_padding ?? 4),
@@ -306,12 +314,28 @@ export function SettingsPage() {
       </Card>
 
       <Card title="Tips">
-        <Toggle
-          checked={form.tips_enabled ?? true}
-          onChange={(v) => set('tips_enabled', v)}
-          label="Ask for a tip when taking payment"
-        />
-        <p className="small dim" style={{ marginBottom: 0 }}>
+        <Field
+          label="Where to ask for a tip"
+          hint="A waiter closing a table and a cook handing a bag over a counter are different moments. You can have the box on one and not the other."
+        >
+          <Select
+            value={askOn}
+            onChange={(e) => {
+              const v = e.target.value as NonNullable<Settings['tips_ask_on']>;
+              // Both are written. The older switch is what an app reads if it
+              // has not been updated, or if this database predates the newer
+              // one — leaving them to disagree is how a setting appears to do
+              // nothing on one screen.
+              setForm({ ...form, tips_ask_on: v, tips_enabled: v !== 'none' });
+            }}
+          >
+            <option value="both">On the till and in the kitchen</option>
+            <option value="till">Only on the till</option>
+            <option value="kitchen">Only in the kitchen</option>
+            <option value="none">Nowhere — never ask</option>
+          </Select>
+        </Field>
+        <p className="small dim">
           Off removes the box entirely rather than defaulting it to zero — a field staff have to look at and skip
           past on every bill is worse than no field.
         </p>
@@ -319,9 +343,9 @@ export function SettingsPage() {
             The two disagreeing is the whole reason this switch appeared not to
             work, and the difference was invisible. */}
         <p className="small" style={{ marginBottom: 0 }}>
-          Right now the till and the kitchen are{' '}
-          <strong>{settings?.tips_enabled === false ? 'not asking for a tip' : 'asking for a tip'}</strong>.
-          {settings?.tips_enabled !== form.tips_enabled && ' Unsaved change — press Save changes.'}
+          Saved right now: the till is <strong>{savedAsks('till') ? 'asking' : 'not asking'}</strong>, the kitchen is{' '}
+          <strong>{savedAsks('kitchen') ? 'asking' : 'not asking'}</strong>.
+          {askOn !== savedAskOn && ' Unsaved change — press Save changes.'}
         </p>
       </Card>
 
