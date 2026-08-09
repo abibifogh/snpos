@@ -165,9 +165,18 @@ export const HELP_ARTICLES: HelpArticle[] = [
       steps(
         'Settle or transfer any open bills. Nothing is left dangling.',
         'Count the drawer and enter what is actually there. You are asked before being shown what was expected — counting blind is what makes the answer worth anything.',
-        'Go through the stock check: mark each item OK, LOW or OUT.',
+        'Go through the stock check. What it asks depends on a setting — see below.',
         'Confirm. The system compares expected against counted and records the difference.',
       ),
+      h('The stock check'),
+      p('An admin chooses which of two questions staff are asked, under Settings. Both end in the same place — an OK, Low or Out against every ingredient. The difference is who decides which.'),
+      list(
+        'Tap OK, Low or Out — quick, and honest about being a glance at a shelf rather than a measurement. Fine where the same person closes most nights.',
+        'Type how much is left — staff enter the amount actually on the shelf and the system works out the status from that ingredient\'s own low level. Slower, and it buys two things tapping cannot.',
+      ),
+      p('The two things: the same four crates get filed the same way whoever is closing, because nobody is judging. And what was counted can be measured against what the recipes say should have gone — which is the only way over-portioning, waste and theft ever show up at all.'),
+      p('The list is grouped the way your shelves are, in the order somebody walks the kitchen. Under each ingredient is the guide an admin wrote for it — "OK = 10pcs or more · Low = under 10pcs" — in the units on the shelf rather than the units in the database. Set those under Stock; without them, "low" means whatever each person thinks it means.'),
+      note('When staff type amounts, a shift will not close with rows left blank — it names what is still to count. Type 0 for anything that has run out. The ingredient nobody looked at is exactly the one that runs out on Saturday.'),
       h('Being over or short'),
       p('A difference is recorded, not hidden, and a large one asks for an explanation. This is not an accusation — drawers drift for honest reasons, and a system that quietly rounded it away would be useless the day it mattered.'),
       note('Marking an ingredient OUT sets it to zero, and the shift summary that goes out at close lists anything that has been low three shifts running separately from anything low for the first time. Repeatedly low is a different problem from newly low.'),
@@ -277,20 +286,61 @@ export const HELP_ARTICLES: HelpArticle[] = [
   {
     id: 'reports',
     title: 'Reading the reports',
-    summary: 'What the numbers on the Reports page actually mean.',
+    summary: 'What every number on the Reports page means, and what it is compared against.',
     area: 'admin',
     audience: MGMT,
     body: [
+      p('Pick your dates at the top. Everything below changes together — there is one date range for the whole page, not one per panel.'),
+
+      h('The four figures at the top'),
+      p('Each one shows a total, and underneath it, how that total compares with the period before. Everything on this page is built around that second line, because a total on its own cannot tell you whether it was a good week.'),
       list(
-        'Sales — the total of bills actually settled. Unpaid orders are not counted, because they are not money.',
+        'Revenue — money from bills that were actually settled. An order sitting unpaid is not counted, because it is not money yet.',
+        'Costs — expenses recorded in this period: the market run, the gas, the repair. Only what somebody entered. Money that left the building without being recorded cannot appear here.',
+        'Kept — revenue minus costs. What the business held on to. It is not profit in the accountant\'s sense: rent, wages and anything else you have not recorded as an expense are not in it.',
+        'Average order — revenue divided by the number of bills. The quickest early warning there is: takings can hold steady while this quietly falls, which means more people spending less each.',
+      ),
+      note('Every comparison is against the SAME LENGTH of time immediately before — the 30 days before your 30 days. Not "last month". Comparing 30 days with a 31-day month reports the extra day as growth.'),
+      p('An arrow and a colour say which way it moved. Green with an arrow up is good — except on Costs, where up is red, because spending more is not an achievement.'),
+      p('A dash instead of a percentage means there was nothing to compare against. Going from no takings to some takings is not "up 100%", it is your first week, and the system will not dress that up as growth.'),
+
+      h('Money in and out'),
+      p('Revenue and costs on one chart. Blue is money in, orange is money out, and the gap between the two lines is what you kept — you can read it without doing any arithmetic.'),
+      p('The three buttons change the grouping. They answer different questions:'),
+      list(
+        'By day — what happened on a particular day. Use it to check a day you remember being unusual.',
+        'By week — is this week beating last week? A day is too noisy to judge a business by; a week absorbs one bad Tuesday.',
+        'By month — is the business actually growing? Nothing shorter can tell you, because a good month can hide inside a bad quarter and the other way round.',
+      ),
+      p('Touch or hover anywhere on the chart and it shows that day\'s revenue, costs and what you kept. "Show the figures" turns the whole chart into a table if you would rather read the numbers, or need to copy one.'),
+      note('A day with no takings shows as zero rather than being skipped. A line that quietly leaves out the days you were closed draws a business that trades seven days a week.'),
+
+      h('Which days actually earn'),
+      p('The average taken on each day of the week — an average, not a total, and the difference matters. A month holds five Mondays and only four Sundays, so totalling would tell you Monday is your better day when it is only the more frequent one.'),
+      p('This is the panel to look at before changing opening hours or deciding which night to staff heavily.'),
+
+      h('Standouts'),
+      list(
+        'Best day and quietest day — the actual dates, so you can think about what was different. A wedding party, a power cut, rain.',
+        'A typical day — the average across the days you actually traded. Days you were closed are left out, so a restaurant that shuts on Mondays is not told its typical day is a fifth worse than every day it opens.',
+      ),
+
+      h('The rest of the page'),
+      list(
         'Discounts given — shown separately rather than netted off, so "how much did we give away" stays a question you can answer.',
-        'Tips — kept out of sales entirely. They are owed to staff, not earned by the restaurant.',
-        'Best sellers — ranked by money, not by count, because that is what pays the rent.',
+        'Covers — how many people ate, and the spend per head. The same takings from twenty people and from sixty are very different businesses.',
+        'Where the money came from — cash, card, mobile money. Worth watching: a drift towards cash is worth understanding.',
+        'Best sellers — ranked by money, not by how many were sold, because that is what pays the rent. A cheap dish can top a count and contribute little.',
         'Busiest hours — for deciding who to roster and when.',
         'Emailed receipts — whether receipts actually reached people, and the reason when one did not.',
       ),
+      p('Tips never appear in revenue anywhere on this page. They are owed to staff, not earned by the restaurant, and counting them as takings would overstate both the sales and the tax.'),
+
       h('Accounts'),
       p('Every closed shift posts a double-entry record. If it ever says "out of balance", something is genuinely wrong and worth raising rather than ignoring.'),
+
+      h('Taking it away with you'),
+      p('"Download PDF" gives you the page laid out for paper — for a meeting, or a lender, or a file. "Spreadsheet" gives you every order in the period as a CSV, for doing your own sums.'),
     ],
   },
 
