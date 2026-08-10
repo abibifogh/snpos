@@ -532,6 +532,13 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
         // to twenty-five must not make every ticket already on the pass
         // retrospectively on time.
         prep_minutes: line.prep_minutes ?? 15,
+        // Consignment. Blank on every restaurant line, and the terms are
+        // written down here because a statement must never be worked out from
+        // whatever the rate happens to be the day somebody asks.
+        variant_id: line.variant_id ?? '',
+        variant_label: line.variant_label ?? '',
+        consignor_id: line.consignor_id ?? '',
+        commission_bp: line.commission_bp ?? undefined,
         status: 'queued',
         course: line.course ?? 1,
         seat_no: line.seat_no,

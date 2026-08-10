@@ -12,7 +12,18 @@ const blank = (sort: number): Partial<Category> => ({
   name: '', description: '', sort, active: true, unavailable_display: 'grey', station: 'hot',
 });
 
-export function CategoriesPage() {
+/**
+ * Categories, for one side of the business at a time.
+ *
+ * The same screen serves the kitchen and the craft shop because the job is
+ * identical — a name, an order, some opening hours. What must never be shared
+ * is the list: a cook scrolling past "Woven baskets" to reach "Starters" is the
+ * cost of one table doing two jobs, and it is paid on every visit.
+ *
+ * Rows written before this existed have no module and are read as kitchen,
+ * which is what they were.
+ */
+export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'craft' }) {
   const { settings } = useSession();
   const toast = useToast();
   const stations = useStations();
@@ -22,8 +33,11 @@ export function CategoriesPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const load = () => listAll<Category>('categories').then((r) => setRows(r.sort((a, b) => a.sort - b.sort)));
-  useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
+  const load = () =>
+    listAll<Category>('categories').then((r) =>
+      setRows(r.filter((c) => (c.module ?? 'kitchen') === module).sort((a, b) => a.sort - b.sort)),
+    );
+  useEffect(() => { load().catch((e) => setError(humanError(e))); }, [module]);
 
   const nameOfStation = (c: Category) => {
     const key = c.station_key || c.station;
@@ -57,6 +71,11 @@ export function CategoriesPage() {
       station_key: editing.station_key ?? '',
       availability: Object.keys(hours).length ? JSON.stringify(hours) : '',
       image_id: editing.image_id ?? '',
+      // Whichever side of the business this screen is showing. Not a choice on
+      // the form: somebody adding a category on the craft page means a craft
+      // category, and a dropdown that could contradict the page they are on is
+      // a dropdown that will.
+      module,
     };
     try {
       if (editing.$id) await db.updateDocument(DB_ID, 'categories', editing.$id, payload);

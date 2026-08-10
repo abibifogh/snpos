@@ -4,7 +4,7 @@ import { contrastRatio } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   bpToPercent, percentToBp, toInput, parseMoney,
-  ADMIN_SECTIONS, GRANTABLE_ROLES, parseAccess, asksForTip,
+  ADMIN_SECTIONS, GRANTABLE_ROLES, parseAccess, asksForTip, modulesOf,
 } from '@snpos/core';
 import type { Settings, Doc } from '@snpos/core';
 
@@ -53,7 +53,8 @@ const FIELD_LABELS: Record<string, string> = {
   stock_check_mode: 'How the stock check asks',
   stock_count_decimals: 'Part amounts in the stock count',
   expense_paid_from: 'What money spent during a shift can come out of',
-  business_type: 'What kind of business this is',
+  kitchen_enabled: 'The kitchen side',
+  craft_enabled: 'The craft shop side',
   self_order_enabled: 'Customers ordering for themselves',
   default_commission_bp: 'Default commission',
   order_number_prefix: 'Order number prefix',
@@ -177,6 +178,10 @@ export function SettingsPage() {
 
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => setForm({ ...form, [key]: value });
 
+  // Read through modulesOf rather than off the form, so an older setup that
+  // only ever said "craft_shop" shows its switches in the right position.
+  const mods = modulesOf(form);
+
   // The tip question, read the same way the till and the kitchen read it, so
   // this page cannot claim one thing while the screens do another.
   const savedAskOn = settings?.tips_enabled === false ? 'none' : settings?.tips_ask_on ?? 'both';
@@ -230,7 +235,8 @@ export function SettingsPage() {
         stock_check_mode: form.stock_check_mode ?? 'levels',
         stock_count_decimals: form.stock_count_decimals !== false,
         expense_paid_from: form.expense_paid_from ?? 'cash_only',
-        business_type: form.business_type ?? 'restaurant',
+        kitchen_enabled: mods.kitchen,
+        craft_enabled: mods.craft,
         self_order_enabled: form.self_order_enabled !== false,
         default_commission_bp: Number(form.default_commission_bp ?? 3000),
       });
@@ -274,21 +280,31 @@ export function SettingsPage() {
         </div>
       </Card>
 
-      <Card title="What kind of business this is">
-        <Field
-          label="Trade"
-          hint="Decides which sections appear and what they are called. It never hides your records — switching back brings everything with it."
-        >
-          <Select
-            value={form.business_type ?? 'restaurant'}
-            onChange={(e) => set('business_type', e.target.value as Settings['business_type'])}
-          >
-            <option value="restaurant">Restaurant or food service</option>
-            <option value="craft_shop">Craft shop selling on consignment</option>
-          </Select>
-        </Field>
+      <Card title="What this business runs">
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Switch on whichever sides you actually run. Both can run together under one till, one set of staff
+          and one set of books — a kitchen with a craft corner is one business, not two systems.
+        </p>
 
-        {form.business_type === 'craft_shop' && (
+        <Toggle
+          checked={mods.kitchen}
+          onChange={(v) => set('kitchen_enabled', v || !mods.craft)}
+          label="Kitchen — food and drink"
+        />
+        <Toggle
+          checked={mods.craft}
+          onChange={(v) => set('craft_enabled', v || !mods.kitchen)}
+          label="Craft shop — goods sold on consignment"
+        />
+        {/* Refusing to turn the last one off rather than letting somebody
+            discover an admin app with nothing in it. The toggle simply does
+            not move, and this says why before they try. */}
+        <p className="small dim">
+          One of these has to stay on. Turning a side off only hides its sections — the products, sales and
+          statements behind them stay exactly where they are.
+        </p>
+
+        {mods.craft && (
           <>
             <Field
               label="Commission you keep by default (%)"
@@ -316,9 +332,9 @@ export function SettingsPage() {
           label="Customers can scan a code and order for themselves"
         />
         <p className="small dim" style={{ marginBottom: 0 }}>
-          {form.business_type === 'craft_shop'
-            ? 'Off by default in a shop, where the normal way to buy is to hand something to whoever is on the till. Worth turning on for a market stall or a busy weekend, where a queue is the problem.'
-            : 'This is what the table QR codes are for. Off means orders can only be taken by staff.'}
+          {mods.kitchen
+            ? 'This is what the table QR codes are for. Off means orders can only be taken by staff.'
+            : 'Off suits a shop where the normal way to buy is to hand something to whoever is on the till. Worth turning on for a market stall or a busy weekend, where a queue is the problem.'}
         </p>
       </Card>
 

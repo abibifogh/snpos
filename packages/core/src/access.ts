@@ -16,31 +16,74 @@ export interface AdminSection {
   /** True for the pages that only ever make sense for an owner. */
   ownerOnly?: boolean;
   /**
-   * Which trades this section belongs to. Absent means both.
+   * Which side of the business this section belongs to, if only one.
    *
-   * A consignment shop has no stations, no waste log and no kitchen; a
-   * restaurant has no consignors. Showing every section to everybody would
-   * bury the eight pages somebody actually uses under eight they never will.
+   * Absent means it serves both — a shift is a shift whether the money came
+   * from a plate of jollof or a woven basket. Where it is set, the section
+   * appears only when that module is switched on, so a restaurant is never
+   * shown consignor payouts and a craft shop is never shown a waste log.
    */
-  only?: ('restaurant' | 'craft_shop')[];
+  module?: Module;
+}
+
+/** The two trades this system knows how to run. */
+export type Module = 'kitchen' | 'craft';
+
+export interface Modules {
+  kitchen: boolean;
+  craft: boolean;
+}
+
+/**
+ * What this business actually runs.
+ *
+ * The first version of this asked what a business WAS — restaurant or craft
+ * shop — and that was the wrong question. A place can have a kitchen and a
+ * craft corner under one roof, one till, one set of staff and one set of
+ * books, and making it choose was making it run two systems.
+ *
+ * So the question is what it DOES, and any combination is allowed except
+ * neither: a system with no trade switched on has no usable screens, and
+ * silently showing nothing is a worse answer than quietly falling back to the
+ * kitchen.
+ *
+ * Setups made before the switches existed said what they were, so that is read
+ * as what they run.
+ */
+export function modulesOf(settings: Settings | null): Modules {
+  const kitchen = settings?.kitchen_enabled;
+  const craft = settings?.craft_enabled;
+
+  if (kitchen === undefined && craft === undefined) {
+    const legacy = settings?.business_type ?? 'restaurant';
+    return { kitchen: legacy !== 'craft_shop', craft: legacy === 'craft_shop' };
+  }
+
+  const on = { kitchen: kitchen !== false, craft: craft === true };
+  return on.kitchen || on.craft ? on : { kitchen: true, craft: false };
 }
 
 export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'dashboard', label: 'Dashboard', path: '/', group: 'Overview' },
   { key: 'orders', label: 'Orders', path: '/orders', group: 'Overview' },
   { key: 'reports', label: 'Reports', path: '/reports', group: 'Overview' },
-  { key: 'menu_categories', label: 'Categories', path: '/menu/categories', group: 'Menu' },
-  { key: 'menu_items', label: 'Dishes & drinks', path: '/menu/items', group: 'Menu' },
-  { key: 'menu_options', label: 'Options', path: '/menu/options', group: 'Menu' },
+  // Everything one side of the business owns lives under that side, so the two
+  // catalogues never share a list. A cook adding a dish and a shop assistant
+  // adding a basket are doing unrelated jobs on unrelated stock.
+  { key: 'menu_categories', label: 'Categories', path: '/menu/categories', group: 'Kitchen', module: 'kitchen' },
+  { key: 'menu_items', label: 'Dishes & drinks', path: '/menu/items', group: 'Kitchen', module: 'kitchen' },
+  { key: 'menu_options', label: 'Options', path: '/menu/options', group: 'Kitchen', module: 'kitchen' },
+  { key: 'stations', label: 'Stations', path: '/stations', group: 'Kitchen', module: 'kitchen' },
+  { key: 'stock', label: 'Ingredients', path: '/stock', group: 'Kitchen', module: 'kitchen' },
+  { key: 'waste', label: 'Waste', path: '/waste', group: 'Kitchen', module: 'kitchen' },
+  { key: 'shop_categories', label: 'Categories', path: '/shop/categories', group: 'Craft shop', module: 'craft' },
+  { key: 'shop_items', label: 'Products', path: '/shop/items', group: 'Craft shop', module: 'craft' },
+  { key: 'consignors', label: 'Consignors', path: '/consignors', group: 'Craft shop', module: 'craft' },
+  { key: 'intake', label: 'Goods received', path: '/intake', group: 'Craft shop', module: 'craft' },
+  { key: 'payouts', label: 'Payouts', path: '/payouts', group: 'Craft shop', module: 'craft' },
   { key: 'shifts', label: 'Shifts', path: '/shifts', group: 'Money' },
   { key: 'expenses', label: 'Expenses', path: '/expenses', group: 'Money' },
   { key: 'vouchers', label: 'Discount vouchers', path: '/vouchers', group: 'Money' },
-  { key: 'consignors', label: 'Consignors', path: '/consignors', group: 'Consignment', only: ['craft_shop'] },
-  { key: 'intake', label: 'Goods received', path: '/intake', group: 'Consignment', only: ['craft_shop'] },
-  { key: 'payouts', label: 'Payouts', path: '/payouts', group: 'Consignment', only: ['craft_shop'] },
-  { key: 'stations', label: 'Stations', path: '/stations', group: 'Kitchen', only: ['restaurant'] },
-  { key: 'stock', label: 'Stock', path: '/stock', group: 'Kitchen', only: ['restaurant'] },
-  { key: 'waste', label: 'Waste', path: '/waste', group: 'Kitchen', only: ['restaurant'] },
   { key: 'venues', label: 'Venues', path: '/venues', group: 'Setup' },
   { key: 'tables', label: 'Tables & QR', path: '/tables', group: 'Setup' },
   { key: 'staff', label: 'Staff', path: '/staff', group: 'Setup' },
@@ -65,8 +108,7 @@ export const DEFAULT_ACCESS: Record<string, string[]> = {
     'dashboard', 'orders', 'reports', 'shifts', 'expenses', 'vouchers',
     'menu_items', 'stock', 'waste', 'stations',
     // A shop manager runs the intake desk and needs to see who is owed what.
-    // Recording a payout stays with them too; approving one is the owner's.
-    'consignors', 'intake', 'payouts',
+    'shop_categories', 'shop_items', 'consignors', 'intake', 'payouts',
   ],
   cashier: ['dashboard', 'orders'],
   waiter: [],
@@ -92,8 +134,8 @@ export function parseAccess(settings: Settings | null): Record<string, string[]>
  * themselves access to a page that simply does not apply.
  */
 export function inTrade(section: AdminSection, settings: Settings | null): boolean {
-  if (!section.only) return true;
-  return section.only.includes(settings?.business_type ?? 'restaurant');
+  if (!section.module) return true;
+  return modulesOf(settings)[section.module];
 }
 
 /**
@@ -125,12 +167,10 @@ export function sectionsFor(profile: StaffProfile | null, settings: Settings | n
  * pages, so the words change in one place.
  */
 export function wordsFor(settings: Settings | null): Record<string, string> {
-  if ((settings?.business_type ?? 'restaurant') !== 'craft_shop') return {};
-  return {
-    menu_items: 'Products',
-    menu_categories: 'Product categories',
-    menu_options: 'Add-ons',
-    orders: 'Sales',
-    Menu: 'Catalogue',
-  };
+  const { kitchen, craft } = modulesOf(settings);
+  // A shop with no kitchen calls a sale a sale. A place running both keeps the
+  // restaurant's words, because the two sides already have their own headings
+  // and renaming the shared pages would leave neither side's language right.
+  if (kitchen || !craft) return {};
+  return { orders: 'Sales' };
 }

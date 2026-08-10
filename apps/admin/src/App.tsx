@@ -63,8 +63,12 @@ export function App() {
         <Route path="/" element={guard('dashboard', <Dashboard />)} />
         <Route path="/orders" element={guard('orders', <OrdersPage />)} />
         <Route path="/reports" element={guard('reports', <ReportsPage />)} />
-        <Route path="/menu/categories" element={guard('menu_categories', <CategoriesPage />)} />
-        <Route path="/menu/items" element={guard('menu_items', <MenuItemsPage />)} />
+        <Route path="/menu/categories" element={guard('menu_categories', <CategoriesPage module="kitchen" />)} />
+        <Route path="/menu/items" element={guard('menu_items', <MenuItemsPage module="kitchen" />)} />
+        {/* Same two screens, the other side of the business. One component, so
+            a fix to the catalogue reaches both rather than one of them. */}
+        <Route path="/shop/categories" element={guard('shop_categories', <CategoriesPage module="craft" />)} />
+        <Route path="/shop/items" element={guard('shop_items', <MenuItemsPage module="craft" />)} />
         <Route path="/menu/options" element={guard('menu_options', <AddonsPage />)} />
         <Route path="/expenses" element={guard('expenses', <ExpensesPage />)} />
         <Route path="/vouchers" element={guard('vouchers', <VouchersPage />)} />

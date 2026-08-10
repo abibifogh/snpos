@@ -1,6 +1,7 @@
 import { listAll } from './client';
 import { isAvailable, parseWindows } from './availability';
 import type { Category, MenuItem, Doc } from './types';
+import type { ProductVariant } from './consignment';
 
 export interface MenuItemCategory extends Doc {
   menu_item_id: string;
@@ -51,6 +52,13 @@ export interface MenuEntry {
   /** Where this is cooked, already worked out — see `resolveStation`. */
   station: string;
   stationKey: string;
+  /**
+   * Sizes, each with its own price. Absent for anything that has one price.
+   *
+   * Where these exist the item's own `price` is not what anything sells for —
+   * every till must ask which size before it can total a line.
+   */
+  variants?: ProductVariant[];
 }
 
 /**
@@ -90,7 +98,7 @@ export interface LoadedMenu {
  * under another.
  */
 export async function loadMenu(venueId: string, at: Date = new Date()): Promise<LoadedMenu> {
-  const [categories, items, memberships, groups, options, itemGroups, overrides] = await Promise.all([
+  const [categories, items, memberships, groups, options, itemGroups, overrides, variants] = await Promise.all([
     listAll<Category>('categories'),
     listAll<MenuItem>('menu_items'),
     listAll<MenuItemCategory>('menu_item_categories'),
@@ -98,6 +106,7 @@ export async function loadMenu(venueId: string, at: Date = new Date()): Promise<
     listAll<AddonOption>('addon_options'),
     listAll<MenuItemAddonGroup>('menu_item_addon_groups'),
     listAll<VenueMenuItem>('venue_menu_items'),
+    listAll<ProductVariant>('product_variants').catch(() => [] as ProductVariant[]),
   ]);
 
   const overrideFor = new Map(overrides.filter((o) => o.venue_id === venueId).map((o) => [o.menu_item_id, o]));
@@ -133,6 +142,21 @@ export async function loadMenu(venueId: string, at: Date = new Date()): Promise<
   const activeItems = items.filter((i) => i.active);
   const byId: Record<string, MenuEntry> = {};
   for (const item of activeItems) byId[item.$id] = buildEntry(item);
+
+  // Sizes, attached where they belong.
+  //
+  // Loaded here rather than by each screen so the till, the customer menu and
+  // the receipt all get the same prices from the same read. A shop with no
+  // variants pays one empty query for this; a shop with them would otherwise
+  // pay one query per product on every screen that shows a price.
+  for (const v of variants) {
+    if (!v.active) continue;
+    const entry = byId[v.menu_item_id];
+    if (entry) (entry.variants ??= []).push(v);
+  }
+  for (const entry of Object.values(byId)) {
+    entry.variants?.sort((a, b) => a.sort - b.sort || a.label.localeCompare(b.label));
+  }
 
   const sections: MenuSection[] = categories
     .filter((c) => c.active)
@@ -181,4 +205,23 @@ export function itemsAvailableNow(menu: LoadedMenu): MenuItem[] {
     }
   }
   return out;
+}
+
+/**
+ * What to print where a price goes.
+ *
+ * A product with sizes has no single price, and showing the row's own figure
+ * would show a number nothing actually sells for. So: one price when there is
+ * one, a range when the sizes differ, and the plain figure when they happen to
+ * agree. `formatMoney` is passed in rather than imported to keep this file free
+ * of the money module, which imports from here.
+ */
+export function variantPriceRange(entry: {
+  price: number;
+  variants?: { price: number; active: boolean }[];
+}): { from: number; to: number } {
+  const live = (entry.variants ?? []).filter((v) => v.active);
+  if (live.length === 0) return { from: entry.price, to: entry.price };
+  const prices = live.map((v) => v.price);
+  return { from: Math.min(...prices), to: Math.max(...prices) };
 }

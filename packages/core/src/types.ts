@@ -43,8 +43,11 @@ export interface Settings extends Doc {
   stock_count_decimals?: boolean;
   /** What a shift expense may be paid out of. Cash only, or any method. */
   expense_paid_from?: 'cash_only' | 'any';
-  /** Restaurant, or consignment craft shop. Decides which sections appear. */
+  /** Older setups said what they were. Read only as a fallback — see modulesOf. */
   business_type?: 'restaurant' | 'craft_shop';
+  /** Which trades this business runs. Any combination except neither. */
+  kitchen_enabled?: boolean;
+  craft_enabled?: boolean;
   /** Whether customers may scan a code and order for themselves. */
   self_order_enabled?: boolean;
   /** What the shop keeps by default, in basis points. */
@@ -104,6 +107,8 @@ export interface Category extends Doc {
   availability?: string;
   unavailable_display: 'grey' | 'hide';
   group_only?: boolean;
+  /** Kitchen or craft. Decides which catalogue screen manages it. */
+  module?: 'kitchen' | 'craft';
   station: Station;
   station_key?: string;
 }
@@ -130,6 +135,8 @@ export interface MenuItem extends Doc {
   tags?: string[];
   sort: number;
   track_stock: boolean;
+  /** Kitchen or craft. Set from the category it was created under. */
+  module?: 'kitchen' | 'craft';
   // ------------------------------------------------------------- craft shop
   // Blank on every restaurant row, and nothing reads them there.
   consignor_id?: string;

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { formatMoney, parseMoney, toInput, previewUrl, Query } from '@snpos/core';
-import type { Category, MenuItem, Ingredient, Recipe, Doc } from '@snpos/core';
+import { formatMoney, parseMoney, toInput, previewUrl, Query, loadConsignors, loadVariants } from '@snpos/core';
+import type { Category, MenuItem, Ingredient, Recipe, Doc, Consignor } from '@snpos/core';
+import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
 import { ImageField } from '../components/ImageField';
 import { RecipeEditor, draftFrom, type DraftRecipe } from '../components/RecipeEditor';
 import { StationPicker, useStations, legacyStationFor } from '../components/StationPicker';
@@ -12,7 +13,15 @@ interface ItemCategory extends Doc { menu_item_id: string; category_id: string; 
 interface AddonGroup extends Doc { name: string; required: boolean; sort: number }
 interface ItemAddonGroup extends Doc { menu_item_id: string; group_id: string; sort: number }
 
-export function MenuItemsPage() {
+/**
+ * The catalogue, for one side of the business at a time.
+ *
+ * Same screen, same job — a name, a price, a picture, a category — scoped so
+ * the kitchen and the shop never share a list. What differs is which extra
+ * fields matter: a dish has a prep time and a station, a consigned piece has a
+ * maker and a commission, and neither wants the other's questions.
+ */
+export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'craft' }) {
   const { settings } = useSession();
   const toast = useToast();
   const stations = useStations();
@@ -31,6 +40,9 @@ export function MenuItemsPage() {
   const [filter, setFilter] = useState('');
   const [editing, setEditing] = useState<Partial<MenuItem> | null>(null);
   const [priceText, setPriceText] = useState('');
+  const [consignors, setConsignors] = useState<Consignor[]>([]);
+  const [variants, setVariants] = useState<DraftVariant[]>([]);
+  const [removedVariantIds, setRemovedVariantIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -46,15 +58,19 @@ export function MenuItemsPage() {
       listAll<Ingredient>('ingredients'),
       listAll<Recipe>('recipes'),
     ]);
-    setItems(i.sort((a, b) => a.sort - b.sort));
-    setCategories(c.sort((a, b) => a.sort - b.sort));
+    // Rows written before modules existed have none, and were kitchen rows.
+    const mine = (x: { module?: string }) => (x.module ?? 'kitchen') === module;
+    setItems(i.filter(mine).sort((a, b) => a.sort - b.sort));
+    setCategories(c.filter(mine).sort((a, b) => a.sort - b.sort));
     setLinks(l);
     setAddonGroups(g.sort((a, b) => a.sort - b.sort));
     setItemAddons(ia);
     setIngredients(ing.filter((x) => x.active).sort((a, b) => a.name.localeCompare(b.name)));
     setRecipes(r);
+    // Only the shop needs these, and only the shop pays for the round trip.
+    if (module === 'craft') setConsignors(await loadConsignors().catch(() => []));
   };
-  useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
+  useEffect(() => { load().catch((e) => setError(humanError(e))); }, [module]);
 
   const byCategory = useMemo(() => Object.fromEntries(categories.map((c) => [c.$id, c.name])), [categories]);
   const visible = useMemo(
@@ -109,6 +125,19 @@ export function MenuItemsPage() {
         : [],
     );
     setRemovedRecipeIds([]);
+    // Sizes come from the database rather than from the row in the list, since
+    // nothing else on this page needs them. A copy takes the sizes but not
+    // their ids, so saving writes new rows instead of moving the original's.
+    setRemovedVariantIds([]);
+    setVariants([]);
+    if (module === 'craft' && item?.$id) {
+      void loadVariants(item.$id)
+        .then((rows) => {
+          const drafts = draftVariantsFrom(rows, decimals);
+          setVariants(copy ? drafts.map((d) => ({ ...d, $id: undefined })) : drafts);
+        })
+        .catch(() => undefined);
+    }
     setError(null);
   };
 
@@ -159,14 +188,47 @@ export function MenuItemsPage() {
             : db.createDocument(DB_ID, 'recipes', ID.unique(), body);
         }),
     );
+
+    // ------------------------------------------------------------- sizes
+    //
+    // A size that has already sold something is switched off rather than
+    // deleted. Its id is on sale lines, on movements and on somebody's
+    // statement, and deleting it would leave those pointing at nothing — the
+    // shop would be unable to say what the customer actually bought.
+    for (const id of removedVariantIds) {
+      await db.updateDocument(DB_ID, 'product_variants', id, { active: false }).catch(() => undefined);
+    }
+    for (const v of variants) {
+      if (!v.label.trim()) continue;
+      const price = parseMoney(v.priceText, decimals);
+      if (price === null) continue;
+      const body = {
+        venue_id: 'main',
+        menu_item_id: itemId,
+        label: v.label.trim(),
+        kind: v.kind,
+        price,
+        sku: v.sku.trim(),
+        barcode: v.barcode.trim(),
+        on_hand: Number(v.onHandText || 0),
+        sort: variants.indexOf(v),
+        active: v.active,
+      };
+      if (v.$id) await db.updateDocument(DB_ID, 'product_variants', v.$id, body);
+      else await db.createDocument(DB_ID, 'product_variants', ID.unique(), body);
+    }
   };
 
   const save = async () => {
-    if (!editing?.name?.trim()) { setError('This dish needs a name.'); return; }
+    const thing = module === 'craft' ? 'product' : 'dish';
+    if (!editing?.name?.trim()) { setError(`This ${thing} needs a name.`); return; }
     if (pickedCategories.length === 0) {
-      setError('Tick at least one category — that is where this dish appears on the menu.');
+      setError(`Tick at least one category — that is where this ${thing} appears.`);
       return;
     }
+    // A size with no price would sell for nothing and be blamed on the till.
+    const badSize = variants.find((v) => v.label.trim() && parseMoney(v.priceText, decimals) === null);
+    if (badSize) { setError(`"${badSize.label}" needs a price.`); return; }
     const price = parseMoney(priceText, decimals);
     if (price === null || price < 0) { setError('Enter a valid price, for example 25.00'); return; }
 
@@ -193,6 +255,13 @@ export function MenuItemsPage() {
       image_focal_x: editing.image_focal_x ?? 0.5,
       image_focal_y: editing.image_focal_y ?? 0.5,
       sku: editing.sku ?? '',
+      module,
+      // Consignment. Blank on every kitchen row, and nothing reads them there.
+      consignor_id: editing.consignor_id ?? '',
+      commission_bp: editing.commission_bp ?? undefined,
+      barcode: editing.barcode ?? '',
+      is_one_off: editing.is_one_off ?? false,
+      maker_note: editing.maker_note ?? '',
     };
     try {
       const itemId = editing.$id
@@ -368,25 +437,48 @@ export function MenuItemsPage() {
           </Field>
 
           <div className="grid-2">
-            <Field label={`Price (${settings?.currency_symbol ?? ''})`}>
+            <Field
+              label={`Price (${settings?.currency_symbol ?? ''})`}
+              hint={module === 'craft' && variants.length > 0 ? 'Ignored — each size below carries its own price.' : undefined}
+            >
               <Input value={priceText} inputMode="decimal" onChange={(e) => setPriceText(e.target.value)} />
             </Field>
-            <Field label="Prep time (minutes)" hint="Used to estimate waits and to time pre-orders.">
-              <Input type="number" min="0" value={editing.prep_minutes ?? 10} onChange={(e) => setEditing({ ...editing, prep_minutes: Number(e.target.value) })} />
-            </Field>
-            <StationPicker
-              stations={stations}
-              value={editing.station_key ?? ''}
-              onChange={(key) => setEditing({ ...editing, station_key: key })}
-              inheritLabel="Same as its main category"
-            />
+            {module === 'kitchen' && (
+              <Field label="Prep time (minutes)" hint="Used to estimate waits and to time pre-orders.">
+                <Input type="number" min="0" value={editing.prep_minutes ?? 10} onChange={(e) => setEditing({ ...editing, prep_minutes: Number(e.target.value) })} />
+              </Field>
+            )}
+            {module === 'kitchen' && (
+              <StationPicker
+                stations={stations}
+                value={editing.station_key ?? ''}
+                onChange={(key) => setEditing({ ...editing, station_key: key })}
+                inheritLabel="Same as its main category"
+              />
+            )}
           </div>
           <Field>
-            <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label="Active — shown on the menu" />
+            <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label={module === 'craft' ? 'For sale' : 'Active — shown on the menu'} />
           </Field>
-          <Field hint="Only for items made from ingredients you count. Leave off for drinks you buy in.">
-            <Toggle checked={editing.track_stock ?? false} onChange={(v) => setEditing({ ...editing, track_stock: v })} label="Track ingredient stock for this item" />
-          </Field>
+          {module === 'kitchen' && (
+            <Field hint="Only for items made from ingredients you count. Leave off for drinks you buy in.">
+              <Toggle checked={editing.track_stock ?? false} onChange={(v) => setEditing({ ...editing, track_stock: v })} label="Track ingredient stock for this item" />
+            </Field>
+          )}
+
+          {module === 'craft' && (
+            <ConsignmentFields
+              editing={editing}
+              setEditing={setEditing}
+              consignors={consignors}
+              variants={variants}
+              setVariants={setVariants}
+              removedVariantIds={removedVariantIds}
+              setRemovedVariantIds={setRemovedVariantIds}
+              symbol={settings?.currency_symbol ?? ''}
+              decimals={decimals}
+            />
+          )}
 
           <RecipeEditor
             ingredients={ingredients}

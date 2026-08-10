@@ -31,6 +31,14 @@ export interface CartLine {
   prep_minutes?: number;
   seat_no?: number;
   course?: number;
+  // ------------------------------------------------------------- craft shop
+  // Which size was picked, and whose work it is. Carried from the shelf to the
+  // sale line so the ledger can credit the right person at the agreed rate,
+  // without the till having to look anything up at the moment of payment.
+  variant_id?: string;
+  variant_label?: string;
+  consignor_id?: string;
+  commission_bp?: number;
 }
 
 /** Unit price plus every add-on, before quantity. */

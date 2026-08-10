@@ -272,6 +272,21 @@ export const COLLECTIONS = [
        */
       ['business_type', 'e', ['restaurant', 'craft_shop'], false, 'restaurant'],
       /**
+       * Which trades this business actually runs, as switches rather than as a
+       * label.
+       *
+       * `business_type` said what a business WAS, which turned out to be the
+       * wrong question: a place can have a kitchen and a craft corner under one
+       * roof, one till and one set of staff, and asking it to pick was asking
+       * it to run two systems. These say what it DOES, and any combination is
+       * allowed except neither.
+       *
+       * Kept alongside the old field rather than replacing it, so a setup made
+       * before this still opens with the sections it had.
+       */
+      ['kitchen_enabled', 'b', null, false, true],
+      ['craft_enabled', 'b', null, false, false],
+      /**
        * Whether customers may scan a code and order for themselves.
        *
        * On in a restaurant, where a table code is the point. Off by default in
@@ -372,8 +387,12 @@ export const COLLECTIONS = [
       // Shown only on the group-order menu. A hotel party ordering platters
       // does not want the a la carte list, and vice versa.
       ['group_only', 'b', null, false, false],
+      // Which side of the business this belongs to. A kitchen category and a
+      // craft category are managed on different screens by different people
+      // and would otherwise pile into one list.
+      ['module', 'e', ['kitchen', 'craft'], false, 'kitchen'],
     ],
-    indexes: [['active_sort', 'key', ['active', 'sort']]],
+    indexes: [['active_sort', 'key', ['active', 'sort']], ['module_sort', 'key', ['module', 'sort']]],
   },
   {
     id: 'menu_items',
@@ -413,6 +432,9 @@ export const COLLECTIONS = [
       // shared rather than duplicated. What a shop adds is ownership: who this
       // piece belongs to, what it was worth when it arrived, and how many are
       // left. Blank on every restaurant row, and nothing reads them there.
+      // Kitchen or craft. Set from the category it is created under, and kept
+      // on the row so a list can be filtered without joining.
+      ['module', 'e', ['kitchen', 'craft'], false, 'kitchen'],
       ['consignor_id', 's', 64, false],
       ['intake_id', 's', 64, false],
       // Overrides the consignor's rate for this piece. Used when one item is

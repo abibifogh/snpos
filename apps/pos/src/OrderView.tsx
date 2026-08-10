@@ -3,9 +3,22 @@ import { Button, Card, Field, Input, Modal, Notice, Select, Badge, Spinner } fro
 import {
   db, DB_ID, Query, listAll, createOrder, computeTotals, lineTotal, formatMoney,
   parseMoney, toInput, isEnabled, featureConfig, splitEvenly, visibleSections, recordPayment, asksForTip,
+  variantPriceRange,
 } from '@snpos/core';
-import type { CartLine, Order, OrderItem, Doc } from '@snpos/core';
+import type { CartLine, Order, OrderItem, Doc, MenuEntry, Settings } from '@snpos/core';
 import type { PosContext, TableRow } from './App';
+
+/**
+ * One price, or the range the sizes cover.
+ *
+ * Printing the product's own price where sizes exist would print a figure the
+ * till will never charge — which is exactly the number a customer reads over
+ * the counter and then queries.
+ */
+function priceLabel(entry: MenuEntry, settings: Settings): string {
+  const { from, to } = variantPriceRange(entry);
+  return from === to ? formatMoney(from, settings) : `${formatMoney(from, settings)}–${formatMoney(to, settings)}`;
+}
 
 interface PaymentMethod extends Doc { name: string; kind: string; enabled: boolean; requires_reference: boolean; venue_id: string }
 
@@ -30,6 +43,15 @@ export function OrderView({
   const [discountLabel, setDiscountLabel] = useState('');
   const [showDiscount, setShowDiscount] = useState(false);
   const [sectionId, setSectionId] = useState<string | null>(null);
+  /**
+   * The product waiting on a size.
+   *
+   * A basket in three sizes has three prices and no single one of them is "the
+   * price", so the till cannot add it to a bill until somebody says which. Held
+   * here rather than added at a guessed price and corrected later — a corrected
+   * line is a line the customer has already been quoted.
+   */
+  const [pickingSize, setPickingSize] = useState<string | null>(null);
 
   const sections = useMemo(() => visibleSections(ctx.menu), [ctx.menu]);
 
@@ -59,23 +81,44 @@ export function OrderView({
     })();
   }, [ctx.venue.$id, table.$id, isTakeaway, sections]);
 
-  const addItem = (menuItemId: string) => {
+  const addItem = (menuItemId: string, variantId?: string) => {
     const entry = ctx.menu.byId[menuItemId];
     if (!entry) return;
+
+    // Sizes have to be answered before a price exists. Asked once, here, so no
+    // caller has to remember to.
+    const sizes = (entry.variants ?? []).filter((v) => v.active);
+    if (sizes.length > 0 && !variantId) { setPickingSize(menuItemId); return; }
+    const size = variantId ? sizes.find((v) => v.$id === variantId) ?? null : null;
+
+    setPickingSize(null);
     setCart((c) => {
-      const twin = c.find((l) => l.menu_item_id === menuItemId && l.addons.length === 0 && !l.notes);
+      const twin = c.find(
+        (l) =>
+          l.menu_item_id === menuItemId &&
+          (l.variant_id ?? '') === (size?.$id ?? '') &&
+          l.addons.length === 0 &&
+          !l.notes,
+      );
       if (twin) return c.map((l) => (l === twin ? { ...l, qty: l.qty + 1 } : l));
       return [
         ...c,
         {
-          key: `${menuItemId}-${Date.now()}`,
+          key: `${menuItemId}-${size?.$id ?? ''}-${Date.now()}`,
           menu_item_id: menuItemId,
-          name: entry.item.name,
-          unit_price: entry.price,
+          name: size ? `${entry.item.name} · ${size.label}` : entry.item.name,
+          unit_price: size ? size.price : entry.price,
           qty: 1,
           addons: [],
           station: entry.station,
           station_key: entry.stationKey,
+          prep_minutes: entry.item.prep_minutes,
+          variant_id: size?.$id,
+          variant_label: size?.label,
+          // Whose work it is, carried from the shelf to the sale so the ledger
+          // can credit the right person without looking anything up at payment.
+          consignor_id: entry.item.consignor_id || undefined,
+          commission_bp: entry.item.commission_bp ?? undefined,
         },
       ];
     });
@@ -164,7 +207,10 @@ export function OrderView({
               >
                 <div className="n">{entry.item.name}</div>
                 <div className="p">
-                  {formatMoney(entry.price, ctx.settings)}
+                  {/* With sizes there is no single price, and printing the
+                      product's own would be printing a number nothing sells
+                      for. The range is the honest answer at a glance. */}
+                  {priceLabel(entry, ctx.settings)}
                   {entry.groups.length > 0 && ' ·opts'}
                 </div>
               </button>
@@ -259,6 +305,35 @@ export function OrderView({
           }}
         />
       )}
+
+      {pickingSize && (() => {
+        const entry = ctx.menu.byId[pickingSize];
+        const sizes = (entry?.variants ?? []).filter((v) => v.active);
+        return (
+          <Modal title={entry?.item.name ?? 'Which one?'} onClose={() => setPickingSize(null)}>
+            <p className="small dim" style={{ marginTop: 0 }}>Which one is the customer buying?</p>
+            <div className="menu-grid">
+              {sizes.map((v) => (
+                <button
+                  key={v.$id}
+                  className="menu-card"
+                  // Sold out rather than hidden: a customer asking for the
+                  // large should be told there is none, not left wondering why
+                  // it is missing from a list they can see over the counter.
+                  disabled={v.on_hand <= 0}
+                  onClick={() => addItem(pickingSize, v.$id)}
+                >
+                  <div className="n">{v.label}</div>
+                  <div className="p">
+                    {formatMoney(v.price, ctx.settings)}
+                    {v.on_hand <= 0 ? ' · none left' : v.on_hand <= 2 ? ` · ${v.on_hand} left` : ''}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </Modal>
+        );
+      })()}
 
       {paying && (
         <PaymentModal

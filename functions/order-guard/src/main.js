@@ -147,6 +147,68 @@ async function redeem({ db, DB_ID, doc, settings, log, error }) {
 }
 
 /**
+ * Take what was sold off the shelf, and write down that it left.
+ *
+ * Always both. The movement is the record and the count is the convenience, and
+ * the moment one is written without the other the shelf and the history start
+ * telling different stories — which is the whole reason the movements exist.
+ *
+ * Idempotent by construction: the movement rows are keyed on the sale line, so
+ * a payment retried on a bad connection finds them already there and takes
+ * nothing off twice.
+ */
+async function depleteShelf({ db, DB_ID, order, lines, log }) {
+  let moved = 0;
+
+  for (const line of lines) {
+    if (line.status === 'void') continue;
+
+    const already = await db.listDocuments(DB_ID, 'product_moves', [
+      Query.equal('ref_type', 'order_item'), Query.equal('ref_id', line.$id), Query.limit(1),
+    ]).catch(() => ({ total: 0 }));
+    if (already.total > 0) continue;
+
+    // The variant is what sells when there is one; the product's own count only
+    // means anything when there are no sizes.
+    const variant = line.variant_id
+      ? await db.getDocument(DB_ID, 'product_variants', line.variant_id).catch(() => null)
+      : null;
+    const item = await db.getDocument(DB_ID, 'menu_items', line.menu_item_id).catch(() => null);
+
+    // A restaurant tracks ingredients, not pieces, and its dishes have no shelf
+    // to come off. Only the shop's catalogue is counted this way.
+    if (!variant && (item?.module ?? 'kitchen') !== 'craft') continue;
+
+    await db.createDocument(DB_ID, 'product_moves', 'unique()', {
+      venue_id: order.venue_id,
+      menu_item_id: line.menu_item_id,
+      variant_id: line.variant_id || '',
+      consignor_id: line.consignor_id || '',
+      type: 'sale',
+      qty_delta: -(line.qty || 1),
+      unit_price: line.unit_price || 0,
+      ref_type: 'order_item',
+      ref_id: line.$id,
+      shift_id: order.shift_id || '',
+    }).catch(() => undefined);
+
+    if (variant) {
+      await db.updateDocument(DB_ID, 'product_variants', variant.$id, {
+        on_hand: (variant.on_hand || 0) - (line.qty || 1),
+      }).catch(() => undefined);
+    } else if (item) {
+      await db.updateDocument(DB_ID, 'menu_items', item.$id, {
+        on_hand: (item.on_hand || 0) - (line.qty || 1),
+      }).catch(() => undefined);
+    }
+    moved++;
+  }
+
+  if (moved) log(`${moved} piece(s) off the shelf for ${order.order_no}`);
+  return moved;
+}
+
+/**
  * Credit every consignor whose work was on a bill that has just been settled.
  *
  * On payment, not on the sale. An order that is cancelled, voided or walked out
@@ -180,8 +242,14 @@ async function creditConsignors({ db, DB_ID, payment, log }) {
   const items = await db.listDocuments(DB_ID, 'order_items', [
     Query.equal('order_id', order.$id), Query.limit(100),
   ]);
+  // Stock comes off the shelf for everything the shop sells, whoever owns it.
+  // Done here rather than at the till because a till on a bad connection is
+  // exactly where a decrement gets lost, and a count that drifts is a count
+  // nobody trusts a week later.
+  await depleteShelf({ db, DB_ID, order, lines: items.documents, log });
+
   const mine = items.documents.filter((i) => i.status !== 'void' && i.consignor_id);
-  if (mine.length === 0) return { skipped: 'nothing on consignment' };
+  if (mine.length === 0) return { ok: true, credited: 0, note: 'nothing on consignment' };
 
   const settings = await db.getDocument(DB_ID, 'settings', 'main').catch(() => ({}));
   const at = new Date().toISOString();

@@ -58,3 +58,19 @@
   .sidebar .group { display: none; }
   .page { padding: 1rem; }
 }
+
+/* A size row in the product editor.
+   Laid out as one line because that is how it reads — name, kind, price, how
+   many, barcode — and a stack of labelled fields per size would turn three
+   sizes into a page of scrolling. Wraps rather than overflows on a narrow
+   screen: an admin doing intake on a tablet is a real situation. */
+.variant-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.45rem;
+}
+.variant-row input { min-width: 0; flex: 1 1 6rem; }
+.variant-row select { flex: 0 0 7rem; }
+.variant-row button { flex: none; }

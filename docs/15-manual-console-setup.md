@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **66 collections, 886 fields and 221 indexes**. Entered by hand at a
+> This is **66 collections, 890 fields and 222 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -257,7 +257,7 @@ There are 66 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: _none — server only_ · **Update**: Team: admins · **Delete**: _none — server only_
 
-**Attributes** (51)
+**Attributes** (53)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -293,6 +293,8 @@ There are 66 collections. A progress checklist is at the end of this document.
 | `tips_ask_on` | Enum | both, till, kitchen, none | No | both | No |
 | `expense_paid_from` | Enum | cash_only, any | No | cash_only | No |
 | `business_type` | Enum | restaurant, craft_shop | No | restaurant | No |
+| `kitchen_enabled` | Boolean | — | No | true | No |
+| `craft_enabled` | Boolean | — | No | false | No |
 | `self_order_enabled` | Boolean | — | No | true | No |
 | `default_commission_bp` | Integer | — | No | 3000 | No |
 | `low_stock_default_bp` | Integer | — | **Yes** | — | No |
@@ -355,7 +357,7 @@ There are 66 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: managers, Team: admins
 
-**Attributes** (11)
+**Attributes** (12)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -370,12 +372,14 @@ There are 66 collections. A progress checklist is at the end of this document.
 | `station` | Enum | hot, cold, bar, dessert | **Yes** | — | No |
 | `station_key` | String | size 40 | No | — | No |
 | `group_only` | Boolean | — | No | false | No |
+| `module` | Enum | kitchen, craft | No | kitchen | No |
 
-**Indexes** (2)
+**Indexes** (3)
 
 | Index key | Type | Attributes (in this order) |
 | --- | --- | --- |
 | `active_sort` | key | `active`, `sort` |
+| `module_sort` | key | `module`, `sort` |
 | `org` | key | `org_id` |
 
 ---
@@ -384,7 +388,7 @@ There are 66 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: managers, Team: admins
 
-**Attributes** (29)
+**Attributes** (30)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -410,6 +414,7 @@ There are 66 collections. A progress checklist is at the end of this document.
 | `tags` | String | size 40 | No | — | Yes |
 | `sort` | Integer | — | **Yes** | — | No |
 | `track_stock` | Boolean | — | **Yes** | — | No |
+| `module` | Enum | kitchen, craft | No | kitchen | No |
 | `consignor_id` | String | size 64 | No | — | No |
 | `intake_id` | String | size 64 | No | — | No |
 | `commission_bp` | Integer | — | No | — | No |
@@ -2469,10 +2474,10 @@ way mistakes creep in.
 - [ ]  2. `venue_menu_items` (7 fields, 2 indexes)
 - [ ]  3. `organisations` (13 fields, 3 indexes)
 - [ ]  4. `org_requests` (10 fields, 1 indexes)
-- [ ]  5. `settings` (51 fields, 1 indexes)
+- [ ]  5. `settings` (53 fields, 1 indexes)
 - [ ]  6. `payment_methods` (11 fields, 3 indexes)
-- [ ]  7. `categories` (11 fields, 2 indexes)
-- [ ]  8. `menu_items` (29 fields, 6 indexes)
+- [ ]  7. `categories` (12 fields, 3 indexes)
+- [ ]  8. `menu_items` (30 fields, 6 indexes)
 - [ ]  9. `menu_item_categories` (5 fields, 4 indexes)
 - [ ] 10. `stations` (7 fields, 3 indexes)
 - [ ] 11. `addon_groups` (7 fields, 1 indexes)
