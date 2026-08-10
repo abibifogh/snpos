@@ -77,6 +77,16 @@ export interface OrderItem extends Doc {
   void_reason?: string;
   course: number;
   seat_no?: number;
+  /** The prep time this dish had when it was ordered. */
+  prep_minutes?: number;
+  // ------------------------------------------------------------- craft shop
+  // Which variant sold, whose it was and what was agreed — snapshotted here
+  // because a statement worked out from today's rate would restate what
+  // somebody was paid last year.
+  variant_id?: string;
+  variant_label?: string;
+  consignor_id?: string;
+  commission_bp?: number;
 }
 
 /**

@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **60 collections, 793 fields and 195 indexes**. Entered by hand at a
+> This is **66 collections, 886 fields and 221 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -127,7 +127,7 @@ Attributes are created asynchronously. If an index refuses to save with
 "attribute not available", wait ten seconds and try again — the attribute is
 still being built.
 
-There are 60 collections. A progress checklist is at the end of this document.
+There are 66 collections. A progress checklist is at the end of this document.
 
 ---
 
@@ -257,7 +257,7 @@ There are 60 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: _none — server only_ · **Update**: Team: admins · **Delete**: _none — server only_
 
-**Attributes** (48)
+**Attributes** (51)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -292,6 +292,9 @@ There are 60 collections. A progress checklist is at the end of this document.
 | `tips_enabled` | Boolean | — | No | true | No |
 | `tips_ask_on` | Enum | both, till, kitchen, none | No | both | No |
 | `expense_paid_from` | Enum | cash_only, any | No | cash_only | No |
+| `business_type` | Enum | restaurant, craft_shop | No | restaurant | No |
+| `self_order_enabled` | Boolean | — | No | true | No |
+| `default_commission_bp` | Integer | — | No | 3000 | No |
 | `low_stock_default_bp` | Integer | — | **Yes** | — | No |
 | `stock_check_mode` | Enum | levels, counts | No | levels | No |
 | `stock_count_decimals` | Boolean | — | No | true | No |
@@ -381,7 +384,7 @@ There are 60 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: managers, Team: admins
 
-**Attributes** (22)
+**Attributes** (29)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -407,13 +410,23 @@ There are 60 collections. A progress checklist is at the end of this document.
 | `tags` | String | size 40 | No | — | Yes |
 | `sort` | Integer | — | **Yes** | — | No |
 | `track_stock` | Boolean | — | **Yes** | — | No |
+| `consignor_id` | String | size 64 | No | — | No |
+| `intake_id` | String | size 64 | No | — | No |
+| `commission_bp` | Integer | — | No | — | No |
+| `barcode` | String | size 60 | No | — | No |
+| `on_hand` | Integer | — | **Yes** | — | No |
+| `is_one_off` | Boolean | — | **Yes** | — | No |
+| `maker_note` | String | size 500 | No | — | No |
 
-**Indexes** (3)
+**Indexes** (6)
 
 | Index key | Type | Attributes (in this order) |
 | --- | --- | --- |
 | `category_active` | key | `category_id`, `active` |
 | `name_search` | fulltext | `name` |
+| `consignor` | key | `consignor_id` |
+| `intake` | key | `intake_id` |
+| `barcode` | key | `barcode` |
 | `org` | key | `org_id` |
 
 ---
@@ -698,7 +711,7 @@ There are 60 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: All users · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins
 
-**Attributes** (19)
+**Attributes** (23)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -717,6 +730,10 @@ There are 60 collections. A progress checklist is at the end of this document.
 | `status` | Enum | queued, preparing, ready, served, void | **Yes** | — | No |
 | `due_at` | Datetime | — | No | — | No |
 | `prep_minutes` | Integer | — | No | — | No |
+| `variant_id` | String | size 64 | No | — | No |
+| `variant_label` | String | size 60 | No | — | No |
+| `consignor_id` | String | size 64 | No | — | No |
+| `commission_bp` | Integer | — | No | — | No |
 | `void_reason` | String | size 300 | No | — | No |
 | `voided_by` | String | size 64 | No | — | No |
 | `course` | Integer | — | **Yes** | — | No |
@@ -2079,6 +2096,204 @@ There are 60 collections. A progress checklist is at the end of this document.
 
 ---
 
+### 61. `consignors` — Consignors
+
+**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
+
+**Attributes** (14)
+
+| Key | Type | Size / Enum values | Required | Default | Array |
+| --- | --- | --- | --- | --- | --- |
+| `org_id` | String | size 64 | No | — | No |
+| `venue_id` | String | size 64 | No | — | No |
+| `code` | String | size 24 | **Yes** | — | No |
+| `name` | String | size 160 | **Yes** | — | No |
+| `phone` | String | size 40 | No | — | No |
+| `email` | String | size 160 | No | — | No |
+| `address` | String | size 300 | No | — | No |
+| `commission_bp` | Integer | — | **Yes** | — | No |
+| `payout_method` | Enum | cash, momo, bank, other | No | momo | No |
+| `payout_details` | String | size 200 | No | — | No |
+| `agreement_start` | Datetime | — | No | — | No |
+| `agreement_end` | Datetime | — | No | — | No |
+| `notes` | String | size 1000 | No | — | No |
+| `active` | Boolean | — | **Yes** | — | No |
+
+**Indexes** (3)
+
+| Index key | Type | Attributes (in this order) |
+| --- | --- | --- |
+| `code_unique` | unique | `code` |
+| `active_name` | key | `active`, `name` |
+| `org` | key | `org_id` |
+
+---
+
+### 62. `consignment_intakes` — Consignment intakes
+
+**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
+
+**Attributes** (10)
+
+| Key | Type | Size / Enum values | Required | Default | Array |
+| --- | --- | --- | --- | --- | --- |
+| `org_id` | String | size 64 | No | — | No |
+| `venue_id` | String | size 64 | No | — | No |
+| `consignor_id` | String | size 64 | **Yes** | — | No |
+| `reference` | String | size 40 | **Yes** | — | No |
+| `received_at` | Datetime | — | **Yes** | — | No |
+| `received_by` | String | size 64 | No | — | No |
+| `piece_count` | Integer | — | **Yes** | — | No |
+| `total_retail` | Integer | — | **Yes** | — | No |
+| `notes` | String | size 1000 | No | — | No |
+| `status` | Enum | open, closed | **Yes** | — | No |
+
+**Indexes** (3)
+
+| Index key | Type | Attributes (in this order) |
+| --- | --- | --- |
+| `reference_unique` | unique | `reference` |
+| `consignor_received` | key | `consignor_id`, `received_at` |
+| `org` | key | `org_id` |
+
+---
+
+### 63. `product_variants` — Product variants
+
+**Read**: Any · **Create**: Team: managers, Team: admins · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: Team: managers, Team: admins
+
+**Attributes** (11)
+
+| Key | Type | Size / Enum values | Required | Default | Array |
+| --- | --- | --- | --- | --- | --- |
+| `org_id` | String | size 64 | No | — | No |
+| `venue_id` | String | size 64 | No | — | No |
+| `menu_item_id` | String | size 64 | **Yes** | — | No |
+| `label` | String | size 60 | **Yes** | — | No |
+| `kind` | Enum | size, colour, finish, other | **Yes** | — | No |
+| `price` | Integer | — | **Yes** | — | No |
+| `sku` | String | size 40 | No | — | No |
+| `barcode` | String | size 60 | No | — | No |
+| `on_hand` | Integer | — | **Yes** | — | No |
+| `sort` | Integer | — | **Yes** | — | No |
+| `active` | Boolean | — | **Yes** | — | No |
+
+**Indexes** (4)
+
+| Index key | Type | Attributes (in this order) |
+| --- | --- | --- |
+| `item_sort` | key | `menu_item_id`, `sort` |
+| `sku` | key | `sku` |
+| `barcode` | key | `barcode` |
+| `org` | key | `org_id` |
+
+---
+
+### 64. `product_moves` — Product movements
+
+**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: _none — server only_ · **Delete**: Team: admins
+
+**Attributes** (13)
+
+| Key | Type | Size / Enum values | Required | Default | Array |
+| --- | --- | --- | --- | --- | --- |
+| `org_id` | String | size 64 | No | — | No |
+| `venue_id` | String | size 64 | No | — | No |
+| `menu_item_id` | String | size 64 | **Yes** | — | No |
+| `variant_id` | String | size 64 | No | — | No |
+| `consignor_id` | String | size 64 | No | — | No |
+| `type` | Enum | intake, sale, return_to_consignor, damaged, lost, adjustment, refund | **Yes** | — | No |
+| `qty_delta` | Integer | — | **Yes** | — | No |
+| `unit_price` | Integer | — | **Yes** | — | No |
+| `ref_type` | String | size 40 | No | — | No |
+| `ref_id` | String | size 64 | No | — | No |
+| `shift_id` | String | size 64 | No | — | No |
+| `note` | String | size 300 | No | — | No |
+| `created_by` | String | size 64 | No | — | No |
+
+**Indexes** (5)
+
+| Index key | Type | Attributes (in this order) |
+| --- | --- | --- |
+| `item_created` | key | `menu_item_id`, `$createdAt` |
+| `consignor_created` | key | `consignor_id`, `$createdAt` |
+| `type_created` | key | `type`, `$createdAt` |
+| `ref` | key | `ref_type`, `ref_id` |
+| `org` | key | `org_id` |
+
+---
+
+### 65. `consignor_ledger` — Consignor ledger
+
+**Read**: Team: managers, Team: admins · **Create**: _none — server only_ · **Update**: _none — server only_ · **Delete**: _none — server only_
+
+**Attributes** (17)
+
+| Key | Type | Size / Enum values | Required | Default | Array |
+| --- | --- | --- | --- | --- | --- |
+| `org_id` | String | size 64 | No | — | No |
+| `venue_id` | String | size 64 | No | — | No |
+| `consignor_id` | String | size 64 | **Yes** | — | No |
+| `entry_at` | Datetime | — | **Yes** | — | No |
+| `kind` | Enum | sale, refund, payout, adjustment, fee | **Yes** | — | No |
+| `amount` | Integer | — | **Yes** | — | No |
+| `description` | String | size 300 | No | — | No |
+| `order_id` | String | size 64 | No | — | No |
+| `order_item_id` | String | size 64 | No | — | No |
+| `menu_item_id` | String | size 64 | No | — | No |
+| `variant_label` | String | size 60 | No | — | No |
+| `qty` | Integer | — | No | 1 | No |
+| `gross` | Integer | — | No | 0 | No |
+| `commission` | Integer | — | No | 0 | No |
+| `commission_bp` | Integer | — | No | 0 | No |
+| `payout_id` | String | size 64 | No | — | No |
+| `created_by` | String | size 64 | No | — | No |
+
+**Indexes** (5)
+
+| Index key | Type | Attributes (in this order) |
+| --- | --- | --- |
+| `consignor_entry` | key | `consignor_id`, `entry_at` |
+| `order_item_unique` | unique | `order_item_id` |
+| `payout` | key | `payout_id` |
+| `kind_entry` | key | `kind`, `entry_at` |
+| `org` | key | `org_id` |
+
+---
+
+### 66. `consignor_payouts` — Consignor payouts
+
+**Read**: Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
+
+**Attributes** (14)
+
+| Key | Type | Size / Enum values | Required | Default | Array |
+| --- | --- | --- | --- | --- | --- |
+| `org_id` | String | size 64 | No | — | No |
+| `venue_id` | String | size 64 | No | — | No |
+| `consignor_id` | String | size 64 | **Yes** | — | No |
+| `reference` | String | size 40 | **Yes** | — | No |
+| `paid_at` | Datetime | — | **Yes** | — | No |
+| `amount` | Integer | — | **Yes** | — | No |
+| `method` | Enum | cash, momo, bank, other | **Yes** | — | No |
+| `transaction_ref` | String | size 120 | No | — | No |
+| `period_start` | Datetime | — | No | — | No |
+| `period_end` | Datetime | — | No | — | No |
+| `note` | String | size 500 | No | — | No |
+| `status` | Enum | recorded, reversed | **Yes** | — | No |
+| `reversed_reason` | String | size 300 | No | — | No |
+| `paid_by` | String | size 64 | No | — | No |
+
+**Indexes** (3)
+
+| Index key | Type | Attributes (in this order) |
+| --- | --- | --- |
+| `reference_unique` | unique | `reference` |
+| `consignor_paid` | key | `consignor_id`, `paid_at` |
+| `org` | key | `org_id` |
+
+---
+
 ## Stage 6 — Seed documents
 
 These rows must exist before the apps will run. Create them from
@@ -2254,10 +2469,10 @@ way mistakes creep in.
 - [ ]  2. `venue_menu_items` (7 fields, 2 indexes)
 - [ ]  3. `organisations` (13 fields, 3 indexes)
 - [ ]  4. `org_requests` (10 fields, 1 indexes)
-- [ ]  5. `settings` (48 fields, 1 indexes)
+- [ ]  5. `settings` (51 fields, 1 indexes)
 - [ ]  6. `payment_methods` (11 fields, 3 indexes)
 - [ ]  7. `categories` (11 fields, 2 indexes)
-- [ ]  8. `menu_items` (22 fields, 3 indexes)
+- [ ]  8. `menu_items` (29 fields, 6 indexes)
 - [ ]  9. `menu_item_categories` (5 fields, 4 indexes)
 - [ ] 10. `stations` (7 fields, 3 indexes)
 - [ ] 11. `addon_groups` (7 fields, 1 indexes)
@@ -2266,7 +2481,7 @@ way mistakes creep in.
 - [ ] 14. `tables` (13 fields, 4 indexes)
 - [ ] 15. `dining_sessions` (9 fields, 3 indexes)
 - [ ] 16. `orders` (61 fields, 13 indexes)
-- [ ] 17. `order_items` (19 fields, 4 indexes)
+- [ ] 17. `order_items` (23 fields, 4 indexes)
 - [ ] 18. `payments` (16 fields, 4 indexes)
 - [ ] 19. `shifts` (28 fields, 4 indexes)
 - [ ] 20. `shift_expenses` (16 fields, 4 indexes)
@@ -2310,6 +2525,12 @@ way mistakes creep in.
 - [ ] 58. `price_rules` (17 fields, 2 indexes)
 - [ ] 59. `discounts` (29 fields, 4 indexes)
 - [ ] 60. `discount_redemptions` (13 fields, 5 indexes)
+- [ ] 61. `consignors` (14 fields, 3 indexes)
+- [ ] 62. `consignment_intakes` (10 fields, 3 indexes)
+- [ ] 63. `product_variants` (11 fields, 4 indexes)
+- [ ] 64. `product_moves` (13 fields, 5 indexes)
+- [ ] 65. `consignor_ledger` (17 fields, 5 indexes)
+- [ ] 66. `consignor_payouts` (14 fields, 3 indexes)
 
 **Stage 6 — seed documents**
 
@@ -2330,7 +2551,7 @@ way mistakes creep in.
 
 Sanity-check before building on top of it:
 
-1. The `snpos` database lists **60 collections**.
+1. The `snpos` database lists **66 collections**.
 2. `settings/main` exists and `shift_float_policy` reads `zero`.
 3. `venues/main` exists and is active.
 4. `feature_flags` holds **19 rows**, each with a blank `venue_id`.

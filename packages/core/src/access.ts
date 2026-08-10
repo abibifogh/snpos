@@ -15,6 +15,14 @@ export interface AdminSection {
   group: string;
   /** True for the pages that only ever make sense for an owner. */
   ownerOnly?: boolean;
+  /**
+   * Which trades this section belongs to. Absent means both.
+   *
+   * A consignment shop has no stations, no waste log and no kitchen; a
+   * restaurant has no consignors. Showing every section to everybody would
+   * bury the eight pages somebody actually uses under eight they never will.
+   */
+  only?: ('restaurant' | 'craft_shop')[];
 }
 
 export const ADMIN_SECTIONS: AdminSection[] = [
@@ -27,9 +35,12 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'shifts', label: 'Shifts', path: '/shifts', group: 'Money' },
   { key: 'expenses', label: 'Expenses', path: '/expenses', group: 'Money' },
   { key: 'vouchers', label: 'Discount vouchers', path: '/vouchers', group: 'Money' },
-  { key: 'stations', label: 'Stations', path: '/stations', group: 'Kitchen' },
-  { key: 'stock', label: 'Stock', path: '/stock', group: 'Kitchen' },
-  { key: 'waste', label: 'Waste', path: '/waste', group: 'Kitchen' },
+  { key: 'consignors', label: 'Consignors', path: '/consignors', group: 'Consignment', only: ['craft_shop'] },
+  { key: 'intake', label: 'Goods received', path: '/intake', group: 'Consignment', only: ['craft_shop'] },
+  { key: 'payouts', label: 'Payouts', path: '/payouts', group: 'Consignment', only: ['craft_shop'] },
+  { key: 'stations', label: 'Stations', path: '/stations', group: 'Kitchen', only: ['restaurant'] },
+  { key: 'stock', label: 'Stock', path: '/stock', group: 'Kitchen', only: ['restaurant'] },
+  { key: 'waste', label: 'Waste', path: '/waste', group: 'Kitchen', only: ['restaurant'] },
   { key: 'venues', label: 'Venues', path: '/venues', group: 'Setup' },
   { key: 'tables', label: 'Tables & QR', path: '/tables', group: 'Setup' },
   { key: 'staff', label: 'Staff', path: '/staff', group: 'Setup' },
@@ -53,6 +64,9 @@ export const DEFAULT_ACCESS: Record<string, string[]> = {
   manager: [
     'dashboard', 'orders', 'reports', 'shifts', 'expenses', 'vouchers',
     'menu_items', 'stock', 'waste', 'stations',
+    // A shop manager runs the intake desk and needs to see who is owed what.
+    // Recording a payout stays with them too; approving one is the owner's.
+    'consignors', 'intake', 'payouts',
   ],
   cashier: ['dashboard', 'orders'],
   waiter: [],
@@ -70,15 +84,30 @@ export function parseAccess(settings: Settings | null): Record<string, string[]>
 }
 
 /**
+ * Does this section belong to the trade this business is in?
+ *
+ * Asked separately from permission, and before it. A restaurant hiding the
+ * consignor pages is not a restriction on anybody — there is nothing behind
+ * them — so it must not read as one, and an owner must not have to grant
+ * themselves access to a page that simply does not apply.
+ */
+export function inTrade(section: AdminSection, settings: Settings | null): boolean {
+  if (!section.only) return true;
+  return section.only.includes(settings?.business_type ?? 'restaurant');
+}
+
+/**
  * Can this person open this section?
  *
  * An admin always can. That is deliberate and not configurable: the alternative
- * is a checkbox that removes the owner's own way back in.
+ * is a checkbox that removes the owner's own way back in. The trade check comes
+ * first because it is not a permission at all.
  */
 export function canOpen(section: string, profile: StaffProfile | null, settings: Settings | null): boolean {
   if (!profile) return false;
-  if (profile.role === 'admin') return true;
   const meta = ADMIN_SECTIONS.find((s) => s.key === section);
+  if (meta && !inTrade(meta, settings)) return false;
+  if (profile.role === 'admin') return true;
   if (meta?.ownerOnly) return false;
   return (parseAccess(settings)[profile.role] ?? []).includes(section);
 }
@@ -86,4 +115,22 @@ export function canOpen(section: string, profile: StaffProfile | null, settings:
 /** The sections this person may open, in the order they are listed above. */
 export function sectionsFor(profile: StaffProfile | null, settings: Settings | null): AdminSection[] {
   return ADMIN_SECTIONS.filter((s) => canOpen(s.key, profile, settings));
+}
+
+/**
+ * What a screen should call things, given the trade.
+ *
+ * A shop assistant looking for "Dishes & drinks" to add a woven basket is being
+ * asked to translate, every time, for ever. One map, read by the nav and the
+ * pages, so the words change in one place.
+ */
+export function wordsFor(settings: Settings | null): Record<string, string> {
+  if ((settings?.business_type ?? 'restaurant') !== 'craft_shop') return {};
+  return {
+    menu_items: 'Products',
+    menu_categories: 'Product categories',
+    menu_options: 'Add-ons',
+    orders: 'Sales',
+    Menu: 'Catalogue',
+  };
 }

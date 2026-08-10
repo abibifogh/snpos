@@ -258,6 +258,30 @@ export const COLLECTIONS = [
        * entries rest on the receipt rather than on a count.
        */
       ['expense_paid_from', 'e', ['cash_only', 'any'], false, 'cash_only'],
+      /**
+       * What kind of business this is.
+       *
+       * One codebase, two trades. A restaurant and a consignment craft shop
+       * share almost everything that matters — a catalogue, a till, shifts,
+       * staff, receipts, reports — and differ in ownership of the goods and in
+       * what the screens are called. Forking would have meant every fix made
+       * twice and, in practice, made once.
+       *
+       * This decides which sections appear and what they are called. It does
+       * not hide data: a shop that switches back still has its consignors.
+       */
+      ['business_type', 'e', ['restaurant', 'craft_shop'], false, 'restaurant'],
+      /**
+       * Whether customers may scan a code and order for themselves.
+       *
+       * On in a restaurant, where a table code is the point. Off by default in
+       * a shop, where the normal way to buy is to hand something to a cashier —
+       * but available, because a market stall with a queue is exactly where
+       * letting people order from their phone earns its keep.
+       */
+      ['self_order_enabled', 'b', null, false, true],
+      /** What the shop keeps by default, in basis points. 3000 = 30%. */
+      ['default_commission_bp', 'i', null, false, 3000],
       ['low_stock_default_bp', 'i', null, true, 3000],
       // How the shift-end stock check asks its question.
       //
@@ -382,10 +406,31 @@ export const COLLECTIONS = [
       ['tags', 's[]', 40, false],
       ['sort', 'i', null, true, 0],
       ['track_stock', 'b', null, true, false],
+      // ---------------------------------------------------------- craft shop
+      //
+      // A shop sells the same table this restaurant sells dishes from — a thing
+      // with a name, a price, a picture and a category — so the catalogue is
+      // shared rather than duplicated. What a shop adds is ownership: who this
+      // piece belongs to, what it was worth when it arrived, and how many are
+      // left. Blank on every restaurant row, and nothing reads them there.
+      ['consignor_id', 's', 64, false],
+      ['intake_id', 's', 64, false],
+      // Overrides the consignor's rate for this piece. Used when one item is
+      // negotiated differently — a large commissioned work, say.
+      ['commission_bp', 'i', null, false],
+      ['barcode', 's', 60, false],
+      // Pieces on the shelf. Only meaningful when the product has no variants;
+      // with variants the count lives on each one, because that is what sells.
+      ['on_hand', 'i', null, true, 0],
+      ['is_one_off', 'b', null, true, false], // a single handmade piece
+      ['maker_note', 's', 500, false], // the card that sits beside it
     ],
     indexes: [
       ['category_active', 'key', ['category_id', 'active']],
       ['name_search', 'fulltext', ['name']],
+      ['consignor', 'key', ['consignor_id']],
+      ['intake', 'key', ['intake_id']],
+      ['barcode', 'key', ['barcode']],
     ],
   },
   {
@@ -693,6 +738,16 @@ export const COLLECTIONS = [
       // a dish from 10 minutes to 25 must not make every ticket already on the
       // pass suddenly on time, nor lowering it make them all late at once.
       ['prep_minutes', 'i', null, false],
+      // ---------------------------------------------------------- craft shop
+      //
+      // Who this piece belonged to and what was agreed, snapshotted at the
+      // moment of sale. Rates change and consignors leave; a statement worked
+      // out from today's rate would quietly restate what somebody was paid
+      // last year. The line has to carry its own terms.
+      ['variant_id', 's', 64, false],
+      ['variant_label', 's', 60, false],
+      ['consignor_id', 's', 64, false],
+      ['commission_bp', 'i', null, false],
       ['void_reason', 's', 300, false],
       ['voided_by', 's', 64, false],
       ['course', 'i', null, true, 1],
@@ -1738,6 +1793,222 @@ export const COLLECTIONS = [
       ['discount_created', 'key', ['discount_id', '$createdAt']],
       ['customer', 'key', ['customer_id']],
       ['applied_by', 'key', ['applied_by']],
+    ],
+  },
+
+  // ------------------------------------------------------------ consignment
+  //
+  // The craft-shop side of the system. A consignment shop does not own what it
+  // sells: somebody brings goods in, the shop sells them, keeps a share and
+  // owes the rest. That "owes the rest" is the whole business, and it is the
+  // part a spreadsheet gets wrong first — which is why it is a ledger here
+  // rather than a running total on a row somebody can edit.
+  //
+  // These collections sit alongside the restaurant ones rather than replacing
+  // them. The spine is the same: products, sales, payments, shifts, staff,
+  // receipts. Only the ownership of the goods and the money that follows a sale
+  // are different, so only those are new.
+  {
+    /**
+     * Somebody who leaves goods with the shop to be sold on their behalf.
+     *
+     * `commission_bp` is theirs and theirs alone. A shop that has one rate for
+     * everybody still wants it here rather than in settings, because the day it
+     * negotiates a different rate with one maker — and it will — a global
+     * number silently rewrites the past for everyone.
+     */
+    id: 'consignors',
+    name: 'Consignors',
+    perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['code', 's', 24, true], // short, human, goes on labels: "AKO", "MB2"
+      ['name', 's', 160, true],
+      ['phone', 's', 40, false],
+      ['email', 's', 160, false],
+      ['address', 's', 300, false],
+      // What the shop keeps, in basis points. 3000 = 30%.
+      ['commission_bp', 'i', null, true, 3000],
+      ['payout_method', 'e', ['cash', 'momo', 'bank', 'other'], false, 'momo'],
+      ['payout_details', 's', 200, false], // momo number, account, whatever
+      ['agreement_start', 'd', null, false],
+      ['agreement_end', 'd', null, false],
+      ['notes', 's', 1000, false],
+      ['active', 'b', null, true, true],
+    ],
+    indexes: [
+      ['code_unique', 'unique', ['code']],
+      ['active_name', 'key', ['active', 'name']],
+    ],
+  },
+  {
+    /**
+     * One delivery of goods from one consignor, on one day.
+     *
+     * Goods arrive in batches and a batch is what both sides remember: "the
+     * baskets I brought in March". Without it, a consignor asking what happened
+     * to that delivery can only be answered item by item.
+     */
+    id: 'consignment_intakes',
+    name: 'Consignment intakes',
+    perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['consignor_id', 's', 64, true],
+      ['reference', 's', 40, true], // INT-0007
+      ['received_at', 'd', null, true],
+      ['received_by', 's', 64, false],
+      ['piece_count', 'i', null, true, 0],
+      ['total_retail', 'i', null, true, 0], // what it would all sell for
+      ['notes', 's', 1000, false],
+      ['status', 'e', ['open', 'closed'], true, 'open'],
+    ],
+    indexes: [
+      ['reference_unique', 'unique', ['reference']],
+      ['consignor_received', 'key', ['consignor_id', 'received_at']],
+    ],
+  },
+  {
+    /**
+     * A size, colour or finish of a product that carries its own price.
+     *
+     * A basket in small, medium and large is one product to a customer and
+     * three prices to a till. Modelled as rows rather than as a JSON blob on
+     * the product because each one is counted, sold and paid out separately —
+     * anything a stock movement or a sale line points at has to have an id.
+     */
+    id: 'product_variants',
+    name: 'Product variants',
+    perms: { read: ['any'], create: MGMT, update: ALL_STAFF, delete: MGMT },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['menu_item_id', 's', 64, true],
+      ['label', 's', 60, true], // "Large", "40cm", "Indigo"
+      ['kind', 'e', ['size', 'colour', 'finish', 'other'], true, 'size'],
+      ['price', 'i', null, true, 0],
+      ['sku', 's', 40, false],
+      ['barcode', 's', 60, false],
+      ['on_hand', 'i', null, true, 0],
+      ['sort', 'i', null, true, 0],
+      ['active', 'b', null, true, true],
+    ],
+    indexes: [
+      ['item_sort', 'key', ['menu_item_id', 'sort']],
+      ['sku', 'key', ['sku']],
+      ['barcode', 'key', ['barcode']],
+    ],
+  },
+  {
+    /**
+     * Every movement of a saleable piece, and why.
+     *
+     * The count on a product is a convenience; this is the record. A shop that
+     * only keeps the count can tell you it has three left and never why it used
+     * to have five — and "why" is the entire conversation when a consignor asks
+     * about a piece that is neither on the shelf nor on a statement.
+     */
+    id: 'product_moves',
+    name: 'Product movements',
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: [], delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['menu_item_id', 's', 64, true],
+      ['variant_id', 's', 64, false],
+      ['consignor_id', 's', 64, false],
+      [
+        'type',
+        'e',
+        ['intake', 'sale', 'return_to_consignor', 'damaged', 'lost', 'adjustment', 'refund'],
+        true,
+      ],
+      ['qty_delta', 'i', null, true], // negative for anything leaving
+      ['unit_price', 'i', null, true, 0],
+      ['ref_type', 's', 40, false], // 'order', 'intake', 'payout'
+      ['ref_id', 's', 64, false],
+      ['shift_id', 's', 64, false],
+      ['note', 's', 300, false],
+      ['created_by', 's', 64, false],
+    ],
+    indexes: [
+      ['item_created', 'key', ['menu_item_id', '$createdAt']],
+      ['consignor_created', 'key', ['consignor_id', '$createdAt']],
+      ['type_created', 'key', ['type', '$createdAt']],
+      ['ref', 'key', ['ref_type', 'ref_id']],
+    ],
+  },
+  {
+    /**
+     * What the shop owes a consignor, one line at a time.
+     *
+     * A ledger, not a balance. Every sale credits, every payout debits, and the
+     * balance is the sum — so it can always be explained line by line, and no
+     * single wrong edit can quietly change what somebody is owed. The
+     * alternative, a running total on the consignor row, is the design that
+     * loses an argument with a maker holding their own notebook.
+     *
+     * Written by the server when a sale settles. Staff cannot create these:
+     * a credit somebody can type is not a record of anything.
+     */
+    id: 'consignor_ledger',
+    name: 'Consignor ledger',
+    perms: { read: MGMT, create: [], update: [], delete: [] },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['consignor_id', 's', 64, true],
+      ['entry_at', 'd', null, true],
+      ['kind', 'e', ['sale', 'refund', 'payout', 'adjustment', 'fee'], true],
+      // Positive increases what the shop owes; negative reduces it.
+      ['amount', 'i', null, true],
+      ['description', 's', 300, false],
+      // The sale behind a credit, so a statement line can be traced to a till.
+      ['order_id', 's', 64, false],
+      ['order_item_id', 's', 64, false],
+      ['menu_item_id', 's', 64, false],
+      ['variant_label', 's', 60, false],
+      ['qty', 'i', null, false, 1],
+      ['gross', 'i', null, false, 0], // what the customer paid
+      ['commission', 'i', null, false, 0], // what the shop kept
+      ['commission_bp', 'i', null, false, 0], // the rate used, snapshotted
+      ['payout_id', 's', 64, false],
+      ['created_by', 's', 64, false],
+    ],
+    indexes: [
+      ['consignor_entry', 'key', ['consignor_id', 'entry_at']],
+      ['order_item_unique', 'unique', ['order_item_id']],
+      ['payout', 'key', ['payout_id']],
+      ['kind_entry', 'key', ['kind', 'entry_at']],
+    ],
+  },
+  {
+    /**
+     * Money actually handed over to a consignor.
+     *
+     * Recorded, never moved — the same rule the rest of the system follows. The
+     * shop pays by momo or cash and writes down that it did; nothing here
+     * touches anybody's money.
+     */
+    id: 'consignor_payouts',
+    name: 'Consignor payouts',
+    perms: { read: MGMT, create: MGMT, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['consignor_id', 's', 64, true],
+      ['reference', 's', 40, true], // PAY-0012
+      ['paid_at', 'd', null, true],
+      ['amount', 'i', null, true],
+      ['method', 'e', ['cash', 'momo', 'bank', 'other'], true, 'momo'],
+      ['transaction_ref', 's', 120, false],
+      // The window this settles, so a statement can say what it covers.
+      ['period_start', 'd', null, false],
+      ['period_end', 'd', null, false],
+      ['note', 's', 500, false],
+      ['status', 'e', ['recorded', 'reversed'], true, 'recorded'],
+      ['reversed_reason', 's', 300, false],
+      ['paid_by', 's', 64, false],
+    ],
+    indexes: [
+      ['reference_unique', 'unique', ['reference']],
+      ['consignor_paid', 'key', ['consignor_id', 'paid_at']],
     ],
   },
 ];

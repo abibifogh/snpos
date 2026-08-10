@@ -146,6 +146,92 @@ async function redeem({ db, DB_ID, doc, settings, log, error }) {
   return { ok: true, used, cap: cap || null };
 }
 
+/**
+ * Credit every consignor whose work was on a bill that has just been settled.
+ *
+ * On payment, not on the sale. An order that is cancelled, voided or walked out
+ * on owes nobody anything, and a credit written at the till and reversed later
+ * is two lines on somebody's statement where there should be none.
+ *
+ * Server-side, and only server-side. The ledger collection is created by
+ * nobody: a credit a till could type is not a record of anything, and this is
+ * the number a maker is paid from. It is also the only place with a guaranteed
+ * view of every payment against the bill, which is what "fully paid" means when
+ * a bill can be split three ways.
+ *
+ * Safe to run twice — `order_item_id` carries a unique index, so a payment
+ * retried on a bad connection collides instead of paying somebody twice.
+ */
+async function creditConsignors({ db, DB_ID, payment, log }) {
+  const order = await db.getDocument(DB_ID, 'orders', payment.order_id).catch(() => null);
+  if (!order) return { skipped: 'no order' };
+
+  // Everything taken against this bill, however many goes it took. Read back
+  // rather than trusting the payment that triggered this: a part payment must
+  // not credit anybody, and the row that completes a split is not special.
+  const paid = await db.listDocuments(DB_ID, 'payments', [
+    Query.equal('order_id', order.$id), Query.limit(100),
+  ]).catch(() => ({ documents: [] }));
+  const taken = paid.documents
+    .filter((p) => p.status !== 'voided' && p.status !== 'refunded')
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
+  if (taken < (order.total || 0)) return { skipped: 'not settled yet' };
+
+  const items = await db.listDocuments(DB_ID, 'order_items', [
+    Query.equal('order_id', order.$id), Query.limit(100),
+  ]);
+  const mine = items.documents.filter((i) => i.status !== 'void' && i.consignor_id);
+  if (mine.length === 0) return { skipped: 'nothing on consignment' };
+
+  const settings = await db.getDocument(DB_ID, 'settings', 'main').catch(() => ({}));
+  const at = new Date().toISOString();
+  let credited = 0;
+
+  for (const line of mine) {
+    const consignor = await db.getDocument(DB_ID, 'consignors', line.consignor_id).catch(() => null);
+
+    // Most specific rate wins: the piece, then the maker, then the shop's
+    // default. Mirrors rateFor() in packages/core/src/consignment.ts.
+    const bp = [line.commission_bp, consignor?.commission_bp, settings.default_commission_bp]
+      .find((v) => typeof v === 'number' && v >= 0) ?? 3000;
+    const rate = Math.max(0, Math.min(10000, Math.round(bp)));
+
+    const gross = line.line_total || 0;
+    // The shop's share is rounded and the maker gets the remainder. Rounding
+    // both independently does not have to add back up to what the customer
+    // paid, and the pesewa always went the same way.
+    const commission = Math.round((gross * rate) / 10000);
+
+    try {
+      await db.createDocument(DB_ID, 'consignor_ledger', 'unique()', {
+        venue_id: order.venue_id,
+        consignor_id: line.consignor_id,
+        entry_at: at,
+        kind: 'sale',
+        amount: gross - commission,
+        description: `${line.name_snapshot}${line.variant_label ? ` · ${line.variant_label}` : ''}`,
+        order_id: order.$id,
+        order_item_id: line.$id,
+        menu_item_id: line.menu_item_id,
+        variant_label: line.variant_label || '',
+        qty: line.qty,
+        gross,
+        commission,
+        commission_bp: rate,
+        created_by: payment.taken_by || '',
+      });
+      credited++;
+    } catch (e) {
+      // Already credited. The unique index did its job; carry on rather than
+      // failing a sale that has already been paid for.
+      if (!/already exists|unique/i.test(e.message || '')) throw e;
+    }
+  }
+
+  if (credited) log(`Credited ${credited} consignment line(s) on ${order.order_no}`);
+  return { ok: true, credited };
+}
+
 /** How long after sending an order a customer may still call it back. */
 const CANCEL_WINDOW_MS = 2 * 60 * 1000;
 
@@ -242,6 +328,16 @@ export default async ({ req, res, log, error }) => {
       return res.json(await redeem({ db, DB_ID, doc, settings, log, error }));
     } catch (e) {
       error(`Redemption check failed for ${doc.$id}: ${e.message}`);
+      return res.json({ ok: false, error: e.message }, 500);
+    }
+  }
+
+  // --------------------------------------------------------- a bill settled
+  if (events.some((e) => e.includes('collections.payments'))) {
+    try {
+      return res.json(await creditConsignors({ db, DB_ID, payment: doc, log }));
+    } catch (e) {
+      error(`Consignor credit failed for payment ${doc.$id}: ${e.message}`);
       return res.json({ ok: false, error: e.message }, 500);
     }
   }

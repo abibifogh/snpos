@@ -10,7 +10,8 @@
       "events": [
         "databases.snpos.collections.orders.documents.*.create",
         "databases.snpos.collections.discount_redemptions.documents.*.create",
-        "databases.snpos.collections.order_cancellations.documents.*.create"
+        "databases.snpos.collections.order_cancellations.documents.*.create",
+        "databases.snpos.collections.payments.documents.*.create"
       ],
       "schedule": "",
       "timeout": 30,

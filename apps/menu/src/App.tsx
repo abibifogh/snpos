@@ -43,6 +43,14 @@ export function App() {
   const toast = useToast();
   const [boot, setBoot] = useState<Boot | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Set when this business does not take orders from phones at all.
+   *
+   * Kept apart from `error` on purpose. Nothing has gone wrong — the sticker
+   * worked, the shop simply sells over a counter — and a page headed "Sorry"
+   * would send somebody looking for a member of staff to report a fault.
+   */
+  const [counterOnly, setCounterOnly] = useState<string | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [openDish, setOpenDish] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -94,6 +102,19 @@ export function App() {
           (await db.getDocument(DB_ID, 'settings', 'main')) as unknown as Settings,
         );
         applyTheme(settings);
+
+        // Ordering from a phone can be switched off. A craft shop where the
+        // normal way to buy is to hand something to whoever is on the till has
+        // no use for it, and a QR code that opens a menu nobody is watching is
+        // worse than no QR code at all.
+        //
+        // Said plainly rather than shown as a broken page: somebody has scanned
+        // a sticker and deserves to know it worked and the shop simply does not
+        // take orders this way.
+        if (settings.self_order_enabled === false) {
+          setCounterOnly(settings.restaurant_name || null);
+          return;
+        }
 
         const venues = await listAll<Venue>('venues', [Query.equal('active', true)]);
         let table: TableRow | null = null;
@@ -244,6 +265,20 @@ export function App() {
     bar.scrollTo({ left: left - bar.clientWidth / 2 + tab.offsetWidth / 2, behavior: 'smooth' });
   }, [activeSection]);
 
+
+  if (counterOnly !== null) {
+    return (
+      <div className="centered">
+        <div>
+          <h2>Please order at the counter</h2>
+          <p className="dim">
+            {counterOnly ? `${counterOnly} does not` : 'This shop does not'} take orders from phones.
+            Bring what you would like to whoever is on the till.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (

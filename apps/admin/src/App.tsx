@@ -25,6 +25,7 @@ import { StationsPage } from './pages/Stations';
 import { OrdersPage } from './pages/Orders';
 import { PurgePage } from './pages/Purge';
 import { VouchersPage } from './pages/Vouchers';
+import { ConsignorsPage } from './pages/Consignors';
 
 export function App() {
   const { user, profile, settings, loading } = useSession();
@@ -67,6 +68,7 @@ export function App() {
         <Route path="/menu/options" element={guard('menu_options', <AddonsPage />)} />
         <Route path="/expenses" element={guard('expenses', <ExpensesPage />)} />
         <Route path="/vouchers" element={guard('vouchers', <VouchersPage />)} />
+        <Route path="/consignors" element={guard('consignors', <ConsignorsPage />)} />
         <Route path="/venues" element={guard('venues', <VenuesPage />)} />
         <Route path="/tables" element={guard('tables', <TablesPage />)} />
         <Route path="/shifts" element={guard('shifts', <ShiftsPage />)} />

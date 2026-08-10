@@ -43,6 +43,12 @@ export interface Settings extends Doc {
   stock_count_decimals?: boolean;
   /** What a shift expense may be paid out of. Cash only, or any method. */
   expense_paid_from?: 'cash_only' | 'any';
+  /** Restaurant, or consignment craft shop. Decides which sections appear. */
+  business_type?: 'restaurant' | 'craft_shop';
+  /** Whether customers may scan a code and order for themselves. */
+  self_order_enabled?: boolean;
+  /** What the shop keeps by default, in basis points. */
+  default_commission_bp?: number;
   cash_variance_tolerance: number;
   terminal_idle_lock_seconds: number;
   default_locale?: string;
@@ -124,6 +130,15 @@ export interface MenuItem extends Doc {
   tags?: string[];
   sort: number;
   track_stock: boolean;
+  // ------------------------------------------------------------- craft shop
+  // Blank on every restaurant row, and nothing reads them there.
+  consignor_id?: string;
+  intake_id?: string;
+  commission_bp?: number;
+  barcode?: string;
+  on_hand?: number;
+  is_one_off?: boolean;
+  maker_note?: string;
 }
 
 export interface FeatureFlag extends Doc {

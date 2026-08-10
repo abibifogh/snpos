@@ -53,6 +53,9 @@ const FIELD_LABELS: Record<string, string> = {
   stock_check_mode: 'How the stock check asks',
   stock_count_decimals: 'Part amounts in the stock count',
   expense_paid_from: 'What money spent during a shift can come out of',
+  business_type: 'What kind of business this is',
+  self_order_enabled: 'Customers ordering for themselves',
+  default_commission_bp: 'Default commission',
   order_number_prefix: 'Order number prefix',
   order_number_mode: 'Order numbering',
   order_number_padding: 'Order number length',
@@ -227,6 +230,9 @@ export function SettingsPage() {
         stock_check_mode: form.stock_check_mode ?? 'levels',
         stock_count_decimals: form.stock_count_decimals !== false,
         expense_paid_from: form.expense_paid_from ?? 'cash_only',
+        business_type: form.business_type ?? 'restaurant',
+        self_order_enabled: form.self_order_enabled !== false,
+        default_commission_bp: Number(form.default_commission_bp ?? 3000),
       });
       await refreshSettings();
 
@@ -266,6 +272,54 @@ export function SettingsPage() {
             <Input value={form.timezone} onChange={(e) => set('timezone', e.target.value)} />
           </Field>
         </div>
+      </Card>
+
+      <Card title="What kind of business this is">
+        <Field
+          label="Trade"
+          hint="Decides which sections appear and what they are called. It never hides your records — switching back brings everything with it."
+        >
+          <Select
+            value={form.business_type ?? 'restaurant'}
+            onChange={(e) => set('business_type', e.target.value as Settings['business_type'])}
+          >
+            <option value="restaurant">Restaurant or food service</option>
+            <option value="craft_shop">Craft shop selling on consignment</option>
+          </Select>
+        </Field>
+
+        {form.business_type === 'craft_shop' && (
+          <>
+            <Field
+              label="Commission you keep by default (%)"
+              hint="Used for a new consignor until you set theirs. Each person can have their own rate, and each piece can override that again."
+            >
+              <Input
+                inputMode="decimal"
+                value={String((form.default_commission_bp ?? 3000) / 100)}
+                onChange={(e) => {
+                  const pct = Number(e.target.value);
+                  if (Number.isFinite(pct)) set('default_commission_bp', Math.round(pct * 100));
+                }}
+              />
+            </Field>
+            <p className="small dim">
+              Changing this never rewrites anything. The rate is written onto each sale as it happens, so what
+              somebody has already earned stays what they earned.
+            </p>
+          </>
+        )}
+
+        <Toggle
+          checked={form.self_order_enabled !== false}
+          onChange={(v) => set('self_order_enabled', v)}
+          label="Customers can scan a code and order for themselves"
+        />
+        <p className="small dim" style={{ marginBottom: 0 }}>
+          {form.business_type === 'craft_shop'
+            ? 'Off by default in a shop, where the normal way to buy is to hand something to whoever is on the till. Worth turning on for a market stall or a busy weekend, where a queue is the problem.'
+            : 'This is what the table QR codes are for. Off means orders can only be taken by staff.'}
+        </p>
       </Card>
 
       <Card title="Currency">

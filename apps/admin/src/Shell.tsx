@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import { Button, Logo, THEME_MODES, themeMode, setThemeMode } from '@snpos/ui';
-import { sectionsFor } from '@snpos/core';
+import { sectionsFor, wordsFor } from '@snpos/core';
 import { useSession } from './session';
 
 export function Shell({ children }: { children: ReactNode }) {
@@ -11,12 +11,17 @@ export function Shell({ children }: { children: ReactNode }) {
   // a fixed list with some entries hidden. One source, so a link can never
   // appear for a page the router will refuse.
   const sections = sectionsFor(profile, settings);
+  // A shop assistant hunting for "Dishes & drinks" to add a woven basket is
+  // being asked to translate, every time. One map decides what things are
+  // called; everything else about the page is the same.
+  const words = wordsFor(settings);
   const groups: { group: string; links: { to: string; label: string; end?: boolean }[] }[] = [];
   for (const s of sections) {
-    const existing = groups.find((g) => g.group === s.group);
-    const link = { to: s.path, label: s.label, end: s.path === '/' };
+    const group = words[s.group] ?? s.group;
+    const existing = groups.find((g) => g.group === group);
+    const link = { to: s.path, label: words[s.key] ?? s.label, end: s.path === '/' };
     if (existing) existing.links.push(link);
-    else groups.push({ group: s.group, links: [link] });
+    else groups.push({ group, links: [link] });
   }
   groups.push({ group: 'You', links: [{ to: '/account', label: 'Your account' }, { to: '/help', label: 'Help' }] });
 
