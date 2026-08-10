@@ -227,9 +227,19 @@ export async function updateStockAlerts(
   ingredients: Ingredient[],
   lowDefaultBp: number,
   persistentThreshold: number,
-): Promise<{ fresh: StockAlert[]; persistent: StockAlert[] }> {
+): Promise<{ fresh: StockAlert[]; persistent: StockAlert[]; all: StockAlert[] }> {
   const fresh: StockAlert[] = [];
   const persistent: StockAlert[] = [];
+  /**
+   * Every flagged item, not just the two ends of the range.
+   *
+   * `fresh` is exactly one shift and `persistent` is three or more, so an
+   * ingredient on its SECOND consecutive shift belonged to neither — and
+   * anything reading only those two lists lost it. The shift-close email did
+   * exactly that, which is how an item a cook had marked OUT could disappear
+   * from the report on the night it mattered most.
+   */
+  const all: StockAlert[] = [];
   const now = new Date().toISOString();
 
   for (const ing of ingredients) {
@@ -257,11 +267,20 @@ export async function updateStockAlerts(
     }).catch(() => undefined);
 
     const alert: StockAlert = { ingredient: ing, level, consecutive: count, since, isNew: count === 1 };
+    all.push(alert);
     if (count >= persistentThreshold) persistent.push(alert);
     else if (count === 1) fresh.push(alert);
   }
 
-  return { fresh, persistent };
+  // Worst first: the longest-running problems, then anything out, then low.
+  all.sort(
+    (a, b) =>
+      Number(b.consecutive >= persistentThreshold) - Number(a.consecutive >= persistentThreshold) ||
+      Number(b.level === 'out') - Number(a.level === 'out') ||
+      a.ingredient.name.localeCompare(b.ingredient.name),
+  );
+
+  return { fresh, persistent, all };
 }
 
 /**

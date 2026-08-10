@@ -161,6 +161,73 @@ async function sweepUnavailable({ db, DB_ID, settings, transport, log, error }) 
   return { alerted: open.total };
 }
 
+/**
+ * Everything flagged, in one table, colour-coded.
+ *
+ * This used to be two lists — "flagged for the first time" and "low for three
+ * shifts or more" — built as `count === 1` and `count >= threshold`. Nothing
+ * rendered the middle. An ingredient on its SECOND consecutive shift appeared
+ * in neither, so an item a cook marked OUT last night could vanish from the
+ * email entirely, and the shift it went missing was the shift somebody most
+ * needed to see it.
+ *
+ * Neither list said whether an item was low or out, either. The quantity was
+ * there and the severity was not, which is the wrong way round: "0 kg left"
+ * needs reading, "Out" does not.
+ *
+ * Colour carries the urgency and a word carries the meaning. Every mail client
+ * strips something, several of them strip background colours, and a table that
+ * says nothing once the colour is gone is a table that says nothing.
+ */
+const STOCK_TONES = {
+  // Third state first: an item low for three shifts running is a different
+  // problem from an item low tonight, whichever of low or out it currently is.
+  persistent: { bg: '#e8f1fc', bar: '#1c5cab', label: 'Keeps running out' },
+  out:        { bg: '#fdeceb', bar: '#b42318', label: 'Out' },
+  low:        { bg: '#fff6e0', bar: '#b26a00', label: 'Low' },
+};
+
+function stockTable(items, threshold, settings) {
+  if (items.length === 0) return '';
+
+  const rows = items
+    .map((i) => {
+      const runs = i.consecutive_low_count || 1;
+      // last_low_severity is what the cook actually reported. Falling back to
+      // the quantity covers a row written before that field existed.
+      const severity = i.last_low_severity || (Number(i.current_qty) > 0 ? 'low' : 'out');
+      const tone = runs >= threshold ? STOCK_TONES.persistent : STOCK_TONES[severity] || STOCK_TONES.low;
+      const qty = `${Number(i.current_qty ?? 0)}${i.unit ? ` ${i.unit}` : ''}`;
+
+      return `<tr style="background:${tone.bg}">
+        <td style="padding:9px 10px;border-left:4px solid ${tone.bar};font-weight:600">${i.name}</td>
+        <td style="padding:9px 10px;white-space:nowrap">
+          ${severity === 'out' ? '<strong>Out</strong>' : 'Low'}
+          ${runs >= threshold ? `<span style="color:#1c5cab;font-weight:600"> · ${runs} shifts running</span>` : ''}
+        </td>
+        <td style="padding:9px 10px;text-align:right;white-space:nowrap;color:#5d6b7a">${qty}</td>
+      </tr>`;
+    })
+    .join('');
+
+  return `<h3 style="margin:22px 0 8px;font-size:15px">Stock (${items.length})</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:14px">
+      <thead>
+        <tr style="color:#5d6b7a;font-size:12px;text-transform:uppercase;letter-spacing:0.04em">
+          <th style="text-align:left;padding:0 10px 6px">Item</th>
+          <th style="text-align:left;padding:0 10px 6px">State</th>
+          <th style="text-align:right;padding:0 10px 6px">Left</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p style="margin:10px 0 0;font-size:12px;color:#5d6b7a">
+      <span style="background:${STOCK_TONES.low.bg};border-left:3px solid ${STOCK_TONES.low.bar};padding:2px 6px">Low</span>
+      <span style="background:${STOCK_TONES.out.bg};border-left:3px solid ${STOCK_TONES.out.bar};padding:2px 6px;margin-left:6px">Out</span>
+      <span style="background:${STOCK_TONES.persistent.bg};border-left:3px solid ${STOCK_TONES.persistent.bar};padding:2px 6px;margin-left:6px">${threshold}+ shifts running</span>
+    </p>`;
+}
+
 export default async ({ req, res, log, error }) => {
   const client = new Client()
     .setEndpoint(process.env.APPWRITE_FUNCTION_API_ENDPOINT || process.env.APPWRITE_ENDPOINT)
@@ -573,7 +640,16 @@ export default async ({ req, res, log, error }) => {
       // The two stock sections, kept apart on purpose: a first-time flag is
       // routine restocking, the same item low for the fourth shift running is
       // a different problem wearing the same clothes.
-      const low = ingredients.documents.filter((i) => i.active && (i.consecutive_low_count || 0) > 0);
+      const severityOf = (i) => i.last_low_severity || (Number(i.current_qty) > 0 ? 'low' : 'out');
+      const low = ingredients.documents
+        .filter((i) => i.active && (i.consecutive_low_count || 0) > 0)
+        // Worst first: persistent, then out, then low, then alphabetical. An
+        // owner reading this on a phone at midnight reads the top three rows.
+        .sort((a, b) => {
+          const rank = (i) =>
+            ((i.consecutive_low_count || 0) >= threshold ? 0 : 2) + (severityOf(i) === 'out' ? 0 : 1);
+          return rank(a) - rank(b) || String(a.name).localeCompare(String(b.name));
+        });
       const fresh = low.filter((i) => (i.consecutive_low_count || 0) === 1);
       const persistent = low.filter((i) => (i.consecutive_low_count || 0) >= threshold);
 
@@ -663,21 +739,7 @@ export default async ({ req, res, log, error }) => {
            ${row('Cash difference', variance === 0 ? 'Balanced' : `${variance > 0 ? '+' : ''}${money(variance, settings)}`, variance !== 0)}
          </table>
          ${section('Who did what', staffRows)}
-         ${section(
-           'Stock flagged for the first time',
-           fresh.map((i) => `<li>${i.name} — ${i.current_qty} ${i.unit} left</li>`),
-         )}
-         ${section(
-           `Low for ${threshold} shifts or more`,
-           persistent.map(
-             (i) =>
-               `<li><strong>${i.name}</strong> — ${i.consecutive_low_count} shifts running${
-                 i.consecutive_low_since
-                   ? `, since ${new Date(i.consecutive_low_since).toLocaleDateString()}`
-                   : ''
-               }</li>`,
-           ),
-         )}
+         ${stockTable(low, threshold, settings)}
          ${section(
            'Taken off the menu during this shift',
            offItems.documents.map(
