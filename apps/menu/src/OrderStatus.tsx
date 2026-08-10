@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Button, Spinner } from '@snpos/ui';
-import { db, DB_ID, Query, listAll, formatMoney, subscribeCollection, isProvisionalOrderNo } from '@snpos/core';
+import {
+  db, DB_ID, Query, listAll, formatMoney, subscribeCollection, isProvisionalOrderNo,
+  cancelWindowLeft, requestCancellation, humanError,
+} from '@snpos/core';
 import type { Order, OrderItem, Settings, Venue } from '@snpos/core';
 import { rememberOrder } from './myOrders';
 
@@ -56,6 +59,21 @@ export function OrderStatus({
   const [order, setOrder] = useState<Order | null>(null);
   const [items, setItems] = useState<OrderItem[]>([]);
   const [gone, setGone] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelNote, setCancelNote] = useState<string | null>(null);
+  /**
+   * A coarse clock, so the countdown runs and the button disappears on its own.
+   *
+   * Ticking every second rather than every hundred milliseconds: this drives a
+   * number counting down in whole seconds, and re-rendering ten times for each
+   * one it shows is work nobody can see on a phone that is holding the screen
+   * awake anyway.
+   */
+  const [tick, setTick] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setTick(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -114,6 +132,39 @@ export function OrderStatus({
   const at = REACHED[order.status] ?? 0;
   const done = at >= 4;
 
+  /**
+   * The window, and the two things that close it early.
+   *
+   * Offered only while the ticket is still untouched. Once a cook has taken it
+   * the food may already be on, and a customer calling that back from a phone
+   * is a kitchen finding out by reading a screen. The server refuses it in that
+   * case too — this only avoids offering something that would be turned down.
+   */
+  const leftMs = cancelWindowLeft(order, tick);
+  const canCancel =
+    leftMs > 0 &&
+    order.status === 'PENDING' &&
+    !order.accepted_at &&
+    order.payment_status !== 'paid' &&
+    order.payment_status !== 'partial';
+  const secondsLeft = Math.ceil(leftMs / 1000);
+
+  const cancel = async () => {
+    setCancelling(true);
+    setCancelNote(null);
+    try {
+      await requestCancellation(order);
+      // The server has the last word, and it arrives on the order itself: the
+      // status flips to CANCELLED and the page above says so. Saying "asked"
+      // rather than "cancelled" here is the honest description of what has
+      // happened so far.
+      setCancelNote('Asked to cancel — one moment.');
+    } catch (e) {
+      setCancelNote(humanError(e));
+      setCancelling(false);
+    }
+  };
+
   return (
     <div className="status-page">
       <header className="menu-header">
@@ -145,8 +196,35 @@ export function OrderStatus({
             <div className="eta">
               <strong>About {order.eta_minutes} minutes</strong>
               <div className="small dim">
-                An estimate from what you ordered. We will tell you the moment it is ready.
+                An estimate from what you ordered and how busy the kitchen is.
+                We will tell you the moment it is ready.
               </div>
+            </div>
+          )}
+
+          {/* Sat directly under the wait, because the two are read together:
+              somebody who has just been told forty minutes is exactly the
+              person deciding whether to keep this order. Gone the moment it
+              expires, rather than left there greyed out — an offer that has
+              run out reads as a broken button. */}
+          {(canCancel || cancelNote) && (
+            <div className="cancel-window">
+              {cancelNote ? (
+                <div className="small">{cancelNote}</div>
+              ) : (
+                <>
+                  <Button onClick={cancel} loading={cancelling} disabled={cancelling}>
+                    Cancel this order
+                  </Button>
+                  <div className="small dim">
+                    You can call this back for another{' '}
+                    {secondsLeft > 60
+                      ? `${Math.ceil(secondsLeft / 60)} minutes`
+                      : `${secondsLeft} second${secondsLeft === 1 ? '' : 's'}`}
+                    . After that, please ask a member of staff.
+                  </div>
+                </>
+              )}
             </div>
           )}
           <ol className="steps">

@@ -145,6 +145,43 @@ export async function loadOpenShift(venueId: string): Promise<Shift | null> {
   return (res.documents[0] as unknown as Shift) ?? null;
 }
 
+/**
+ * Every order that belongs to a shift, by either of the two ways one can.
+ *
+ * Asking by the shift's clock alone was wrong in one direction and asking by
+ * its id alone was wrong in the other, so this asks both ways and merges.
+ *
+ * A customer ordering from their phone has no shift stamped on the order — the
+ * menu has no idea whether one is open — so the clock is the only thing that
+ * ties those to a night. But an order placed BEFORE anyone opened the till,
+ * which is every pre-order and everything taken in the quiet half hour before
+ * service, falls outside that window and used to belong to no shift at all: the
+ * money appeared in the takings, because the payment carries the shift, while
+ * the order itself was missing from the list the takings were supposed to
+ * explain. Collecting the payment is what settles the question, and that is
+ * exactly when the order gets stamped.
+ *
+ * So: created during the shift, or paid by it. Either is enough.
+ */
+export async function ordersForShift(
+  venueId: string,
+  shift: Pick<Shift, '$id' | 'opened_at' | 'closed_at'>,
+): Promise<Order[]> {
+  const closed = shift.closed_at ?? new Date().toISOString();
+  const [inWindow, stamped] = await Promise.all([
+    listAll<Order>('orders', [
+      Query.equal('venue_id', venueId),
+      Query.greaterThanEqual('$createdAt', shift.opened_at),
+      Query.lessThanEqual('$createdAt', closed),
+    ]),
+    listAll<Order>('orders', [Query.equal('shift_id', shift.$id)]),
+  ]);
+
+  const byId = new Map<string, Order>();
+  for (const o of [...inWindow, ...stamped]) byId.set(o.$id, o);
+  return [...byId.values()].sort((a, b) => b.$createdAt.localeCompare(a.$createdAt));
+}
+
 /** An order that stops the shift being closed, and why. */
 export interface ShiftBlocker {
   order: Order;

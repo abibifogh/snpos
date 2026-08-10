@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Badge, Button, Empty, Field, FormError, Input, Modal, Spinner } from '@snpos/ui';
 import {
   Query, formatMoney, listAll, displayOrderNo, requestReceipt,
-  receiptForOrder, buildReceiptHtml, openPrintable,
+  receiptForOrder, buildReceiptHtml, openPrintable, ordersForShift,
 } from '@snpos/core';
 import type { Order, OrderItem, Settings, Shift, Doc, Venue, StaffProfile } from '@snpos/core';
 
@@ -105,19 +105,14 @@ export function ShiftHistory({
 
   useEffect(() => {
     (async () => {
-      // By the shift's clock rather than its id: a customer ordering from a
-      // phone has no shift stamped on their order, and those are exactly the
-      // ones somebody asks about later.
-      const closed = shift.closed_at ?? new Date().toISOString();
-      const [o, e] = await Promise.all([
-        listAll<Order>('orders', [
-          Query.equal('venue_id', venueId),
-          Query.greaterThanEqual('$createdAt', shift.opened_at),
-          Query.lessThanEqual('$createdAt', closed),
-        ]),
+      // By the clock AND by the stamp — see ordersForShift. An order placed
+      // before the till was opened and settled during this shift belongs here,
+      // and reading only the clock left it out of the very list its money was
+      // sitting in.
+      const [sorted, e] = await Promise.all([
+        ordersForShift(venueId, shift),
         listAll<ExpenseRow>('shift_expenses', [Query.equal('shift_id', shift.$id)]),
       ]);
-      const sorted = o.sort((a, b) => b.$createdAt.localeCompare(a.$createdAt));
       setOrders(sorted);
       setExpenses(e.sort((a, b) => b.$createdAt.localeCompare(a.$createdAt)));
 

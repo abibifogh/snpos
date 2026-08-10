@@ -146,6 +146,72 @@ async function redeem({ db, DB_ID, doc, settings, log, error }) {
   return { ok: true, used, cap: cap || null };
 }
 
+/** How long after sending an order a customer may still call it back. */
+const CANCEL_WINDOW_MS = 2 * 60 * 1000;
+
+/**
+ * Honour a cancellation request, or say why not.
+ *
+ * Two things can close the window, and both are checked here rather than in the
+ * browser, because a clock on a phone is whatever its owner sets it to.
+ *
+ * The first is time. The second is the kitchen: once a cook has taken the
+ * ticket, the food may already be on. The request is refused then even if the
+ * two minutes have not run out, because the alternative is a customer cancelling
+ * a dish that is halfway cooked and a kitchen finding out by reading a screen.
+ * A guest in that position can still ask staff — a person can weigh whether the
+ * pan has gone on, which is precisely the judgement this cannot make.
+ *
+ * The row is always updated, never deleted. Somebody asking tomorrow why the
+ * food they thought they had called off still arrived deserves an answer.
+ */
+async function cancelForCustomer({ db, DB_ID, doc, log }) {
+  const settle = (status, refused_reason) =>
+    db.updateDocument(DB_ID, 'order_cancellations', doc.$id, {
+      status,
+      ...(refused_reason ? { refused_reason } : {}),
+    }).catch(() => undefined);
+
+  const order = await db.getDocument(DB_ID, 'orders', doc.order_id).catch(() => null);
+  if (!order) {
+    await settle('refused', 'That order could not be found.');
+    return { ok: true, refused: 'no such order' };
+  }
+
+  if (['CANCELLED', 'REJECTED'].includes(order.status)) {
+    // Already off. Not a refusal — they got what they asked for.
+    await settle('cancelled');
+    return { ok: true, already: true };
+  }
+
+  const age = Date.now() - Date.parse(order.$createdAt);
+  if (!(age <= CANCEL_WINDOW_MS)) {
+    await settle('refused', 'The two minutes to cancel have passed. Please speak to a member of staff.');
+    return { ok: true, refused: 'window closed' };
+  }
+
+  if (order.status !== 'PENDING' || order.accepted_at) {
+    await settle('refused', 'The kitchen has already started this order. Please speak to a member of staff.');
+    return { ok: true, refused: 'kitchen started' };
+  }
+
+  if (order.payment_status === 'paid' || order.payment_status === 'partial') {
+    await settle('refused', 'This order has already been paid for. Please speak to a member of staff.');
+    return { ok: true, refused: 'already paid' };
+  }
+
+  await db.updateDocument(DB_ID, 'orders', order.$id, {
+    status: 'CANCELLED',
+    rejected_at: new Date().toISOString(),
+    reject_reason_code: 'customer_request',
+    reject_reason_note: 'Cancelled by the customer within two minutes of ordering.',
+  });
+  await settle('cancelled');
+
+  log(`${order.order_no} cancelled by the customer after ${Math.round(age / 1000)}s`);
+  return { ok: true, cancelled: order.order_no };
+}
+
 export default async ({ req, res, log, error }) => {
   const client = new Client()
     .setEndpoint(process.env.APPWRITE_FUNCTION_API_ENDPOINT || process.env.APPWRITE_ENDPOINT)
@@ -176,6 +242,20 @@ export default async ({ req, res, log, error }) => {
       return res.json(await redeem({ db, DB_ID, doc, settings, log, error }));
     } catch (e) {
       error(`Redemption check failed for ${doc.$id}: ${e.message}`);
+      return res.json({ ok: false, error: e.message }, 500);
+    }
+  }
+
+  // ------------------------------------------------------ customer cancelled
+  //
+  // The guest asked; the server decides. The window is short on purpose: a
+  // couple of minutes covers the ordinary "wrong thing, sent too fast" and
+  // stops short of food that has been started.
+  if (events.some((e) => e.includes('collections.order_cancellations'))) {
+    try {
+      return res.json(await cancelForCustomer({ db, DB_ID, doc, log }));
+    } catch (e) {
+      error(`Cancellation failed for ${doc.$id}: ${e.message}`);
       return res.json({ ok: false, error: e.message }, 500);
     }
   }
@@ -278,6 +358,7 @@ export default async ({ req, res, log, error }) => {
     const overrideFor = new Map(overrides.documents.map((o) => [o.menu_item_id, o]));
 
     let subtotal = 0;
+    let prepTotal = 0;
     const corrections = [];
 
     for (const item of items.documents) {
@@ -288,6 +369,10 @@ export default async ({ req, res, log, error }) => {
         corrections.push(`${item.name_snapshot}: no longer on the menu`);
         continue;
       }
+
+      // Counted once per line, not per portion: three of the same thing goes in
+      // one pan, and multiplying produces a number nobody believes.
+      prepTotal += menuItem.prep_minutes ?? 15;
 
       const base = overrideFor.get(item.menu_item_id)?.price_override ?? menuItem.price;
 
@@ -343,12 +428,49 @@ export default async ({ req, res, log, error }) => {
 
     const { service, tax, total } = totalsFor(subtotal, discount, settings);
 
+    /**
+     * The wait, worked out where the queue is actually visible.
+     *
+     * The phone that placed the order quoted its own dishes and nothing else,
+     * because a guest cannot read the kitchen's order list and should not be
+     * able to. So the first number a customer sees is the cooking time alone,
+     * and it is wrong on a busy night in the one direction that matters: a
+     * fifteen-minute dish behind four other tickets is not fifteen minutes.
+     *
+     * Here the whole pass is readable, so the tickets ahead are added — what is
+     * LEFT of each, not what it started as. Then the cap: nothing is ever quoted
+     * past an hour, because past that the number stops being something a person
+     * can decide on and starts being something they stop believing.
+     *
+     * Pre-orders are left alone. Somebody collecting at seven is not waiting in
+     * tonight's queue.
+     */
+    let eta = order.eta_minutes;
+    if (order.status !== 'SCHEDULED' && !order.is_preorder && prepTotal > 0) {
+      const live = await db.listDocuments(DB_ID, 'orders', [
+        Query.equal('venue_id', order.venue_id),
+        Query.equal('status', ['PENDING', 'ACCEPTED', 'PREPARING']),
+        Query.limit(200),
+      ]).catch(() => ({ documents: [] }));
+
+      const now = Date.now();
+      let ahead = 0;
+      for (const o of live.documents) {
+        if (o.$id === order.$id) continue;
+        const started = Date.parse(o.accepted_at || o.$createdAt);
+        const elapsed = Number.isFinite(started) ? (now - started) / 60000 : 0;
+        ahead += Math.max(0, (o.eta_minutes ?? 15) - Math.max(0, elapsed));
+      }
+      eta = Math.min(60, Math.max(1, Math.round(prepTotal + ahead)));
+    }
+
     if (
       corrections.length ||
       order.subtotal !== subtotal ||
       order.total !== total ||
       order.tax_total !== tax ||
-      order.service_total !== service
+      order.service_total !== service ||
+      order.eta_minutes !== eta
     ) {
       await db.updateDocument(DB_ID, 'orders', order.$id, {
         subtotal,
@@ -356,6 +478,7 @@ export default async ({ req, res, log, error }) => {
         service_total: service,
         tax_total: tax,
         total,
+        ...(typeof eta === 'number' ? { eta_minutes: eta } : {}),
       });
 
       if (corrections.length) {

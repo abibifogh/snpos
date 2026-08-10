@@ -145,6 +145,18 @@
 }
 .eta strong { font-size: 1.15rem; }
 
+/* The way back out, for the two minutes it exists.
+   Quiet on purpose: it sits under the wait, and a customer who is happy with
+   their order should be able to read past it without it competing with the
+   thing they actually came to see. */
+.cancel-window {
+  margin: 0.55rem 0 0.2rem;
+  padding: 0.75rem 1rem;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+}
+.cancel-window .small { margin-top: 0.45rem; line-height: 1.45; }
+
 .steps { list-style: none; margin: 1.4rem 0; padding: 0 0 0 0.4rem; }
 .steps li { display: flex; gap: 0.85rem; padding-bottom: 1.3rem; position: relative; opacity: 0.45; }
 .steps li:last-child { padding-bottom: 0; }

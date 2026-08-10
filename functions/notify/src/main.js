@@ -626,7 +626,7 @@ export default async ({ req, res, log, error }) => {
       const openedAt = doc.opened_at;
       const closedAt = doc.closed_at || new Date().toISOString();
 
-      const [ingredients, waste, expenses, subs, offItems, orders, payments, staff] = await Promise.all([
+      const [ingredients, waste, expenses, subs, offItems, inWindow, settledHere, payments, staff] = await Promise.all([
         db.listDocuments(DB_ID, 'ingredients', [Query.equal('venue_id', doc.venue_id), Query.limit(500)]),
         db.listDocuments(DB_ID, 'waste_log', [Query.equal('shift_id', doc.$id), Query.limit(100)]),
         db.listDocuments(DB_ID, 'shift_expenses', [Query.equal('shift_id', doc.$id), Query.limit(100)]),
@@ -642,11 +642,27 @@ export default async ({ req, res, log, error }) => {
           Query.lessThanEqual('$createdAt', closedAt),
           Query.limit(500),
         ]).catch(() => ({ documents: [] })),
+        // And the ones the clock misses. An order placed before anybody opened
+        // the till — every pre-order, and everything taken in the quiet half
+        // hour before service — was created outside the window above, so it
+        // appeared in no shift at all. Its money was still in the takings,
+        // because a payment carries the shift it was collected in, which left
+        // the summary counting revenue it could not show you the orders for.
+        // Taking the payment is the moment the order gets stamped.
+        db.listDocuments(DB_ID, 'orders', [
+          Query.equal('shift_id', doc.$id), Query.limit(500),
+        ]).catch(() => ({ documents: [] })),
         db.listDocuments(DB_ID, 'payments', [
           Query.equal('shift_id', doc.$id), Query.limit(500),
         ]).catch(() => ({ documents: [] })),
         db.listDocuments(DB_ID, 'staff_profiles', [Query.limit(200)]).catch(() => ({ documents: [] })),
       ]);
+
+      // Created during the shift, or settled by it. Merged by id so an order
+      // that is both is still one order.
+      const orders = { documents: [...new Map(
+        [...inWindow.documents, ...settledHere.documents].map((o) => [o.$id, o]),
+      ).values()] };
 
       // The two stock sections, kept apart on purpose: a first-time flag is
       // routine restocking, the same item low for the fourth shift running is

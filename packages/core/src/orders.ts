@@ -266,9 +266,53 @@ export interface CreatedOrder {
  * Extra portions of the same dish are not multiplied — three of one thing goes
  * in one pan, and doubling it produces a number nobody believes.
  */
-export function estimateMinutes(lines: CartLine[]): number {
+/**
+ * The longest wait this system will ever quote, whatever the arithmetic says.
+ *
+ * Not because the food will always arrive by then — on a bad night it will not
+ * — but because a number past this stops being useful. "One hour" is a decision
+ * point: somebody reads it and either waits or leaves. "An hour and fifty" is a
+ * number nobody believes and nobody plans around, and quoting it does more
+ * damage than the honest cap plus a cook who keeps people posted.
+ */
+export const MAX_ETA_MINUTES = 60;
+
+export function estimateMinutes(lines: CartLine[], queueAhead = 0): number {
   const total = lines.reduce((sum, l) => sum + (l.prep_minutes ?? 15), 0);
-  return Math.max(1, Math.round(total));
+  return Math.min(MAX_ETA_MINUTES, Math.max(1, Math.round(total + queueAhead)));
+}
+
+/**
+ * How long the tickets already on the pass will take before this one is
+ * started.
+ *
+ * The kitchen is treated as working through one ticket at a time — the same
+ * assumption that makes the dishes within an order add up rather than overlap,
+ * and for the same reason. Two cooks who genuinely work in parallel will beat
+ * this estimate, and a customer told twenty-five who eats in eighteen is a
+ * customer who comes back.
+ *
+ * What remains of each ticket, not what it started as: an order accepted twelve
+ * minutes ago with a fifteen-minute estimate is three minutes from the pass, and
+ * counting the full fifteen would push every quote up all evening as the night's
+ * finished work piled into the arithmetic.
+ *
+ * Orders sitting READY are excluded — the cooking is done and they are waiting
+ * on a person, not on a stove.
+ */
+export function queueMinutes(
+  pending: Pick<Order, 'status' | 'eta_minutes' | 'accepted_at' | '$createdAt'>[],
+  now: number = Date.now(),
+): number {
+  const cooking: OrderStatus[] = ['PENDING', 'ACCEPTED', 'PREPARING'];
+  let ahead = 0;
+  for (const o of pending) {
+    if (!cooking.includes(o.status)) continue;
+    const started = Date.parse(o.accepted_at || o.$createdAt);
+    const elapsed = Number.isFinite(started) ? (now - started) / 60_000 : 0;
+    ahead += Math.max(0, (o.eta_minutes ?? 15) - Math.max(0, elapsed));
+  }
+  return Math.round(ahead);
 }
 
 /**
@@ -397,6 +441,52 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
   );
 
   return { order, items: items as unknown as OrderItem[] };
+}
+
+/**
+ * How long after sending an order a customer may still call it back.
+ *
+ * Deliberately short. Long enough for "that was the wrong thing, I pressed send
+ * too fast", which is the whole of what this is for, and short enough that a
+ * kitchen is not throwing away food somebody has already started.
+ *
+ * The browser uses this to decide what to show; the server checks it again for
+ * real, because the clock on a phone is whatever its owner sets it to.
+ */
+export const CANCEL_WINDOW_MS = 2 * 60 * 1000;
+
+/** Milliseconds left on the cancel window, or 0 once it has closed. */
+export function cancelWindowLeft(order: Pick<Order, '$createdAt'>, now: number = Date.now()): number {
+  const placed = Date.parse(order.$createdAt);
+  if (!Number.isFinite(placed)) return 0;
+  return Math.max(0, CANCEL_WINDOW_MS - (now - placed));
+}
+
+/**
+ * Ask for an order to be called back.
+ *
+ * A request, not an instruction. A guest cannot write to their own order —
+ * Appwrite grants permission per document rather than per field, so a phone
+ * allowed to change the status would be a phone allowed to change the total.
+ * This writes a row the server acts on, and grants the guest read on it so the
+ * answer, including a refusal and its reason, comes back to the person who
+ * asked.
+ */
+export async function requestCancellation(order: Pick<Order, '$id' | 'venue_id'>): Promise<string> {
+  const me = await account.get().catch(() => null);
+  const row = await db.createDocument(
+    DB_ID,
+    'order_cancellations',
+    ID.unique(),
+    {
+      venue_id: order.venue_id,
+      order_id: order.$id,
+      requested_at: new Date().toISOString(),
+      status: 'requested',
+    },
+    me ? [Permission.read(Role.user(me.$id))] : [],
+  );
+  return row.$id;
 }
 
 /** Live orders for a venue, newest first. */

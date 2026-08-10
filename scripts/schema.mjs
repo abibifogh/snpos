@@ -812,6 +812,35 @@ export const COLLECTIONS = [
   },
   {
     /**
+     * A customer asking to call an order back, in the first couple of minutes
+     * after sending it.
+     *
+     * A request rather than an action, because a guest cannot be allowed to
+     * write to an order. Document permissions in Appwrite are per document, not
+     * per field: letting a phone change the status would let it change the
+     * total, and the whole reason order-guard exists is that a phone is not
+     * trusted with what things cost.
+     *
+     * So the guest writes here, which is the only thing they may do, and the
+     * server decides whether the window is still open. The row stays either
+     * way — a cancellation inside two minutes and a request that arrived too
+     * late are both worth being able to look up when somebody asks why food
+     * they thought they had called off turned up.
+     */
+    id: 'order_cancellations',
+    name: 'Order cancellations',
+    perms: { read: ALL_STAFF, create: ['users'], update: ALL_STAFF, delete: [] },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['order_id', 's', 64, true],
+      ['requested_at', 'd', null, false],
+      ['status', 'e', ['requested', 'cancelled', 'refused'], true, 'requested'],
+      ['refused_reason', 's', 200, false],
+    ],
+    indexes: [['order', 'key', ['order_id']]],
+  },
+  {
+    /**
      * Expense categories, defined by the restaurant.
      *
      * `account_code` is what makes a category more than a label: it decides

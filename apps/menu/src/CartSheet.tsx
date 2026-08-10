@@ -203,6 +203,14 @@ export function CartSheet({
       return;
     }
 
+    // A name is not politeness, it is how the food gets to the right person.
+    // Left optional, most people skipped it, and the pass ended up calling out
+    // order numbers to a room that had already forgotten them.
+    if (!name.trim()) {
+      setProblem('Please enter your name so we know whose order this is.');
+      return;
+    }
+
     // A group order the kitchen cannot tie to a booking is a party nobody can
     // find at the front desk, so the reference is asked for before it is sent
     // rather than chased afterwards.
@@ -402,8 +410,12 @@ export function CartSheet({
         </Field>
       )}
 
-      <Field label="Your name" hint="So staff know whose order this is. Optional.">
-        <Input value={name} onChange={(e) => setName(e.target.value)} />
+      <Field label="Your name" hint="So we know whose order this is.">
+        <Input
+          value={name}
+          onChange={(e) => { setName(e.target.value); setProblem(null); }}
+          placeholder="Required"
+        />
       </Field>
 
       {collectEmail && (
