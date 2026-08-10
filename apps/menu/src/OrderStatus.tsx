@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Spinner } from '@snpos/ui';
 import {
   db, DB_ID, Query, listAll, formatMoney, subscribeCollection, isProvisionalOrderNo,
-  cancelWindowLeft, requestCancellation, humanError,
+  cancelWindowLeft, requestCancellation, humanError, shownEta,
 } from '@snpos/core';
 import type { Order, OrderItem, Settings, Venue } from '@snpos/core';
 import { rememberOrder } from './myOrders';
@@ -192,9 +192,9 @@ export function OrderStatus({
               "send" is looking. A wait nobody has named is a wait that feels
               twice as long, and it is the question a guest otherwise gets up
               and asks a waiter. */}
-          {order.eta_minutes && !done && (
+          {shownEta(order.eta_minutes) && !done && (
             <div className="eta">
-              <strong>About {order.eta_minutes} minutes</strong>
+              <strong>About {shownEta(order.eta_minutes)} minutes</strong>
               <div className="small dim">
                 An estimate from what you ordered and how busy the kitchen is.
                 We will tell you the moment it is ready.

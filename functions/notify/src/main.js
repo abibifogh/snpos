@@ -452,7 +452,11 @@ export default async ({ req, res, log, error }) => {
                 stage === 'accepted'
                   ? `<p style="margin:0 0 10px">We have your order. The kitchen will start on it shortly.</p>
                      <p style="margin:0;color:#5d6b7a;font-size:14px">Order ${doc.order_no}${
-                       doc.eta_minutes ? ` · about ${doc.eta_minutes} minutes` : ''
+                       // Capped on the way out too. Mirrors MAX_ETA_MINUTES in
+                       // packages/core/src/orders.ts — a row written before the
+                       // cap existed must not put "about 95 minutes" in an
+                       // email, where it cannot be corrected afterwards.
+                       doc.eta_minutes > 0 ? ` · about ${Math.min(60, Math.round(doc.eta_minutes))} minutes` : ''
                      }</p>`
                   : `<p style="margin:0 0 10px">Your order is ready.</p>
                      <p style="margin:0;color:#5d6b7a;font-size:14px">Order ${doc.order_no}${

@@ -279,6 +279,23 @@ export interface CreatedOrder {
  */
 export const MAX_ETA_MINUTES = 60;
 
+/**
+ * The wait to show, never more than the cap.
+ *
+ * Applied on the way out as well as on the way in. Capping only where the
+ * figure is worked out leaves every row written before the cap existed — and
+ * anything a future change forgets to clamp — free to put "about 95 minutes"
+ * in front of a customer. Reading is the last chance to be sure, and it costs
+ * nothing to take it.
+ *
+ * Returns null when there is no estimate at all, so a caller can leave the
+ * whole line out rather than print a made-up number.
+ */
+export function shownEta(minutes?: number | null): number | null {
+  if (!minutes || minutes <= 0) return null;
+  return Math.min(MAX_ETA_MINUTES, Math.round(minutes));
+}
+
 export function estimateMinutes(lines: CartLine[], queueAhead = 0): number {
   return Math.min(MAX_ETA_MINUTES, Math.max(1, Math.round(cookMinutes(lines) + queueAhead)));
 }
