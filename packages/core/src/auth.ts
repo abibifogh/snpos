@@ -30,6 +30,49 @@ export async function myStaffTeams(): Promise<StaffTeam[]> {
   }
 }
 
+/**
+ * What a customer needs before they can order: a session, any session.
+ *
+ * Ordering is not open to the public. The orders collection is created by
+ * `users`, and an anonymous session is what puts a guest who scanned a sticker
+ * inside that role. Without one the server refuses the order in its own words —
+ * "Missing create permission for the role users" — which is both frightening
+ * and useless to somebody holding a menu.
+ *
+ * Creating the session is not enough to trust it. Appwrite keeps it in a cookie
+ * for a different domain than the menu is served from, and a browser in private
+ * mode, or one refusing cross-site cookies, will accept the request and then
+ * quietly keep none of it. Every later call goes out as a stranger. So this
+ * asks again afterwards: if the session did not survive the round trip, the
+ * guest finds out here, in a sentence they can act on, rather than at the
+ * moment they try to send an order they have spent five minutes building.
+ */
+export async function ensureGuestSession(): Promise<void> {
+  const CANNOT =
+    'This browser will not let us start your order — that is usually private browsing, or cookies being blocked. ' +
+    'Open the menu in a normal tab, or try a different browser.';
+
+  try {
+    await account.get();
+    return;
+  } catch {
+    // No session yet, which is the ordinary case on a first scan.
+  }
+
+  try {
+    await account.createAnonymousSession();
+  } catch (e) {
+    // A session that arrived between the two calls is a success, not a failure.
+    if (!/session is active|already/i.test(e instanceof Error ? e.message : '')) throw new Error(CANNOT);
+  }
+
+  try {
+    await account.get();
+  } catch {
+    throw new Error(CANNOT);
+  }
+}
+
 export interface StaffSession {
   userId: string;
   email: string;

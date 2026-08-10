@@ -3,6 +3,7 @@ import { Button, Modal, Input, Field, Notice, Select, FormError } from '@snpos/u
 import {
   computeTotals, formatMoney, lineTotal, createOrder, parseWindows,
   isEnabled, featureConfig, db, DB_ID, ID, Query, isProvisionalOrderNo,
+  ensureGuestSession, humanError,
 } from '@snpos/core';
 import type { CartLine, Settings, Venue, FeatureMap, LoadedMenu, Doc, Order } from '@snpos/core';
 
@@ -216,6 +217,12 @@ export function CartSheet({
 
     setBusy(true);
     try {
+      // A guest can have the menu open for an hour before they send anything,
+      // and a session can lapse or be cleared in that time. Rebuilding it here
+      // costs one call and is the difference between an order going through and
+      // the server refusing it in language nobody can act on.
+      await ensureGuestSession();
+
       // Checked again here, not only when the code was typed. A guest can sit
       // with the sheet open for twenty minutes, and the last use of a code can
       // go to somebody else in that time. The server refuses it either way;
@@ -283,8 +290,12 @@ export function CartSheet({
       onPlaced(await settledOrderNo(order), order.$id, slot || undefined);
       setCart(() => []);
     } catch (e) {
-      setProblem(e instanceof Error ? e.message : 'Could not send your order. Please try again.');
-      onError(e instanceof Error ? e.message : 'Could not send your order. Please try again.');
+      // Through humanError, so the server's own vocabulary — roles, scopes,
+      // permissions — never reaches somebody who only wants lunch.
+      const said = e ? humanError(e) : '';
+      const message = said || 'Could not send your order. Please try again.';
+      setProblem(message);
+      onError(message);
     } finally {
       setBusy(false);
     }

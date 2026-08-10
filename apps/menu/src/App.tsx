@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Modal, Spinner, Notice, useToast, Logo, HelpModal, OfflineBar, useOfflineQueue } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
-  account, db, DB_ID, Query, listAll, loadMenu, visibleSections, computeTotals,
+  ensureGuestSession, db, DB_ID, Query, listAll, loadMenu, visibleSections, computeTotals,
   formatMoney, isAvailable, parseWindows, nextAvailable, describeWindows, loadFeatures, isEnabled,
   articlesFor, HELP_AREAS,
   featureConfig, previewUrl, humanError,
@@ -80,12 +80,15 @@ export function App() {
     (async () => {
       try {
         // Guests never sign in. An anonymous session is what lets Appwrite
-        // accept an order from someone who has only scanned a sticker.
-        try {
-          await account.get();
-        } catch {
-          await account.createAnonymousSession();
-        }
+        // accept an order from someone who has only scanned a sticker, and
+        // ensureGuestSession checks the session actually stuck rather than
+        // assuming it did.
+        //
+        // Deliberately not fatal. Reading a menu needs no session at all, and a
+        // browser that will not keep one should still be able to show somebody
+        // what the kitchen is cooking. The complaint belongs at the moment it
+        // actually costs them something, which is when they send the order.
+        await ensureGuestSession().catch(() => undefined);
 
         const settings = await loadWithFallback('settings', async () =>
           (await db.getDocument(DB_ID, 'settings', 'main')) as unknown as Settings,

@@ -148,6 +148,23 @@ export function humanError(e: unknown): string {
 
   if (/Invalid credentials/i.test(msg)) return 'That email and password combination was not recognised.';
   if (/User .*not found/i.test(msg)) return 'No account exists for that email address.';
+  /**
+   * Appwrite's own words for this are "Missing "create" permission for the role
+   * "users". Only ["any","guests"] scopes are allowed and ["users"] was given",
+   * which a customer holding a menu cannot be expected to make anything of.
+   *
+   * It always means the same thing: this browser is talking to the server as a
+   * stranger. Either the session expired, or it was never kept — private
+   * browsing and blocked cookies both accept a sign-in and then remember none
+   * of it. Reloading is the fix in the first case and the diagnosis in the
+   * second, so it leads.
+   */
+  if (/permission for the role/i.test(msg)) {
+    return (
+      'Your session has ended. Reload the page and try again. ' +
+      'If it keeps happening, private browsing or blocked cookies are the usual cause.'
+    );
+  }
   if (/missing scopes|not authorized|unauthorized/i.test(msg)) return 'Your account does not have permission to do that.';
   if (/Document with the requested ID could not be found/i.test(msg)) return 'That record no longer exists — it may have been deleted.';
   if (/already exists/i.test(msg)) return 'Something with that name or code already exists.';
