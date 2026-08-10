@@ -457,12 +457,23 @@ export default async ({ req, res, log, error }) => {
       let ahead = 0;
       for (const o of live.documents) {
         if (o.$id === order.$id) continue;
-        const started = Date.parse(o.accepted_at || o.$createdAt);
-        const elapsed = Number.isFinite(started) ? (now - started) / 60000 : 0;
-        ahead += Math.max(0, (o.eta_minutes ?? 15) - Math.max(0, elapsed));
+        // Cooking time, not the wait that order's own customer was quoted —
+        // their quote already contains the queue that was ahead of them, and
+        // adding up quotes counts the same stove time again for every ticket
+        // that has joined since. What is left to cook is what is left to cook.
+        const work = o.prep_minutes ?? o.eta_minutes ?? 15;
+        // Nothing comes off a ticket no cook has picked up yet.
+        const started = o.accepted_at ? Date.parse(o.accepted_at) : NaN;
+        const elapsed = Number.isFinite(started) ? Math.max(0, (now - started) / 60000) : 0;
+        ahead += Math.max(0, work - elapsed);
       }
       eta = Math.min(60, Math.max(1, Math.round(prepTotal + ahead)));
     }
+
+    // The cooking time on its own, from the menu rather than from the phone.
+    // This is what decides whether a ticket on the pass is late, so it is
+    // settled here where the prep times cannot be edited by the sender.
+    const cookTime = prepTotal > 0 ? Math.max(1, Math.round(prepTotal)) : order.prep_minutes;
 
     if (
       corrections.length ||
@@ -470,7 +481,8 @@ export default async ({ req, res, log, error }) => {
       order.total !== total ||
       order.tax_total !== tax ||
       order.service_total !== service ||
-      order.eta_minutes !== eta
+      order.eta_minutes !== eta ||
+      order.prep_minutes !== cookTime
     ) {
       await db.updateDocument(DB_ID, 'orders', order.$id, {
         subtotal,
@@ -479,6 +491,7 @@ export default async ({ req, res, log, error }) => {
         tax_total: tax,
         total,
         ...(typeof eta === 'number' ? { eta_minutes: eta } : {}),
+        ...(typeof cookTime === 'number' ? { prep_minutes: cookTime } : {}),
       });
 
       if (corrections.length) {

@@ -54,8 +54,10 @@ export interface Order extends Doc {
   fire_at?: string;
   placed_while_closed?: boolean;
   quoted_wait_minutes?: number;
-  /** How long the whole order should take, from the prep time on each dish. */
+  /** What the customer was told: cooking time plus the queue ahead of them. */
   eta_minutes?: number;
+  /** What the kitchen is judged by: the cooking time alone. */
+  prep_minutes?: number;
 }
 
 export interface OrderItem extends Doc {
@@ -278,8 +280,54 @@ export interface CreatedOrder {
 export const MAX_ETA_MINUTES = 60;
 
 export function estimateMinutes(lines: CartLine[], queueAhead = 0): number {
-  const total = lines.reduce((sum, l) => sum + (l.prep_minutes ?? 15), 0);
-  return Math.min(MAX_ETA_MINUTES, Math.max(1, Math.round(total + queueAhead)));
+  return Math.min(MAX_ETA_MINUTES, Math.max(1, Math.round(cookMinutes(lines) + queueAhead)));
+}
+
+/**
+ * The cooking time alone: the prep time set on each dish, added up.
+ *
+ * This is what the kitchen is judged by, and it is deliberately not what the
+ * customer is quoted. Their wait includes queueing behind other tickets, which
+ * is time before a cook touches this one — measuring a kitchen by it would hand
+ * them extra minutes on exactly the nights being late matters most, and only
+ * because other people were also waiting.
+ *
+ * Added rather than taking the longest, for the same reason as everywhere else
+ * here: a cook with a curry and a grill on one ticket does them one after the
+ * other. Not multiplied by quantity — three of one thing goes in one pan.
+ */
+export function cookMinutes(lines: Pick<CartLine, 'prep_minutes'>[]): number {
+  return Math.max(1, Math.round(lines.reduce((sum, l) => sum + (l.prep_minutes ?? 15), 0)));
+}
+
+/**
+ * How long a ticket already on the pass should have taken, in minutes.
+ *
+ * One definition, read by the screen that shows the Late pill and by whatever
+ * decides to make a noise. Two copies of this rule is two answers to "is this
+ * late", and the one that goes wrong is always the one nobody is looking at.
+ *
+ * `prep_minutes` on the order is the answer whenever it is there. The fallbacks
+ * are for orders placed before it was stored: each line's due time was stamped
+ * as "now plus its prep", so the difference gives that prep back. Twenty
+ * minutes if even that is missing — a guess that pings beats a blank that never
+ * does.
+ */
+export function dueMinutes(
+  order: Pick<Order, 'prep_minutes' | '$createdAt'>,
+  lines: { due_at?: string; prep_minutes?: number }[] = [],
+): number {
+  if (order.prep_minutes) return order.prep_minutes;
+
+  const fromLines = lines.reduce((sum, l) => sum + (l.prep_minutes ?? 0), 0);
+  if (fromLines > 0) return fromLines;
+
+  const placed = Date.parse(order.$createdAt);
+  const summed = lines.reduce((sum, l) => {
+    const due = l.due_at ? Date.parse(l.due_at) : 0;
+    return sum + (due > placed ? Math.round((due - placed) / 60_000) : 0);
+  }, 0);
+  return summed || 20;
 }
 
 /**
@@ -301,16 +349,32 @@ export function estimateMinutes(lines: CartLine[], queueAhead = 0): number {
  * on a person, not on a stove.
  */
 export function queueMinutes(
-  pending: Pick<Order, 'status' | 'eta_minutes' | 'accepted_at' | '$createdAt'>[],
+  pending: Pick<Order, 'status' | 'prep_minutes' | 'eta_minutes' | 'accepted_at' | '$createdAt'>[],
   now: number = Date.now(),
 ): number {
   const cooking: OrderStatus[] = ['PENDING', 'ACCEPTED', 'PREPARING'];
   let ahead = 0;
   for (const o of pending) {
     if (!cooking.includes(o.status)) continue;
-    const started = Date.parse(o.accepted_at || o.$createdAt);
-    const elapsed = Number.isFinite(started) ? (now - started) / 60_000 : 0;
-    ahead += Math.max(0, (o.eta_minutes ?? 15) - Math.max(0, elapsed));
+
+    /**
+     * Cooking time, not the wait its own customer was quoted.
+     *
+     * Those are different numbers now, and using the wrong one compounds. An
+     * order's quoted wait already contains the queue that was ahead of IT, so
+     * adding up quoted waits counts the same stove time again for every order
+     * that has joined since — a fourth ticket on a quiet-ish evening would
+     * inherit the first three's queueing on top of their cooking and sail
+     * straight into the hour cap. What is left to cook is what is left to cook.
+     */
+    const work = o.prep_minutes ?? o.eta_minutes ?? 15;
+
+    // A ticket nobody has accepted is not being cooked, so none of it is done
+    // however long it has been sitting there. Only time since a cook took it
+    // comes off.
+    const started = o.accepted_at ? Date.parse(o.accepted_at) : NaN;
+    const elapsed = Number.isFinite(started) ? Math.max(0, (now - started) / 60_000) : 0;
+    ahead += Math.max(0, work - elapsed);
   }
   return Math.round(ahead);
 }
@@ -381,6 +445,10 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
     placed_while_closed: input.placedWhileClosed ?? false,
     quoted_wait_minutes: input.quotedWaitMinutes ?? undefined,
     eta_minutes: estimateMinutes(lines),
+    // The cooking time on its own, which is what the pass is measured against.
+    // order-guard recomputes both a second later from the menu itself; this is
+    // so the very first ticket to appear already has the right rule on it.
+    prep_minutes: cookMinutes(lines),
   };
 
   if (input.scheduledFor) {
@@ -433,6 +501,10 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
         // When this should be out by, so an overdue ticket can ping without
         // anyone doing the arithmetic mid-service.
         due_at: new Date(Date.now() + (line.prep_minutes ?? 15) * 60_000).toISOString(),
+        // Snapshotted like the price. An admin raising a dish from ten minutes
+        // to twenty-five must not make every ticket already on the pass
+        // retrospectively on time.
+        prep_minutes: line.prep_minutes ?? 15,
         status: 'queued',
         course: line.course ?? 1,
         seat_no: line.seat_no,

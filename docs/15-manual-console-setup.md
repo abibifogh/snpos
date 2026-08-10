@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **60 collections, 791 fields and 195 indexes**. Entered by hand at a
+> This is **60 collections, 793 fields and 195 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -608,7 +608,7 @@ There are 60 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: All users · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: _none — server only_
 
-**Attributes** (60)
+**Attributes** (61)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -669,6 +669,7 @@ There are 60 collections. A progress checklist is at the end of this document.
 | `driver_name` | String | size 120 | No | — | No |
 | `quoted_wait_minutes` | Integer | — | No | — | No |
 | `eta_minutes` | Integer | — | No | — | No |
+| `prep_minutes` | Integer | — | No | — | No |
 | `discounts_applied` | String | size 4000 | No | — | No |
 | `loyalty_points_earned` | Integer | — | No | 0 | No |
 | `loyalty_points_redeemed` | Integer | — | No | 0 | No |
@@ -697,7 +698,7 @@ There are 60 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: All users · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins
 
-**Attributes** (18)
+**Attributes** (19)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -715,6 +716,7 @@ There are 60 collections. A progress checklist is at the end of this document.
 | `station_key` | String | size 40 | No | — | No |
 | `status` | Enum | queued, preparing, ready, served, void | **Yes** | — | No |
 | `due_at` | Datetime | — | No | — | No |
+| `prep_minutes` | Integer | — | No | — | No |
 | `void_reason` | String | size 300 | No | — | No |
 | `voided_by` | String | size 64 | No | — | No |
 | `course` | Integer | — | **Yes** | — | No |
@@ -2263,8 +2265,8 @@ way mistakes creep in.
 - [ ] 13. `menu_item_addon_groups` (6 fields, 2 indexes)
 - [ ] 14. `tables` (13 fields, 4 indexes)
 - [ ] 15. `dining_sessions` (9 fields, 3 indexes)
-- [ ] 16. `orders` (60 fields, 13 indexes)
-- [ ] 17. `order_items` (18 fields, 4 indexes)
+- [ ] 16. `orders` (61 fields, 13 indexes)
+- [ ] 17. `order_items` (19 fields, 4 indexes)
 - [ ] 18. `payments` (16 fields, 4 indexes)
 - [ ] 19. `shifts` (28 fields, 4 indexes)
 - [ ] 20. `shift_expenses` (16 fields, 4 indexes)

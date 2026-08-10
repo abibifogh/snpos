@@ -8,7 +8,7 @@ import {
   db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
   verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
-  itemsAvailableNow,
+  itemsAvailableNow, dueMinutes,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback,
 } from '@snpos/core';
 import type {
@@ -301,23 +301,22 @@ export function App() {
    */
   const nowSlice = Math.floor(Date.now() / 10_000);
 
-  /** How long the whole order was expected to take, in minutes. */
-  const promisedMinutes = useCallback(
-    (o: Order) => {
-      if (o.eta_minutes) return o.eta_minutes;
-      // Older orders, placed before an estimate was stored. Each line's due
-      // time was stamped as "now plus its prep", so the difference gives that
-      // prep time back — and they add up the same way a new order's would.
-      // Twenty minutes if even that is missing, rather than never pinging.
-      const placed = new Date(o.$createdAt).getTime();
-      const summed = (items[o.$id] ?? []).reduce((sum, i) => {
-        const due = i.due_at ? new Date(i.due_at).getTime() : 0;
-        return sum + (due > placed ? Math.round((due - placed) / 60_000) : 0);
-      }, 0);
-      return summed || 20;
-    },
-    [items],
-  );
+  /**
+   * How long the kitchen had to cook this, in minutes.
+   *
+   * The prep time set on each dish, added up — not the estimate the customer
+   * was given. Those two used to be the same number and are not any more: the
+   * customer's wait now includes queueing behind the tickets already on the
+   * pass, which is time before a cook touches this one. Judging the kitchen by
+   * it would quietly hand them the whole queue as extra minutes on exactly the
+   * night when being late matters most.
+   *
+   * dueMinutes lives in core so the pill on the ticket, the count in the
+   * header and the alarm all read one rule. They did already, but only because
+   * they happened to call the same local function; a rule worth getting right
+   * belongs somewhere a second screen cannot quietly disagree with.
+   */
+  const promisedMinutes = useCallback((o: Order) => dueMinutes(o, items[o.$id] ?? []), [items]);
 
   const overdue = useMemo(() => {
     if (!overdueOn) return [];
@@ -678,6 +677,8 @@ export function App() {
               items={items[order.$id] ?? []}
               sla={sla}
               overdue={overdue.some((o) => o.$id === order.$id)}
+              cookMinutes={promisedMinutes(order)}
+              graceMinutes={graceMinutes}
               settings={settings}
               canSettle={combined && (who?.can_mark_paid ?? false)}
               onAccept={() => accept(order)}
@@ -738,12 +739,16 @@ export function App() {
 }
 
 function Ticket({
-  order, items, sla, overdue, settings, canSettle, onAccept, onStart, onDone, onCollect, onSettle, onReject,
+  order, items, sla, overdue, cookMinutes, graceMinutes,
+  settings, canSettle, onAccept, onStart, onDone, onCollect, onSettle, onReject,
 }: {
   order: Order;
   items: OrderItem[];
   sla: number;
   overdue: boolean;
+  /** The cooking time this ticket is judged against — the same figure the alarm uses. */
+  cookMinutes: number;
+  graceMinutes: number;
   settings: Settings | null;
   /** Combined mode, and this person is allowed to take money. */
   canSettle: boolean;
@@ -757,6 +762,23 @@ function Ticket({
   const age = secondsSince(order.$createdAt);
   const late = (order.status === 'PENDING' && age > sla) || overdue;
   const ageClass = age > sla * 2 ? 'bad' : age > sla ? 'warn' : '';
+
+  /**
+   * The same sum the alarm does, shown on the ticket.
+   *
+   * The clock in the corner counts from when the order was PLACED, and lateness
+   * is judged from when the kitchen ACCEPTED it. Those differ by however long
+   * the ticket sat unacknowledged, so a cook could read 18:32 on a
+   * fifteen-minute dish, expect the alarm, and not get it — which teaches
+   * people the alarm is unreliable when it is doing exactly what it was told.
+   *
+   * This says what it is actually counting, in whole minutes, so the ping never
+   * arrives as a surprise. The grace period is included: what is shown here is
+   * precisely the moment it will ring.
+   */
+  const cooking = order.status === 'ACCEPTED' || order.status === 'PREPARING';
+  const cookedFor = secondsSince(order.accepted_at || order.$createdAt);
+  const leftMinutes = Math.round((cookMinutes + graceMinutes) - cookedFor / 60);
 
   return (
     <div className={`ticket ${order.status === 'PENDING' ? 'pending' : ''} ${late ? 'late' : ''}`}>
@@ -779,6 +801,16 @@ function Ticket({
         </div>
         <div style={{ textAlign: 'right' }}>
           <div className={`age ${ageClass}`}>{mmss(age)}</div>
+          {cooking && (
+            <div className="due" style={leftMinutes < 0 ? { color: '#ff9b90' } : undefined}>
+              {leftMinutes < 0
+                ? `${Math.abs(leftMinutes)} min over`
+                : leftMinutes === 0
+                  ? 'due now'
+                  : `${leftMinutes} min left`}
+              <span className="dim"> · {cookMinutes} min dish</span>
+            </div>
+          )}
           <div style={{ marginTop: '0.2rem' }}>
             {order.channel === 'qr' && <span className="pill qr">QR</span>}
             {order.is_preorder && <span className="pill preorder">Pre-order</span>}

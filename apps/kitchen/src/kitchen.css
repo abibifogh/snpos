@@ -53,6 +53,16 @@ body { background: var(--bg); color: var(--text); }
 .ticket-head .age { font-variant-numeric: tabular-nums; font-weight: 650; }
 .ticket-head .age.warn { color: #f5a524; }
 .ticket-head .age.bad { color: #ff6b5e; }
+/* What the alarm is actually counting, under the clock that counts something
+   else. Smaller than the age on purpose — it is the explanation, not the
+   headline, and a second big number in the same corner would fight the first. */
+.ticket-head .due {
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  margin-top: 0.1rem;
+  white-space: nowrap;
+}
+.ticket-head .due .dim { color: var(--text-dim); }
 
 .ticket-items { padding: 0.55rem 0.8rem; flex: 1; }
 .ticket-items li { list-style: none; padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
