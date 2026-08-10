@@ -227,6 +227,20 @@ export async function updateStockAlerts(
   ingredients: Ingredient[],
   lowDefaultBp: number,
   persistentThreshold: number,
+  /**
+   * What staff said at the shift-end check, keyed by ingredient.
+   *
+   * This overrides the arithmetic, and it has to. The running quantity only
+   * moves when a recipe deplete it or somebody counts, so a cook tapping LOW
+   * changed nothing at all: the number stayed where it was, `levelOf` read it
+   * as fine, and the item was never flagged. OUT survived only because closing
+   * a shift writes the quantity to zero, which is why out reached the email and
+   * low never did.
+   *
+   * A person standing in front of the shelf outranks a figure derived from
+   * recipes that may not even be set up.
+   */
+  reported: Record<string, 'OK' | 'LOW' | 'OUT'> = {},
 ): Promise<{ fresh: StockAlert[]; persistent: StockAlert[]; all: StockAlert[] }> {
   const fresh: StockAlert[] = [];
   const persistent: StockAlert[] = [];
@@ -243,7 +257,10 @@ export async function updateStockAlerts(
   const now = new Date().toISOString();
 
   for (const ing of ingredients) {
-    const level = levelOf(ing, lowDefaultBp);
+    const said = reported[ing.$id];
+    const level: StockLevel = said
+      ? said === 'OK' ? 'ok' : said === 'LOW' ? 'low' : 'out'
+      : levelOf(ing, lowDefaultBp);
 
     if (level === 'ok') {
       // Recovered: clear the run so a later dip reads as new rather than

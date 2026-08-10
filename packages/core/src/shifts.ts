@@ -341,6 +341,10 @@ export async function closeShift(opts: {
       after.filter((i) => i.active),
       settings.low_stock_default_bp ?? 3000,
       threshold,
+      // What the cook reported wins over what the recipes imply. Without this,
+      // tapping LOW moved nothing — the running quantity stayed put, the
+      // arithmetic called the item fine, and it never reached the email.
+      levels,
     );
     if (fresh.length || persistent.length) {
       stockNote =

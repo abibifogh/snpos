@@ -692,7 +692,6 @@ export function SettleModal({
   const [methodId, setMethodId] = useState('');
   const [shift, setShift] = useState<Shift | null>(null);
   const [tipText, setTipText] = useState('');
-  const [cashText, setCashText] = useState('');
   const [payText, setPayText] = useState('');
   const [reference, setReference] = useState('');
   const [owed, setOwed] = useState(order.total);
@@ -704,10 +703,6 @@ export function SettleModal({
   // A blank box means "all of it" — the overwhelmingly common case, and it
   // should not need typing.
   const paying = payText.trim() === '' ? owed : parseMoney(payText, decimals) ?? 0;
-  // Cash means change, and change is a number somebody has to get right while
-  // holding a plate. Working it out here is one fewer thing to do in the head.
-  const tendered = parseMoney(cashText, decimals) ?? 0;
-  const change = method?.kind === 'cash' ? Math.max(0, tendered - paying) : 0;
   const leftAfter = Math.max(0, owed - paying);
 
   useEffect(() => {
@@ -744,7 +739,12 @@ export function SettleModal({
         methodKind: method?.kind ?? 'other',
         amount: paying,
         tip: parseMoney(tipText, decimals) ?? 0,
-        changeGiven: change,
+        // Nothing is handed over on this screen: a cook marking an order
+        // collected is recording that it went out, not running a drawer. The
+        // box asking what the customer gave was one more thing to type while
+        // holding a plate, and the change it worked out was a sum nobody
+        // needed — the till still does it where a drawer is actually open.
+        changeGiven: 0,
         reference: reference.trim(),
         takenBy: who?.user_id || who?.$id || '',
         // The pass has handed the food over; it has not closed the table.
@@ -754,7 +754,6 @@ export function SettleModal({
         // Still owed, so the modal stays open ready for the next person to pay.
         setOwed(remaining);
         setPayText('');
-        setCashText('');
         setTipText('');
         setReference('');
         setBusy(false);
@@ -819,16 +818,6 @@ export function SettleModal({
         >
           <Input value={reference} onChange={(e) => setReference(e.target.value)} />
         </Field>
-      )}
-      {method?.kind === 'cash' && (
-        <Field label={`Cash handed over (${settings.currency_symbol ?? ''})`} hint="Optional. Fill it in and the change is worked out for you.">
-          <Input value={cashText} inputMode="decimal" onChange={(e) => setCashText(e.target.value)} />
-        </Field>
-      )}
-      {change > 0 && (
-        <p style={{ margin: '-0.4rem 0 1rem', fontSize: '1.05rem' }}>
-          Change to give: <strong>{formatMoney(change, settings)}</strong>
-        </p>
       )}
       {asksForTip(settings, 'kitchen') && (
         <Field label={`Tip (${settings.currency_symbol ?? ''})`} hint="Optional. Kept separate from sales — it is not yours.">

@@ -197,7 +197,18 @@ function stockTable(items, threshold, settings) {
       // the quantity covers a row written before that field existed.
       const severity = i.last_low_severity || (Number(i.current_qty) > 0 ? 'low' : 'out');
       const tone = runs >= threshold ? STOCK_TONES.persistent : STOCK_TONES[severity] || STOCK_TONES.low;
-      const qty = `${Number(i.current_qty ?? 0)}${i.unit ? ` ${i.unit}` : ''}`;
+
+      // Print the quantity only when it backs up what was reported.
+      //
+      // A cook tapping LOW does not change the running figure — that only moves
+      // when a recipe depletes it or somebody counts. So the book can happily
+      // say "12 kg" on a row the kitchen has just flagged as low, and printing
+      // it there makes the alert look like a mistake and teaches people to
+      // ignore the table. A dash says what is true: nobody counted this one.
+      const lowAt = i.low_threshold ?? (Number(i.par_level || 0) * (settings?.low_stock_default_bp ?? 3000)) / 10000;
+      const onHand = Number(i.current_qty ?? 0);
+      const agrees = severity === 'out' ? onHand <= 0 : onHand <= lowAt;
+      const qty = agrees ? `${onHand}${i.unit ? ` ${i.unit}` : ''}` : '—';
 
       return `<tr style="background:${tone.bg}">
         <td style="padding:9px 10px;border-left:4px solid ${tone.bar};font-weight:600">${i.name}</td>
