@@ -1,6 +1,29 @@
 /* Customer menu — phone first. Everything here assumes a thumb, not a mouse. */
 
-.menu-app { max-width: 620px; margin: 0 auto; padding-bottom: 6rem; }
+/* Nothing is allowed to be wider than the phone.
+   A single element a few pixels too wide does not scroll sideways on a phone —
+   it makes the browser shrink the WHOLE page to fit, so every dish and price
+   comes out small and the guest has to pinch to read a menu. One long word in
+   a dish name is enough to do it, which is why the wrapping rules below are
+   not cosmetic.
+
+   `clip` rather than `hidden`: hidden would make this a scrolling box and the
+   category bar would stop sticking to the top. */
+.menu-app {
+  max-width: 620px;
+  margin: 0 auto;
+  padding-bottom: 6rem;
+  overflow-x: clip;
+}
+
+/* Anything a guest did not write, and cannot be trusted to be short: a dish
+   called "Grilled-Tilapia-with-Shito-and-Kelewele" has no space to break at,
+   and without this it decides how wide the page is. */
+.menu-app h1,
+.menu-app h2,
+.dish .name,
+.dish .desc,
+.section .when { overflow-wrap: anywhere; }
 
 .menu-header {
   padding: 1.1rem 1rem 0.9rem;

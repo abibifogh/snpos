@@ -51,6 +51,48 @@ async function recipientsFor(db, DB_ID, event) {
 }
 
 /**
+ * Write down that something was not sent, and why.
+ *
+ * The failures this file can have are all invisible ones. "Nobody is
+ * subscribed" returns quietly, once an hour, into a log nobody reads — and the
+ * owner's experience is simply that backups never arrive, with nothing
+ * anywhere to say so. Three separate email paths in this system have now
+ * failed exactly that way.
+ *
+ * So a skip that a person would want to know about leaves a row instead. It
+ * shows on the settings page next to the recipients, where somebody looking
+ * for "why am I not getting these" will actually find it.
+ *
+ * Once a day, not once an hour: the timer fires hourly and a repeated notice
+ * is a notice that gets ignored.
+ */
+async function recordNotSent({ db, DB_ID, kind, day, venueId, reason, log }) {
+  const already = await db
+    .listDocuments(DB_ID, 'summary_reports', [
+      Query.equal('kind', kind),
+      Query.orderDesc('$createdAt'),
+      Query.limit(1),
+    ])
+    .catch(() => ({ documents: [] }));
+  if (already.documents[0] && JSON.parse(already.documents[0].payload || '{}').day === day) return;
+
+  const now = new Date().toISOString();
+  await db
+    .createDocument(DB_ID, 'summary_reports', 'unique()', {
+      venue_id: venueId || '',
+      kind,
+      period_start: now,
+      period_end: now,
+      payload: JSON.stringify({ day, not_sent: true }),
+      delivery_status: 'failed',
+      last_error: reason,
+      delivered_to: '',
+    })
+    .catch(() => undefined);
+  log(`${kind} not sent: ${reason}`);
+}
+
+/**
  * The day's trading, in one email.
  *
  * Separate from the shift summary on purpose. A day with two shifts produces
@@ -61,13 +103,26 @@ export async function dailyDigest({ db, DB_ID, settings, transport, from, shell,
   const tz = settings.timezone || 'UTC';
   if (localHour(tz) !== Number(settings.daily_report_hour ?? 23)) return { skipped: 'not the hour' };
 
-  const to = await recipientsFor(db, DB_ID, 'daily_digest');
-  if (to.length === 0) return { skipped: 'nobody subscribed to the daily summary' };
-
   const day = localDay(tz);
   const venues = await db.listDocuments(DB_ID, 'venues', [Query.limit(25)]);
   const venue = venues.documents[0];
   if (!venue) return { skipped: 'no venue' };
+
+  const to = await recipientsFor(db, DB_ID, 'daily_digest');
+  if (to.length === 0) {
+    await recordNotSent({
+      db, DB_ID, kind: 'daily_digest', day, venueId: venue.$id, log,
+      reason: 'Nobody is subscribed to the daily summary. Admin → Settings → Reports and backups by email: add an address and tick "Daily summary".',
+    });
+    return { skipped: 'nobody subscribed to the daily summary' };
+  }
+  if (!transport) {
+    await recordNotSent({
+      db, DB_ID, kind: 'daily_digest', day, venueId: venue.$id, log,
+      reason: 'No email provider is configured on the server. The SMTP secrets are missing — re-run Deploy functions with them set.',
+    });
+    return { skipped: 'no smtp' };
+  }
 
   // Sent once per day. The timer fires hourly and a clock change or a retry
   // must not produce two.
@@ -261,13 +316,26 @@ export async function nightlyBackup({ db, DB_ID, settings, transport, from, shel
   const tz = settings.timezone || 'UTC';
   if (localHour(tz) !== Number(settings.daily_report_hour ?? 23)) return { skipped: 'not the hour' };
 
-  const to = await recipientsFor(db, DB_ID, 'backup');
-  if (to.length === 0) return { skipped: 'nobody subscribed to backups' };
-
   const day = localDay(tz);
   const venues = await db.listDocuments(DB_ID, 'venues', [Query.limit(5)]);
   const venue = venues.documents[0];
   if (!venue) return { skipped: 'no venue' };
+
+  const to = await recipientsFor(db, DB_ID, 'backup');
+  if (to.length === 0) {
+    await recordNotSent({
+      db, DB_ID, kind: 'backup', day, venueId: venue.$id, log,
+      reason: 'Nobody is subscribed to backups. Admin → Settings → Reports and backups by email: add an address and tick "Nightly backup".',
+    });
+    return { skipped: 'nobody subscribed to backups' };
+  }
+  if (!transport) {
+    await recordNotSent({
+      db, DB_ID, kind: 'backup', day, venueId: venue.$id, log,
+      reason: 'No email provider is configured on the server. The SMTP secrets are missing — re-run Deploy functions with them set.',
+    });
+    return { skipped: 'no smtp' };
+  }
 
   const already = await db
     .listDocuments(DB_ID, 'summary_reports', [

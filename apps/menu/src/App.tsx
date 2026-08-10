@@ -191,25 +191,54 @@ export function App() {
       setActiveSection(current.id.slice(4));
     };
 
+    // One measurement per frame at most. A scroll event can fire dozens of
+    // times a frame on a phone, and reading getBoundingClientRect on every one
+    // of them forces the browser to re-lay-out mid-scroll — which is felt as
+    // the page stuttering under the thumb.
+    let queued = 0;
+    const onScroll = () => {
+      if (queued) return;
+      queued = requestAnimationFrame(() => { queued = 0; pick(); });
+    };
+
     pick();
     // Plain scroll rather than IntersectionObserver: the question is "which
     // heading is above the line", and a scroll position answers it directly
     // instead of being reconstructed from a dozen intersection callbacks.
-    window.addEventListener('scroll', pick, { passive: true });
-    window.addEventListener('resize', pick);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
     return () => {
-      window.removeEventListener('scroll', pick);
-      window.removeEventListener('resize', pick);
+      if (queued) cancelAnimationFrame(queued);
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
     };
   }, [boot, groupMode]);
 
-  // Follow the highlighted tab along the bar, or the section a guest has
-  // scrolled to sits off the right-hand edge and the bar looks stuck.
+  /**
+   * Follow the highlighted tab along the bar.
+   *
+   * The bar is scrolled directly rather than with scrollIntoView, which was a
+   * mistake: scrollIntoView moves EVERY scrollable ancestor, the page
+   * included. Scrolling the page fired the listener above, which changed the
+   * current section, which scrolled the page again — a loop that reads, on a
+   * phone, as the whole menu shaking.
+   *
+   * Setting scrollLeft on the bar itself cannot touch the page. And it only
+   * moves when the tab is actually out of view, so a guest scrolling within
+   * one long section is not fighting an animation the whole way down.
+   */
   useEffect(() => {
     if (!activeSection) return;
-    document
-      .querySelector<HTMLElement>(`.cat-nav button[data-cat="${activeSection}"]`)
-      ?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    const bar = document.querySelector<HTMLElement>('.cat-nav');
+    const tab = bar?.querySelector<HTMLElement>(`button[data-cat="${activeSection}"]`);
+    if (!bar || !tab) return;
+
+    const left = tab.offsetLeft;
+    const right = left + tab.offsetWidth;
+    const edge = 24; // a little air, so the tab is never flush against the rim
+    if (left >= bar.scrollLeft + edge && right <= bar.scrollLeft + bar.clientWidth - edge) return;
+
+    bar.scrollTo({ left: left - bar.clientWidth / 2 + tab.offsetWidth / 2, behavior: 'smooth' });
   }, [activeSection]);
 
 

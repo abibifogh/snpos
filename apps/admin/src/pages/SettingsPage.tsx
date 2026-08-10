@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Field, Input, Select, Notice, Textarea, Toggle, useToast } from '@snpos/ui';
+import { Badge, Button, Card, Field, Input, Select, Notice, Textarea, Toggle, useToast } from '@snpos/ui';
 import { contrastRatio } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
@@ -61,6 +61,19 @@ const FIELD_LABELS: Record<string, string> = {
   email_from_address: 'Email from address',
 };
 
+const REPORT_NAMES: Record<string, string> = {
+  shift_close: 'End-of-shift report',
+  daily_digest: 'Daily summary',
+  backup: 'Nightly backup',
+};
+
+interface Delivery extends Doc {
+  kind: 'shift_close' | 'daily_digest' | 'backup';
+  delivery_status: 'queued' | 'sent' | 'partial' | 'failed';
+  last_error?: string;
+  delivered_to?: string;
+}
+
 interface ReportSub extends Doc {
   channel: string;
   destination: string;
@@ -80,10 +93,23 @@ export function SettingsPage() {
   const [reportEmails, setReportEmails] = useState('');
   const [reportKinds, setReportKinds] = useState<string[]>(['shift_close']);
   const [subs, setSubs] = useState<ReportSub[]>([]);
+  // What the server actually did with the last few reports. The failures this
+  // system can have are invisible ones — "sent to nobody" looks identical to
+  // "sent" from every screen — so the record is put where somebody wondering
+  // why nothing arrives will look.
+  const [deliveries, setDeliveries] = useState<Delivery[] | null>(null);
   const [savingSubs, setSavingSubs] = useState(false);
   const [subsError, setSubsError] = useState<string | null>(null);
 
   useEffect(() => setForm(settings), [settings]);
+
+  useEffect(() => {
+    listAll<Delivery>('summary_reports')
+      .then((rows) =>
+        setDeliveries(rows.sort((a, b) => b.$createdAt.localeCompare(a.$createdAt)).slice(0, 8)),
+      )
+      .catch(() => setDeliveries([]));
+  }, []);
 
   useEffect(() => {
     listAll<ReportSub>('report_subscriptions')
@@ -347,6 +373,48 @@ export function SettingsPage() {
           <strong>{savedAsks('kitchen') ? 'asking' : 'not asking'}</strong>.
           {askOn !== savedAskOn && ' Unsaved change — press Save changes.'}
         </p>
+        <h3 style={{ margin: '1.4rem 0 0.4rem' }}>What actually happened</h3>
+        <p className="small dim" style={{ marginTop: 0 }}>
+          The last few reports the server produced, and whether they reached anybody. If something is not
+          arriving, the reason is here rather than in a log nobody can read.
+        </p>
+        {deliveries === null ? (
+          <p className="small dim">Loading…</p>
+        ) : deliveries.length === 0 ? (
+          <p className="small dim" style={{ marginBottom: 0 }}>
+            Nothing produced yet. The end-of-shift report appears when a shift is closed; the daily ones after
+            the hour set above.
+          </p>
+        ) : (
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr><th>When</th><th>Report</th><th>Result</th></tr>
+              </thead>
+              <tbody>
+                {deliveries.map((d) => (
+                  <tr key={d.$id}>
+                    <td className="small dim">{new Date(d.$createdAt).toLocaleString()}</td>
+                    <td className="small">{REPORT_NAMES[d.kind] ?? d.kind}</td>
+                    <td className="small">
+                      {d.delivery_status === 'sent' ? (
+                        <>
+                          <Badge tone="ok">Sent</Badge>{' '}
+                          <span className="dim">{d.delivered_to || ''}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Badge tone="danger">Not sent</Badge>{' '}
+                          <span className="dim">{d.last_error || 'No reason recorded.'}</span>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
 
       <Card title="Order numbers">
@@ -589,6 +657,27 @@ export function SettingsPage() {
             <div className="small dim" style={{ marginLeft: '1.6rem' }}>{k.hint}</div>
           </label>
         ))}
+
+        {/* Which reports currently have nobody to go to.
+            Ticking a box and typing an address are two separate acts, and it
+            is entirely possible to do one and not the other — after which the
+            report is generated nightly and thrown away in silence. */}
+        {(() => {
+          const live = subs.filter((r) => r.active !== false);
+          const orphans = [
+            { key: 'shift_close', label: 'End-of-shift report' },
+            { key: 'daily_digest', label: 'Daily summary' },
+            { key: 'backup', label: 'Nightly backup' },
+          ].filter((k) => !live.some((r) => (r.events ?? []).includes(k.key)));
+          if (orphans.length === 0) return null;
+          return (
+            <Notice tone="warn">
+              <strong>Nobody is receiving {orphans.map((o) => o.label.toLowerCase()).join(', ')}.</strong>{' '}
+              These are still being produced — they simply have nowhere to go. Add an address above, tick the
+              box, and press Save recipients.
+            </Notice>
+          );
+        })()}
 
         <Field
           label="When the daily ones go out"
