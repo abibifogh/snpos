@@ -7,7 +7,7 @@ import {
   db, DB_ID, ID, formatMoney, parseMoney, toInput, loadIngredients, stockCheckRows,
   loadPaymentMethods, openShift, loadOpenShift, shiftBlockers, expectedTakings, closeShift, openingFloats,
   recordPayment, amountOutstanding, PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions,
-  receiveStock, uploadFile, asksForTip,
+  receiveStock, uploadFile, asksForTip, expenseMethods,
 } from '@snpos/core';
 import type {
   PaymentMethod, Shift, Settings, Venue, StaffProfile, FeatureMap, Order,
@@ -377,11 +377,15 @@ function ExpenseModal({
       setSuppliers(opts.suppliers);
       setStaff(opts.staff);
       setCategoryKey(opts.categories[0]?.key ?? 'other');
-      setMethods(m);
-      setMethodId(m.find((x) => x.kind === 'cash')?.$id ?? m[0]?.$id ?? '');
+      // Only what an expense is allowed to be paid out of ever reaches the
+      // form, so the restriction cannot be got round by leaving the dropdown
+      // where it was.
+      const allowed = expenseMethods(m, settings);
+      setMethods(allowed);
+      setMethodId(allowed.find((x) => x.kind === 'cash')?.$id ?? allowed[0]?.$id ?? '');
       setIngredients(ing.filter((i) => i.active).sort((a, b) => a.name.localeCompare(b.name)));
     })().catch(() => undefined);
-  }, [venueId]);
+  }, [venueId, settings.expense_paid_from]);
 
   const filledLines = lines.filter((l) => l.ingredientId && Number(l.qtyText) > 0);
 
@@ -604,11 +608,21 @@ function ExpenseModal({
           <Input value={amountText} inputMode="decimal" autoFocus onChange={(e) => setAmountText(e.target.value)} />
         </Field>
       )}
-      <Field label="Paid from">
-        <Select value={methodId} onChange={(e) => setMethodId(e.target.value)}>
-          {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
-        </Select>
-      </Field>
+      {/* One option is not a choice. When the restaurant pays for shop runs out
+          of the drawer and nothing else — the default — a dropdown with a
+          single line in it is a question that wastes a tap and implies there is
+          something to decide. It says what happened instead. */}
+      {methods.length === 1 ? (
+        <Field label="Paid from" hint="Set by an admin under Settings.">
+          <Input value={methods[0].name} disabled />
+        </Field>
+      ) : (
+        <Field label="Paid from">
+          <Select value={methodId} onChange={(e) => setMethodId(e.target.value)}>
+            {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
+          </Select>
+        </Field>
+      )}
       <Field label="Paid to" hint="Not every purchase has a supplier behind it.">
         <Select value={paidToKind} onChange={(e) => setPaidToKind(e.target.value as PaidToKind)}>
           {PAID_TO_KINDS.map((k) => <option key={k.v} value={k.v}>{k.l}</option>)}

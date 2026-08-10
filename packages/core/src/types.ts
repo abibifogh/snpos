@@ -41,6 +41,8 @@ export interface Settings extends Doc {
   stock_check_mode?: 'levels' | 'counts';
   /** Whether a counted amount may be a part — 0.5, 0.25 — or whole only. */
   stock_count_decimals?: boolean;
+  /** What a shift expense may be paid out of. Cash only, or any method. */
+  expense_paid_from?: 'cash_only' | 'any';
   cash_variance_tolerance: number;
   terminal_idle_lock_seconds: number;
   default_locale?: string;

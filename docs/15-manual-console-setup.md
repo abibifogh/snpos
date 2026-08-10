@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **60 collections, 790 fields and 195 indexes**. Entered by hand at a
+> This is **60 collections, 791 fields and 195 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -257,7 +257,7 @@ There are 60 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: _none — server only_ · **Update**: Team: admins · **Delete**: _none — server only_
 
-**Attributes** (47)
+**Attributes** (48)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -291,6 +291,7 @@ There are 60 collections. A progress checklist is at the end of this document.
 | `order_number_reset_on` | Datetime | — | No | — | No |
 | `tips_enabled` | Boolean | — | No | true | No |
 | `tips_ask_on` | Enum | both, till, kitchen, none | No | both | No |
+| `expense_paid_from` | Enum | cash_only, any | No | cash_only | No |
 | `low_stock_default_bp` | Integer | — | **Yes** | — | No |
 | `stock_check_mode` | Enum | levels, counts | No | levels | No |
 | `stock_count_decimals` | Boolean | — | No | true | No |
@@ -2251,7 +2252,7 @@ way mistakes creep in.
 - [ ]  2. `venue_menu_items` (7 fields, 2 indexes)
 - [ ]  3. `organisations` (13 fields, 3 indexes)
 - [ ]  4. `org_requests` (10 fields, 1 indexes)
-- [ ]  5. `settings` (47 fields, 1 indexes)
+- [ ]  5. `settings` (48 fields, 1 indexes)
 - [ ]  6. `payment_methods` (11 fields, 3 indexes)
 - [ ]  7. `categories` (11 fields, 2 indexes)
 - [ ]  8. `menu_items` (22 fields, 3 indexes)

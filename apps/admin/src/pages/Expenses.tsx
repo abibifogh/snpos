@@ -4,7 +4,7 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, uploadFile, downloadUrl, deleteFile, receiveStock, Query,
   PAID_TO_KINDS, payeeLabel as sharedPayeeLabel, legacyExpenseCategory as legacyFor,
-  isPostableExpenseAccount,
+  isPostableExpenseAccount, expenseMethods,
 } from '@snpos/core';
 import type { Doc, Ingredient, PaidToKind } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
@@ -90,7 +90,10 @@ export function ExpensesPage() {
       listAll<AccountRow>('accounts'),
     ]);
     setRows(e.sort((a2, b) => b.$createdAt.localeCompare(a2.$createdAt)));
-    setMethods(m.filter((x) => x.enabled));
+    // The same restriction the kitchen form obeys. An admin recording a shop
+    // run after the fact is recording the same event, and a rule that only
+    // holds on one of the two screens is not a rule.
+    setMethods(expenseMethods(m.filter((x) => x.enabled), settings ?? undefined));
     setVenues(v);
     setSuppliers(s.filter((x) => x.active !== false).sort((a2, b) => a2.name.localeCompare(b.name)));
     setStaff(p.filter((x) => x.active !== false).sort((a2, b) => a2.display_name.localeCompare(b.display_name)));
@@ -448,10 +451,14 @@ export function ExpensesPage() {
                 {PAID_TO_KINDS.map((k) => <option key={k.v} value={k.v}>{k.l}</option>)}
               </Select>
             </Field>
-            <Field label="Paid from">
+            <Field
+              label="Paid from"
+              hint={methods.length === 1 ? 'Expenses are set to cash only under Settings.' : undefined}
+            >
               <Select
                 value={editing.paid_from_method_id ?? ''}
                 onChange={(e) => setEditing({ ...editing, paid_from_method_id: e.target.value })}
+                disabled={methods.length === 1}
               >
                 {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
               </Select>

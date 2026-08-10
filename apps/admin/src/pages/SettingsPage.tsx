@@ -52,6 +52,7 @@ const FIELD_LABELS: Record<string, string> = {
   allow_negative_cash: 'Allow a drawer to close below nothing',
   stock_check_mode: 'How the stock check asks',
   stock_count_decimals: 'Part amounts in the stock count',
+  expense_paid_from: 'What money spent during a shift can come out of',
   order_number_prefix: 'Order number prefix',
   order_number_mode: 'Order numbering',
   order_number_padding: 'Order number length',
@@ -225,6 +226,7 @@ export function SettingsPage() {
         allow_negative_cash: !!form.allow_negative_cash,
         stock_check_mode: form.stock_check_mode ?? 'levels',
         stock_count_decimals: form.stock_count_decimals !== false,
+        expense_paid_from: form.expense_paid_from ?? 'cash_only',
       });
       await refreshSettings();
 
@@ -568,10 +570,31 @@ export function SettingsPage() {
           onChange={(v) => set('allow_negative_cash', v)}
           label="Allow a drawer to close below nothing"
         />
-        <p className="small dim" style={{ marginBottom: 0 }}>
+        <p className="small dim">
           Off is the safer setting and the default. A drawer cannot physically hold less than no money, so a negative
           count nearly always means cash was paid out and never recorded — blocking it makes somebody enter the missing
           expense instead of closing over it.
+        </p>
+
+        <Field
+          label="What money spent during a shift can come out of"
+          hint="This covers shop runs, gas, transport — anything staff record as spent while a shift is open."
+        >
+          <Select
+            value={form.expense_paid_from ?? 'cash_only'}
+            onChange={(e) => set('expense_paid_from', e.target.value as Settings['expense_paid_from'])}
+          >
+            <option value="cash_only">Cash only</option>
+            <option value="any">Any payment method</option>
+          </Select>
+        </Field>
+        <p className="small dim" style={{ marginBottom: 0 }}>
+          Cash only is the default, and it is not about tidiness. Money taken from the drawer has to be missing
+          from the drawer when it is counted at the end of the shift, so a wrong entry surfaces within hours.
+          An expense recorded against mobile money reduces nothing anybody counts — which makes it the easiest
+          entry in the whole system to write and never have questioned. Turn it on only if you genuinely pay
+          suppliers by transfer from this screen, and expect those entries to rest on the receipt rather than on
+          a count.
         </p>
       </Card>
 

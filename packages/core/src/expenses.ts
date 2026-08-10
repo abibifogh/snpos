@@ -31,6 +31,33 @@ export interface Supplier extends Doc {
   active?: boolean;
 }
 
+/**
+ * Which payment methods an expense may be paid out of.
+ *
+ * Cash only by default, and the reason is not tidiness. A cash expense reduces
+ * what the drawer should hold, so it meets a physical count at the end of the
+ * shift and a wrong one shows up within hours. An expense filed against mobile
+ * money reduces nothing anybody counts — which makes it the easiest entry in
+ * the system to write and never have questioned.
+ *
+ * Restaurants that genuinely pay suppliers by transfer can turn the restriction
+ * off; the setting exists because that is a real way to run a kitchen, not
+ * because the default is arbitrary.
+ *
+ * If the restriction is on but no cash method has been set up, every method is
+ * allowed rather than none. A form with an empty dropdown teaches staff the
+ * screen is broken, and the honest failure here is to let the expense be
+ * recorded and be visible in the report.
+ */
+export function expenseMethods<T extends { $id: string; kind?: string }>(
+  methods: T[],
+  settings?: { expense_paid_from?: 'cash_only' | 'any' },
+): T[] {
+  if ((settings?.expense_paid_from ?? 'cash_only') === 'any') return methods;
+  const cash = methods.filter((m) => m.kind === 'cash');
+  return cash.length ? cash : methods;
+}
+
 export interface ExpenseCategoryDoc extends Doc {
   key: string;
   name: string;

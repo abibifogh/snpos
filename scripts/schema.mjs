@@ -242,6 +242,22 @@ export const COLLECTIONS = [
       // `tips_enabled` is still honoured as a master switch so an older build,
       // or a database provisioned before this existed, keeps working.
       ['tips_ask_on', 'e', ['both', 'till', 'kitchen', 'none'], false, 'both'],
+      /**
+       * What a shift expense may be paid out of.
+       *
+       * 'cash_only' — the drawer, and nothing else. This is the default because
+       * it matches what actually happens: somebody takes notes out of the till
+       * for a shop run. It also closes a hole. A cash expense reduces what the
+       * drawer should hold at close, so it is checked against a physical count
+       * within hours; an expense filed against mobile money reduces nothing
+       * anybody counts, which makes "spent GH₵200, paid by momo" the easiest
+       * unverifiable entry in the system to write.
+       *
+       * 'any' — every payment method. For a restaurant that genuinely pays
+       * suppliers by transfer from the same screen, and accepts that those
+       * entries rest on the receipt rather than on a count.
+       */
+      ['expense_paid_from', 'e', ['cash_only', 'any'], false, 'cash_only'],
       ['low_stock_default_bp', 'i', null, true, 3000],
       // How the shift-end stock check asks its question.
       //
