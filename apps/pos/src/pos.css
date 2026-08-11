@@ -46,3 +46,9 @@
 
 .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
 .pad button { padding: 1rem; font-size: 1.15rem; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-weight: 600; }
+
+/* Which side of the business this till is selling for.
+   Marked out from the ordinary tabs, because it changes what every other tab
+   contains rather than which one is showing. */
+.pos-side { margin-right: 0.9rem; border: 1px solid var(--brand); border-radius: 999px; }
+.pos-side button.on { background: var(--brand); color: var(--brand-ink); }

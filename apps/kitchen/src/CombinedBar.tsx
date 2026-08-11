@@ -70,7 +70,9 @@ export function CombinedBar({
   const money = (n: number) => formatMoney(n, settings);
 
   const reload = useCallback(async () => {
-    setShift(await loadOpenShift(venue.$id));
+    // This screen is the kitchen, so it opens and closes the kitchen's shift.
+    // The craft counter has its own, on the till.
+    setShift(await loadOpenShift(venue.$id, 'kitchen'));
   }, [venue.$id]);
 
   useEffect(() => { void reload(); }, [reload]);
@@ -101,6 +103,7 @@ export function CombinedBar({
         userId: who?.user_id || who?.$id || '',
         floats: Object.fromEntries(Object.entries(floats).map(([k, v]) => [k, parseMoney(v, decimals) ?? 0])),
         floatSource,
+        module: 'kitchen',
       });
       await reload();
       setOpening(false);
@@ -117,7 +120,10 @@ export function CombinedBar({
     setBusy(true);
     setError(null);
     try {
-      const [m, blocking] = await Promise.all([loadPaymentMethods(venue.$id), shiftBlockers(venue.$id)]);
+      const [m, blocking] = await Promise.all([
+        loadPaymentMethods(venue.$id),
+        shiftBlockers(venue.$id, undefined, 'kitchen'),
+      ]);
       setMethods(m);
       setBlockers(
         blocking.map((b) => ({
@@ -329,6 +335,7 @@ export function CombinedBar({
 
       {spending && shift && (
         <ExpenseModal
+          module={shift.module ?? 'kitchen'}
           venueId={venue.$id}
           shiftId={shift.$id}
           settings={settings}
@@ -353,8 +360,9 @@ interface DraftLine { ingredientId: string; qtyText: string; costText: string }
  * which screen it was entered from.
  */
 function ExpenseModal({
-  venueId, shiftId, settings, userId, onClose, onDone,
+  module, venueId, shiftId, settings, userId, onClose, onDone,
 }: {
+  module: 'kitchen' | 'craft';
   venueId: string;
   shiftId: string;
   settings: Settings;
@@ -472,6 +480,10 @@ function ExpenseModal({
       const expense = await db.createDocument(DB_ID, 'shift_expenses', ID.unique(), {
         venue_id: venueId,
         shift_id: shiftId,
+        // Which side's books this comes out of. Carried on the row rather than
+        // read back from the shift, because an expense outlives the shift it
+        // was recorded in and still belongs to one side.
+        module,
         category: legacyExpenseCategory(categoryKey),
         category_key: categoryKey,
         paid_to_kind: paidToKind,

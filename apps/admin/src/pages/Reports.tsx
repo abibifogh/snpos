@@ -7,11 +7,12 @@ import {
 } from '@snpos/core';
 import type { Order, OrderItem, Doc, TrialBalanceRow } from '@snpos/core';
 import { useSession } from '../session';
+import { SideFilter, onSide, type Side } from '../components/SideFilter';
 import { Insights } from '../components/Insights';
 
 interface Payment extends Doc { order_id: string; method_id: string; method_kind_snapshot: string; amount: number; tip: number; shift_id: string }
 interface PaymentMethod extends Doc { name: string }
-interface Expense extends Doc { amount: number; category: string }
+interface Expense extends Doc { amount: number; category: string; module?: 'kitchen' | 'craft' }
 interface AccountRow extends Doc { code: string; name: string; type: string }
 interface Receipt extends Doc {
   to_email?: string;
@@ -44,6 +45,7 @@ export function ReportsPage() {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [tb, setTb] = useState<{ rows: TrialBalanceRow[]; balanced: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [side, setSide] = useState<Side>('all');
 
   useEffect(() => {
     (async () => {
@@ -72,20 +74,28 @@ export function ReportsPage() {
   };
 
   const paid = useMemo(
-    () => (orders ?? []).filter((o) => o.payment_status === 'paid' && inRange(o.$createdAt)),
+    () => (orders ?? []).filter((o) => o.payment_status === 'paid' && inRange(o.$createdAt) && onSide(o, side)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [orders, since, until],
+    [orders, since, until, side],
   );
   const periodPayments = useMemo(
+    () => {
+      // Payments carry no side of their own — they belong to an order, and the
+      // order knows. Matched through it rather than stamped twice, so the two
+      // can never disagree about which books a payment lands in.
+      const mine = new Set(paid.map((o) => o.$id));
+      return payments.filter((p) => inRange(p.$createdAt) && (side === 'all' || mine.has(p.order_id)));
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    () => payments.filter((p) => inRange(p.$createdAt)),
-    [payments, since, until],
+    [payments, since, until, side, paid],
   );
 
   const sales = paid.reduce((s, o) => s + o.total, 0);
   const discounts = paid.reduce((s, o) => s + o.discount_total, 0);
   const tips = periodPayments.reduce((s, p) => s + (p.tip ?? 0), 0);
-  const spend = expenses.filter((e) => inRange(e.$createdAt)).reduce((s, e) => s + e.amount, 0);
+  const spend = expenses
+    .filter((e) => inRange(e.$createdAt) && onSide(e, side))
+    .reduce((s, e) => s + e.amount, 0);
   const covers = paid.reduce((s, o) => s + (o.guest_count || 1), 0);
 
   /** Best sellers by revenue, which is the number that pays the rent. */
@@ -234,6 +244,11 @@ export function ReportsPage() {
       <div className="spread">
         <h1>Reports</h1>
         <div className="row" style={{ gap: '0.5rem' }}>
+          {/* Two sides under one roof keep two sets of books, so every figure
+              below can be read for one or for the whole business. Placed with
+              the export buttons because what you are looking at is what you
+              will download. */}
+          <SideFilter value={side} onChange={setSide} settings={settings} />
           <Button onClick={exportPdf} disabled={paid.length === 0}>Download PDF</Button>
           <Button onClick={exportCsv} disabled={paid.length === 0}>Spreadsheet</Button>
         </div>

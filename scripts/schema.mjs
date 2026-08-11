@@ -687,6 +687,9 @@ export const COLLECTIONS = [
       ['delivery_status', 'e', ['pending', 'ready', 'dispatched', 'delivered', 'failed'], false],
       ['driver_name', 's', 120, false],
       ['quoted_wait_minutes', 'i', null, false], // set by busy mode (feature 11)
+      // Which side of the business sold this, so the two sets of books can be
+      // read apart. Taken from the till that rang it up.
+      ['module', 'e', ['kitchen', 'craft'], false, 'kitchen'],
       /**
        * What the CUSTOMER was told to expect, end to end.
        *
@@ -837,10 +840,26 @@ export const COLLECTIONS = [
       ['stock_check_status', 'e', ['pending', 'complete'], true, 'pending'],
       ['posted_to_ledger', 'b', null, true, false],
       ['notes', 's', 1000, false],
+      /**
+       * Which side of the business this shift belongs to.
+       *
+       * A kitchen and a craft shop under one roof keep separate books. They
+       * take money at different counters, spend on different things and answer
+       * to different people, so one shift covering both would produce a figure
+       * neither side could act on.
+       *
+       * Each side has its own open shift, and closing one never closes the
+       * other. Rows written before this are kitchen, which is what they were.
+       */
+      ['module', 'e', ['kitchen', 'craft'], false, 'kitchen'],
     ],
-    // Only one shift may be `open` per venue — enforced by the shift functions,
-    // with this index making the check a single fast lookup.
-    indexes: [['venue_status_opened', 'key', ['venue_id', 'status', 'opened_at']], ['code_unique', 'unique', ['venue_id', 'code']]],
+    // One shift may be open per venue PER SIDE — the query that enforces it
+    // filters on both, so this index carries both.
+    indexes: [
+      ['venue_status_opened', 'key', ['venue_id', 'status', 'opened_at']],
+      ['venue_module_status', 'key', ['venue_id', 'module', 'status']],
+      ['code_unique', 'unique', ['venue_id', 'code']],
+    ],
   },
   {
     id: 'shift_expenses',
@@ -848,6 +867,10 @@ export const COLLECTIONS = [
     perms: { read: ['team:cashiers', ...MGMT], create: ['team:cashiers', ...MGMT], update: MGMT, delete: ADMIN },
     attributes: [
       ['shift_id', 's', 64, false], // blank = recorded outside a shift
+      // Which side of the business paid for this. Carried on the row rather
+      // than read from the shift, because an expense recorded outside a shift
+      // still belongs to one side's books.
+      ['module', 'e', ['kitchen', 'craft'], false, 'kitchen'],
       // The old fixed list. Kept because an enum cannot be widened in place
       // without dropping the column and the data with it; `category_key` is
       // what the app reads and writes now, and it points at a row the

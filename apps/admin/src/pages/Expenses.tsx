@@ -4,12 +4,13 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, uploadFile, downloadUrl, deleteFile, receiveStock, Query,
   PAID_TO_KINDS, payeeLabel as sharedPayeeLabel, legacyExpenseCategory as legacyFor,
-  isPostableExpenseAccount, expenseMethods,
+  isPostableExpenseAccount, expenseMethods, modulesOf,
 } from '@snpos/core';
 import type { Doc, Ingredient, PaidToKind } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
 import { AccountsManager } from '../components/AccountsManager';
 import { useSession } from '../session';
+import { SideFilter, onSide, type Side } from '../components/SideFilter';
 
 interface Expense extends Doc {
   venue_id: string;
@@ -18,6 +19,7 @@ interface Expense extends Doc {
   category_key?: string;
   payee?: string;
   paid_to_kind?: 'supplier' | 'staff' | 'open_market' | 'other';
+  module?: 'kitchen' | 'craft';
   supplier_id?: string;
   paid_to_staff_id?: string;
   amount: number;
@@ -64,6 +66,8 @@ export function ExpensesPage() {
   const [tab, setTab] = useState<'expenses' | 'categories' | 'accounts'>('expenses');
   const [rows, setRows] = useState<Expense[] | null>(null);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [side, setSide] = useState<Side>('all');
+  const mods = modulesOf(settings);
   const [venues, setVenues] = useState<VenueRow[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -221,6 +225,9 @@ export function ExpensesPage() {
         payee: payeeLabel(kind, editing),
         amount,
         paid_from_method_id: editing.paid_from_method_id,
+        // Which side's books this comes out of. Defaults to the kitchen for a
+        // business that runs one side, where the question has one answer.
+        module: editing.module ?? 'kitchen',
         note: editing.note ?? '',
         receipt_file_id: editing.receipt_file_id ?? '',
         created_by: user?.$id ?? '',
@@ -311,6 +318,7 @@ export function ExpensesPage() {
     <>
       <div className="spread">
         <h1>Expenses</h1>
+        {tab === 'expenses' && <SideFilter value={side} onChange={setSide} settings={settings} />}
         {tab === 'expenses' && (
           <Button variant="primary" onClick={() => void open()} disabled={methods.length === 0}>
             Record expense
@@ -369,7 +377,7 @@ export function ExpensesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((r) => (
+                    {rows.filter((r) => onSide(r, side)).map((r) => (
                       <tr key={r.$id}>
                         <td className="dim small">{new Date(r.$createdAt).toLocaleDateString()}</td>
                         <td>{nameForKey(categories, r.category_key || r.category)}</td>
@@ -451,6 +459,17 @@ export function ExpensesPage() {
                 {PAID_TO_KINDS.map((k) => <option key={k.v} value={k.v}>{k.l}</option>)}
               </Select>
             </Field>
+            {mods.kitchen && mods.craft && (
+              <Field label="Which side" hint="Whose books this comes out of.">
+                <Select
+                  value={editing.module ?? 'kitchen'}
+                  onChange={(e) => setEditing({ ...editing, module: e.target.value as 'kitchen' | 'craft' })}
+                >
+                  <option value="kitchen">Kitchen</option>
+                  <option value="craft">Craft shop</option>
+                </Select>
+              </Field>
+            )}
             <Field
               label="Paid from"
               hint={methods.length === 1 ? 'Expenses are set to cash only under Settings.' : undefined}

@@ -58,6 +58,8 @@ export interface Order extends Doc {
   eta_minutes?: number;
   /** What the kitchen is judged by: the cooking time alone. */
   prep_minutes?: number;
+  /** Which side of the business sold this. Absent means kitchen. */
+  module?: 'kitchen' | 'craft';
 }
 
 export interface OrderItem extends Doc {
@@ -259,6 +261,8 @@ export interface CreateOrderInput {
   scheduledFor?: Date;
   placedWhileClosed?: boolean;
   quotedWaitMinutes?: number;
+  /** Which side of the business is selling. Defaults to the kitchen. */
+  module?: 'kitchen' | 'craft';
 }
 
 export interface CreatedOrder {
@@ -472,6 +476,9 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
     placed_while_closed: input.placedWhileClosed ?? false,
     quoted_wait_minutes: input.quotedWaitMinutes ?? undefined,
     eta_minutes: estimateMinutes(lines),
+    // Which side of the business rang this up, so the two sets of books can be
+    // read apart afterwards.
+    module: input.module ?? 'kitchen',
     // The cooking time on its own, which is what the pass is measured against.
     // order-guard recomputes both a second later from the menu itself; this is
     // so the very first ticket to appear already has the right rule on it.

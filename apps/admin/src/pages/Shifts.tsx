@@ -4,10 +4,12 @@ import { listAll, humanError } from '../lib';
 import { formatMoney, byStaff, destinationLabel } from '@snpos/core';
 import type { Doc, CashHandover } from '@snpos/core';
 import { useSession } from '../session';
+import { SideFilter, onSide, type Side } from '../components/SideFilter';
 
 interface Shift extends Doc {
   venue_id: string;
   code: string;
+  module?: 'kitchen' | 'craft';
   status: 'open' | 'closing' | 'closed';
   opened_by: string;
   opened_at: string;
@@ -41,6 +43,7 @@ export function ShiftsPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [handovers, setHandovers] = useState<CashHandover[]>([]);
   const [detail, setDetail] = useState<Shift | null>(null);
+  const [side, setSide] = useState<Side>('all');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -61,6 +64,8 @@ export function ShiftsPage() {
   const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? id;
   const tolerance = settings?.cash_variance_tolerance ?? 500;
 
+  const shown = (rows ?? []).filter((s) => onSide(s, side));
+
   const totalVariance = (s: Shift) =>
     Object.values(parseMap(s.variance)).reduce((a, b) => a + b, 0);
 
@@ -68,7 +73,10 @@ export function ShiftsPage() {
 
   return (
     <>
-      <h1>Shifts</h1>
+      <div className="page-head">
+        <h1>Shifts</h1>
+        <SideFilter value={side} onChange={setSide} settings={settings} />
+      </div>
       <p className="dim small" style={{ marginTop: 0 }}>
         Shifts are opened and closed on the terminal, by whoever is on the till. This is the record of what happened —
         what was expected in each drawer, what was actually counted, and the difference.
@@ -77,8 +85,12 @@ export function ShiftsPage() {
       <Card pad={false}>
         {!rows ? (
           <div className="card-pad"><Spinner /></div>
-        ) : rows.length === 0 ? (
-          <Empty title="No shifts yet">Open the first one from the terminal app when you start trading.</Empty>
+        ) : shown.length === 0 ? (
+          <Empty title={rows.length === 0 ? 'No shifts yet' : 'No shifts on that side'}>
+            {rows.length === 0
+              ? 'Open the first one from the terminal app when you start trading.'
+              : 'Each side of the business opens and closes its own shift. Nothing has been opened on this one yet.'}
+          </Empty>
         ) : (
           <div className="table-wrap">
             <table className="data">
@@ -90,11 +102,12 @@ export function ShiftsPage() {
                   <th className="num">Sales</th>
                   <th className="num">Difference</th>
                   <th>Status</th>
+                  {side === 'all' && <th>Side</th>}
                   <th />
                 </tr>
               </thead>
               <tbody>
-                {rows.map((s) => {
+                {shown.map((s) => {
                   const diff = totalVariance(s);
                   return (
                     <tr key={s.$id}>
@@ -117,6 +130,11 @@ export function ShiftsPage() {
                         )}
                       </td>
                       <td>{s.status === 'open' ? <Badge tone="ok">Open</Badge> : <Badge>Closed</Badge>}</td>
+                      {/* Named only when both are on screen together. A column
+                          that always says the same word is a column of noise. */}
+                      {side === 'all' && (
+                        <td className="dim small">{(s.module ?? 'kitchen') === 'craft' ? 'Craft shop' : 'Kitchen'}</td>
+                      )}
                       <td className="num">
                         <Button size="sm" variant="ghost" onClick={() => setDetail(s)}>Details</Button>
                       </td>

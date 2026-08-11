@@ -53,7 +53,21 @@ export function OrderView({
    */
   const [pickingSize, setPickingSize] = useState<string | null>(null);
 
-  const sections = useMemo(() => visibleSections(ctx.menu), [ctx.menu]);
+  /**
+   * Only this side's catalogue.
+   *
+   * A craft till showing jollof is a craft till somebody will eventually ring
+   * jollof up on, and that sale would land in the wrong shift, the wrong
+   * takings and the wrong set of books. Filtering here rather than at load
+   * keeps one menu in memory for a device that switches sides.
+   */
+  const sections = useMemo(
+    () =>
+      visibleSections(ctx.menu).filter(
+        (s) => (s.category.module ?? 'kitchen') === ctx.module,
+      ),
+    [ctx.menu, ctx.module],
+  );
 
   useEffect(() => {
     (async () => {
@@ -134,6 +148,7 @@ export function OrderView({
     setSending(true);
     try {
       const { order } = await createOrder({
+        module: ctx.module,
         venueId: ctx.venue.$id,
         lines: cart,
         settings: ctx.settings,

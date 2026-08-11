@@ -4,6 +4,7 @@ import type { Order, OrderItem } from './orders';
 import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from './stock';
 import { postShift } from './ledger';
 import { featureConfig, isEnabled, type FeatureMap } from './features';
+import type { Module } from './access';
 
 export interface Shift extends Doc {
   venue_id: string;
@@ -17,6 +18,8 @@ export interface Shift extends Doc {
   closed_by?: string;
   /** JSON, per method, written at close. */
   counted?: string;
+  /** Which side of the business. Absent on shifts opened before the split. */
+  module?: Module;
   sales_total: number;
   expense_total: number;
   covers: number;
@@ -119,6 +122,15 @@ export async function openShift(opts: {
   floats: Record<string, number>;
   /** Where the opening figure came from, for the record. */
   floatSource?: string;
+  /**
+   * Which side of the business this shift is for.
+   *
+   * A kitchen and a craft shop under one roof keep separate books: different
+   * counters, different spending, different people answerable for the drawer.
+   * Each side opens and closes its own shift, and closing one leaves the other
+   * exactly where it was.
+   */
+  module?: Module;
 }): Promise<Shift> {
   const code = `S${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).slice(-4)}`;
   const doc = await db.createDocument(DB_ID, 'shifts', ID.unique(), {
@@ -132,17 +144,28 @@ export async function openShift(opts: {
     sales_total: 0, expense_total: 0, tax_total: 0, tip_total: 0, discount_total: 0,
     void_total: 0, refund_total: 0, cogs_total: 0, covers: 0,
     stock_check_status: 'pending', posted_to_ledger: false,
+    module: opts.module ?? 'kitchen',
   });
   return doc as unknown as Shift;
 }
 
-export async function loadOpenShift(venueId: string): Promise<Shift | null> {
+/**
+ * The open shift for one side of the business.
+ *
+ * Filtered in memory rather than in the query, because shifts opened before
+ * the column existed carry no module at all and a database filter would step
+ * straight over them — which would look, from the till, like the shift somebody
+ * opened this morning had vanished. A venue has at most a couple of open shifts
+ * at once, so reading them and choosing costs nothing.
+ */
+export async function loadOpenShift(venueId: string, module: Module = 'kitchen'): Promise<Shift | null> {
   const res = await db.listDocuments(DB_ID, 'shifts', [
     Query.equal('venue_id', venueId),
     Query.equal('status', 'open'),
-    Query.limit(1),
+    Query.limit(25),
   ]);
-  return (res.documents[0] as unknown as Shift) ?? null;
+  const open = res.documents as unknown as Shift[];
+  return open.find((s) => (s.module ?? 'kitchen') === module) ?? null;
 }
 
 /**
@@ -165,8 +188,9 @@ export async function loadOpenShift(venueId: string): Promise<Shift | null> {
  */
 export async function ordersForShift(
   venueId: string,
-  shift: Pick<Shift, '$id' | 'opened_at' | 'closed_at'>,
+  shift: Pick<Shift, '$id' | 'opened_at' | 'closed_at' | 'module'>,
 ): Promise<Order[]> {
+  const module = shift.module ?? 'kitchen';
   const closed = shift.closed_at ?? new Date().toISOString();
   const [inWindow, stamped] = await Promise.all([
     listAll<Order>('orders', [
@@ -178,7 +202,13 @@ export async function ordersForShift(
   ]);
 
   const byId = new Map<string, Order>();
-  for (const o of [...inWindow, ...stamped]) byId.set(o.$id, o);
+  for (const o of [...inWindow, ...stamped]) {
+    // The clock catches everything sold in the building during the window,
+    // including the other side's. The stamp is precise; the clock is not, so
+    // the side has to be checked after the merge rather than before it.
+    if ((o.module ?? 'kitchen') !== module) continue;
+    byId.set(o.$id, o);
+  }
   return [...byId.values()].sort((a, b) => b.$createdAt.localeCompare(a.$createdAt));
 }
 
@@ -197,7 +227,11 @@ export interface ShiftBlocker {
  * problem one step earlier. Both are answerable in a minute at the time and
  * unanswerable the next morning, which is why they are asked now.
  */
-export async function shiftBlockers(venueId: string, _shiftId?: string): Promise<ShiftBlocker[]> {
+export async function shiftBlockers(
+  venueId: string,
+  _shiftId?: string,
+  module: Module = 'kitchen',
+): Promise<ShiftBlocker[]> {
   // Every live order for the venue, not only those stamped with this shift.
   //
   // That distinction is what let a shift close over an unpaid order: a
@@ -208,6 +242,10 @@ export async function shiftBlockers(venueId: string, _shiftId?: string): Promise
   const orders = await listAll<Order>('orders', [Query.equal('venue_id', venueId)]);
   const blockers: ShiftBlocker[] = [];
   for (const o of orders) {
+    // Only this side's. A craft shop cannot be held open by an unpaid plate of
+    // jollof, and telling it that it is would teach staff to close over the
+    // warning — which is the one thing this must never become.
+    if ((o.module ?? 'kitchen') !== module) continue;
     // A pre-order for tomorrow is not this shift's problem.
     if (['CANCELLED', 'REJECTED', 'CLOSED', 'SCHEDULED'].includes(o.status)) continue;
     if (o.payment_status !== 'paid') blockers.push({ order: o, reason: 'unpaid' });

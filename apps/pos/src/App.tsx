@@ -8,10 +8,10 @@ import {
   account, db, DB_ID, Query, listAll, loadMenu, loadFeatures, humanError, isEnabled,
   articlesFor, featureConfig, HELP_AREAS,
   markUnavailable, markAvailable, isUnavailable, loadMenu as reloadMenu, itemsAvailableNow,
-  requireStaff, signOutCompletely, staffProfileFor,
+  requireStaff, signOutCompletely, staffProfileFor, loadOpenShift, modulesForStaff,
   onQueueChange, startOfflineSync, flushQueue,
 } from '@snpos/core';
-import type { Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc } from '@snpos/core';
+import type { Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc, Module } from '@snpos/core';
 import { TablesView } from './TablesView';
 import { OrderView } from './OrderView';
 import { ShiftBar, type Shift } from './ShiftBar';
@@ -37,6 +37,11 @@ export interface PosContext {
   userId: string;
   shift: Shift | null;
   reloadShift: () => Promise<void>;
+  /** Which side of the business this till is selling for. */
+  module: Module;
+  /** Both sides running and this person works on both — so the till can switch. */
+  canSwitch: boolean;
+  setModule: (m: Module) => void;
 }
 
 export function App() {
@@ -54,14 +59,12 @@ export function App() {
   const [offOpen, setOffOpen] = useState(false);
   const [offBusy, setOffBusy] = useState<string | null>(null);
 
-  const loadShift = useCallback(async (venueId: string): Promise<Shift | null> => {
-    const res = await db.listDocuments(DB_ID, 'shifts', [
-      Query.equal('venue_id', venueId),
-      Query.equal('status', 'open'),
-      Query.limit(1),
-    ]);
-    return (res.documents[0] as unknown as Shift) ?? null;
-  }, []);
+  // Each side of the business has its own open shift, so this asks for one
+  // rather than for whichever happened to be first.
+  const loadShift = useCallback(
+    (venueId: string, module: Module = 'kitchen') => loadOpenShift(venueId, module),
+    [],
+  );
 
   const boot = useCallback(async () => {
     // A customer session is not a staff session. The menu signs guests in
@@ -74,12 +77,29 @@ export function App() {
     const venue = venues[0];
     if (!venue) throw new Error('No venue is set up yet. Add one in the admin app.');
 
-    const [menu, features, profile, shift] = await Promise.all([
+    const [menu, features, profile] = await Promise.all([
       loadMenu(venue.$id),
       loadFeatures(venue.$id),
       staffProfileFor(me),
-      loadShift(venue.$id),
     ]);
+
+    /**
+     * Which side this till is selling for.
+     *
+     * From the person, not from a setting: somebody who only works the craft
+     * counter should find the till already showing baskets rather than having
+     * to pick the shop out of a menu at the start of every shift. Where they
+     * work both and the business runs both, the till remembers the last choice
+     * on this device — one tap, once, on the device that stays where it is.
+     */
+    const mine = modulesForStaff(profile, settings);
+    const canSwitch = mine.kitchen && mine.craft;
+    const remembered = localStorage.getItem('snpos.till.module') as Module | null;
+    const startingModule: Module = canSwitch
+      ? (remembered === 'craft' || remembered === 'kitchen' ? remembered : 'kitchen')
+      : mine.craft ? 'craft' : 'kitchen';
+
+    const shift = await loadShift(venue.$id, startingModule);
 
     setCtx({
       settings,
@@ -89,8 +109,18 @@ export function App() {
       profile,
       userId: me.userId,
       shift,
+      module: startingModule,
+      canSwitch,
+      setModule: (m) => {
+        localStorage.setItem('snpos.till.module', m);
+        setCtx((c) => (c ? { ...c, module: m } : c));
+        // The other side has its own open shift, so switching has to go and
+        // find it. Showing the kitchen's shift on the craft till would put the
+        // day's takings under the wrong roof.
+        void loadShift(venue.$id, m).then((s) => setCtx((c) => (c ? { ...c, shift: s } : c)));
+      },
       reloadShift: async () => {
-        const s = await loadShift(venue.$id);
+        const s = await loadShift(venue.$id, startingModule);
         setCtx((c) => (c ? { ...c, shift: s } : c));
       },
     });
@@ -187,6 +217,26 @@ export function App() {
             <div className="who">{ctx.profile?.display_name ?? 'Staff'} · {ctx.profile?.role ?? 'no profile'}</div>
           </div>
         </div>
+        {/* Which counter this till is. Only shown to somebody who works both
+            sides in a business that runs both — everyone else is already where
+            they belong and a switch would just be a way to end up in the wrong
+            books. It sits left of the tabs because it changes what they mean. */}
+        {ctx.canSwitch && (
+          <div className="pos-tabs pos-side">
+            <button
+              className={ctx.module === 'kitchen' ? 'on' : ''}
+              onClick={() => ctx.setModule('kitchen')}
+            >
+              Kitchen
+            </button>
+            <button
+              className={ctx.module === 'craft' ? 'on' : ''}
+              onClick={() => ctx.setModule('craft')}
+            >
+              Craft shop
+            </button>
+          </div>
+        )}
         <div className="pos-tabs">
           <button className={tab === 'tables' ? 'on' : ''} onClick={() => setTab('tables')}>Tables</button>
           <button className={tab === 'takeaway' ? 'on' : ''} onClick={() => setTab('takeaway')}>Takeaway</button>

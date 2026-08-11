@@ -95,3 +95,15 @@
 @media (prefers-reduced-motion: reduce) {
   .nav-group > summary .fold-caret { transition: none; }
 }
+
+/* Which side of the business a list is showing. A segmented control rather
+   than a dropdown: three options that get switched between constantly should
+   cost one tap, not two. */
+.side-filter { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.side-filter button {
+  border: 0; background: none; font: inherit; font-size: 0.85rem; color: var(--text-dim);
+  padding: 0.35rem 0.85rem; cursor: pointer;
+}
+.side-filter button + button { border-left: 1px solid var(--border); }
+.side-filter button.on { background: var(--brand); color: var(--brand-ink); font-weight: 600; }
+.side-filter button:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }

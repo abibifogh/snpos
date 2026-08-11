@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **67 collections, 906 fields and 226 indexes**. Entered by hand at a
+> This is **67 collections, 909 fields and 227 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -626,7 +626,7 @@ There are 67 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: All users · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: _none — server only_
 
-**Attributes** (61)
+**Attributes** (62)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -686,6 +686,7 @@ There are 67 collections. A progress checklist is at the end of this document.
 | `delivery_status` | Enum | pending, ready, dispatched, delivered, failed | No | — | No |
 | `driver_name` | String | size 120 | No | — | No |
 | `quoted_wait_minutes` | Integer | — | No | — | No |
+| `module` | Enum | kitchen, craft | No | kitchen | No |
 | `eta_minutes` | Integer | — | No | — | No |
 | `prep_minutes` | Integer | — | No | — | No |
 | `discounts_applied` | String | size 4000 | No | — | No |
@@ -795,7 +796,7 @@ There are 67 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: _none — server only_
 
-**Attributes** (28)
+**Attributes** (29)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -827,12 +828,14 @@ There are 67 collections. A progress checklist is at the end of this document.
 | `stock_check_status` | Enum | pending, complete | **Yes** | — | No |
 | `posted_to_ledger` | Boolean | — | **Yes** | — | No |
 | `notes` | String | size 1000 | No | — | No |
+| `module` | Enum | kitchen, craft | No | kitchen | No |
 
-**Indexes** (4)
+**Indexes** (5)
 
 | Index key | Type | Attributes (in this order) |
 | --- | --- | --- |
 | `venue_status_opened` | key | `venue_id`, `status`, `opened_at` |
+| `venue_module_status` | key | `venue_id`, `module`, `status` |
 | `code_unique` | unique | `venue_id`, `code` |
 | `venue` | key | `venue_id` |
 | `org` | key | `org_id` |
@@ -843,13 +846,14 @@ There are 67 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cashiers, Team: managers, Team: admins · **Create**: Team: cashiers, Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
-**Attributes** (16)
+**Attributes** (17)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
 | `org_id` | String | size 64 | No | — | No |
 | `venue_id` | String | size 64 | **Yes** | — | No |
 | `shift_id` | String | size 64 | No | — | No |
+| `module` | Enum | kitchen, craft | No | kitchen | No |
 | `category` | Enum | supplies, transport, utilities, repairs, staff_advance, petty_cash, other | **Yes** | — | No |
 | `category_key` | String | size 60 | No | — | No |
 | `payee` | String | size 160 | No | — | No |
@@ -2521,11 +2525,11 @@ way mistakes creep in.
 - [ ] 13. `menu_item_addon_groups` (6 fields, 2 indexes)
 - [ ] 14. `tables` (13 fields, 4 indexes)
 - [ ] 15. `dining_sessions` (9 fields, 3 indexes)
-- [ ] 16. `orders` (61 fields, 13 indexes)
+- [ ] 16. `orders` (62 fields, 13 indexes)
 - [ ] 17. `order_items` (23 fields, 4 indexes)
 - [ ] 18. `payments` (16 fields, 4 indexes)
-- [ ] 19. `shifts` (28 fields, 4 indexes)
-- [ ] 20. `shift_expenses` (16 fields, 4 indexes)
+- [ ] 19. `shifts` (29 fields, 5 indexes)
+- [ ] 20. `shift_expenses` (17 fields, 4 indexes)
 - [ ] 21. `item_availability` (12 fields, 4 indexes)
 - [ ] 22. `order_notices` (7 fields, 2 indexes)
 - [ ] 23. `order_cancellations` (6 fields, 2 indexes)
