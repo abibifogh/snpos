@@ -275,8 +275,13 @@ export function App() {
         )}
         <div className="row">
           {isEnabled(ctx.features, 'item_availability') && (
-            <Button size="sm" variant="ghost" onClick={() => setOffOpen(true)} title="Mark a dish as run out">
-              Run out
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setOffOpen(true)}
+              title={ctx.module === 'craft' ? 'Mark a product as sold out' : 'Mark a dish as run out'}
+            >
+              {ctx.module === 'craft' ? 'Sold out' : 'Run out'}
             </Button>
           )}
           {isEnabled(ctx.features, 'help') && (

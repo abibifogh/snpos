@@ -209,8 +209,14 @@ export function OrderView({
 
       {!ctx.shift && (
         <div style={{ padding: '0.6rem 1rem' }}>
+          {/* A shop has no kitchen to fall back on. Where a restaurant can
+              keep cooking and settle up later, a counter sale with no shift
+              open is a sale that cannot be completed at all, so the message
+              says the one useful thing: open a shift. */}
           <Notice tone="warn">
-            No shift is open, so payment cannot be recorded. Orders can still be sent to the kitchen.
+            {ctx.module === 'craft'
+              ? 'No shift is open, so nothing can be sold. Open one above to start taking money.'
+              : 'No shift is open, so payment cannot be recorded. Orders can still be sent to the kitchen.'}
           </Notice>
         </div>
       )}
