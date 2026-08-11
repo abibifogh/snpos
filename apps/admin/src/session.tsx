@@ -43,7 +43,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       try {
         await loadSettings();
       } catch {
-        /* not provisioned yet — the login screen explains it */
+        /* not provisioned yet, the login screen explains it */
       }
       try {
         // Being signed in is not enough: the customer menu hands every guest
@@ -64,8 +64,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [loadSettings, loadProfile]);
 
   const signIn = async (email: string, password: string) => {
-    // Any session already on the device — very likely a guest one from the
-    // customer menu on a shared phone — is replaced, not added to.
+    // Any session already on the device, very likely a guest one from the
+    // customer menu on a shared phone, is replaced, not added to.
     await signOutCompletely();
     await account.createEmailPasswordSession(email, password);
     const staff = await requireStaff();

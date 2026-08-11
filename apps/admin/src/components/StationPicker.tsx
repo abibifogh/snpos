@@ -23,7 +23,7 @@ export function useStations() {
 
 /**
  * The four stations the system was born with. Only ever shown for a dish that
- * still points at one of them and whose restaurant has since defined its own —
+ * still points at one of them and whose restaurant has since defined its own, 
  * otherwise the old value would silently vanish from the dropdown and get
  * overwritten on the next save.
  */

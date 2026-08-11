@@ -13,7 +13,7 @@ guardStaleBuild();
 // with the restaurant's own colours as soon as settings load.
 applyFavicon();
 
-// The saved light/dark choice, before first paint — otherwise the page
+// The saved light/dark choice, before first paint, otherwise the page
 // flashes the wrong colours on the way in.
 applyThemeMode();
 
@@ -24,7 +24,7 @@ enableOffline();
 // One restaurant, for now.
 //
 // This says out loud that the app is not yet reading a hotel's identity from
-// the session — so no query is filtered by organisation, exactly as it has
+// the session, so no query is filtered by organisation, exactly as it has
 // always behaved. Every read refuses outright until this has been called,
 // which is the point: the state that must never exist is "nobody said which
 // hotel, and the data came back anyway".

@@ -1,4 +1,4 @@
-# 04 — Kitchen display, realtime sync & the ping
+# 04, Kitchen display, realtime sync & the ping
 
 ## 4.1 Cross-device order sync
 
@@ -10,7 +10,7 @@ table map, live sales tile) recomputes.
 Ordering guarantees:
 
 - Writes go through `order-guard` / status functions, so two waiters tapping
-  "Accept" on the same ticket resolve deterministically — the function checks
+  "Accept" on the same ticket resolve deterministically, the function checks
   the current status and rejects an illegal transition (`ACCEPTED` → `PENDING`),
   returning the winning state.
 - Each order carries `version` (int, incremented server-side). Clients drop an
@@ -27,7 +27,7 @@ filtered to `hot` / `cold` / `bar`.
 
 Card shows: order number, table/channel, elapsed timer, guest count, item lines
 with add-ons and notes, allergy flags in high contrast, and the two primary
-actions — **Accept** and **Reject**.
+actions, **Accept** and **Reject**.
 
 Per-item progress: a cook can mark individual lines `preparing` → `ready`; the
 ticket auto-advances to `READY` when all its lines are ready, which notifies the
@@ -36,7 +36,7 @@ waiter's POS and the diner's phone.
 Bump bar / keyboard shortcuts for gloved hands; large tap targets (min 64px);
 screen wake lock so the tablet never sleeps mid-service.
 
-## 4.3 The ping — escalating until acknowledged
+## 4.3 The ping, escalating until acknowledged
 
 **Requirement**: a new order pings the kitchen device *until* it is accepted or
 rejected.
@@ -47,14 +47,14 @@ Client side (`apps/kitchen`):
 2. The loop plays a sound via the Web Audio API on an interval, vibrates where
    supported, flashes the card and the document title, and shows a persistent
    full-width banner. It does **not** stop on its own.
-3. It stops only when the order's status leaves `PENDING` — including when
+3. It stops only when the order's status leaves `PENDING`, including when
    *another* kitchen device accepts it, because the stop is driven by the
    realtime event, not by the local button press.
 4. Audio unlock: browsers block sound before a user gesture, so the KDS shows a
    one-tap "Start service" screen at shift start that unlocks an
    `AudioContext`; the app then monitors `audioContext.state` and re-shows the
    prompt if the OS suspends it. A silent-but-flashing kitchen is a failure
-   mode, so the banner also shows "🔇 Sound blocked — tap to enable" whenever
+   mode, so the banner also shows "🔇 Sound blocked, tap to enable" whenever
    the context isn't running.
 5. Sound files are cached by the service worker so a network blip never mutes
    the alarm.
@@ -73,7 +73,7 @@ reboot and it reaches the manager even if the kitchen device is off or asleep.
 
 **Heartbeat**: each KDS device writes `last_seen` every 30s to a
 `devices` document. If a station has open tickets and no heartbeat for 2
-minutes, the manager dashboard shows "Kitchen display offline" — this catches
+minutes, the manager dashboard shows "Kitchen display offline"; this catches
 the silent failure where nobody is looking at the screen at all.
 
 ## 4.4 Accept / reject
@@ -88,7 +88,7 @@ everywhere, diner's phone updates, prep timer starts from `prep_minutes`.
 - Free-text note optional, **mandatory when the code is `other`**
   (`settings.require_reject_reason` defaults true and only an admin may relax
   it).
-- Optionally reject **individual lines** rather than the whole ticket — the
+- Optionally reject **individual lines** rather than the whole ticket, the
   common real case is one dish being off, not the order. Remaining lines
   proceed; the rejected line is voided with the reason and removed from the
   total.
@@ -98,4 +98,4 @@ everywhere, diner's phone updates, prep timer starts from `prep_minutes`.
   "rejections by reason", which is the number that tells you whether your
   kitchen is under-stocked or under-staffed.
 - If the reason is `out_of_stock`, the KDS offers "also mark this item 86'd" in
-  the same modal — one tap removes it from every diner's phone.
+  the same modal, one tap removes it from every diner's phone.

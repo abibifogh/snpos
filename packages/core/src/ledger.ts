@@ -39,8 +39,8 @@ export const ACCOUNTS = {
  * Accounts the system itself posts to, which therefore cannot be removed.
  *
  * Everything else in the chart is the restaurant's own and can be renamed,
- * added to or retired. These ten are named in code — a shift close writes to
- * them by number — so deleting one would not produce an error message, it
+ * added to or retired. These ten are named in code, a shift close writes to
+ * them by number, so deleting one would not produce an error message, it
  * would produce a shift that fails to balance at eleven at night.
  *
  * Derived from ACCOUNTS rather than listed again, so the protected set cannot
@@ -52,7 +52,7 @@ export const isSystemAccount = (code: string) => SYSTEM_ACCOUNT_CODES.includes(c
 /**
  * Accounts an expense category may be pointed at.
  *
- * Expense lines only — money going out lands on an expense account, and
+ * Expense lines only, money going out lands on an expense account, and
  * offering "Food sales" as a destination for a gas refill is offering a way to
  * make the books wrong. Cost of goods sold and cash over/short are left out
  * too: both are posted automatically at shift close from the stock count and
@@ -199,7 +199,7 @@ export interface TrialBalanceRow {
   balance: number;
 }
 
-/** Every account's totals — the check that the books actually balance. */
+/** Every account's totals, the check that the books actually balance. */
 export async function trialBalance(venueId: string): Promise<{ rows: TrialBalanceRow[]; balanced: boolean }> {
   const lines = await listAll<JournalLine>('journal_lines', [Query.equal('venue_id', venueId)]);
   const map = new Map<string, TrialBalanceRow>();

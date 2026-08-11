@@ -82,7 +82,7 @@ if (profiles.total > 0) {
 console.log(`\n✓ Admin ready: ${values.email}`);
 if (password) {
   console.log(`\n  TEMPORARY PASSWORD:  ${password}\n`);
-  console.log('  Copy it now — it is not stored and cannot be shown again.');
+  console.log('  Copy it now; it is not stored and cannot be shown again.');
   console.log('  Change it at first login, then enable MFA.');
 } else {
   console.log('  Existing account left untouched, including its password.');

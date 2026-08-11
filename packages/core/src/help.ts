@@ -9,7 +9,7 @@
  * What the restaurant *does* control is who sees which chapter. A cook does not
  * need the chapter on accounts, and burying the one page they do need under
  * twelve they don't is how a manual goes unread. Visibility lives in the `help`
- * feature's config — see `audienceFor`.
+ * feature's config, see `audienceFor`.
  */
 
 export type HelpRole = 'guest' | 'cook' | 'waiter' | 'cashier' | 'manager' | 'admin';
@@ -60,13 +60,13 @@ export const HELP_ARTICLES: HelpArticle[] = [
     body: [
       p('There is one system with four screens. They all talk to the same information, so an order taken on one appears on the others straight away.'),
       list(
-        'Terminal — where orders are taken and bills are settled. Waiters and cashiers live here.',
-        'Kitchen — the queue of what needs cooking, with an alarm when something is running late.',
-        'Customer menu — what a guest sees when they scan the QR code on their table.',
-        'Admin — the menu, prices, staff, stock, expenses and reports. Managers and owners.',
+        'Terminal, where orders are taken and bills are settled. Waiters and cashiers live here.',
+        'Kitchen, the queue of what needs cooking, with an alarm when something is running late.',
+        'Customer menu, what a guest sees when they scan the QR code on their table.',
+        'Admin, the menu, prices, staff, stock, expenses and reports. Managers and owners.',
       ),
       p('You do not need to close one to use another; they are separate web pages and a device can be left on whichever one it is for.'),
-      note('If a screen ever looks blank or stuck, reload the page first. That fixes most of it, and nothing is lost — orders live on the server, not in the browser.'),
+      note('If a screen ever looks blank or stuck, reload the page first. That fixes most of it, and nothing is lost, orders live on the server, not in the browser.'),
     ],
   },
 
@@ -80,26 +80,26 @@ export const HELP_ARTICLES: HelpArticle[] = [
       steps(
         'On the Terminal, tap the table the guests are sitting at.',
         'Tap dishes to add them. Tap a dish again to add another of the same.',
-        'If a dish has choices — protein, spice, size — a panel opens for them. Required choices must be answered before the dish can be added.',
+        'If a dish has choices, protein, spice, size, a panel opens for them. Required choices must be answered before the dish can be added.',
         'Add a note to a line for anything unusual: "no pepper", "well done". The kitchen sees it in red.',
         'Tap Send to kitchen. Only then does the kitchen see it.',
       ),
       h('Adding to a table later'),
       p('Open the same table again and add more. Everything stays on one bill until it is settled, so a second round does not become a second order to chase.'),
       h('Takeaway and counter orders'),
-      p('Use the Takeaway tab for anything with no table behind it — walk-ins at the counter, phone orders. It reaches the kitchen exactly the same way.'),
-      note('Nothing is sent to the kitchen until you tap Send. A half-built order sitting on the screen is invisible to them, which is deliberate — it means you can build it while the guest changes their mind.'),
+      p('Use the Takeaway tab for anything with no table behind it, walk-ins at the counter, phone orders. It reaches the kitchen exactly the same way.'),
+      note('Nothing is sent to the kitchen until you tap Send. A half-built order sitting on the screen is invisible to them, which is deliberate; it means you can build it while the guest changes their mind.'),
     ],
   },
 
   {
     id: 'payments',
     title: 'Settling a bill',
-    summary: 'How payment is recorded — and why the system never takes money itself.',
+    summary: 'How payment is recorded, and why the system never takes money itself.',
     area: 'pos',
     audience: ['waiter', 'cashier', 'cook', 'manager', 'admin'],
     body: [
-      p('This system records payments. It does not take them. The guest pays exactly as they always have — cash, your card machine, mobile money — and a member of staff then tells the system what happened.'),
+      p('This system records payments. It does not take them. The guest pays exactly as they always have, cash, your card machine, mobile money, and a member of staff then tells the system what happened.'),
       steps(
         'Open the table and tap Bill.',
         'Choose how they paid. Split across more than one method if they did.',
@@ -109,7 +109,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       h('Splitting a bill'),
       p('Split evenly between however many people, or take part payment now and the rest later. The table stays open until the whole bill is settled.'),
       h('Emailing the receipt'),
-      p('If the guest gave an email address when ordering it is already there. If not, you can type one in, or skip it — skipping is a normal answer and is recorded as such.'),
+      p('If the guest gave an email address when ordering it is already there. If not, you can type one in, or skip it, skipping is a normal answer and is recorded as such.'),
       note('Only people whose profile allows it can mark a bill paid. If the button is greyed out for you, that is a setting an admin controls, not a fault.', 'warn'),
     ],
   },
@@ -125,7 +125,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       h('Your limit'),
       p('Each person has a maximum discount they may give without a manager. If you try to go beyond yours the system stops you and says so. That limit is set per person in Admin → Staff, so ask a manager rather than assuming it is broken.'),
       h('Codes from guests'),
-      p('A code a guest types in when ordering is checked on the server before it counts — an expired or invented code simply does not apply, and the price they see stays the real one.'),
+      p('A code a guest types in when ordering is checked on the server before it counts, an expired or invented code simply does not apply, and the price they see stays the real one.'),
     ],
   },
 
@@ -138,14 +138,14 @@ export const HELP_ARTICLES: HelpArticle[] = [
     body: [
       p('Every ticket moves through four states, and moving it is how everyone else knows where the food is.'),
       list(
-        'New — just arrived. Tap Accept to say you have seen it.',
-        'Accepted — you know about it. Tap Start when it goes on.',
-        'Cooking — in progress. Tap Ready when it can go out.',
-        'Ready — waiting to be collected.',
+        'New, just arrived. Tap Accept to say you have seen it.',
+        'Accepted, you know about it. Tap Start when it goes on.',
+        'Cooking, in progress. Tap Ready when it can go out.',
+        'Ready, waiting to be collected.',
       ),
       h('The alarm'),
       p('Each dish has an expected prep time. When a ticket passes it, the ticket turns red and an alarm sounds. It gets more insistent the longer nobody touches it.'),
-      p('There is deliberately no snooze. Accepting the ticket stops it — which is the point, because it means the alarm can only be silenced by someone who has actually looked.'),
+      p('There is deliberately no snooze. Accepting the ticket stops it, which is the point, because it means the alarm can only be silenced by someone who has actually looked.'),
       note('The alarm needs the screen to have been tapped once after the browser opens; that is a browser rule about sound, not a setting. Entering your PIN counts as that tap.'),
       h('Stations'),
       p('If your kitchen has stations set up, the tabs across the top filter to just yours. All shows everything.'),
@@ -160,25 +160,25 @@ export const HELP_ARTICLES: HelpArticle[] = [
     audience: ['cashier', 'cook', 'manager', 'admin'],
     body: [
       h('Opening'),
-      p('Someone opens a shift at the start of service and enters the float — the money already in the drawer. Orders can be taken without a shift, but nothing can be settled, so open one first.'),
+      p('Someone opens a shift at the start of service and enters the float, the money already in the drawer. Orders can be taken without a shift, but nothing can be settled, so open one first.'),
       h('Closing'),
       steps(
         'Settle or transfer any open bills. Nothing is left dangling.',
-        'Count the drawer and enter what is actually there. You are asked before being shown what was expected — counting blind is what makes the answer worth anything.',
-        'Go through the stock check. What it asks depends on a setting — see below.',
+        'Count the drawer and enter what is actually there. You are asked before being shown what was expected, counting blind is what makes the answer worth anything.',
+        'Go through the stock check. What it asks depends on a setting, see below.',
         'Confirm. The system compares expected against counted and records the difference.',
       ),
       h('The stock check'),
-      p('An admin chooses which of two questions staff are asked, under Settings. Both end in the same place — an OK, Low or Out against every ingredient. The difference is who decides which.'),
+      p('An admin chooses which of two questions staff are asked, under Settings. Both end in the same place, an OK, Low or Out against every ingredient. The difference is who decides which.'),
       list(
-        'Tap OK, Low or Out — quick, and honest about being a glance at a shelf rather than a measurement. Fine where the same person closes most nights.',
-        'Type how much is left — staff enter the amount actually on the shelf and the system works out the status from that ingredient\'s own low level. Slower, and it buys two things tapping cannot.',
+        'Tap OK, Low or Out, quick, and honest about being a glance at a shelf rather than a measurement. Fine where the same person closes most nights.',
+        'Type how much is left, staff enter the amount actually on the shelf and the system works out the status from that ingredient\'s own low level. Slower, and it buys two things tapping cannot.',
       ),
-      p('The two things: the same four crates get filed the same way whoever is closing, because nobody is judging. And what was counted can be measured against what the recipes say should have gone — which is the only way over-portioning, waste and theft ever show up at all.'),
-      p('The list is grouped the way your shelves are, in the order somebody walks the kitchen. Under each ingredient is the guide an admin wrote for it — "OK = 10pcs or more · Low = under 10pcs" — in the units on the shelf rather than the units in the database. Set those under Stock; without them, "low" means whatever each person thinks it means.'),
-      note('When staff type amounts, a shift will not close with rows left blank — it names what is still to count. Type 0 for anything that has run out. The ingredient nobody looked at is exactly the one that runs out on Saturday.'),
+      p('The two things: the same four crates get filed the same way whoever is closing, because nobody is judging. And what was counted can be measured against what the recipes say should have gone, which is the only way over-portioning, waste and theft ever show up at all.'),
+      p('The list is grouped the way your shelves are, in the order somebody walks the kitchen. Under each ingredient is the guide an admin wrote for it, "OK = 10pcs or more · Low = under 10pcs", in the units on the shelf rather than the units in the database. Set those under Stock; without them, "low" means whatever each person thinks it means.'),
+      note('When staff type amounts, a shift will not close with rows left blank; it names what is still to count. Type 0 for anything that has run out. The ingredient nobody looked at is exactly the one that runs out on Saturday.'),
       h('Being over or short'),
-      p('A difference is recorded, not hidden, and a large one asks for an explanation. This is not an accusation — drawers drift for honest reasons, and a system that quietly rounded it away would be useless the day it mattered.'),
+      p('A difference is recorded, not hidden, and a large one asks for an explanation. This is not an accusation, drawers drift for honest reasons, and a system that quietly rounded it away would be useless the day it mattered.'),
       note('Marking an ingredient OUT sets it to zero, and the shift summary that goes out at close lists anything that has been low three shifts running separately from anything low for the first time. Repeatedly low is a different problem from newly low.'),
       note('Whether you can open or close a shift is set per person, not by job title. On a quiet shift the cook is the cashier, and an admin can grant exactly that.', 'warn'),
       h('What you personally finished with'),
@@ -199,15 +199,15 @@ export const HELP_ARTICLES: HelpArticle[] = [
     body: [
       h('Categories first'),
       p('Every dish belongs to at least one category. A category can have its own available hours, which is how Lunch stops showing at nine in the evening.'),
-      p('A dish can sit in several categories and will appear in each one during that category\'s hours — so the same dish can be on the lunch menu and the dinner menu without being entered twice. The first category ticked is its main one.'),
+      p('A dish can sit in several categories and will appear in each one during that category\'s hours, so the same dish can be on the lunch menu and the dinner menu without being entered twice. The first category ticked is its main one.'),
       h('Dishes'),
       p('Name, description, price, a photo, and how long it takes to prepare. The prep time is what the kitchen alarm counts against, so a guess that is roughly right is much better than leaving it at the default.'),
       h('Options'),
-      p('Built once under Menu → Options and attached to as many dishes as you like — "Choose your protein", "How spicy". A choice can add nothing to the price: set it to 0.'),
+      p('Built once under Menu → Options and attached to as many dishes as you like, "Choose your protein", "How spicy". A choice can add nothing to the price: set it to 0.'),
       h('Duplicating'),
       p('Both dishes and option groups have a Duplicate button. The copy opens in the editor with "(copy)" on the name so you can change the one thing that differs before saving it.'),
       h('Stations'),
-      p('A station is where food is cooked — hot line, grill, bar, pastry. Set them up under Kitchen → Stations, and each dish either names one or inherits its main category\'s.'),
+      p('A station is where food is cooked, hot line, grill, bar, pastry. Set them up under Kitchen → Stations, and each dish either names one or inherits its main category\'s.'),
       note('Stations are not pickup points. A station is inside the kitchen; a pickup point is where a customer collects. Pickup points live under Venues.', 'warn'),
     ],
   },
@@ -221,17 +221,17 @@ export const HELP_ARTICLES: HelpArticle[] = [
     body: [
       p('Ingredients are what you buy and count. Recipes say how much of each one a portion of a dish uses. Without recipes, selling food and counting stock are two unrelated activities.'),
       steps(
-        'Add your ingredients under Stock — name, the unit you count in, what it costs you, how much you have.',
+        'Add your ingredients under Stock, name, the unit you count in, what it costs you, how much you have.',
         'Open a dish under Menu, and fill in "What it\'s made from": ingredient, how much per portion, and a wastage percentage.',
         'That is the whole link. From then on, closing a shift deducts what should have been used.',
       ),
       h('Wastage'),
-      p('The skin of an onion was bought and paid for even though it never reaches the plate. Putting 10% there is not padding — leaving it out flatters every margin on your menu in the same direction.'),
+      p('The skin of an onion was bought and paid for even though it never reaches the plate. Putting 10% there is not padding, leaving it out flatters every margin on your menu in the same direction.'),
       h('What it tells you'),
       list(
         'What each dish costs you, and your margin at the price you charge.',
         'What stock you should have left at the end of a shift, to compare against what you actually have.',
-        'Which dishes use an ingredient — shown on the Stock list, alongside a warning for any ingredient no dish uses.',
+        'Which dishes use an ingredient, shown on the Stock list, alongside a warning for any ingredient no dish uses.',
       ),
       note('A dish with stock tracking switched on but no recipe is flagged in the dish list. That combination silently does nothing at all, so it is worth fixing or turning off.', 'warn'),
     ],
@@ -245,13 +245,13 @@ export const HELP_ARTICLES: HelpArticle[] = [
     audience: ['cashier', 'manager', 'admin'],
     body: [
       steps(
-        'Choose a category. The list is yours — edit it under Expenses → Categories.',
+        'Choose a category. The list is yours, edit it under Expenses → Categories.',
         'Say who the money went to: a supplier, a member of staff, the open market, or someone else.',
         'Enter the amount and which payment method it came out of. Cash paid out reduces what the drawer should hold, automatically.',
         'Attach a photo or PDF of the receipt. Only managers and admins can see it.',
       ),
       h('Buying stock'),
-      p('If the money bought ingredients, list them under "Stock bought" — ingredient, quantity, unit cost. They go into stock as you save, so the shopping trip and the delivery are one job instead of two. The unit cost you enter becomes that ingredient\'s cost from then on.'),
+      p('If the money bought ingredients, list them under "Stock bought", ingredient, quantity, unit cost. They go into stock as you save, so the shopping trip and the delivery are one job instead of two. The unit cost you enter becomes that ingredient\'s cost from then on.'),
       h('Categories and your accounts'),
       p('Each category names which line of the accounts it lands on. That is what makes a category more than a label: "Gas refill" can sit under Utilities rather than everything piling into Other.'),
       h('What it can be paid out of'),
@@ -282,7 +282,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       ),
       h('Permissions are per person'),
       p('These are not decided by job title. On a quiet shift the cook is the cashier, and this is where you say so for that particular cook.'),
-      note('Obvious PINs are refused — 1111, 1234, and the other usual ones. A PIN that everybody can guess is the same as no PIN.', 'warn'),
+      note('Obvious PINs are refused, 1111, 1234, and the other usual ones. A PIN that everybody can guess is the same as no PIN.', 'warn'),
     ],
   },
 
@@ -306,49 +306,49 @@ export const HELP_ARTICLES: HelpArticle[] = [
     area: 'admin',
     audience: MGMT,
     body: [
-      p('Pick your dates at the top. Everything below changes together — there is one date range for the whole page, not one per panel.'),
+      p('Pick your dates at the top. Everything below changes together; there is one date range for the whole page, not one per panel.'),
 
       h('The four figures at the top'),
       p('Each one shows a total, and underneath it, how that total compares with the period before. Everything on this page is built around that second line, because a total on its own cannot tell you whether it was a good week.'),
       list(
-        'Revenue — money from bills that were actually settled. An order sitting unpaid is not counted, because it is not money yet.',
-        'Costs — expenses recorded in this period: the market run, the gas, the repair. Only what somebody entered. Money that left the building without being recorded cannot appear here.',
-        'Kept — revenue minus costs. What the business held on to. It is not profit in the accountant\'s sense: rent, wages and anything else you have not recorded as an expense are not in it.',
-        'Average order — revenue divided by the number of bills. The quickest early warning there is: takings can hold steady while this quietly falls, which means more people spending less each.',
+        'Revenue, money from bills that were actually settled. An order sitting unpaid is not counted, because it is not money yet.',
+        'Costs, expenses recorded in this period: the market run, the gas, the repair. Only what somebody entered. Money that left the building without being recorded cannot appear here.',
+        'Kept, revenue minus costs. What the business held on to. It is not profit in the accountant\'s sense: rent, wages and anything else you have not recorded as an expense are not in it.',
+        'Average order, revenue divided by the number of bills. The quickest early warning there is: takings can hold steady while this quietly falls, which means more people spending less each.',
       ),
-      note('Every comparison is against the SAME LENGTH of time immediately before — the 30 days before your 30 days. Not "last month". Comparing 30 days with a 31-day month reports the extra day as growth.'),
-      p('An arrow and a colour say which way it moved. Green with an arrow up is good — except on Costs, where up is red, because spending more is not an achievement.'),
+      note('Every comparison is against the SAME LENGTH of time immediately before, the 30 days before your 30 days. Not "last month". Comparing 30 days with a 31-day month reports the extra day as growth.'),
+      p('An arrow and a colour say which way it moved. Green with an arrow up is good, except on Costs, where up is red, because spending more is not an achievement.'),
       p('A dash instead of a percentage means there was nothing to compare against. Going from no takings to some takings is not "up 100%", it is your first week, and the system will not dress that up as growth.'),
 
       h('Money in and out'),
-      p('Revenue and costs on one chart. Blue is money in, orange is money out, and the gap between the two lines is what you kept — you can read it without doing any arithmetic.'),
+      p('Revenue and costs on one chart. Blue is money in, orange is money out, and the gap between the two lines is what you kept; you can read it without doing any arithmetic.'),
       p('The three buttons change the grouping. They answer different questions:'),
       list(
-        'By day — what happened on a particular day. Use it to check a day you remember being unusual.',
-        'By week — is this week beating last week? A day is too noisy to judge a business by; a week absorbs one bad Tuesday.',
-        'By month — is the business actually growing? Nothing shorter can tell you, because a good month can hide inside a bad quarter and the other way round.',
+        'By day, what happened on a particular day. Use it to check a day you remember being unusual.',
+        'By week, is this week beating last week? A day is too noisy to judge a business by; a week absorbs one bad Tuesday.',
+        'By month, is the business actually growing? Nothing shorter can tell you, because a good month can hide inside a bad quarter and the other way round.',
       ),
       p('Touch or hover anywhere on the chart and it shows that day\'s revenue, costs and what you kept. "Show the figures" turns the whole chart into a table if you would rather read the numbers, or need to copy one.'),
       note('A day with no takings shows as zero rather than being skipped. A line that quietly leaves out the days you were closed draws a business that trades seven days a week.'),
 
       h('Which days actually earn'),
-      p('The average taken on each day of the week — an average, not a total, and the difference matters. A month holds five Mondays and only four Sundays, so totalling would tell you Monday is your better day when it is only the more frequent one.'),
+      p('The average taken on each day of the week, an average, not a total, and the difference matters. A month holds five Mondays and only four Sundays, so totalling would tell you Monday is your better day when it is only the more frequent one.'),
       p('This is the panel to look at before changing opening hours or deciding which night to staff heavily.'),
 
       h('Standouts'),
       list(
-        'Best day and quietest day — the actual dates, so you can think about what was different. A wedding party, a power cut, rain.',
-        'A typical day — the average across the days you actually traded. Days you were closed are left out, so a restaurant that shuts on Mondays is not told its typical day is a fifth worse than every day it opens.',
+        'Best day and quietest day, the actual dates, so you can think about what was different. A wedding party, a power cut, rain.',
+        'A typical day, the average across the days you actually traded. Days you were closed are left out, so a restaurant that shuts on Mondays is not told its typical day is a fifth worse than every day it opens.',
       ),
 
       h('The rest of the page'),
       list(
-        'Discounts given — shown separately rather than netted off, so "how much did we give away" stays a question you can answer.',
-        'Covers — how many people ate, and the spend per head. The same takings from twenty people and from sixty are very different businesses.',
-        'Where the money came from — cash, card, mobile money. Worth watching: a drift towards cash is worth understanding.',
-        'Best sellers — ranked by money, not by how many were sold, because that is what pays the rent. A cheap dish can top a count and contribute little.',
-        'Busiest hours — for deciding who to roster and when.',
-        'Emailed receipts — whether receipts actually reached people, and the reason when one did not.',
+        'Discounts given, shown separately rather than netted off, so "how much did we give away" stays a question you can answer.',
+        'Covers, how many people ate, and the spend per head. The same takings from twenty people and from sixty are very different businesses.',
+        'Where the money came from, cash, card, mobile money. Worth watching: a drift towards cash is worth understanding.',
+        'Best sellers, ranked by money, not by how many were sold, because that is what pays the rent. A cheap dish can top a count and contribute little.',
+        'Busiest hours, for deciding who to roster and when.',
+        'Emailed receipts, whether receipts actually reached people, and the reason when one did not.',
       ),
       p('Tips never appear in revenue anywhere on this page. They are owed to staff, not earned by the restaurant, and counting them as takings would overstate both the sales and the tax.'),
 
@@ -356,7 +356,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       p('Every closed shift posts a double-entry record. If it ever says "out of balance", something is genuinely wrong and worth raising rather than ignoring.'),
 
       h('Taking it away with you'),
-      p('"Download PDF" gives you the page laid out for paper — for a meeting, or a lender, or a file. "Spreadsheet" gives you every order in the period as a CSV, for doing your own sums.'),
+      p('"Download PDF" gives you the page laid out for paper, for a meeting, or a lender, or a file. "Spreadsheet" gives you every order in the period as a CSV, for doing your own sums.'),
       h('If you run two sides'),
       p(
         'With a kitchen and a craft shop both switched on, every figure here can be read for one side or for ' +
@@ -375,7 +375,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     body: [
       p('Admin → Settings holds the restaurant name, your colours, the currency and how tax behaves. The colours flow through every screen, including the icon in the browser tab.'),
       h('Receipts by email'),
-      p('Set the from-name and from-address under Settings → Email. The address must be one your email provider has verified, or every receipt will be rejected — the Reports page shows you the reason when that happens.'),
+      p('Set the from-name and from-address under Settings → Email. The address must be one your email provider has verified, or every receipt will be rejected, the Reports page shows you the reason when that happens.'),
     ],
   },
 
@@ -392,7 +392,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         'Add it to your order. Add as much as you like before sending.',
         'Send the order. It goes straight to the kitchen.',
       ),
-      p('You pay at the end, with your server, exactly as usual — there is nothing to pay for here.'),
+      p('You pay at the end, with your server, exactly as usual; there is nothing to pay for here.'),
       p('If you give an email address, your receipt is sent there. If you would rather not, skip it; nothing else changes.'),
       note('If the restaurant is closed, you can still place an order for later. The kitchen stays quiet until it is time to cook it.'),
     ],
@@ -406,7 +406,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     audience: ALL_STAFF,
     body: [
       h('The screen is blank or stuck'),
-      p('Reload the page. If it is still blank, hold the reload button (or press Ctrl+Shift+R, Cmd+Shift+R on a Mac) to load a fresh copy. Nothing is lost — everything lives on the server.'),
+      p('Reload the page. If it is still blank, hold the reload button (or press Ctrl+Shift+R, Cmd+Shift+R on a Mac) to load a fresh copy. Nothing is lost, everything lives on the server.'),
       h('"Could not reach the server"'),
       p('Check the device is on the internet by opening any other website. If other sites work and this one does not, tell an admin: it is usually a setting on the server side, not the device.'),
       h('A button is greyed out'),

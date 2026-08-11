@@ -22,7 +22,7 @@ interface PaymentMethod extends Doc { name: string }
  * Every order, over a range you choose.
  *
  * The Reports page answers "how did we do"; this one answers "what happened to
- * that order" — which is the question somebody actually has when a customer
+ * that order", which is the question somebody actually has when a customer
  * rings up about last Tuesday.
  *
  * It is also the only place a status can be put back. Mistakes happen at a
@@ -123,7 +123,7 @@ export function OrdersPage() {
         o.placed_by ?? '',
         o.customer_name ?? '',
         o.guest_count ?? 1,
-        // Money as plain decimals, not formatted — a spreadsheet has to be
+        // Money as plain decimals, not formatted; a spreadsheet has to be
         // able to add this column up, and "GH₵12.00" is text.
         (o.subtotal / 100).toFixed(2),
         (o.discount_total / 100).toFixed(2),
@@ -177,7 +177,7 @@ export function OrdersPage() {
   };
 
   const nameOf = (userId?: string) => {
-    if (!userId) return '—';
+    if (!userId) return ', ';
     const person = staff.find((s) => s.user_id === userId || s.$id === userId);
     return person?.display_name ?? 'Unknown';
   };
@@ -342,7 +342,7 @@ export function OrdersPage() {
                     <td>
                       <Badge tone={o.payment_status === 'paid' ? 'ok' : 'warn'}>{o.payment_status}</Badge>
                     </td>
-                    <td className="dim small">{touchedBy(o).map(nameOf).join(', ') || '—'}</td>
+                    <td className="dim small">{touchedBy(o).map(nameOf).join(', ') || ', '}</td>
                     <td className="num">{money(o.total)}</td>
                     <td className="num">
                       <Button size="sm" variant="ghost" onClick={() => openOrder(o)}>Details</Button>
@@ -398,9 +398,9 @@ export function OrdersPage() {
                 <tbody>
                   {payments.filter((p) => p.order_id === open.$id).map((p) => (
                     <tr key={p.$id}>
-                      <td>{methods.find((m) => m.$id === p.method_id)?.name ?? '—'}</td>
+                      <td>{methods.find((m) => m.$id === p.method_id)?.name ?? ', '}</td>
                       <td className="num">{money(p.amount)}</td>
-                      <td className="num dim">{p.tip ? money(p.tip) : '—'}</td>
+                      <td className="num dim">{p.tip ? money(p.tip) : ', '}</td>
                       <td className="dim small">{nameOf(p.taken_by)}</td>
                     </tr>
                   ))}
@@ -424,7 +424,7 @@ export function OrdersPage() {
         >
           {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
           <p className="small dim" style={{ marginTop: 0 }}>
-            Putting a status back is sometimes the only honest option — an order marked paid that was not, food marked
+            Putting a status back is sometimes the only honest option, an order marked paid that was not, food marked
             collected that is still on the pass. It changes the figures, so the reason is kept with it.
           </p>
           <div className="grid-2">
@@ -443,13 +443,13 @@ export function OrdersPage() {
             <Input
               value={reason}
               autoFocus
-              placeholder="Marked paid by mistake — customer had not paid"
+              placeholder="Marked paid by mistake, customer had not paid"
               onChange={(e) => setReason(e.target.value)}
             />
           </Field>
           {newPayment !== 'paid' && editing.payment_status === 'paid' && (
             <Notice tone="warn">
-              This order has payment records against it. Setting it back to unpaid does not delete them — the money is
+              This order has payment records against it. Setting it back to unpaid does not delete them, the money is
               still counted in the shift it was taken in. Fix the payment separately if it was never received.
             </Notice>
           )}

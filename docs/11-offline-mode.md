@@ -1,9 +1,9 @@
-# 11 — Offline mode
+# 11, Offline mode
 
 **In plain terms:** if the internet drops, the restaurant keeps serving. Orders
 still reach the kitchen, bills still get settled, and everything catches up by
 itself when the connection comes back. Staff see a small banner telling them
-they're offline and how many things are waiting to send — no guessing.
+they're offline and how many things are waiting to send, no guessing.
 
 The rest of this doc is the technical detail.
 
@@ -15,7 +15,7 @@ The rest of this doc is the technical detail.
 | Taking an order (waiter/counter) | Written to a local queue, sent on reconnect |
 | Kitchen display showing queued tickets | Same local store, shared over the venue LAN |
 | Accepting / rejecting / marking ready | State changes queue like any other write |
-| Settling a bill, splitting, tips | Payments are records, not gateway calls — nothing external to reach |
+| Settling a bill, splitting, tips | Payments are records, not gateway calls; nothing external to reach |
 | Opening a shift, recording an expense | Local, reconciled on sync |
 | Closing a shift | **Allowed but held**: the close is computed locally and posted to the ledger only once every device has synced (see 11.5) |
 
@@ -35,7 +35,7 @@ The rest of this doc is the technical detail.
   tablet reboots.
 - **Sync worker**: drains the outbox in creation order whenever connectivity
   returns, with exponential backoff. Because every mutation carries an
-  `idem_key`, replaying one that actually did reach the server is harmless — the
+  `idem_key`, replaying one that actually did reach the server is harmless, the
   server recognises it and returns the existing record.
 - **Server IDs**: records created offline get a locally generated ID that is
   also the server ID (Appwrite accepts client-supplied IDs), so an order created
@@ -56,7 +56,7 @@ internet outage shouldn't stop an order reaching the kitchen ten feet away.
   (WebRTC data channel over a locally-discovered peer, with the KDS acting as
   the rendezvous point).
 - The KDS remains the authority on what's been accepted. When the internet
-  returns, the server reconciles — and because the KDS's accept/reject events
+  returns, the server reconciles, and because the KDS's accept/reject events
   carry timestamps and device IDs, the server can order them correctly.
 - If peer discovery fails (guest/staff wifi isolation is a common cause), the
   system degrades to "orders queue until internet returns", and the terminal
@@ -70,8 +70,8 @@ Conflicts are rare but must resolve predictably rather than cleverly.
 | Conflict | Rule |
 | --- | --- |
 | Two devices edit the same open ticket | Line items merge (they're separate records); quantity edits use last-write-wins by device timestamp |
-| An order accepted on the KDS and cancelled on a terminal, both offline | **Kitchen wins** — food may already be cooking. The cancellation becomes a void requiring a manager |
-| Two devices take payment for the same bill | Both payments are kept; the bill shows as overpaid and the POS forces a manager to void one. Never silently discarded — that's someone's money |
+| An order accepted on the KDS and cancelled on a terminal, both offline | **Kitchen wins**, food may already be cooking. The cancellation becomes a void requiring a manager |
+| Two devices take payment for the same bill | Both payments are kept; the bill shows as overpaid and the POS forces a manager to void one. Never silently discarded; that's someone's money |
 | Menu price changed centrally while a device was offline | The order keeps the price snapshot it took at the time. Receipts stay truthful |
 | Stock count entered on two devices | Latest by timestamp wins, both are kept in the audit log |
 
@@ -98,7 +98,7 @@ would post a false figure. So:
 Offline behaviour that isn't tested doesn't work. Added to the Stage 7 script:
 
 - Take 5 orders with wifi off, restore, confirm all 5 arrive exactly once.
-- Take an order offline, kill the app, reopen — the order must still be queued.
+- Take an order offline, kill the app, reopen, the order must still be queued.
 - Settle a bill offline on two terminals at once, confirm the overpayment is
   flagged rather than lost.
 - Close a shift with one terminal still offline; confirm the close waits and

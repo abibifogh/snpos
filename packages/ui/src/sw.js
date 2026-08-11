@@ -3,7 +3,7 @@
  * The service worker, so the app opens with no connection at all.
  *
  * Copied into each app's build output by the deploy, because a service worker
- * can only control pages inside its own folder — one at the site root could not
+ * can only control pages inside its own folder; one at the site root could not
  * be registered by /admin/ with the scope it needs.
  *
  * Two strategies, chosen for what each thing actually is:
@@ -11,7 +11,7 @@
  *   - The page itself: network first. A deploy must reach people, and an app
  *     shell served from cache for ever is how a fixed bug stays broken.
  *   - Everything else with a content hash in its name: cache first. Those files
- *     never change — that is what the hash means — so going to the network for
+ *     never change, that is what the hash means, so going to the network for
  *     them is pure latency, and having them cached is what makes the app open
  *     on a dead connection.
  *
@@ -26,7 +26,7 @@ const SHELL = `${VERSION}-shell`;
 
 self.addEventListener('install', (event) => {
   // Take over as soon as the new worker is ready rather than waiting for every
-  // tab to close — a kitchen screen is never closed.
+  // tab to close, a kitchen screen is never closed.
   self.skipWaiting();
   event.waitUntil(caches.open(SHELL));
 });
@@ -50,7 +50,7 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // Anything not on this origin is somebody else's business — chiefly Appwrite,
+  // Anything not on this origin is somebody else's business, chiefly Appwrite,
   // which must never be served from a cache.
   if (url.origin !== self.location.origin) return;
 

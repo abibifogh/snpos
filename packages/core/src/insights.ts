@@ -2,16 +2,16 @@
  * Turning a pile of orders into something a restaurant owner can act on.
  *
  * The reports page already answered "how much did we take between these two
- * dates". That is a fact, not an insight — it tells you the number and leaves
+ * dates". That is a fact, not an insight; it tells you the number and leaves
  * you to know whether it is good. Everything here exists to supply the second
  * half: compared with what?
  *
  * Three questions, because they are asked by different people at different
  * moments and answered by different arithmetic:
  *
- *   Day     — what happened yesterday, and was it a normal day?
- *   Week    — is this week beating last week, and on which days?
- *   Month   — is the business growing, once a bad Tuesday is averaged out?
+ *   Day, what happened yesterday, and was it a normal day?
+ *   Week, is this week beating last week, and on which days?
+ *   Month, is the business growing, once a bad Tuesday is averaged out?
  *
  * All pure functions over rows already loaded. Nothing here reads the database,
  * so the page, the printed report and the nightly email can all use the same
@@ -258,4 +258,4 @@ export const changeTone = (c: Change, goodWhenUp = true): 'good' | 'bad' | 'flat
 };
 
 export const asPercent = (ratio: number | null): string =>
-  ratio === null ? '—' : `${ratio > 0 ? '+' : ''}${(ratio * 100).toFixed(ratio > -0.1 && ratio < 0.1 ? 1 : 0)}%`;
+  ratio === null ? ', ' : `${ratio > 0 ? '+' : ''}${(ratio * 100).toFixed(ratio > -0.1 && ratio < 0.1 ? 1 : 0)}%`;

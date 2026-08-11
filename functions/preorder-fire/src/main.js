@@ -54,7 +54,7 @@ export default async ({ req, res, log, error }) => {
         await db.updateDocument(DB_ID, 'orders', order.$id, {
           status: 'PENDING',
           alert_level: 0,
-          notes: `${order.notes || ''}\nUNAVAILABLE AT FIRE TIME: ${unavailable.join(', ')} — call the customer.`.trim(),
+          notes: `${order.notes || ''}\nUNAVAILABLE AT FIRE TIME: ${unavailable.join(', ')}, call the customer.`.trim(),
         });
         log(`Fired ${order.order_no} with unavailable items: ${unavailable.join(', ')}`);
       } else {

@@ -39,11 +39,11 @@ export interface Settings extends Doc {
   tips_ask_on?: 'both' | 'till' | 'kitchen' | 'none';
   /** How the shift-end check asks: tap a level, or type what is there. */
   stock_check_mode?: 'levels' | 'counts';
-  /** Whether a counted amount may be a part — 0.5, 0.25 — or whole only. */
+  /** Whether a counted amount may be a part, 0.5, 0.25, or whole only. */
   stock_count_decimals?: boolean;
   /** What a shift expense may be paid out of. Cash only, or any method. */
   expense_paid_from?: 'cash_only' | 'any';
-  /** Older setups said what they were. Read only as a fallback — see modulesOf. */
+  /** Older setups said what they were. Read only as a fallback, see modulesOf. */
   business_type?: 'restaurant' | 'craft_shop';
   /** Which trades this business runs. Any combination except neither. */
   kitchen_enabled?: boolean;

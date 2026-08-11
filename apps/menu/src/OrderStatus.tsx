@@ -15,7 +15,7 @@ import { rememberOrder } from './myOrders';
  * cook, which is two people's time for a question the system already knows the
  * answer to.
  *
- * Live rather than polled — the same subscription the kitchen uses — so it
+ * Live rather than polled, the same subscription the kitchen uses, so it
  * changes the moment a cook taps a button. It falls back to a slow refresh if
  * the live connection cannot be made, because a page that quietly stops
  * updating is worse than one that updates late.
@@ -38,7 +38,7 @@ const STEPS: Step[] = [
   { key: 'PENDING', label: 'Sent', says: 'Your order has gone through to the kitchen.' },
   { key: 'ACCEPTED', label: 'Accepted', says: 'The kitchen has your order and will start shortly.' },
   { key: 'PREPARING', label: 'Cooking', says: 'Your food is being cooked.' },
-  { key: 'READY', label: 'Ready', says: "It's ready — someone is bringing it over." },
+  { key: 'READY', label: 'Ready', says: "It's ready, someone is bringing it over." },
 ];
 
 const REACHED: Record<string, number> = {
@@ -138,7 +138,7 @@ export function OrderStatus({
    * Offered only while the ticket is still untouched. Once a cook has taken it
    * the food may already be on, and a customer calling that back from a phone
    * is a kitchen finding out by reading a screen. The server refuses it in that
-   * case too — this only avoids offering something that would be turned down.
+   * case too; this only avoids offering something that would be turned down.
    */
   const leftMs = cancelWindowLeft(order, tick);
   const canCancel =
@@ -158,7 +158,7 @@ export function OrderStatus({
       // status flips to CANCELLED and the page above says so. Saying "asked"
       // rather than "cancelled" here is the honest description of what has
       // happened so far.
-      setCancelNote('Asked to cancel — one moment.');
+      setCancelNote('Asked to cancel, one moment.');
     } catch (e) {
       setCancelNote(humanError(e));
       setCancelling(false);
@@ -177,7 +177,7 @@ export function OrderStatus({
       {stopped ? (
         <div className="banner banner-info">
           <strong>This order was {order.status === 'REJECTED' ? 'not accepted' : 'cancelled'}.</strong>{' '}
-          {order.reject_reason_note || 'Please speak to a member of staff — you have not been charged.'}
+          {order.reject_reason_note || 'Please speak to a member of staff; you have not been charged.'}
         </div>
       ) : order.status === 'SCHEDULED' ? (
         <div className="banner banner-info">
@@ -205,7 +205,7 @@ export function OrderStatus({
           {/* Sat directly under the wait, because the two are read together:
               somebody who has just been told forty minutes is exactly the
               person deciding whether to keep this order. Gone the moment it
-              expires, rather than left there greyed out — an offer that has
+              expires, rather than left there greyed out, an offer that has
               run out reads as a broken button. */}
           {(canCancel || cancelNote) && (
             <div className="cancel-window">
@@ -261,7 +261,7 @@ export function OrderStatus({
         </div>
         <p className="small dim" style={{ marginBottom: 0 }}>
           {order.payment_status === 'paid'
-            ? 'Paid — thank you.'
+            ? 'Paid, thank you.'
             : 'Pay a member of staff when you are done. There is no payment in this app.'}
         </p>
       </div>

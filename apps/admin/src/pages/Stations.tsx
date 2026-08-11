@@ -38,7 +38,7 @@ export function StationsPage() {
       const payload = {
         venue_id: editing.venue_id ?? 'main',
         // The key is what gets written onto every dish and ticket, so it is set
-        // once at creation and never edited — renaming a station should not
+        // once at creation and never edited, renaming a station should not
         // orphan the dishes pointing at it.
         key: editing.key || editing.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''),
         name: editing.name.trim(),
@@ -67,7 +67,7 @@ export function StationsPage() {
         }).catch(() => undefined);
       }
       await load();
-      toast('Added the usual four — rename or remove any of them');
+      toast('Added the usual four, rename or remove any of them');
     } finally {
       setBusy(false);
     }
@@ -83,7 +83,7 @@ export function StationsPage() {
       </div>
 
       <p className="dim small" style={{ marginTop: 0 }}>
-        A station is <strong>where food is cooked</strong> — hot line, grill, bar, pastry. Each dish is sent to one,
+        A station is <strong>where food is cooked</strong>, hot line, grill, bar, pastry. Each dish is sent to one,
         and the kitchen screen can be filtered to show only that station's tickets.
       </p>
 
@@ -148,7 +148,7 @@ export function StationsPage() {
             <Input value={editing.name ?? ''} autoFocus placeholder="Grill" onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
           </Field>
           {editing.$id && (
-            <Field label="Key" hint="Fixed once created — dishes point at this. Rename the station freely; the key stays.">
+            <Field label="Key" hint="Fixed once created, dishes point at this. Rename the station freely; the key stays.">
               <Input value={editing.key ?? ''} disabled />
             </Field>
           )}
@@ -163,7 +163,7 @@ export function StationsPage() {
               <Input type="number" value={editing.sort ?? 0} onChange={(e) => setEditing({ ...editing, sort: Number(e.target.value) })} />
             </Field>
           </div>
-          <Field hint="Turning a station off hides its tab on the kitchen screen. Dishes assigned to it still cook — they just appear under All.">
+          <Field hint="Turning a station off hides its tab on the kitchen screen. Dishes assigned to it still cook, they just appear under All.">
             <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label="Active" />
           </Field>
         </Modal>

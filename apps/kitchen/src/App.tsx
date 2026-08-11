@@ -39,7 +39,7 @@ export function App() {
   const [venue, setVenue] = useState<Venue | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [items, setItems] = useState<Record<string, OrderItem[]>>({});
-  // Read by the reconcile timer without making it depend on `items` — that
+  // Read by the reconcile timer without making it depend on `items`, that
   // dependency would tear down and rebuild the timer every time a ticket
   // loaded, which is most of the reason a timer like this stops firing.
   const itemsRef = useRef(items);
@@ -90,7 +90,7 @@ export function App() {
   useEffect(() => {
     (async () => {
       try {
-        // Not "is there a session?" — a customer who scanned a table code has
+        // Not "is there a session?", a customer who scanned a table code has
         // one. This asks whether the session belongs to a member of staff, and
         // Appwrite answers it, not the browser.
         setSession(await requireStaff());
@@ -159,7 +159,7 @@ export function App() {
    * Keep settings current while the screen stays open.
    *
    * A kitchen display is opened once and left running for weeks. Without this,
-   * an admin switching something off — tips, say — has no effect until somebody
+   * an admin switching something off, tips, say, has no effect until somebody
    * thinks to reload a screen nobody ever touches.
    */
   useEffect(() => {
@@ -190,8 +190,8 @@ export function App() {
   /**
    * A net under the live connection.
    *
-   * The live socket drops without saying so — a wifi blip, a router restart, a
-   * screen left running for a fortnight — and the page carries on looking
+   * The live socket drops without saying so, a wifi blip, a router restart, a
+   * screen left running for a fortnight, and the page carries on looking
    * exactly as healthy as it did a minute ago. A cook has no way to tell the
    * difference between "no new orders" and "no new orders reaching me", and the
    * first they know of it is a customer asking about food that was ordered
@@ -279,7 +279,7 @@ export function App() {
    * Orders that should have been out by now.
    *
    * This is a different question from the acknowledgement alarm. That one asks
-   * "has anybody SEEN this?"; this asks "should this have left the pass?" — an
+   * "has anybody SEEN this?"; this asks "should this have left the pass?", an
    * order can be accepted promptly and still be forgotten on the shelf.
    */
   const overdueOn = isEnabled(features, 'overdue_alerts');
@@ -288,7 +288,7 @@ export function App() {
   /**
    * A coarse clock, and the reason this list works at all.
    *
-   * Being late is a fact about the time, not about the orders — and the orders
+   * Being late is a fact about the time, not about the orders, and the orders
    * were the only thing this was memoised on. So the clock inside it froze at
    * whatever moment a ticket last arrived: an order could sail past its time
    * with nothing else happening and never appear here, never show the Late
@@ -304,7 +304,7 @@ export function App() {
   /**
    * How long the kitchen had to cook this, in minutes.
    *
-   * The prep time set on each dish, added up — not the estimate the customer
+   * The prep time set on each dish, added up, not the estimate the customer
    * was given. Those two used to be the same number and are not any more: the
    * customer's wait now includes queueing behind the tickets already on the
    * pass, which is time before a cook touches this one. Judging the kitchen by
@@ -328,7 +328,7 @@ export function App() {
       // Two different late moments, both worth a noise.
       //
       // Still cooking, past the time the customer was given. Measured from
-      // when the kitchen took it, not from when it was placed — an order that
+      // when the kitchen took it, not from when it was placed, an order that
       // sat unacknowledged for ten minutes is a different failure, and the
       // acknowledgement alarm has already been shouting about that one.
       if (['ACCEPTED', 'PREPARING'].includes(o.status)) {
@@ -350,7 +350,7 @@ export function App() {
 
   /**
    * Escalation is driven by the oldest unacknowledged ticket, not by each one
-   * separately — three quiet alarms are less useful than one loud one.
+   * separately; three quiet alarms are less useful than one loud one.
    */
   const combined = isEnabled(features, 'combined_mode');
   const sla = settings?.kitchen_ack_sla_seconds ?? 60;
@@ -461,7 +461,7 @@ export function App() {
             {staff.length > 0 ? (
               <>
                 <p className="dim" style={{ marginTop: '0.6rem' }}>
-                  Enter your PIN to start. Tapping also lets the alarm sound — browsers keep a page silent until
+                  Enter your PIN to start. Tapping also lets the alarm sound, browsers keep a page silent until
                   someone touches it.
                 </p>
                 <div
@@ -503,7 +503,7 @@ export function App() {
             ) : (
               <>
                 {/* Nobody has a PIN yet. The device is signed in as staff, so
-                    work goes against that account rather than against nobody —
+                    work goes against that account rather than against nobody, 
                     every Accept still has a name on it. */}
                 <p className="dim" style={{ marginTop: '0.6rem' }}>
                   No cook has a PIN yet, so everything done here will be recorded against{' '}
@@ -511,7 +511,7 @@ export function App() {
                 </p>
                 <p className="dim small">
                   Give your cooks PINs in the admin app under Staff, and they can identify themselves here by name
-                  instead — which is the only way to tell who accepted what.
+                  instead, which is the only way to tell who accepted what.
                 </p>
                 <Button variant="primary" className="btn" onClick={() => { unlockAudio(); setReady(true); }}>
                   Start service as {session?.name || 'this account'}
@@ -746,7 +746,7 @@ function Ticket({
   items: OrderItem[];
   sla: number;
   overdue: boolean;
-  /** The cooking time this ticket is judged against — the same figure the alarm uses. */
+  /** The cooking time this ticket is judged against, the same figure the alarm uses. */
   cookMinutes: number;
   graceMinutes: number;
   settings: Settings | null;
@@ -769,7 +769,7 @@ function Ticket({
    * The clock in the corner counts from when the order was PLACED, and lateness
    * is judged from when the kitchen ACCEPTED it. Those differ by however long
    * the ticket sat unacknowledged, so a cook could read 18:32 on a
-   * fifteen-minute dish, expect the alarm, and not get it — which teaches
+   * fifteen-minute dish, expect the alarm, and not get it, which teaches
    * people the alarm is unreliable when it is doing exactly what it was told.
    *
    * This says what it is actually counting, in whole minutes, so the ping never

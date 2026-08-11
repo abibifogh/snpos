@@ -6,7 +6,7 @@ import { receiptPdf } from './receipt-pdf.js';
  *
  * Both hang off the same hourly timer the availability sweep uses, because
  * this plan allows four functions and they are all spoken for. Each checks
- * whether it is its hour in the restaurant's own timezone — not the server's,
+ * whether it is its hour in the restaurant's own timezone, not the server's,
  * which is UTC and would fire the "end of day" report in the middle of dinner.
  */
 
@@ -36,7 +36,7 @@ const esc = (s) =>
 /**
  * Everyone signed up for a given report.
  *
- * An empty list is not an error and not a silence to be worked around — it is
+ * An empty list is not an error and not a silence to be worked around, it is
  * an admin saying they do not want this one. It is only worth logging when
  * something was actually generated and had nowhere to go.
  */
@@ -54,7 +54,7 @@ async function recipientsFor(db, DB_ID, event) {
  * Write down that something was not sent, and why.
  *
  * The failures this file can have are all invisible ones. "Nobody is
- * subscribed" returns quietly, once an hour, into a log nobody reads — and the
+ * subscribed" returns quietly, once an hour, into a log nobody reads, and the
  * owner's experience is simply that backups never arrive, with nothing
  * anywhere to say so. Three separate email paths in this system have now
  * failed exactly that way.
@@ -119,7 +119,7 @@ export async function dailyDigest({ db, DB_ID, settings, transport, from, shell,
   if (!transport) {
     await recordNotSent({
       db, DB_ID, kind: 'daily_digest', day, venueId: venue.$id, log,
-      reason: 'No email provider is configured on the server. The SMTP secrets are missing — re-run Deploy functions with them set.',
+      reason: 'No email provider is configured on the server. The SMTP secrets are missing, re-run Deploy functions with them set.',
     });
     return { skipped: 'no smtp' };
   }
@@ -201,12 +201,12 @@ export async function dailyDigest({ db, DB_ID, settings, transport, from, shell,
        'Taken by',
        [...byMethod.entries()].map(
          ([id, amount]) =>
-           `<li>${esc(methods.documents.find((m) => m.$id === id)?.name || 'Unknown')} — ${money(amount, settings)}</li>`,
+           `<li>${esc(methods.documents.find((m) => m.$id === id)?.name || 'Unknown')}, ${money(amount, settings)}</li>`,
        ),
      )}
      ${section(
        'Still unpaid at the end of the day',
-       unpaid.map((o) => `<li>${esc(o.order_no)} — ${money(o.total, settings)}</li>`),
+       unpaid.map((o) => `<li>${esc(o.order_no)}, ${money(o.total, settings)}</li>`),
      )}
      ${
        unpaid.length
@@ -239,7 +239,7 @@ export async function dailyDigest({ db, DB_ID, settings, transport, from, shell,
     await transport.sendMail({
       from,
       to: to.join(','),
-      subject: `${settings.restaurant_name} — ${day} · ${money(sales, settings)} taken`,
+      subject: `${settings.restaurant_name}, ${day} · ${money(sales, settings)} taken`,
       html,
     });
     await db.updateDocument(DB_ID, 'summary_reports', report.$id, {
@@ -273,7 +273,7 @@ function csv(rows) {
   return rows.map((r) => r.map(cell).join(',')).join('\r\n');
 }
 
-/** Every row of a collection, page by page — the default page size is 25. */
+/** Every row of a collection, page by page, the default page size is 25. */
 async function everything(db, DB_ID, collection) {
   const out = [];
   let cursor = null;
@@ -293,7 +293,7 @@ async function everything(db, DB_ID, collection) {
  * What is worth being able to get back.
  *
  * Not the whole database: the menu can be retyped in an afternoon and the
- * settings in ten minutes. What cannot be reconstructed is what happened —
+ * settings in ten minutes. What cannot be reconstructed is what happened, 
  * every order, every payment, every expense, every shift and every count. That
  * is what goes in the email.
  */
@@ -332,7 +332,7 @@ export async function nightlyBackup({ db, DB_ID, settings, transport, from, shel
   if (!transport) {
     await recordNotSent({
       db, DB_ID, kind: 'backup', day, venueId: venue.$id, log,
-      reason: 'No email provider is configured on the server. The SMTP secrets are missing — re-run Deploy functions with them set.',
+      reason: 'No email provider is configured on the server. The SMTP secrets are missing, re-run Deploy functions with them set.',
     });
     return { skipped: 'no smtp' };
   }
@@ -371,7 +371,7 @@ export async function nightlyBackup({ db, DB_ID, settings, transport, from, shel
 
   const listed = Object.entries(counts)
     .filter(([, n]) => n > 0)
-    .map(([name, n]) => `<li>${esc(name)} — ${n}</li>`)
+    .map(([name, n]) => `<li>${esc(name)}, ${n}</li>`)
     .join('');
 
   const report = await db.createDocument(DB_ID, 'summary_reports', 'unique()', {
@@ -397,7 +397,7 @@ export async function nightlyBackup({ db, DB_ID, settings, transport, from, shel
     await transport.sendMail({
       from,
       to: to.join(','),
-      subject: `${settings.restaurant_name} — backup ${day} (${rowsTotal} records)`,
+      subject: `${settings.restaurant_name}, backup ${day} (${rowsTotal} records)`,
       html: shell(
         `Backup · ${day}`,
         `<p style="margin:0 0 12px">A copy of everything the system holds, as spreadsheets. Keep the last one somewhere

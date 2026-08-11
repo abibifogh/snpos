@@ -132,7 +132,7 @@ export function ConsignorsPage() {
         </div>
         <p className="small dim" style={{ marginBottom: 0 }}>
           Every balance here is added up from the sales and payments on record, not stored anywhere.
-          It can always be shown line by line — open a statement to see exactly where a figure came from.
+          It can always be shown line by line, open a statement to see exactly where a figure came from.
         </p>
       </Card>
 
@@ -275,7 +275,7 @@ export function ConsignorsPage() {
           />
           <p className="small dim" style={{ marginBottom: 0 }}>
             Turning this off only hides them from the day-to-day lists. Their sales, statements and anything
-            still owed stay exactly where they are — somebody who has stopped bringing work in is usually still
+            still owed stay exactly where they are, somebody who has stopped bringing work in is usually still
             waiting to be paid.
           </p>
         </Modal>
@@ -498,7 +498,7 @@ function StatementModal({
           </div>
 
           {/* The figure that matters for paying is today's, and it is not always
-              the closing figure above — anything sold since the chosen end date
+              the closing figure above, anything sold since the chosen end date
               is owed too. Said plainly rather than left to be worked out. */}
           {Math.round(owedNow) !== Math.round(statement.closingBalance) && (
             <p className="small dim">
@@ -510,7 +510,7 @@ function StatementModal({
           {paying && (
             <Card title={`Record a payment to ${consignor.name}`}>
               <p className="small dim">
-                This writes down that you paid them. It does not move any money — send the{' '}
+                This writes down that you paid them. It does not move any money, send the{' '}
                 {consignor.payout_method === 'cash' ? 'cash' : consignor.payout_method ?? 'mobile money'}
                 {consignor.payout_details ? ` to ${consignor.payout_details}` : ''} the usual way, then record it here.
               </p>

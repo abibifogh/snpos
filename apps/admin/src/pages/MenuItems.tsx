@@ -18,7 +18,7 @@ interface ItemAddonGroup extends Doc { menu_item_id: string; group_id: string; s
 /**
  * The catalogue, for one side of the business at a time.
  *
- * Same screen, same job — a name, a price, a picture, a category — scoped so
+ * Same screen, same job, a name, a price, a picture, a category, scoped so
  * the kitchen and the shop never share a list. What differs is which extra
  * fields matter: a dish has a prep time and a station, a consigned piece has a
  * maker and a commission, and neither wants the other's questions.
@@ -130,7 +130,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
     // Nothing pre-ticked on a new dish.
     //
     // It used to tick whichever category sorted first, which quietly filed
-    // every new dish under "Everyday" — and because a pre-ticked box is one
+    // every new dish under "Everyday", and because a pre-ticked box is one
     // nobody reads, a Thursday special added on Thursday ended up in both,
     // showing every day of the week. Choosing where a dish goes is the whole
     // job here; it should not have a default.
@@ -166,7 +166,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
   /**
    * Reconcile the join rows to match what was ticked.
    *
-   * Only the difference is written — leaving untouched rows alone keeps their
+   * Only the difference is written, leaving untouched rows alone keeps their
    * per-category sort order, which a delete-and-recreate would throw away.
    */
   const syncLinks = async (itemId: string) => {
@@ -215,7 +215,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
     //
     // A size that has already sold something is switched off rather than
     // deleted. Its id is on sale lines, on movements and on somebody's
-    // statement, and deleting it would leave those pointing at nothing — the
+    // statement, and deleting it would leave those pointing at nothing, the
     // shop would be unable to say what the customer actually bought.
     for (const id of removedVariantIds) {
       await db.updateDocument(DB_ID, 'product_variants', id, { active: false }).catch(() => undefined);
@@ -246,7 +246,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
     const thing = W.one;
     if (!editing?.name?.trim()) { setError(`This ${thing} needs a name.`); return; }
     if (pickedCategories.length === 0) {
-      setError(`Tick at least one category — that is where this ${thing} appears.`);
+      setError(`Tick at least one category; that is where this ${thing} appears.`);
       return;
     }
     // A size with no price would sell for nothing and be blamed on the till.
@@ -341,7 +341,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
       </div>
 
       {categories.length === 0 && (
-        <Notice tone="warn">Create at least one category first — every {W.one} belongs to one.</Notice>
+        <Notice tone="warn">Create at least one category first, every {W.one} belongs to one.</Notice>
       )}
       {error && !editing && <Notice>{error}</Notice>}
 
@@ -457,7 +457,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
             label="Categories"
             hint={module === 'craft'
               ? 'A product appears under every category ticked here. The first one ticked is its main category.'
-              : 'A dish appears under every category ticked here. Tick two and it shows twice — so a Thursday special should be ticked for Thursday only, not for Thursday and Everyday. The first one ticked is its main category and sets the default kitchen station.'}
+              : 'A dish appears under every category ticked here. Tick two and it shows twice, so a Thursday special should be ticked for Thursday only, not for Thursday and Everyday. The first one ticked is its main category and sets the default kitchen station.'}
           >
             <div className="stack" style={{ gap: '0.35rem', marginTop: '0.2rem' }}>
               {categories.map((c) => {
@@ -482,7 +482,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
           <div className="grid-2">
             <Field
               label={`Price (${settings?.currency_symbol ?? ''})`}
-              hint={module === 'craft' && variants.length > 0 ? 'Ignored — each size below carries its own price.' : undefined}
+              hint={module === 'craft' && variants.length > 0 ? 'Ignored, each size below carries its own price.' : undefined}
             >
               <Input value={priceText} inputMode="decimal" onChange={(e) => setPriceText(e.target.value)} />
             </Field>
@@ -501,7 +501,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
             )}
           </div>
           <Field>
-            <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label={module === 'craft' ? 'For sale' : 'Active — shown on the menu'} />
+            <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label={module === 'craft' ? 'For sale' : 'Active, shown on the menu'} />
           </Field>
           {module === 'kitchen' && (
             <Field hint="Only for items made from ingredients you count. Leave off for drinks you buy in.">
@@ -561,7 +561,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
             label="Option groups"
             hint={
               addonGroups.length === 0
-                ? 'None built yet. Create them under Menu → Options — for example “Choose your protein”.'
+                ? 'None built yet. Create them under Menu → Options, for example “Choose your protein”.'
                 : `Choices the customer makes for this ${W.one}. Build and price them under Kitchen → Options.`
             }
           >

@@ -39,7 +39,7 @@ export function OfflineBar({
           <>
             <strong>No connection.</strong>{' '}
             {queued > 0
-              ? `Still working — ${queued} ${queued === 1 ? 'change is' : 'changes are'} saved on this device and will send when you are back.`
+              ? `Still working, ${queued} ${queued === 1 ? 'change is' : 'changes are'} saved on this device and will send when you are back.`
               : 'Still working. Anything you do is saved here and sent when you are back.'}
           </>
         ) : (

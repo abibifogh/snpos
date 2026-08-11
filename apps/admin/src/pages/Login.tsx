@@ -100,7 +100,7 @@ export function Login() {
         await account.updatePassword(password);
       } else {
         await account.updateRecovery(link.userId, link.secret, password);
-        // Straight in, rather than "now go and sign in" — they have just typed
+        // Straight in, rather than "now go and sign in"; they have just typed
         // the password, and asking for it again is a step that exists only
         // because it was easier to write.
         await signIn(email.trim(), password);

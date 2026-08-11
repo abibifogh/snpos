@@ -1,4 +1,4 @@
-# 16 — Deploying without touching a computer
+# 16, Deploying without touching a computer
 
 **In plain terms:** once this is set up, you never download a ZIP or run a
 command again. Changes go to GitHub, GitHub builds and publishes them, and the
@@ -24,7 +24,7 @@ sales live, so touching it stays a decision you make on purpose.
 
 ## 16.2 One-time setup
 
-### Step 1 — Tell GitHub about your Appwrite project
+### Step 1, Tell GitHub about your Appwrite project
 
 In your repository: **Settings → Secrets and variables → Actions**.
 
@@ -49,16 +49,16 @@ Create the key in the Appwrite console under **Integrations → API keys →
 Create API key**, with the **Databases**, **Teams**, **Storage** and **Users**
 scopes. GitHub hides it after you save; nobody can read it back, including you.
 
-This is the right place for it — far better than a file on a laptop.
+This is the right place for it, far better than a file on a laptop.
 
-### Step 2 — Turn on GitHub Pages
+### Step 2, Turn on GitHub Pages
 
 **Settings → Pages → Build and deployment → Source: GitHub Actions.**
 
 That is the whole step. Do not pick a branch; picking "GitHub Actions" is what
 lets the workflow publish.
 
-### Step 3 — Let Appwrite accept the new address
+### Step 3, Let Appwrite accept the new address
 
 Your apps will live at:
 
@@ -68,13 +68,13 @@ https://<your-github-username>.github.io/<repository-name>/
 
 Appwrite refuses connections from addresses it does not know, so add it:
 **Appwrite console → Settings → Platforms → Add platform → Web app**, type
-**React**, hostname `<your-github-username>.github.io` (the hostname only — no
+**React**, hostname `<your-github-username>.github.io` (the hostname only, no
 `https://`, no path).
 
 Skip this and every app loads to a blank screen with a CORS error. It is the
 single most common thing to forget.
 
-### Step 4 — Deploy
+### Step 4, Deploy
 
 Go to the **Actions** tab → **Deploy** → **Run workflow**.
 
@@ -87,7 +87,7 @@ It takes two or three minutes. When it finishes, your apps are live.
 ### Changing the code
 
 Nothing to do. Any change pushed to the branch triggers **Check** (typecheck
-and build) and then **Deploy**. If the check fails, nothing is published — a
+and build) and then **Deploy**. If the check fails, nothing is published, a
 broken build cannot reach your staff mid-service.
 
 ### Changing the database
@@ -98,7 +98,7 @@ When `scripts/schema.mjs` changes, the new tables or fields need applying:
 confirmation box, click the green button.
 
 The confirmation box exists so this cannot happen by a stray click. The script
-is safe to re-run — it creates what is missing and skips what exists — but
+is safe to re-run, it creates what is missing and skips what exists, but
 writing to a live database should always be deliberate.
 
 It finishes by printing the same report `npm run doctor` gives, so you can see
@@ -128,7 +128,7 @@ Being straight about the limits:
 
 - **GitHub Pages is public.** Anyone with the address can open the admin
   login page. They cannot get in without an account, and every collection is
-  permission-controlled — but the *page* is reachable. That is normal for a web
+  permission-controlled, but the *page* is reachable. That is normal for a web
   app; it is worth knowing rather than assuming otherwise.
 - **Custom domain.** `github.io` works, but `order.yourrestaurant.com` on a QR
   code inspires more confidence. Pages supports custom domains under
@@ -145,7 +145,7 @@ Being straight about the limits:
 | Red cross on **Check** | The code does not compile. Nothing was published; the live apps are untouched. |
 | Red cross on **Deploy**, "Pages not enabled" | Step 2 was missed. |
 | Apps load but nothing appears, console shows CORS | Step 3 was missed, or the hostname has a typo. |
-| Provision fails with "missing scopes" | The API key needs more permissions — recreate it with all four scope groups. |
+| Provision fails with "missing scopes" | The API key needs more permissions, recreate it with all four scope groups. |
 | Provision fails with "maximum number of…" | An Appwrite plan ceiling, not a fault. The message names what hit the limit. |
 
 Every failed run keeps its full log under the **Actions** tab. Paste it to me
@@ -167,7 +167,7 @@ Appwrite as **Functions**, deployed from GitHub like everything else:
 
 The first two exist precisely because a screen cannot be relied on. A tablet
 that has crashed, been unplugged, or had its battery optimised into silence is
-exactly the moment an order gets forgotten — and it is the moment the kitchen
+exactly the moment an order gets forgotten, and it is the moment the kitchen
 display is no longer running to notice.
 
 ### Deploying them
@@ -189,7 +189,7 @@ event brings one, the timer does not.
 
 ### Email
 
-Receipts and summaries need an SMTP account. Any provider works — Brevo,
+Receipts and summaries need an SMTP account. Any provider works, Brevo,
 Mailgun, SendGrid, or a Gmail app password for low volume. Add these as
 **Secrets** (Settings → Secrets and variables → Actions):
 
@@ -211,7 +211,7 @@ called out here rather than left to be discovered.
 
 1. In Brevo, go to **SMTP & API → SMTP**. It shows a **login** and a **master
    password** (Brevo calls it an SMTP key). The login looks like an email
-   address ending in `@smtp-brevo.com` — it is *not* the address you signed up
+   address ending in `@smtp-brevo.com`; it is *not* the address you signed up
    with, and it is *not* the address your receipts will come from. It is only
    the username for the connection.
 2. In Brevo, go to **Senders, Domains & Dedicated IPs → Senders** and add the
@@ -238,7 +238,7 @@ Finally:
   the from-address to the sender you verified in step 2.
 
 Send yourself a test order and check that the receipt arrives. If it does not,
-Admin → Reports shows the receipt row with the reason it failed — Brevo's
+Admin → Reports shows the receipt row with the reason it failed, Brevo's
 rejection message is passed straight through rather than swallowed.
 
 Rotating the SMTP key later is the same four secrets and the same **Deploy

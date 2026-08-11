@@ -1,8 +1,8 @@
-# 12 — The kitchen app (native Android)
+# 12, The kitchen app (native Android)
 
 **In plain terms:** the kitchen screen becomes a proper installed app rather
 than a web page. That's what guarantees the alarm actually sounds when an order
-arrives — at full volume, even if the tablet is locked, minimised, or was just
+arrives, at full volume, even if the tablet is locked, minimised, or was just
 restarted. Web pages get quietened by the browser when they're not in front;
 an app doesn't.
 
@@ -13,7 +13,7 @@ fine). Everything else in the system stays a normal web app.
 
 ## 12.1 What the wrapper adds
 
-Built with **Capacitor**, wrapping the same KDS web app — so the screen itself
+Built with **Capacitor**, wrapping the same KDS web app, so the screen itself
 never drifts out of step with the rest of the system. Only the alarm and device
 behaviour are native.
 
@@ -35,13 +35,13 @@ behaviour are native.
 2. Alarm starts: repeating tone on the alarm stream, screen wakes, ticket shown
    full-screen, tablet vibrates.
 3. The alarm **does not stop on its own** and has no snooze. It stops only when
-   the order leaves `PENDING` — which includes another station accepting it,
+   the order leaves `PENDING`, which includes another station accepting it,
    because the stop is driven by the shared order state, not by the local
    button.
 4. Escalation matches doc 04: louder and more frequent at each level, and past
    level 3 the manager's device is notified too. Escalation is computed on the
    server, so a dead kitchen tablet still raises the alarm somewhere.
-5. Rejecting requires a reason, exactly as in doc 04 — the modal can't be
+5. Rejecting requires a reason, exactly as in doc 04; the modal can't be
    dismissed without one.
 
 ## 12.3 Build and install
@@ -63,7 +63,7 @@ Then either:
   many venues. Needs a one-off $25 developer account and a day or two of review.
 
 **Keep the signing keystore safe and backed up.** Lose it and you can't update
-the installed apps — only reinstall from scratch.
+the installed apps, only reinstall from scratch.
 
 ## 12.4 Tablet setup checklist
 
@@ -71,7 +71,7 @@ the installed apps — only reinstall from scratch.
    permissions.
 2. Sign in with the station's device account, pick the station (hot / cold /
    bar / all).
-3. Turn off battery optimisation for the app — Android will otherwise kill it
+3. Turn off battery optimisation for the app, Android will otherwise kill it
    overnight. This is the single most common cause of "the alarm stopped
    working after a few days".
 4. Turn off screen timeout; keep it on mains power.
@@ -85,6 +85,6 @@ Steps 3, 7 and 8 are the ones people skip and later regret.
 ## 12.5 What stays web
 
 POS terminals, the admin dashboard and the customer QR menu remain normal web
-apps — installable to the home screen, updated by deploying, no app store
+apps, installable to the home screen, updated by deploying, no app store
 involved. Only the kitchen needed the native treatment, and only because of the
 alarm.

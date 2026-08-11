@@ -5,7 +5,7 @@ import type { Settings } from './types';
  * Uploading, aware of which storage layout provisioning ended up with.
  *
  * With separate buckets, the bucket itself decides who can read a file. With
- * one shared bucket — which a capped plan forces — the bucket cannot, so every
+ * one shared bucket, which a capped plan forces, the bucket cannot, so every
  * upload must carry its own permissions. Getting this wrong would publish
  * expense receipts, so the choice is made here rather than at each call site.
  */
@@ -26,7 +26,7 @@ export const bucketFor = (purpose: FilePurpose, settings?: Pick<Settings, 'stora
  * Roles the signed-in user actually holds.
  *
  * Appwrite refuses to let anyone grant a permission they do not have
- * themselves — an admin who is not also in `managers` cannot hand a file to
+ * themselves, an admin who is not also in `managers` cannot hand a file to
  * `team:managers`. So ask, rather than assume, and grant only what is really
  * available.
  */
@@ -80,7 +80,7 @@ export interface UploadResult {
  * A photo straight off a phone is commonly 4000px and several megabytes. On a
  * menu it will be shown at a few hundred pixels, so sending the original wastes
  * the customer's data on a mobile connection and the restaurant's storage
- * allowance — and since we serve stored files unchanged, whatever is uploaded
+ * allowance, and since we serve stored files unchanged, whatever is uploaded
  * is what every diner downloads.
  *
  * Falls back to the original file if anything goes wrong: a slightly large
@@ -137,7 +137,7 @@ export async function deleteFile(
  * URL for showing an image.
  *
  * Deliberately NOT getFilePreview. Appwrite's preview endpoint resizes and
- * crops on the fly, which is exactly what a menu wants — but image
+ * crops on the fly, which is exactly what a menu wants, but image
  * transformation is a paid feature on Appwrite Cloud, and on the free plan it
  * returns an error that the browser renders as a broken image.
  *

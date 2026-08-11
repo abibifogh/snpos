@@ -16,18 +16,18 @@ export interface AccountRow extends Doc {
 const TYPES: AccountRow['type'][] = ['expense', 'revenue', 'asset', 'liability', 'equity'];
 
 const TYPE_HELP: Record<AccountRow['type'], string> = {
-  expense: 'Money going out — supplies, rent, transport, wages.',
+  expense: 'Money going out, supplies, rent, transport, wages.',
   revenue: 'Money coming in from selling.',
-  asset: 'Something the business holds — cash, stock, money owed to you.',
-  liability: 'Something the business owes — tax collected, tips not yet paid out.',
+  asset: 'Something the business holds, cash, stock, money owed to you.',
+  liability: 'Something the business owes, tax collected, tips not yet paid out.',
   equity: "The owner's stake.",
 };
 
 /**
  * Suggest the next free code in the right range.
  *
- * The ranges are the ordinary accounting convention — 1000s assets, 4000s
- * revenue, 6000s expenses — and following it means the Reports page lists
+ * The ranges are the ordinary accounting convention, 1000s assets, 4000s
+ * revenue, 6000s expenses, and following it means the Reports page lists
  * things in a sensible order without anybody having to think about numbering.
  * An admin who wants a different number can type one.
  */
@@ -50,7 +50,7 @@ function suggestCode(type: AccountRow['type'], existing: AccountRow[]): string {
  * outgoings are gas refills, okada runs and landlord rent had to file all
  * three under "Other expenses" and read a report that said nothing.
  *
- * Ten of these accounts are written to by the system itself at shift close —
+ * Ten of these accounts are written to by the system itself at shift close, 
  * cash, sales, tax, tips. Those can be renamed to suit the house but never
  * removed or re-typed, because a posting names them by number and a missing
  * one would surface as a shift that will not close.
@@ -91,7 +91,7 @@ export function AccountsManager() {
     try {
       if (editing.$id) {
         // The code is frozen once created. Every posting ever made refers to it
-        // by number, so changing it would not move that history — it would
+        // by number, so changing it would not move that history, it would
         // orphan it, silently, and only show up as a report that no longer adds
         // up. Renaming is always safe.
         await db.updateDocument(DB_ID, 'accounts', editing.$id, {
@@ -132,7 +132,7 @@ export function AccountsManager() {
       }
       const pointing = used.filter((c) => c.account_code === a.code).map((c) => c.name);
       if (pointing.length) {
-        toast(`Point ${pointing.join(', ')} somewhere else first — ${pointing.length === 1 ? 'it posts' : 'they post'} to this account.`, 'err');
+        toast(`Point ${pointing.join(', ')} somewhere else first, ${pointing.length === 1 ? 'it posts' : 'they post'} to this account.`, 'err');
         return;
       }
       if (!confirm(`Remove ${a.code} ${a.name}?`)) return;
@@ -148,7 +148,7 @@ export function AccountsManager() {
     <>
       <div className="spread">
         <p className="dim small" style={{ marginTop: 0, maxWidth: '46rem' }}>
-          The lines your money lands on. Expense categories point at one of these, and Reports adds up by them — so
+          The lines your money lands on. Expense categories point at one of these, and Reports adds up by them, so
           this is what decides whether your report says “GH₵4,200 other” or “GH₵2,800 gas, GH₵1,400 transport”.
           Add whatever your outgoings actually are.
         </p>
@@ -247,7 +247,7 @@ export function AccountsManager() {
             </Field>
             <Field
               label="Code"
-              hint={editing.$id ? 'Fixed — every posting made refers to it.' : 'A number. The suggestion is fine.'}
+              hint={editing.$id ? 'Fixed, every posting made refers to it.' : 'A number. The suggestion is fine.'}
             >
               <Input
                 value={editing.code ?? ''}

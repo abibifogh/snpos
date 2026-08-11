@@ -50,7 +50,7 @@ function HoursEditor({ value, onChange }: { value: Windows; onChange: (w: Window
         );
       })}
       <p className="hint" style={{ marginTop: '0.7rem' }}>
-        A closing time earlier than the opening time means past midnight — 18:00 to 02:00 is a valid late shift.
+        A closing time earlier than the opening time means past midnight, 18:00 to 02:00 is a valid late shift.
       </p>
     </div>
   );

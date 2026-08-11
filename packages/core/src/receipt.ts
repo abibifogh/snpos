@@ -8,7 +8,7 @@ import type { Order, OrderItem } from './orders';
  * A printable receipt, in the shape people expect from a till.
  *
  * Built as a self-contained HTML document rather than as React, because it is
- * not part of any page — it goes into a print window, and from there to paper
+ * not part of any page; it goes into a print window, and from there to paper
  * or to "Save as PDF". That route is the reason there is no PDF library here:
  * every browser already has a very good one, it handles fonts and page breaks
  * properly, and it costs nothing to ship.
@@ -22,7 +22,7 @@ export interface ReceiptLine {
   qty: number;
   unitPrice: string;
   lineTotal: string;
-  /** Add-ons, notes — the small print under a line. */
+  /** Add-ons, notes, the small print under a line. */
   detail?: string;
 }
 
@@ -73,7 +73,7 @@ const esc = (s: string) =>
  * The barcode strip along the bottom.
  *
  * Drawn from the order number rather than fetched, so a receipt saved as a PDF
- * still looks right with no network. It is decorative — a real scannable
+ * still looks right with no network. It is decorative, a real scannable
  * symbology would need a checksum and a fixed character set, and nothing in
  * this system scans receipts. Deliberately not pretending otherwise.
  */
@@ -261,7 +261,7 @@ interface PaymentRow extends Doc {
  *
  * Written once and called from both the customer's phone and the admin app, so
  * the copy a guest downloads and the copy an owner reprints are the same
- * document — which is the entire point of a receipt.
+ * document, which is the entire point of a receipt.
  */
 export async function receiptForOrder(opts: {
   order: Order;
@@ -354,7 +354,7 @@ export interface ReceiptRow extends Doc {
 /**
  * Ask for a receipt to be sent, or sent again.
  *
- * Staff can update a receipt row but not delete one, deliberately — an audit
+ * Staff can update a receipt row but not delete one, deliberately, an audit
  * trail the audited can remove is not an audit trail. So a resend is recorded
  * as a request against the existing rows, and the notify function acts on it
  * and clears it. An order that never had a receipt has no row to mark, and the

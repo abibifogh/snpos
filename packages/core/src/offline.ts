@@ -14,7 +14,7 @@ import { db, DB_ID } from './client';
  *      order it was made, the moment the connection returns.
  *   2. Ids are decided by the device, not the server. Appwrite's ID.unique()
  *      already generates client-side, so an order created offline has the same
- *      id it will have online — which means its items can reference it, and a
+ *      id it will have online, which means its items can reference it, and a
  *      replay cannot create the same row twice.
  *   3. Nothing pretends. If something is queued rather than saved, the person
  *      standing there is told, and told how many are waiting.
@@ -81,8 +81,8 @@ export function onQueueChange(fn: Listener): () => void {
 /**
  * Is this failure the network, or is it the request?
  *
- * Queueing a write the server actively refused — a validation error, a missing
- * permission — would mean retrying it for ever and telling the user it is
+ * Queueing a write the server actively refused, a validation error, a missing
+ * permission, would mean retrying it for ever and telling the user it is
  * "waiting to send" when it is never going to send. Only connection failures
  * are queued; everything else is a real error and is thrown.
  */
@@ -97,7 +97,7 @@ export function isOffline(e: unknown): boolean {
   if ((e as { code?: number })?.code === 0) return true;
 
   // navigator.onLine is checked last and only when there is nothing else to go
-  // on. Checking it first was a bug: a server that answered — even to refuse —
+  // on. Checking it first was a bug: a server that answered, even to refuse, 
   // is not offline, and treating a validation error as one meant queueing a
   // write that could never be accepted and stalling every write behind it.
   if (!message && typeof navigator !== 'undefined' && navigator.onLine === false) return true;
@@ -116,7 +116,7 @@ export function enqueue(op: QueuedOp): void {
  * Create a document, or queue it if there is no connection.
  *
  * Returns what the document will be once it lands, so the screen can carry on
- * as though it had — the id is already decided, so nothing downstream has to
+ * as though it had; the id is already decided, so nothing downstream has to
  * wait to find out what it is.
  */
 export async function createOrQueue<T>(
@@ -191,7 +191,7 @@ export async function flushQueue(): Promise<{ sent: number; failed: number; rema
       }
 
       // A genuine refusal. Retried a few times in case it is transient, then
-      // dropped from the queue and reported — a row that can never be accepted
+      // dropped from the queue and reported, a row that can never be accepted
       // must not block every write behind it for ever.
       next.tries += 1;
       next.lastError = message;
@@ -220,7 +220,7 @@ export async function flushQueue(): Promise<{ sent: number; failed: number; rema
 /**
  * A write the server would not take, kept rather than thrown away.
  *
- * These are rare and always a bug — a field that no longer exists, a permission
+ * These are rare and always a bug, a field that no longer exists, a permission
  * that changed. Dropping one silently would mean a real order quietly ceasing
  * to exist, so it is kept where somebody can find it and re-enter it by hand.
  */
@@ -289,8 +289,8 @@ export async function loadWithFallback<T>(key: string, load: () => Promise<T>): 
 /**
  * Watch the connection and drain the queue when it returns.
  *
- * `online` alone is not enough — a device can be on a wifi network that has no
- * route out, and report itself perfectly online — so the queue is also retried
+ * `online` alone is not enough; a device can be on a wifi network that has no
+ * route out, and report itself perfectly online, so the queue is also retried
  * on a slow timer whenever anything is waiting.
  */
 export function startOfflineSync(): () => void {

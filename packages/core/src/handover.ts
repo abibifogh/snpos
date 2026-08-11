@@ -5,7 +5,7 @@ import type { Doc, StaffProfile } from './types';
  * Cash leaving one person's hands and entering another's.
  *
  * A shift is not a person. Three people can work one shift, take money in turn
- * out of the same drawer and leave at different times — and the shift close,
+ * out of the same drawer and leave at different times, and the shift close,
  * which happens once at the end, cannot say who left with what. So "what did
  * Ama end with?" had no answer anywhere in the system, and the only record was
  * whatever a manager wrote on a pad.
@@ -49,7 +49,7 @@ export const destinationLabel = (d: HandoverDestination): string =>
  * Write down that cash changed hands.
  *
  * Never edits an earlier one. A handover somebody can quietly revise afterwards
- * is not evidence of anything — so a mistake is fixed by recording a correction
+ * is not evidence of anything, so a mistake is fixed by recording a correction
  * that points at the original, and both stay on the record. That is the whole
  * difference between a log and a note.
  */
@@ -88,7 +88,7 @@ export async function recordHandover(opts: {
   })) as unknown as CashHandover;
 
   // The row being corrected is marked, not changed. Its figure stays exactly
-  // as it was written — that is what makes the correction meaningful.
+  // as it was written; that is what makes the correction meaningful.
   if (opts.correctsId) {
     await db
       .updateDocument(DB_ID, 'cash_handovers', opts.correctsId, { status: 'corrected' })

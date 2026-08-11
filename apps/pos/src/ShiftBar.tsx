@@ -14,7 +14,7 @@ export type { Shift } from '@snpos/core';
 /**
  * The shift is the boundary that makes cash reconcilable.
  *
- * Nothing can be paid for outside one — otherwise money arrives with no
+ * Nothing can be paid for outside one, otherwise money arrives with no
  * opening float to measure it against, and the day never balances.
  */
 export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: string, tone?: 'ok' | 'err') => void }) {
@@ -136,7 +136,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
    * A drawer counted below nothing, when that is not allowed.
    *
    * You cannot hand over less than no money, so a negative count is not a
-   * variance — it is a missing record, usually an expense paid out of the till
+   * variance; it is a missing record, usually an expense paid out of the till
    * that nobody entered. Blocked by default, with a switch for the places that
    * genuinely need to close short and explain it.
    */
@@ -155,7 +155,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
     if (short) {
       setError(
         `${short} cannot finish below nothing. A drawer that counts negative almost always means money was paid ` +
-        'out and not recorded — add the expense first, then close.',
+        'out and not recorded. Add the expense first, then close.',
       );
       return;
     }
@@ -163,12 +163,12 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       const names = resolved.missing.slice(0, 3).map((i) => i.name).join(', ');
       setError(
         `Still to count: ${names}${resolved.missing.length > 3 ? ` and ${resolved.missing.length - 3} more` : ''}. ` +
-        'Type 0 for anything that has run out — a blank row would be saved as if it were fine.',
+        'Type 0 for anything that has run out. A blank row would be saved as if it were fine.',
       );
       return;
     }
     if (anythingOff() && !note.trim()) {
-      setError('Something is over or short. Say what happened before closing — that answer is gone by tomorrow.');
+      setError('Something is over or short. Say what happened before closing; that answer is gone by tomorrow.');
       return;
     }
 
@@ -195,7 +195,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         onToast(`Shift closed, but the accounts entry failed: ${result.ledgerError}`, 'err');
       }
       const off = Object.values(result.variance).reduce((a, b) => a + Math.abs(b), 0);
-      const base = off === 0 ? 'Shift closed and balanced' : `Shift closed — ${money(off)} out`;
+      const base = off === 0 ? 'Shift closed and balanced' : `Shift closed, ${money(off)} out`;
       onToast(result.stockNote ? `${base}. ${result.stockNote}` : base, off > tolerance ? 'err' : 'ok');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not close the shift.');
@@ -220,7 +220,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
             </>
           ) : (
             <span className="small" style={{ color: 'var(--warn)' }}>
-              No shift open — orders can be taken, but nothing can be marked paid until one is.
+              No shift open, orders can be taken, but nothing can be marked paid until one is.
               {!ctx.profile?.can_open_shift && ' Ask someone who can open one, or have an admin grant you the permission.'}
             </span>
           )}

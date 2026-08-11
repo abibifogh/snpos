@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
  * How many writes are waiting to be sent, kept live.
  *
  * Lives in the UI package with the bar that displays it, but takes its
- * functions as arguments so this package still does not depend on core — the
+ * functions as arguments so this package still does not depend on core, the
  * app wires the two together.
  */
 export function useOfflineQueue(

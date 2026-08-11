@@ -59,7 +59,7 @@ export interface PosContext {
   reloadShift: () => Promise<void>;
   /** Which side of the business this till is selling for. */
   module: Module;
-  /** Both sides running and this person works on both — so the till can switch. */
+  /** Both sides running and this person works on both, so the till can switch. */
   canSwitch: boolean;
   setModule: (m: Module) => void;
 }
@@ -110,7 +110,7 @@ export function App() {
      * counter should find the till already showing baskets rather than having
      * to pick the shop out of a menu at the start of every shift. Where they
      * work both and the business runs both, the till remembers the last choice
-     * on this device — one tap, once, on the device that stays where it is.
+     * on this device; one tap, once, on the device that stays where it is.
      */
     const mine = modulesForStaff(profile, settings);
     const canSwitch = mine.kitchen && mine.craft;
@@ -238,7 +238,7 @@ export function App() {
           </div>
         </div>
         {/* Which counter this till is. Only shown to somebody who works both
-            sides in a business that runs both — everyone else is already where
+            sides in a business that runs both, everyone else is already where
             they belong and a switch would just be a way to end up in the wrong
             books. It sits left of the tabs because it changes what they mean. */}
         {ctx.canSwitch && (
@@ -307,7 +307,7 @@ export function App() {
                 reason,
               });
               // Reload so the dish disappears from the ordering screen at once
-              // — a waiter who can still tap it will still sell it.
+              //, a waiter who can still tap it will still sell it.
               const fresh = await reloadMenu(ctx.venue.$id);
               setCtx((c) => (c ? { ...c, menu: fresh } : c));
               toast(`${i.name} taken off the menu`);

@@ -4,7 +4,7 @@ import { scopedQueries, scopedPayload, scopedPermissions } from './org';
 /**
  * One Appwrite client per app, configured from build-time env vars.
  *
- * These values are public by design — they identify the project, they do not
+ * These values are public by design, they identify the project, they do not
  * grant access. All real authorisation happens through sessions and the
  * collection permissions set during provisioning.
  */
@@ -30,7 +30,7 @@ const rawDb = new Databases(client);
  * The database, with the current hotel applied to everything.
  *
  * One database holds every hotel, so a query that forgets to say whose rows it
- * wants is not a slow query — it is one hotel reading another's takings. There
+ * wants is not a slow query; it is one hotel reading another's takings. There
  * are 117 places in this codebase that read data, and the honest assessment of
  * "remember to add a filter in all of them, and in everything written from
  * here on" is that it will be forgotten, once, quietly, in a year.
@@ -66,7 +66,7 @@ export const db = {
 
   // Update and delete are left alone on purpose. Both name one document by id,
   // and Appwrite will not hand over a document this session's team cannot read
-  // — so the permissions written at creation are already the whole answer.
+  //, so the permissions written at creation are already the whole answer.
   updateDocument: (
     databaseId: string,
     collectionId: string,
@@ -106,7 +106,7 @@ export async function listAll<T>(collectionId: string, queries: string[] = []): 
  * and the failure names a field the person saving has never heard of either.
  *
  * So the unknown fields are shed one at a time and the rest is saved. What was
- * dropped comes back, for the caller to mention if it matters — a note that is
+ * dropped comes back, for the caller to mention if it matters, a note that is
  * missing is worth saying out loud; a field the admin never filled in is not.
  */
 export async function saveDropping(
@@ -138,7 +138,7 @@ export async function saveDropping(
  * Turn an Appwrite failure into something a person can act on.
  *
  * The browser reports a blocked cross-origin request as an ordinary network
- * failure — it cannot see the response at all — so "could not reach the
+ * failure, it cannot see the response at all, so "could not reach the
  * server" and "this address is not registered in Appwrite" look identical from
  * here. Since the second is by far the most common cause during setup, the
  * message names it rather than leaving someone to check their wifi.
@@ -154,7 +154,7 @@ export function humanError(e: unknown): string {
    * which a customer holding a menu cannot be expected to make anything of.
    *
    * It always means the same thing: this browser is talking to the server as a
-   * stranger. Either the session expired, or it was never kept — private
+   * stranger. Either the session expired, or it was never kept, private
    * browsing and blocked cookies both accept a sign-in and then remember none
    * of it. Reloading is the fix in the first case and the diagnosis in the
    * second, so it leads.
@@ -166,7 +166,7 @@ export function humanError(e: unknown): string {
     );
   }
   if (/missing scopes|not authorized|unauthorized/i.test(msg)) return 'Your account does not have permission to do that.';
-  if (/Document with the requested ID could not be found/i.test(msg)) return 'That record no longer exists — it may have been deleted.';
+  if (/Document with the requested ID could not be found/i.test(msg)) return 'That record no longer exists; it may have been deleted.';
   if (/already exists/i.test(msg)) return 'Something with that name or code already exists.';
   if (/Rate limit/i.test(msg)) return 'Too many attempts. Wait a minute and try again.';
 

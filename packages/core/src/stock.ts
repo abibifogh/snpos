@@ -49,7 +49,7 @@ export interface StockMovement extends Doc {
  *
  * "Should have" is the operative phrase: this is the theoretical figure that a
  * physical count is later measured against. The gap between them is the whole
- * point — it is where waste, over-portioning and theft show up.
+ * point; it is where waste, over-portioning and theft show up.
  */
 export function theoreticalUsage(items: OrderItem[], recipes: Recipe[]): Record<string, number> {
   const usage: Record<string, number> = {};
@@ -59,7 +59,7 @@ export function theoreticalUsage(items: OrderItem[], recipes: Recipe[]): Record<
 
     const forItem = recipes.filter((r) => r.menu_item_id === item.menu_item_id);
     for (const r of forItem) {
-      // Wastage covers trim and spillage — the peel on an onion is consumed
+      // Wastage covers trim and spillage, the peel on an onion is consumed
       // even though it never reaches the plate.
       const perUnit = r.qty_per_unit * (1 + (r.wastage_bp || 0) / 10000);
       usage[r.ingredient_id] = (usage[r.ingredient_id] ?? 0) + perUnit * item.qty;
@@ -248,7 +248,7 @@ export async function updateStockAlerts(
    * Every flagged item, not just the two ends of the range.
    *
    * `fresh` is exactly one shift and `persistent` is three or more, so an
-   * ingredient on its SECOND consecutive shift belonged to neither — and
+   * ingredient on its SECOND consecutive shift belonged to neither, and
    * anything reading only those two lists lost it. The shift-close email did
    * exactly that, which is how an item a cook had marked OUT could disappear
    * from the report on the night it mattered most.

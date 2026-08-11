@@ -8,7 +8,7 @@ import { useSession } from '../session';
 /**
  * What can be erased, and what has to go with it.
  *
- * An order without its items is worse than no order at all — a report that
+ * An order without its items is worse than no order at all, a report that
  * counts it finds nothing to count and quietly reports zero. So each group
  * names the children that must go too, and they go first: if the run stops
  * half way, what is left is whole records, never headless lines.
@@ -35,7 +35,7 @@ const GROUPS: Group[] = [
   },
   {
     key: 'payments',
-    label: 'Payments — cash, card and mobile money',
+    label: 'Payments, cash, card and mobile money',
     hint: 'The record that a bill was settled, and by what means.',
     collection: 'payments',
   },
@@ -49,7 +49,7 @@ const GROUPS: Group[] = [
   {
     key: 'shifts',
     label: 'Shifts',
-    hint: 'Opening floats, counts and variances. Erase these last — a shift is what the money hangs off.',
+    hint: 'Opening floats, counts and variances. Erase these last; a shift is what the money hangs off.',
     collection: 'shifts',
     children: [{ collection: 'shift_stock_checks', field: 'shift_id' }],
   },
@@ -73,7 +73,7 @@ const GROUPS: Group[] = [
  * This is a delete, not an archive: Appwrite has nowhere to put a copy, and
  * pretending otherwise would be worse than saying so. Hence the typed
  * confirmation, the count shown before anything happens, and the entry written
- * to the audit log after — the one record the erase never touches.
+ * to the audit log after, the one record the erase never touches.
  */
 export function PurgePage() {
   const { user, profile } = useSession();
@@ -102,7 +102,7 @@ export function PurgePage() {
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'manager';
 
-  /** Inclusive of both days, in whole days — nobody thinks in timestamps. */
+  /** Inclusive of both days, in whole days, nobody thinks in timestamps. */
   const startIso = () => new Date(`${from}T00:00:00`).toISOString();
   const endIso = () => new Date(`${to}T23:59:59.999`).toISOString();
 
@@ -145,7 +145,7 @@ export function PurgePage() {
         const parents = await rowsIn(g.collection);
         if (parents.length === 0) continue;
 
-        // Children first, in id batches — a headless line is worse than a
+        // Children first, in id batches, a headless line is worse than a
         // deleted one, so nothing is orphaned even if this stops half way.
         for (const child of g.children ?? []) {
           for (let i = 0; i < parents.length; i += 25) {
@@ -208,7 +208,7 @@ export function PurgePage() {
       <h1>Erase records</h1>
       <p className="dim" style={{ maxWidth: '46rem' }}>
         For clearing out test data before you go live, or removing a period you no longer need to keep. This deletes
-        permanently — there is no undo and no copy kept. Run your reports first if there is anything you want off them.
+        permanently; there is no undo and no copy kept. Run your reports first if there is anything you want off them.
       </p>
 
       {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
@@ -276,7 +276,7 @@ export function PurgePage() {
           </Notice>
           <ul className="small">
             {GROUPS.filter((g) => picked.includes(g.key)).map((g) => (
-              <li key={g.key}>{g.label} — {counts?.[g.key] ?? 0}</li>
+              <li key={g.key}>{g.label}, {counts?.[g.key] ?? 0}</li>
             ))}
           </ul>
           <Field label="Type ERASE to confirm">

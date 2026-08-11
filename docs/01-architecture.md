@@ -1,4 +1,4 @@
-# 01 — Architecture
+# 01, Architecture
 
 ## 1.1 Surfaces
 
@@ -19,25 +19,25 @@ tablet never ships the admin bundle.
   relevant query keys, so every device converges without manual refresh logic.
 - **Zustand** for local UI state (open ticket, cart, selected table).
 - **vite-plugin-pwa** for service worker, install prompt and an offline shell.
-- **Tailwind + CSS custom properties** — branding colours are injected at
+- **Tailwind + CSS custom properties**, branding colours are injected at
   runtime as `--brand-primary` / `--brand-secondary`, so an admin colour change
   repaints every device on the next realtime tick without a rebuild.
 
 Why one web codebase: the four surfaces share ~70% of their logic (money maths,
 availability engine, order model, permission checks). Splitting into native apps
-triples the release overhead for one genuine gain — reliable background alarms —
+triples the release overhead for one genuine gain, reliable background alarms, 
 which is addressed in doc 09.
 
 ## 1.3 Appwrite service usage
 
 | Service | Used for |
 | --- | --- |
-| **Databases** | All business data — one database `snpos`, collections in doc 02 |
+| **Databases** | All business data, one database `snpos`, collections in doc 02 |
 | **Auth** | Staff accounts; anonymous sessions for diners |
-| **Teams** | Role assignment — `cooks`, `waiters`, `cashiers`, `managers`, `admins`. Collection permissions reference team IDs, so authorisation is enforced by the server, not the UI |
+| **Teams** | Role assignment, `cooks`, `waiters`, `cashiers`, `managers`, `admins`. Collection permissions reference team IDs, so authorisation is enforced by the server, not the UI |
 | **Storage** | `menu-images`, `branding`, `receipts` (expense photos) buckets |
 | **Realtime** | Order sync, kitchen alerts, table status, settings/branding push |
-| **Functions** | Server-authoritative logic — see below |
+| **Functions** | Server-authoritative logic, see below |
 | **Messaging** | Optional email/SMS receipts (doc 09) |
 
 ## 1.4 Server-authoritative logic (Appwrite Functions)
@@ -71,10 +71,10 @@ Client A writes ──► Appwrite Function ──► Database
 
 Every client subscribes to:
 
-- `databases.snpos.collections.orders.documents` — filtered client-side by
+- `databases.snpos.collections.orders.documents`, filtered client-side by
   `shift_id` (kitchen/POS) or `session_id` (diner).
-- `databases.snpos.collections.order_items.documents` — item-level state.
-- `databases.snpos.collections.settings.documents.main` — branding, currency,
+- `databases.snpos.collections.order_items.documents`, item-level state.
+- `databases.snpos.collections.settings.documents.main`, branding, currency,
   payment methods; applied live.
 
 Reconnect handling: on `disconnected`, the client shows a banner and starts a
@@ -88,7 +88,7 @@ never double-fire a ticket.
 ## 1.6 Money handling
 
 All monetary values are stored as **integer minor units** (pesewas, cents) in
-`integer` attributes — never floats. `packages/core/money.ts` owns formatting,
+`integer` attributes, never floats. `packages/core/money.ts` owns formatting,
 using `currency_code`, `currency_symbol`, `decimals` and `symbol_position` from
 the settings document. Changing currency in admin changes display everywhere
 instantly; it does **not** convert historical values, and the admin UI warns

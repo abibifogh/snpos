@@ -3,14 +3,14 @@
  *
  * Generated with the Web Audio API rather than an audio file: nothing to load,
  * nothing to 404, and the sound can be shaped to the room. It stops only when
- * the order is acknowledged — there is no snooze, because a snooze is how an
+ * the order is acknowledged; there is no snooze, because a snooze is how an
  * order gets forgotten.
  *
  * This is built for a bar. A polite beep loses to a sound system every time, so
  * the alarm carries in three ways at once: a low tone with real energy under
  * 200 Hz that travels through noise, a bright tone on top that cuts through it,
  * and a slight detune between two oscillators that makes the sound beat rather
- * than sit still — a steady tone is exactly what a room full of noise hides
+ * than sit still, a steady tone is exactly what a room full of noise hides
  * best.
  *
  * Browsers refuse to play audio before the user has touched the page, which is
@@ -126,7 +126,7 @@ function chimeLate(level: number): void {
   for (let i = 0; i < 3; i += 1) {
     const at = t + i * 0.34;
     thump(at, vol);
-    // High then low, quickly — the two-tone that says "move".
+    // High then low, quickly, the two-tone that says "move".
     tone(at, 880 + level * 60, 0.16, vol * 0.85, 'sawtooth');
     tone(at, 880 + level * 60, 0.16, vol * 0.4, 'square', 12);
     tone(at + 0.16, 587.33 + level * 40, 0.2, vol * 0.85, 'sawtooth');
@@ -156,7 +156,7 @@ export function setAlarm(level: number, kind: AlarmKind = 'new'): void {
   timer = window.setInterval(() => play(kind, level), gap);
 
   // Vibration is the backstop when a tablet has been muted at the hardware
-  // switch — silent failure is the one outcome that must not happen here.
+  // switch, silent failure is the one outcome that must not happen here.
   if ('vibrate' in navigator) {
     navigator.vibrate?.(kind === 'late' ? [300, 90, 300, 90, 300] : [200, 100, 200]);
   }

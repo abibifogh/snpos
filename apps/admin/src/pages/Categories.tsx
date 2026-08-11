@@ -17,7 +17,7 @@ const blank = (sort: number): Partial<Category> => ({
  * Categories, for one side of the business at a time.
  *
  * The same screen serves the kitchen and the craft shop because the job is
- * identical — a name, an order, some opening hours. What must never be shared
+ * identical, a name, an order, some opening hours. What must never be shared
  * is the list: a cook scrolling past "Woven baskets" to reach "Starters" is the
  * cost of one table doing two jobs, and it is paid on every visit.
  *
@@ -121,7 +121,7 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'c
           <div className="card-pad"><Spinner /></div>
         ) : rows.length === 0 ? (
           <Empty title="No categories yet">
-            Categories group your menu — Starters, Mains, Drinks. Add one to begin.
+            Categories group your menu, Starters, Mains, Drinks. Add one to begin.
           </Empty>
         ) : (
           <div className="table-wrap">
@@ -204,7 +204,7 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'c
               value={editing.unavailable_display ?? 'grey'}
               onChange={(e) => setEditing({ ...editing, unavailable_display: e.target.value as 'grey' | 'hide' })}
             >
-              <option value="grey">Show greyed out — customers can see it exists</option>
+              <option value="grey">Show greyed out, customers can see it exists</option>
               <option value="hide">Hide completely</option>
             </Select>
           </Field>
@@ -219,7 +219,7 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'c
 
           <Field
             label="Available hours"
-            hint="When this section shows on the menu. A dish in several categories appears and disappears with each one — so the same dish can be in Lunch and in Dinner and show at both times."
+            hint="When this section shows on the menu. A dish in several categories appears and disappears with each one, so the same dish can be in Lunch and in Dinner and show at both times."
           />
           <HoursEditor value={hours} onChange={setHours} emptyMeans="this category shows all day, every day" />
 

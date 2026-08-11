@@ -4,7 +4,7 @@
  * A serving cloche: the one shape that reads as "food is coming" at any size,
  * including the 16 pixels a browser tab gives you. It is drawn from the theme
  * variables rather than from a fixed palette, so when an admin changes the
- * restaurant's colours the icon changes with them — no new image to upload, no
+ * restaurant's colours the icon changes with them, no new image to upload, no
  * redeploy.
  */
 
@@ -40,7 +40,7 @@ export function logoSvg(c: BrandColours, rounded = true): string {
     // The dome, sitting on its counter.
     `<path d="M11 41a21 21 0 0 1 42 0z" fill="${body}"/>`,
     `<rect x="7" y="44" width="50" height="7" rx="3.5" fill="${body}"/>`,
-    // The handle, in the accent colour — the one spot of contrast that makes
+    // The handle, in the accent colour, the one spot of contrast that makes
     // the silhouette read as a cloche rather than a hill.
     `<circle cx="32" cy="15" r="4.5" fill="${c.accent}"/>`,
     '</svg>',

@@ -5,7 +5,7 @@ import type { FeatureFlag } from './types';
  * Feature flags, resolved per venue.
  *
  * A row with a blank venue_id is the group-wide default; a row naming a venue
- * overrides it there. Nothing is hard-coded into the screens — they ask this.
+ * overrides it there. Nothing is hard-coded into the screens, they ask this.
  */
 export interface ResolvedFeature {
   key: string;

@@ -64,7 +64,7 @@ export function ConsignmentFields({
   const removeVariant = (index: number) =>
     setVariants((rows) => {
       const row = rows[index];
-      // Saved rows have to be deleted on save, not merely forgotten about —
+      // Saved rows have to be deleted on save, not merely forgotten about, 
       // otherwise a size somebody removed carries on being sellable.
       if (row.$id) setRemovedVariantIds((ids) => [...ids, row.$id as string]);
       return rows.filter((_, i) => i !== index);
@@ -75,7 +75,7 @@ export function ConsignmentFields({
       <div className="grid-2">
         <Field
           label="Whose work is this?"
-          hint="Leave blank for anything the shop owns outright — nothing is credited to anybody for those."
+          hint="Leave blank for anything the shop owns outright; nothing is credited to anybody for those."
         >
           <Select
             value={editing.consignor_id ?? ''}
@@ -124,7 +124,7 @@ export function ConsignmentFields({
         <Toggle
           checked={editing.is_one_off ?? false}
           onChange={(v) => { setEditing({ ...editing, is_one_off: v }); if (v) setOnHandText('1'); }}
-          label="A one-off piece — there is only ever one of these"
+          label="A one-off piece; there is only ever one of these"
         />
       </Field>
 
@@ -144,7 +144,7 @@ export function ConsignmentFields({
         <div>
           {variants.length === 0 && (
             <p className="small dim" style={{ margin: '0 0 0.5rem' }}>
-              No sizes — this sells at the single price above.
+              No sizes, this sells at the single price above.
             </p>
           )}
 
@@ -183,7 +183,7 @@ export function ConsignmentFields({
                 onChange={(e) => setVariant(i, { barcode: e.target.value })}
               />
               {/* Retired rather than deleted where it has already sold things,
-                  but the distinction belongs to the row, not to this button —
+                  but the distinction belongs to the row, not to this button, 
                   see the save path in MenuItems. */}
               <Button onClick={() => removeVariant(i)} aria-label={`Remove ${v.label || 'this size'}`}>×</Button>
               {parseMoney(v.priceText, decimals) === null && v.priceText.trim() !== '' && (
@@ -195,7 +195,7 @@ export function ConsignmentFields({
           <Button onClick={() => setVariants((rows) => [...rows, blankVariant()])}>Add a size</Button>
           {removedVariantIds.length > 0 && (
             <p className="small dim" style={{ marginBottom: 0 }}>
-              {removedVariantIds.length} removed — saved when you press Save.
+              {removedVariantIds.length} removed, saved when you press Save.
             </p>
           )}
         </div>

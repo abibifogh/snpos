@@ -40,7 +40,7 @@ const isTransient = (e) =>
  * Retry a call through transient network failures.
  *
  * Free-tier connections drop regularly, and a provisioning run makes hundreds
- * of calls — without this, one dropped socket half an hour in throws away the
+ * of calls, without this, one dropped socket half an hour in throws away the
  * whole run.
  */
 async function retry(fn, label = '', tries = 5) {
@@ -61,7 +61,7 @@ async function retry(fn, label = '', tries = 5) {
  *
  * Appwrite returns 25 rows by default. Reading only the first page made every
  * attribute past the 25th look missing, so a wide collection waited forever for
- * fields that already existed — and re-runs kept recreating them.
+ * fields that already existed, and re-runs kept recreating them.
  */
 async function listAll(fetchPage, key) {
   const out = [];
@@ -165,7 +165,7 @@ async function createAttribute(colId, tuple) {
 /**
  * Make an attribute optional when the schema says it should be.
  *
- * Attributes that already exist are otherwise left alone — Appwrite will not
+ * Attributes that already exist are otherwise left alone, Appwrite will not
  * rebuild one, and re-creating it would throw the column's data away. That is
  * right for size, type and defaults, but it left one kind of drift stuck:
  * a field that used to be required and no longer is.
@@ -221,13 +221,13 @@ async function waitForAttributes(colId, keys, timeoutMs) {
     const attributes = await allAttributes(colId);
     const byKey = Object.fromEntries(attributes.map((a) => [a.key, a.status]));
 
-    // `failed` and `stuck` never resolve on their own — waiting is pointless.
+    // `failed` and `stuck` never resolve on their own, waiting is pointless.
     const wedged = keys.filter((k) => byKey[k] === 'failed' || byKey[k] === 'stuck');
     if (wedged.length) {
       throw new Error(
         `${colId}: Appwrite reports ${wedged.map((k) => `${k} → ${byKey[k]}`).join(', ')}\n` +
           `  These will not finish on their own. Delete the \`${colId}\` collection in the\n` +
-          `  Appwrite console, then re-run — it will be rebuilt cleanly.`,
+          `  Appwrite console, then re-run; it will be rebuilt cleanly.`,
       );
     }
 
@@ -247,7 +247,7 @@ async function waitForAttributes(colId, keys, timeoutMs) {
   const stuck = keys.filter((k) => byKey[k] !== 'available').map((k) => `${k}(${byKey[k] || 'missing'})`);
   throw new Error(
     `Timed out after ${Math.round(budget / 1000)}s waiting for ${colId}: ${stuck.join(', ')}\n` +
-      `  Appwrite is still building these. Re-run — it will resume from here.`,
+      `  Appwrite is still building these. Re-run; it will resume from here.`,
   );
 }
 
@@ -355,7 +355,7 @@ async function main() {
             sharedBucketId,
             'SNPOS files (shared)',
             sharedPerms,
-            true /* fileSecurity — each file carries its own permissions */,
+            true /* fileSecurity, each file carries its own permissions */,
             true,
             maxSize,
             allExtensions,
@@ -369,7 +369,7 @@ async function main() {
       log('!', `Plan allows one storage bucket, so all files share \`${sharedBucketId}\`.`);
       log(' ', '  File-level security is on: uploads must set their own permissions.');
       log(' ', '  Menu images stay public; expense receipts stay manager-only.');
-      log(' ', '  Upgrading the Appwrite plan later restores separate buckets — re-run then.');
+      log(' ', '  Upgrading the Appwrite plan later restores separate buckets, re-run then.');
       break;
     }
   }
@@ -410,7 +410,7 @@ async function main() {
 
   await waitForAttributes('accounts', ['code', 'name', 'type', 'system']);
   // `system` marks the accounts the code itself posts to at shift close. The
-  // rest are a convenient starting set — Supplies, Transport, Repairs — and a
+  // rest are a convenient starting set, Supplies, Transport, Repairs, and a
   // restaurant whose real outgoings are gas refills and okada runs should be
   // able to rename or retire them without asking anybody.
   for (const [code, name, type] of SEED_ACCOUNTS) {
@@ -510,12 +510,12 @@ async function main() {
   }
   log('✓', 'Seed data');
 
-  log('▸', `Done — ${created} created, ${skipped} already present.`);
+  log('▸', `Done, ${created} created, ${skipped} already present.`);
   log('▸', 'Next: npm run seed:admin -- --email you@example.com --name "Owner"');
 }
 
 main().catch((e) => {
   console.error(`\n✗ ${e.message}`);
-  console.error('  Re-running is safe — Appwrite creates attributes asynchronously and a cold project sometimes needs a second pass.');
+  console.error('  Re-running is safe, Appwrite creates attributes asynchronously and a cold project sometimes needs a second pass.');
   process.exit(1);
 });

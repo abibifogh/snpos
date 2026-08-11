@@ -54,7 +54,7 @@ export function FeaturesPage() {
     <>
       <h1>Features</h1>
       <p className="dim small" style={{ marginTop: 0 }}>
-        Switching a feature off hides it — it never deletes what you have already recorded, so you can turn it back on
+        Switching a feature off hides it; it never deletes what you have already recorded, so you can turn it back on
         later and find everything intact.
       </p>
 

@@ -22,7 +22,7 @@ import type {
  * Combined mode exists for the shift where there is nobody on the floor: the
  * cook takes the order, cooks it, hands it over and settles the bill. Making
  * them walk to another device to open a shift or record the gas money would
- * defeat the point — so the whole till lives here too, driven by the same code
+ * defeat the point, so the whole till lives here too, driven by the same code
  * the terminal uses rather than a second version of it that drifts.
  */
 export function CombinedBar({
@@ -158,14 +158,14 @@ export function CombinedBar({
       return;
     }
     // A drawer cannot hold less than nothing. When one counts negative it is
-    // not a variance, it is a missing expense — so say that rather than
+    // not a variance, it is a missing expense, so say that rather than
     // recording an impossible figure.
     if (!settings.allow_negative_cash) {
       const short = rows.find((r) => (parseMoney(r.countedText, decimals) ?? 0) < 0);
       if (short) {
         setError(
           `${short.name} cannot finish below nothing. That almost always means money was paid out and not ` +
-          'recorded — add the expense first, then close.',
+          'recorded. Add the expense first, then close.',
         );
         return;
       }
@@ -174,13 +174,13 @@ export function CombinedBar({
       const names = resolved.missing.slice(0, 3).map((i) => i.name).join(', ');
       setError(
         `Still to count: ${names}${resolved.missing.length > 3 ? ` and ${resolved.missing.length - 3} more` : ''}. ` +
-        'Type 0 for anything that has run out — a blank row would be saved as if it were fine.',
+        'Type 0 for anything that has run out. A blank row would be saved as if it were fine.',
       );
       return;
     }
     const off = rows.some((r) => (parseMoney(r.countedText, decimals) ?? 0) !== r.expected);
     if (off && !note.trim()) {
-      setError('Something is over or short. Say what happened before closing — that answer is gone by tomorrow.');
+      setError('Something is over or short. Say what happened before closing; that answer is gone by tomorrow.');
       return;
     }
 
@@ -203,7 +203,7 @@ export function CombinedBar({
       setClosing(false);
       if (result.ledgerError) onToast(`Shift closed, but the accounts entry failed: ${result.ledgerError}`, 'err');
       const total = Object.values(result.variance).reduce((a, b) => a + Math.abs(b), 0);
-      const base = total === 0 ? 'Shift closed and balanced' : `Shift closed — ${money(total)} out`;
+      const base = total === 0 ? 'Shift closed and balanced' : `Shift closed, ${money(total)} out`;
       onToast(result.stockNote ? `${base}. ${result.stockNote}` : base, total > tolerance ? 'err' : 'ok');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not close the shift.');
@@ -222,7 +222,7 @@ export function CombinedBar({
           </>
         ) : (
           <span className="small" style={{ color: 'var(--warn)' }}>
-            No shift open — nothing can be marked paid until one is.
+            No shift open; nothing can be marked paid until one is.
           </span>
         )}
         <span style={{ flex: 1 }} />
@@ -419,7 +419,7 @@ function ExpenseModal({
   /**
    * Lines add up to the total, so nobody types it twice.
    *
-   * Kept editable when there are no lines at all — plenty of spending (a taxi,
+   * Kept editable when there are no lines at all, plenty of spending (a taxi,
    * a gas refill) has nothing to put into stock.
    */
   const linesTotal = filledLines.reduce(
@@ -470,7 +470,7 @@ function ExpenseModal({
     setError(null);
     try {
       // The receipt goes up first. If the upload fails the expense is still
-      // recorded — a missing photo is a nuisance, a missing expense is a hole
+      // recorded, a missing photo is a nuisance, a missing expense is a hole
       // in the drawer nobody can explain.
       let receiptFileId = '';
       if (receipt) {
@@ -568,11 +568,11 @@ function ExpenseModal({
       </p>
 
       {/* What was bought, before what it cost. A shop run is several things,
-          and listing them here is what puts them into stock — otherwise
+          and listing them here is what puts them into stock, otherwise
           somebody has to enter the same delivery twice. */}
       <Field
         label="What was bought"
-        hint="Leave empty for spending with nothing to stock — transport, gas, repairs."
+        hint="Leave empty for spending with nothing to stock: transport, gas, repairs."
       >
         <div className="stack" style={{ gap: '0.45rem' }}>
           {lines.map((l, i) => (
@@ -582,7 +582,7 @@ function ExpenseModal({
                 onChange={(e) => pickIngredient(i, e.target.value)}
                 style={{ flex: 2 }}
               >
-                <option value="">— item —</option>
+                <option value="">Item</option>
                 {ingredients.map((ing) => (
                   <option key={ing.$id} value={ing.$id}>{ing.name} ({ing.unit})</option>
                 ))}
@@ -614,8 +614,8 @@ function ExpenseModal({
       {/* Not asked once items are chosen. Each ingredient already carries the
           category it belongs to, set when an admin added it, so asking again
           is asking the same question twice and inviting two answers.
-          Still asked for spending with nothing to stock — a taxi, gas, a
-          repair — because there is nothing to take the answer from. */}
+          Still asked for spending with nothing to stock: a taxi, gas, a
+          repair, because there is nothing to take the answer from. */}
       {filledLines.length === 0 && (
         <Field label="What for">
           <Select value={categoryKey} onChange={(e) => setCategoryKey(e.target.value)}>
@@ -640,7 +640,7 @@ function ExpenseModal({
         </Field>
       )}
       {/* One option is not a choice. When the restaurant pays for shop runs out
-          of the drawer and nothing else — the default — a dropdown with a
+          of the drawer and nothing else, the default, a dropdown with a
           single line in it is a question that wastes a tap and implies there is
           something to decide. It says what happened instead. */}
       {methods.length === 1 ? (
@@ -662,7 +662,7 @@ function ExpenseModal({
       {paidToKind === 'supplier' && (
         <Field label="Which supplier" hint="Suppliers are added by an admin under Stock.">
           <Select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-            <option value="">— choose —</option>
+            <option value="">Choose</option>
             {suppliers.map((s) => <option key={s.$id} value={s.$id}>{s.name}</option>)}
           </Select>
         </Field>
@@ -670,7 +670,7 @@ function ExpenseModal({
       {paidToKind === 'staff' && (
         <Field label="Which member of staff" hint="For money handed to someone to go and buy, or a staff advance.">
           <Select value={staffId} onChange={(e) => setStaffId(e.target.value)}>
-            <option value="">— choose —</option>
+            <option value="">Choose</option>
             {staff.map((s) => <option key={s.$id} value={s.$id}>{s.display_name}</option>)}
           </Select>
         </Field>
@@ -745,7 +745,7 @@ export function SettleModal({
 
   const decimals = settings.currency_decimals ?? 2;
   const method = methods.find((m) => m.$id === methodId);
-  // A blank box means "all of it" — the overwhelmingly common case, and it
+  // A blank box means "all of it", the overwhelmingly common case, and it
   // should not need typing.
   const paying = payText.trim() === '' ? owed : parseMoney(payText, decimals) ?? 0;
   const leftAfter = Math.max(0, owed - paying);
@@ -788,7 +788,7 @@ export function SettleModal({
         // collected is recording that it went out, not running a drawer. The
         // box asking what the customer gave was one more thing to type while
         // holding a plate, and the change it worked out was a sum nobody
-        // needed — the till still does it where a drawer is actually open.
+        // needed, the till still does it where a drawer is actually open.
         changeGiven: 0,
         reference: reference.trim(),
         takenBy: who?.user_id || who?.$id || '',
@@ -838,7 +838,7 @@ export function SettleModal({
         </Select>
       </Field>
       {/* Blank means the whole balance. Filled in, it takes part of it and the
-          bill stays open for whoever is paying the rest — a table splitting
+          bill stays open for whoever is paying the rest, a table splitting
           the bill should not need one person to front the lot. */}
       <Field
         label={`Amount paid now (${settings.currency_symbol ?? ''})`}
@@ -865,7 +865,7 @@ export function SettleModal({
         </Field>
       )}
       {asksForTip(settings, 'kitchen') && (
-        <Field label={`Tip (${settings.currency_symbol ?? ''})`} hint="Optional. Kept separate from sales — it is not yours.">
+        <Field label={`Tip (${settings.currency_symbol ?? ''})`} hint="Optional. Kept separate from sales; it is not yours.">
           <Input value={tipText} inputMode="decimal" onChange={(e) => setTipText(e.target.value)} />
         </Field>
       )}
@@ -976,7 +976,7 @@ function HandoverModal({
 
       <p className="small dim" style={{ marginTop: 0 }}>
         This writes down that you handed the money over. It does not move anything and it does not close the
-        shift — it is so there is a record of what you finished with, in your name.
+        shift; it is so there is a record of what you finished with, in your name.
       </p>
 
       {already > 0 && (
@@ -1008,7 +1008,7 @@ function HandoverModal({
         hint="The person receiving it, so both sides of the handover are on the record."
       >
         <Select value={receivedById} onChange={(e) => setReceivedById(e.target.value)}>
-          <option value="">— nobody, it went to the safe —</option>
+          <option value="">Nobody, it went to the safe</option>
           {staff.filter((s) => s.$id !== who?.$id).map((s) => (
             <option key={s.$id} value={s.$id}>{s.display_name}</option>
           ))}

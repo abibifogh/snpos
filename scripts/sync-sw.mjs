@@ -3,7 +3,7 @@
  *
  * A service worker only controls pages inside its own folder, so every app
  * needs its own copy at its own root. Copying at build time rather than
- * checking in four files means there is still only one to edit — four copies of
+ * checking in four files means there is still only one to edit, four copies of
  * a caching policy would drift, and a stale one is invisible until somebody is
  * looking at last week's app on a dead connection.
  */

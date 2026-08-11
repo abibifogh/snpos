@@ -80,7 +80,7 @@ export function ReportsPage() {
   );
   const periodPayments = useMemo(
     () => {
-      // Payments carry no side of their own — they belong to an order, and the
+      // Payments carry no side of their own, they belong to an order, and the
       // order knows. Matched through it rather than stamped twice, so the two
       // can never disagree about which books a payment lands in.
       const mine = new Set(paid.map((o) => o.$id));
@@ -155,7 +155,7 @@ export function ReportsPage() {
    * The report as an A4 document, for saving as a PDF.
    *
    * Built from the same figures the page is showing rather than from the page
-   * itself, so what comes out is laid out for paper — and so a column that is
+   * itself, so what comes out is laid out for paper, and so a column that is
    * cut off on a narrow screen is not cut off in the file somebody files.
    */
   const exportPdf = () => {
@@ -188,7 +188,7 @@ export function ReportsPage() {
           rows: byMethod.map(([id, v]) => [
             methodName(id),
             money(v),
-            sales ? `${((v / sales) * 100).toFixed(1)}%` : '—',
+            sales ? `${((v / sales) * 100).toFixed(1)}%` : ', ',
           ]),
         },
         {
@@ -197,7 +197,7 @@ export function ReportsPage() {
           numeric: [1, 2],
           bars: topItems.map((t) => (topItems[0]?.revenue ? t.revenue / topItems[0].revenue : 0)),
           rows: topItems.map((t) => [t.name, String(t.qty), money(t.revenue)]),
-          footnote: 'By revenue rather than by count — that is the number that pays the rent.',
+          footnote: 'By revenue rather than by count; that is the number that pays the rent.',
         },
         {
           title: 'Busiest hours',
@@ -362,7 +362,7 @@ export function ReportsPage() {
               {tb.balanced ? (
                 <Badge tone="ok">Balanced</Badge>
               ) : (
-                <Badge tone="danger">Out of balance — tell Claude</Badge>
+                <Badge tone="danger">Out of balance, tell Claude</Badge>
               )}
             </div>
             <div className="table-wrap">
@@ -393,7 +393,7 @@ export function ReportsPage() {
  * Whether the emails actually went out.
  *
  * Sending is done by a function you cannot watch, so a receipt that fails would
- * otherwise be invisible — the customer just never gets it. The provider's own
+ * otherwise be invisible, the customer just never gets it. The provider's own
  * rejection message is shown as it came back, because that message is usually
  * the whole answer (an unverified sender address, most often).
  */
@@ -424,7 +424,7 @@ function EmailPanel({ receipts }: { receipts: Receipt[] }) {
                 {recent.map((r) => (
                   <tr key={r.$id}>
                     <td className="dim small">{new Date(r.$createdAt).toLocaleString()}</td>
-                    <td className="small">{r.to_email || '—'}</td>
+                    <td className="small">{r.to_email || ', '}</td>
                     <td>
                       <Badge tone={r.status === 'sent' ? 'ok' : r.status === 'failed' || r.status === 'bounced' ? 'danger' : 'warn'}>
                         {r.status}

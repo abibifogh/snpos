@@ -5,7 +5,7 @@ import type { Doc, MenuItem } from './types';
  * Taking a dish off the menu mid-service, and putting it back.
  *
  * Called "86ing" in most kitchens. The person who discovers the chicken has
- * run out is whoever opened the fridge, so anyone working can do it — making
+ * run out is whoever opened the fridge, so anyone working can do it, making
  * them find a manager first is exactly how a sold-out dish keeps being ordered
  * for another hour.
  *

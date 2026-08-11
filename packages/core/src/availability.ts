@@ -5,7 +5,7 @@
  *   { "mon": [["11:00","15:00"],["18:00","22:00"]], "sat": [["11:00","23:00"]] }
  *
  * A missing day means closed that day. An absent or empty rule means always
- * available — the common case should need no configuration.
+ * available, the common case should need no configuration.
  */
 export type DayKey = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 export type Windows = Partial<Record<DayKey, [string, string][]>>;

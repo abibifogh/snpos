@@ -52,7 +52,7 @@ function Stat({
           {/* An arrow as well as the colour. Red and green alone is the one
               encoding a colourblind reader cannot use, and this is the line
               the whole panel turns on. */}
-          <span aria-hidden="true">{tone === 'good' ? '▲' : tone === 'bad' ? '▼' : '—'}</span>
+          <span aria-hidden="true">{tone === 'good' ? '▲' : tone === 'bad' ? '▼' : ', '}</span>
           <span>{asPercent(delta.ratio)} on the period before</span>
         </div>
       ) : (
@@ -72,7 +72,7 @@ export function Insights({ revenue, cost, from, to, money, tickMoney }: InsightI
   );
 
   // The same length of time, ending the instant this period starts. Not "last
-  // month" — a 30-day range compared against a calendar month would be
+  // month", a 30-day range compared against a calendar month would be
   // comparing 30 days with 31, and reporting the extra day as growth.
   const before = useMemo(() => previousRange(from, to), [from, to]);
   const prior = useMemo(() => {
@@ -101,7 +101,7 @@ export function Insights({ revenue, cost, from, to, money, tickMoney }: InsightI
   const avg = now.orders ? Math.round(now.revenue / now.orders) : 0;
   const avgBefore = prior.orders ? Math.round(prior.revenue / prior.orders) : 0;
 
-  // Day buckets specifically, whatever the chart is showing — a weekday
+  // Day buckets specifically, whatever the chart is showing, a weekday
   // pattern built from weekly totals would be meaningless.
   const days = useMemo(() => series({ revenue, cost, grain: 'day', from, to }), [revenue, cost, from, to]);
   const dow = useMemo(() => byDayOfWeek(days), [days]);
@@ -157,7 +157,7 @@ export function Insights({ revenue, cost, from, to, money, tickMoney }: InsightI
       <div className="grid-2">
         <Card title="Which days actually earn">
           <p className="small dim" style={{ marginTop: 0 }}>
-            An average, not a total — a month holds five Mondays and four Sundays, and totalling would
+            An average, not a total, a month holds five Mondays and four Sundays, and totalling would
             call Monday the better day when it is only the more frequent one.
           </p>
           <div className="dow">
@@ -180,7 +180,7 @@ export function Insights({ revenue, cost, from, to, money, tickMoney }: InsightI
                 <div className="label small dim">Best day</div>
                 <div style={{ fontWeight: 650 }}>{marks.best.full}</div>
                 <div className="small dim">
-                  {money(marks.best.revenue)} — {asPercent((marks.best.revenue - marks.typical) / (marks.typical || 1))} on a
+                  {money(marks.best.revenue)}, {asPercent((marks.best.revenue - marks.typical) / (marks.typical || 1))} on a
                   typical day
                 </div>
               </div>

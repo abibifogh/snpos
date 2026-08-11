@@ -31,7 +31,7 @@ export function Field({
   label?: string;
   hint?: ReactNode;
   error?: string | null;
-  /** Drops the field entirely rather than dimming it — a control that is
+  /** Drops the field entirely rather than dimming it, a control that is
       visible but inert is one people keep trying to use. */
   hidden?: boolean;
   children?: ReactNode;
@@ -106,7 +106,7 @@ export function Card({ title, actions, children, pad = true }: { title?: ReactNo
  * find-in-page reaches inside a closed one in modern browsers. Every one of
  * those is a thing a hand-rolled version silently loses.
  *
- * `summary` is what somebody reads while deciding whether to open it — the
+ * `summary` is what somebody reads while deciding whether to open it, the
  * setting's current value, a count, whatever answers "is what I want in here?"
  * without opening it. A row of headings that all look identical is a row
  * somebody opens one at a time until they find the right one.
@@ -229,7 +229,7 @@ export function ToastHost({ children }: { children: ReactNode }) {
  * An error where the person will actually see it.
  *
  * Put at the TOP of a form, not the bottom. A customer who taps "Add to order"
- * and gets a red line below the fold has been given no reason at all — the
+ * and gets a red line below the fold has been given no reason at all, the
  * button simply appeared not to work, which is how an order gets abandoned.
  * This also scrolls itself into view when the message changes, because on a
  * phone the top of a long dish sheet is off screen too.

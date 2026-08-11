@@ -15,7 +15,7 @@ interface PaymentRow extends Doc {
  *
  * Worked out from the payments already recorded rather than tracked on the
  * order, so a bill split four ways cannot drift out of step with the four rows
- * that prove it. Tips are excluded — a tip is not part of what was owed.
+ * that prove it. Tips are excluded; a tip is not part of what was owed.
  */
 export async function amountOutstanding(order: Pick<Order, '$id' | 'total'>): Promise<number> {
   const paid = await listAll<PaymentRow>('payments', [Query.equal('order_id', order.$id)]).catch(
@@ -30,8 +30,8 @@ export async function amountOutstanding(order: Pick<Order, '$id' | 'total'>): Pr
 /**
  * Recording that a bill was settled.
  *
- * One function because there are two screens that settle bills — the till and
- * the kitchen display in combined mode — and they were two separate pieces of
+ * One function because there are two screens that settle bills, the till and
+ * the kitchen display in combined mode, and they were two separate pieces of
  * code writing the same row. The kitchen's copy omitted `change_given`, which
  * the database requires, so settling from the pass failed every time while the
  * till worked perfectly. A second implementation of a write is a second chance
@@ -61,7 +61,7 @@ export interface RecordPaymentInput {
 /**
  * Records one payment against a bill, and returns what is still owed.
  *
- * A bill can be settled in several goes — a table splitting it, somebody
+ * A bill can be settled in several goes, a table splitting it, somebody
  * paying half in cash and half by mobile money, a deposit against a booking.
  * So this counts what has actually been taken rather than assuming one payment
  * clears the whole thing: the order is only marked paid and closed once the

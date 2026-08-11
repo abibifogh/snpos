@@ -78,7 +78,7 @@ export function ShiftsPage() {
         <SideFilter value={side} onChange={setSide} settings={settings} />
       </div>
       <p className="dim small" style={{ marginTop: 0 }}>
-        Shifts are opened and closed on the terminal, by whoever is on the till. This is the record of what happened —
+        Shifts are opened and closed on the terminal, by whoever is on the till. This is the record of what happened, 
         what was expected in each drawer, what was actually counted, and the difference.
       </p>
 
@@ -113,7 +113,7 @@ export function ShiftsPage() {
                     <tr key={s.$id}>
                       <td style={{ fontWeight: 550 }}>{s.code}</td>
                       <td className="dim small">{new Date(s.opened_at).toLocaleString()}</td>
-                      <td className="dim small">{s.closed_at ? new Date(s.closed_at).toLocaleString() : '—'}</td>
+                      <td className="dim small">{s.closed_at ? new Date(s.closed_at).toLocaleString() : ', '}</td>
                       <td className="num">{settings ? formatMoney(s.sales_total, settings) : s.sales_total}</td>
                       <td className="num">
                         {s.status === 'closed' ? (
@@ -126,7 +126,7 @@ export function ShiftsPage() {
                             </Badge>
                           )
                         ) : (
-                          '—'
+                          ', '
                         )}
                       </td>
                       <td>{s.status === 'open' ? <Badge tone="ok">Open</Badge> : <Badge>Closed</Badge>}</td>
@@ -177,7 +177,7 @@ export function ShiftsPage() {
                       <td className="num">{settings ? formatMoney(parseMap(detail.counted)[id] ?? 0, settings) : 0}</td>
                       <td className="num">
                         {diff === 0 ? (
-                          <span className="dim">—</span>
+                          <span className="dim">-</span>
                         ) : (
                           <Badge tone={Math.abs(diff) > tolerance ? 'danger' : 'warn'}>
                             {diff > 0 ? '+' : ''}
@@ -200,8 +200,8 @@ export function ShiftsPage() {
 
           {/* Who ended with what.
               The reconciliation above is about the drawer; this is about
-              people. A shift is not a person — three can work one, take money
-              in turn and leave at different times — so "what did Ama end with?"
+              people. A shift is not a person; three can work one, take money
+              in turn and leave at different times, so "what did Ama end with?"
               is a question the close cannot answer and this can. */}
           <h3 style={{ marginTop: '1rem' }}>Cash handed over</h3>
           {handovers.filter((h) => h.shift_id === detail.$id).length === 0 ? (

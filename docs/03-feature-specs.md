@@ -1,4 +1,4 @@
-# 03 — Feature specs
+# 03, Feature specs
 
 ## 3.1 Digital menu & QR ordering
 
@@ -21,7 +21,7 @@
   server for a fresh code" rather than a raw error.
 - Rate limit: max 3 open orders per anonymous session, max 40 items per order.
 - If `dining_sessions.status != open`, ordering is blocked (table already
-  billed) — the phone shows "Your bill has been requested".
+  billed), the phone shows "Your bill has been requested".
 - Optional **staff approval mode** (`settings`): QR orders land in a `PENDING`
   waiter queue instead of going straight to the kitchen. Useful when you don't
   yet trust the room.
@@ -58,14 +58,14 @@ and its category's rule pass (a breakfast category can't leak into dinner).
   and evaluated against the *service day*, not the calendar day.
 - Evaluation lives in `packages/core/availability.ts` and is used identically by
   the menu app (to hide items), the POS (to grey them out but let a manager
-  override), and `order-guard` (to reject). One implementation, three callers —
+  override), and `order-guard` (to reject). One implementation, three callers, 
   no drift.
 - Admin UI: a weekly grid where you drag time blocks per category, plus a
   per-item "inherit / custom / always / never" selector and a date-exception
   list. A live "available right now?" badge previews the result.
 
 Unavailable items are **shown greyed with the next available time** ("Available
-from 7:00 AM tomorrow") rather than hidden — it sells the return visit, and it's
+from 7:00 AM tomorrow") rather than hidden, it sells the return visit, and it's
 configurable (`hide` vs `grey`) per category.
 
 ## 3.3 Add-ons with custom pricing
@@ -91,7 +91,7 @@ Admin → Branding sets `primary_color`, `secondary_color`, `logo_light_id`,
 Implementation:
 
 - Colours are written to CSS custom properties on `:root` at boot from the
-  settings document, and re-applied on every realtime update of that document —
+  settings document, and re-applied on every realtime update of that document, 
   so a colour change propagates to all devices within a second, no redeploy.
 - The UI palette is generated from the two brand colours (tints, shades,
   hover/active states) so a single hex produces a coherent theme.
@@ -135,7 +135,7 @@ close, and an optional surcharge.
   shift, always with a reason and a manager approval.
 - **Gateway-ready**: `gateway` on the method plus `payments.status` and the
   dormant `payment-webhook` function mean enabling Paystack or Stripe later is
-  configuration plus one function deploy — no schema migration.
+  configuration plus one function deploy, no schema migration.
 
 ## 3.7 Other core service features
 
@@ -158,8 +158,8 @@ beside the ordinary menu.
 - Categories and dishes flagged **group orders only** appear on that menu and
   nowhere else. A hotel party ordering platters does not want the à la carte
   list, and a walk-in should not be offered a set meal for twenty.
-- The guest is asked for a booking reference — labelled "Hotel reservation
-  number" by default, changeable — and how many people. Both are configurable
+- The guest is asked for a booking reference, labelled "Hotel reservation
+  number" by default, changeable, and how many people. Both are configurable
   as required or optional under Admin → Features.
 - When the order arrives, an email goes out immediately to whoever is listed
   (falling back to the shift-summary recipients). A party of twenty is a
@@ -171,13 +171,13 @@ beside the ordinary menu.
 ## Tables and areas
 
 Somewhere to sit is not always a table. Under Admin → Tables & QR each entry
-is either a **table** or an **area** — poolside, lounge, terrace. An area has
+is either a **table** or an **area**, poolside, lounge, terrace. An area has
 no number and no fixed seat count; what the kitchen needs is somewhere to send
 the waiter, and an area answers that as well as a table does.
 
 A guest who arrives without scanning a table QR code is asked where they are
 sitting, choosing from anything marked selectable. When they pick an area they
-can add a line of their own — "by the pool bar, blue umbrella" — which is the
+can add a line of their own, "by the pool bar, blue umbrella", which is the
 only thing that gets the food to the right people, and it prints on the ticket.
 
 ## Order numbers

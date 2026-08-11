@@ -13,7 +13,7 @@
  *   4. Rewrites each document's permissions so only that team may read it.
  *
  * Safe to re-run. Every step checks before it acts, and a document that
- * already carries the right org is skipped — so a run that dies halfway
+ * already carries the right org is skipped, so a run that dies halfway
  * through a connection wobble is fixed by running it again, not by unpicking
  * anything.
  *
@@ -77,7 +77,7 @@ async function* everyDocument(collectionId) {
 }
 
 async function main() {
-  log('▸', DRY ? 'Dry run — nothing will be written' : `Making "${NAME}" the first organisation`);
+  log('▸', DRY ? 'Dry run; nothing will be written' : `Making "${NAME}" the first organisation`);
 
   // ---- the team ----------------------------------------------------------
   const teamId = `org-${SLUG}`;
@@ -163,7 +163,7 @@ async function main() {
     : `${touched} stamped, ${skipped} already done, ${failed} failed`);
 
   if (!DRY && failed > 0) {
-    log('!', 'Some rows did not take. Run this again — it resumes where it left off.');
+    log('!', 'Some rows did not take. Run this again, it resumes where it left off.');
     process.exit(1);
   }
   if (!DRY) {

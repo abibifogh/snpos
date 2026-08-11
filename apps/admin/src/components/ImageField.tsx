@@ -7,7 +7,7 @@ import { humanError } from '../lib';
 /**
  * Upload one image and hand back its file ID.
  *
- * The previous file is removed after the new one is stored, never before — a
+ * The previous file is removed after the new one is stored, never before, a
  * failed upload should not leave a record with no picture at all.
  */
 export function ImageField({

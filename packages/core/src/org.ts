@@ -5,7 +5,7 @@ import type { Doc } from './types';
  * Which hotel is this?
  *
  * One database holds every hotel using the system, so every read has to be
- * answerable to "whose rows are these?" — and 117 query sites is 117 chances to
+ * answerable to "whose rows are these?", and 117 query sites is 117 chances to
  * forget. So nothing here relies on remembering. The context is set once at
  * start-up and every query goes through one place that applies it.
  *
@@ -40,7 +40,7 @@ export interface Organisation extends Doc {
  * Collections that belong to nobody in particular.
  *
  * `organisations` has to be readable before anybody knows which organisation
- * they are in — that is the lookup itself. `org_requests` is written by
+ * they are in; that is the lookup itself. `org_requests` is written by
  * strangers on the public website who have no organisation at all.
  */
 const UNSCOPED = new Set(['organisations', 'org_requests']);
@@ -57,7 +57,7 @@ let context: Context | null = null;
  * Declare which hotel this app is working for.
  *
  * Called once during start-up, before any data is read. Until it is called,
- * every scoped query throws — which is the point. The dangerous state is not
+ * every scoped query throws, which is the point. The dangerous state is not
  * "no organisation set", it is "no organisation set and everything returned
  * anyway", and refusing outright is the only way that state cannot exist.
  */
@@ -70,7 +70,7 @@ export function currentOrg(): { id: string; teamId: string } | null {
   if (!context) {
     throw new Error(
       'The app tried to read data before saying which hotel it is working for. ' +
-        'This is a bug — configureOrg() must be called during start-up.',
+        'This is a bug, configureOrg() must be called during start-up.',
     );
   }
   return context.mode === 'org' ? { id: context.id, teamId: context.teamId } : null;
@@ -96,7 +96,7 @@ export function scopedQueries(collectionId: string, queries: string[] = []): str
  *
  * The permissions are the real work. A document created without them is
  * readable by whatever the collection allows, which across a shared database
- * means every hotel — so this is never optional and never inlined at a call
+ * means every hotel, so this is never optional and never inlined at a call
  * site where somebody can leave it out.
  */
 export function scopedPayload(
@@ -116,7 +116,7 @@ export function scopedPermissions(collectionId: string, extra: string[] = []): s
     Permission.read(team),
     Permission.update(team),
     Permission.delete(team),
-    // Anything the caller adds on top — a guest granted read on their own
+    // Anything the caller adds on top, a guest granted read on their own
     // order, for instance. Never instead of the team's, always as well as.
     ...extra,
   ];

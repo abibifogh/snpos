@@ -15,7 +15,7 @@ import { useSession } from '../session';
  *
  * Appwrite refuses a whole document update if one field on it does not exist
  * yet, so a single setting added since the last time provisioning was run took
- * every other setting down with it — you switched tips off, the save failed as
+ * every other setting down with it, you switched tips off, the save failed as
  * a whole, and the only clue was one line of error text that read like a
  * general problem rather than "that switch did nothing".
  *
@@ -107,8 +107,8 @@ export function SettingsPage() {
   const [reportKinds, setReportKinds] = useState<string[]>(['shift_close']);
   const [subs, setSubs] = useState<ReportSub[]>([]);
   // What the server actually did with the last few reports. The failures this
-  // system can have are invisible ones — "sent to nobody" looks identical to
-  // "sent" from every screen — so the record is put where somebody wondering
+  // system can have are invisible ones, "sent to nobody" looks identical to
+  // "sent" from every screen, so the record is put where somebody wondering
   // why nothing arrives will look.
   const [deliveries, setDeliveries] = useState<Delivery[] | null>(null);
   const [savingSubs, setSavingSubs] = useState(false);
@@ -253,7 +253,7 @@ export function SettingsPage() {
       if (dropped.length > 0) {
         const names = dropped.map((d) => FIELD_LABELS[d] ?? d);
         setError(
-          `Everything else was saved, but ${names.join(', ')} could not be — ` +
+          `Everything else was saved, but ${names.join(', ')} could not be, ` +
           `${dropped.length === 1 ? 'that setting does' : 'those settings do'} not exist in the database yet. ` +
           'Run "Provision Appwrite" from the Actions tab on GitHub, then save again.',
         );
@@ -280,7 +280,7 @@ export function SettingsPage() {
       {/* Nine folds instead of thirteen cards, and only the first open.
           A settings page is read twice: once on the day it is set up, and
           afterwards only to change one thing. Thirteen open sections serve
-          neither — the first reading has no shape and the second is a scroll
+          neither, the first reading has no shape and the second is a scroll
           past twelve things to reach one. Each heading carries what is
           currently set, so most questions are answered without opening it. */}
       <FoldCard
@@ -300,24 +300,24 @@ export function SettingsPage() {
         <h3 style={{ marginTop: '1.6rem' }}>What this business runs</h3>
         <p className="small dim" style={{ marginTop: 0 }}>
           Switch on whichever sides you actually run. Both can run together under one till, one set of staff
-          and one set of books — a kitchen with a craft corner is one business, not two systems.
+          and one set of books, a kitchen with a craft corner is one business, not two systems.
         </p>
 
         <Toggle
           checked={mods.kitchen}
           onChange={(v) => set('kitchen_enabled', v || !mods.craft)}
-          label="Kitchen — food and drink"
+          label="Kitchen, food and drink"
         />
         <Toggle
           checked={mods.craft}
           onChange={(v) => set('craft_enabled', v || !mods.kitchen)}
-          label="Craft shop — goods sold on consignment"
+          label="Craft shop, goods sold on consignment"
         />
         {/* Refusing to turn the last one off rather than letting somebody
             discover an admin app with nothing in it. The toggle simply does
             not move, and this says why before they try. */}
         <p className="small dim">
-          One of these has to stay on. Turning a side off only hides its sections — the products, sales and
+          One of these has to stay on. Turning a side off only hides its sections, the products, sales and
           statements behind them stay exactly where they are.
         </p>
 
@@ -368,15 +368,15 @@ export function SettingsPage() {
           </Field>
           <Field label="Decimal places">
             <Select value={form.currency_decimals} onChange={(e) => set('currency_decimals', Number(e.target.value))}>
-              <option value={0}>0 — whole units</option>
-              <option value={2}>2 — standard</option>
+              <option value={0}>0, whole units</option>
+              <option value={2}>2, standard</option>
               <option value={3}>3</option>
             </Select>
           </Field>
           <Field label="Symbol position">
             <Select value={form.symbol_position} onChange={(e) => set('symbol_position', e.target.value as 'before' | 'after')}>
-              <option value="before">Before — {form.currency_symbol}10.00</option>
-              <option value="after">After — 10.00{form.currency_symbol}</option>
+              <option value="before">Before, {form.currency_symbol}10.00</option>
+              <option value="after">After, 10.00{form.currency_symbol}</option>
             </Select>
           </Field>
         </div>
@@ -418,7 +418,7 @@ export function SettingsPage() {
               const v = e.target.value as NonNullable<Settings['tips_ask_on']>;
               // Both are written. The older switch is what an app reads if it
               // has not been updated, or if this database predates the newer
-              // one — leaving them to disagree is how a setting appears to do
+              // one, leaving them to disagree is how a setting appears to do
               // nothing on one screen.
               setForm({ ...form, tips_ask_on: v, tips_enabled: v !== 'none' });
             }}
@@ -426,11 +426,11 @@ export function SettingsPage() {
             <option value="both">On the till and in the kitchen</option>
             <option value="till">Only on the till</option>
             <option value="kitchen">Only in the kitchen</option>
-            <option value="none">Nowhere — never ask</option>
+            <option value="none">Nowhere, never ask</option>
           </Select>
         </Field>
         <p className="small dim">
-          Off removes the box entirely rather than defaulting it to zero — a field staff have to look at and skip
+          Off removes the box entirely rather than defaulting it to zero, a field staff have to look at and skip
           past on every bill is worse than no field.
         </p>
         {/* What the database currently holds, not what this form is showing.
@@ -439,7 +439,7 @@ export function SettingsPage() {
         <p className="small" style={{ marginBottom: 0 }}>
           Saved right now: the till is <strong>{savedAsks('till') ? 'asking' : 'not asking'}</strong>, the kitchen is{' '}
           <strong>{savedAsks('kitchen') ? 'asking' : 'not asking'}</strong>.
-          {askOn !== savedAskOn && ' Unsaved change — press Save changes.'}
+          {askOn !== savedAskOn && ' Unsaved change, press Save changes.'}
         </p>
       </FoldCard>
 
@@ -452,7 +452,7 @@ export function SettingsPage() {
             value={form.shift_float_policy ?? 'zero'}
             onChange={(e) => set('shift_float_policy', e.target.value as Settings['shift_float_policy'])}
           >
-            <option value="zero">Nothing — count in whatever is there</option>
+            <option value="zero">Nothing, count in whatever is there</option>
             <option value="carry_over">Carry over what the last shift counted</option>
             <option value="fixed">A fixed float, the same every time</option>
             <option value="prompt">Ask, with nothing filled in</option>
@@ -478,13 +478,13 @@ export function SettingsPage() {
         />
         <p className="small dim">
           Off is the safer setting and the default. A drawer cannot physically hold less than no money, so a negative
-          count nearly always means cash was paid out and never recorded — blocking it makes somebody enter the missing
+          count nearly always means cash was paid out and never recorded, blocking it makes somebody enter the missing
           expense instead of closing over it.
         </p>
 
         <Field
           label="What money spent during a shift can come out of"
-          hint="This covers shop runs, gas, transport — anything staff record as spent while a shift is open."
+          hint="This covers shop runs, gas, transport; anything staff record as spent while a shift is open."
         >
           <Select
             value={form.expense_paid_from ?? 'cash_only'}
@@ -497,7 +497,7 @@ export function SettingsPage() {
         <p className="small dim" style={{ marginBottom: 0 }}>
           Cash only is the default, and it is not about tidiness. Money taken from the drawer has to be missing
           from the drawer when it is counted at the end of the shift, so a wrong entry surfaces within hours.
-          An expense recorded against mobile money reduces nothing anybody counts — which makes it the easiest
+          An expense recorded against mobile money reduces nothing anybody counts, which makes it the easiest
           entry in the whole system to write and never have questioned. Turn it on only if you genuinely pay
           suppliers by transfer from this screen, and expect those entries to rest on the receipt rather than on
           a count.
@@ -506,7 +506,7 @@ export function SettingsPage() {
         <h3 style={{ marginTop: '1.6rem' }}>The stock check at the end of a shift</h3>
         <Field
           label="What staff are asked"
-          hint="Both end up in the same place — an OK, Low or Out against every ingredient. The difference is who decides which."
+          hint="Both end up in the same place, an OK, Low or Out against every ingredient. The difference is who decides which."
         >
           <Select
             value={form.stock_check_mode ?? 'levels'}
@@ -522,7 +522,7 @@ export function SettingsPage() {
             <>
               Staff type what is actually on the shelf and the system reads it against each ingredient's low level. It
               takes longer, and it buys two things a tapped level cannot: the same shelf gets filed the same way
-              whoever is closing, and what was counted can be set against what the recipes say should have gone —
+              whoever is closing, and what was counted can be set against what the recipes say should have gone, 
               which is the only way over-portioning, waste and theft ever show up. Set the low level for each
               ingredient under <strong>Stock</strong>, or nothing above zero can be called low.
             </>
@@ -540,11 +540,11 @@ export function SettingsPage() {
             <Toggle
               checked={form.stock_count_decimals !== false}
               onChange={(v) => set('stock_count_decimals', v)}
-              label="Allow part amounts — 0.5, 0.25"
+              label="Allow part amounts, 0.5, 0.25"
             />
             <p className="small dim" style={{ marginBottom: 0 }}>
               On for anything measured: half a bucket of rice, a quarter bottle of oil. Off for anything counted in
-              pieces — nobody has 2.5 eggs, and a till with a numeric keypad will produce one by accident if the
+              pieces, nobody has 2.5 eggs, and a till with a numeric keypad will produce one by accident if the
               decimal point is there to be pressed.
             </p>
           </>
@@ -583,8 +583,8 @@ export function SettingsPage() {
             value={form.order_number_mode ?? 'continuous'}
             onChange={(e) => set('order_number_mode', e.target.value as 'continuous' | 'daily')}
           >
-            <option value="continuous">Keep counting — numbers never repeat</option>
-            <option value="daily">Start again each morning — lower numbers, repeated daily</option>
+            <option value="continuous">Keep counting, numbers never repeat</option>
+            <option value="daily">Start again each morning, lower numbers, repeated daily</option>
           </Select>
         </Field>
 
@@ -667,7 +667,7 @@ export function SettingsPage() {
         </div>
         <Notice tone="warn">
           <strong>This address has to be verified with your email provider.</strong> Brevo and the others accept the
-          message, report success, and then quietly drop it if the from-address is not one of their verified senders —
+          message, report success, and then quietly drop it if the from-address is not one of their verified senders, 
           so receipts show as <em>sent</em> here and never arrive. If that is happening, this is almost always why.
           Check Brevo → Senders, Domains &amp; Dedicated IPs → Senders, and put exactly that address here.
         </Notice>
@@ -686,12 +686,12 @@ export function SettingsPage() {
           {
             key: 'daily_digest',
             label: 'Daily summary',
-            hint: 'Once a day after close. A day with two shifts produces two shift reports and no figure for the day — this is that figure.',
+            hint: 'Once a day after close. A day with two shifts produces two shift reports and no figure for the day; this is that figure.',
           },
           {
             key: 'backup',
             label: 'Nightly backup',
-            hint: 'Every record as spreadsheets, attached. This hosting plan keeps no backups of its own, so this is your only copy — keep one somewhere other than your inbox.',
+            hint: 'Every record as spreadsheets, attached. This hosting plan keeps no backups of its own, so this is your only copy, keep one somewhere other than your inbox.',
           },
         ].map((k) => (
           <label key={k.key} className="check-row" style={{ display: 'block', marginBottom: '0.6rem' }}>
@@ -709,7 +709,7 @@ export function SettingsPage() {
 
         {/* Which reports currently have nobody to go to.
             Ticking a box and typing an address are two separate acts, and it
-            is entirely possible to do one and not the other — after which the
+            is entirely possible to do one and not the other, after which the
             report is generated nightly and thrown away in silence. */}
         {(() => {
           const live = subs.filter((r) => r.active !== false);
@@ -722,7 +722,7 @@ export function SettingsPage() {
           return (
             <Notice tone="warn">
               <strong>Nobody is receiving {orphans.map((o) => o.label.toLowerCase()).join(', ')}.</strong>{' '}
-              These are still being produced — they simply have nowhere to go. Add an address above, tick the
+              These are still being produced; they simply have nowhere to go. Add an address above, tick the
               box, and press Save recipients.
             </Notice>
           );
@@ -820,14 +820,14 @@ export function SettingsPage() {
         {brandContrast < 3 && (
           <Notice tone="warn">
             White text on this primary colour has a contrast ratio of {brandContrast.toFixed(1)}:1. Buttons will be hard
-            to read — the app will use dark text instead, but a deeper colour would look better.
+            to read; the app will use dark text instead, but a deeper colour would look better.
           </Notice>
         )}
       </FoldCard>
 
       <FoldCard title="Who can see what" summary="Which admin pages each role may open">
         <p className="small dim" style={{ marginTop: 0 }}>
-          Which parts of this admin app each role can open. Admins always see everything — there is no switch for that
+          Which parts of this admin app each role can open. Admins always see everything; there is no switch for that
           on purpose, because a checkbox that can lock the owner out of their own settings eventually will.
         </p>
         <div className="table-wrap">
@@ -850,7 +850,7 @@ export function SettingsPage() {
                   {GRANTABLE_ROLES.map((role) => (
                     <td key={role} style={{ textAlign: 'center' }}>
                       {section.ownerOnly ? (
-                        <span className="small dim" title="Admins only">—</span>
+                        <span className="small dim" title="Admins only">-</span>
                       ) : (
                         <input
                           type="checkbox"

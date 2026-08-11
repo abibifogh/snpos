@@ -7,7 +7,7 @@ import type { Order, OrderItem } from './orders';
  *
  * A consignment shop sells things it does not own. Somebody brings work in, the
  * shop sells it, keeps an agreed share and owes the rest. Everything difficult
- * about the trade lives in that last clause — and it is the part a spreadsheet
+ * about the trade lives in that last clause, and it is the part a spreadsheet
  * gets wrong first, because a running total is one careless edit away from
  * being unarguable and wrong.
  *
@@ -121,8 +121,8 @@ export interface ConsignorPayout extends Doc {
  * Which commission rate applies to one sale.
  *
  * Three places can set it, most specific first: the piece, the consignor, then
- * the shop's default. The order matters — a shop negotiates a lower rate on a
- * large commissioned work without wanting that to become everybody's rate — and
+ * the shop's default. The order matters, a shop negotiates a lower rate on a
+ * large commissioned work without wanting that to become everybody's rate, and
  * getting it backwards would silently pay the wrong people the wrong amount for
  * as long as nobody checked.
  */
@@ -160,7 +160,7 @@ export interface Split {
  * maker's share, by construction.
  *
  * A discount reduces what the customer paid, so it reduces both sides in
- * proportion — the shop does not fund a sale out of somebody else's work, and
+ * proportion; the shop does not fund a sale out of somebody else's work, and
  * it does not pass the whole cost of its own promotion to them either. Pass the
  * line's actual money, after discount.
  */
@@ -184,13 +184,13 @@ export const balanceOf = (entries: Pick<LedgerEntry, 'amount'>[]): number =>
 /**
  * Credit a consignor for everything of theirs on a settled order.
  *
- * Called once, when the bill is paid — not when the order is placed. An order
+ * Called once, when the bill is paid, not when the order is placed. An order
  * that is cancelled, voided or never paid for owes nobody anything, and a
  * credit written at the till and reversed later is two entries on a statement
  * where there should be none.
  *
  * Safe to call twice. `order_item_id` carries a unique index, so a repeat is
- * refused by the database rather than by a check that can race — which matters,
+ * refused by the database rather than by a check that can race, which matters,
  * because a payment retried on a bad connection is exactly the case that would
  * otherwise pay somebody twice.
  */
@@ -261,7 +261,7 @@ export const ledgerFor = (consignorId: string) =>
 /**
  * Write down that a consignor has been paid.
  *
- * Two records, and both are needed. The payout is the event — when, how much,
+ * Two records, and both are needed. The payout is the event, when, how much,
  * by what method, with a transaction reference somebody can look up. The ledger
  * line is what it does to the balance. Keeping them together in one row would
  * mean the statement had to know about payment methods, and the payout had to
@@ -351,7 +351,7 @@ export interface Statement {
  *
  * Built from the ledger and nothing else, which is what lets it be checked. The
  * opening balance is every entry before the window, so the statement adds up on
- * its own — a period statement whose figures only reconcile against a different
+ * its own, a period statement whose figures only reconcile against a different
  * document is a statement that starts an argument rather than settling one.
  *
  * Dates are inclusive at both ends: somebody asking for March means March, and
@@ -448,7 +448,7 @@ export async function balancesByConsignor(): Promise<Record<string, number>> {
  * The next reference in a series, from what is already there.
  *
  * Human-readable and sequential because these get said out loud and written on
- * paper — "INT-0007" survives a phone call in a way a random id does not.
+ * paper, "INT-0007" survives a phone call in a way a random id does not.
  */
 export async function nextReference(
   collectionId: 'consignment_intakes' | 'consignor_payouts',
@@ -470,7 +470,7 @@ export async function nextReference(
  *
  * Always both. The movement is the record and the count is the convenience, and
  * the moment somebody writes one without the other the shelf and the history
- * start telling different stories — which is precisely the state this whole
+ * start telling different stories, which is precisely the state this whole
  * collection exists to prevent.
  */
 export async function moveStock(opts: {
@@ -522,7 +522,7 @@ export async function moveStock(opts: {
  * How much of a product is on the shelf.
  *
  * With variants the count lives on each one and the product's own figure means
- * nothing — one place to ask, so a screen cannot pick the wrong one.
+ * nothing; one place to ask, so a screen cannot pick the wrong one.
  */
 export const onHandFor = (
   item: { on_hand?: number },

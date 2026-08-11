@@ -4,7 +4,7 @@ import { useId, useMemo, useRef, useState } from 'react';
  * Money in and money out, over time.
  *
  * Two lines rather than a second axis. Revenue and cost are both money in the
- * same currency, so they belong on one scale — and the moment they share it,
+ * same currency, so they belong on one scale, and the moment they share it,
  * the gap between the lines IS the profit, readable without arithmetic. A
  * second axis would let that gap be anything the scales happened to make it.
  *
@@ -25,7 +25,7 @@ export interface TrendPoint {
  * Ticks a person would have chosen.
  *
  * 1 / 2 / 5 × a power of ten. An axis reading 0, 3,167, 6,334 is arithmetically
- * correct and useless — nobody holds those in their head to read a point off
+ * correct and useless, nobody holds those in their head to read a point off
  * the line.
  */
 function niceTicks(max: number, count = 4): number[] {
@@ -88,8 +88,8 @@ export function TrendChart({
   // Every second or fourth label once there are more than a fortnight of them,
   // so the axis stays readable rather than becoming a grey smear.
   //
-  // The last one is always wanted — it is where the eye lands and where the
-  // direct labels are — but only if there is room. Forcing it drew "5 Wed"
+  // The last one is always wanted; it is where the eye lands and where the
+  // direct labels are, but only if there is room. Forcing it drew "5 Wed"
   // and "6 Thu" on top of each other at the right-hand edge.
   const labelEvery = points.length > 24 ? 4 : points.length > 14 ? 2 : 1;
   const lastIndex = points.length - 1;
@@ -144,7 +144,7 @@ export function TrendChart({
             </linearGradient>
           </defs>
 
-          {/* Hairline grid, one step off the surface. Solid — a dashed grid
+          {/* Hairline grid, one step off the surface. Solid, a dashed grid
               reads as a threshold or a projection when it is neither. */}
           {ticks.map((t) => (
             <g key={t}>
@@ -199,7 +199,7 @@ export function TrendChart({
 /**
  * The same numbers, as a table.
  *
- * Not a fallback — a twin. Somebody using a screen reader, printing the page,
+ * Not a fallback, a twin. Somebody using a screen reader, printing the page,
  * or wanting to check one figure against a receipt needs the values, and a
  * tooltip is the one place a value must never only live.
  */

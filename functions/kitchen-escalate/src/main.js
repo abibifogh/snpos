@@ -4,7 +4,7 @@ import { Client, Databases, Query } from 'node-appwrite';
  * Raises the alarm level on orders the kitchen has not acknowledged.
  *
  * The kitchen screen escalates on its own while it is running. This exists for
- * when it is NOT — a tablet that has crashed, been unplugged, or had its
+ * when it is NOT, a tablet that has crashed, been unplugged, or had its
  * battery optimised to death is precisely the situation where an order is
  * about to be forgotten and nobody is watching.
  *
@@ -52,7 +52,7 @@ export default async ({ req, res, log, error }) => {
             entity_id: order.$id,
             after: JSON.stringify({ order_no: order.order_no, age_seconds: ageSeconds }),
           }).catch(() => undefined);
-          log(`Order ${order.order_no} unacknowledged for ${ageSeconds}s — escalated to manager`);
+          log(`Order ${order.order_no} unacknowledged for ${ageSeconds}s, escalated to manager`);
         }
       }
     }

@@ -23,8 +23,8 @@ export const draftFrom = (r: Recipe): DraftRecipe => ({
  * This is the link between the menu and the store room, and until it exists
  * nothing connects the two: selling a plate of jollof cannot take rice off the
  * shelf if nobody has said how much rice is in a plate of jollof. Everything
- * downstream — what a dish costs you, what stock you should have left at close,
- * where the gap between should-have and actually-have is — is built on these
+ * downstream, what a dish costs you, what stock you should have left at close,
+ * where the gap between should-have and actually-have is, is built on these
  * numbers.
  *
  * It is optional. A bottle of Coke you buy in and sell on needs no recipe.
@@ -89,7 +89,7 @@ export function RecipeEditor({
                 <tr key={i}>
                   <td>
                     <Select value={d.ingredient_id} onChange={(e) => setLine(i, { ingredient_id: e.target.value })}>
-                      <option value="">— choose —</option>
+                      <option value="">Choose</option>
                       {ingredients.map((x) => <option key={x.$id} value={x.$id}>{x.name}</option>)}
                     </Select>
                   </td>
@@ -150,7 +150,7 @@ export function RecipeEditor({
 
       {draft.length > 0 && (
         <p className="hint" style={{ marginTop: '0.5rem' }}>
-          Wastage covers what is bought but never reaches the plate — trim, peel, spillage. 10% on an onion means a
+          Wastage covers what is bought but never reaches the plate, trim, peel, spillage. 10% on an onion means a
           portion consumes a tenth more than it uses.
         </p>
       )}
@@ -158,7 +158,7 @@ export function RecipeEditor({
       {cost > 0 && price > 0 && cost >= price && (
         <div style={{ marginTop: '0.5rem' }}>
           <Notice>
-            The ingredients cost as much as the dish sells for. Check the quantities and the unit costs under Stock —
+            The ingredients cost as much as the dish sells for. Check the quantities and the unit costs under Stock, 
             usually one of them is out by a factor of a thousand, grams entered where kilos were meant.
           </Notice>
         </div>

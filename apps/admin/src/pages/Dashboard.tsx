@@ -29,13 +29,13 @@ export function Dashboard() {
    * Are the background jobs actually running?
    *
    * They are deployed by a separate step that is easy to skip, and when they
-   * are missing nothing errors — emails simply never arrive and pre-orders
+   * are missing nothing errors, emails simply never arrive and pre-orders
    * never reach the kitchen. Silence that looks like success is the worst
    * failure mode there is, so it gets checked and said out loud.
    *
    * The test: settled orders exist, but not one has produced a receipt row.
    * The email function writes that row before it tries to send, so its absence
-   * means the function never ran at all — as distinct from running and failing
+   * means the function never ran at all, as distinct from running and failing
    * to send, which shows up in Reports with a reason.
    */
   useEffect(() => {
@@ -73,19 +73,19 @@ export function Dashboard() {
         </p>
         <ol className="small" style={{ lineHeight: 1.9, paddingLeft: '1.2rem', margin: 0 }}>
           <li>
-            <Link to="/settings">Settings</Link> — restaurant name, currency, tax and colours.
+            <Link to="/settings">Settings</Link>, restaurant name, currency, tax and colours.
           </li>
           <li>
-            <Link to="/venues">Venues</Link> — set your opening hours. Pre-ordering needs these.
+            <Link to="/venues">Venues</Link>, set your opening hours. Pre-ordering needs these.
           </li>
           <li>
-            <Link to="/menu/categories">Categories</Link> — Starters, Mains, Drinks.
+            <Link to="/menu/categories">Categories</Link>, Starters, Mains, Drinks.
           </li>
           <li>
-            <Link to="/menu/items">Dishes &amp; drinks</Link> — the menu itself, with prices.
+            <Link to="/menu/items">Dishes &amp; drinks</Link>, the menu itself, with prices.
           </li>
           <li>
-            <Link to="/features">Features</Link> — switch off anything you do not want yet.
+            <Link to="/features">Features</Link>, switch off anything you do not want yet.
           </li>
         </ol>
       </Card>

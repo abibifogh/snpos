@@ -21,7 +21,7 @@ interface VenueRow extends Doc { name: string; walkin_token?: string; group_toke
 
 /**
  * The QR token is the table's identity to a customer who has scanned nothing
- * but a sticker, so it must be unguessable — a sequential id would let anyone
+ * but a sticker, so it must be unguessable, a sequential id would let anyone
  * order against any table by editing the URL.
  */
 const newToken = (): string => {
@@ -101,7 +101,7 @@ export function TablesPage() {
     try {
       await db.updateDocument(DB_ID, 'tables', t.$id, { qr_token: newToken() });
       await load();
-      toast('New code issued — reprint the sticker');
+      toast('New code issued, reprint the sticker');
     } catch (e) {
       toast(humanError(e), 'err');
     }
@@ -121,7 +121,7 @@ export function TablesPage() {
   const urlFor = (t: TableRow) => `${menuBase}/?t=${t.qr_token}`;
 
   /**
-   * A QR that belongs to nobody's table — the counter queue, a window poster,
+   * A QR that belongs to nobody's table, the counter queue, a window poster,
    * a flyer. It opens the menu in takeaway mode.
    */
   const walkInUrl = (v: VenueRow) => (v.walkin_token ? `${menuBase}/?v=${v.walkin_token}` : null);
@@ -154,7 +154,7 @@ export function TablesPage() {
     try {
       await db.updateDocument(DB_ID, 'venues', v.$id, { group_token: newToken() });
       await load();
-      toast(replacing ? 'New group link created — the old one no longer works' : 'Group ordering link created');
+      toast(replacing ? 'New group link created, the old one no longer works' : 'Group ordering link created');
     } catch (e) {
       toast(humanError(e), 'err');
     }
@@ -176,7 +176,7 @@ export function TablesPage() {
 
       <Card title="Walk-in QR">
         <p className="small dim" style={{ marginTop: 0 }}>
-          For people who are not sitting down — the counter queue, a poster in the window, a flyer. Same menu, opened
+          For people who are not sitting down, the counter queue, a poster in the window, a flyer. Same menu, opened
           as a takeaway order rather than against a table.
         </p>
         {venues.map((v) => {
@@ -200,7 +200,7 @@ export function TablesPage() {
       <Card title="Group ordering link">
         <p className="small dim" style={{ marginTop: 0 }}>
           A separate, private address for parties and hotel bookings. It shows only the categories you have marked
-          group-only, and it does not appear anywhere on the ordinary menu — the only way in is this link. Send it to
+          group-only, and it does not appear anywhere on the ordinary menu, the only way in is this link. Send it to
           whoever takes group bookings, and replace it if it ends up somewhere it should not be.
         </p>
         {venues.map((v) => {
@@ -237,7 +237,7 @@ export function TablesPage() {
                 {rows.map((t) => (
                   <tr key={t.$id}>
                     <td style={{ fontWeight: 550 }}>{t.label}</td>
-                    <td className="dim">{t.zone || '—'}</td>
+                    <td className="dim">{t.zone || ', '}</td>
                     <td className="num dim">{t.seats}</td>
                     <td>{t.active ? <Badge tone="ok">Active</Badge> : <Badge>Inactive</Badge>}</td>
                     <td className="num">
@@ -268,7 +268,7 @@ export function TablesPage() {
           <div className="grid-2">
             <Field
               label="Is this a table or an area?"
-              hint="An area is somewhere people sit without a table number — the poolside, the lounge, the terrace. The kitchen gets told where to send the waiter rather than a number that does not exist."
+              hint="An area is somewhere people sit without a table number, the poolside, the lounge, the terrace. The kitchen gets told where to send the waiter rather than a number that does not exist."
             >
               <Select
                 value={editing.kind ?? 'table'}
@@ -297,7 +297,7 @@ export function TablesPage() {
           <Field>
             <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label="Active" />
           </Field>
-          <Field hint="Off means only a scanned QR code can put an order here — useful for a staff-only or reserved area.">
+          <Field hint="Off means only a scanned QR code can put an order here, useful for a staff-only or reserved area.">
             <Toggle
               checked={editing.guest_selectable ?? true}
               onChange={(v) => setEditing({ ...editing, guest_selectable: v })}
@@ -309,7 +309,7 @@ export function TablesPage() {
 
       {showQr && (
         <Modal
-          title={`QR link — ${showQr.label}`}
+          title={`QR link, ${showQr.label}`}
           onClose={() => setShowQr(null)}
           footer={
             <>
@@ -334,7 +334,7 @@ export function TablesPage() {
           </Field>
           <Notice tone="warn">
             Treat this link as the table's key. Anyone who has it can order against this table, so do not post it
-            publicly — and issue a new code if a sticker goes missing.
+            publicly, and issue a new code if a sticker goes missing.
           </Notice>
           <p className="small dim">
             The address points at <code>{menuBase}</code>. Once the customer menu is on a real domain, set{' '}

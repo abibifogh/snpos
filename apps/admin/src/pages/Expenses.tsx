@@ -103,7 +103,7 @@ export function ExpensesPage() {
     setStaff(p.filter((x) => x.active !== false).sort((a2, b) => a2.display_name.localeCompare(b.display_name)));
     setIngredients(i.filter((x) => x.active).sort((a2, b) => a2.name.localeCompare(b.name)));
     // Expense lines only, minus the two the system fills in by itself. See
-    // isPostableExpenseAccount — offering "Food sales" as a destination for a
+    // isPostableExpenseAccount, offering "Food sales" as a destination for a
     // gas refill is offering a way to make the books wrong.
     setAccounts(a.filter(isPostableExpenseAccount).sort((a2, b) => a2.code.localeCompare(b.code)));
   };
@@ -124,7 +124,7 @@ export function ExpensesPage() {
     );
     // Blank for a new expense, not "0.00". A pre-filled zero has to be cleared
     // before anything can be typed, and on a phone that means a long-press and
-    // a select-all — so what actually gets recorded is 250.00 turned into
+    // a select-all, so what actually gets recorded is 250.00 turned into
     // 0.00250 by somebody in a hurry.
     setAmountText(row ? toInput(row.amount, decimals) : '');
     setDraftItems([]);
@@ -151,7 +151,7 @@ export function ExpensesPage() {
     setUploading(true);
     setError(null);
     try {
-      // Receipts are uploaded manager-readable, never public — see uploadFile.
+      // Receipts are uploaded manager-readable, never public, see uploadFile.
       const { fileId } = await uploadFile(file, 'receipt', settings);
       setEditing((x) => (x ? { ...x, receipt_file_id: fileId } : x));
     } catch (e) {
@@ -167,7 +167,7 @@ export function ExpensesPage() {
    *
    * Ingredients each name what buying them counts as, so listing what was
    * bought is usually enough to say what the money was. Only claimed when
-   * every line agrees — a trip that bought rice and a new gas bottle is two
+   * every line agrees, a trip that bought rice and a new gas bottle is two
    * categories, and guessing one of them would be worse than asking.
    */
   const impliedCategory = (() => {
@@ -290,7 +290,7 @@ export function ExpensesPage() {
   };
 
   const remove = async (row: Expense) => {
-    if (!confirm(`Delete this ${settings ? formatMoney(row.amount, settings) : ''} expense? Stock already added from it stays where it is — remove that separately if it was wrong.`)) return;
+    if (!confirm(`Delete this ${settings ? formatMoney(row.amount, settings) : ''} expense? Stock already added from it stays where it is, remove that separately if it was wrong.`)) return;
     try {
       if (row.receipt_file_id) await deleteFile(row.receipt_file_id, 'receipt', settings).catch(() => undefined);
       const items = await listAll<ExpenseItem>('expense_items', [Query.equal('expense_id', row.$id)]).catch(() => []);
@@ -303,7 +303,7 @@ export function ExpensesPage() {
     }
   };
 
-  const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? '—';
+  const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? ', ';
 
   /** A readable "paid to", worked out the same way the kitchen works it out. */
   function payeeLabel(kind: PaidToKind, e: Partial<Expense>): string {
@@ -351,7 +351,7 @@ export function ExpensesPage() {
       ) : (
         <>
           <p className="dim small" style={{ marginTop: 0 }}>
-            Money paid out — supplies, transport, repairs. Attach the receipt as a photo or PDF; receipts are visible
+            Money paid out, supplies, transport, repairs. Attach the receipt as a photo or PDF; receipts are visible
             to managers and admins only, never to customers or other staff.
           </p>
 
@@ -382,7 +382,7 @@ export function ExpensesPage() {
                         <td className="dim small">{new Date(r.$createdAt).toLocaleDateString()}</td>
                         <td>{nameForKey(categories, r.category_key || r.category)}</td>
                         <td className="dim">
-                          {r.payee || '—'}
+                          {r.payee || ', '}
                           {r.paid_to_kind === 'open_market' && <div className="small dim">Open market</div>}
                           {r.paid_to_kind === 'staff' && <div className="small dim">Staff</div>}
                         </td>
@@ -428,14 +428,14 @@ export function ExpensesPage() {
             {/* Hidden once the stock lines answer it. Each ingredient already
                 carries its category, set when it was added, so asking again
                 invites a second and different answer for the same purchase.
-                Still asked when there is nothing listed — a taxi or a repair
+                Still asked when there is nothing listed, a taxi or a repair
                 has no ingredient to take the answer from. */}
             <Field
               label="Category"
               hidden={!!impliedCategory}
               hint={
                 categories && categories.length === 0
-                  ? 'None set up — add some under the Categories tab.'
+                  ? 'None set up, add some under the Categories tab.'
                   : undefined
               }
             >
@@ -490,7 +490,7 @@ export function ExpensesPage() {
                 value={editing.supplier_id ?? ''}
                 onChange={(e) => setEditing({ ...editing, supplier_id: e.target.value })}
               >
-                <option value="">— choose —</option>
+                <option value="">Choose</option>
                 {suppliers.map((s) => <option key={s.$id} value={s.$id}>{s.name}</option>)}
               </Select>
             </Field>
@@ -502,7 +502,7 @@ export function ExpensesPage() {
                 value={editing.paid_to_staff_id ?? ''}
                 onChange={(e) => setEditing({ ...editing, paid_to_staff_id: e.target.value })}
               >
-                <option value="">— choose —</option>
+                <option value="">Choose</option>
                 {staff.map((s) => <option key={s.$id} value={s.$id}>{s.display_name}</option>)}
               </Select>
             </Field>
@@ -658,7 +658,7 @@ function StockLines({
                         costText: ing ? toInput(ing.base_unit_cost, decimals) : d.costText,
                       });
                     }}>
-                      <option value="">— choose —</option>
+                      <option value="">Choose</option>
                       {ingredients.map((x) => <option key={x.$id} value={x.$id}>{x.name}</option>)}
                     </Select>
                   </td>
@@ -709,7 +709,7 @@ function StockLines({
       {draft.length > 0 && paidTotal > 0 && draftTotal > paidTotal && (
         <div style={{ marginTop: '0.5rem' }}>
           <Notice tone="warn">
-            The items add up to more than the amount paid. That is allowed — part of a delivery may be on credit — but
+            The items add up to more than the amount paid. That is allowed, part of a delivery may be on credit, but
             it is worth a second look.
           </Notice>
         </div>

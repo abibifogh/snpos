@@ -5,7 +5,7 @@
  *   npm run doctor
  *
  * Prints what actually exists in Appwrite and, for anything not yet usable,
- * the status Appwrite reports for it — which is the difference between "still
+ * the status Appwrite reports for it, which is the difference between "still
  * building", "wedged", and "rejected".
  */
 import 'dotenv/config';
@@ -25,7 +25,7 @@ const teams = new Teams(client);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Retry transient network failures — free-tier connections drop regularly. */
+/** Retry transient network failures, free-tier connections drop regularly. */
 async function retry(fn, tries = 4) {
   for (let i = 1; ; i++) {
     try {
@@ -38,7 +38,7 @@ async function retry(fn, tries = 4) {
   }
 }
 
-/** Page through a list endpoint — Appwrite returns only 25 rows by default. */
+/** Page through a list endpoint, Appwrite returns only 25 rows by default. */
 async function listAll(fetchPage, key) {
   const out = [];
   for (let offset = 0; ; offset += 100) {
@@ -79,7 +79,7 @@ try {
   await retry(() => db.get(DB_ID));
   console.log(`Database \`${DB_ID}\`: present\n`);
 } catch {
-  console.log(`Database \`${DB_ID}\`: MISSING — nothing else can exist yet.\n`);
+  console.log(`Database \`${DB_ID}\`: MISSING; nothing else can exist yet.\n`);
   process.exit(0);
 }
 
@@ -144,10 +144,10 @@ if (incomplete.length) {
 }
 
 if (unhealthy.length) {
-  console.log(`\n✗ Needs attention — these will not finish on their own:`);
+  console.log(`\n✗ Needs attention, these will not finish on their own:`);
   for (const u of unhealthy) console.log(`    ${u.id}: ${u.bad.join(', ')}`);
   console.log(`\n  Delete the affected collection in the Appwrite console, then re-run`);
-  console.log(`  \`npm run provision\` — it will rebuild it cleanly.`);
+  console.log(`  \`npm run provision\`; it will rebuild it cleanly.`);
 } else if (incomplete.length || missing.length) {
   console.log(`\n▸ Nothing is broken. Re-run \`npm run provision\` to continue where it stopped.`);
 } else {

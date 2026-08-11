@@ -31,7 +31,7 @@ export function contrastRatio(a: string, b: string): number {
  *
  * "System" is the default and stays the default: a phone that switches to dark
  * at sunset should take the app with it. Choosing explicitly is an override,
- * kept on the device rather than in the settings document — one person
+ * kept on the device rather than in the settings document, one person
  * preferring dark is not a decision for the whole restaurant.
  */
 export type ThemeMode = 'system' | 'light' | 'dark';

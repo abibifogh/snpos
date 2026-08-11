@@ -32,7 +32,7 @@
  * Dark colours, defined once and applied two ways.
  *
  * `prefers-color-scheme` covers the default, which is to follow the device.
- * `[data-theme="dark"]` covers somebody who has chosen dark explicitly — and
+ * `[data-theme="dark"]` covers somebody who has chosen dark explicitly, and
  * because it is an attribute on the element rather than a media query, it also
  * wins over a device set to light. The light block below does the mirror
  * image, which is what makes "always light" possible on a phone in dark mode.
@@ -197,7 +197,7 @@ table.data tbody tr:hover { background: var(--surface-2); }
 .notice-err { background: var(--danger-bg); color: var(--danger); }
 .notice-ok { background: var(--ok-bg); color: var(--ok); }
 .notice-warn { background: var(--warn-bg); color: var(--warn); }
-/* A plain aside. Neither a success nor a problem — just worth knowing. */
+/* A plain aside. Neither a success nor a problem, just worth knowing. */
 .notice-info { background: var(--surface-2); color: var(--text); border-left: 3px solid var(--brand); }
 
 .spinner {
@@ -264,7 +264,7 @@ table.data tbody tr:hover { background: var(--surface-2); }
    space it costs. */
 .form-error { position: sticky; top: 0; z-index: 5; margin-bottom: 0.9rem; }
 
-/* The light/dark picker in the sidebar foot. Small and quiet — it is a
+/* The light/dark picker in the sidebar foot. Small and quiet; it is a
    preference, not a setting anyone needs to find twice. */
 .theme-pick {
   width: 100%;
@@ -279,7 +279,7 @@ table.data tbody tr:hover { background: var(--surface-2); }
 }
 
 /* The OK / LOW / OUT key in the shift close. Quiet, but readable at the end of
-   a long night — which is the only time anybody reads it. */
+   a long night, which is the only time anybody reads it. */
 .stock-key {
   display: flex;
   flex-direction: column;
@@ -294,7 +294,7 @@ table.data tbody tr:hover { background: var(--surface-2); }
 }
 .stock-key .badge { margin-right: 0.4rem; }
 
-/* The shelf heading — Sauces, Protein, Staples.
+/* The shelf heading, Sauces, Protein, Staples.
    Spaced out and small rather than large and bold: it has to be findable while
    scrolling past forty rows without competing with the ingredient names, which
    are the thing actually being read. */
@@ -313,7 +313,7 @@ table.data tbody tr:hover { background: var(--surface-2); }
 .stock-line > span:first-child { min-width: 0; padding-right: 0.6rem; }
 .stock-line > .row { flex: none; }
 
-/* The counted-amount box. Narrow on purpose — an amount is two or three
+/* The counted-amount box. Narrow on purpose, an amount is two or three
    characters, and a wide field on a phone pushes the unit and the status badge
    onto a second line. */
 .stock-count input { width: 5.2rem; text-align: right; }
@@ -352,7 +352,7 @@ table.data tbody tr:hover { background: var(--surface-2); }
    light / 26.8 dark against a target of 8, contrast over 3:1 in both.
 
    Deliberately NOT the restaurant's brand colour. That is set by whoever runs
-   the place and can be any colour at all — including one that vanishes against
+   the place and can be any colour at all, including one that vanishes against
    the card behind it. A chart that becomes unreadable when somebody picks a
    pale green for their logo is not a chart. */
 .trend {
@@ -434,7 +434,7 @@ table.data tbody tr:hover { background: var(--surface-2); }
   font-size: 0.75rem; letter-spacing: 0.04em; text-transform: uppercase;
   color: var(--text-dim);
 }
-/* Proportional figures, not tabular — equal-width digits make a large number
+/* Proportional figures, not tabular, equal-width digits make a large number
    look loose. Tabular is for columns that align. */
 .stat .value { font-size: 1.6rem; font-weight: 650; line-height: 1.15; margin-top: 0.3rem; }
 .stat .delta { font-size: 0.8rem; margin-top: 0.25rem; display: flex; align-items: center; gap: 0.3rem; }
@@ -454,7 +454,7 @@ table.data tbody tr:hover { background: var(--surface-2); }
 
 /* ---- folding cards ----------------------------------------------------- */
 /* A <details> dressed as a card. The marker is replaced rather than hidden so
-   the caret can sit where the eye expects it — on the left of the heading,
+   the caret can sit where the eye expects it, on the left of the heading,
    pointing at what it opens. */
 .fold > summary { cursor: pointer; list-style: none; user-select: none; }
 .fold > summary::-webkit-details-marker { display: none; }

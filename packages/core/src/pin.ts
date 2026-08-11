@@ -7,7 +7,7 @@
  * every action attributed to whoever set it up.
  *
  * A four-digit PIN is not a password and is not treated as one. It identifies
- * a person on a device that is ALREADY authenticated — the device holds the
+ * a person on a device that is ALREADY authenticated, the device holds the
  * real session. The PIN answers "which of you is this?", not "should you be
  * here at all".
  */
@@ -42,6 +42,6 @@ export function pinProblem(pin: string): string | null {
   if (!/^\d{4,6}$/.test(pin)) return 'A PIN is 4 to 6 digits.';
   if (/^(\d)\1+$/.test(pin)) return 'Not all the same digit.';
   if ('0123456789'.includes(pin) || '9876543210'.includes(pin)) return 'Not a run of consecutive digits.';
-  if (['1234', '0000', '1111', '1212', '2580'].includes(pin)) return 'That PIN is too common — pick another.';
+  if (['1234', '0000', '1111', '1212', '2580'].includes(pin)) return 'That PIN is too common, pick another.';
   return null;
 }

@@ -49,13 +49,13 @@ export interface MenuEntry {
   price: number;
   soldOut: boolean;
   groups: { group: AddonGroup; options: AddonOption[] }[];
-  /** Where this is cooked, already worked out — see `resolveStation`. */
+  /** Where this is cooked, already worked out, see `resolveStation`. */
   station: string;
   stationKey: string;
   /**
    * Sizes, each with its own price. Absent for anything that has one price.
    *
-   * Where these exist the item's own `price` is not what anything sells for —
+   * Where these exist the item's own `price` is not what anything sells for, 
    * every till must ask which size before it can total a line.
    */
   variants?: ProductVariant[];
@@ -92,7 +92,7 @@ export interface LoadedMenu {
 /**
  * Build the menu for one venue at one moment.
  *
- * A dish can belong to several categories, so it may appear more than once —
+ * A dish can belong to several categories, so it may appear more than once, 
  * that is the point. Each appearance is governed by that category's own hours,
  * which is how the same dish shows at lunch under one heading and all day
  * under another.
@@ -186,7 +186,7 @@ export const visibleSections = (menu: LoadedMenu): MenuSection[] =>
  *
  * What the "we've run out" screen should offer. It used to list the entire
  * menu, so a cook looking for the thing in front of them scrolled past every
- * Sunday roast and every breakfast item on a Tuesday evening — and could take
+ * Sunday roast and every breakfast item on a Tuesday evening, and could take
  * one off, which does nothing useful because the dish was not orderable today
  * anyway. The list is long enough with only the dishes that are on.
  *

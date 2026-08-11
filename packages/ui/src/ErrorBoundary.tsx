@@ -5,7 +5,7 @@ import type { ErrorInfo, ReactNode } from 'react';
  * The last thing between a broken render and a blank screen.
  *
  * React unmounts the whole tree when a render throws. Without this, a mistake
- * in one sheet takes the entire app down to white — no message, no clue, and
+ * in one sheet takes the entire app down to white, no message, no clue, and
  * nothing to tell someone standing in a kitchen whether the wifi died or the
  * software did. It has happened here more than once, so it is caught.
  *
@@ -35,7 +35,7 @@ export class ErrorBoundary extends Component<
       <div style={{ padding: '2rem 1.25rem', maxWidth: '34rem', margin: '0 auto', textAlign: 'center' }}>
         <h2 style={{ marginBottom: '0.4rem' }}>Something went wrong</h2>
         <p style={{ opacity: 0.75, lineHeight: 1.5 }}>
-          This screen stopped working. Nothing you had entered was sent. Reloading usually clears it — if it keeps
+          This screen stopped working. Nothing you had entered was sent. Reloading usually clears it, if it keeps
           happening, show this message to whoever looks after the system.
         </p>
         <pre

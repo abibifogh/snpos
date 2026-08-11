@@ -1,7 +1,7 @@
 /**
  * The orders this phone has placed.
  *
- * A guest has no account and no way to sign in — that is the whole point of
+ * A guest has no account and no way to sign in; that is the whole point of
  * ordering from a sticker on a table. So "my orders" can only mean "the ones
  * this device placed", kept on the device.
  *
@@ -48,8 +48,8 @@ export function rememberOrder(order: MyOrder): void {
 /**
  * The order the address is asking for, if any.
  *
- * Kept in the hash rather than in React state alone, so refreshing the page —
- * or locking the phone and coming back to it — lands on the same screen instead
+ * Kept in the hash rather than in React state alone, so refreshing the page, 
+ * or locking the phone and coming back to it, lands on the same screen instead
  * of throwing the guest back to the menu with no way to find their order.
  */
 export function orderIdFromHash(): string | null {

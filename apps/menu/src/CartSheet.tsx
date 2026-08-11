@@ -21,7 +21,7 @@ interface TableRow extends Doc {
  * Slots the kitchen can actually serve.
  *
  * Offering a time the restaurant is shut, or one five minutes from now, is
- * worse than offering nothing — the customer plans around it and arrives to a
+ * worse than offering nothing, the customer plans around it and arrives to a
  * locked door.
  */
 function buildSlots(venue: Venue, features: FeatureMap, from = new Date()): Date[] {
@@ -127,7 +127,7 @@ export function CartSheet({
   // The QR sticker wins; only when it says nothing does the guest get asked.
   //
   // Kept below the state it reads, deliberately. Sitting above `seatId` this
-  // threw on every single render of the sheet — the cart button did nothing and
+  // threw on every single render of the sheet, the cart button did nothing and
   // no order could be sent, with nothing on screen to say why.
   const chosenSeat = table ?? seating.find((x) => x.$id === seatId) ?? null;
   const areasFirst = [...seating].sort(
@@ -156,7 +156,7 @@ export function CartSheet({
         | undefined;
 
       // A code that does not exist and one that is not for customers get the
-      // same message on purpose — otherwise the form becomes a way to discover
+      // same message on purpose, otherwise the form becomes a way to discover
       // staff-only codes by guessing.
       if (!d || !d.active || !d.guest_applicable) {
         setCodeError("That code isn't valid for this order.");
@@ -244,7 +244,7 @@ export function CartSheet({
         if (!v || v.active === false || usedUp || (v.ends_at && new Date(v.ends_at) < new Date())) {
           setCodeState(null);
           setCodeError('That code is no longer available. Your order has been updated to the full price.');
-          setProblem('The discount code is no longer available — check the total and send again.');
+          setProblem('The discount code is no longer available, check the total and send again.');
           setBusy(false);
           return;
         }
@@ -298,8 +298,8 @@ export function CartSheet({
       onPlaced(await settledOrderNo(order), order.$id, slot || undefined);
       setCart(() => []);
     } catch (e) {
-      // Through humanError, so the server's own vocabulary — roles, scopes,
-      // permissions — never reaches somebody who only wants lunch.
+      // Through humanError, so the server's own vocabulary, roles, scopes,
+      // permissions, never reaches somebody who only wants lunch.
       const said = e ? humanError(e) : '';
       const message = said || 'Could not send your order. Please try again.';
       setProblem(message);
@@ -327,7 +327,7 @@ export function CartSheet({
       {!table && seating.length > 0 && (
         <Field label="Where are you sitting?" hint="So we can bring your food to you.">
           <Select value={seatId} onChange={(e) => { setSeatId(e.target.value); setProblem(null); }}>
-            <option value="">— please choose —</option>
+            <option value="">Please choose</option>
             {areasFirst.map((t) => (
               <option key={t.$id} value={t.$id}>
                 {t.kind === 'area' ? t.label : `Table ${t.label}`}
@@ -383,7 +383,7 @@ export function CartSheet({
         >
           {slots.length === 0 ? (
             <Notice tone="warn">
-              No times are available yet — opening hours have not been set. Please order in person.
+              No times are available yet, opening hours have not been set. Please order in person.
             </Notice>
           ) : (
             <Select value={slot} onChange={(e) => setSlot(e.target.value)}>
@@ -421,7 +421,7 @@ export function CartSheet({
       {collectEmail && (
         <Field
           label="Your email"
-          hint="We'll tell you when your order is accepted and when it's ready, and send your receipt once you've paid. Optional — leave blank if you'd rather not."
+          hint="We'll tell you when your order is accepted and when it's ready, and send your receipt once you've paid. Optional, leave blank if you'd rather not."
         >
           <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
@@ -466,7 +466,7 @@ export function CartSheet({
       </div>
 
       <p className="small dim" style={{ marginTop: '0.9rem' }}>
-        Pay a member of staff when you're done — there's no payment in this app.
+        Pay a member of staff when you're done, there's no payment in this app.
       </p>
     </Modal>
   );

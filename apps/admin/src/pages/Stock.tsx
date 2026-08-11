@@ -140,7 +140,7 @@ export function StockPage() {
     }
   };
 
-  const supplierName = (id?: string) => suppliers.find((s) => s.$id === id)?.name ?? '—';
+  const supplierName = (id?: string) => suppliers.find((s) => s.$id === id)?.name ?? ', ';
 
   /**
    * Which dishes this ingredient goes into.
@@ -193,7 +193,7 @@ export function StockPage() {
           {alerts.some((a) => (a.consecutive_low_count ?? 0) >= 3) && (
             <>
               {' '}
-              Some have been low for three shifts or more — that is a supply problem or something leaving unrecorded,
+              Some have been low for three shifts or more; that is a supply problem or something leaving unrecorded,
               not ordinary restocking.
             </>
           )}
@@ -204,7 +204,7 @@ export function StockPage() {
         <KeyedListManager
           collection="ingredient_categories"
           singular="category"
-          hint="Your own groupings — Produce, Dry goods, Drinks, whatever suits how you shop. Used to sort the ingredient list; nothing breaks if you leave them alone."
+          hint="Your own groupings, Produce, Dry goods, Drinks, whatever suits how you shop. Used to sort the ingredient list; nothing breaks if you leave them alone."
         />
       ) : (
       <Card pad={false}>
@@ -236,7 +236,7 @@ export function StockPage() {
                           <div style={{ fontWeight: 550 }}>{i.name}</div>
                           {i.critical && <span className="badge badge-warn">Critical</span>}
                         </td>
-                        <td className="dim small">{nameForKey(categories, i.category) === '—' ? '' : nameForKey(categories, i.category)}</td>
+                        <td className="dim small">{nameForKey(categories, i.category) === ', ' ? '' : nameForKey(categories, i.category)}</td>
                         <td className="dim small">{supplierName(i.supplier_id)}</td>
                         <td className="small">{usedIn(i.$id)}</td>
                         <td className="num">{i.current_qty} {i.unit}</td>
@@ -264,8 +264,8 @@ export function StockPage() {
                 {suppliers.map((s) => (
                   <tr key={s.$id}>
                     <td style={{ fontWeight: 550 }}>{s.name}</td>
-                    <td className="dim">{s.contact || '—'}</td>
-                    <td className="dim">{s.phone || '—'}</td>
+                    <td className="dim">{s.contact || ', '}</td>
+                    <td className="dim">{s.phone || ', '}</td>
                     <td>{s.active ? <Badge tone="ok">Active</Badge> : <Badge>Inactive</Badge>}</td>
                     <td className="num"><Button size="sm" variant="ghost" onClick={() => setEditingSupplier(s)}>Edit</Button></td>
                   </tr>
@@ -334,7 +334,7 @@ export function StockPage() {
             </Field>
             <Field label="Supplier">
               <Select value={editing.supplier_id ?? ''} onChange={(e) => setEditing({ ...editing, supplier_id: e.target.value })}>
-                <option value="">— none —</option>
+                <option value="">None</option>
                 {suppliers.map((s) => <option key={s.$id} value={s.$id}>{s.name}</option>)}
               </Select>
             </Field>
@@ -346,7 +346,7 @@ export function StockPage() {
                 value={editing.expense_category_key ?? ''}
                 onChange={(e) => setEditing({ ...editing, expense_category_key: e.target.value })}
               >
-                <option value="">— ask each time —</option>
+                <option value="">Ask each time</option>
                 {(expenseCategories ?? []).filter((c) => c.active !== false).map((c) => (
                   <option key={c.key} value={c.key}>{c.name}</option>
                 ))}
@@ -354,10 +354,10 @@ export function StockPage() {
             </Field>
             <Field
               label="Category"
-              hint={categories && categories.length === 0 ? 'None set up — add some under the Categories tab.' : 'Optional. Groups the shopping list.'}
+              hint={categories && categories.length === 0 ? 'None set up, add some under the Categories tab.' : 'Optional. Groups the shopping list.'}
             >
               <Select value={editing.category ?? ''} onChange={(e) => setEditing({ ...editing, category: e.target.value })}>
-                <option value="">— none —</option>
+                <option value="">None</option>
                 {(categories ?? []).filter((c) => c.active !== false).map((c) => (
                   <option key={c.key} value={c.key}>{c.name}</option>
                 ))}
@@ -385,7 +385,7 @@ export function StockPage() {
           </Field>
 
           <Field hint="Critical items are called out first when they run low, ahead of everything else.">
-            <Toggle checked={editing.critical ?? false} onChange={(v) => setEditing({ ...editing, critical: v })} label="Critical — service stops without it" />
+            <Toggle checked={editing.critical ?? false} onChange={(v) => setEditing({ ...editing, critical: v })} label="Critical, service stops without it" />
           </Field>
           <Field>
             <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label="Active" />

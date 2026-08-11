@@ -12,7 +12,7 @@ import type { PosContext, TableRow } from './App';
  * One price, or the range the sizes cover.
  *
  * Printing the product's own price where sizes exist would print a figure the
- * till will never charge — which is exactly the number a customer reads over
+ * till will never charge, which is exactly the number a customer reads over
  * the counter and then queries.
  */
 function priceLabel(entry: MenuEntry, settings: Settings): string {
@@ -48,7 +48,7 @@ export function OrderView({
    *
    * A basket in three sizes has three prices and no single one of them is "the
    * price", so the till cannot add it to a bill until somebody says which. Held
-   * here rather than added at a guessed price and corrected later — a corrected
+   * here rather than added at a guessed price and corrected later, a corrected
    * line is a line the customer has already been quoted.
    */
   const [pickingSize, setPickingSize] = useState<string | null>(null);
@@ -418,7 +418,7 @@ function DiscountModal({
       }
     >
       <p className="small dim" style={{ marginTop: 0 }}>
-        Discounts can only be applied before the bill is marked paid. Afterwards, use a refund — which leaves its own
+        Discounts can only be applied before the bill is marked paid. Afterwards, use a refund, which leaves its own
         trail.
       </p>
       <Field label="Percentage off" error={error}>
@@ -470,7 +470,7 @@ function PaymentModal({
     setError(null);
     try {
       const billTotal = Math.max(1, orders.reduce((s, o) => s + o.total, 0));
-      // What was actually handed over, not what the bill came to — the two
+      // What was actually handed over, not what the bill came to, the two
       // differ whenever somebody pays part of it, and recording the bill total
       // against a part payment would mark the whole thing settled.
       const taken = Math.min(paid, amountDue);
@@ -548,7 +548,7 @@ function PaymentModal({
       <div className="grid-2">
         <Field
           label={`Amount taken (${ctx.settings.currency_symbol})`}
-          hint="Less than the total is fine — the bill stays open for whoever is paying the rest."
+          hint="Less than the total is fine, the bill stays open for whoever is paying the rest."
         >
           <Input value={amount} inputMode="decimal" onChange={(e) => setAmount(e.target.value)} />
         </Field>
@@ -585,7 +585,7 @@ function PaymentModal({
       </Field>
 
       {askEmail && (
-        <Field label="Email the receipt to" hint="Optional. Leave blank to skip — no receipt is sent.">
+        <Field label="Email the receipt to" hint="Optional. Leave blank to skip, no receipt is sent.">
           <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
       )}

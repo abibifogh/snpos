@@ -135,7 +135,7 @@ export function AccountPage() {
       {profile && (
         <Card title="Your permissions">
           <p className="small dim" style={{ marginTop: 0 }}>
-            Set by an administrator — you cannot raise your own limits, which is the point of them.
+            Set by an administrator; you cannot raise your own limits, which is the point of them.
           </p>
           <div className="table-wrap">
             <table className="data">

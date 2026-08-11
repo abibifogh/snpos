@@ -250,7 +250,7 @@ export function StockImport({
       {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
 
       <p className="small dim" style={{ marginTop: 0 }}>
-        Start from the template — it has the right headings and one example row. Fill it in with any spreadsheet
+        Start from the template; it has the right headings and one example row. Fill it in with any spreadsheet
         program, save as CSV, and bring it back here. Nothing is written until you have seen what will happen.
       </p>
 
@@ -289,7 +289,7 @@ export function StockImport({
           {broken.length > 0 && (
             <div style={{ marginBottom: '0.8rem' }}>
               <Notice tone="warn">
-                These rows are skipped. Everything else still imports — fix them and run the file again.
+                These rows are skipped. Everything else still imports, fix them and run the file again.
               </Notice>
               <ul className="small" style={{ margin: '0.5rem 0 0', paddingLeft: '1.2rem' }}>
                 {broken.slice(0, 8).map((r) => (

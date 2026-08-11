@@ -68,7 +68,7 @@ export function WastePage() {
         recorded_by: user?.$id ?? '',
       });
 
-      // Waste leaves the building, so the stock figure must follow it down —
+      // Waste leaves the building, so the stock figure must follow it down, 
       // otherwise the next count reads as an unexplained loss.
       if (kind === 'ingredient' && ing) {
         await db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
@@ -93,7 +93,7 @@ export function WastePage() {
 
   const total = (rows ?? []).reduce((s, r) => s + r.value, 0);
   const name = (r: WasteRow) =>
-    ingredients.find((i) => i.$id === r.ingredient_id)?.name ?? items.find((i) => i.$id === r.menu_item_id)?.name ?? '—';
+    ingredients.find((i) => i.$id === r.ingredient_id)?.name ?? items.find((i) => i.$id === r.menu_item_id)?.name ?? ', ';
 
   return (
     <>
@@ -136,7 +136,7 @@ export function WastePage() {
                     <td>{name(r)}</td>
                     <td className="num">{r.qty} {r.unit}</td>
                     <td><Badge>{REASONS.find((x) => x.v === r.reason)?.l ?? r.reason}</Badge></td>
-                    <td className="num">{settings && r.value ? formatMoney(r.value, settings) : '—'}</td>
+                    <td className="num">{settings && r.value ? formatMoney(r.value, settings) : ', '}</td>
                   </tr>
                 ))}
               </tbody>
@@ -166,14 +166,14 @@ export function WastePage() {
           {kind === 'ingredient' ? (
             <Field label="Ingredient">
               <Select value={editing.ingredient_id ?? ''} onChange={(e) => setEditing({ ...editing, ingredient_id: e.target.value })}>
-                <option value="">— choose —</option>
+                <option value="">Choose</option>
                 {ingredients.map((i) => <option key={i.$id} value={i.$id}>{i.name} ({i.unit})</option>)}
               </Select>
             </Field>
           ) : (
             <Field label="Dish">
               <Select value={editing.menu_item_id ?? ''} onChange={(e) => setEditing({ ...editing, menu_item_id: e.target.value })}>
-                <option value="">— choose —</option>
+                <option value="">Choose</option>
                 {items.map((i) => <option key={i.$id} value={i.$id}>{i.name}</option>)}
               </Select>
             </Field>

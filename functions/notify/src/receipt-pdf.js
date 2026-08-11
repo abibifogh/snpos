@@ -2,7 +2,7 @@
  * A till receipt as a real PDF, written by hand.
  *
  * No library, deliberately. A receipt is monospaced text on a narrow roll, and
- * PDF has Courier built into every reader on earth — so there is no font to
+ * PDF has Courier built into every reader on earth, so there is no font to
  * embed, nothing to lay out, and no dependency to install inside a function on
  * a plan with tight limits. The whole format needed here is a few hundred
  * bytes of header and one text stream.
@@ -13,14 +13,14 @@
  * the amount should be.
  */
 
-/** Courier is 600/1000 em wide at every size — the only reason this is easy. */
+/** Courier is 600/1000 em wide at every size, the only reason this is easy. */
 const CHAR_W = 0.6;
 
 const LATIN1_SAFE = {
   '₵': 'GHS', // cedi
   '₦': 'NGN', // naira
   '’': "'", '‘': "'", '“': '"', '”': '"',
-  '–': '-', '—': '-', '…': '...', '·': '-',
+  '–': '-', ', ': '-', '…': '...', '·': '-',
   '×': 'x', '−': '-',
 };
 
@@ -41,7 +41,7 @@ const esc = (s) => latin1(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replac
  * The page, built as a list of lines before anything is measured.
  *
  * Height comes out of the line count rather than being fixed, because a
- * receipt roll has no page two — a bill for twenty covers should be one long
+ * receipt roll has no page two, a bill for twenty covers should be one long
  * page, not a document somebody has to scroll through.
  */
 class Receipt {
@@ -82,7 +82,7 @@ class Receipt {
     return this;
   }
 
-  /** Label left, amount right, on one line — the shape of every receipt. */
+  /** Label left, amount right, on one line, the shape of every receipt. */
   pair(left, right, { bold = false, size = this.size } = {}) {
     const cols = Math.floor(this.inner / (size * CHAR_W));
     const r = latin1(right);
@@ -181,8 +181,8 @@ function pdf(width, height, content) {
 /**
  * The receipt itself.
  *
- * Same shape as the one the apps print — name, address, the items, the totals,
- * how it was paid — so a customer's emailed copy and a reprint from the admin
+ * Same shape as the one the apps print, name, address, the items, the totals,
+ * how it was paid, so a customer's emailed copy and a reprint from the admin
  * app are recognisably the same document.
  */
 export function receiptPdf({ settings, venue, order, items, payments, methods }) {

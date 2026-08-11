@@ -82,7 +82,7 @@ export interface OrderItem extends Doc {
   /** The prep time this dish had when it was ordered. */
   prep_minutes?: number;
   // ------------------------------------------------------------- craft shop
-  // Which variant sold, whose it was and what was agreed — snapshotted here
+  // Which variant sold, whose it was and what was agreed, snapshotted here
   // because a statement worked out from today's rate would restate what
   // somebody was paid last year.
   variant_id?: string;
@@ -105,18 +105,18 @@ export const newIdempotencyKey = (): string =>
  * Next order number for a venue.
  *
  * The prefix, the width and whether numbering restarts each day are the
- * restaurant's to decide — these numbers get shouted across a pass, and a
+ * restaurant's to decide, these numbers get shouted across a pass, and a
  * kitchen that counts to four digits forever is being made to work around the
  * software rather than the other way round.
  *
  * Still derived from the last order rather than from a counter document.
  * Read-then-write is not safe against two terminals ordering in the same
  * instant, but the unique index on (venue_id, order_no) catches the collision
- * and createOrder retries — cheaper and simpler than a counter every order
+ * and createOrder retries, cheaper and simpler than a counter every order
  * must serialise through.
  *
  * Only staff can do this. Reading the last order means reading orders, and a
- * guest deliberately cannot — see the note on the collection. Guests get
+ * guest deliberately cannot, see the note on the collection. Guests get
  * `provisionalOrderNo` instead and order-guard settles the real number the
  * moment the order lands.
  */
@@ -127,7 +127,7 @@ async function nextOrderNo(venueId: string, settings: Settings): Promise<string>
 
   // A window rather than the single newest row. Guest orders sit on a
   // placeholder for a second or so before the server settles them, and the
-  // newest order is quite often one of those — reading it as "the last number"
+  // newest order is quite often one of those, reading it as "the last number"
   // would send the count back to the beginning.
   const queries = [Query.equal('venue_id', venueId), Query.orderDesc('$createdAt'), Query.limit(50)];
   if (daily) {
@@ -162,7 +162,7 @@ async function nextOrderNo(venueId: string, settings: Settings): Promise<string>
  * the building can put it right.
  *
  * Staff can read and update orders, so any staff screen that is open can heal
- * them. Safe to call often — it does nothing when there is nothing to fix.
+ * them. Safe to call often; it does nothing when there is nothing to fix.
  */
 export async function settleOrderNumbers(venueId: string, settings: Settings): Promise<number> {
   const byPrefix = [
@@ -173,7 +173,7 @@ export async function settleOrderNumbers(venueId: string, settings: Settings): P
   ];
   // The narrow query needs the plain index on order_no. If provisioning has
   // not run since that index was added, fall back to reading recent orders and
-  // filtering here — slower, but it still heals them.
+  // filtering here, slower, but it still heals them.
   const stuck = (await db
     .listDocuments(DB_ID, 'orders', byPrefix)
     .catch(() =>
@@ -222,7 +222,7 @@ export const PROVISIONAL_MARK = '~';
 export const isProvisionalOrderNo = (no: string | undefined) => !!no && no.startsWith(PROVISIONAL_MARK);
 /**
  * What to put on a ticket. A placeholder is not a number anyone should read
- * out, and it is replaced within a second or so — a quiet ellipsis is better
+ * out, and it is replaced within a second or so, a quiet ellipsis is better
  * than a string of characters somebody might try to shout across a pass.
  */
 export const displayOrderNo = (no: string | undefined) =>
@@ -253,7 +253,7 @@ export interface CreateOrderInput {
    *
    * Guests cannot read the order list, so they cannot work out what the next
    * number is. Saying so here is more honest than guessing from whether a read
-   * happened to come back empty — which is exactly what used to happen, and it
+   * happened to come back empty, which is exactly what used to happen, and it
    * handed every guest order the number 0001 until the unique index refused it.
    */
   guest?: boolean;
@@ -279,14 +279,14 @@ export interface CreatedOrder {
  * customer ends up waiting twice what they were told. Better to say twenty and
  * hand it over in fifteen than the other way round.
  *
- * Extra portions of the same dish are not multiplied — three of one thing goes
+ * Extra portions of the same dish are not multiplied; three of one thing goes
  * in one pan, and doubling it produces a number nobody believes.
  */
 /**
  * The longest wait this system will ever quote, whatever the arithmetic says.
  *
- * Not because the food will always arrive by then — on a bad night it will not
- * — but because a number past this stops being useful. "One hour" is a decision
+ * Not because the food will always arrive by then, on a bad night it will not
+ *, but because a number past this stops being useful. "One hour" is a decision
  * point: somebody reads it and either waits or leaves. "An hour and fifty" is a
  * number nobody believes and nobody plans around, and quoting it does more
  * damage than the honest cap plus a cook who keeps people posted.
@@ -297,8 +297,8 @@ export const MAX_ETA_MINUTES = 60;
  * The wait to show, never more than the cap.
  *
  * Applied on the way out as well as on the way in. Capping only where the
- * figure is worked out leaves every row written before the cap existed — and
- * anything a future change forgets to clamp — free to put "about 95 minutes"
+ * figure is worked out leaves every row written before the cap existed, and
+ * anything a future change forgets to clamp, free to put "about 95 minutes"
  * in front of a customer. Reading is the last chance to be sure, and it costs
  * nothing to take it.
  *
@@ -319,13 +319,13 @@ export function estimateMinutes(lines: CartLine[], queueAhead = 0): number {
  *
  * This is what the kitchen is judged by, and it is deliberately not what the
  * customer is quoted. Their wait includes queueing behind other tickets, which
- * is time before a cook touches this one — measuring a kitchen by it would hand
+ * is time before a cook touches this one, measuring a kitchen by it would hand
  * them extra minutes on exactly the nights being late matters most, and only
  * because other people were also waiting.
  *
  * Added rather than taking the longest, for the same reason as everywhere else
  * here: a cook with a curry and a grill on one ticket does them one after the
- * other. Not multiplied by quantity — three of one thing goes in one pan.
+ * other. Not multiplied by quantity; three of one thing goes in one pan.
  */
 export function cookMinutes(lines: Pick<CartLine, 'prep_minutes'>[]): number {
   return Math.max(1, Math.round(lines.reduce((sum, l) => sum + (l.prep_minutes ?? 15), 0)));
@@ -341,7 +341,7 @@ export function cookMinutes(lines: Pick<CartLine, 'prep_minutes'>[]): number {
  * `prep_minutes` on the order is the answer whenever it is there. The fallbacks
  * are for orders placed before it was stored: each line's due time was stamped
  * as "now plus its prep", so the difference gives that prep back. Twenty
- * minutes if even that is missing — a guess that pings beats a blank that never
+ * minutes if even that is missing, a guess that pings beats a blank that never
  * does.
  */
 export function dueMinutes(
@@ -365,7 +365,7 @@ export function dueMinutes(
  * How long the tickets already on the pass will take before this one is
  * started.
  *
- * The kitchen is treated as working through one ticket at a time — the same
+ * The kitchen is treated as working through one ticket at a time, the same
  * assumption that makes the dishes within an order add up rather than overlap,
  * and for the same reason. Two cooks who genuinely work in parallel will beat
  * this estimate, and a customer told twenty-five who eats in eighteen is a
@@ -376,7 +376,7 @@ export function dueMinutes(
  * counting the full fifteen would push every quote up all evening as the night's
  * finished work piled into the arithmetic.
  *
- * Orders sitting READY are excluded — the cooking is done and they are waiting
+ * Orders sitting READY are excluded; the cooking is done and they are waiting
  * on a person, not on a stove.
  */
 export function queueMinutes(
@@ -394,7 +394,7 @@ export function queueMinutes(
      * Those are different numbers now, and using the wrong one compounds. An
      * order's quoted wait already contains the queue that was ahead of IT, so
      * adding up quoted waits counts the same stove time again for every order
-     * that has joined since — a fourth ticket on a quiet-ish evening would
+     * that has joined since, a fourth ticket on a quiet-ish evening would
      * inherit the first three's queueing on top of their cooking and sail
      * straight into the hour cap. What is left to cook is what is left to cook.
      */
@@ -427,7 +427,7 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
   const isPreorder = !!input.scheduledFor;
   const prepById: Record<string, number> = {};
   // Guests never number their own orders, and neither can anybody with no
-  // connection — working out the next number means reading the last one. Both
+  // connection, working out the next number means reading the last one. Both
   // get a placeholder, and the server settles it on arrival. The same mechanism
   // covers both cases, so an order taken during an outage is numbered properly
   // the moment it lands rather than needing anything special.
@@ -578,7 +578,7 @@ export function cancelWindowLeft(order: Pick<Order, '$createdAt'>, now: number =
 /**
  * Ask for an order to be called back.
  *
- * A request, not an instruction. A guest cannot write to their own order —
+ * A request, not an instruction. A guest cannot write to their own order, 
  * Appwrite grants permission per document rather than per field, so a phone
  * allowed to change the status would be a phone allowed to change the total.
  * This writes a row the server acts on, and grants the guest read on it so the

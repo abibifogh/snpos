@@ -1,5 +1,5 @@
 /**
- * Generates docs/15-manual-console-setup.md — a complete click-by-click guide
+ * Generates docs/15-manual-console-setup.md, a complete click-by-click guide
  * for building the schema by hand in the Appwrite console.
  *
  * Derived from schema.mjs so it can never drift from what provision.mjs does.
@@ -22,8 +22,8 @@ function describe([key, type, arg, required = false, def]) {
   if (base === 's') size = `size ${arg}`;
   else if (base === 'e') size = arg.map((v) => (v === '' ? '(blank)' : v)).join(', ');
 
-  // Appwrite forbids a default on a required attribute — mirror provision.mjs.
-  const shown = required ? '—' : def === undefined ? '—' : String(def);
+  // Appwrite forbids a default on a required attribute, mirror provision.mjs.
+  const shown = required ? ', ' : def === undefined ? ', ' : String(def);
   return {
     key,
     type: label,
@@ -43,7 +43,7 @@ function permLine(perms) {
     const roles = perms[action] || [];
     parts.push(
       `**${action[0].toUpperCase() + action.slice(1)}**: ` +
-        (roles.length ? roles.map(roleLabel).join(', ') : '_none — server only_'),
+        (roles.length ? roles.map(roleLabel).join(', ') : '_none, server only_'),
     );
   }
   return parts.join(' · ');
@@ -55,7 +55,7 @@ const p = (s = '') => out.push(s);
 const totalAttrs = COLLECTIONS.reduce((n, c) => n + c.attributes.length, 0);
 const totalIdx = COLLECTIONS.reduce((n, c) => n + (c.indexes || []).length, 0);
 
-p('# 15 — Manual setup in the Appwrite console');
+p('# 15, Manual setup in the Appwrite console');
 p('');
 p('Everything to create by hand, in order. Generated from `scripts/schema.mjs`,');
 p('so it matches exactly what `npm run provision` would have built.');
@@ -69,7 +69,7 @@ p('> an error at the time. The script does the same work in about four minutes a
 p('> is safe to re-run.');
 p('>');
 p('> If the terminal is the obstacle, the shortest path is still');
-p('> `npm run provision` on any computer (see doc 08, Stage 2) — it needs Node');
+p('> `npm run provision` on any computer (see doc 08, Stage 2), it needs Node');
 p('> installed and nothing else. This document exists because you asked for it, and');
 p('> it is complete and correct; it is just the expensive way to get there.');
 p('>');
@@ -77,11 +77,11 @@ p('> **Work top to bottom.** Later steps reference IDs created in earlier ones.'
 p('');
 p('**Conventions used below**');
 p('');
-p('- **ID** means the "Collection ID" / "Attribute Key" field — type it exactly,');
+p('- **ID** means the "Collection ID" / "Attribute Key" field, type it exactly,');
 p('  lowercase, underscores not spaces. The apps look these up by ID.');
 p('- **Required** columns marked **Yes** must be ticked. Appwrite will not let you');
-p('  set a default on a required field — that is expected, not a mistake.');
-p('- **Default `—`** means leave the default box empty.');
+p('  set a default on a required field; that is expected, not a mistake.');
+p('- **Default `, `** means leave the default box empty.');
 p('- **Array Yes** means tick "Array".');
 p('- Enum values are comma-separated; enter them one per row in the console.');
 p('  A value shown as `(blank)` means add an empty option.');
@@ -90,7 +90,7 @@ p('---');
 p('');
 
 // ---------------------------------------------------------------- Stage 1
-p('## Stage 1 — Project settings');
+p('## Stage 1, Project settings');
 p('');
 p('In your existing project (ID `6a6e308e00234b152989`, Frankfurt region):');
 p('');
@@ -108,7 +108,7 @@ p('   not listed here, so skipping this makes everything fail with a CORS error.
 p('');
 p('2. **Auth → Settings**:');
 p('   - Enable **Email/Password**.');
-p('   - Enable **Anonymous** — the customer QR menu needs it; without it, guests');
+p('   - Enable **Anonymous**, the customer QR menu needs it; without it, guests');
 p('     cannot order at all.');
 p('   - Set **Session length** to 1 year (staff devices stay logged in).');
 p('   - Disable every provider you do not use.');
@@ -118,15 +118,15 @@ p('   `databases.read`, `databases.write`, `collections.read`, `collections.writ
 p('   `attributes.read`, `attributes.write`, `indexes.read`, `indexes.write`,');
 p('   `documents.read`, `documents.write`, `users.read`, `users.write`,');
 p('   `teams.read`, `teams.write`, `files.read`, `files.write`.');
-p('   Copy the secret immediately — it is shown once.');
+p('   Copy the secret immediately; it is shown once.');
 p('');
 p('---');
 p('');
 
 // ---------------------------------------------------------------- Stage 2
-p('## Stage 2 — Teams');
+p('## Stage 2, Teams');
 p('');
-p('**Auth → Teams → Create team**, five times. The Team ID matters — permissions');
+p('**Auth → Teams → Create team**, five times. The Team ID matters, permissions');
 p('below refer to it.');
 p('');
 p('| Team ID | Name |');
@@ -137,16 +137,16 @@ p('---');
 p('');
 
 // ---------------------------------------------------------------- Stage 3
-p('## Stage 3 — Storage buckets');
+p('## Stage 3, Storage buckets');
 p('');
 p('**Storage → Create bucket**, three times.');
 p('');
 for (const b of BUCKETS) {
-  p(`### Bucket \`${b.id}\` — ${b.name}`);
+  p(`### Bucket \`${b.id}\`, ${b.name}`);
   p('');
   p(`- **Maximum file size**: ${Math.round(b.maxSize / 1024 / 1024)} MB`);
   p(`- **Allowed file extensions**: ${b.extensions.join(', ')}`);
-  p(`- **Permissions** — Read: ${b.read.map(roleLabel).join(', ')} · Create/Update/Delete: ${b.write.map(roleLabel).join(', ')}`);
+  p(`- **Permissions**, Read: ${b.read.map(roleLabel).join(', ')} · Create/Update/Delete: ${b.write.map(roleLabel).join(', ')}`);
   p('- Leave encryption and antivirus on (the defaults).');
   p('');
 }
@@ -154,18 +154,18 @@ p('---');
 p('');
 
 // ---------------------------------------------------------------- Stage 4
-p('## Stage 4 — Database');
+p('## Stage 4, Database');
 p('');
 p(`**Databases → Create database** → Name \`NiceOps POS\`, **Database ID \`${DB_ID}\`**.`);
 p('');
-p('The ID must be exactly this — the apps read it from `DB_ID` in the settings');
+p('The ID must be exactly this, the apps read it from `DB_ID` in the settings');
 p('file and will not find anything otherwise.');
 p('');
 p('---');
 p('');
 
 // ---------------------------------------------------------------- Stage 5
-p('## Stage 5 — Collections');
+p('## Stage 5, Collections');
 p('');
 p('For each collection below:');
 p('');
@@ -175,7 +175,7 @@ p('3. Add every attribute from the table, in order.');
 p('4. Add every index from the index table.');
 p('');
 p('Attributes are created asynchronously. If an index refuses to save with');
-p('"attribute not available", wait ten seconds and try again — the attribute is');
+p('"attribute not available", wait ten seconds and try again, the attribute is');
 p('still being built.');
 p('');
 p(`There are ${COLLECTIONS.length} collections. A progress checklist is at the end of this document.`);
@@ -186,7 +186,7 @@ for (const c of COLLECTIONS) {
   n += 1;
   p('---');
   p('');
-  p(`### ${n}. \`${c.id}\` — ${c.name}`);
+  p(`### ${n}. \`${c.id}\`, ${c.name}`);
   p('');
   p(permLine(c.perms));
   p('');
@@ -196,7 +196,7 @@ for (const c of COLLECTIONS) {
   p('| --- | --- | --- | --- | --- | --- |');
   for (const a of c.attributes) {
     const d = describe(a);
-    p(`| \`${d.key}\` | ${d.type} | ${d.size || '—'} | ${d.required} | ${d.def} | ${d.array} |`);
+    p(`| \`${d.key}\` | ${d.type} | ${d.size || ', '} | ${d.required} | ${d.def} | ${d.array} |`);
   }
   p('');
   if (c.indexes && c.indexes.length) {
@@ -217,13 +217,13 @@ for (const c of COLLECTIONS) {
 // ---------------------------------------------------------------- Stage 6
 p('---');
 p('');
-p('## Stage 6 — Seed documents');
+p('## Stage 6, Seed documents');
 p('');
 p('These rows must exist before the apps will run. Create them from');
 p('**Databases → snpos → [collection] → Add document**.');
 p('');
 
-p('### 6.1 `settings` — one document, ID `main`');
+p('### 6.1 `settings`, one document, ID `main`');
 p('');
 p('Set the **Document ID** to `main` manually (do not let it auto-generate).');
 p('Fill every required field; the values below are sensible starting points and');
@@ -247,7 +247,7 @@ p('');
 p('Leave the rest blank for now.');
 p('');
 
-p('### 6.2 `venues` — one document, ID `main`');
+p('### 6.2 `venues`, one document, ID `main`');
 p('');
 p('Set the **Document ID** to `main`.');
 p('');
@@ -261,11 +261,11 @@ p('| `sort` | `0` |');
 p('| `shift_float_policy` | `inherit` |');
 p('| `shift_float_default` | `0` |');
 p('');
-p('Add `opening_hours` later from the admin screens — it is JSON and far easier');
+p('Add `opening_hours` later from the admin screens; it is JSON and far easier');
 p('to set there than by hand here.');
 p('');
 
-p('### 6.3 `accounts` — 20 documents (chart of accounts)');
+p('### 6.3 `accounts`, 20 documents (chart of accounts)');
 p('');
 p('Auto-generated Document IDs are fine. Set `system` to `true` on all of them.');
 p('');
@@ -274,7 +274,7 @@ p('| --- | --- | --- |');
 for (const [code, name, type] of SEED_ACCOUNTS) p(`| \`${code}\` | ${name} | \`${type}\` |`);
 p('');
 
-p('### 6.4 `payment_methods` — 2 documents');
+p('### 6.4 `payment_methods`, 2 documents');
 p('');
 p('| venue_id | name | kind | sort | opens_cash_drawer | requires_reference | counted_at_close | enabled | gateway | surcharge_bp |');
 p('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
@@ -286,7 +286,7 @@ for (const m of SEED_PAYMENT_METHODS) {
 }
 p('');
 
-p('### 6.5 `pickup_points` — 1 document');
+p('### 6.5 `pickup_points`, 1 document');
 p('');
 p('| Field | Value |');
 p('| --- | --- |');
@@ -299,9 +299,9 @@ p('| `active` | `true` |');
 p('| `sort` | `0` |');
 p('');
 
-p(`### 6.6 \`feature_flags\` — ${FEATURES.length} documents`);
+p(`### 6.6 \`feature_flags\`, ${FEATURES.length} documents`);
 p('');
-p('One per feature. Leave `venue_id` **blank** — that makes each row the');
+p('One per feature. Leave `venue_id` **blank**; that makes each row the');
 p('group-wide default. `config` is a JSON string: copy the whole block from the');
 p('`config` column into the field as-is, including the outer braces.');
 p('');
@@ -312,14 +312,14 @@ for (const f of FEATURES) {
 }
 p('');
 p('If pasting that much JSON is painful, you can set `config` to `{}` for now and');
-p('edit the options in the admin screens once the apps are running — the code');
+p('edit the options in the admin screens once the apps are running, the code');
 p('falls back to the defaults in `scripts/schema.mjs` for anything missing.');
 p('');
 
 // ---------------------------------------------------------------- Stage 7
 p('---');
 p('');
-p('## Stage 7 — First admin user');
+p('## Stage 7, First admin user');
 p('');
 p('1. **Auth → Users → Create user** with your email, a name, and a password.');
 p('2. Copy the resulting **User ID**.');
@@ -336,7 +336,7 @@ p('| `can_open_shift` | `true` |');
 p('| `can_close_shift` | `true` |');
 p('| `can_void` | `true` |');
 p('| `can_discount_up_to_bp` | `10000` |');
-p('| `venue_ids` | leave empty — empty means all venues |');
+p('| `venue_ids` | leave empty, empty means all venues |');
 p('');
 p('**Verify:** you can log into the admin app and see Settings.');
 p('');
@@ -346,15 +346,15 @@ p('---');
 p('');
 p('## Progress checklist');
 p('');
-p('Tick these off as you go — it is a long job and losing your place is the main');
+p('Tick these off as you go; it is a long job and losing your place is the main');
 p('way mistakes creep in.');
 p('');
-p('- [ ] Stage 1 — platforms, auth, API key');
-p('- [ ] Stage 2 — 5 teams');
-p('- [ ] Stage 3 — 3 buckets');
-p('- [ ] Stage 4 — database `snpos`');
+p('- [ ] Stage 1, platforms, auth, API key');
+p('- [ ] Stage 2, 5 teams');
+p('- [ ] Stage 3, 3 buckets');
+p('- [ ] Stage 4, database `snpos`');
 p('');
-p('**Stage 5 — collections**');
+p('**Stage 5, collections**');
 p('');
 let i = 0;
 for (const c of COLLECTIONS) {
@@ -362,7 +362,7 @@ for (const c of COLLECTIONS) {
   p(`- [ ] ${String(i).padStart(2, ' ')}. \`${c.id}\` (${c.attributes.length} fields, ${(c.indexes || []).length} indexes)`);
 }
 p('');
-p('**Stage 6 — seed documents**');
+p('**Stage 6, seed documents**');
 p('');
 p('- [ ] `settings/main`');
 p('- [ ] `venues/main`');
@@ -388,9 +388,9 @@ p(`4. \`feature_flags\` holds **${FEATURES.length} rows**, each with a blank \`v
 p('5. `accounts` holds **20 rows**.');
 p('');
 p('If you later get access to a terminal, running `npm run provision` against');
-p('this same project is still safe — it creates only what is missing and reports');
+p('this same project is still safe; it creates only what is missing and reports');
 p('the rest as already present. It is a good way to catch anything mistyped here.');
 p('');
 
 writeFileSync(new URL('../docs/15-manual-console-setup.md', import.meta.url), out.join('\n'));
-console.log(`Wrote docs/15-manual-console-setup.md — ${COLLECTIONS.length} collections, ${totalAttrs} attributes, ${totalIdx} indexes.`);
+console.log(`Wrote docs/15-manual-console-setup.md, ${COLLECTIONS.length} collections, ${totalAttrs} attributes, ${totalIdx} indexes.`);

@@ -1,7 +1,7 @@
-/* Customer menu — phone first. Everything here assumes a thumb, not a mouse. */
+/* Customer menu, phone first. Everything here assumes a thumb, not a mouse. */
 
 /* Nothing is allowed to be wider than the phone.
-   A single element a few pixels too wide does not scroll sideways on a phone —
+   A single element a few pixels too wide does not scroll sideways on a phone; 
    it makes the browser shrink the WHOLE page to fit, so every dish and price
    comes out small and the guest has to pinch to read a menu. One long word in
    a dish name is enough to do it, which is why the wrapping rules below are
@@ -59,7 +59,7 @@
 .cat-nav button.shut { opacity: 0.55; }
 
 /* A section has to announce itself.
-   The heading was 1.05rem against dish names at 0.97rem — eight hundredths of
+   The heading was 1.05rem against dish names at 0.97rem, eight hundredths of
    a rem apart, both dark, both semibold. Scrolling past, a customer could not
    tell where "Everyday" ended and "Thursday" began, so the whole menu read as
    one long list. Bigger, heavier, and with air above it and a rule beneath. */

@@ -45,7 +45,7 @@ export function Shell({ children }: { children: ReactNode }) {
              * page opens itself, so nothing is ever hidden from somebody who is
              * already there.
              *
-             * The browser remembers nothing here on purpose — this reopens from
+             * The browser remembers nothing here on purpose, this reopens from
              * where you actually are on every load, which is more useful than
              * restoring whatever was open last Tuesday.
              */

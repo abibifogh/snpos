@@ -60,8 +60,8 @@
 }
 
 /* A size row in the product editor.
-   Laid out as one line because that is how it reads — name, kind, price, how
-   many, barcode — and a stack of labelled fields per size would turn three
+   Laid out as one line because that is how it reads, name, kind, price, how
+   many, barcode, and a stack of labelled fields per size would turn three
    sizes into a page of scrolling. Wraps rather than overflows on a narrow
    screen: an admin doing intake on a tablet is a real situation. */
 .variant-row {
@@ -77,7 +77,7 @@
 
 /* ---- folding sidebar groups -------------------------------------------- */
 /* The heading is the control. Made to look no different from the heading it
-   replaced — a sidebar that suddenly grows a row of buttons reads as busier
+   replaced, a sidebar that suddenly grows a row of buttons reads as busier
    than the list it was meant to shorten. */
 .nav-group > summary {
   cursor: pointer;

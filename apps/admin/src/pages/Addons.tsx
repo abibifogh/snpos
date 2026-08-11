@@ -72,7 +72,7 @@ export function AddonsPage() {
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
 
   /**
-   * Open the editor. `copy` starts a brand new group from an existing one —
+   * Open the editor. `copy` starts a brand new group from an existing one, 
    * every choice comes across, but none of them keep their id, so saving writes
    * a second group instead of overwriting the first.
    */
@@ -148,7 +148,7 @@ export function AddonsPage() {
           : (await db.createDocument(DB_ID, 'addon_options', ID.unique(), body)).$id;
 
         // What this choice takes off the shelf, written as a recipe against the
-        // option rather than the dish — which is what the stock engine already
+        // option rather than the dish, which is what the stock engine already
         // reads when it works out what a shift should have used.
         const wants = o.ingredientId && Number(o.qtyText) > 0;
         const recipeBody = {
@@ -176,7 +176,7 @@ export function AddonsPage() {
   const remove = async (g: AddonGroup) => {
     if (!confirm(`Delete "${g.name}" and its choices? Dishes using it will lose that set of options.`)) return;
     try {
-      // Remove the links first, then the options, then the group — leaving a
+      // Remove the links first, then the options, then the group, leaving a
       // dish pointing at a group that no longer exists would break its page.
       const links = await db.listDocuments(DB_ID, 'menu_item_addon_groups', [Query.equal('group_id', g.$id), Query.limit(100)]);
       await Promise.all(links.documents.map((l) => db.deleteDocument(DB_ID, 'menu_item_addon_groups', l.$id)));
@@ -200,7 +200,7 @@ export function AddonsPage() {
       </div>
 
       <p className="dim small" style={{ marginTop: 0 }}>
-        Choices a customer makes when ordering a dish — protein, spice level, size, extras. Build a group once and
+        Choices a customer makes when ordering a dish, protein, spice level, size, extras. Build a group once and
         attach it to as many dishes as you like. A choice can add nothing to the price: set it to 0.
       </p>
 
@@ -209,7 +209,7 @@ export function AddonsPage() {
       {!groups ? (
         <Spinner />
       ) : groups.length === 0 ? (
-        <Card><Empty title="No option groups yet">For example: “Choose your protein” — Chicken +0, Beef +10, Prawns +25.</Empty></Card>
+        <Card><Empty title="No option groups yet">For example: “Choose your protein”, Chicken +0, Beef +10, Prawns +25.</Empty></Card>
       ) : (
         <div className="stack">
           {groups.map((g) => (
@@ -345,7 +345,7 @@ export function AddonsPage() {
                             value={o.ingredientId}
                             onChange={(e) => setOption(i, { ingredientId: e.target.value })}
                           >
-                            <option value="">— none —</option>
+                            <option value="">None</option>
                             {ingredients.map((x) => <option key={x.$id} value={x.$id}>{x.name}</option>)}
                           </Select>
                           {o.ingredientId && (
@@ -416,7 +416,7 @@ export function AddonsPage() {
           <p className="hint" style={{ marginTop: '0.6rem' }}>
             Extra cost is what this choice adds to the dish price. Leave it at {toInput(0, decimals)} for choices
             included in the price. <strong>Takes from stock</strong> is how much of an ingredient the choice actually
-            uses — an extra portion of chicken is real chicken, and it comes off the shelf whether or not it was
+            uses, an extra portion of chicken is real chicken, and it comes off the shelf whether or not it was
             charged for.
           </p>
         </Modal>

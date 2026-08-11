@@ -10,7 +10,7 @@ import { Badge, Button, Field, Input, Notice, Textarea } from './components';
  *   2. Staff enter only what they physically hold. Everything they are
  *      measured against is computed.
  *   3. A difference must be explained before the shift can close. Not to
- *      accuse anyone — drawers drift honestly — but because the explanation is
+ *      accuse anyone, drawers drift honestly, but because the explanation is
  *      available now and gone by morning.
  */
 
@@ -38,7 +38,7 @@ export interface StockRow {
   unit?: string;
   /** What the system believes is left, for comparison against the shelf. */
   onHand?: number;
-  /** The heading this belongs under — Sauces, Protein, Staples. */
+  /** The heading this belongs under, Sauces, Protein, Staples. */
   group?: string;
   /** The rule in the restaurant's own words, written by an admin. */
   guide?: string;
@@ -70,7 +70,7 @@ export function readCount(text?: string, allowDecimals = true): number | null {
  * the same shelf to be filed differently depending on which device was nearest.
  *
  * `missing` is what has not been answered yet, so a shift cannot close on a
- * half-finished count — a blank row would otherwise be saved as OK and the
+ * half-finished count, a blank row would otherwise be saved as OK and the
  * ingredient nobody looked at is exactly the one that runs out.
  */
 export function resolveCounts(
@@ -99,7 +99,7 @@ export function resolveCounts(
  * What to put under an item's name.
  *
  * When staff tap a level, the written rule wins whenever there is one. It is in
- * the units on the shelf — buckets, crates, half a bottle — and it says the
+ * the units on the shelf, buckets, crates, half a bottle, and it says the
  * same thing to everybody, which is the entire point of having written it down.
  * Falling back to the numbers is better than falling back to nothing, but only
  * just: "low at 4 kg" is a conversion somebody has to do in their head while
@@ -172,7 +172,7 @@ export function ShiftCloseForm({
     return (
       <>
         <Notice>
-          <strong>This shift cannot close yet.</strong> Settle or void everything below first — an order left open
+          <strong>This shift cannot close yet.</strong> Settle or void everything below first, an order left open
           rolls into a shift that never sold it, and the money stops being traceable to anybody.
         </Notice>
         {unpaid.length > 0 && (
@@ -221,7 +221,7 @@ export function ShiftCloseForm({
    *
    * Worked out the same way each row's badge is, so the explanation box and
    * the red numbers can never disagree. A drawer nobody has counted yet is not
-   * a difference — it is an unanswered question, and the close is blocked on it
+   * a difference; it is an unanswered question, and the close is blocked on it
    * separately.
    */
   const anythingOff = rows.some((r) => {
@@ -266,7 +266,7 @@ export function ShiftCloseForm({
                   </td>
                   <td className="num">
                     {diff === null ? (
-                      <span className="dim">—</span>
+                      <span className="dim">-</span>
                     ) : diff === 0 ? (
                       <Badge tone="ok">Exact</Badge>
                     ) : (
@@ -308,12 +308,12 @@ export function ShiftCloseForm({
             <>
               <p className="small dim" style={{ marginTop: 0 }}>
                 Count what is actually on the shelf and type it in. The system decides whether that is low from the
-                levels set for each ingredient, so nobody has to judge it — and what you count is measured against what
+                levels set for each ingredient, so nobody has to judge it, and what you count is measured against what
                 the recipes say should have gone, which is where waste shows up.
               </p>
               <div className="stock-key">
                 <div>
-                  Type the amount you can see, in the unit shown. A blank is not the same as zero — if there is none
+                  Type the amount you can see, in the unit shown. A blank is not the same as zero, if there is none
                   left, type <strong>0</strong>.
                   {stockDecimals && ' Part amounts are fine: 0.5 for half, 0.25 for a quarter.'}
                 </div>
@@ -323,15 +323,15 @@ export function ShiftCloseForm({
             <>
               <p className="small dim" style={{ marginTop: 0 }}>
                 A quick look at the shelf, not a full count. Anything marked <strong>low</strong> or <strong>out</strong>{' '}
-                goes into tonight's summary — and if the same thing keeps coming up, that becomes its own warning.
+                goes into tonight's summary, and if the same thing keeps coming up, that becomes its own warning.
               </p>
               {/* Three people will otherwise use three different meanings of "low",
                   and the report that comes out the other end is worth nothing.
                   One sentence each, phrased as the question to ask yourself. */}
               <div className="stock-key">
                 <div><Badge tone="ok">OK</Badge> Enough to get through tomorrow's service without thinking about it.</div>
-                <div><Badge tone="warn">LOW</Badge> Enough for tonight, but it needs ordering — you would not want to start another service on what is left.</div>
-                <div><Badge tone="danger">OUT</Badge> None left, or too little to serve. Mark this even if the system thinks there is some — the shelf wins.</div>
+                <div><Badge tone="warn">LOW</Badge> Enough for tonight, but it needs ordering; you would not want to start another service on what is left.</div>
+                <div><Badge tone="danger">OUT</Badge> None left, or too little to serve. Mark this even if the system thinks there is some, the shelf wins.</div>
               </div>
             </>
           )}
@@ -362,7 +362,7 @@ export function ShiftCloseForm({
                       <Input
                         value={stockCounts[i.$id] ?? ''}
                         inputMode="decimal"
-                        placeholder="—"
+                        placeholder=", "
                         aria-label={`How much ${i.name} is left`}
                         onChange={(e) =>
                           onStockCount?.(

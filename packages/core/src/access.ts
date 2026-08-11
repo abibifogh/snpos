@@ -18,7 +18,7 @@ export interface AdminSection {
   /**
    * Which side of the business this section belongs to, if only one.
    *
-   * Absent means it serves both — a shift is a shift whether the money came
+   * Absent means it serves both; a shift is a shift whether the money came
    * from a plate of jollof or a woven basket. Where it is set, the section
    * appears only when that module is switched on, so a restaurant is never
    * shown consignor payouts and a craft shop is never shown a waste log.
@@ -37,8 +37,8 @@ export interface Modules {
 /**
  * What this business actually runs.
  *
- * The first version of this asked what a business WAS — restaurant or craft
- * shop — and that was the wrong question. A place can have a kitchen and a
+ * The first version of this asked what a business WAS, restaurant or craft
+ * shop, and that was the wrong question. A place can have a kitchen and a
  * craft corner under one roof, one till, one set of staff and one set of
  * books, and making it choose was making it run two systems.
  *
@@ -129,8 +129,8 @@ export function parseAccess(settings: Settings | null): Record<string, string[]>
  * Does this section belong to the trade this business is in?
  *
  * Asked separately from permission, and before it. A restaurant hiding the
- * consignor pages is not a restriction on anybody — there is nothing behind
- * them — so it must not read as one, and an owner must not have to grant
+ * consignor pages is not a restriction on anybody; there is nothing behind
+ * them, so it must not read as one, and an owner must not have to grant
  * themselves access to a page that simply does not apply.
  */
 export function inTrade(section: AdminSection, settings: Settings | null): boolean {

@@ -14,7 +14,7 @@ import { useSession } from '../session';
  * gets missed twice running.
  *
  * Nothing is paid from here. The shop sends the money the way it always does
- * and records that it did — the same rule the whole system follows. Recording
+ * and records that it did, the same rule the whole system follows. Recording
  * happens inside a statement, so nobody ever pays a figure they have not seen
  * the workings for.
  */
@@ -46,7 +46,7 @@ export function PayoutsPage() {
   );
 
   // Anything owed, most first. Somebody with nothing outstanding is not a row
-  // to skim past on payday — they are not on the list.
+  // to skim past on payday; they are not on the list.
   const waiting = useMemo(
     () =>
       (consignors ?? [])

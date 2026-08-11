@@ -19,7 +19,7 @@ interface ExpenseRow extends Doc {
 /**
  * What this shift has actually done, from the pass.
  *
- * The kitchen screen is deliberately a list of what still needs cooking —
+ * The kitchen screen is deliberately a list of what still needs cooking, 
  * anything already dealt with disappears, which is right during service and
  * useless the moment somebody asks "did that order for the poolside ever go
  * out?" or "how much did I say the gas was?".
@@ -105,7 +105,7 @@ export function ShiftHistory({
 
   useEffect(() => {
     (async () => {
-      // By the clock AND by the stamp — see ordersForShift. An order placed
+      // By the clock AND by the stamp, see ordersForShift. An order placed
       // before the till was opened and settled during this shift belongs here,
       // and reading only the clock left it out of the very list its money was
       // sitting in.
@@ -196,7 +196,7 @@ export function ShiftHistory({
                             {(items[o.$id] ?? []).map((i) => (
                               <li key={i.$id}>
                                 {i.qty}× {i.name_snapshot}
-                                {i.notes && <span className="dim"> — {i.notes}</span>}
+                                {i.notes && <span className="dim">, {i.notes}</span>}
                               </li>
                             ))}
                             {(items[o.$id] ?? []).length === 0 && <li className="dim">No items recorded.</li>}
@@ -223,7 +223,7 @@ export function ShiftHistory({
               {expenses.map((e) => (
                 <tr key={e.$id}>
                   <td className="dim small">{time(e.$createdAt)}</td>
-                  <td>{e.payee || '—'}</td>
+                  <td>{e.payee || ', '}</td>
                   <td className="dim small">
                     {e.category_key || e.category}
                     {e.note && <div>{e.note}</div>}
@@ -251,7 +251,7 @@ export function ShiftHistory({
           <FormError message={sendError} />
           <p className="small dim" style={{ marginTop: 0 }}>
             {sending.customer_email
-              ? 'Already sent once. Sending again is fine — change the address first if they gave you a different one.'
+              ? 'Already sent once. Sending again is fine, change the address first if they gave you a different one.'
               : 'This order was placed without an email address. Enter one and the receipt will go out, with the printable copy attached.'}
           </p>
           <Field label="Email address">

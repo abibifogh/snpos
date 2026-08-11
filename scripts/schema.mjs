@@ -44,7 +44,7 @@ const MGMT = ['team:managers', 'team:admins'];
 const ADMIN = ['team:admins'];
 
 /**
- * perms.read / .create / .update / .delete — arrays of Appwrite role strings.
+ * perms.read / .create / .update / .delete, arrays of Appwrite role strings.
  * An empty create/update array means: functions only (server API key).
  */
 export const COLLECTIONS = [
@@ -75,7 +75,7 @@ export const COLLECTIONS = [
       // customer may pre-order into.
       ['opening_hours', 's', 4000, false],
       ['holiday_closures', 's', 4000, false], // dated exceptions
-      // A QR for people not sitting at a table — the counter queue, a poster
+      // A QR for people not sitting at a table, the counter queue, a poster
       // in the window, a flyer. Opens the menu in takeaway mode.
       ['walkin_token', 's', 64, false],
       // A separate address for group and party ordering. Kept off the ordinary
@@ -108,8 +108,8 @@ export const COLLECTIONS = [
      * One row per hotel using the system.
      *
      * Everything else in this database belongs to one of these. The row is
-     * created by the owner of the platform when a request is approved — not by
-     * whoever is signing up — which is why nobody but a platform owner may
+     * created by the owner of the platform when a request is approved, not by
+     * whoever is signing up, which is why nobody but a platform owner may
      * write here.
      *
      * `team_id` is the Appwrite team that owns this hotel's data. Every
@@ -128,11 +128,11 @@ export const COLLECTIONS = [
       // Used in addresses and in support conversations. Never changes.
       ['slug', 's', 60, true],
       ['team_id', 's', 64, true],
-      // trial   — using it, not paying yet, ends on trial_ends_at
-      // active  — paying
-      // overdue — payment failed; still working, being chased
-      // suspended — read-only; nobody can take an order
-      // closed  — gone, kept only so their history still reads
+      // trial, using it, not paying yet, ends on trial_ends_at
+      // active, paying
+      // overdue, payment failed; still working, being chased
+      // suspended, read-only; nobody can take an order
+      // closed, gone, kept only so their history still reads
       ['status', 'e', ['trial', 'active', 'overdue', 'suspended', 'closed'], true, 'trial'],
       ['plan', 's', 40, false],
       ['trial_ends_at', 'd', null, false],
@@ -208,7 +208,7 @@ export const COLLECTIONS = [
       ['shift_float_policy', 'e', ['zero', 'carry_over', 'fixed', 'prompt'], true, 'zero'],
       ['shift_float_default', 'i', null, true, 0],
       // Whether a drawer may finish the night below nothing. It should not be
-      // possible — you cannot hand over less than no money — so a negative
+      // possible, you cannot hand over less than no money, so a negative
       // count almost always means an expense went unrecorded. Left as a switch
       // because a restaurant that pays out of the till all evening may
       // genuinely need to close short and explain it.
@@ -245,7 +245,7 @@ export const COLLECTIONS = [
       /**
        * What a shift expense may be paid out of.
        *
-       * 'cash_only' — the drawer, and nothing else. This is the default because
+       * 'cash_only', the drawer, and nothing else. This is the default because
        * it matches what actually happens: somebody takes notes out of the till
        * for a shop run. It also closes a hole. A cash expense reduces what the
        * drawer should hold at close, so it is checked against a physical count
@@ -253,7 +253,7 @@ export const COLLECTIONS = [
        * anybody counts, which makes "spent GH₵200, paid by momo" the easiest
        * unverifiable entry in the system to write.
        *
-       * 'any' — every payment method. For a restaurant that genuinely pays
+       * 'any', every payment method. For a restaurant that genuinely pays
        * suppliers by transfer from the same screen, and accepts that those
        * entries rest on the receipt rather than on a count.
        */
@@ -262,8 +262,8 @@ export const COLLECTIONS = [
        * What kind of business this is.
        *
        * One codebase, two trades. A restaurant and a consignment craft shop
-       * share almost everything that matters — a catalogue, a till, shifts,
-       * staff, receipts, reports — and differ in ownership of the goods and in
+       * share almost everything that matters, a catalogue, a till, shifts,
+       * staff, receipts, reports, and differ in ownership of the goods and in
        * what the screens are called. Forking would have meant every fix made
        * twice and, in practice, made once.
        *
@@ -290,7 +290,7 @@ export const COLLECTIONS = [
        * Whether customers may scan a code and order for themselves.
        *
        * On in a restaurant, where a table code is the point. Off by default in
-       * a shop, where the normal way to buy is to hand something to a cashier —
+       * a shop, where the normal way to buy is to hand something to a cashier, 
        * but available, because a market stall with a queue is exactly where
        * letting people order from their phone earns its keep.
        */
@@ -300,10 +300,10 @@ export const COLLECTIONS = [
       ['low_stock_default_bp', 'i', null, true, 3000],
       // How the shift-end stock check asks its question.
       //
-      // 'levels' — a cook taps OK, Low or Out. Fast, and honest about being a
+      // 'levels', a cook taps OK, Low or Out. Fast, and honest about being a
       // glance at a shelf rather than a measurement.
       //
-      // 'counts' — a cook types how much is actually there, and the system
+      // 'counts', a cook types how much is actually there, and the system
       // works out the status from the ingredient's own thresholds. Slower, but
       // the answer stops being an opinion: two cooks looking at the same four
       // crates file the same status, and the number can be set against what the
@@ -311,7 +311,7 @@ export const COLLECTIONS = [
       // over-portioning show up at all.
       ['stock_check_mode', 'e', ['levels', 'counts'], false, 'levels'],
       // Half a bucket, a quarter of a bottle. Real for anything measured, and
-      // nonsense for anything counted in pieces — nobody has 2.5 eggs, and a
+      // nonsense for anything counted in pieces, nobody has 2.5 eggs, and a
       // till with a numeric keypad will produce one by accident if the decimal
       // point is there to be pressed.
       ['stock_count_decimals', 'b', null, false, true],
@@ -336,11 +336,11 @@ export const COLLECTIONS = [
       ['shared_bucket_id', 's', 64, false],
       // Which parts of the admin app each role may open, as JSON:
       // {"manager":["orders","reports"],"cashier":[]}. Admins are not listed
-      // and never restricted — a switch that can lock the owner out of their
+      // and never restricted, a switch that can lock the owner out of their
       // own settings is a switch that eventually will.
       ['role_access', 's', 2000, false],
       // The hour, in the restaurant's own timezone, at which the once-a-day
-      // report and the nightly backup go out. After close, not at midnight —
+      // report and the nightly backup go out. After close, not at midnight, 
       // a kitchen still serving at 00:30 would otherwise get yesterday's
       // figures while it is still making today's.
       ['daily_report_hour', 'i', null, false, 23],
@@ -414,7 +414,7 @@ export const COLLECTIONS = [
       ['station', 'e', ['hot', 'cold', 'bar', 'dessert', 'inherit'], true, 'inherit'],
       ['station_key', 's', 40, false],
       // Marked off by staff mid-service. `sold_out_until` already existed as a
-      // timed block; these say who did it, when, and why — which is what makes
+      // timed block; these say who did it, when, and why, which is what makes
       // "this has been off for two days" a question anyone can answer.
       ['unavailable_since', 'd', null, false],
       ['unavailable_by', 's', 64, false],
@@ -427,8 +427,8 @@ export const COLLECTIONS = [
       ['track_stock', 'b', null, true, false],
       // ---------------------------------------------------------- craft shop
       //
-      // A shop sells the same table this restaurant sells dishes from — a thing
-      // with a name, a price, a picture and a category — so the catalogue is
+      // A shop sells the same table this restaurant sells dishes from, a thing
+      // with a name, a price, a picture and a category, so the catalogue is
       // shared rather than duplicated. What a shop adds is ownership: who this
       // piece belongs to, what it was worth when it arrived, and how many are
       // left. Blank on every restaurant row, and nothing reads them there.
@@ -438,7 +438,7 @@ export const COLLECTIONS = [
       ['consignor_id', 's', 64, false],
       ['intake_id', 's', 64, false],
       // Overrides the consignor's rate for this piece. Used when one item is
-      // negotiated differently — a large commissioned work, say.
+      // negotiated differently, a large commissioned work, say.
       ['commission_bp', 'i', null, false],
       ['barcode', 's', 60, false],
       // Pieces on the shelf. Only meaningful when the product has no variants;
@@ -461,8 +461,8 @@ export const COLLECTIONS = [
   },
   {
     /**
-     * A dish can sit in several categories at once — Jollof in both "Lunch"
-     * and "Mains" — and each category has its own availability hours, so the
+     * A dish can sit in several categories at once, Jollof in both "Lunch"
+     * and "Mains", and each category has its own availability hours, so the
      * same dish appears and disappears at different times depending on which
      * section the customer is looking at.
      *
@@ -489,7 +489,7 @@ export const COLLECTIONS = [
     /**
      * Kitchen stations, defined by the restaurant rather than by us.
      *
-     * A station is WHERE FOOD IS COOKED — hot line, grill, bar, pastry. It is
+     * A station is WHERE FOOD IS COOKED, hot line, grill, bar, pastry. It is
      * not a pickup point, which is where a customer collects. One kitchen with
      * three stations can serve four pickup points, and often does.
      */
@@ -554,7 +554,7 @@ export const COLLECTIONS = [
     name: 'Tables and areas',
     // Readable by guests, deliberately. A customer ordering from their phone
     // has to be able to say where they are sitting, and the qr_token stopped
-    // being a meaningful secret the moment that list existed — anyone can pick
+    // being a meaningful secret the moment that list existed, anyone can pick
     // any seat from a dropdown whether or not they can read a token. Nothing
     // here is worth protecting: labels, zones and seat counts. Orders are
     // never paid by the customer and every one lands in front of staff.
@@ -604,7 +604,7 @@ export const COLLECTIONS = [
     // never trusted on what something costs.
     //
     // read is NOT 'users'. It was, and that meant any guest who had scanned a
-    // table code could read every order in the restaurant — the anonymous
+    // table code could read every order in the restaurant, the anonymous
     // session that lets them order is indistinguishable from any other. Staff
     // read the collection; a guest is granted read on their own order document
     // as it is created (see createOrder), which is all they ever needed.
@@ -699,7 +699,7 @@ export const COLLECTIONS = [
        *
        * Cooking time plus however long the tickets already on the pass will
        * take before this one is started. Stored rather than recomputed so the
-       * figure a customer was told is the figure that stays on their screen —
+       * figure a customer was told is the figure that stays on their screen, 
        * a menu edited at seven must not quietly change what was promised at six.
        */
       ['eta_minutes', 'i', null, false],
@@ -709,7 +709,7 @@ export const COLLECTIONS = [
        *
        * Deliberately not the same number as `eta_minutes`, and separating the
        * two is the whole point. The customer's wait includes queueing, which is
-       * time before a cook touches the ticket — judging the kitchen by it would
+       * time before a cook touches the ticket, judging the kitchen by it would
        * hand them extra minutes on a busy night for the very orders where being
        * late matters most, and only because other people were also waiting.
        *
@@ -857,7 +857,7 @@ export const COLLECTIONS = [
        */
       ['module', 'e', ['kitchen', 'craft'], false, 'kitchen'],
     ],
-    // One shift may be open per venue PER SIDE — the query that enforces it
+    // One shift may be open per venue PER SIDE, the query that enforces it
     // filters on both, so this index carries both.
     indexes: [
       ['venue_status_opened', 'key', ['venue_id', 'status', 'opened_at']],
@@ -882,8 +882,8 @@ export const COLLECTIONS = [
       ['category', 'e', ['supplies', 'transport', 'utilities', 'repairs', 'staff_advance', 'petty_cash', 'other'], true],
       ['category_key', 's', 60, false],
       ['payee', 's', 160, false],
-      // Who the money went to. Often there is no supplier at all — a driver, a
-      // cook sent to the market, a one-off stall — and pretending otherwise is
+      // Who the money went to. Often there is no supplier at all, a driver, a
+      // cook sent to the market, a one-off stall, and pretending otherwise is
       // what makes people type "market" into a supplier field forever.
       ['paid_to_kind', 'e', ['supplier', 'staff', 'open_market', 'other'], false, 'other'],
       ['supplier_id', 's', 64, false],
@@ -937,7 +937,7 @@ export const COLLECTIONS = [
      *
      * Exists so that "we told them" is a fact rather than an assumption. The
      * update event fires on every edit to an order, and without a record here
-     * a customer would be told four times that their food is ready — which is
+     * a customer would be told four times that their food is ready, which is
      * how people learn to ignore everything you send them.
      */
     id: 'order_notices',
@@ -966,7 +966,7 @@ export const COLLECTIONS = [
      *
      * So the guest writes here, which is the only thing they may do, and the
      * server decides whether the window is still open. The row stays either
-     * way — a cancellation inside two minutes and a request that arrived too
+     * way, a cancellation inside two minutes and a request that arrived too
      * late are both worth being able to look up when somebody asks why food
      * they thought they had called off turned up.
      */
@@ -1026,7 +1026,7 @@ export const COLLECTIONS = [
     indexes: [['expense', 'key', ['expense_id']], ['ingredient', 'key', ['ingredient_id']]],
   },
   {
-    /** Ingredient groupings — Produce, Dry goods, Drinks — the restaurant's own. */
+    /** Ingredient groupings, Produce, Dry goods, Drinks, the restaurant's own. */
     id: 'ingredient_categories',
     name: 'Ingredient categories',
     perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: ADMIN },
@@ -1077,7 +1077,7 @@ export const COLLECTIONS = [
       // own words: "OK = 10pcs or more . Low = under 10pcs".
       //
       // Par levels and thresholds are numbers in a unit the system understands
-      // — kilograms, litres, each. The shelf does not hold kilograms, it holds
+      //, kilograms, litres, each. The shelf does not hold kilograms, it holds
       // buckets, crates, half a bottle and a tubber of yam. Asking somebody to
       // convert at eleven at night is how three people end up with three
       // different meanings of "low", and the report that comes out is worth
@@ -1275,8 +1275,8 @@ export const COLLECTIONS = [
       //
       // An admin sets `requested`; the server notices, makes sure the account
       // and the team membership exist, and emails a link through the
-      // restaurant's own mail provider — the one that already delivers
-      // receipts — rather than Appwrite's shared sender, which is throttled and
+      // restaurant's own mail provider, the one that already delivers
+      // receipts, rather than Appwrite's shared sender, which is throttled and
       // lands in spam. `sent` is stamped afterwards so an ordinary edit to
       // somebody's phone number does not post them another one.
       /**
@@ -1285,7 +1285,7 @@ export const COLLECTIONS = [
        * A shop assistant has no reason to see a kitchen display or a list of
        * dishes, and a cook has none to see consignor payouts. 'both' is the
        * default because most small places genuinely are both, and guessing
-       * wrong in that direction only shows somebody a page they ignore —
+       * wrong in that direction only shows somebody a page they ignore, 
        * guessing wrong the other way hides the work they came in to do.
        */
       ['works_in', 'e', ['both', 'kitchen', 'craft'], false, 'both'],
@@ -1334,7 +1334,7 @@ export const COLLECTIONS = [
 
   // ======================================================================
   //  OPTIONAL FEATURES (1–12)
-  //  Every one of these is switched on or off by an admin — see FEATURES
+  //  Every one of these is switched on or off by an admin, see FEATURES
   //  below. Collections exist whether or not the feature is enabled; a
   //  disabled feature simply hides its UI and skips its hooks, so turning
   //  something on later never needs a migration or loses history.
@@ -1377,8 +1377,8 @@ export const COLLECTIONS = [
       ['pdf_file_id', 's', 64, false],
       ['requested_by', 's', 64, false],
       // Set when somebody asks for a receipt to be sent again. Staff can update
-      // a receipt row but not delete one — an audit trail the audited can
-      // remove is not one — so a resend is a request rather than a deletion.
+      // a receipt row but not delete one, an audit trail the audited can
+      // remove is not one, so a resend is a request rather than a deletion.
       // Cleared once it has gone.
       ['resend_requested_at', 'd', null, false],
       ['resend_requested_by', 's', 64, false],
@@ -1434,7 +1434,7 @@ export const COLLECTIONS = [
   {
     // Bookable time slots for pre-orders. A row per slot per venue, created on
     // demand. `booked_count` is what stops fifty people all pre-ordering for
-    // 12:00 — capacity is checked and incremented server-side in one step, so
+    // 12:00, capacity is checked and incremented server-side in one step, so
     // two simultaneous orders can't both take the last place.
     id: 'preorder_slots',
     name: 'Pre-order slots',
@@ -1717,7 +1717,7 @@ export const COLLECTIONS = [
       // Stock is reported in two separate sections, never merged:
       //  - new_stock_ids: flagged low/out for the FIRST time this shift
       //  - persistent_stock_ids: flagged for `persistent_stock_threshold`
-      //    shifts running (default 3) — the ones that need a decision
+      //    shifts running (default 3), the ones that need a decision
       ['new_stock_ids', 's[]', 64, false],
       ['persistent_stock_ids', 's[]', 64, false],
       ['delivery_status', 'e', ['queued', 'sent', 'partial', 'failed'], true, 'queued'],
@@ -1825,7 +1825,7 @@ export const COLLECTIONS = [
     ],
   },
   {
-    // Every application, including ones later reversed — this is the audit
+    // Every application, including ones later reversed; this is the audit
     // trail for the single easiest way to steal from a restaurant.
     id: 'discount_redemptions',
     name: 'Discount redemptions',
@@ -1860,7 +1860,7 @@ export const COLLECTIONS = [
      * What a member of staff handed over at the end of their time on the till.
      *
      * A shift is not a person. Three people can work one shift, take money in
-     * turn out of the same drawer, and leave at different times — and the shift
+     * turn out of the same drawer, and leave at different times, and the shift
      * close, which happens once, cannot say who left what. So the answer to
      * "what did Ama end with?" was nowhere in the system, and the only record
      * was whatever the manager wrote on a pad.
@@ -1870,7 +1870,7 @@ export const COLLECTIONS = [
      *
      * Staff can create but never edit or delete: a handover somebody can
      * quietly revise afterwards is not evidence of anything. A wrong one is
-     * corrected by a second entry, which leaves both on the record — which is
+     * corrected by a second entry, which leaves both on the record, which is
      * the point.
      */
     id: 'cash_handovers',
@@ -1912,7 +1912,7 @@ export const COLLECTIONS = [
   // The craft-shop side of the system. A consignment shop does not own what it
   // sells: somebody brings goods in, the shop sells them, keeps a share and
   // owes the rest. That "owes the rest" is the whole business, and it is the
-  // part a spreadsheet gets wrong first — which is why it is a ledger here
+  // part a spreadsheet gets wrong first, which is why it is a ledger here
   // rather than a running total on a row somebody can edit.
   //
   // These collections sit alongside the restaurant ones rather than replacing
@@ -1925,7 +1925,7 @@ export const COLLECTIONS = [
      *
      * `commission_bp` is theirs and theirs alone. A shop that has one rate for
      * everybody still wants it here rather than in settings, because the day it
-     * negotiates a different rate with one maker — and it will — a global
+     * negotiates a different rate with one maker, and it will, a global
      * number silently rewrites the past for everyone.
      */
     id: 'consignors',
@@ -1985,7 +1985,7 @@ export const COLLECTIONS = [
      *
      * A basket in small, medium and large is one product to a customer and
      * three prices to a till. Modelled as rows rather than as a JSON blob on
-     * the product because each one is counted, sold and paid out separately —
+     * the product because each one is counted, sold and paid out separately, 
      * anything a stock movement or a sale line points at has to have an id.
      */
     id: 'product_variants',
@@ -2019,7 +2019,7 @@ export const COLLECTIONS = [
      *
      * The count on a product is a convenience; this is the record. A shop that
      * only keeps the count can tell you it has three left and never why it used
-     * to have five — and "why" is the entire conversation when a consignor asks
+     * to have five, and "why" is the entire conversation when a consignor asks
      * about a piece that is neither on the shelf nor on a statement.
      */
     id: 'product_moves',
@@ -2056,7 +2056,7 @@ export const COLLECTIONS = [
      * What the shop owes a consignor, one line at a time.
      *
      * A ledger, not a balance. Every sale credits, every payout debits, and the
-     * balance is the sum — so it can always be explained line by line, and no
+     * balance is the sum, so it can always be explained line by line, and no
      * single wrong edit can quietly change what somebody is owed. The
      * alternative, a running total on the consignor row, is the design that
      * loses an argument with a maker holding their own notebook.
@@ -2098,7 +2098,7 @@ export const COLLECTIONS = [
     /**
      * Money actually handed over to a consignor.
      *
-     * Recorded, never moved — the same rule the rest of the system follows. The
+     * Recorded, never moved, the same rule the rest of the system follows. The
      * shop pays by momo or cash and writes down that it did; nothing here
      * touches anybody's money.
      */
@@ -2135,7 +2135,7 @@ export const COLLECTIONS = [
  * row limit at 4 bytes per character; larger ones become TEXT and cost ~12
  * bytes in-row. A collection that creeps over the limit fails part-way through
  * provisioning with "maximum number or size of attributes reached", which does
- * not name the offending field — so catch it here instead.
+ * not name the offending field, so catch it here instead.
  */
 const VARCHAR_MAX = 16383;
 const ROW_LIMIT = 65535;
@@ -2157,7 +2157,7 @@ for (const c of COLLECTIONS) {
 }
 
 // Appwrite rejects an empty string as an enum option (elements must be 1+ chars).
-// These attributes are all optional, so "unset" already means blank — an empty
+// These attributes are all optional, so "unset" already means blank, an empty
 // option was both invalid and redundant. Fail loudly if one is reintroduced.
 for (const c of COLLECTIONS) {
   for (const [key, type, arg] of c.attributes) {
@@ -2173,7 +2173,7 @@ for (const c of COLLECTIONS) {
  *
  * The menu, recipes and add-ons are SHARED across venues (edit once, use
  * everywhere) with per-venue price/availability overrides in `venue_menu_items`.
- * Everything operational is SEPARATE per venue — staff, shifts, cash, stock,
+ * Everything operational is SEPARATE per venue, staff, shifts, cash, stock,
  * purchases and the ledger never mix between locations.
  *
  * `venue_id` is injected here rather than repeated 20 times above, so a venue
@@ -2199,14 +2199,14 @@ for (const id of VENUE_SCOPED) {
 /**
  * One database, many hotels.
  *
- * `org_id` goes on every collection without exception — not on a list of the
+ * `org_id` goes on every collection without exception, not on a list of the
  * ones that seemed to need it. A list is a thing somebody forgets to add to,
  * and the collection left off it is the one that shows one hotel's figures to
  * another. There is no collection here whose rows are not owned by somebody.
  *
  * The field is deliberately NOT required. Every row that already exists
  * predates it, and making it required would refuse to save a single one of
- * them until the migration had finished — turning a careful, resumable
+ * them until the migration had finished, turning a careful, resumable
  * backfill into an outage. `scripts/migrate-org.mjs` stamps them; the apps
  * treat a blank as belonging to the first organisation.
  *
@@ -2252,7 +2252,7 @@ export const FEATURES = [
       email_subject: 'Your receipt from {{venue}}',
       // Told twice, at the two moments a customer actually wants to hear:
       // somebody has taken the order, and the food is ready. Each can be
-      // switched off on its own — a sit-down restaurant where the waiter is
+      // switched off on its own, a sit-down restaurant where the waiter is
       // standing there anyway has no use for "your food is ready".
       notify_on_accepted: true,
       notify_on_ready: true,
@@ -2273,7 +2273,7 @@ export const FEATURES = [
     config: {
       takeaway_enabled: true,
       delivery_enabled: false,
-      // Pickup points are rows in `pickup_points` — as many per venue as you
+      // Pickup points are rows in `pickup_points`, as many per venue as you
       // like. This is just the default behaviour around them.
       require_pickup_point_choice: true,
       default_pickup_point_id: '',
@@ -2306,7 +2306,7 @@ export const FEATURES = [
       // Whether staff must confirm a pre-order before its fire time.
       require_staff_confirmation: false,
       auto_cancel_unconfirmed_hours: 0,
-      closed_message: "We're closed right now — order ahead and pick a time.",
+      closed_message: "We're closed right now, order ahead and pick a time.",
     },
   },
   {
@@ -2408,7 +2408,7 @@ export const FEATURES = [
       pause_pending_threshold: 20,
       busy_extra_minutes: 15,
       hold_qr_orders_when_paused: true,
-      message_to_guest: 'The kitchen is very busy — your order may take a little longer.',
+      message_to_guest: 'The kitchen is very busy, your order may take a little longer.',
     },
   },
   {
@@ -2455,7 +2455,7 @@ export const FEATURES = [
     label: 'Group orders',
     enabled: false,
     config: {
-      // A separate menu for parties — platters and set meals rather than the
+      // A separate menu for parties, platters and set meals rather than the
       // a la carte list. Categories and dishes are flagged group_only.
       require_reservation_number: true,
       reservation_label: 'Hotel reservation number',

@@ -4,7 +4,7 @@ import type { StaffProfile } from './types';
 /**
  * Telling a member of staff apart from a customer.
  *
- * The customer menu signs every guest in anonymously — that is what lets
+ * The customer menu signs every guest in anonymously; that is what lets
  * someone who has only scanned a sticker place an order. The consequence is
  * that "is there a session?" is a useless question on a staff screen: a
  * customer who scanned a table code half an hour ago has one.
@@ -35,8 +35,8 @@ export async function myStaffTeams(): Promise<StaffTeam[]> {
  *
  * Ordering is not open to the public. The orders collection is created by
  * `users`, and an anonymous session is what puts a guest who scanned a sticker
- * inside that role. Without one the server refuses the order in its own words —
- * "Missing create permission for the role users" — which is both frightening
+ * inside that role. Without one the server refuses the order in its own words, 
+ * "Missing create permission for the role users", which is both frightening
  * and useless to somebody holding a menu.
  *
  * Creating the session is not enough to trust it. Appwrite keeps it in a cookie
@@ -49,7 +49,7 @@ export async function myStaffTeams(): Promise<StaffTeam[]> {
  */
 export async function ensureGuestSession(): Promise<void> {
   const CANNOT =
-    'This browser will not let us start your order — that is usually private browsing, or cookies being blocked. ' +
+    'This browser will not let us start your order; that is usually private browsing, or cookies being blocked. ' +
     'Open the menu in a normal tab, or try a different browser.';
 
   try {
@@ -92,7 +92,7 @@ export class NotStaffError extends Error {
  *
  * Throws rather than returning null so a screen cannot forget to check: the
  * boot sequence stops, and the message explains the difference between "not
- * signed in" and "signed in, but as a customer" — which look identical from
+ * signed in" and "signed in, but as a customer", which look identical from
  * the outside and need completely different answers.
  */
 export async function requireStaff(): Promise<StaffSession> {
@@ -117,13 +117,13 @@ export async function requireStaff(): Promise<StaffSession> {
  * The staff profile behind a session, joining the two up on first sign-in.
  *
  * A profile is written when somebody is invited, which is before they have an
- * account for it to point at — so on their very first sign-in nothing matches
+ * account for it to point at, so on their very first sign-in nothing matches
  * on the account id. Matching on the email address they were invited with, and
  * stamping the id onto the profile, is what closes that gap. Every sign-in
  * after this one matches directly.
  *
  * Without it, an invitation could be accepted and the sign-in succeed, only for
- * the app to open with no name, no role and no permissions — which reads as a
+ * the app to open with no name, no role and no permissions, which reads as a
  * broken account rather than a blank field.
  */
 export async function staffProfileFor(session: {

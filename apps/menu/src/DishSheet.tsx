@@ -4,7 +4,7 @@ import { formatMoney, previewUrl } from '@snpos/core';
 import type { MenuEntry, Settings, CartLine, CartAddon } from '@snpos/core';
 
 /**
- * One dish, its options, and the quantity — the only screen where a customer
+ * One dish, its options, and the quantity, the only screen where a customer
  * makes a decision that costs money, so the running price is always visible.
  */
 export function DishSheet({

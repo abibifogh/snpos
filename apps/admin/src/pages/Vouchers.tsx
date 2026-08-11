@@ -224,7 +224,7 @@ export function VouchersPage() {
   const state = (v: Voucher) => {
     const now = new Date().toISOString();
     // Checked before `active`, because a voucher that hit its limit is
-    // switched off automatically — and "Off" would make that look like
+    // switched off automatically, and "Off" would make that look like
     // somebody's decision rather than the limit doing its job.
     if (v.usage_limit_total && v.used_count >= v.usage_limit_total) {
       return { tone: 'danger' as const, label: 'Used up' };
@@ -248,7 +248,7 @@ export function VouchersPage() {
       </div>
       <p className="dim" style={{ maxWidth: '46rem' }}>
         A voucher with a code can be typed by a customer while ordering. One without a code is a button staff press.
-        Every voucher is money leaving the till, so give each one an end date and — for anything by percentage — a
+        Every voucher is money leaving the till, so give each one an end date and, for anything by percentage, a
         maximum amount.
       </p>
 
@@ -341,7 +341,7 @@ export function VouchersPage() {
           {editing.kind === 'percent' && (
             <Field
               label={`Maximum amount (${symbol})`}
-              hint="The most this voucher can ever take off one bill. Strongly recommended — without it, a large table costs whatever they order."
+              hint="The most this voucher can ever take off one bill. Strongly recommended, without it, a large table costs whatever they order."
             >
               <Input value={capText} inputMode="decimal" onChange={(e) => setCapText(e.target.value)} />
             </Field>

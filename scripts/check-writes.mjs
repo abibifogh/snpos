@@ -4,10 +4,10 @@
  *
  * Two ways to get this wrong, and this project has now shipped both:
  *
- *   "Missing required attribute change_given"  — a field the database insists
+ *   "Missing required attribute change_given", a field the database insists
  *   on, left out of a payload. Reached a cook trying to settle a bill.
  *
- *   "Unknown attribute: served_at"             — a field the code invented and
+ *   "Unknown attribute: served_at", a field the code invented and
  *   the schema never had. Reached the same cook a day later.
  *
  * Neither is visible to a typecheck. The shape of an Appwrite document lives
@@ -34,7 +34,7 @@ const schema = new Map(
     c.id,
     {
       all: new Set(c.attributes.map((a) => a[0])),
-      // Required attributes get no default — provisioning drops it — so every
+      // Required attributes get no default, provisioning drops it, so every
       // create must carry them itself.
       required: c.attributes.filter((a) => a[3] === true).map((a) => a[0]),
     },
@@ -75,8 +75,8 @@ function objectAt(src, open) {
  * A small state machine rather than a regular expression, because the naive
  * version reads values as keys: in `{ expense_id: expenseId }` the identifier
  * after the colon looks exactly like a shorthand key. So this tracks whether
- * the parser is at a position where a key may begin — the start of the object,
- * or just after a top-level comma — and only reads an identifier there.
+ * the parser is at a position where a key may begin, the start of the object,
+ * or just after a top-level comma, and only reads an identifier there.
  *
  * Returns null when the literal contains anything it cannot account for, so an
  * unusual payload is skipped rather than misreported.
@@ -182,8 +182,8 @@ for (const root of ROOTS) {
       // A spread hides fields this cannot see, so "is anything required
       // missing?" becomes unanswerable. "Is anything here made up?" does not:
       // every key it CAN see is still a key being sent. Skipping the whole
-      // payload was how `served_at` — a field the schema never had, written
-      // beside a spread — reached a cook at the pass.
+      // payload was how `served_at`, a field the schema never had, written
+      // beside a spread, reached a cook at the pass.
       const spread = body.includes('...');
 
       const unknown = [...keys].filter((k) => !def.all.has(k) && !SYSTEM_KEYS.has(k));
@@ -205,7 +205,7 @@ for (const root of ROOTS) {
 // must not delete; ledger.ts names them so postings can refer to them by
 // meaning. They live in different languages and cannot import each other, so
 // the only thing keeping them together is this check. Drift here would let an
-// admin remove an account a shift close writes to — and it would surface as a
+// admin remove an account a shift close writes to, and it would surface as a
 // shift that will not close, not as an error anybody could act on.
 {
   const ledger = readFileSync(new URL('../packages/core/src/ledger.ts', import.meta.url), 'utf8');

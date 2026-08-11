@@ -1,8 +1,8 @@
 /**
  * A report as a printable document.
  *
- * Deliberately not "print the page". A dashboard is laid out for a screen — a
- * sidebar, cards three across, colours that assume a backlight — and printing
+ * Deliberately not "print the page". A dashboard is laid out for a screen, a
+ * sidebar, cards three across, colours that assume a backlight, and printing
  * it produces something nobody wants to hand to an accountant. This builds a
  * separate A4 document from the same figures, so the PDF is a report rather
  * than a screenshot of one.
@@ -20,7 +20,7 @@ export interface ReportTable {
   title: string;
   headers: string[];
   rows: string[][];
-  /** Columns to right-align, by index — money and counts. */
+  /** Columns to right-align, by index, money and counts. */
   numeric?: number[];
   /** A bar drawn behind each row, 0–1, for share-of-total tables. */
   bars?: number[];

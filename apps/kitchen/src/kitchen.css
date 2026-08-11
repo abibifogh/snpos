@@ -1,6 +1,6 @@
 /*
  * Kitchen display. Read from two metres away, by someone holding a pan.
- * Dark by default — a bright white screen in a dim kitchen is unusable.
+ * Dark by default, a bright white screen in a dim kitchen is unusable.
  */
 :root {
   --bg: #0d1117;
@@ -54,7 +54,7 @@ body { background: var(--bg); color: var(--text); }
 .ticket-head .age.warn { color: #f5a524; }
 .ticket-head .age.bad { color: #ff6b5e; }
 /* What the alarm is actually counting, under the clock that counts something
-   else. Smaller than the age on purpose — it is the explanation, not the
+   else. Smaller than the age on purpose; it is the explanation, not the
    headline, and a second big number in the same corner would fight the first. */
 .ticket-head .due {
   font-size: 0.78rem;
@@ -86,7 +86,7 @@ body { background: var(--bg); color: var(--text); }
 .audio-gate { position: fixed; inset: 0; background: rgba(0,0,0,0.88); display: grid; place-items: center; z-index: 100; text-align: center; padding: 2rem; }
 .audio-gate .btn { margin-top: 1.2rem; padding: 1rem 2rem; font-size: 1.05rem; }
 
-/* PIN keypad — thumb-sized, because it is used with wet or gloved hands. */
+/* PIN keypad, thumb-sized, because it is used with wet or gloved hands. */
 .pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
 .pin-pad button {
   padding: 1.1rem 0; font-size: 1.35rem; font-weight: 600;
@@ -114,7 +114,7 @@ body { background: var(--bg); color: var(--text); }
 /* ---- booked for later --------------------------------------------------- */
 
 /* A strip, not tickets. These must be visible without competing with food
-   that is actually being cooked — a cook glancing up at four o'clock should
+   that is actually being cooked, a cook glancing up at four o'clock should
    already know about the party at seven, and should not be able to confuse it
    with something waiting on the pass. */
 .kds-coming {

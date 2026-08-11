@@ -4,7 +4,7 @@
  * Builds name their files with a content hash, so a new version replaces
  * index-ABC.js with index-XYZ.js. A browser holding a cached index.html then
  * asks for a file that is no longer there, gets the app's 404 page back, and
- * refuses to run HTML as JavaScript — leaving a blank screen that looks
+ * refuses to run HTML as JavaScript, leaving a blank screen that looks
  * exactly like the site being down.
  *
  * The deploy keeps the previous build's files around so this should not happen.
@@ -40,7 +40,7 @@ export function guardStaleBuild(): void {
  * Called once the app is running.
  *
  * Clears the recovery flag so a genuine failure later still gets its one
- * reload, and tidies the cache-busting parameter out of the address bar — the
+ * reload, and tidies the cache-busting parameter out of the address bar, the
  * customer menu's own `?t=` table token has to survive that, so the parameter
  * is removed rather than the query being cleared.
  */

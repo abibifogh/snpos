@@ -32,10 +32,10 @@ export function useKeyedList(collection: string) {
 
 /** The display name for a stored key, falling back to the key itself. */
 export const nameForKey = (rows: KeyedRow[] | null, key?: string) =>
-  (key ? rows?.find((r) => r.key === key)?.name : undefined) ?? key ?? '—';
+  (key ? rows?.find((r) => r.key === key)?.name : undefined) ?? key ?? ', ';
 
 /**
- * Manage one of the restaurant's own lists — expense categories, ingredient
+ * Manage one of the restaurant's own lists, expense categories, ingredient
  * categories, and anything else that is just "a name the restaurant chose".
  *
  * The key is generated from the name the first time and then frozen. Records
@@ -66,7 +66,7 @@ export function KeyedListManager({
   const save = async () => {
     if (!editing?.name?.trim()) { setError(`Give the ${singular} a name.`); return; }
     const key = editing.key || keyFrom(editing.name);
-    if (!key) { setError('That name has no letters or numbers in it — try another.'); return; }
+    if (!key) { setError('That name has no letters or numbers in it, try another.'); return; }
     if (!editing.$id && rows?.some((r) => r.key === key)) {
       setError(`There is already a ${singular} called "${editing.name.trim()}".`);
       return;
@@ -140,7 +140,7 @@ export function KeyedListManager({
                     <td style={{ fontWeight: 550 }}>{r.name}</td>
                     {accounts && (
                       <td className="dim small">
-                        {accounts.find((a) => a.code === r.account_code)?.name ?? r.account_code ?? '—'}
+                        {accounts.find((a) => a.code === r.account_code)?.name ?? r.account_code ?? ', '}
                       </td>
                     )}
                     <td>{r.active === false ? <Badge>Off</Badge> : <Badge tone="ok">Active</Badge>}</td>
@@ -174,7 +174,7 @@ export function KeyedListManager({
           {accounts && (
             <Field
               label="Posts to"
-              hint="Which line of the accounts money spent on this lands on — that is what Reports adds up by. Not sure? Leave it on Other expenses; it can be changed whenever. Nothing here that fits? Add it under the Accounts tab."
+              hint="Which line of the accounts money spent on this lands on; that is what Reports adds up by. Not sure? Leave it on Other expenses; it can be changed whenever. Nothing here that fits? Add it under the Accounts tab."
             >
               <Select
                 value={editing.account_code ?? '6090'}

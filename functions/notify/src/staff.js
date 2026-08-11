@@ -4,7 +4,7 @@ import { Teams, Users, Query, ID } from 'node-appwrite';
  * Cancelling a login when somebody leaves.
  *
  * Removing a staff profile used to remove only the profile. The Appwrite
- * account behind it stayed, still in its role team, still able to sign in — so
+ * account behind it stayed, still in its role team, still able to sign in, so
  * a person who had left could open the till, and the admin who removed them
  * had no way of knowing. It also claimed their email address forever: inviting
  * the same person again failed, because the login they were being invited to
@@ -14,7 +14,7 @@ import { Teams, Users, Query, ID } from 'node-appwrite';
  *
  * It has to live server-side. Deleting somebody else's account, or removing
  * them from a team the admin is not themselves a member of, is not something a
- * browser is allowed to do — and should not be.
+ * browser is allowed to do, and should not be.
  */
 
 const ROLE_TEAMS = ['cooks', 'waiters', 'cashiers', 'managers', 'admins'];
@@ -29,14 +29,14 @@ const TEAM_FOR = {
  * This used to be done by the browser: the admin app asked Appwrite to invite
  * the address to a team. It could not work. Creating a membership from a
  * browser needs the person doing it to be an owner of that team, and an admin
- * is an owner of the admins team only — so inviting a cook was refused, the
+ * is an owner of the admins team only, so inviting a cook was refused, the
  * account was never created, and no email was ever sent. The profile saved
  * fine, which is what made it look like the email had simply gone astray.
  *
  * Doing it here fixes two things at once. The account and the membership are
  * made with a server key, so any admin can add anybody. And the email is sent
- * through the restaurant's own mail provider — the one already delivering
- * receipts — rather than Appwrite's shared sender, which is throttled and lands
+ * through the restaurant's own mail provider, the one already delivering
+ * receipts, rather than Appwrite's shared sender, which is throttled and lands
  * in spam.
  *
  * The link signs them in once and asks them to choose a password. No temporary
@@ -165,7 +165,7 @@ export async function revokeLogin({ client, db, DB_ID, doc, log, error }) {
   const users = new Users(client);
   const teams = new Teams(client);
 
-  // Somebody else may still be using this address — most likely because the
+  // Somebody else may still be using this address, most likely because the
   // profile was re-created before this ran, or because two profiles were made
   // by mistake and the spare is the one being deleted. Either way the account
   // is still in use and must not be touched.
@@ -182,7 +182,7 @@ export async function revokeLogin({ client, db, DB_ID, doc, log, error }) {
   }
 
   // Find the account. The id is the reliable way, but an invited person who
-  // has not signed in yet has no id on their profile — their account exists
+  // has not signed in yet has no id on their profile, their account exists
   // (Appwrite creates it when the invitation is sent) and is found by email.
   let account = null;
   if (userId) account = await users.get(userId).catch(() => null);
@@ -206,7 +206,7 @@ export async function revokeLogin({ client, db, DB_ID, doc, log, error }) {
 
   // Deleting the account removes every team membership with it. The
   // memberships are cleared first anyway, so that a delete which fails for any
-  // reason still leaves somebody who cannot open a single screen — a login
+  // reason still leaves somebody who cannot open a single screen, a login
   // that survives is worse than an account record that lingers.
   for (const team of ROLE_TEAMS) {
     const list = await teams.listMemberships(team, [Query.limit(100)]).catch(() => null);

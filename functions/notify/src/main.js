@@ -63,7 +63,7 @@ const row = (label, value, bold = false) =>
  * Who to tell about stock.
  *
  * The addresses typed into the feature's own box win. Otherwise it falls back
- * to the report recipients — the people who already get the shift summary are
+ * to the report recipients, the people who already get the shift summary are
  * the people who care that the chicken has run out.
  *
  * This used to read `x.email` from those rows. The field is called
@@ -85,7 +85,7 @@ async function alertRecipients({ db, DB_ID, configured }) {
 
   const rows = subs.documents.filter((r) => r.destination);
   // Anybody who asked for stock alerts specifically; everybody on the list if
-  // nobody did. Sending to the whole list is the recoverable mistake here —
+  // nobody did. Sending to the whole list is the recoverable mistake here, 
   // sending to nobody is the one that goes unnoticed for a month.
   const asked = rows.filter((r) => (r.events || []).includes('stock_alert'));
   return [...new Set((asked.length ? asked : rows).map((r) => r.destination))];
@@ -96,7 +96,7 @@ async function alertRecipients({ db, DB_ID, configured }) {
  *
  * Taking something off mid-service is right and normal. Leaving it off for two
  * days is either a supply problem nobody escalated or a tap nobody remembered
- * to press, and both look identical from the kitchen — the only place the
+ * to press, and both look identical from the kitchen, the only place the
  * difference shows is a screen nobody is looking at.
  *
  * Each one is mentioned once. An admin who has been told will act or decide
@@ -132,7 +132,7 @@ async function sweepUnavailable({ db, DB_ID, settings, transport, log, error }) 
   const rows = open.documents
     .map((r) => {
       const off = Math.floor((Date.now() - new Date(r.marked_off_at).getTime()) / 3600_000);
-      return `<li><strong>${r.name_snapshot}</strong> — off for ${off} hours${
+      return `<li><strong>${r.name_snapshot}</strong>, off for ${off} hours${
         r.reason ? `, "${r.reason}"` : ''
       }${r.marked_off_name ? ` (${r.marked_off_name})` : ''}</li>`;
     })
@@ -164,8 +164,8 @@ async function sweepUnavailable({ db, DB_ID, settings, transport, log, error }) 
 /**
  * Everything flagged, in one table, colour-coded.
  *
- * This used to be two lists — "flagged for the first time" and "low for three
- * shifts or more" — built as `count === 1` and `count >= threshold`. Nothing
+ * This used to be two lists, "flagged for the first time" and "low for three
+ * shifts or more", built as `count === 1` and `count >= threshold`. Nothing
  * rendered the middle. An ingredient on its SECOND consecutive shift appeared
  * in neither, so an item a cook marked OUT last night could vanish from the
  * email entirely, and the shift it went missing was the shift somebody most
@@ -200,7 +200,7 @@ function stockTable(items, threshold, settings) {
 
       // Print the quantity only when it backs up what was reported.
       //
-      // A cook tapping LOW does not change the running figure — that only moves
+      // A cook tapping LOW does not change the running figure, that only moves
       // when a recipe depletes it or somebody counts. So the book can happily
       // say "12 kg" on a row the kitchen has just flagged as low, and printing
       // it there makes the alert look like a mistake and teaches people to
@@ -208,7 +208,7 @@ function stockTable(items, threshold, settings) {
       const lowAt = i.low_threshold ?? (Number(i.par_level || 0) * (settings?.low_stock_default_bp ?? 3000)) / 10000;
       const onHand = Number(i.current_qty ?? 0);
       const agrees = severity === 'out' ? onHand <= 0 : onHand <= lowAt;
-      const qty = agrees ? `${onHand}${i.unit ? ` ${i.unit}` : ''}` : '—';
+      const qty = agrees ? `${onHand}${i.unit ? ` ${i.unit}` : ''}` : ', ';
 
       return `<tr style="background:${tone.bg}">
         <td style="padding:9px 10px;border-left:4px solid ${tone.bar};font-weight:600">${i.name}</td>
@@ -254,7 +254,7 @@ export default async ({ req, res, log, error }) => {
   const transport = mailer();
   const settings = await db.getDocument(DB_ID, 'settings', 'main');
   // No silent fallback to SMTP_USER. On Brevo that login is something like
-  // 9a1b2c001@smtp-brevo.com — never a verified sender — so falling back to it
+  // 9a1b2c001@smtp-brevo.com, never a verified sender, so falling back to it
   // produces mail the provider accepts and then drops, which looks like
   // success everywhere except the customer's inbox.
   if (!settings.email_from_address) {
@@ -281,7 +281,7 @@ export default async ({ req, res, log, error }) => {
   if (!doc) {
     const results = {};
     // Each is tried on its own. A failing backup must not stop the daily
-    // summary going out, and neither must stop the availability sweep — three
+    // summary going out, and neither must stop the availability sweep, three
     // unrelated jobs sharing a timer because the plan allows four functions.
     for (const [name, job] of [
       ['availability', () => sweepUnavailable({ db, DB_ID, settings, transport, log, error })],
@@ -300,7 +300,7 @@ export default async ({ req, res, log, error }) => {
 
   try {
     // ------------------------------------------------ staff member removed
-    // Nothing to email — this one takes an access away rather than sending
+    // Nothing to email; this one takes an access away rather than sending
     // anything. It lives here because the plan allows four functions and a
     // fifth would exist only to hold twenty lines.
     if (events.some((e) => e.includes('collections.staff_profiles'))) {
@@ -315,7 +315,7 @@ export default async ({ req, res, log, error }) => {
     // -------------------------------------------------- a dish has run out
     // Sent the moment it happens, not on the hourly sweep.
     //
-    // The sweep exists for the opposite problem — something that has been off
+    // The sweep exists for the opposite problem, something that has been off
     // for two days and nobody noticed. This is the other end: a dish going off
     // during service is a buying decision somebody may still be able to act on
     // within the hour, and by the time an hourly job runs, the trip to the
@@ -399,9 +399,9 @@ export default async ({ req, res, log, error }) => {
                   'A group has ordered',
                   `<table style="width:100%;border-collapse:collapse;font-size:15px">
                      ${row('Order', doc.order_no)}
-                     ${row('People', String(doc.group_size || '—'))}
-                     ${row(label, doc.group_reference || '—')}
-                     ${row('Booked by', doc.group_contact_name || doc.customer_name || '—')}
+                     ${row('People', String(doc.group_size || ', '))}
+                     ${row(label, doc.group_reference || ', ')}
+                     ${row('Booked by', doc.group_contact_name || doc.customer_name || ', ')}
                      ${row('Total', money(doc.total, settings), true)}
                    </table>
                    <p style="margin:18px 0 0;color:#5d6b7a;font-size:13px">The kitchen has it on the pass now.</p>`,
@@ -453,7 +453,7 @@ export default async ({ req, res, log, error }) => {
                   ? `<p style="margin:0 0 10px">We have your order. The kitchen will start on it shortly.</p>
                      <p style="margin:0;color:#5d6b7a;font-size:14px">Order ${doc.order_no}${
                        // Capped on the way out too. Mirrors MAX_ETA_MINUTES in
-                       // packages/core/src/orders.ts — a row written before the
+                       // packages/core/src/orders.ts, a row written before the
                        // cap existed must not put "about 95 minutes" in an
                        // email, where it cannot be corrected afterwards.
                        doc.eta_minutes > 0 ? ` · about ${Math.min(60, Math.round(doc.eta_minutes))} minutes` : ''
@@ -510,7 +510,7 @@ export default async ({ req, res, log, error }) => {
       if (delivery === null) return res.json({ ok: true, skipped: 'receipts feature off' });
 
       if (!doc.customer_email) {
-        // Recorded once, not once per edit — otherwise an order touched twenty
+        // Recorded once, not once per edit, otherwise an order touched twenty
         // times leaves twenty rows saying the same thing.
         if (already.total === 0) {
           await db.createDocument(DB_ID, 'receipts', 'unique()', {
@@ -538,7 +538,7 @@ export default async ({ req, res, log, error }) => {
 
       const html = shell(
         settings.restaurant_name,
-        `<p style="margin:0 0 4px">Thank you — here is your receipt.</p>
+        `<p style="margin:0 0 4px">Thank you, here is your receipt.</p>
          <p style="margin:0 0 16px;color:#5d6b7a;font-size:14px">Order ${doc.order_no} · ${new Date(doc.$createdAt).toLocaleString()}</p>
          <table style="width:100%;border-collapse:collapse;font-size:15px">${lines}
          <tr><td colspan="2" style="border-top:1px solid #e3e7ec;padding-top:8px"></td></tr>${totals}</table>
@@ -624,8 +624,8 @@ export default async ({ req, res, log, error }) => {
       if (threshold === null) return res.json({ ok: true, skipped: 'summary feature off' });
 
       // The shift's own clock, used for anything a customer could have started.
-      // A QR order has no shift stamped on it — the phone that placed it has no
-      // idea one is open — so scoping "what happened tonight" by shift_id alone
+      // A QR order has no shift stamped on it, the phone that placed it has no
+      // idea one is open, so scoping "what happened tonight" by shift_id alone
       // would leave the busiest orders out of the count.
       const openedAt = doc.opened_at;
       const closedAt = doc.closed_at || new Date().toISOString();
@@ -647,8 +647,8 @@ export default async ({ req, res, log, error }) => {
           Query.limit(500),
         ]).catch(() => ({ documents: [] })),
         // And the ones the clock misses. An order placed before anybody opened
-        // the till — every pre-order, and everything taken in the quiet half
-        // hour before service — was created outside the window above, so it
+        // the till, every pre-order, and everything taken in the quiet half
+        // hour before service, was created outside the window above, so it
         // appeared in no shift at all. Its money was still in the takings,
         // because a payment carries the shift it was collected in, which left
         // the summary counting revenue it could not show you the orders for.
@@ -691,8 +691,8 @@ export default async ({ req, res, log, error }) => {
       // ------------------------------------------------- who did what
       //
       // The totals say how the night went; this says who was in it. Not to
-      // rank anybody — a cook on the pass and a cashier on the till leave very
-      // different traces — but so that a question about one order has a name
+      // rank anybody, a cook on the pass and a cashier on the till leave very
+      // different traces, but so that a question about one order has a name
       // attached to it the next morning, when nobody remembers.
       //
       // Staff are recorded by their Appwrite user id in some places and by
@@ -750,7 +750,7 @@ export default async ({ req, res, log, error }) => {
           if (r.spent) bits.push(`${money(r.spent, settings)} paid out`);
           if (r.wasted) bits.push(`${r.wasted} waste entr${r.wasted === 1 ? 'y' : 'ies'}`);
           if (r.off) bits.push(`${r.off} item${r.off === 1 ? '' : 's'} taken off`);
-          return `<li><strong>${name}</strong> — ${bits.join(' · ') || 'on shift, nothing recorded against them'}</li>`;
+          return `<li><strong>${name}</strong>, ${bits.join(' · ') || 'on shift, nothing recorded against them'}</li>`;
         });
 
       const section = (title, rows) =>
@@ -775,13 +775,13 @@ export default async ({ req, res, log, error }) => {
            'Taken off the menu during this shift',
            offItems.documents.map(
              (r) =>
-               `<li><strong>${r.name_snapshot}</strong>${r.reason ? ` — ${r.reason}` : ''}${
+               `<li><strong>${r.name_snapshot}</strong>${r.reason ? `, ${r.reason}` : ''}${
                  r.marked_off_name ? ` <span style="color:#5d6b7a">(${r.marked_off_name})</span>` : ''
                }${r.restored_at ? ' <span style="color:#12805c">· back on</span>' : ' <span style="color:#b42318">· still off</span>'}</li>`,
            ),
          )}
          ${doc.variance_note ? `<h3 style="margin:20px 0 6px;font-size:15px">Why the drawer was out</h3><p style="margin:0;font-size:14px">${doc.variance_note}</p>` : ''}
-         ${persistent.length ? '<p style="margin:14px 0 0;font-size:13px;color:#b54708">Items low this many shifts running are usually a supply problem or stock leaving unrecorded — worth a look rather than another reorder.</p>' : ''}`,
+         ${persistent.length ? '<p style="margin:14px 0 0;font-size:13px;color:#b54708">Items low this many shifts running are usually a supply problem or stock leaving unrecorded, worth a look rather than another reorder.</p>' : ''}`,
         brand,
       );
 
@@ -813,7 +813,7 @@ export default async ({ req, res, log, error }) => {
       try {
         await transport.sendMail({
           from, to: recipients.join(','),
-          subject: `${settings.restaurant_name} — shift ${doc.code} closed`,
+          subject: `${settings.restaurant_name}, shift ${doc.code} closed`,
           html,
         });
         await db.updateDocument(DB_ID, 'summary_reports', report.$id, {

@@ -50,7 +50,7 @@ export const loadPaymentMethods = async (venueId: string): Promise<PaymentMethod
  * What each drawer should start the shift holding.
  *
  * Starting every shift at zero means somebody physically empties the till
- * every night, and most places do not — the float stays in the drawer and gets
+ * every night, and most places do not, the float stays in the drawer and gets
  * counted again in the morning, at which point the system calls it takings.
  * So the restaurant says which it is once, and this works it out.
  *
@@ -65,7 +65,7 @@ export async function openingFloats(
   const policy = settings.shift_float_policy ?? 'zero';
 
   if (policy === 'carry_over') {
-    // What the last shift actually counted, not what it expected — the drawer
+    // What the last shift actually counted, not what it expected, the drawer
     // holds what it holds.
     const previous = await db.listDocuments(DB_ID, 'shifts', [
       Query.equal('venue_id', venueId),
@@ -89,7 +89,7 @@ export async function openingFloats(
     return {
       floats: Object.fromEntries(methods.map((m) => [m.$id, 0])),
       source: 'carry_over',
-      note: 'No previous shift to carry over from — starting at nothing.',
+      note: 'No previous shift to carry over from, starting at nothing.',
     };
   }
 
@@ -154,7 +154,7 @@ export async function openShift(opts: {
  *
  * Filtered in memory rather than in the query, because shifts opened before
  * the column existed carry no module at all and a database filter would step
- * straight over them — which would look, from the till, like the shift somebody
+ * straight over them, which would look, from the till, like the shift somebody
  * opened this morning had vanished. A venue has at most a couple of open shifts
  * at once, so reading them and choosing costs nothing.
  */
@@ -174,8 +174,8 @@ export async function loadOpenShift(venueId: string, module: Module = 'kitchen')
  * Asking by the shift's clock alone was wrong in one direction and asking by
  * its id alone was wrong in the other, so this asks both ways and merges.
  *
- * A customer ordering from their phone has no shift stamped on the order — the
- * menu has no idea whether one is open — so the clock is the only thing that
+ * A customer ordering from their phone has no shift stamped on the order, the
+ * menu has no idea whether one is open, so the clock is the only thing that
  * ties those to a night. But an order placed BEFORE anyone opened the till,
  * which is every pre-order and everything taken in the quiet half hour before
  * service, falls outside that window and used to belong to no shift at all: the
@@ -235,8 +235,8 @@ export async function shiftBlockers(
   // Every live order for the venue, not only those stamped with this shift.
   //
   // That distinction is what let a shift close over an unpaid order: a
-  // customer ordering from their phone has no shift to be stamped with — the
-  // menu does not know one is open — so `shift_id` is blank and a query by
+  // customer ordering from their phone has no shift to be stamped with, the
+  // menu does not know one is open, so `shift_id` is blank and a query by
   // shift never saw it. The question is not "which orders belong to this
   // shift", it is "is anything still owed or still on the pass".
   const orders = await listAll<Order>('orders', [Query.equal('venue_id', venueId)]);
@@ -244,7 +244,7 @@ export async function shiftBlockers(
   for (const o of orders) {
     // Only this side's. A craft shop cannot be held open by an unpaid plate of
     // jollof, and telling it that it is would teach staff to close over the
-    // warning — which is the one thing this must never become.
+    // warning, which is the one thing this must never become.
     if ((o.module ?? 'kitchen') !== module) continue;
     // A pre-order for tomorrow is not this shift's problem.
     if (['CANCELLED', 'REJECTED', 'CLOSED', 'SCHEDULED'].includes(o.status)) continue;
@@ -318,7 +318,7 @@ export interface CloseShiftResult {
  * Close the shift.
  *
  * Order matters here. The stock and the money are settled first, then the
- * shift is written closed, then the ledger is posted — so a failure in the
+ * shift is written closed, then the ledger is posted, so a failure in the
  * accounts leaves a shift that is closed and counted rather than one stuck
  * half-open with the drawer already back in the safe.
  */
@@ -379,7 +379,7 @@ export async function closeShift(opts: {
 
       // The gap between what the recipes say should be left and what is
       // actually on the shelf. This is the number the whole stock system exists
-      // to produce — it is where over-portioning, waste and theft show up — and
+      // to produce, it is where over-portioning, waste and theft show up, and
       // it can only be worked out when somebody has counted. A tapped level
       // cannot produce it, which is the real argument for counting.
       const varianceQty = wasCounted ? Number((countedQty - theoretical).toFixed(4)) : 0;
@@ -402,7 +402,7 @@ export async function closeShift(opts: {
 
       // A real count is the best truth there is, so it replaces the running
       // figure outright. Otherwise "out" still means out, whatever the book
-      // says — trust the eyes.
+      // says, trust the eyes.
       if (wasCounted) {
         await db.updateDocument(DB_ID, 'ingredients', ingredientId, { current_qty: countedQty }).catch(() => undefined);
       } else if (level === 'OUT') {
@@ -417,7 +417,7 @@ export async function closeShift(opts: {
       settings.low_stock_default_bp ?? 3000,
       threshold,
       // What the cook reported wins over what the recipes imply. Without this,
-      // tapping LOW moved nothing — the running quantity stayed put, the
+      // tapping LOW moved nothing, the running quantity stayed put, the
       // arithmetic called the item fine, and it never reached the email.
       levels,
     );

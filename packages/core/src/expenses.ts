@@ -5,13 +5,13 @@ import type { Doc, StaffProfile } from './types';
  * Where the money went.
  *
  * Lived in the admin expense form only, which is how the kitchen ended up
- * writing every expense as "other" with a free-text name — two forms asking the
+ * writing every expense as "other" with a free-text name, two forms asking the
  * same question in two different shapes. It is defined once here now, and both
  * forms read it.
  */
 export const PAID_TO_KINDS = [
   { v: 'supplier', l: 'A supplier' },
-  { v: 'open_market', l: 'Open market — no fixed supplier' },
+  { v: 'open_market', l: 'Open market, no fixed supplier' },
   { v: 'staff', l: 'A member of staff' },
   { v: 'other', l: 'Someone else' },
 ] as const;
@@ -37,7 +37,7 @@ export interface Supplier extends Doc {
  * Cash only by default, and the reason is not tidiness. A cash expense reduces
  * what the drawer should hold, so it meets a physical count at the end of the
  * shift and a wrong one shows up within hours. An expense filed against mobile
- * money reduces nothing anybody counts — which makes it the easiest entry in
+ * money reduces nothing anybody counts, which makes it the easiest entry in
  * the system to write and never have questioned.
  *
  * Restaurants that genuinely pay suppliers by transfer can turn the restriction
@@ -70,7 +70,7 @@ export interface ExpenseCategoryDoc extends Doc {
  * A readable "paid to", whichever way the money went out.
  *
  * Reports and the ledger read `payee`, so it is filled in even when the real
- * answer is an id — nobody wants a supplier row id in a shift summary.
+ * answer is an id, nobody wants a supplier row id in a shift summary.
  */
 export function payeeLabel(
   kind: PaidToKind,

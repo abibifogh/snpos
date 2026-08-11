@@ -3,7 +3,7 @@ import { Client, Databases, Query } from 'node-appwrite';
 /**
  * Re-prices every new order against the database.
  *
- * Customers write their own orders — they have to, since a guest who has only
+ * Customers write their own orders; they have to, since a guest who has only
  * scanned a sticker has no staff member to write it for them. That means the
  * prices arrive from a phone, and anything a phone sends can be edited by
  * whoever owns the phone.
@@ -76,8 +76,8 @@ async function reprice({ db, DB_ID, orderId, settings }) {
  * Decide whether a voucher was actually allowed to be used, and count it.
  *
  * Runs on the redemption's own creation, which is the only moment the row is
- * guaranteed to exist. Everything about a voucher that can run out — the dates,
- * the switch, the number of uses — is decided here and nowhere else, so there
+ * guaranteed to exist. Everything about a voucher that can run out, the dates,
+ * the switch, the number of uses, is decided here and nowhere else, so there
  * is exactly one place the count is kept and exactly one place it is checked.
  *
  * The customer's phone checks the same things before letting a code be typed,
@@ -151,7 +151,7 @@ async function redeem({ db, DB_ID, doc, settings, log, error }) {
  *
  * Always both. The movement is the record and the count is the convenience, and
  * the moment one is written without the other the shelf and the history start
- * telling different stories — which is the whole reason the movements exist.
+ * telling different stories, which is the whole reason the movements exist.
  *
  * Idempotent by construction: the movement rows are keyed on the sale line, so
  * a payment retried on a bad connection finds them already there and takes
@@ -221,7 +221,7 @@ async function depleteShelf({ db, DB_ID, order, lines, log }) {
  * view of every payment against the bill, which is what "fully paid" means when
  * a bill can be split three ways.
  *
- * Safe to run twice — `order_item_id` carries a unique index, so a payment
+ * Safe to run twice, `order_item_id` carries a unique index, so a payment
  * retried on a bad connection collides instead of paying somebody twice.
  */
 async function creditConsignors({ db, DB_ID, payment, log }) {
@@ -313,7 +313,7 @@ const CANCEL_WINDOW_MS = 2 * 60 * 1000;
  * ticket, the food may already be on. The request is refused then even if the
  * two minutes have not run out, because the alternative is a customer cancelling
  * a dish that is halfway cooked and a kitchen finding out by reading a screen.
- * A guest in that position can still ask staff — a person can weigh whether the
+ * A guest in that position can still ask staff; a person can weigh whether the
  * pan has gone on, which is precisely the judgement this cannot make.
  *
  * The row is always updated, never deleted. Somebody asking tomorrow why the
@@ -333,7 +333,7 @@ async function cancelForCustomer({ db, DB_ID, doc, log }) {
   }
 
   if (['CANCELLED', 'REJECTED'].includes(order.status)) {
-    // Already off. Not a refusal — they got what they asked for.
+    // Already off. Not a refusal, they got what they asked for.
     await settle('cancelled');
     return { ok: true, already: true };
   }
@@ -387,7 +387,7 @@ export default async ({ req, res, log, error }) => {
   // It used to be done on the order's own event, and that was a race it lost
   // more often than it won: the browser writes the order first and the
   // redemption a moment later, so this function ran, found no redemption, and
-  // moved on — which is why a code with five uses could be typed for ever and
+  // moved on, which is why a code with five uses could be typed for ever and
   // the count never moved. The row exists by definition when its own creation
   // is the trigger.
   if (events.some((e) => e.includes('collections.discount_redemptions'))) {
@@ -431,8 +431,8 @@ export default async ({ req, res, log, error }) => {
 
     // ------------------------------------------------ the real order number
     //
-    // A guest cannot read the order list — that is the whole point of the
-    // permissions on the collection — so they cannot work out what number
+    // A guest cannot read the order list; that is the whole point of the
+    // permissions on the collection, so they cannot work out what number
     // comes next. They send a placeholder starting with "~" and it is settled
     // here, where the server can see every order.
     //
@@ -447,12 +447,12 @@ export default async ({ req, res, log, error }) => {
       const padding = Math.max(1, settings.order_number_padding || 4);
       // A window rather than just the last order. Several placeholders can be
       // in flight at once on a busy night, and the newest row is quite likely
-      // to be one of them — including this order itself.
+      // to be one of them, including this order itself.
       //
       // Filtering happens below rather than in the query on purpose:
       // `order_no` is only the second half of the composite unique index, so
       // Appwrite refuses to query it on its own. Asking anyway threw here,
-      // killed the function, and left every order stuck on its placeholder —
+      // killed the function, and left every order stuck on its placeholder, 
       // which is exactly what "Order ~msciu67tsi36" was.
       const queries = [
         Query.equal('venue_id', order.venue_id),
@@ -569,7 +569,7 @@ export default async ({ req, res, log, error }) => {
     // customer who did nothing wrong.
     //
     // Whether the voucher was still allowed to be used is decided on the
-    // redemption's own event, not here — see redeem() below. This only totals
+    // redemption's own event, not here, see redeem() below. This only totals
     // up what survived that check.
     let redemptions = { documents: [] };
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -601,7 +601,7 @@ export default async ({ req, res, log, error }) => {
      * and it is wrong on a busy night in the one direction that matters: a
      * fifteen-minute dish behind four other tickets is not fifteen minutes.
      *
-     * Here the whole pass is readable, so the tickets ahead are added — what is
+     * Here the whole pass is readable, so the tickets ahead are added, what is
      * LEFT of each, not what it started as. Then the cap: nothing is ever quoted
      * past an hour, because past that the number stops being something a person
      * can decide on and starts being something they stop believing.
@@ -621,7 +621,7 @@ export default async ({ req, res, log, error }) => {
       let ahead = 0;
       for (const o of live.documents) {
         if (o.$id === order.$id) continue;
-        // Cooking time, not the wait that order's own customer was quoted —
+        // Cooking time, not the wait that order's own customer was quoted, 
         // their quote already contains the queue that was ahead of them, and
         // adding up quotes counts the same stove time again for every ticket
         // that has joined since. What is left to cook is what is left to cook.

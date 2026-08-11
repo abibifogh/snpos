@@ -1,4 +1,4 @@
-# 02 — Data model
+# 02, Data model
 
 Database ID: `snpos`. All IDs are Appwrite `$id` strings. `int` money fields are
 **minor units** (see 01.6). Timestamps are ISO-8601 in the restaurant's timezone
@@ -16,7 +16,7 @@ collection-level permissions applied by `scripts/provision.mjs`.
 | Attribute | Type | Notes |
 | --- | --- | --- |
 | `restaurant_name` | string(120) | |
-| `timezone` | string(64) | e.g. `Africa/Accra` — drives availability + shift days |
+| `timezone` | string(64) | e.g. `Africa/Accra`, drives availability + shift days |
 | `currency_code` | string(3) | ISO 4217, admin-set |
 | `currency_symbol` | string(8) | e.g. `GH₵` |
 | `currency_decimals` | int | 2 |
@@ -30,9 +30,9 @@ collection-level permissions applied by `scripts/provision.mjs`.
 | `tax_rate_bp` | int | basis points, e.g. `1500` = 15% |
 | `tax_inclusive` | bool | whether menu prices already include tax |
 | `service_charge_bp` | int | |
-| `shift_float_policy` | enum | `zero` \| `carry_over` \| `prompt` — **default `zero`** |
+| `shift_float_policy` | enum | `zero` \| `carry_over` \| `prompt`, **default `zero`** |
 | `shift_float_default` | int | opening float when policy is `zero` |
-| `kitchen_ack_sla_seconds` | int | default 60 — ping escalates past this |
+| `kitchen_ack_sla_seconds` | int | default 60, ping escalates past this |
 | `kitchen_ping_max_level` | int | default 4 |
 | `require_reject_reason` | bool | default `true`, cannot be disabled below manager |
 | `order_number_prefix` | string(8) | |
@@ -46,14 +46,14 @@ Permissions: read `any` (the menu app needs branding + currency), update
 
 | Attribute | Type | Notes |
 | --- | --- | --- |
-| `name` | string(40) | "Cash", "Card", "MoMo — MTN" |
+| `name` | string(40) | "Cash", "Card", "MoMo, MTN" |
 | `kind` | enum | `cash` \| `card` \| `mobile_money` \| `voucher` \| `on_account` |
 | `enabled` | bool | |
 | `sort` | int | |
 | `opens_cash_drawer` | bool | |
 | `requires_reference` | bool | forces the cashier to key a terminal/txn ref |
 | `counted_at_close` | bool | whether it appears in the blind count at shift close |
-| `gateway` | enum | `none` \| `paystack` \| `stripe` — `none` until you enable one |
+| `gateway` | enum | `none` \| `paystack` \| `stripe`, `none` until you enable one |
 | `surcharge_bp` | int | optional card surcharge |
 
 Read `users`, write `T:admins`.
@@ -65,8 +65,8 @@ Read `users`, write `T:admins`.
 ### `categories`
 
 `name`, `description`, `sort` (int), `image_id`, `active` (bool),
-`availability` (string 4000, JSON — see 03.2), `station` (enum:
-`hot` \| `cold` \| `bar` \| `dessert`) — the default routing for its items.
+`availability` (string 4000, JSON, see 03.2), `station` (enum:
+`hot` \| `cold` \| `bar` \| `dessert`), the default routing for its items.
 
 Read `any`. Write `T:admins`, `T:managers`.
 
@@ -100,14 +100,14 @@ otherwise checkboxes.
 
 ### `addon_options`
 
-`group_id`, `name`, `price_delta` (int — **can be negative**, e.g. "No cheese
+`group_id`, `name`, `price_delta` (int, **can be negative**, e.g. "No cheese
 −GH₵2"), `active`, `sort`, `default_selected` (bool), `max_qty` (int, allows
 "×2 bacon").
 
 ### `menu_item_addon_groups`
 
 Join: `menu_item_id`, `group_id`, `sort`, plus per-item overrides
-`price_delta_override` (nullable int) and `required_override` (nullable bool) —
+`price_delta_override` (nullable int) and `required_override` (nullable bool), 
 so "Extra cheese" can cost GH₵3 on a burger and GH₵5 on a pizza without
 duplicating the group.
 
@@ -121,13 +121,13 @@ duplicating the group.
 unique, rotatable), `status` (enum `free` \| `seated` \| `ordered` \| `bill_requested`
 \| `dirty`), `current_order_id`, `active`.
 
-The QR encodes `https://menu.<domain>/t/<qr_token>` — never the table's `$id`,
+The QR encodes `https://menu.<domain>/t/<qr_token>`, never the table's `$id`,
 so a leaked/photographed code can be revoked by rotating the token.
 
 ### `dining_sessions`
 
 One per group seated at a table. `table_id`, `opened_at`, `closed_at`,
-`guest_count`, `anon_user_ids` (string[] — every phone that joined this table),
+`guest_count`, `anon_user_ids` (string[], every phone that joined this table),
 `status`. Lets several diners at one table add to a shared ticket, and scopes
 what a diner's phone is allowed to read.
 
@@ -140,7 +140,7 @@ what a diner's phone is allowed to read.
 | Attribute | Type | Notes |
 | --- | --- | --- |
 | `order_no` | string(20) | human-facing, `PREFIX-0042` |
-| `idem_key` | string(64) | unique index — retry safety |
+| `idem_key` | string(64) | unique index, retry safety |
 | `channel` | enum | `qr` \| `waiter` \| `counter` \| `takeaway` \| `delivery` |
 | `table_id`, `session_id` | string | null for takeaway |
 | `shift_id` | string | set at creation, immutable |
@@ -151,7 +151,7 @@ what a diner's phone is allowed to read.
 | `reject_reason_code` | enum | `out_of_stock` \| `too_busy` \| `item_unavailable` \| `closing_soon` \| `duplicate` \| `customer_request` \| `other` |
 | `reject_reason_note` | string(500) | **required when code is `other`** |
 | `subtotal`, `discount_total`, `tax_total`, `service_total`, `tip_total`, `total` | int | |
-| `currency_code` | string(3) | snapshot — historical orders stay correct if currency changes |
+| `currency_code` | string(3) | snapshot, historical orders stay correct if currency changes |
 | `payment_status` | enum | `unpaid` \| `partial` \| `paid` \| `refunded` |
 | `placed_by` | string | staff `$id`, or `anon:<userId>` for QR |
 | `guest_count` | int | |
@@ -168,9 +168,9 @@ phone sees only its own table's orders. Update restricted per role (doc 07).
 ### `order_items`
 
 `order_id`, `menu_item_id`, `name_snapshot`, `unit_price` (int),
-`qty`, `addons` (string 2000 — JSON snapshot `[{option_id,name,price_delta,qty}]`),
+`qty`, `addons` (string 2000, JSON snapshot `[{option_id,name,price_delta,qty}]`),
 `line_total`, `notes`, `station`, `status` (`queued`/`preparing`/`ready`/`served`/`void`),
-`void_reason`, `voided_by`, `course` (int — starter/main/dessert firing),
+`void_reason`, `voided_by`, `course` (int, starter/main/dessert firing),
 `seat_no` (int, drives split-by-seat).
 
 Snapshotting name and price is deliberate: editing a menu price must never
@@ -198,18 +198,18 @@ Multiple rows per order = split payment. Indexes: `order_id`, `shift_id`,
 | `status` | enum | `open` \| `closing` \| `closed` \| `reopened` |
 | `opened_by`, `opened_at` | | |
 | `opening_floats` | string(2000) | JSON `{method_id: amount}` |
-| `float_source` | enum | `zero` \| `manual` \| `carried_over` — audit of which policy applied |
+| `float_source` | enum | `zero` \| `manual` \| `carried_over`, audit of which policy applied |
 | `carried_from_shift_id` | string | only set when an admin explicitly carried over |
 | `closed_by`, `closed_at` | | |
 | `expected` | string(2000) | JSON `{method_id: amount}` computed by `shift-close` |
-| `counted` | string(2000) | JSON — blind count keyed by the closer |
+| `counted` | string(2000) | JSON, blind count keyed by the closer |
 | `variance` | string(2000) | JSON `{method_id: counted − expected}` |
 | `expense_total`, `sales_total`, `tax_total`, `tip_total`, `discount_total`, `void_total`, `refund_total` | int | |
 | `stock_check_status` | enum | `pending` \| `complete` |
 | `notes` | string(1000) | |
 | `posted_to_ledger` | bool | |
 
-Only one shift may be `open` at a time per venue — enforced by `shift-close`/
+Only one shift may be `open` at a time per venue, enforced by `shift-close`/
 `shift-open` functions checking for an existing open shift.
 
 ### `shift_expenses`
@@ -217,12 +217,12 @@ Only one shift may be `open` at a time per venue — enforced by `shift-close`/
 `shift_id`, `category` (enum `supplies` \| `transport` \| `utilities` \| `repairs`
 \| `staff_advance` \| `petty_cash` \| `other`), `payee`, `amount` (int),
 `paid_from_method_id`, `note`, `receipt_file_id`, `created_by`, `approved_by`,
-`approval_status` (enum — expenses above a threshold need manager approval).
+`approval_status` (enum, expenses above a threshold need manager approval).
 
 ### `shift_stock_checks`
 
 One row per ingredient per closing shift. `shift_id`, `ingredient_id`,
-`opening_qty`, `theoretical_qty`, `counted_qty` (nullable — count is optional
+`opening_qty`, `theoretical_qty`, `counted_qty` (nullable, count is optional
 for non-critical items), `status` (enum `OK` \| `LOW` \| `OUT`),
 `status_source` (enum `auto` \| `manual_override`), `variance_qty`,
 `variance_value`, `checked_by`, `note`.
@@ -235,15 +235,15 @@ for non-critical items), `status` (enum `OK` \| `LOW` \| `OUT`),
 
 `name`, `unit` (enum `g` \| `kg` \| `ml` \| `l` \| `each` \| `pack`),
 `base_unit_cost` (int, rolling weighted average), `current_qty` (float),
-`par_level` (float), `low_threshold` (float — absolute; falls back to
-`settings.low_stock_default_bp` × par when null), `critical` (bool — critical
+`par_level` (float), `low_threshold` (float, absolute; falls back to
+`settings.low_stock_default_bp` × par when null), `critical` (bool, critical
 items must be counted at every close), `supplier_id`, `category`,
 `shelf_life_days`, `active`.
 
 ### `recipes`
 
-`menu_item_id` (nullable), `addon_option_id` (nullable — add-ons consume stock
-too), `ingredient_id`, `qty_per_unit` (float), `wastage_bp` (int — expected
+`menu_item_id` (nullable), `addon_option_id` (nullable, add-ons consume stock
+too), `ingredient_id`, `qty_per_unit` (float), `wastage_bp` (int, expected
 trim/spill %). Exactly one of the two parent IDs is set.
 
 This is the "mark which meal uses which ingredient" mapping and the basis of all
@@ -275,7 +275,7 @@ Append-only ledger: `ingredient_id`, `type` (enum `purchase` \| `sale_depletion`
 Raised by `stock-variance`: `ingredient_id`, `period_start`, `period_end`,
 `theoretical_usage`, `actual_usage`, `variance_qty`, `variance_bp`,
 `variance_value`, `severity` (enum `info` \| `warn` \| `critical`),
-`likely_causes` (string[] — `over_portioning`, `waste_unrecorded`,
+`likely_causes` (string[], `over_portioning`, `waste_unrecorded`,
 `unrecorded_sale`, `theft`, `recipe_wrong`, `count_error`), `status`
 (`open`/`investigating`/`resolved`), `resolution_note`, `resolved_by`.
 
@@ -292,12 +292,12 @@ Double-entry, so the numbers reconcile rather than merely tally.
 `posted_by`, `reversed_by`.
 
 `journal_lines`: `entry_id`, `account_code`, `debit` (int), `credit` (int),
-`memo`. Every entry must balance — `shift-close` refuses to post otherwise.
+`memo`. Every entry must balance, `shift-close` refuses to post otherwise.
 
 ### `accounts` (chart of accounts, seeded)
 
 `code`, `name`, `type` (enum `asset` \| `liability` \| `equity` \| `revenue` \|
-`expense`), `parent_code`, `system` (bool — protected from deletion).
+`expense`), `parent_code`, `system` (bool, protected from deletion).
 
 Seed: `1000` Cash on hand, `1010` Card clearing, `1020` Mobile money clearing,
 `1200` Inventory, `2100` Tax payable, `2200` Tips payable, `4000` Food sales,
@@ -311,7 +311,7 @@ Seed: `1000` Cash on hand, `1010` Card clearing, `1020` Mobile money clearing,
 
 ### `staff_profiles`
 
-`user_id` (Appwrite account `$id`), `display_name`, `role` (enum — mirrors team
+`user_id` (Appwrite account `$id`), `display_name`, `role` (enum, mirrors team
 for fast client checks; the team is authoritative), `pin_hash` (Argon2id, set
 via function only), `pin_set_at`, `active`, `phone`, `hired_at`,
 `can_open_shift`, `can_discount_up_to_bp`, `can_void` (bool).

@@ -12,7 +12,7 @@ const ROLES: StaffProfile['role'][] = ['cook', 'waiter', 'cashier', 'manager', '
 
 /**
  * Starting permissions per role. Every one is adjustable per person afterwards
- * — these are a sensible default, not a rule. A cook can be given the till.
+ *, these are a sensible default, not a rule. A cook can be given the till.
  */
 const DEFAULTS: Record<StaffProfile['role'], Partial<StaffProfile>> = {
   cook: { can_open_shift: false, can_close_shift: false, can_void: false, can_discount_up_to_bp: 0, can_mark_paid: false, can_record_waste: true },
@@ -39,7 +39,7 @@ const linked = (p: Pick<StaffProfile, '$id' | 'user_id'>) => !!p.user_id && p.us
  *
  * A field the database has never heard of is dropped and the save retried:
  * asking for a sign-in link is a field, and a database provisioned before that
- * field existed would otherwise refuse the whole document — so adding staff
+ * field existed would otherwise refuse the whole document, so adding staff
  * would break again for anybody who had not re-run provisioning.
  *
  * A user_id the database still insists on is filled with the profile's own id.
@@ -86,7 +86,7 @@ export function StaffPage() {
   const [busy, setBusy] = useState(false);
   const [pin, setPin] = useState('');
   // Kitchen staff usually have no email at all. A profile with a PIN and no
-  // login is a complete, working staff record — not a half-finished one.
+  // login is a complete, working staff record, not a half-finished one.
   const [wantsLogin, setWantsLogin] = useState(false);
   const { settings } = useSession();
   const mods = modulesOf(settings);
@@ -107,7 +107,7 @@ export function StaffPage() {
 
   const save = async () => {
     if (!editing?.display_name?.trim()) { setError('Enter their name.'); return; }
-    if (wantsLogin && !editing.email?.trim()) { setError('Enter their email address — the invitation goes there.'); return; }
+    if (wantsLogin && !editing.email?.trim()) { setError('Enter their email address, the invitation goes there.'); return; }
     if (pin) {
       const problem = pinProblem(pin);
       if (problem) { setError(problem); return; }
@@ -137,7 +137,7 @@ export function StaffPage() {
       const payload = {
         // Left out entirely until there is a real one, never written as "".
         //
-        // user_id carries a unique index — one profile per login, which is the
+        // user_id carries a unique index; one profile per login, which is the
         // point of it. An empty string is a value like any other, so the first
         // person without a login took "" and the next one collided with them:
         // "Something with that name or code already exists" on the second cook
@@ -160,7 +160,7 @@ export function StaffPage() {
         ...(pin ? { pin_hash: await encodePin(pin), pin_set_at: new Date().toISOString() } : {}),
         // Asking for the sign-in link is a field on the profile, not a call
         // from here. Creating an account and adding somebody to a team needs a
-        // server key — a browser is not allowed to, which is exactly why the
+        // server key; a browser is not allowed to, which is exactly why the
         // old version saved the profile and then quietly failed to invite
         // anybody.
         ...(wantsLogin && editing.email?.trim() ? { login_link_requested_at: new Date().toISOString() } : {}),
@@ -168,7 +168,7 @@ export function StaffPage() {
 
       const id = editing.$id ?? ID.unique();
       // On an edit the link is cleared outright, so a profile saved by an
-      // older version — which wrote "" — is tidied rather than left holding the
+      // older version, which wrote "", is tidied rather than left holding the
       // one empty slot the unique index allows.
       const dropped = await writeProfile(
         !!editing.$id,
@@ -177,10 +177,10 @@ export function StaffPage() {
       );
 
       const outcome = !(wantsLogin && payload.email)
-        ? pin ? 'Saved — PIN set' : 'Saved'
+        ? pin ? 'Saved, PIN set' : 'Saved'
         : dropped.includes('login_link_requested_at')
           ? 'Saved, but no sign-in link can be sent yet. Run "Provision Appwrite" in GitHub Actions, then use "Send sign-in link" on their row.'
-          : `Saved — a sign-in link is on its way to ${payload.email}`;
+          : `Saved, a sign-in link is on its way to ${payload.email}`;
 
       setEditing(null);
       setPin('');
@@ -188,13 +188,13 @@ export function StaffPage() {
       toast(outcome);
     } catch (e) {
       const msg = humanError(e);
-      // A clash here is no longer expected — profiles without a login are
+      // A clash here is no longer expected, profiles without a login are
       // written with that field left empty rather than blank, which the
       // database allows any number of. If one turns up anyway, say so plainly
       // instead of leaving "something already exists" to be guessed at.
       setError(
         /already exists/i.test(msg)
-          ? 'The database refused to save this person, and nothing was saved. Nothing you typed is wrong — an old record is holding a slot this one needs. Send this to whoever set the system up: staff_profiles / user_unique.'
+          ? 'The database refused to save this person, and nothing was saved. Nothing you typed is wrong, an old record is holding a slot this one needs. Send this to whoever set the system up: staff_profiles / user_unique.'
           : msg,
       );
     } finally {
@@ -206,7 +206,7 @@ export function StaffPage() {
    * Send somebody their way in, again.
    *
    * Asking is a field on their profile; the sending is done by the server, over
-   * the restaurant's own mail provider — the one already delivering receipts.
+   * the restaurant's own mail provider, the one already delivering receipts.
    * Nothing here talks to Appwrite's invitation mail, which is throttled, lands
    * in spam, and cannot be resent at all.
    */
@@ -230,16 +230,16 @@ export function StaffPage() {
 
   const remove = async (p: StaffProfile) => {
     const warnLogin = p.email
-      ? `\n\nTheir login (${p.email}) is cancelled with them — they will not be able to sign in to anything. To stop somebody working without going that far, untick "active" instead.`
+      ? `\n\nTheir login (${p.email}) is cancelled with them; they will not be able to sign in to anything. To stop somebody working without going that far, untick "active" instead.`
       : '';
-    if (!confirm(`Remove ${p.display_name}? Their past orders, discounts and shifts stay on record — that history is what makes the audit trail worth having.${warnLogin}`)) return;
+    if (!confirm(`Remove ${p.display_name}? Their past orders, discounts and shifts stay on record; that history is what makes the audit trail worth having.${warnLogin}`)) return;
     try {
       await db.deleteDocument(DB_ID, 'staff_profiles', p.$id);
       await load();
       // The login is cancelled by the server a moment later, off the back of
-      // this deletion — a browser is not allowed to delete somebody else's
+      // this deletion; a browser is not allowed to delete somebody else's
       // account, and should not be.
-      toast(p.email ? 'Removed — their login is being cancelled' : 'Removed');
+      toast(p.email ? 'Removed, their login is being cancelled' : 'Removed');
     } catch (e) {
       toast(humanError(e), 'err');
     }
@@ -253,7 +253,7 @@ export function StaffPage() {
       </div>
 
       <p className="dim small" style={{ marginTop: 0 }}>
-        Kitchen and floor staff sign in with a <strong>PIN</strong> on the shared device — no email, no password.
+        Kitchen and floor staff sign in with a <strong>PIN</strong> on the shared device, no email, no password.
         Only people who need the admin dashboard on their own device get a login. Either way each person is
         identified individually, which is what makes “who authorised this discount” answerable at all.
       </p>
@@ -278,7 +278,7 @@ export function StaffPage() {
                   <tr key={p.$id}>
                     <td>
                       <div style={{ fontWeight: 550 }}>{p.display_name}</div>
-                      <div className="small dim">{p.email || (p.pin_hash ? 'PIN only — no login' : 'no PIN set')}</div>
+                      <div className="small dim">{p.email || (p.pin_hash ? 'PIN only, no login' : 'no PIN set')}</div>
                     </td>
                     <td className="dim">{p.role}</td>
                     <td className="dim small">
@@ -353,14 +353,14 @@ export function StaffPage() {
           {mods.kitchen && mods.craft && (
             <Field
               label="Which side do they work on?"
-              hint="Decides what they see on the till and in the admin app. It is not a permission — it is about keeping their screens to the work they actually do."
+              hint="Decides what they see on the till and in the admin app. It is not a permission; it is about keeping their screens to the work they actually do."
             >
               <Select
                 value={editing.works_in ?? 'both'}
                 onChange={(e) => setEditing({ ...editing, works_in: e.target.value as StaffProfile['works_in'] })}
               >
                 <option value="both">Both</option>
-                <option value="kitchen">Kitchen only — food and drink</option>
+                <option value="kitchen">Kitchen only, food and drink</option>
                 <option value="craft">Craft shop only</option>
               </Select>
             </Field>
@@ -369,7 +369,7 @@ export function StaffPage() {
           <h3 style={{ margin: '1.1rem 0 0.5rem' }}>How they sign in</h3>
           <Field
             label={editing.$id && editing.pin_hash ? 'Change PIN' : 'PIN'}
-            hint="4 to 6 digits. They tap this on the shared terminal or kitchen screen — no email, no password. Leave blank when editing to keep the current one."
+            hint="4 to 6 digits. They tap this on the shared terminal or kitchen screen, no email, no password. Leave blank when editing to keep the current one."
           >
             <Input
               value={pin}
@@ -404,7 +404,7 @@ export function StaffPage() {
           <h3 style={{ margin: '1.1rem 0 0.5rem' }}>What they can do</h3>
           <p className="small dim" style={{ marginTop: 0 }}>
             These are per person, not per job title. On a quiet shift the cook is the cashier, so give a cook the till
-            permissions if that is how your restaurant runs — the role above only sets the starting point.
+            permissions if that is how your restaurant runs, the role above only sets the starting point.
           </p>
           <Field hint="Counting the opening float and starting the till.">
             <Toggle
@@ -420,7 +420,7 @@ export function StaffPage() {
               label="Close a shift and count the drawer"
             />
           </Field>
-          <Field hint="Recording that a bill was settled — cash, card or mobile money.">
+          <Field hint="Recording that a bill was settled, cash, card or mobile money.">
             <Toggle
               checked={editing.can_mark_paid ?? true}
               onChange={(v) => setEditing({ ...editing, can_mark_paid: v })}
@@ -466,7 +466,7 @@ export function StaffPage() {
             <Field>
               <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label="Active" />
               <span className="hint">
-                Turn this off when someone leaves. Better than deleting them — their history stays attributable.
+                Turn this off when someone leaves. Better than deleting them, their history stays attributable.
               </span>
             </Field>
           )}

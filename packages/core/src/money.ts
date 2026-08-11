@@ -5,7 +5,7 @@ import type { Settings } from './types';
  *
  * Floating point and money must never meet: 0.1 + 0.2 !== 0.3, and a cash
  * drawer that is out by a thousandth of a pesewa per line still fails to
- * reconcile at close. Convert only at the edges — here for display, and in
+ * reconcile at close. Convert only at the edges, here for display, and in
  * parseMoney for input.
  */
 export function formatMoney(minor: number, s: Pick<Settings, 'currency_symbol' | 'currency_decimals' | 'symbol_position'>): string {
@@ -43,7 +43,7 @@ export const percentToBp = (pct: string): number => Math.round(Number(pct || 0) 
  * Does this screen ask for a tip?
  *
  * One rule, read by both the till and the kitchen, because the alternative is
- * two `settings.tips_enabled !== false` checks that drift apart — and a tip box
+ * two `settings.tips_enabled !== false` checks that drift apart, and a tip box
  * that is gone from one screen and still on the other is indistinguishable,
  * from the far side of a kitchen, from a setting that did not save.
  *
@@ -63,7 +63,7 @@ export function asksForTip(
 /**
  * Money for an axis tick: whole units, thousands separated, no decimals.
  *
- * `formatMoney` is right everywhere a figure is quoted — a bill of GH₵1,000.00
+ * `formatMoney` is right everywhere a figure is quoted, a bill of GH₵1,000.00
  * is not GH₵1,000. On an axis it is noise: three ticks reading .00 add nothing
  * a reader wanted and crowd out the label they did.
  */

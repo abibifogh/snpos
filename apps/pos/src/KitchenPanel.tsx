@@ -10,7 +10,7 @@ import type { PosContext } from './App';
  * For shifts with nobody on the floor: the cook takes the order, cooks it and
  * settles the bill from one screen rather than walking between two devices.
  *
- * Deliberately quieter than the dedicated kitchen display — someone standing
+ * Deliberately quieter than the dedicated kitchen display, someone standing
  * at the till does not need an alarm going off in their ear, and an alarm they
  * silence out of irritation is worse than no alarm at all.
  */
@@ -138,8 +138,8 @@ export function KitchenPanel({
                   )}
                   {o.status === 'READY' && (
                     o.payment_status === 'paid'
-                      ? <Badge tone="ok">Paid — waiting to be collected</Badge>
-                      : <Badge tone="warn">Not paid yet — settle before it goes out</Badge>
+                      ? <Badge tone="ok">Paid, waiting to be collected</Badge>
+                      : <Badge tone="warn">Not paid yet, settle before it goes out</Badge>
                   )}
                 </div>
               </Card>

@@ -46,8 +46,8 @@ export function App() {
   /**
    * Set when this business does not take orders from phones at all.
    *
-   * Kept apart from `error` on purpose. Nothing has gone wrong — the sticker
-   * worked, the shop simply sells over a counter — and a page headed "Sorry"
+   * Kept apart from `error` on purpose. Nothing has gone wrong, the sticker
+   * worked, the shop simply sells over a counter, and a page headed "Sorry"
    * would send somebody looking for a member of staff to report a fault.
    */
   const [counterOnly, setCounterOnly] = useState<string | null>(null);
@@ -79,8 +79,8 @@ export function App() {
    *
    * It used to be a tab on the ordinary menu, which meant every walk-in could
    * see the party platters and what a hotel pays for them. Neither is for the
-   * dining room to read. The link goes to whoever books groups — a front desk,
-   * an events contact — and nobody else has a way in.
+   * dining room to read. The link goes to whoever books groups, a front desk,
+   * an events contact, and nobody else has a way in.
    */
   const groupToken = params.get('g');
 
@@ -144,7 +144,7 @@ export function App() {
           ).catch(() => [] as TableRow[]),
         ]);
         // Only what the restaurant is happy for a guest to claim. A table
-        // somebody else is already sitting at is still offered — two parties
+        // somebody else is already sitting at is still offered, two parties
         // choosing the same table is a smaller problem than a guest who cannot
         // say where they are.
         const seating = allSeating
@@ -191,8 +191,8 @@ export function App() {
   /**
    * Keep the tab bar honest while somebody scrolls.
    *
-   * The tabs used to change only when tapped, so a guest who scrolled — which
-   * is how anybody actually reads a menu — was told they were still in the
+   * The tabs used to change only when tapped, so a guest who scrolled, which
+   * is how anybody actually reads a menu, was told they were still in the
    * first section three sections later. The bar became decoration.
    *
    * The current section is the last one whose heading has passed under the
@@ -217,7 +217,7 @@ export function App() {
 
     // One measurement per frame at most. A scroll event can fire dozens of
     // times a frame on a phone, and reading getBoundingClientRect on every one
-    // of them forces the browser to re-lay-out mid-scroll — which is felt as
+    // of them forces the browser to re-lay-out mid-scroll, which is felt as
     // the page stuttering under the thumb.
     let queued = 0;
     const onScroll = () => {
@@ -244,7 +244,7 @@ export function App() {
    * The bar is scrolled directly rather than with scrollIntoView, which was a
    * mistake: scrollIntoView moves EVERY scrollable ancestor, the page
    * included. Scrolling the page fired the listener above, which changed the
-   * current section, which scrolled the page again — a loop that reads, on a
+   * current section, which scrolled the page again, a loop that reads, on a
    * phone, as the whole menu shaking.
    *
    * Setting scrollLeft on the bar itself cannot touch the page. And it only
@@ -301,7 +301,7 @@ export function App() {
 
   // Straight to the live status page rather than a dead confirmation screen.
   // "Sent to the kitchen" answers the question for about ninety seconds; this
-  // keeps answering it — and now survives a refresh, because it is in the
+  // keeps answering it, and now survives a refresh, because it is in the
   // address rather than only in memory.
   if (viewing) {
     return (
@@ -325,7 +325,7 @@ export function App() {
   const inGroupMode = groupMode && isEnabled(features, 'group_orders');
 
   // Two menus, one list. Group-only sections are hidden from the ordinary
-  // menu and are the only thing shown on the group one — a hotel party
+  // menu and are the only thing shown on the group one, a hotel party
   // ordering platters does not want the a la carte list, and a walk-in
   // should not be offered a set meal for twenty.
   const sections = visibleSections(menu).filter((sec) =>
@@ -363,7 +363,7 @@ export function App() {
                 : 'Takeaway'}
           {venueOpen ? ' · Open now' : ' · Closed'}
           {/* The way back to an order already placed. Only shown when there is
-              one, and it is the only route back after a refresh — without it a
+              one, and it is the only route back after a refresh, without it a
               guest who reloads has no way to reach their own order again. */}
           {mine.length > 0 && (
             <>
@@ -430,7 +430,7 @@ export function App() {
         <div className={canOrderNow ? 'banner' : 'banner banner-info'}>
           {canOrderNow ? (
             <>
-              <strong>We're closed right now.</strong> You can still order — pick a time when we're open and we'll have
+              <strong>We're closed right now.</strong> You can still order, pick a time when we're open and we'll have
               it ready.
               {nextAvailable(venueHours) && (
                 <> Next open {nextAvailable(venueHours)!.toLocaleString([], { weekday: 'long', hour: '2-digit', minute: '2-digit' })}.</>
@@ -548,7 +548,7 @@ function Section({
       {!section.open && (
         <div className="when">
           Not available right now
-          {next && ` — from ${next.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`}
+          {next && `, from ${next.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`}
         </div>
       )}
       {section.entries.map((entry) => {

@@ -13,14 +13,14 @@ import { useSession } from '../session';
 /**
  * The desk where work arrives.
  *
- * A delivery is what both sides remember — "the baskets I brought in March" —
+ * A delivery is what both sides remember, "the baskets I brought in March", 
  * so it is a thing with a reference, not a scatter of products that happen to
  * share a date. Without it, a maker asking what happened to that delivery can
  * only be answered piece by piece.
  *
  * Receiving is the moment stock exists. Every piece booked in here writes a
  * movement as well as a product, because the count on a shelf is a convenience
- * and the movement is the record — and the question a shop cannot answer
+ * and the movement is the record, and the question a shop cannot answer
  * without it is not "how many" but "where did the other one go".
  */
 export function IntakePage() {

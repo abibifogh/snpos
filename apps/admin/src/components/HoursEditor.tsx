@@ -53,12 +53,12 @@ export function HoursEditor({
       })}
       <p className="hint" style={{ marginTop: '0.7rem' }}>
         {anySet
-          ? 'A closing time earlier than the opening time means past midnight — 18:00 to 02:00 is a valid late shift.'
+          ? 'A closing time earlier than the opening time means past midnight, 18:00 to 02:00 is a valid late shift.'
           : `Nothing set: ${emptyMeans}.`}
       </p>
       {anySet && (
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange({})} style={{ marginTop: '0.3rem' }}>
-          Clear — make it always available
+          Clear, make it always available
         </button>
       )}
     </div>

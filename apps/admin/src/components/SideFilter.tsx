@@ -8,7 +8,7 @@ export type Side = Module | 'all';
  *
  * Only rendered where there is a choice: a business running one side has
  * nothing to filter, and a row of buttons that never changes anything is a row
- * somebody learns to ignore — along with the next one, which does matter.
+ * somebody learns to ignore, along with the next one, which does matter.
  *
  * "Both" leads because the question an owner asks first is what the whole
  * business did. The split is the second question, and it is one tap away.
