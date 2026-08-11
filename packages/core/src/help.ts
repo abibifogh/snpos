@@ -181,6 +181,12 @@ export const HELP_ARTICLES: HelpArticle[] = [
       p('A difference is recorded, not hidden, and a large one asks for an explanation. This is not an accusation — drawers drift for honest reasons, and a system that quietly rounded it away would be useless the day it mattered.'),
       note('Marking an ingredient OUT sets it to zero, and the shift summary that goes out at close lists anything that has been low three shifts running separately from anything low for the first time. Repeatedly low is a different problem from newly low.'),
       note('Whether you can open or close a shift is set per person, not by job title. On a quiet shift the cook is the cashier, and an admin can grant exactly that.', 'warn'),
+      h('What you personally finished with'),
+      p(
+        'Closing the shift balances the drawer. It does not say who left with what, and on a shift worked by ' +
+        'three people that is a different question. Use Hand over cash when you finish \u2014 see the chapter ' +
+        'on handing your cash over.',
+      ),
     ],
   },
 
@@ -248,6 +254,16 @@ export const HELP_ARTICLES: HelpArticle[] = [
       p('If the money bought ingredients, list them under "Stock bought" — ingredient, quantity, unit cost. They go into stock as you save, so the shopping trip and the delivery are one job instead of two. The unit cost you enter becomes that ingredient\'s cost from then on.'),
       h('Categories and your accounts'),
       p('Each category names which line of the accounts it lands on. That is what makes a category more than a label: "Gas refill" can sit under Utilities rather than everything piling into Other.'),
+      h('What it can be paid out of'),
+      p(
+        'By default, only cash. That is not tidiness: money taken from the drawer has to be missing from the ' +
+        'drawer when it is counted at the end of the shift, so a wrong entry surfaces within hours. An expense ' +
+        'recorded against mobile money reduces nothing anybody counts.',
+      ),
+      p(
+        'An owner can widen it under Settings \u2192 Cash and shifts, for a place that genuinely pays ' +
+        'suppliers by transfer. Those entries then rest on the receipt rather than on a count.',
+      ),
     ],
   },
 
@@ -341,6 +357,12 @@ export const HELP_ARTICLES: HelpArticle[] = [
 
       h('Taking it away with you'),
       p('"Download PDF" gives you the page laid out for paper — for a meeting, or a lender, or a file. "Spreadsheet" gives you every order in the period as a CSV, for doing your own sums.'),
+      h('If you run two sides'),
+      p(
+        'With a kitchen and a craft shop both switched on, every figure here can be read for one side or for ' +
+        'the whole business. The Both / Kitchen / Craft shop buttons sit beside the download buttons, because ' +
+        'what you are looking at is what you will download.',
+      ),
     ],
   },
 
@@ -393,6 +415,162 @@ export const HELP_ARTICLES: HelpArticle[] = [
       p('Tap anywhere on the kitchen screen once. Browsers refuse to play sound until the page has been touched, and the screen may have been reloaded since anyone last touched it.'),
       h('A receipt did not arrive'),
       p('Admin → Reports, at the bottom, lists every receipt and the reason any of them failed. Check the guest\'s spam folder too.'),
+    ],
+  },
+  {
+    id: 'craft_shop',
+    title: 'Selling other people\u2019s work: the craft shop',
+    summary: 'Consignors, what they are owed, and how the shop keeps its half straight.',
+    area: 'admin',
+    audience: MGMT,
+    body: [
+      p(
+        'A consignment shop sells things it does not own. Somebody brings work in, the shop sells it, keeps an ' +
+        'agreed share and owes the rest. That last part is the whole business, and it is where a paper system ' +
+        'goes wrong first.',
+      ),
+      h('Turning it on'),
+      steps(
+        'Settings \u2192 What this business runs. Switch on Craft shop.',
+        'You can have both sides on at once. A kitchen with a craft corner is one business, not two systems \u2014 one till, one set of staff, one Reports page you can read either way.',
+        'A new group appears in the sidebar: Categories, Products, Consignors, Goods received and Payouts.',
+      ),
+      h('Consignors'),
+      p(
+        'Add each person who leaves work with you. They get a short code that goes on the label tied to every ' +
+        'piece, their own commission rate, and the number you pay them on.',
+      ),
+      p(
+        'The commission is what the SHOP keeps. Thirty percent means a GH\u20b5 100 basket earns the shop ' +
+        'GH\u20b5 30 and the maker GH\u20b5 70.',
+      ),
+      note(
+        'Changing somebody\u2019s rate never rewrites the past. The rate is written onto each sale as it ' +
+        'happens, so what a maker has already earned stays what they earned.',
+      ),
+      h('Booking work in'),
+      steps(
+        'Craft shop \u2192 Goods received \u2192 Receive a delivery.',
+        'Pick the maker, then type straight down the page \u2014 one row per piece, with its price and how many.',
+        'Each delivery gets a reference like INT-0007. Both of you keep it, so a question months later has one thing to look at.',
+        'Everything booked in goes onto the shop floor immediately at the price you set.',
+      ),
+      h('Sizes'),
+      p(
+        'A basket in small, medium and large is one product and three prices. Open the product under Craft shop ' +
+        '\u2192 Products and add a row per size, each with its own price and count.',
+      ),
+      p(
+        'The till then asks which size before it can add the line, and the product list shows a price range ' +
+        'rather than a single figure \u2014 because with sizes there is no single figure.',
+      ),
+      note(
+        'Removing a size that has already sold something switches it off rather than deleting it. Its name is ' +
+        'on old receipts and on somebody\u2019s statement, and those have to keep making sense.',
+      ),
+      h('What you owe, and paying it'),
+      p(
+        'Nothing stores a balance. Every sale credits a ledger, every payment debits it, and what somebody is ' +
+        'owed is the sum. That is deliberate: a stored total is one careless edit away from being both ' +
+        'unarguable and wrong, and in a disagreement with a maker holding their own notebook you would have ' +
+        'no evidence.',
+      ),
+      steps(
+        'Craft shop \u2192 Payouts shows who is waiting, most owed first.',
+        'Open their statement to see every line \u2014 what sold, what it sold for, what you kept, what they earned.',
+        'Send the money the way you always do: mobile money, cash, transfer.',
+        'Then press Record a payment inside the statement, so the figure and its workings are on one screen.',
+      ),
+      note(
+        'A maker is credited when the bill is PAID, not when it is rung up. An order cancelled or walked out ' +
+        'on owes nobody anything.',
+      ),
+      note(
+        'Somebody who has stopped consigning stays on the payouts list until they are settled. Marking them ' +
+        'inactive only hides them from the day-to-day lists.',
+        'warn',
+      ),
+    ],
+  },
+  {
+    id: 'two_sides',
+    title: 'Running a kitchen and a shop together',
+    summary: 'Two counters, two sets of books, one system.',
+    area: 'admin',
+    audience: MGMT,
+    body: [
+      p(
+        'With both sides switched on, the two are kept apart everywhere it matters: separate shifts, separate ' +
+        'expenses, separate takings. They take money at different counters and answer to different people, so ' +
+        'one figure covering both would be a figure neither side could act on.',
+      ),
+      h('On the till'),
+      list(
+        'A Kitchen / Craft shop switch appears at the top, left of the tabs.',
+        'It changes what every tab contains, not which tab is showing \u2014 the catalogue, the open shift and where a sale lands all follow it.',
+        'The device remembers the last choice, so a till that lives on the craft counter opens on the craft counter.',
+      ),
+      h('Staff who only work one side'),
+      p(
+        'Setup \u2192 Staff \u2192 Which side do they work on. Somebody set to Craft shop only finds the till ' +
+        'already showing baskets and never sees the kitchen\u2019s dishes, its stations or its waste log.',
+      ),
+      note(
+        'This is not a permission. It is about keeping somebody\u2019s screens to the work they actually do.',
+      ),
+      h('Shifts'),
+      list(
+        'Each side opens and closes its own. Closing one leaves the other exactly where it was.',
+        'The kitchen screen always runs the kitchen\u2019s shift; the craft shift is opened from the till with the switch set to Craft shop.',
+        'An unpaid plate of jollof can never hold the craft shop open, and vice versa.',
+      ),
+      h('Reading it back'),
+      p(
+        'Shifts, Expenses and Reports all carry a Both / Kitchen / Craft shop filter. Both is the default, ' +
+        'because the first question is usually what the whole business did.',
+      ),
+    ],
+  },
+  {
+    id: 'cash_handover',
+    title: 'Handing your cash over at the end',
+    summary: 'How to record what you finished with, in your own name.',
+    area: 'pos',
+    audience: ALL_STAFF,
+    body: [
+      p(
+        'A shift is not a person. Three people can work one shift, take money in turn out of the same drawer ' +
+        'and leave at different times \u2014 so closing the shift, which happens once at the end, cannot say ' +
+        'who left with what.',
+      ),
+      p('This is how you say it, so there is a record in your name rather than a note on somebody\u2019s pad.'),
+      h('Doing it'),
+      steps(
+        'On the till or the kitchen screen, press Hand over cash.',
+        'Type how much you are handing over.',
+        'Say where it is going \u2014 a manager, the safe, the next shift, the owner.',
+        'Say who is taking it. Both names go on the record, because the conversation this settles is always between two people.',
+        'Press Record it.',
+      ),
+      note(
+        'It does not move any money and it does not close the shift. Hand the cash over the way you always ' +
+        'do, then write it down here.',
+      ),
+      note(
+        'You can do this whenever you finish, not only at the close \u2014 people leave at different times.',
+      ),
+      h('If you get it wrong'),
+      p(
+        'Nothing here can be edited afterwards, on purpose: a record somebody can quietly revise is not ' +
+        'evidence of anything. Record a second entry with the right figure and tell a manager. Both stay on ' +
+        'the record, which is the point.',
+      ),
+      h('What a manager sees'),
+      p(
+        'Admin \u2192 Shifts \u2192 Details lists what each person handed over, to whom and at what time \u2014 ' +
+        'every trip, not just the total. Two trips to the safe and one of twice the size are different ' +
+        'evenings, and only one of them is worth asking about.',
+      ),
     ],
   },
 ];
