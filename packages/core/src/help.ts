@@ -67,7 +67,13 @@ export const HELP_ARTICLES: HelpArticle[] = [
       ),
       p('You do not need to close one to use another; they are separate web pages and a device can be left on whichever one it is for.'),
       note('If a screen ever looks blank or stuck, reload the page first. That fixes most of it, and nothing is lost, orders live on the server, not in the browser.'),
-    ],
+          h('If you also run a shop'),
+      p(
+        'The same four screens serve a craft shop selling on consignment. The till becomes a counter, the '
+        + 'admin app gains a Craft shop group, and the kitchen screen simply has nothing to do with it. '
+        + 'Which sides you run is a pair of switches under Settings.',
+      ),
+],
   },
 
   {
@@ -106,8 +112,25 @@ export const HELP_ARTICLES: HelpArticle[] = [
         'Enter a tip if there is one; it is kept separate from sales, because it is not yours.',
         'Tap Mark as paid.',
       ),
-      h('Splitting a bill'),
-      p('Split evenly between however many people, or take part payment now and the rest later. The table stays open until the whole bill is settled.'),
+      h('Cash: two boxes, two questions'),
+      p(
+        'Amount to pay is how much of this bill is being settled. Cash given is what the customer '
+        + 'actually handed over. They are separate on purpose: change comes off what was handed over, '
+        + 'never off the bill, so somebody paying half a bill with a large note still gets the right change.',
+      ),
+      p(
+        'Three shortcuts save the arithmetic at the counter: Pay all fills in the whole bill, Half fills '
+        + 'in half, and Exact cash matches the cash to whatever is being paid.',
+      ),
+      note(
+        'If the cash given is less than the amount being recorded, the till refuses it. Better caught at '
+        + 'the counter than at the close, when the drawer disagrees and nobody remembers why.',
+      ),
+      h('Part payment'),
+      p(
+        'Type less than the total and the rest stays owed. The table stays open until the whole bill is '
+        + 'settled, so a party paying in pieces is just several payments against the same bill.',
+      ),
       h('Emailing the receipt'),
       p('If the guest gave an email address when ordering it is already there. If not, you can type one in, or skip it, skipping is a normal answer and is recorded as such.'),
       note('Only people whose profile allows it can mark a bill paid. If the button is greyed out for you, that is a setting an admin controls, not a fault.', 'warn'),
@@ -209,7 +232,14 @@ export const HELP_ARTICLES: HelpArticle[] = [
       h('Stations'),
       p('A station is where food is cooked, hot line, grill, bar, pastry. Set them up under Kitchen → Stations, and each dish either names one or inherits its main category\'s.'),
       note('Stations are not pickup points. A station is inside the kitchen; a pickup point is where a customer collects. Pickup points live under Venues.', 'warn'),
-    ],
+          h('Who may change it'),
+      p(
+        'Adding, editing and deleting are for managers and owners. Everybody else with the page can look '
+        + 'at it, and the Edit button says View. Looking a price up and creating a product are different '
+        + 'jobs, and anybody who can create one is somebody whose slip reaches the floor at a price '
+        + 'customers get charged.',
+      ),
+],
   },
 
   {
@@ -283,7 +313,18 @@ export const HELP_ARTICLES: HelpArticle[] = [
       h('Permissions are per person'),
       p('These are not decided by job title. On a quiet shift the cook is the cashier, and this is where you say so for that particular cook.'),
       note('Obvious PINs are refused, 1111, 1234, and the other usual ones. A PIN that everybody can guess is the same as no PIN.', 'warn'),
-    ],
+          h('Which side they work on'),
+      p(
+        'Where a business runs both a kitchen and a craft shop, each person is set to Kitchen only, '
+        + 'Craft shop only, or Both. Somebody set to the shop finds the till already showing products and '
+        + 'never meets a station or a waste log.',
+      ),
+      note(
+        'This is not a permission. It is about keeping somebody\u2019s screens to the work they actually do. '
+        + 'The question only appears when both sides are switched on, because otherwise there is nothing '
+        + 'to choose.',
+      ),
+],
   },
 
   {
@@ -418,6 +459,63 @@ export const HELP_ARTICLES: HelpArticle[] = [
     ],
   },
   {
+    id: 'craft_till',
+    title: 'Selling at the shop counter',
+    summary: 'The till in craft mode: one screen, pick, charge, done.',
+    area: 'pos',
+    audience: ALL_STAFF,
+    body: [
+      p(
+        'A shop counter is not a dining room. There are no tables to seat anybody at, nothing goes to a '
+        + 'kitchen, and the whole sale happens while the customer stands there. So the craft till is one '
+        + 'screen: the products on the left, the sale on the right.',
+      ),
+      h('Getting to it'),
+      p(
+        'It is the same till as the restaurant, at the same address. Where a business runs both sides, a '
+        + 'Kitchen / Craft shop switch sits at the top. It changes what every tab contains, not which tab '
+        + 'is showing: the products, the open shift and where the money lands all follow it.',
+      ),
+      note(
+        'The device remembers your last choice, so a till that lives on the craft counter opens on the '
+        + 'craft counter. Somebody set to work only the shop never sees the switch at all; they are '
+        + 'already where they belong.',
+      ),
+      h('Making a sale'),
+      steps(
+        'Tap the pieces the customer is buying.',
+        'If a piece comes in sizes, the till asks which before it can price the line.',
+        'Press Take payment. It rings the sale up and opens the payment straight away.',
+        'Enter what was handed over, take the money, done.',
+      ),
+      p(
+        'The till stays where it is afterwards, cleared and ready for the next customer. There is nothing '
+        + 'to go back to.',
+      ),
+      h('Prices with a range'),
+      p(
+        'A product with sizes shows a range rather than one price, because with sizes there is no single '
+        + 'price. A size with none left is still shown, marked "none left", so somebody asking for the '
+        + 'large is told rather than left wondering why it is missing.',
+      ),
+      h('If a sale goes wrong'),
+      p(
+        'A sale rung up but not paid for stays on the counter and can be settled later from the same '
+        + 'screen. It never appears on the kitchen display; a woven basket is not something anybody cooks.',
+      ),
+      note(
+        'Nothing can be sold with no shift open. Open one from the bar at the top first, and note that the '
+        + 'shop\u2019s shift is its own: opening the kitchen\u2019s does not open this one.',
+        'warn',
+      ),
+      h('Sale numbers'),
+      p(
+        'Shop sales count on their own sequence with their own prefix, so a shop receipt and a restaurant '
+        + 'receipt can never wear the same number. An owner sets the prefix under Settings.',
+      ),
+    ],
+  },
+  {
     id: 'craft_shop',
     title: 'Selling other people\u2019s work: the craft shop',
     summary: 'Consignors, what they are owed, and how the shop keeps its half straight.',
@@ -454,6 +552,17 @@ export const HELP_ARTICLES: HelpArticle[] = [
         'Pick the maker, then type straight down the page \u2014 one row per piece, with its price and how many.',
         'Each delivery gets a reference like INT-0007. Both of you keep it, so a question months later has one thing to look at.',
         'Everything booked in goes onto the shop floor immediately at the price you set.',
+        'A delivery slip opens straight away, while the maker is still at the counter.',
+      ),
+      h('The delivery slip'),
+      p(
+        'A proper page, not a screenshot: the pieces with their prices, the agreed commission, what a full '
+        + 'sale would earn them, and a line for each of you to sign. The commission is on it deliberately, '
+        + 'because a maker who signs a slip that does not mention it has agreed to nothing.',
+      ),
+      p(
+        'Print it, or choose Save as PDF in the print dialog to send it on. Reprint any time from the Slip '
+        + 'button on the delivery.',
       ),
       h('Sizes'),
       p(
@@ -477,9 +586,13 @@ export const HELP_ARTICLES: HelpArticle[] = [
       ),
       steps(
         'Craft shop \u2192 Payouts shows who is waiting, most owed first.',
-        'Open their statement to see every line \u2014 what sold, what it sold for, what you kept, what they earned.',
+        'Open their statement to see every line: what sold, what it sold for, what you kept, what they earned.',
         'Send the money the way you always do: mobile money, cash, transfer.',
         'Then press Record a payment inside the statement, so the figure and its workings are on one screen.',
+      ),
+      p(
+        'Print or save as PDF prints the statement itself, as its own page, rather than the screen it is '
+        + 'sitting on. It is something you can hand over.',
       ),
       note(
         'A maker is credited when the bill is PAID, not when it is rung up. An order cancelled or walked out ' +
