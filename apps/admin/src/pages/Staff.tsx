@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { encodePin, pinProblem } from '@snpos/core';
+import { encodePin, pinProblem, modulesOf } from '@snpos/core';
 import type { StaffProfile } from '@snpos/core';
 import type { Doc } from '@snpos/core';
+import { useSession } from '../session';
 
 interface VenueRow extends Doc { name: string }
 
@@ -87,6 +88,8 @@ export function StaffPage() {
   // Kitchen staff usually have no email at all. A profile with a PIN and no
   // login is a complete, working staff record — not a half-finished one.
   const [wantsLogin, setWantsLogin] = useState(false);
+  const { settings } = useSession();
+  const mods = modulesOf(settings);
 
   const load = async () => {
     const [s, v] = await Promise.all([listAll<StaffProfile>('staff_profiles'), listAll<VenueRow>('venues')]);
@@ -146,6 +149,7 @@ export function StaffPage() {
         role,
         active: editing.active ?? true,
         phone: editing.phone ?? '',
+        works_in: editing.works_in ?? 'both',
         can_open_shift: editing.can_open_shift ?? false,
         can_close_shift: editing.can_close_shift ?? false,
         can_void: editing.can_void ?? false,
@@ -342,6 +346,25 @@ export function StaffPage() {
               </Select>
             </Field>
           </div>
+
+          {/* Only asked where there is an answer. A business running one side
+              has nothing to choose between, and a dropdown with one real option
+              is a question that wastes a moment on every new starter. */}
+          {mods.kitchen && mods.craft && (
+            <Field
+              label="Which side do they work on?"
+              hint="Decides what they see on the till and in the admin app. It is not a permission — it is about keeping their screens to the work they actually do."
+            >
+              <Select
+                value={editing.works_in ?? 'both'}
+                onChange={(e) => setEditing({ ...editing, works_in: e.target.value as StaffProfile['works_in'] })}
+              >
+                <option value="both">Both</option>
+                <option value="kitchen">Kitchen only — food and drink</option>
+                <option value="craft">Craft shop only</option>
+              </Select>
+            </Field>
+          )}
 
           <h3 style={{ margin: '1.1rem 0 0.5rem' }}>How they sign in</h3>
           <Field

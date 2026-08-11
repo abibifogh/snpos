@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **67 collections, 905 fields and 226 indexes**. Entered by hand at a
+> This is **67 collections, 906 fields and 226 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -1360,7 +1360,7 @@ There are 67 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
-**Attributes** (21)
+**Attributes** (22)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -1382,6 +1382,7 @@ There are 67 collections. A progress checklist is at the end of this document.
 | `can_apply_discount_codes` | Boolean | — | No | true | No |
 | `can_record_waste` | Boolean | — | No | true | No |
 | `hourly_rate` | Integer | — | No | — | No |
+| `works_in` | Enum | both, kitchen, craft | No | both | No |
 | `login_link_requested_at` | Datetime | — | No | — | No |
 | `login_link_sent_at` | Datetime | — | No | — | No |
 | `venue_ids` | String | size 64 | No | — | Yes |
@@ -2542,7 +2543,7 @@ way mistakes creep in.
 - [ ] 35. `accounts` (6 fields, 2 indexes)
 - [ ] 36. `journal_entries` (9 fields, 4 indexes)
 - [ ] 37. `journal_lines` (7 fields, 4 indexes)
-- [ ] 38. `staff_profiles` (21 fields, 4 indexes)
+- [ ] 38. `staff_profiles` (22 fields, 4 indexes)
 - [ ] 39. `devices` (8 fields, 3 indexes)
 - [ ] 40. `audit_log` (13 fields, 4 indexes)
 - [ ] 41. `feature_flags` (6 fields, 3 indexes)

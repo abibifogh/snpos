@@ -22,6 +22,16 @@ interface ItemAddonGroup extends Doc { menu_item_id: string; group_id: string; s
  * maker and a commission, and neither wants the other's questions.
  */
 export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'craft' }) {
+  /**
+   * What this side of the business calls the thing on the shelf.
+   *
+   * A shop assistant reading "Dishes & drinks" above a page of woven baskets
+   * is being asked to translate on every visit, and the translation is not the
+   * screen's to ask for.
+   */
+  const W = module === 'craft'
+    ? { title: 'Products', one: 'product', many: 'products', first: 'Add your first piece, with its price.' }
+    : { title: 'Dishes & drinks', one: 'dish', many: 'dishes', first: 'Add your first dish or drink, with its price.' };
   const { settings } = useSession();
   const toast = useToast();
   const stations = useStations();
@@ -220,7 +230,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
   };
 
   const save = async () => {
-    const thing = module === 'craft' ? 'product' : 'dish';
+    const thing = W.one;
     if (!editing?.name?.trim()) { setError(`This ${thing} needs a name.`); return; }
     if (pickedCategories.length === 0) {
       setError(`Tick at least one category — that is where this ${thing} appears.`);
@@ -301,12 +311,12 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
   return (
     <>
       <div className="spread">
-        <h1>Dishes &amp; drinks</h1>
+        <h1>{W.title}</h1>
         <Button variant="primary" onClick={() => open()} disabled={categories.length === 0}>Add item</Button>
       </div>
 
       {categories.length === 0 && (
-        <Notice tone="warn">Create at least one category first — every dish belongs to one.</Notice>
+        <Notice tone="warn">Create at least one category first — every {W.one} belongs to one.</Notice>
       )}
       {error && !editing && <Notice>{error}</Notice>}
 
@@ -318,8 +328,8 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
         {!items ? (
           <div className="card-pad"><Spinner /></div>
         ) : visible.length === 0 ? (
-          <Empty title={items.length === 0 ? 'No dishes yet' : 'Nothing matches that search'}>
-            {items.length === 0 && 'Add your first dish or drink, with its price.'}
+          <Empty title={items.length === 0 ? `No ${W.many} yet` : 'Nothing matches that search'}>
+            {items.length === 0 && W.first}
           </Empty>
         ) : (
           <div className="table-wrap">
@@ -374,7 +384,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
                     <td>{i.active ? <Badge tone="ok">Active</Badge> : <Badge>Hidden</Badge>}</td>
                     <td className="num">
                       <Button size="sm" variant="ghost" onClick={() => open(i)}>Edit</Button>
-                      <Button size="sm" variant="ghost" onClick={() => open(i, true)} title="Copy this dish, options and all">
+                      <Button size="sm" variant="ghost" onClick={() => open(i, true)} title={`Copy this ${W.one}, options and all`}>
                         Duplicate
                       </Button>
                       <Button size="sm" variant="ghost" onClick={() => remove(i)}>Delete</Button>
@@ -414,7 +424,9 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
 
           <Field
             label="Categories"
-            hint="A dish appears under every category ticked here. Tick two and it shows twice — so a Thursday special should be ticked for Thursday only, not for Thursday and Everyday. The first one ticked is its main category and sets the default kitchen station."
+            hint={module === 'craft'
+              ? 'A product appears under every category ticked here. The first one ticked is its main category.'
+              : 'A dish appears under every category ticked here. Tick two and it shows twice — so a Thursday special should be ticked for Thursday only, not for Thursday and Everyday. The first one ticked is its main category and sets the default kitchen station.'}
           >
             <div className="stack" style={{ gap: '0.35rem', marginTop: '0.2rem' }}>
               {categories.map((c) => {
@@ -511,7 +523,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
             hint={
               addonGroups.length === 0
                 ? 'None built yet. Create them under Menu → Options — for example “Choose your protein”.'
-                : 'Choices the customer makes for this dish. Build and price them under Menu → Options.'
+                : `Choices the customer makes for this ${W.one}. Build and price them under Kitchen → Options.`
             }
           >
             <div className="stack" style={{ gap: '0.35rem', marginTop: '0.2rem' }}>

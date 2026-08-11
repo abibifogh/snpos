@@ -1252,6 +1252,16 @@ export const COLLECTIONS = [
       // receipts — rather than Appwrite's shared sender, which is throttled and
       // lands in spam. `sent` is stamped afterwards so an ordinary edit to
       // somebody's phone number does not post them another one.
+      /**
+       * Which side of the business this person works on.
+       *
+       * A shop assistant has no reason to see a kitchen display or a list of
+       * dishes, and a cook has none to see consignor payouts. 'both' is the
+       * default because most small places genuinely are both, and guessing
+       * wrong in that direction only shows somebody a page they ignore —
+       * guessing wrong the other way hides the work they came in to do.
+       */
+      ['works_in', 'e', ['both', 'kitchen', 'craft'], false, 'both'],
       ['login_link_requested_at', 'd', null, false],
       ['login_link_sent_at', 'd', null, false],
     ],

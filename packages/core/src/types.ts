@@ -173,6 +173,8 @@ export interface StaffProfile extends Doc {
   hourly_rate?: number;
   email?: string;
   venue_ids?: string[];
+  /** Which side of the business they work on. Absent means both. */
+  works_in?: 'both' | 'kitchen' | 'craft';
   login_link_requested_at?: string;
   login_link_sent_at?: string;
 }

@@ -48,7 +48,9 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'c
     const base = c ? { ...c } : blank((rows?.length ?? 0) + 1);
     // An older category has only the built-in `station`; a new one starts at the
     // restaurant's first station rather than at a name they never chose.
-    base.station_key = c ? c.station_key || c.station : stations?.[0]?.key ?? '';
+    // A craft category has no station, and must not silently inherit the
+    // kitchen's first one just because that is what the picker would default to.
+    base.station_key = module === 'craft' ? '' : c ? c.station_key || c.station : stations?.[0]?.key ?? '';
     setEditing(base);
     setHours(c ? parseWindows(c.availability) ?? {} : {});
     setError(null);
@@ -64,7 +66,7 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'c
       sort: Number(editing.sort ?? 0),
       active: editing.active ?? true,
       unavailable_display: editing.unavailable_display ?? 'grey',
-      group_only: editing.group_only ?? false,
+      group_only: module === 'craft' ? false : editing.group_only ?? false,
       // `station` is the old built-in enum and is still required by the
       // database; `station_key` is the one the kitchen actually reads.
       station: legacyStationFor(editing.station_key ?? ''),
@@ -180,12 +182,17 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'c
             <Textarea value={editing.description ?? ''} onChange={(e) => setEditing({ ...editing, description: e.target.value })} />
           </Field>
           <div className="grid-2">
-            <StationPicker
-              stations={stations}
-              value={editing.station_key ?? ''}
-              onChange={(key) => setEditing({ ...editing, station_key: key })}
-              hint="Where these are prepared. A dish can override it."
-            />
+            {/* A shop has no stove. Asking a craft category which station
+                prepares it is asking a question with no true answer, and every
+                field like that teaches somebody that half the form is noise. */}
+            {module === 'kitchen' && (
+              <StationPicker
+                stations={stations}
+                value={editing.station_key ?? ''}
+                onChange={(key) => setEditing({ ...editing, station_key: key })}
+                hint="Where these are prepared. A dish can override it."
+              />
+            )}
             <Field label="Sort order" hint="Lower numbers appear first.">
               <Input type="number" value={editing.sort ?? 0} onChange={(e) => setEditing({ ...editing, sort: Number(e.target.value) })} />
             </Field>
@@ -217,13 +224,17 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'c
           <Field>
             <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label="Active" />
           </Field>
-          <Field hint="Shown only on the group-order menu, and hidden from the ordinary one. For platters and set meals.">
-            <Toggle
-              checked={editing.group_only ?? false}
-              onChange={(v) => setEditing({ ...editing, group_only: v })}
-              label="Group orders only"
-            />
-          </Field>
+          {/* Group ordering is a hotel booking a party's platters in advance.
+              Nobody pre-books a shelf of baskets, so the shop never sees it. */}
+          {module === 'kitchen' && (
+            <Field hint="Shown only on the group-order menu, and hidden from the ordinary one. For platters and set meals.">
+              <Toggle
+                checked={editing.group_only ?? false}
+                onChange={(v) => setEditing({ ...editing, group_only: v })}
+                label="Group orders only"
+              />
+            </Field>
+          )}
         </Modal>
       )}
     </>

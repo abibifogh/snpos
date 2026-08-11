@@ -160,6 +160,23 @@ export function sectionsFor(profile: StaffProfile | null, settings: Settings | n
 }
 
 /**
+ * Which sides of the business a person actually works on.
+ *
+ * The business's own switches come first: somebody marked as craft-only in a
+ * kitchen-only business works in the kitchen, because there is nowhere else to
+ * work. A person's setting narrows what the business runs; it cannot invent a
+ * side that is switched off.
+ */
+export function modulesForStaff(profile: StaffProfile | null, settings: Settings | null): Modules {
+  const running = modulesOf(settings);
+  const theirs = profile?.works_in ?? 'both';
+  if (theirs === 'both') return running;
+
+  const narrowed = { kitchen: running.kitchen && theirs === 'kitchen', craft: running.craft && theirs === 'craft' };
+  return narrowed.kitchen || narrowed.craft ? narrowed : running;
+}
+
+/**
  * What a screen should call things, given the trade.
  *
  * A shop assistant looking for "Dishes & drinks" to add a woven basket is being
