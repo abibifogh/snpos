@@ -4,7 +4,7 @@ import { contrastRatio } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   bpToPercent, percentToBp, toInput, parseMoney,
-  ADMIN_SECTIONS, GRANTABLE_ROLES, parseAccess, asksForTip, modulesOf,
+  ADMIN_SECTIONS, GRANTABLE_ROLES, parseAccess, asksForTip, modulesOf, saveDropping,
 } from '@snpos/core';
 import type { Settings, Doc } from '@snpos/core';
 
@@ -23,22 +23,12 @@ import { useSession } from '../session';
  * What was dropped is returned, by name, to be reported plainly.
  */
 async function saveSettings(patch: Record<string, unknown>): Promise<string[]> {
-  const payload = { ...patch };
-  const dropped: string[] = [];
-
-  for (let attempt = 0; attempt < 20; attempt++) {
-    try {
-      await db.updateDocument(DB_ID, 'settings', 'main', payload);
-      return dropped;
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      const unknown = /unknown attribute:?\s*"?([A-Za-z0-9_]+)"?/i.exec(message);
-      if (!unknown || !(unknown[1] in payload)) throw e;
-      dropped.push(unknown[1]);
-      delete payload[unknown[1]];
-    }
-  }
-  throw new Error('Too many settings could not be saved. Run Provision Appwrite, then try again.');
+  // One implementation, in core, shared with everything else that writes to a
+  // database a release ahead of its provisioning. This page carried a second
+  // copy of the same loop, which is one more place for the two to disagree
+  // about what counts as an unknown field.
+  const { dropped } = await saveDropping('settings', 'main', patch);
+  return dropped;
 }
 
 /** Field names as somebody would recognise them on this page. */
@@ -57,6 +47,7 @@ const FIELD_LABELS: Record<string, string> = {
   craft_enabled: 'The craft shop side',
   self_order_enabled: 'Customers ordering for themselves',
   default_commission_bp: 'Default commission',
+  craft_order_prefix: 'Craft sale number prefix',
   order_number_prefix: 'Order number prefix',
   order_number_mode: 'Order numbering',
   order_number_padding: 'Order number length',
@@ -247,6 +238,7 @@ export function SettingsPage() {
         craft_enabled: mods.craft,
         self_order_enabled: form.self_order_enabled !== false,
         default_commission_bp: Number(form.default_commission_bp ?? 3000),
+        craft_order_prefix: form.craft_order_prefix ?? 'S',
       });
       await refreshSettings();
 
@@ -323,6 +315,15 @@ export function SettingsPage() {
 
         {mods.craft && (
           <>
+            <Field
+              label="Craft sale number prefix"
+              hint="Shop sales count on their own, so a shop receipt and a restaurant receipt can never wear the same number. Blank uses the same prefix as the kitchen."
+            >
+              <Input
+                value={form.craft_order_prefix ?? 'S'}
+                onChange={(e) => set('craft_order_prefix', e.target.value)}
+              />
+            </Field>
             <Field
               label="Commission you keep by default (%)"
               hint="Used for a new consignor until you set theirs. Each person can have their own rate, and each piece can override that again."

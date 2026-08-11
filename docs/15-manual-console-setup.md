@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **68 collections, 916 fields and 230 indexes**. Entered by hand at a
+> This is **68 collections, 917 fields and 232 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -257,7 +257,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: _none, server only_ · **Update**: Team: admins · **Delete**: _none, server only_
 
-**Attributes** (53)
+**Attributes** (54)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -292,6 +292,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 | `tips_enabled` | Boolean | ,  | No | true | No |
 | `tips_ask_on` | Enum | both, till, kitchen, none | No | both | No |
 | `expense_paid_from` | Enum | cash_only, any | No | cash_only | No |
+| `craft_order_prefix` | String | size 10 | No | S | No |
 | `business_type` | Enum | restaurant, craft_shop | No | restaurant | No |
 | `kitchen_enabled` | Boolean | ,  | No | true | No |
 | `craft_enabled` | Boolean | ,  | No | false | No |
@@ -693,7 +694,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 | `loyalty_points_earned` | Integer | ,  | No | 0 | No |
 | `loyalty_points_redeemed` | Integer | ,  | No | 0 | No |
 
-**Indexes** (13)
+**Indexes** (14)
 
 | Index key | Type | Attributes (in this order) |
 | --- | --- | --- |
@@ -702,6 +703,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 | `order_no` | key | `order_no` |
 | `shift_status` | key | `shift_id`, `status` |
 | `status_created` | key | `status`, `$createdAt` |
+| `module_status` | key | `module`, `status` |
 | `session` | key | `session_id` |
 | `table` | key | `table_id` |
 | `fulfilment_status` | key | `venue_id`, `fulfilment`, `status` |
@@ -1512,12 +1514,13 @@ There are 68 collections. A progress checklist is at the end of this document.
 | `resend_requested_by` | String | size 64 | No | ,  | No |
 | `email_source` | Enum | guest_at_order, staff_entered, customer_profile | No | ,  | No |
 
-**Indexes** (4)
+**Indexes** (5)
 
 | Index key | Type | Attributes (in this order) |
 | --- | --- | --- |
 | `order` | key | `order_id` |
 | `status_created` | key | `status`, `$createdAt` |
+| `module_status` | key | `module`, `status` |
 | `email` | key | `to_email` |
 | `org` | key | `org_id` |
 
@@ -2205,7 +2208,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 
 ### 64. `product_variants`, Product variants
 
-**Read**: Any · **Create**: Team: managers, Team: admins · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: Team: managers, Team: admins
+**Read**: Any · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: managers, Team: admins
 
 **Attributes** (12)
 
@@ -2540,7 +2543,7 @@ way mistakes creep in.
 - [ ]  2. `venue_menu_items` (7 fields, 2 indexes)
 - [ ]  3. `organisations` (13 fields, 3 indexes)
 - [ ]  4. `org_requests` (10 fields, 1 indexes)
-- [ ]  5. `settings` (53 fields, 1 indexes)
+- [ ]  5. `settings` (54 fields, 1 indexes)
 - [ ]  6. `payment_methods` (11 fields, 3 indexes)
 - [ ]  7. `categories` (12 fields, 3 indexes)
 - [ ]  8. `menu_items` (30 fields, 6 indexes)
@@ -2551,7 +2554,7 @@ way mistakes creep in.
 - [ ] 13. `menu_item_addon_groups` (6 fields, 2 indexes)
 - [ ] 14. `tables` (13 fields, 4 indexes)
 - [ ] 15. `dining_sessions` (9 fields, 3 indexes)
-- [ ] 16. `orders` (62 fields, 13 indexes)
+- [ ] 16. `orders` (62 fields, 14 indexes)
 - [ ] 17. `order_items` (23 fields, 4 indexes)
 - [ ] 18. `payments` (16 fields, 4 indexes)
 - [ ] 19. `shifts` (29 fields, 5 indexes)
@@ -2577,7 +2580,7 @@ way mistakes creep in.
 - [ ] 39. `devices` (8 fields, 3 indexes)
 - [ ] 40. `audit_log` (13 fields, 4 indexes)
 - [ ] 41. `feature_flags` (6 fields, 3 indexes)
-- [ ] 42. `receipts` (16 fields, 4 indexes)
+- [ ] 42. `receipts` (16 fields, 5 indexes)
 - [ ] 43. `pickup_points` (13 fields, 2 indexes)
 - [ ] 44. `delivery_zones` (9 fields, 2 indexes)
 - [ ] 45. `preorder_slots` (9 fields, 3 indexes)

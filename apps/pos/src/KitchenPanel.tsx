@@ -41,7 +41,8 @@ export function KitchenPanel({
 
   useEffect(() => {
     (async () => {
-      const open = await loadOpenOrders(ctx.venue.$id);
+      // The kitchen view, even when reached from a till that can switch sides.
+      const open = await loadOpenOrders(ctx.venue.$id, 'kitchen');
       setOrders(open);
       await loadItems(open.map((o) => o.$id));
     })();

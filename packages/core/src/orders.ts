@@ -1,8 +1,22 @@
 import { db, DB_ID, ID, Query, Permission, Role, account, listAll } from './client';
+import { cookMinutes, estimateMinutes, fireTimeFor } from './orders-time';
+
+/**
+ * The timing arithmetic lives next door, in a file that imports nothing.
+ *
+ * Re-exported so every caller keeps working. The split exists so the figure a
+ * customer is quoted and the figure a kitchen is judged by can be tested
+ * without selling anything, not to make callers choose a file.
+ */
+export {
+  MAX_ETA_MINUTES, shownEta, cookMinutes, estimateMinutes, queueMinutes, dueMinutes, fireTimeFor,
+  CANCEL_WINDOW_MS, cancelWindowLeft,
+} from './orders-time';
 import { createOrQueue, isOffline } from './offline';
 import { computeTotals, lineUnitPrice, lineTotal } from './pricing';
 import type { CartLine } from './pricing';
 import type { Settings, Doc } from './types';
+import type { Module } from './access';
 
 export type OrderStatus =
   | 'SCHEDULED' | 'PENDING' | 'ACCEPTED' | 'PREPARING' | 'READY' | 'SERVED' | 'CLOSED' | 'REJECTED' | 'CANCELLED';
@@ -120,8 +134,18 @@ export const newIdempotencyKey = (): string =>
  * `provisionalOrderNo` instead and order-guard settles the real number the
  * moment the order lands.
  */
-async function nextOrderNo(venueId: string, settings: Settings): Promise<string> {
-  const prefix = settings.order_number_prefix ?? '';
+async function nextOrderNo(venueId: string, settings: Settings, module: Module = 'kitchen'): Promise<string> {
+  /**
+   * Each side counts on its own.
+   *
+   * A shared run of numbers meant a shop receipt and a restaurant receipt could
+   * look alike and sort together, while the two sides keep separate books
+   * everywhere else. The craft prefix falls back to the kitchen's when it is
+   * blank, which is what a business running only one side wants.
+   */
+  const prefix = module === 'craft'
+    ? (settings.craft_order_prefix ?? 'S') || (settings.order_number_prefix ?? '')
+    : settings.order_number_prefix ?? '';
   const padding = Math.max(1, settings.order_number_padding ?? 4);
   const daily = settings.order_number_mode === 'daily';
 
@@ -129,7 +153,7 @@ async function nextOrderNo(venueId: string, settings: Settings): Promise<string>
   // placeholder for a second or so before the server settles them, and the
   // newest order is quite often one of those, reading it as "the last number"
   // would send the count back to the beginning.
-  const queries = [Query.equal('venue_id', venueId), Query.orderDesc('$createdAt'), Query.limit(50)];
+  const queries = [Query.equal('venue_id', venueId), Query.orderDesc('$createdAt'), Query.limit(80)];
   if (daily) {
     // Only today's orders count, so tomorrow starts at one again.
     const midnight = new Date();
@@ -142,7 +166,9 @@ async function nextOrderNo(venueId: string, settings: Settings): Promise<string>
   }
 
   const latest = await db.listDocuments(DB_ID, 'orders', queries);
-  const numbered = (latest.documents as unknown as Order[]).filter((o) => !isProvisionalOrderNo(o.order_no));
+  // Only this side's, so the two sequences never read each other's last number.
+  const numbered = (latest.documents as unknown as Order[])
+    .filter((o) => !isProvisionalOrderNo(o.order_no) && (o.module ?? 'kitchen') === module);
   const last = numbered[0]?.order_no ?? '';
   // Strip the prefix before reading the number, so a prefix containing digits
   // ("B2-") does not get counted as part of it.
@@ -190,9 +216,14 @@ export async function settleOrderNumbers(venueId: string, settings: Settings): P
   // Oldest first, one at a time: each has to see the number the one before it
   // just took, or they all claim the same one.
   for (const order of stuck) {
-    const wanted = await nextOrderNo(venueId, settings);
+    // Healed into its own side's sequence. Healing a craft sale into the
+    // kitchen's run would give it a number the shop's own receipts do not use.
+    const side = order.module ?? 'kitchen';
+    const wanted = await nextOrderNo(venueId, settings, side);
     const base = Number(wanted.replace(/\D/g, '')) || 1;
-    const prefix = settings.order_number_prefix ?? '';
+    const prefix = side === 'craft'
+      ? (settings.craft_order_prefix ?? 'S') || (settings.order_number_prefix ?? '')
+      : settings.order_number_prefix ?? '';
     const padding = Math.max(1, settings.order_number_padding ?? 4);
     for (let i = 0; i < 25; i++) {
       try {
@@ -282,143 +313,6 @@ export interface CreatedOrder {
  * Extra portions of the same dish are not multiplied; three of one thing goes
  * in one pan, and doubling it produces a number nobody believes.
  */
-/**
- * The longest wait this system will ever quote, whatever the arithmetic says.
- *
- * Not because the food will always arrive by then, on a bad night it will not
- *, but because a number past this stops being useful. "One hour" is a decision
- * point: somebody reads it and either waits or leaves. "An hour and fifty" is a
- * number nobody believes and nobody plans around, and quoting it does more
- * damage than the honest cap plus a cook who keeps people posted.
- */
-export const MAX_ETA_MINUTES = 60;
-
-/**
- * The wait to show, never more than the cap.
- *
- * Applied on the way out as well as on the way in. Capping only where the
- * figure is worked out leaves every row written before the cap existed, and
- * anything a future change forgets to clamp, free to put "about 95 minutes"
- * in front of a customer. Reading is the last chance to be sure, and it costs
- * nothing to take it.
- *
- * Returns null when there is no estimate at all, so a caller can leave the
- * whole line out rather than print a made-up number.
- */
-export function shownEta(minutes?: number | null): number | null {
-  if (!minutes || minutes <= 0) return null;
-  return Math.min(MAX_ETA_MINUTES, Math.round(minutes));
-}
-
-export function estimateMinutes(lines: CartLine[], queueAhead = 0): number {
-  return Math.min(MAX_ETA_MINUTES, Math.max(1, Math.round(cookMinutes(lines) + queueAhead)));
-}
-
-/**
- * The cooking time alone: the prep time set on each dish, added up.
- *
- * This is what the kitchen is judged by, and it is deliberately not what the
- * customer is quoted. Their wait includes queueing behind other tickets, which
- * is time before a cook touches this one, measuring a kitchen by it would hand
- * them extra minutes on exactly the nights being late matters most, and only
- * because other people were also waiting.
- *
- * Added rather than taking the longest, for the same reason as everywhere else
- * here: a cook with a curry and a grill on one ticket does them one after the
- * other. Not multiplied by quantity; three of one thing goes in one pan.
- */
-export function cookMinutes(lines: Pick<CartLine, 'prep_minutes'>[]): number {
-  return Math.max(1, Math.round(lines.reduce((sum, l) => sum + (l.prep_minutes ?? 15), 0)));
-}
-
-/**
- * How long a ticket already on the pass should have taken, in minutes.
- *
- * One definition, read by the screen that shows the Late pill and by whatever
- * decides to make a noise. Two copies of this rule is two answers to "is this
- * late", and the one that goes wrong is always the one nobody is looking at.
- *
- * `prep_minutes` on the order is the answer whenever it is there. The fallbacks
- * are for orders placed before it was stored: each line's due time was stamped
- * as "now plus its prep", so the difference gives that prep back. Twenty
- * minutes if even that is missing, a guess that pings beats a blank that never
- * does.
- */
-export function dueMinutes(
-  order: Pick<Order, 'prep_minutes' | '$createdAt'>,
-  lines: { due_at?: string; prep_minutes?: number }[] = [],
-): number {
-  if (order.prep_minutes) return order.prep_minutes;
-
-  const fromLines = lines.reduce((sum, l) => sum + (l.prep_minutes ?? 0), 0);
-  if (fromLines > 0) return fromLines;
-
-  const placed = Date.parse(order.$createdAt);
-  const summed = lines.reduce((sum, l) => {
-    const due = l.due_at ? Date.parse(l.due_at) : 0;
-    return sum + (due > placed ? Math.round((due - placed) / 60_000) : 0);
-  }, 0);
-  return summed || 20;
-}
-
-/**
- * How long the tickets already on the pass will take before this one is
- * started.
- *
- * The kitchen is treated as working through one ticket at a time, the same
- * assumption that makes the dishes within an order add up rather than overlap,
- * and for the same reason. Two cooks who genuinely work in parallel will beat
- * this estimate, and a customer told twenty-five who eats in eighteen is a
- * customer who comes back.
- *
- * What remains of each ticket, not what it started as: an order accepted twelve
- * minutes ago with a fifteen-minute estimate is three minutes from the pass, and
- * counting the full fifteen would push every quote up all evening as the night's
- * finished work piled into the arithmetic.
- *
- * Orders sitting READY are excluded; the cooking is done and they are waiting
- * on a person, not on a stove.
- */
-export function queueMinutes(
-  pending: Pick<Order, 'status' | 'prep_minutes' | 'eta_minutes' | 'accepted_at' | '$createdAt'>[],
-  now: number = Date.now(),
-): number {
-  const cooking: OrderStatus[] = ['PENDING', 'ACCEPTED', 'PREPARING'];
-  let ahead = 0;
-  for (const o of pending) {
-    if (!cooking.includes(o.status)) continue;
-
-    /**
-     * Cooking time, not the wait its own customer was quoted.
-     *
-     * Those are different numbers now, and using the wrong one compounds. An
-     * order's quoted wait already contains the queue that was ahead of IT, so
-     * adding up quoted waits counts the same stove time again for every order
-     * that has joined since, a fourth ticket on a quiet-ish evening would
-     * inherit the first three's queueing on top of their cooking and sail
-     * straight into the hour cap. What is left to cook is what is left to cook.
-     */
-    const work = o.prep_minutes ?? o.eta_minutes ?? 15;
-
-    // A ticket nobody has accepted is not being cooked, so none of it is done
-    // however long it has been sitting there. Only time since a cook took it
-    // comes off.
-    const started = o.accepted_at ? Date.parse(o.accepted_at) : NaN;
-    const elapsed = Number.isFinite(started) ? Math.max(0, (now - started) / 60_000) : 0;
-    ahead += Math.max(0, work - elapsed);
-  }
-  return Math.round(ahead);
-}
-
-/**
- * Work back from when the customer wants it to when the kitchen must start,
- * using the slowest dish on the order plus a small buffer.
- */
-export function fireTimeFor(lines: CartLine[], scheduledFor: Date, prepMinutesById: Record<string, number>, buffer = 5): Date {
-  const longest = Math.max(0, ...lines.map((l) => prepMinutesById[l.menu_item_id] ?? 10));
-  return new Date(scheduledFor.getTime() - (longest + buffer) * 60_000);
-}
-
 export async function createOrder(input: CreateOrderInput, attempt = 0): Promise<CreatedOrder> {
   const { venueId, lines, settings, channel, placedBy } = input;
   if (lines.length === 0) throw new Error('An order needs at least one item.');
@@ -433,7 +327,7 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
   // the moment it lands rather than needing anything special.
   const orderNo = input.guest
     ? provisionalOrderNo()
-    : await nextOrderNo(venueId, settings).catch((e) => {
+    : await nextOrderNo(venueId, settings, input.module ?? 'kitchen').catch((e) => {
         if (isOffline(e)) return provisionalOrderNo();
         throw e;
       });
@@ -557,25 +451,6 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
 }
 
 /**
- * How long after sending an order a customer may still call it back.
- *
- * Deliberately short. Long enough for "that was the wrong thing, I pressed send
- * too fast", which is the whole of what this is for, and short enough that a
- * kitchen is not throwing away food somebody has already started.
- *
- * The browser uses this to decide what to show; the server checks it again for
- * real, because the clock on a phone is whatever its owner sets it to.
- */
-export const CANCEL_WINDOW_MS = 2 * 60 * 1000;
-
-/** Milliseconds left on the cancel window, or 0 once it has closed. */
-export function cancelWindowLeft(order: Pick<Order, '$createdAt'>, now: number = Date.now()): number {
-  const placed = Date.parse(order.$createdAt);
-  if (!Number.isFinite(placed)) return 0;
-  return Math.max(0, CANCEL_WINDOW_MS - (now - placed));
-}
-
-/**
  * Ask for an order to be called back.
  *
  * A request, not an instruction. A guest cannot write to their own order, 
@@ -602,12 +477,24 @@ export async function requestCancellation(order: Pick<Order, '$id' | 'venue_id'>
   return row.$id;
 }
 
-/** Live orders for a venue, newest first. */
-export async function loadOpenOrders(venueId: string): Promise<Order[]> {
+/**
+ * Live orders for one side of the business, newest first.
+ *
+ * The module filter is not cosmetic. This feeds the kitchen display, and a
+ * counter sale sits at PENDING between being rung up and being paid, so without
+ * it every woven basket flashed onto the pass as a ticket to cook. Worse, a
+ * customer who walked away mid-payment left one there permanently,
+ * unacknowledged, ringing an alarm at a kitchen with nothing to cook.
+ *
+ * Defaults to the kitchen because that is what every caller meant before the
+ * shop existed, and a default that changes behaviour silently is worse than a
+ * default that keeps it.
+ */
+export async function loadOpenOrders(venueId: string, module: Module = 'kitchen'): Promise<Order[]> {
   const rows = await listAll<Order>('orders', [Query.equal('venue_id', venueId)]);
   const live: OrderStatus[] = ['PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED'];
   return rows
-    .filter((o) => live.includes(o.status))
+    .filter((o) => live.includes(o.status) && (o.module ?? 'kitchen') === module)
     .sort((a, b) => a.$createdAt.localeCompare(b.$createdAt));
 }
 

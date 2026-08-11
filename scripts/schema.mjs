@@ -259,6 +259,16 @@ export const COLLECTIONS = [
        */
       ['expense_paid_from', 'e', ['cash_only', 'any'], false, 'cash_only'],
       /**
+       * What a craft sale's number starts with.
+       *
+       * Its own sequence, separate from the kitchen's. One shared run of
+       * numbers meant a shop receipt and a restaurant receipt could look alike
+       * and sort together, and the two sides keep separate books everywhere
+       * else. Blank falls back to the kitchen's prefix, which is what a
+       * business running only one side wants.
+       */
+      ['craft_order_prefix', 's', 10, false, 'S'],
+      /**
        * What kind of business this is.
        *
        * One codebase, two trades. A restaurant and a consignment craft shop
@@ -732,6 +742,7 @@ export const COLLECTIONS = [
       ['order_no', 'key', ['order_no']],
       ['shift_status', 'key', ['shift_id', 'status']],
       ['status_created', 'key', ['status', '$createdAt']],
+      ['module_status', 'key', ['module', 'status']],
       ['session', 'key', ['session_id']],
       ['table', 'key', ['table_id']],
       ['fulfilment_status', 'key', ['venue_id', 'fulfilment', 'status']],
@@ -1387,6 +1398,7 @@ export const COLLECTIONS = [
     indexes: [
       ['order', 'key', ['order_id']],
       ['status_created', 'key', ['status', '$createdAt']],
+      ['module_status', 'key', ['module', 'status']],
       ['email', 'key', ['to_email']],
     ],
   },
@@ -1990,7 +2002,10 @@ export const COLLECTIONS = [
      */
     id: 'product_variants',
     name: 'Product variants',
-    perms: { read: ['any'], create: MGMT, update: ALL_STAFF, delete: MGMT },
+    // Update is management, not all staff. A variant carries a price, and a
+    // price anybody can change is a price customers get charged wrongly. It
+    // matches the restriction on the catalogue itself.
+    perms: { read: ['any'], create: MGMT, update: MGMT, delete: MGMT },
     attributes: [
       ['venue_id', 's', 64, false],
       ['menu_item_id', 's', 64, true],

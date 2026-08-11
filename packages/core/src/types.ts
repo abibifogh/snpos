@@ -52,6 +52,8 @@ export interface Settings extends Doc {
   self_order_enabled?: boolean;
   /** What the shop keeps by default, in basis points. */
   default_commission_bp?: number;
+  /** What a craft sale's number starts with. Blank uses the kitchen's. */
+  craft_order_prefix?: string;
   cash_variance_tolerance: number;
   terminal_idle_lock_seconds: number;
   default_locale?: string;

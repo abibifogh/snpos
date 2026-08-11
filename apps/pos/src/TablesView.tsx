@@ -20,7 +20,8 @@ export function TablesView({ ctx, onOpen }: { ctx: PosContext; onOpen: (t: Table
     (async () => {
       const [t, o] = await Promise.all([
         listAll<TableRow>('tables', [Query.equal('venue_id', ctx.venue.$id)]),
-        listAll<Order>('orders', [Query.equal('venue_id', ctx.venue.$id), Query.equal('payment_status', 'unpaid')]),
+        listAll<Order>('orders', [Query.equal('venue_id', ctx.venue.$id), Query.equal('payment_status', 'unpaid')])
+          .then((rows) => rows.filter((o) => (o.module ?? 'kitchen') === 'kitchen')),
       ]);
       setTables(t.filter((x) => x.active).sort((a, b) => a.sort - b.sort));
       setOrders(o.filter((x) => !['REJECTED', 'CANCELLED', 'CLOSED'].includes(x.status)));

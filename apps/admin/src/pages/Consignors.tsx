@@ -338,7 +338,7 @@ function StatementModal({
     ledgerFor(consignor.$id).then(setEntries).catch((e) => setError(humanError(e)));
   }, [consignor.$id]);
 
-  const statement: Statement | null = useMemo(() => {
+  const statement: Statement<Consignor> | null = useMemo(() => {
     if (!entries) return null;
     return buildStatement(consignor, entries, new Date(from), new Date(to));
   }, [entries, consignor, from, to]);

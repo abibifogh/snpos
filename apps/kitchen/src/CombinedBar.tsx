@@ -754,7 +754,9 @@ export function SettleModal({
     (async () => {
       const [m, s, out] = await Promise.all([
         loadPaymentMethods(venueId),
-        loadOpenShift(venueId),
+        // Named rather than defaulted. An implicit side is exactly what broke
+        // the craft shift, and this screen is the kitchen.
+        loadOpenShift(venueId, 'kitchen'),
         amountOutstanding(order),
       ]);
       setMethods(m);

@@ -35,9 +35,15 @@ export interface TableRow extends Doc {
  * is written around a table and rewriting it for the sake of one field would be
  * two versions of the till drifting apart. So the counter is a table with no
  * seats, exactly as takeaway already was.
+ *
+ * Its own id, not "takeaway". Sharing one with the restaurant meant a craft
+ * till and a takeaway counter were the same place as far as every query was
+ * concerned, so unpaid orders from one would surface on the other's bill.
  */
+export const COUNTER_TABLE_ID = 'shop-counter';
+
 const COUNTER: TableRow = {
-  $id: 'takeaway',
+  $id: COUNTER_TABLE_ID,
   $createdAt: '',
   $updatedAt: '',
   venue_id: '',

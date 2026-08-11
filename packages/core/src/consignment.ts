@@ -1,6 +1,22 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
+import { rateFor, splitSale } from './consignment-math';
+import type { LedgerKind } from './consignment-math';
 import type { Doc, Settings } from './types';
 import type { Order, OrderItem } from './orders';
+
+/**
+ * The arithmetic lives next door, in a file that imports nothing.
+ *
+ * Re-exported here so every existing caller keeps working and nobody has to
+ * know which of the two files a function came from. The split exists so the
+ * money logic can be tested without a database, not to make callers choose.
+ */
+export {
+  rateFor, splitSale, balanceOf, buildStatement, labelForKind, onHandFor,
+} from './consignment-math';
+export type {
+  Split, Statement, StatementLine, LedgerKind, LedgerLike,
+} from './consignment-math';
 
 /**
  * The craft-shop side: goods that belong to somebody else.
@@ -80,8 +96,6 @@ export interface ProductMove extends Doc {
   created_by?: string;
 }
 
-export type LedgerKind = 'sale' | 'refund' | 'payout' | 'adjustment' | 'fee';
-
 export interface LedgerEntry extends Doc {
   venue_id?: string;
   consignor_id: string;
@@ -117,70 +131,6 @@ export interface ConsignorPayout extends Doc {
   reversed_reason?: string;
   paid_by?: string;
 }
-
-/* ------------------------------------------------------------------ the split */
-
-/**
- * Which commission rate applies to one sale.
- *
- * Three places can set it, most specific first: the piece, the consignor, then
- * the shop's default. The order matters, a shop negotiates a lower rate on a
- * large commissioned work without wanting that to become everybody's rate, and
- * getting it backwards would silently pay the wrong people the wrong amount for
- * as long as nobody checked.
- */
-export function rateFor(
-  item: { commission_bp?: number | null },
-  consignor: { commission_bp?: number | null } | null | undefined,
-  settings?: Pick<Settings, 'default_commission_bp'>,
-): number {
-  const candidates = [item?.commission_bp, consignor?.commission_bp, settings?.default_commission_bp];
-  for (const bp of candidates) {
-    if (typeof bp === 'number' && bp >= 0) return bp;
-  }
-  return 3000;
-}
-
-export interface Split {
-  /** What the customer paid for this line. */
-  gross: number;
-  /** What the shop keeps. */
-  commission: number;
-  /** What the consignor is owed. */
-  consignor: number;
-  /** The rate used, so it can be written down beside the numbers. */
-  bp: number;
-}
-
-/**
- * Divide one sale between the shop and the maker.
- *
- * The commission is rounded and the consignor gets the remainder, rather than
- * both being rounded independently. Two roundings of the same amount do not
- * have to add back up to it, and a shop that keeps one pesewa more than it
- * should on every sale of an odd-priced item will eventually be asked about it
- * by somebody with a calculator. Whatever is left after the shop's share is the
- * maker's share, by construction.
- *
- * A discount reduces what the customer paid, so it reduces both sides in
- * proportion; the shop does not fund a sale out of somebody else's work, and
- * it does not pass the whole cost of its own promotion to them either. Pass the
- * line's actual money, after discount.
- */
-export function splitSale(gross: number, commissionBp: number): Split {
-  const bp = Math.max(0, Math.min(10000, Math.round(commissionBp)));
-  const commission = Math.round((gross * bp) / 10000);
-  return { gross, commission, consignor: gross - commission, bp };
-}
-
-/**
- * What a set of ledger entries comes to.
- *
- * Summed rather than read from anywhere, everywhere, always. See the note at
- * the top of this file: the balance is a conclusion, not a stored fact.
- */
-export const balanceOf = (entries: Pick<LedgerEntry, 'amount'>[]): number =>
-  entries.reduce((sum, e) => sum + e.amount, 0);
 
 /* -------------------------------------------------------------- the recording */
 
@@ -319,105 +269,6 @@ export async function recordPayout(opts: {
   return payout;
 }
 
-/* ---------------------------------------------------------------- statements */
-
-export interface StatementLine {
-  at: string;
-  kind: LedgerKind;
-  description: string;
-  qty: number;
-  gross: number;
-  commission: number;
-  /** What this line did to the balance. */
-  amount: number;
-}
-
-export interface Statement {
-  consignor: Consignor;
-  from: string;
-  to: string;
-  /** What was owed before the first line of this statement. */
-  openingBalance: number;
-  lines: StatementLine[];
-  soldCount: number;
-  grossSales: number;
-  commissionKept: number;
-  earned: number;
-  paidOut: number;
-  adjustments: number;
-  /** What is owed at the end of the period. */
-  closingBalance: number;
-}
-
-/**
- * A consignor's statement for a period.
- *
- * Built from the ledger and nothing else, which is what lets it be checked. The
- * opening balance is every entry before the window, so the statement adds up on
- * its own, a period statement whose figures only reconcile against a different
- * document is a statement that starts an argument rather than settling one.
- *
- * Dates are inclusive at both ends: somebody asking for March means March, and
- * losing the 31st to an off-by-one is the kind of error that is only noticed by
- * the person it costs.
- */
-export function buildStatement(
-  consignor: Consignor,
-  entries: LedgerEntry[],
-  from: Date,
-  to: Date,
-): Statement {
-  const start = from.toISOString();
-  // To the last instant of the closing day, so entries on it are included.
-  const endOfDay = new Date(to);
-  endOfDay.setHours(23, 59, 59, 999);
-  const end = endOfDay.toISOString();
-
-  const before = entries.filter((e) => e.entry_at < start);
-  const within = entries
-    .filter((e) => e.entry_at >= start && e.entry_at <= end)
-    .sort((a, b) => a.entry_at.localeCompare(b.entry_at));
-
-  const openingBalance = balanceOf(before);
-
-  const lines: StatementLine[] = within.map((e) => ({
-    at: e.entry_at,
-    kind: e.kind,
-    description: e.description || labelForKind(e.kind),
-    qty: e.qty ?? 0,
-    gross: e.gross ?? 0,
-    commission: e.commission ?? 0,
-    amount: e.amount,
-  }));
-
-  const sales = within.filter((e) => e.kind === 'sale');
-  const refunds = within.filter((e) => e.kind === 'refund');
-
-  return {
-    consignor,
-    from: start,
-    to: end,
-    openingBalance,
-    lines,
-    soldCount: sales.reduce((n, e) => n + (e.qty ?? 1), 0),
-    grossSales: sales.reduce((n, e) => n + (e.gross ?? 0), 0) + refunds.reduce((n, e) => n + (e.gross ?? 0), 0),
-    commissionKept:
-      sales.reduce((n, e) => n + (e.commission ?? 0), 0) + refunds.reduce((n, e) => n + (e.commission ?? 0), 0),
-    earned: [...sales, ...refunds].reduce((n, e) => n + e.amount, 0),
-    // Stored negative; reported as the positive amount that was handed over.
-    paidOut: -within.filter((e) => e.kind === 'payout').reduce((n, e) => n + e.amount, 0),
-    adjustments: within.filter((e) => e.kind === 'adjustment' || e.kind === 'fee').reduce((n, e) => n + e.amount, 0),
-    closingBalance: openingBalance + balanceOf(within),
-  };
-}
-
-const labelForKind = (kind: LedgerKind) =>
-  kind === 'sale' ? 'Sale'
-    : kind === 'refund' ? 'Refund'
-      : kind === 'payout' ? 'Payment to you'
-        : kind === 'fee' ? 'Fee'
-          : 'Adjustment';
-
 /* ------------------------------------------------------------------ loading */
 
 export const loadConsignors = (activeOnly = false) =>
@@ -546,17 +397,3 @@ export async function moveStock(opts: {
     });
   }
 }
-
-/**
- * How much of a product is on the shelf.
- *
- * With variants the count lives on each one and the product's own figure means
- * nothing; one place to ask, so a screen cannot pick the wrong one.
- */
-export const onHandFor = (
-  item: { on_hand?: number },
-  variants: Pick<ProductVariant, 'on_hand' | 'active'>[] = [],
-): number =>
-  variants.length
-    ? variants.filter((v) => v.active).reduce((n, v) => n + (v.on_hand ?? 0), 0)
-    : item.on_hand ?? 0;

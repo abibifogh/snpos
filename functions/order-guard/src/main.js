@@ -1,4 +1,5 @@
 import { Client, Databases, Query } from 'node-appwrite';
+import { totalsFor, rateFor, splitSale, queueMinutes, quotedWait } from './money.js';
 
 /**
  * Re-prices every new order against the database.
@@ -16,24 +17,6 @@ import { Client, Databases, Query } from 'node-appwrite';
  *
  * Triggered on order creation, and on a discount redemption being recorded.
  */
-
-/**
- * Service, tax and the total, from a subtotal and a discount.
- *
- * One copy, used by the re-pricing on a new order and by the re-pricing after
- * a voucher is refused. Two copies of tax arithmetic is two answers to the
- * same question, and the one that is wrong is always the one nobody looks at.
- */
-function totalsFor(subtotal, discount, settings) {
-  const discounted = subtotal - discount;
-  const service = Math.round((discounted * (settings.service_charge_bp || 0)) / 10000);
-  const taxable = discounted + service;
-  const rate = settings.tax_rate_bp || 0;
-  const tax = settings.tax_inclusive
-    ? Math.round(taxable - (taxable * 10000) / (10000 + rate))
-    : Math.round((taxable * rate) / 10000);
-  return { service, tax, total: settings.tax_inclusive ? taxable : taxable + tax };
-}
 
 /**
  * Put an order back to what it should cost.
@@ -443,7 +426,12 @@ export default async ({ req, res, log, error }) => {
     // Two copies because a browser bundle and a function bundle cannot share
     // one; if you change the numbering, change it in both.
     if ((order.order_no || '').startsWith('~')) {
-      const prefix = settings.order_number_prefix || '';
+      // Each side counts on its own, so a shop receipt and a restaurant
+      // receipt can never wear the same number.
+      const side = order.module === 'craft' ? 'craft' : 'kitchen';
+      const prefix = side === 'craft'
+        ? (settings.craft_order_prefix ?? 'S') || (settings.order_number_prefix || '')
+        : settings.order_number_prefix || '';
       const padding = Math.max(1, settings.order_number_padding || 4);
       // A window rather than just the last order. Several placeholders can be
       // in flight at once on a busy night, and the newest row is quite likely
@@ -457,7 +445,7 @@ export default async ({ req, res, log, error }) => {
       const queries = [
         Query.equal('venue_id', order.venue_id),
         Query.orderDesc('$createdAt'),
-        Query.limit(50),
+        Query.limit(80),
       ];
       if (settings.order_number_mode === 'daily') {
         const midnight = new Date();
@@ -470,7 +458,9 @@ export default async ({ req, res, log, error }) => {
       // Placeholders are not numbers; counting one as the last order would
       // send the next guest back to the start.
       const previous = latest.documents.filter(
-        (d) => d.$id !== order.$id && !(d.order_no || '').startsWith('~'),
+        (d) => d.$id !== order.$id
+          && !(d.order_no || '').startsWith('~')
+          && (d.module === 'craft' ? 'craft' : 'kitchen') === side,
       );
       const last = previous[0]?.order_no || '';
       const digits = (prefix && last.startsWith(prefix) ? last.slice(prefix.length) : last).replace(/\D/g, '');

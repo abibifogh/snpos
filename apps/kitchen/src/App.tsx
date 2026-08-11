@@ -132,7 +132,8 @@ export function App() {
         const [open, booked] = await Promise.all([
           loadWithFallback(`open:${v.$id}`, () => loadOpenOrders(v.$id)),
           loadWithFallback(`booked:${v.$id}`, () =>
-            listAll<Order>('orders', [Query.equal('venue_id', v.$id), Query.equal('status', 'SCHEDULED')]),
+            listAll<Order>('orders', [Query.equal('venue_id', v.$id), Query.equal('status', 'SCHEDULED')])
+              .then((rows) => rows.filter((o) => (o.module ?? 'kitchen') === 'kitchen')),
           ),
         ]);
         setOrders([...open, ...booked]);
@@ -178,11 +179,15 @@ export function App() {
     const off = subscribeCollection<Order>('orders', (order, events) => {
       if (order.venue_id !== venue.$id) return;
       setOrders((prev) => {
-        const live = ['SCHEDULED', 'PENDING', 'ACCEPTED', 'PREPARING', 'READY'].includes(order.status);
+        // A craft counter sale is somebody else's business. Checked here as
+        // well as in the initial load, because realtime bypasses that entirely.
+        const mine = (order.module ?? 'kitchen') === 'kitchen';
+        const live = mine && ['SCHEDULED', 'PENDING', 'ACCEPTED', 'PREPARING', 'READY'].includes(order.status);
         const without = prev.filter((o) => o.$id !== order.$id);
         return live ? [...without, order].sort((a, b) => a.$createdAt.localeCompare(b.$createdAt)) : without;
       });
-      if (isCreate(events) && ['PENDING', 'SCHEDULED'].includes(order.status)) void loadItemsFor([order.$id]);
+      if (isCreate(events) && (order.module ?? 'kitchen') === 'kitchen'
+          && ['PENDING', 'SCHEDULED'].includes(order.status)) void loadItemsFor([order.$id]);
     });
     return off;
   }, [venue, loadItemsFor]);
@@ -211,7 +216,8 @@ export function App() {
       try {
         const [open, booked] = await Promise.all([
           loadOpenOrders(venue.$id),
-          listAll<Order>('orders', [Query.equal('venue_id', venue.$id), Query.equal('status', 'SCHEDULED')]),
+          listAll<Order>('orders', [Query.equal('venue_id', venue.$id), Query.equal('status', 'SCHEDULED')])
+            .then((rows) => rows.filter((o) => (o.module ?? 'kitchen') === 'kitchen')),
         ]);
         if (!alive) return;
         const fresh = [...open, ...booked];

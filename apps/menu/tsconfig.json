@@ -34,5 +34,8 @@
     "vite.config.ts",
     "../../packages/core/src",
     "../../packages/ui/src"
+  ],
+  "exclude": [
+    "../../packages/core/src/__tests__"
   ]
 }

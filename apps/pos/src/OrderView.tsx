@@ -6,6 +6,7 @@ import {
   variantPriceRange,
 } from '@snpos/core';
 import type { CartLine, Order, OrderItem, Doc, MenuEntry, Settings } from '@snpos/core';
+import { COUNTER_TABLE_ID } from './App';
 import type { PosContext, TableRow } from './App';
 
 /**
@@ -30,7 +31,9 @@ export function OrderView({
   onBack: () => void;
   onToast: (m: string, tone?: 'ok' | 'err') => void;
 }) {
-  const isTakeaway = table.$id === 'takeaway';
+  // Neither is tied to a seat, and both create counter-channel orders. They are
+  // still different places: see COUNTER_TABLE_ID.
+  const isTakeaway = table.$id === 'takeaway' || table.$id === COUNTER_TABLE_ID;
 
   const [cart, setCart] = useState<CartLine[]>([]);
   const [existing, setExisting] = useState<Order[]>([]);
@@ -76,12 +79,27 @@ export function OrderView({
       ]);
       setMethods(m.filter((x) => x.enabled));
 
-      if (!isTakeaway) {
+      /**
+       * What is still owed here.
+       *
+       * The craft counter needs this as much as a table does, and used to be
+       * skipped along with takeaway: a counter sale whose payment failed could
+       * never be seen or settled again from the till it was rung up on. The
+       * money was owed and no screen in the shop would take it.
+       *
+       * Restaurant takeaway keeps its old behaviour, where each order is
+       * started fresh from the takeaway list.
+       */
+      if (!isTakeaway || ctx.module === 'craft') {
         const orders = await listAll<Order>('orders', [
           Query.equal('venue_id', ctx.venue.$id),
           Query.equal('table_id', table.$id),
         ]);
-        const live = orders.filter((o) => o.payment_status !== 'paid' && !['REJECTED', 'CANCELLED'].includes(o.status));
+        const live = orders.filter(
+          (o) => o.payment_status !== 'paid'
+            && !['REJECTED', 'CANCELLED'].includes(o.status)
+            && (o.module ?? 'kitchen') === ctx.module,
+        );
         setExisting(live);
         if (live.length) {
           const rows = await listAll<OrderItem>('order_items', [Query.equal('order_id', live.map((o) => o.$id))]);

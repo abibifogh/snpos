@@ -1,4 +1,11 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
+
+/**
+ * Reading handovers back is arithmetic, so it lives next door in a file that
+ * imports nothing and can be tested. Re-exported so callers need not care.
+ */
+export { byStaff, totalHandedOver } from './handover-math';
+export type { StaffCashLine, HandoverLike } from './handover-math';
 import type { Doc, StaffProfile } from './types';
 
 /**
@@ -107,42 +114,3 @@ export const handoversForStaff = (staffId: string) =>
   listAll<CashHandover>('cash_handovers', [Query.equal('staff_id', staffId)]).then((rows) =>
     rows.sort((a, b) => b.handed_at.localeCompare(a.handed_at)),
   );
-
-export interface StaffCashLine {
-  staffId: string;
-  name: string;
-  handedOver: number;
-  entries: CashHandover[];
-}
-
-/**
- * What each person handed over, one line each.
- *
- * Corrected rows are kept in `entries` but left out of the total. Somebody
- * reading this wants one number per person; somebody querying that number wants
- * to see everything, including the entry that was wrong and the one that put it
- * right. Both are here rather than in two different screens.
- */
-export function byStaff(rows: CashHandover[]): StaffCashLine[] {
-  const lines = new Map<string, StaffCashLine>();
-
-  for (const r of rows) {
-    const line = lines.get(r.staff_id) ?? {
-      staffId: r.staff_id,
-      name: r.staff_name || 'Unknown',
-      handedOver: 0,
-      entries: [],
-    };
-    line.entries.push(r);
-    if (r.status !== 'corrected') line.handedOver += r.amount;
-    // A later row carries the more current spelling of somebody's name.
-    if (r.staff_name) line.name = r.staff_name;
-    lines.set(r.staff_id, line);
-  }
-
-  return [...lines.values()].sort((a, b) => b.handedOver - a.handedOver || a.name.localeCompare(b.name));
-}
-
-/** Everything handed over on a shift, ignoring corrected entries. */
-export const totalHandedOver = (rows: CashHandover[]): number =>
-  rows.filter((r) => r.status !== 'corrected').reduce((sum, r) => sum + r.amount, 0);

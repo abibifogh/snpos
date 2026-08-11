@@ -49,6 +49,16 @@ jobs:
       - name: Typecheck every app
         run: npm run typecheck
 
+      - name: Typecheck the tests
+        run: npm run typecheck:tests
+
+      # The logic suite. Runs before the build on purpose: a wrong commission
+      # split should stop a release as surely as a syntax error does, and this
+      # is also where the browser and the server copies of the money arithmetic
+      # are checked against each other.
+      - name: Run the logic tests
+        run: npm test
+
       - name: Build every app
         run: npm run build
         env:

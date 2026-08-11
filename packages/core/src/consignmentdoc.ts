@@ -1,5 +1,6 @@
 import type { Settings } from './types';
-import type { Consignor, ConsignmentIntake, Statement } from './consignment';
+import type { Consignor, ConsignmentIntake } from './consignment';
+import type { Statement } from './consignment-math';
 import { formatMoney } from './money';
 
 /**
@@ -187,7 +188,7 @@ ${intake.notes ? `<p class="note">${esc(intake.notes)}</p>` : ''}
  * rather than settling one.
  */
 export function buildStatementHtml(d: {
-  statement: Statement;
+  statement: Statement<Consignor>;
   settings: Settings;
   /** What is owed today, when that differs from the period's closing figure. */
   owedNow?: number;
