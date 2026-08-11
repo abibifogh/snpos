@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **66 collections, 890 fields and 222 indexes**. Entered by hand at a
+> This is **67 collections, 905 fields and 226 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -127,7 +127,7 @@ Attributes are created asynchronously. If an index refuses to save with
 "attribute not available", wait ten seconds and try again — the attribute is
 still being built.
 
-There are 66 collections. A progress checklist is at the end of this document.
+There are 67 collections. A progress checklist is at the end of this document.
 
 ---
 
@@ -2101,7 +2101,42 @@ There are 66 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 61. `consignors` — Consignors
+### 61. `cash_handovers` — Cash handovers
+
+**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
+
+**Attributes** (15)
+
+| Key | Type | Size / Enum values | Required | Default | Array |
+| --- | --- | --- | --- | --- | --- |
+| `org_id` | String | size 64 | No | — | No |
+| `venue_id` | String | size 64 | No | — | No |
+| `shift_id` | String | size 64 | No | — | No |
+| `staff_id` | String | size 64 | **Yes** | — | No |
+| `staff_name` | String | size 120 | No | — | No |
+| `amount` | Integer | — | **Yes** | — | No |
+| `method_id` | String | size 64 | No | — | No |
+| `method_name` | String | size 60 | No | — | No |
+| `destination` | Enum | manager, safe, next_shift, bank, owner, other | **Yes** | — | No |
+| `received_by` | String | size 64 | No | — | No |
+| `received_by_name` | String | size 120 | No | — | No |
+| `note` | String | size 300 | No | — | No |
+| `handed_at` | Datetime | — | **Yes** | — | No |
+| `corrects_id` | String | size 64 | No | — | No |
+| `status` | Enum | recorded, corrected | **Yes** | — | No |
+
+**Indexes** (4)
+
+| Index key | Type | Attributes (in this order) |
+| --- | --- | --- |
+| `shift_staff` | key | `shift_id`, `staff_id` |
+| `staff_handed` | key | `staff_id`, `handed_at` |
+| `handed` | key | `handed_at` |
+| `org` | key | `org_id` |
+
+---
+
+### 62. `consignors` — Consignors
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
@@ -2134,7 +2169,7 @@ There are 66 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 62. `consignment_intakes` — Consignment intakes
+### 63. `consignment_intakes` — Consignment intakes
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
@@ -2163,7 +2198,7 @@ There are 66 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 63. `product_variants` — Product variants
+### 64. `product_variants` — Product variants
 
 **Read**: Any · **Create**: Team: managers, Team: admins · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: Team: managers, Team: admins
 
@@ -2194,7 +2229,7 @@ There are 66 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 64. `product_moves` — Product movements
+### 65. `product_moves` — Product movements
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: _none — server only_ · **Delete**: Team: admins
 
@@ -2228,7 +2263,7 @@ There are 66 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 65. `consignor_ledger` — Consignor ledger
+### 66. `consignor_ledger` — Consignor ledger
 
 **Read**: Team: managers, Team: admins · **Create**: _none — server only_ · **Update**: _none — server only_ · **Delete**: _none — server only_
 
@@ -2266,7 +2301,7 @@ There are 66 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 66. `consignor_payouts` — Consignor payouts
+### 67. `consignor_payouts` — Consignor payouts
 
 **Read**: Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
@@ -2530,12 +2565,13 @@ way mistakes creep in.
 - [ ] 58. `price_rules` (17 fields, 2 indexes)
 - [ ] 59. `discounts` (29 fields, 4 indexes)
 - [ ] 60. `discount_redemptions` (13 fields, 5 indexes)
-- [ ] 61. `consignors` (14 fields, 3 indexes)
-- [ ] 62. `consignment_intakes` (10 fields, 3 indexes)
-- [ ] 63. `product_variants` (11 fields, 4 indexes)
-- [ ] 64. `product_moves` (13 fields, 5 indexes)
-- [ ] 65. `consignor_ledger` (17 fields, 5 indexes)
-- [ ] 66. `consignor_payouts` (14 fields, 3 indexes)
+- [ ] 61. `cash_handovers` (15 fields, 4 indexes)
+- [ ] 62. `consignors` (14 fields, 3 indexes)
+- [ ] 63. `consignment_intakes` (10 fields, 3 indexes)
+- [ ] 64. `product_variants` (11 fields, 4 indexes)
+- [ ] 65. `product_moves` (13 fields, 5 indexes)
+- [ ] 66. `consignor_ledger` (17 fields, 5 indexes)
+- [ ] 67. `consignor_payouts` (14 fields, 3 indexes)
 
 **Stage 6 — seed documents**
 
@@ -2556,7 +2592,7 @@ way mistakes creep in.
 
 Sanity-check before building on top of it:
 
-1. The `snpos` database lists **66 collections**.
+1. The `snpos` database lists **67 collections**.
 2. `settings/main` exists and `shift_float_policy` reads `zero`.
 3. `venues/main` exists and is active.
 4. `feature_flags` holds **19 rows**, each with a blank `venue_id`.

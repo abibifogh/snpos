@@ -1818,6 +1818,58 @@ export const COLLECTIONS = [
     ],
   },
 
+  {
+    /**
+     * What a member of staff handed over at the end of their time on the till.
+     *
+     * A shift is not a person. Three people can work one shift, take money in
+     * turn out of the same drawer, and leave at different times — and the shift
+     * close, which happens once, cannot say who left what. So the answer to
+     * "what did Ama end with?" was nowhere in the system, and the only record
+     * was whatever the manager wrote on a pad.
+     *
+     * This is that record. Written by the person handing over, naming who took
+     * it, so both halves of the exchange are on file rather than one.
+     *
+     * Staff can create but never edit or delete: a handover somebody can
+     * quietly revise afterwards is not evidence of anything. A wrong one is
+     * corrected by a second entry, which leaves both on the record — which is
+     * the point.
+     */
+    id: 'cash_handovers',
+    name: 'Cash handovers',
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['shift_id', 's', 64, false],
+      ['staff_id', 's', 64, true], // whose money this was
+      ['staff_name', 's', 120, false], // snapshotted, so a leaver still reads
+      ['amount', 'i', null, true],
+      ['method_id', 's', 64, false], // which drawer or wallet it came from
+      ['method_name', 's', 60, false],
+      [
+        'destination',
+        'e',
+        ['manager', 'safe', 'next_shift', 'bank', 'owner', 'other'],
+        true,
+        'manager',
+      ],
+      ['received_by', 's', 64, false], // the staff profile who took it
+      ['received_by_name', 's', 120, false],
+      ['note', 's', 300, false],
+      ['handed_at', 'd', null, true],
+      // A correction points at what it corrects, so the pair can be read
+      // together rather than looking like two handovers.
+      ['corrects_id', 's', 64, false],
+      ['status', 'e', ['recorded', 'corrected'], true, 'recorded'],
+    ],
+    indexes: [
+      ['shift_staff', 'key', ['shift_id', 'staff_id']],
+      ['staff_handed', 'key', ['staff_id', 'handed_at']],
+      ['handed', 'key', ['handed_at']],
+    ],
+  },
+
   // ------------------------------------------------------------ consignment
   //
   // The craft-shop side of the system. A consignment shop does not own what it

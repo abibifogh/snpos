@@ -97,6 +97,45 @@ export function Card({ title, actions, children, pad = true }: { title?: ReactNo
   );
 }
 
+/**
+ * A card that folds.
+ *
+ * Built on <details> rather than on a state hook and a div. The browser already
+ * knows how to open and close one, it stays open when the page is printed, the
+ * heading is a real button for anybody using a keyboard or a screen reader, and
+ * find-in-page reaches inside a closed one in modern browsers. Every one of
+ * those is a thing a hand-rolled version silently loses.
+ *
+ * `summary` is what somebody reads while deciding whether to open it — the
+ * setting's current value, a count, whatever answers "is what I want in here?"
+ * without opening it. A row of headings that all look identical is a row
+ * somebody opens one at a time until they find the right one.
+ */
+export function FoldCard({
+  title, summary, open, children, actions,
+}: {
+  title: ReactNode;
+  summary?: ReactNode;
+  /** Open on first render. Leave off for anything most people never touch. */
+  open?: boolean;
+  children: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <details className="card fold" open={open}>
+      <summary className="card-head fold-head">
+        <span className="fold-title">
+          <span className="fold-caret" aria-hidden="true" />
+          <h2>{title}</h2>
+        </span>
+        {summary !== undefined && <span className="fold-summary">{summary}</span>}
+        {actions}
+      </summary>
+      <div className="card-pad">{children}</div>
+    </details>
+  );
+}
+
 export const Badge = ({ tone = 'default', children }: { tone?: 'default' | 'ok' | 'warn' | 'danger'; children: ReactNode }) => (
   <span className={`badge ${tone !== 'default' ? `badge-${tone}` : ''}`}>{children}</span>
 );

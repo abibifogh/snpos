@@ -451,3 +451,40 @@ table.data tbody tr:hover { background: var(--surface-2); }
 .dow-track { background: var(--surface-2); border-radius: 3px; height: 18px; overflow: hidden; }
 .dow-fill { height: 100%; background: var(--series-rev, #2a78d6); border-radius: 0 3px 3px 0; }
 .dow-row .num { font-variant-numeric: tabular-nums; font-size: 0.85rem; }
+
+/* ---- folding cards ----------------------------------------------------- */
+/* A <details> dressed as a card. The marker is replaced rather than hidden so
+   the caret can sit where the eye expects it — on the left of the heading,
+   pointing at what it opens. */
+.fold > summary { cursor: pointer; list-style: none; user-select: none; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold-head { display: flex; align-items: center; gap: 0.75rem; }
+.fold-title { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.fold-title h2 { margin: 0; }
+.fold-caret {
+  width: 0; height: 0; flex: none;
+  border-left: 6px solid currentColor;
+  border-top: 4.5px solid transparent;
+  border-bottom: 4.5px solid transparent;
+  opacity: 0.55;
+  transition: transform 0.15s ease;
+}
+.fold[open] > summary .fold-caret { transform: rotate(90deg); }
+/* What is inside, without opening it. Pushed to the right so a column of these
+   reads as a list of values rather than as a second column of headings. */
+.fold-summary {
+  margin-left: auto;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.fold > summary:hover .fold-caret { opacity: 1; }
+.fold > summary:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+
+/* Everything opens for printing. A statement or a settings page printed with
+   half its sections folded away is a page that lies about what it contains. */
+@media print {
+  .fold > div { display: block !important; }
+  .fold-caret { display: none; }
+}

@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { Button, Logo, THEME_MODES, themeMode, setThemeMode } from '@snpos/ui';
 import { sectionsFor, wordsFor } from '@snpos/core';
 import { useSession } from './session';
 
 export function Shell({ children }: { children: ReactNode }) {
   const { settings, profile, user, signOut } = useSession();
+  const path = useLocation().pathname;
 
   // The navigation is built from what this person may actually open, not from
   // a fixed list with some entries hidden. One source, so a link can never
@@ -33,16 +34,38 @@ export function Shell({ children }: { children: ReactNode }) {
           <span>{settings?.restaurant_name ?? 'NiceOps POS'}</span>
         </div>
         <nav>
-          {groups.map((section) => (
-            <div key={section.group}>
-              <div className="group">{section.group}</div>
-              {section.links.map((l) => (
-                <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => (isActive ? 'active' : '')}>
-                  {l.label}
-                </NavLink>
-              ))}
-            </div>
-          ))}
+          {groups.map((section) => {
+            /**
+             * Folded, except the one you are standing in.
+             *
+             * Two trades running side by side is around twenty links, and a
+             * column that long means scrolling past nine things you are not
+             * doing to reach the one you are. Closed by default keeps the whole
+             * shape of the app visible at once; the group holding the current
+             * page opens itself, so nothing is ever hidden from somebody who is
+             * already there.
+             *
+             * The browser remembers nothing here on purpose — this reopens from
+             * where you actually are on every load, which is more useful than
+             * restoring whatever was open last Tuesday.
+             */
+            const here = section.links.some((l) =>
+              l.end ? path === l.to : path === l.to || path.startsWith(`${l.to}/`),
+            );
+            return (
+              <details key={section.group} className="nav-group" open={here}>
+                <summary className="group">
+                  <span className="fold-caret" aria-hidden="true" />
+                  {section.group}
+                </summary>
+                {section.links.map((l) => (
+                  <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => (isActive ? 'active' : '')}>
+                    {l.label}
+                  </NavLink>
+                ))}
+              </details>
+            );
+          })}
         </nav>
         <div className="sidebar-foot">
           <NavLink to="/account" style={{ fontWeight: 600, display: 'block', padding: 0 }}>

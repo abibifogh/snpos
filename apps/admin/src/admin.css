@@ -74,3 +74,24 @@
 .variant-row input { min-width: 0; flex: 1 1 6rem; }
 .variant-row select { flex: 0 0 7rem; }
 .variant-row button { flex: none; }
+
+/* ---- folding sidebar groups -------------------------------------------- */
+/* The heading is the control. Made to look no different from the heading it
+   replaced — a sidebar that suddenly grows a row of buttons reads as busier
+   than the list it was meant to shorten. */
+.nav-group > summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.nav-group > summary::-webkit-details-marker { display: none; }
+.nav-group > summary:hover { color: var(--text); }
+.nav-group > summary:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 4px; }
+.nav-group > summary .fold-caret { transition: transform 0.15s ease; }
+.nav-group[open] > summary .fold-caret { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) {
+  .nav-group > summary .fold-caret { transition: none; }
+}

@@ -19,6 +19,7 @@ export * from './availability86';
 export * from './payments';
 export * from './auth';
 export * from './consignment';
+export * from './handover';
 export * from './expenses';
 export * from './access';
 export * from './receipt';

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Card, Empty, Notice, Spinner, Badge, Modal, Button } from '@snpos/ui';
 import { listAll, humanError } from '../lib';
-import { formatMoney } from '@snpos/core';
-import type { Doc } from '@snpos/core';
+import { formatMoney, byStaff, destinationLabel } from '@snpos/core';
+import type { Doc, CashHandover } from '@snpos/core';
 import { useSession } from '../session';
 
 interface Shift extends Doc {
@@ -39,19 +39,22 @@ export function ShiftsPage() {
   const [rows, setRows] = useState<Shift[] | null>(null);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [handovers, setHandovers] = useState<CashHandover[]>([]);
   const [detail, setDetail] = useState<Shift | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
-      const [s, m, e] = await Promise.all([
+      const [s, m, e, h] = await Promise.all([
         listAll<Shift>('shifts'),
         listAll<PaymentMethod>('payment_methods'),
         listAll<Expense>('shift_expenses'),
+        listAll<CashHandover>('cash_handovers').catch(() => [] as CashHandover[]),
       ]);
       setRows(s.sort((a, b) => b.opened_at.localeCompare(a.opened_at)));
       setMethods(m);
       setExpenses(e);
+      setHandovers(h);
     })().catch((err) => setError(humanError(err)));
   }, []);
 
@@ -175,6 +178,52 @@ export function ShiftsPage() {
               This shift is outside your tolerance of {settings ? formatMoney(tolerance, settings) : tolerance}. One
               bad count is a mistake; the same person repeatedly short is a pattern worth looking at.
             </Notice>
+          )}
+
+          {/* Who ended with what.
+              The reconciliation above is about the drawer; this is about
+              people. A shift is not a person — three can work one, take money
+              in turn and leave at different times — so "what did Ama end with?"
+              is a question the close cannot answer and this can. */}
+          <h3 style={{ marginTop: '1rem' }}>Cash handed over</h3>
+          {handovers.filter((h) => h.shift_id === detail.$id).length === 0 ? (
+            <p className="small dim">
+              Nobody recorded handing cash over on this shift. Staff record it themselves from the till, under
+              "Hand over cash".
+            </p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr><th>Who</th><th className="num">Handed over</th><th>To</th><th>When</th></tr>
+                </thead>
+                <tbody>
+                  {byStaff(handovers.filter((h) => h.shift_id === detail.$id)).map((line) => (
+                    <tr key={line.staffId}>
+                      <td>{line.name}</td>
+                      <td className="num" style={{ fontWeight: 650 }}>
+                        {settings ? formatMoney(line.handedOver, settings) : line.handedOver}
+                      </td>
+                      <td className="small dim">
+                        {/* Every trip, not just the total. Two trips to the
+                            safe and one trip of twice the size are different
+                            evenings, and only one of them is worth a question. */}
+                        {line.entries
+                          .filter((e) => e.status !== 'corrected')
+                          .map((e) => e.received_by_name || destinationLabel(e.destination))
+                          .join(', ')}
+                      </td>
+                      <td className="small dim">
+                        {line.entries
+                          .filter((e) => e.status !== 'corrected')
+                          .map((e) => new Date(e.handed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+                          .join(', ')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
 
           <h3 style={{ marginTop: '1rem' }}>Expenses in this shift</h3>

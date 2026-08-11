@@ -8,10 +8,12 @@ import {
   loadPaymentMethods, openShift, loadOpenShift, shiftBlockers, expectedTakings, closeShift, openingFloats,
   recordPayment, amountOutstanding, PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions,
   receiveStock, uploadFile, asksForTip, expenseMethods,
+  recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
 } from '@snpos/core';
 import type {
   PaymentMethod, Shift, Settings, Venue, StaffProfile, FeatureMap, Order,
   PaidToKind, Supplier, ExpenseCategoryDoc, Ingredient,
+  CashHandover, HandoverDestination,
 } from '@snpos/core';
 
 /**
@@ -41,6 +43,7 @@ export function CombinedBar({
   const [opening, setOpening] = useState(false);
   const [closing, setClosing] = useState(false);
   const [spending, setSpending] = useState(false);
+  const [handingOver, setHandingOver] = useState(false);
   const [history, setHistory] = useState(false);
   const [floats, setFloats] = useState<Record<string, string>>({});
   const [floatSource, setFloatSource] = useState('zero');
@@ -221,6 +224,11 @@ export function CombinedBar({
           <>
             <Button size="sm" onClick={() => setHistory(true)}>This shift</Button>
             <Button size="sm" onClick={() => { setSpending(true); setError(null); }}>Record spend</Button>
+            {/* Available whenever a shift is open, not only at the close.
+                People finish at different times and hand over as they leave;
+                a button that only appears at the end is a button that misses
+                everybody but the last person out. */}
+            <Button size="sm" onClick={() => { setHandingOver(true); setError(null); }}>Hand over cash</Button>
           </>
         )}
         {shift ? (
@@ -306,6 +314,17 @@ export function CombinedBar({
             tolerance={tolerance}
           />
         </Modal>
+      )}
+
+      {handingOver && (
+        <HandoverModal
+          venueId={venue.$id}
+          shiftId={shift?.$id}
+          settings={settings}
+          who={who}
+          onClose={() => setHandingOver(false)}
+          onDone={(m) => { setHandingOver(false); onToast(m); }}
+        />
       )}
 
       {spending && shift && (
@@ -838,6 +857,155 @@ export function SettleModal({
           <Input value={tipText} inputMode="decimal" onChange={(e) => setTipText(e.target.value)} />
         </Field>
       )}
+    </Modal>
+  );
+}
+
+
+/**
+ * Cash leaving one person's hands.
+ *
+ * Opened by whoever is handing over, on the screen they are already standing
+ * at, because the moment cash moves is the only moment anybody will write it
+ * down. A form somebody has to find later is a form that gets filled in from
+ * memory, or not at all.
+ *
+ * Both names are asked for. One name is a claim; two is a record, and the
+ * conversation this is meant to settle is always between two people.
+ */
+function HandoverModal({
+  venueId, shiftId, settings, who, onClose, onDone,
+}: {
+  venueId: string;
+  shiftId?: string;
+  settings: Settings;
+  who: StaffProfile | null;
+  onClose: () => void;
+  onDone: (message: string) => void;
+}) {
+  const decimals = settings.currency_decimals ?? 2;
+  const [staff, setStaff] = useState<StaffProfile[]>([]);
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [amountText, setAmountText] = useState('');
+  const [methodId, setMethodId] = useState('');
+  const [destination, setDestination] = useState<HandoverDestination>('manager');
+  const [receivedById, setReceivedById] = useState('');
+  const [note, setNote] = useState('');
+  const [mine, setMine] = useState<CashHandover[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const [opts, m] = await Promise.all([loadPaidToOptions(), loadPaymentMethods(venueId)]);
+      setStaff(opts.staff.filter((s) => s.active !== false));
+      const cash = m.filter((x) => x.kind === 'cash');
+      setMethods(cash.length ? cash : m);
+      setMethodId((cash[0] ?? m[0])?.$id ?? '');
+      if (shiftId) {
+        // What this person has already handed over on this shift. Shown so a
+        // second trip to the safe is obviously a second trip, rather than
+        // somebody wondering whether the first one saved.
+        const rows = await handoversForShift(shiftId).catch(() => [] as CashHandover[]);
+        setMine(rows.filter((r) => r.staff_id === (who?.$id ?? '')));
+      }
+    })().catch(() => undefined);
+  }, [venueId, shiftId, who?.$id]);
+
+  const save = async () => {
+    const amount = parseMoney(amountText, decimals);
+    if (amount === null || amount <= 0) { setError('Enter how much you are handing over.'); return; }
+    if (!who) { setError('This device does not know who you are. Sign in again.'); return; }
+    // "A manager" with no manager named is the entry nobody can follow up.
+    if ((destination === 'manager' || destination === 'owner') && !receivedById) {
+      setError('Say who is taking it.');
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      const method = methods.find((m) => m.$id === methodId);
+      const taker = staff.find((s) => s.$id === receivedById) ?? null;
+      await recordHandover({
+        venueId,
+        shiftId,
+        staff: who,
+        amount,
+        methodId,
+        methodName: method?.name,
+        destination,
+        receivedBy: taker,
+        note: note.trim(),
+      });
+      onDone(
+        `${formatMoney(amount, settings)} handed to ${taker?.display_name ?? destinationLabel(destination).toLowerCase()}`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not record that.');
+      setBusy(false);
+    }
+  };
+
+  const already = mine.filter((r) => r.status !== 'corrected').reduce((s, r) => s + r.amount, 0);
+
+  return (
+    <Modal
+      title="Hand over cash"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={save} loading={busy}>Record it</Button>
+        </>
+      }
+    >
+      <FormError message={error} />
+
+      <p className="small dim" style={{ marginTop: 0 }}>
+        This writes down that you handed the money over. It does not move anything and it does not close the
+        shift — it is so there is a record of what you finished with, in your name.
+      </p>
+
+      {already > 0 && (
+        <Notice tone="info">
+          You have already handed over {formatMoney(already, settings)} on this shift. This adds to that.
+        </Notice>
+      )}
+
+      <Field label={`How much (${settings.currency_symbol ?? ''})`}>
+        <Input value={amountText} inputMode="decimal" autoFocus onChange={(e) => setAmountText(e.target.value)} />
+      </Field>
+
+      {methods.length > 1 && (
+        <Field label="Out of">
+          <Select value={methodId} onChange={(e) => setMethodId(e.target.value)}>
+            {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
+          </Select>
+        </Field>
+      )}
+
+      <Field label="Where is it going?">
+        <Select value={destination} onChange={(e) => setDestination(e.target.value as HandoverDestination)}>
+          {HANDOVER_DESTINATIONS.map((d) => <option key={d.v} value={d.v}>{d.l}</option>)}
+        </Select>
+      </Field>
+
+      <Field
+        label="Who is taking it?"
+        hint="The person receiving it, so both sides of the handover are on the record."
+      >
+        <Select value={receivedById} onChange={(e) => setReceivedById(e.target.value)}>
+          <option value="">— nobody, it went to the safe —</option>
+          {staff.filter((s) => s.$id !== who?.$id).map((s) => (
+            <option key={s.$id} value={s.$id}>{s.display_name}</option>
+          ))}
+        </Select>
+      </Field>
+
+      <Field label="Anything to add">
+        <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+      </Field>
     </Modal>
   );
 }
