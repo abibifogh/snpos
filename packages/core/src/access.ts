@@ -115,11 +115,38 @@ export const DEFAULT_ACCESS: Record<string, string[]> = {
   cook: [],
 };
 
+/**
+ * Who may open what, from what was saved plus what has been added since.
+ *
+ * The saved value is a complete list per role, so the moment a new section
+ * exists it is missing from every list that was written before it, and the
+ * spread that merged them replaced the defaults wholesale. That is how the
+ * craft shop pages arrived invisible to every manager in a business that had
+ * ever opened this page and pressed Save: nothing was wrong with the
+ * permission, the permission had simply never been asked about.
+ *
+ * So a section nobody has an opinion about, one that appears in no role's
+ * saved list at all, falls back to its default. A section mentioned anywhere
+ * has been positioned deliberately and is left exactly as it was, including
+ * where it was deliberately taken away.
+ *
+ * The failure this trades against is a manager seeing one page they did not
+ * need. The one it replaces is a whole side of the business unreachable, with
+ * nothing on any screen to say why.
+ */
 export function parseAccess(settings: Settings | null): Record<string, string[]> {
   if (!settings?.role_access) return DEFAULT_ACCESS;
   try {
     const parsed = JSON.parse(settings.role_access) as Record<string, string[]>;
-    return { ...DEFAULT_ACCESS, ...parsed };
+    const mentioned = new Set(Object.values(parsed).flat());
+
+    const merged: Record<string, string[]> = {};
+    for (const role of Object.keys({ ...DEFAULT_ACCESS, ...parsed })) {
+      const saved = parsed[role] ?? DEFAULT_ACCESS[role] ?? [];
+      const unasked = (DEFAULT_ACCESS[role] ?? []).filter((key) => !mentioned.has(key));
+      merged[role] = [...new Set([...saved, ...unasked])];
+    }
+    return merged;
   } catch {
     return DEFAULT_ACCESS;
   }
@@ -133,9 +160,16 @@ export function parseAccess(settings: Settings | null): Record<string, string[]>
  * them, so it must not read as one, and an owner must not have to grant
  * themselves access to a page that simply does not apply.
  */
-export function inTrade(section: AdminSection, settings: Settings | null): boolean {
+export function inTrade(
+  section: AdminSection,
+  settings: Settings | null,
+  profile: StaffProfile | null = null,
+): boolean {
   if (!section.module) return true;
-  return modulesOf(settings)[section.module];
+  // What the business runs, narrowed by what this person works on. Somebody
+  // marked kitchen-only has no use for a consignor statement, and somebody
+  // marked as working both, which is the default, sees both.
+  return modulesForStaff(profile, settings)[section.module];
 }
 
 /**
@@ -148,7 +182,7 @@ export function inTrade(section: AdminSection, settings: Settings | null): boole
 export function canOpen(section: string, profile: StaffProfile | null, settings: Settings | null): boolean {
   if (!profile) return false;
   const meta = ADMIN_SECTIONS.find((s) => s.key === section);
-  if (meta && !inTrade(meta, settings)) return false;
+  if (meta && !inTrade(meta, settings, profile)) return false;
   if (profile.role === 'admin') return true;
   if (meta?.ownerOnly) return false;
   return (parseAccess(settings)[profile.role] ?? []).includes(section);

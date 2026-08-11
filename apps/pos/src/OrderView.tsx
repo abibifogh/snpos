@@ -166,7 +166,15 @@ export function OrderView({
       setDiscount(0);
       setDiscountLabel('');
       if (!isTakeaway) await db.updateDocument(DB_ID, 'tables', table.$id, { status: 'ordered' }).catch(() => undefined);
-      onToast(`Order ${order.order_no} sent to the kitchen`);
+      if (ctx.module === 'craft') {
+        // Nothing is being sent anywhere. A shop sale is rung up and paid for
+        // in one movement at the counter, so the till goes straight to taking
+        // the money rather than announcing a kitchen that does not exist.
+        onToast(`${order.order_no} rung up`);
+        setPaying(true);
+      } else {
+        onToast(`Order ${order.order_no} sent to the kitchen`);
+      }
     } catch (e) {
       onToast(e instanceof Error ? e.message : 'Could not send the order.', 'err');
     } finally {
@@ -242,7 +250,7 @@ export function OrderView({
           </p>
         </div>
 
-        <Card title="Bill" pad>
+        <Card title={ctx.module === 'craft' ? 'Sale' : 'Bill'} pad>
           <div className="bill">
             {existing.map((o) => (
               <div key={o.$id} style={{ marginBottom: '0.7rem' }}>
@@ -277,11 +285,16 @@ export function OrderView({
                   </div>
                 ))}
                 <div className="bill-total grand">
-                  <span>New items</span>
+                  <span>{ctx.module === 'craft' ? 'To pay' : 'New items'}</span>
                   <span>{formatMoney(newTotals.total, ctx.settings)}</span>
                 </div>
                 <Button variant="primary" onClick={send} loading={sending} style={{ width: '100%', marginTop: '0.7rem' }}>
-                  Send to kitchen
+                  {/* A shop has no kitchen to send anything to. The one thing
+                      that happens next at a counter is being charged, so the
+                      button says that and does it. */}
+                  {ctx.module === 'craft'
+                    ? `Take payment · ${formatMoney(newTotals.total, ctx.settings)}`
+                    : 'Send to kitchen'}
                 </Button>
               </>
             )}
