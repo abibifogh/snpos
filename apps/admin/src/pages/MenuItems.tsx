@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { formatMoney, parseMoney, toInput, previewUrl, Query, loadConsignors, loadVariants } from '@snpos/core';
+import {
+  formatMoney, parseMoney, toInput, previewUrl, Query, loadConsignors, loadVariants, canEditCatalogue,
+} from '@snpos/core';
 import type { Category, MenuItem, Ingredient, Recipe, Doc, Consignor } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
 import { ImageField } from '../components/ImageField';
@@ -32,7 +34,8 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
   const W = module === 'craft'
     ? { title: 'Products', one: 'product', many: 'products', first: 'Add your first piece, with its price.' }
     : { title: 'Dishes & drinks', one: 'dish', many: 'dishes', first: 'Add your first dish or drink, with its price.' };
-  const { settings } = useSession();
+  const { settings, profile } = useSession();
+  const mayEdit = canEditCatalogue(profile);
   const toast = useToast();
   const stations = useStations();
   const [items, setItems] = useState<MenuItem[] | null>(null);
@@ -50,6 +53,14 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
   const [filter, setFilter] = useState('');
   const [editing, setEditing] = useState<Partial<MenuItem> | null>(null);
   const [priceText, setPriceText] = useState('');
+  /**
+   * Kept as text, like every other number on a form here.
+   *
+   * Bound straight to a number, backspacing the last digit produced an empty
+   * string, Number('') came back as 0, and the box refilled itself with the
+   * zero somebody had just deleted. Nobody can type over that.
+   */
+  const [onHandText, setOnHandText] = useState('0');
   const [consignors, setConsignors] = useState<Consignor[]>([]);
   const [variants, setVariants] = useState<DraftVariant[]>([]);
   const [removedVariantIds, setRemovedVariantIds] = useState<string[]>([]);
@@ -115,6 +126,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
     base.station_key = item ? item.station_key || (item.station !== 'inherit' ? item.station : '') : '';
     setEditing(base);
     setPriceText(toInput(base.price ?? 0, decimals));
+    setOnHandText(String(base.on_hand ?? 0));
     // Nothing pre-ticked on a new dish.
     //
     // It used to tick whichever category sorted first, which quietly filed
@@ -230,6 +242,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
   };
 
   const save = async () => {
+    if (!mayEdit) { setError('Only a manager or the owner can change what is for sale.'); return; }
     const thing = W.one;
     if (!editing?.name?.trim()) { setError(`This ${thing} needs a name.`); return; }
     if (pickedCategories.length === 0) {
@@ -270,6 +283,10 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
       consignor_id: editing.consignor_id ?? '',
       commission_bp: editing.commission_bp ?? undefined,
       barcode: editing.barcode ?? '',
+      // Written explicitly. The count is what the shop floor reads, and
+      // leaving it out of the payload left new pieces at whatever the column
+      // defaulted to rather than what somebody typed.
+      on_hand: Number(onHandText || 0),
       is_one_off: editing.is_one_off ?? false,
       maker_note: editing.maker_note ?? '',
     };
@@ -312,7 +329,15 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
     <>
       <div className="spread">
         <h1>{W.title}</h1>
-        <Button variant="primary" onClick={() => open()} disabled={categories.length === 0}>Add item</Button>
+        {/* Reading and changing are different jobs. Somebody who opens this
+            page twenty times a day to check a price needs to create a product
+            roughly never, and every person who can create one is a person whose
+            slip reaches the shop floor at a price customers get charged. */}
+        {mayEdit && (
+          <Button variant="primary" onClick={() => open()} disabled={categories.length === 0}>
+            Add {W.one}
+          </Button>
+        )}
       </div>
 
       {categories.length === 0 && (
@@ -383,11 +408,17 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
                     <td className="num dim">{i.prep_minutes}m</td>
                     <td>{i.active ? <Badge tone="ok">Active</Badge> : <Badge>Hidden</Badge>}</td>
                     <td className="num">
-                      <Button size="sm" variant="ghost" onClick={() => open(i)}>Edit</Button>
-                      <Button size="sm" variant="ghost" onClick={() => open(i, true)} title={`Copy this ${W.one}, options and all`}>
-                        Duplicate
+                      <Button size="sm" variant="ghost" onClick={() => open(i)}>
+                        {mayEdit ? 'Edit' : 'View'}
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => remove(i)}>Delete</Button>
+                      {mayEdit && (
+                        <>
+                          <Button size="sm" variant="ghost" onClick={() => open(i, true)} title={`Copy this ${W.one}, options and all`}>
+                            Duplicate
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => remove(i)}>Delete</Button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -404,7 +435,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
           footer={
             <>
               <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
-              <Button variant="primary" onClick={save} loading={busy}>Save</Button>
+              {mayEdit && <Button variant="primary" onClick={save} loading={busy}>Save</Button>}
             </>
           }
         >
@@ -482,6 +513,8 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
             <ConsignmentFields
               editing={editing}
               setEditing={setEditing}
+              onHandText={onHandText}
+              setOnHandText={setOnHandText}
               consignors={consignors}
               variants={variants}
               setVariants={setVariants}
@@ -492,6 +525,12 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
             />
           )}
 
+          {/* Recipes and option groups are the kitchen's. A woven basket is not
+              made from ingredients the shop counts, and "Choose your protein"
+              has no meaning on a shelf. Both were showing on the craft form and
+              both were noise there. */}
+          {module === 'kitchen' && (
+          <>
           <RecipeEditor
             ingredients={ingredients}
             draft={draftRecipes}
@@ -541,6 +580,8 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
               ))}
             </div>
           </Field>
+          </>
+          )}
         </Modal>
       )}
     </>

@@ -41,9 +41,13 @@ export const blankVariant = (): DraftVariant => ({
 export function ConsignmentFields({
   editing, setEditing, consignors, variants, setVariants,
   removedVariantIds, setRemovedVariantIds, symbol, decimals,
+  onHandText, setOnHandText,
 }: {
   editing: Partial<MenuItem>;
   setEditing: (v: Partial<MenuItem>) => void;
+  /** Held as text so backspacing the last digit does not refill itself. */
+  onHandText: string;
+  setOnHandText: (v: string) => void;
   consignors: Consignor[];
   variants: DraftVariant[];
   setVariants: (f: (v: DraftVariant[]) => DraftVariant[]) => void;
@@ -109,8 +113,8 @@ export function ConsignmentFields({
           <Input
             type="number"
             min="0"
-            value={editing.on_hand ?? 0}
-            onChange={(e) => setEditing({ ...editing, on_hand: Number(e.target.value) })}
+            value={onHandText}
+            onChange={(e) => setOnHandText(e.target.value)}
             disabled={variants.length > 0}
           />
         </Field>
@@ -119,7 +123,7 @@ export function ConsignmentFields({
       <Field>
         <Toggle
           checked={editing.is_one_off ?? false}
-          onChange={(v) => setEditing({ ...editing, is_one_off: v, on_hand: v ? 1 : editing.on_hand })}
+          onChange={(v) => { setEditing({ ...editing, is_one_off: v }); if (v) setOnHandText('1'); }}
           label="A one-off piece — there is only ever one of these"
         />
       </Field>

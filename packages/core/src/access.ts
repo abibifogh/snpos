@@ -160,6 +160,21 @@ export function sectionsFor(profile: StaffProfile | null, settings: Settings | n
 }
 
 /**
+ * May this person add or change what is in the catalogue?
+ *
+ * Opening the products page and adding to it are different things. A shop
+ * assistant needs to look a price up twenty times a day and needs to create a
+ * product roughly never, and every person who can create one is a person whose
+ * mistake reaches the shop floor at a price customers are charged.
+ *
+ * Owners and managers, then. Anybody else with the page granted to them can
+ * read it, which is what they actually opened it for.
+ */
+export function canEditCatalogue(profile: StaffProfile | null): boolean {
+  return profile?.role === 'admin' || profile?.role === 'manager';
+}
+
+/**
  * Which sides of the business a person actually works on.
  *
  * The business's own switches come first: somebody marked as craft-only in a

@@ -443,7 +443,11 @@ export const COLLECTIONS = [
       ['barcode', 's', 60, false],
       // Pieces on the shelf. Only meaningful when the product has no variants;
       // with variants the count lives on each one, because that is what sells.
-      ['on_hand', 'i', null, true, 0],
+      // Optional, not required. A required attribute has to appear in every
+      // write even though it carries a default, and the first form that
+      // forgot it failed with "Missing required attribute on_hand" rather
+      // than quietly using the zero it already had.
+      ['on_hand', 'i', null, false, 0],
       ['is_one_off', 'b', null, true, false], // a single handmade piece
       ['maker_note', 's', 500, false], // the card that sits beside it
     ],
@@ -1995,7 +1999,11 @@ export const COLLECTIONS = [
       ['price', 'i', null, true, 0],
       ['sku', 's', 40, false],
       ['barcode', 's', 60, false],
-      ['on_hand', 'i', null, true, 0],
+      // Optional, not required. A required attribute has to appear in every
+      // write even though it carries a default, and the first form that
+      // forgot it failed with "Missing required attribute on_hand" rather
+      // than quietly using the zero it already had.
+      ['on_hand', 'i', null, false, 0],
       ['sort', 'i', null, true, 0],
       ['active', 'b', null, true, true],
     ],

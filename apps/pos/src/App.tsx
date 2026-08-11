@@ -28,6 +28,26 @@ export interface TableRow extends Doc {
   sort: number;
 }
 
+/**
+ * The counter, standing in for a table.
+ *
+ * A shop sale is not tied to anywhere somebody is sitting, but the bill screen
+ * is written around a table and rewriting it for the sake of one field would be
+ * two versions of the till drifting apart. So the counter is a table with no
+ * seats, exactly as takeaway already was.
+ */
+const COUNTER: TableRow = {
+  $id: 'takeaway',
+  $createdAt: '',
+  $updatedAt: '',
+  venue_id: '',
+  label: 'Counter',
+  seats: 0,
+  status: 'free',
+  active: true,
+  sort: 0,
+};
+
 export interface PosContext {
   settings: Settings;
   venue: Venue;
@@ -237,13 +257,15 @@ export function App() {
             </button>
           </div>
         )}
-        <div className="pos-tabs">
-          <button className={tab === 'tables' ? 'on' : ''} onClick={() => setTab('tables')}>Tables</button>
-          <button className={tab === 'takeaway' ? 'on' : ''} onClick={() => setTab('takeaway')}>Takeaway</button>
-          {isEnabled(ctx.features, 'combined_mode') && (
-            <button className={tab === 'kitchen' ? 'on' : ''} onClick={() => setTab('kitchen')}>Kitchen</button>
-          )}
-        </div>
+        {ctx.module !== 'craft' && (
+          <div className="pos-tabs">
+            <button className={tab === 'tables' ? 'on' : ''} onClick={() => setTab('tables')}>Tables</button>
+            <button className={tab === 'takeaway' ? 'on' : ''} onClick={() => setTab('takeaway')}>Takeaway</button>
+            {isEnabled(ctx.features, 'combined_mode') && (
+              <button className={tab === 'kitchen' ? 'on' : ''} onClick={() => setTab('kitchen')}>Kitchen</button>
+            )}
+          </div>
+        )}
         <div className="row">
           {isEnabled(ctx.features, 'item_availability') && (
             <Button size="sm" variant="ghost" onClick={() => setOffOpen(true)} title="Mark a dish as run out">
@@ -326,7 +348,19 @@ export function App() {
       <ShiftBar ctx={ctx} onToast={(m, tone) => toast(m, tone)} />
 
       <div className="pos-body">
-        {tab === 'tables' ? (
+        {/* A shop counter is not a dining room.
+            Tables, takeaway and a kitchen view are three answers to "where is
+            this food going", and a woven basket is going into a bag. So the
+            craft till opens straight onto the counter sale: pick the pieces,
+            take the money, done. */}
+        {ctx.module === 'craft' ? (
+          <OrderView
+            ctx={ctx}
+            table={COUNTER}
+            onBack={() => undefined}
+            onToast={(m, t) => toast(m, t)}
+          />
+        ) : tab === 'tables' ? (
           <TablesView ctx={ctx} onOpen={setOpenTable} />
         ) : tab === 'takeaway' ? (
           <TakeawayList ctx={ctx} onOpen={setOpenTable} />

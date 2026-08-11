@@ -7,6 +7,7 @@ import { HoursEditor } from '../components/HoursEditor';
 import { ImageField } from '../components/ImageField';
 import { StationPicker, useStations, legacyStationFor } from '../components/StationPicker';
 import { useSession } from '../session';
+import { canEditCatalogue } from '@snpos/core';
 
 const blank = (sort: number): Partial<Category> => ({
   name: '', description: '', sort, active: true, unavailable_display: 'grey', station: 'hot',
@@ -24,7 +25,8 @@ const blank = (sort: number): Partial<Category> => ({
  * which is what they were.
  */
 export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'craft' }) {
-  const { settings } = useSession();
+  const { settings, profile } = useSession();
+  const mayEdit = canEditCatalogue(profile);
   const toast = useToast();
   const stations = useStations();
   const [hours, setHours] = useState<Windows>({});
@@ -109,7 +111,7 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'c
     <>
       <div className="spread">
         <h1>Categories</h1>
-        <Button variant="primary" onClick={() => open()}>Add category</Button>
+        {mayEdit && <Button variant="primary" onClick={() => open()}>Add category</Button>}
       </div>
 
       {error && !editing && <Notice>{error}</Notice>}
@@ -170,7 +172,7 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'c
           footer={
             <>
               <Button variant="ghost" onClick={() => { setEditing(null); setError(null); }}>Cancel</Button>
-              <Button variant="primary" onClick={save} loading={busy}>Save</Button>
+              {mayEdit && <Button variant="primary" onClick={save} loading={busy}>Save</Button>}
             </>
           }
         >

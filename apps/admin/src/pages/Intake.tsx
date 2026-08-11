@@ -5,7 +5,7 @@ import {
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, Query,
-  loadConsignors, nextReference, moveStock,
+  loadConsignors, nextReference, moveStock, buildDeliverySlipHtml, openPrintable,
 } from '@snpos/core';
 import type { Consignor, ConsignmentIntake, MenuItem, Category } from '@snpos/core';
 import { useSession } from '../session';
@@ -52,6 +52,32 @@ export function IntakePage() {
     () => Object.fromEntries(consignors.map((c) => [c.$id, `${c.code} · ${c.name}`])),
     [consignors],
   );
+
+  /**
+   * The paper that goes back with the maker.
+   *
+   * Built from the pieces as they stand rather than from a copy taken at
+   * intake, so a slip reprinted after a price correction shows the corrected
+   * price. The alternative, a frozen snapshot, would have the shop and the
+   * maker holding two different documents about the same delivery.
+   */
+  const slipFor = async (intake: ConsignmentIntake) => {
+    const consignor = consignors.find((c) => c.$id === intake.consignor_id);
+    if (!consignor || !settings) { setError('That delivery has no consignor on file.'); return; }
+    const pieces = await listAll<MenuItem>('menu_items', [Query.equal('intake_id', intake.$id)]).catch(() => []);
+    if (pieces.length === 0) { setError('Nothing is recorded against that delivery.'); return; }
+    openPrintable(
+      buildDeliverySlipHtml({
+        intake,
+        consignor,
+        settings,
+        pieces: pieces
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((p) => ({ name: p.name, qty: p.on_hand ?? 1, price: p.price })),
+      }),
+      `Delivery slip ${intake.reference}`,
+    );
+  };
 
   if (rows === null) return <Spinner />;
 
@@ -111,6 +137,7 @@ export function IntakePage() {
                     <td className="num">{money(r.total_retail)}</td>
                     <td className="row-actions">
                       <Button onClick={() => setViewing(r)}>What came in</Button>
+                      <Button onClick={() => void slipFor(r)}>Slip</Button>
                     </td>
                   </tr>
                 ))}
@@ -128,7 +155,14 @@ export function IntakePage() {
           symbol={settings?.currency_symbol ?? ''}
           userId={user?.$id ?? ''}
           onClose={() => setReceiving(false)}
-          onDone={async (m) => { await load(); setReceiving(false); toast(m); }}
+          onDone={async (m, intake) => {
+            await load();
+            setReceiving(false);
+            toast(m);
+            // Straight to the slip, because the maker is still at the counter.
+            // Asking them to come back for it tomorrow is how it never happens.
+            if (intake) await slipFor(intake);
+          }}
         />
       )}
 
@@ -168,7 +202,7 @@ function ReceiveModal({
   symbol: string;
   userId: string;
   onClose: () => void;
-  onDone: (message: string) => Promise<void>;
+  onDone: (message: string, intake?: ConsignmentIntake) => Promise<void>;
 }) {
   const [consignorId, setConsignorId] = useState(consignors[0]?.$id ?? '');
   const [reference, setReference] = useState('');
@@ -259,7 +293,10 @@ function ReceiveModal({
         }).catch(() => undefined);
       }
 
-      await onDone(`${reference} received · ${totalPieces} piece${totalPieces === 1 ? '' : 's'}`);
+      await onDone(
+        `${reference} received, ${totalPieces} piece${totalPieces === 1 ? '' : 's'}`,
+        intake as unknown as ConsignmentIntake,
+      );
     } catch (e) {
       setError(humanError(e));
       setBusy(false);
@@ -303,14 +340,7 @@ function ReceiveModal({
               <Input
                 placeholder="Woven basket, medium"
                 value={p.name}
-                onChange={(e) => {
-                  setPiece(i, { name: e.target.value });
-                  // Always one blank row at the end, so adding another is just
-                  // carrying on typing rather than reaching for a button.
-                  if (i === pieces.length - 1 && e.target.value.trim()) {
-                    setPieces((rows) => [...rows, blankPiece(p.categoryId)]);
-                  }
-                }}
+                onChange={(e) => setPiece(i, { name: e.target.value })}
               />
               <Select value={p.categoryId} onChange={(e) => setPiece(i, { categoryId: e.target.value })}>
                 {categories.map((c) => <option key={c.$id} value={c.$id}>{c.name}</option>)}
@@ -333,6 +363,20 @@ function ReceiveModal({
               )}
             </div>
           ))}
+
+          {/* Rows are added deliberately.
+              A blank row that appeared as soon as you started typing meant the
+              list was always one longer than what had actually been received,
+              and somebody reading back what they had entered had to ignore the
+              last line every time. */}
+          <Button onClick={() => setPieces((rows) => [...rows, blankPiece(pieces[0]?.categoryId ?? categories[0]?.$id ?? '')])}>
+            Add another piece
+          </Button>
+          {filled.length > 0 && (
+            <p className="small dim" style={{ marginBottom: 0 }}>
+              {totalPieces} piece{totalPieces === 1 ? '' : 's'} worth {symbol}{(totalRetail / 100).toFixed(2)} so far.
+            </p>
+          )}
         </div>
       </Field>
 

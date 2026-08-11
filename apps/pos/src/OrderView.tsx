@@ -179,8 +179,13 @@ export function OrderView({
   return (
     <div className="pos">
       <div className="pos-top">
-        <Button variant="ghost" onClick={onBack}>← Tables</Button>
-        <strong>{isTakeaway ? 'Takeaway order' : `Table ${table.label}`}</strong>
+        {/* The craft till has nowhere to go back to: the counter is the whole
+            screen, not one table among several. A back button that leads
+            nowhere is a button somebody presses once and distrusts after. */}
+        {ctx.module !== 'craft' && <Button variant="ghost" onClick={onBack}>← Tables</Button>}
+        <strong>
+          {ctx.module === 'craft' ? 'Counter sale' : isTakeaway ? 'Takeaway order' : `Table ${table.label}`}
+        </strong>
         <div className="row">
           {existing.length > 0 && (
             <Button
@@ -361,7 +366,9 @@ export function OrderView({
             setPaying(false);
             if (!isTakeaway) await db.updateDocument(DB_ID, 'tables', table.$id, { status: 'dirty' }).catch(() => undefined);
             onToast('Payment recorded');
-            onBack();
+            // The shop till stays where it is, ready for the next customer.
+            // Sending it "back" would land it on a screen that does not exist.
+            if (ctx.module === 'craft') { setCart([]); setExisting([]); setExistingItems({}); } else onBack();
           }}
           onError={(m) => onToast(m, 'err')}
         />

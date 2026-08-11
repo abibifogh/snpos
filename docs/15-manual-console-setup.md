@@ -419,7 +419,7 @@ There are 67 collections. A progress checklist is at the end of this document.
 | `intake_id` | String | size 64 | No | — | No |
 | `commission_bp` | Integer | — | No | — | No |
 | `barcode` | String | size 60 | No | — | No |
-| `on_hand` | Integer | — | **Yes** | — | No |
+| `on_hand` | Integer | — | No | 0 | No |
 | `is_one_off` | Boolean | — | **Yes** | — | No |
 | `maker_note` | String | size 500 | No | — | No |
 
@@ -2219,7 +2219,7 @@ There are 67 collections. A progress checklist is at the end of this document.
 | `price` | Integer | — | **Yes** | — | No |
 | `sku` | String | size 40 | No | — | No |
 | `barcode` | String | size 60 | No | — | No |
-| `on_hand` | Integer | — | **Yes** | — | No |
+| `on_hand` | Integer | — | No | 0 | No |
 | `sort` | Integer | — | **Yes** | — | No |
 | `active` | Boolean | — | **Yes** | — | No |
 

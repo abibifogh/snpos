@@ -6,8 +6,9 @@ import { db, DB_ID, ID, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput,
   loadConsignors, balancesByConsignor, ledgerFor, buildStatement, recordPayout, nextReference,
+  buildStatementHtml, openPrintable,
 } from '@snpos/core';
-import type { Consignor, LedgerEntry, Statement } from '@snpos/core';
+import type { Consignor, LedgerEntry, Statement, Settings } from '@snpos/core';
 import { useSession } from '../session';
 
 /**
@@ -285,6 +286,7 @@ export function ConsignorsPage() {
           consignor={statementFor}
           money={money}
           decimals={decimals}
+          settings={settings}
           userId={user?.$id ?? ''}
           onClose={() => setStatementFor(null)}
           onPaid={async (m) => { await load(); toast(m); }}
@@ -313,12 +315,13 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
  * payout gets recorded against the wrong period.
  */
 function StatementModal({
-  consignor, money, decimals, userId, onClose, onPaid,
+  consignor, money, decimals, userId, settings, onClose, onPaid,
 }: {
   consignor: Consignor;
   money: (n: number) => string;
   decimals: number;
   userId: string;
+  settings: Settings;
   onClose: () => void;
   onPaid: (message: string) => Promise<void>;
 }) {
@@ -397,7 +400,22 @@ function StatementModal({
       footer={
         <>
           <Button onClick={onClose}>Close</Button>
-          <Button onClick={() => window.print()}>Print</Button>
+          {/* A document, not the screen.
+              window.print() printed the whole admin app, sidebar and all, which
+              is not something anybody would hand to a maker. This builds the
+              statement on its own page and prints that. */}
+          <Button
+            onClick={() =>
+              statement && settings &&
+              openPrintable(
+                buildStatementHtml({ statement, settings, owedNow }),
+                `Statement ${consignor.code}`,
+              )
+            }
+            disabled={!statement}
+          >
+            Print or save as PDF
+          </Button>
           {!paying && owedNow > 0 && (
             <Button variant="primary" onClick={startPaying}>Record a payment</Button>
           )}
