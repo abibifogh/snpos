@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Badge, Button, Card, Field, Input, Select, Notice, Textarea, Toggle, useToast } from '@snpos/ui';
+import { Badge, Button, FoldCard, Field, Input, Select, Notice, Textarea, Toggle, useToast } from '@snpos/ui';
 import { contrastRatio } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
@@ -64,6 +64,14 @@ const FIELD_LABELS: Record<string, string> = {
   order_number_reset_on: 'Order numbering reset',
   email_from_name: 'Email from name',
   email_from_address: 'Email from address',
+};
+
+/** The float policy, in the four words a heading has room for. */
+const FLOAT_WORDS: Record<string, string> = {
+  zero: 'Starts empty',
+  carry_over: 'Carries over',
+  fixed: 'Fixed float',
+  prompt: 'Asked each time',
 };
 
 const REPORT_NAMES: Record<string, string> = {
@@ -269,7 +277,17 @@ export function SettingsPage() {
 
       {error && <Notice>{error}</Notice>}
 
-      <Card title="Restaurant">
+      {/* Nine folds instead of thirteen cards, and only the first open.
+          A settings page is read twice: once on the day it is set up, and
+          afterwards only to change one thing. Thirteen open sections serve
+          neither — the first reading has no shape and the second is a scroll
+          past twelve things to reach one. Each heading carries what is
+          currently set, so most questions are answered without opening it. */}
+      <FoldCard
+        title="The basics"
+        open
+        summary={`${form.restaurant_name || 'Unnamed'} · ${[mods.kitchen && 'kitchen', mods.craft && 'craft shop'].filter(Boolean).join(' + ')}`}
+      >
         <div className="grid-2">
           <Field label="Name">
             <Input value={form.restaurant_name} onChange={(e) => set('restaurant_name', e.target.value)} />
@@ -278,9 +296,8 @@ export function SettingsPage() {
             <Input value={form.timezone} onChange={(e) => set('timezone', e.target.value)} />
           </Field>
         </div>
-      </Card>
 
-      <Card title="What this business runs">
+        <h3 style={{ marginTop: '1.6rem' }}>What this business runs</h3>
         <p className="small dim" style={{ marginTop: 0 }}>
           Switch on whichever sides you actually run. Both can run together under one till, one set of staff
           and one set of books — a kitchen with a craft corner is one business, not two systems.
@@ -336,9 +353,12 @@ export function SettingsPage() {
             ? 'This is what the table QR codes are for. Off means orders can only be taken by staff.'
             : 'Off suits a shop where the normal way to buy is to hand something to whoever is on the till. Worth turning on for a market stall or a busy weekend, where a queue is the problem.'}
         </p>
-      </Card>
+      </FoldCard>
 
-      <Card title="Currency">
+      <FoldCard
+        title="Money"
+        summary={`${form.currency_code} · tax ${bpToPercent(form.tax_rate_bp)}% · service ${bpToPercent(form.service_charge_bp)}%`}
+      >
         <div className="grid-2">
           <Field label="Code" hint="Three letters, e.g. GHS.">
             <Input value={form.currency_code} maxLength={3} onChange={(e) => set('currency_code', e.target.value.toUpperCase())} />
@@ -360,9 +380,8 @@ export function SettingsPage() {
             </Select>
           </Field>
         </div>
-      </Card>
 
-      <Card title="Tax and service">
+        <h3 style={{ marginTop: '1.6rem' }}>Tax and service</h3>
         <div className="grid-2">
           <Field label="Tax rate (%)" hint="0 if you do not charge tax.">
             <Input
@@ -386,32 +405,9 @@ export function SettingsPage() {
         <Field hint="Tax-inclusive means the price on the menu is what the customer pays; tax is worked out from it rather than added on top.">
           <Toggle checked={form.tax_inclusive} onChange={(v) => set('tax_inclusive', v)} label="Menu prices include tax" />
         </Field>
-      </Card>
+      </FoldCard>
 
-      <Card title="Colours">
-        <div className="grid-2">
-          <Field label="Primary">
-            <div className="color-row">
-              <input type="color" value={form.primary_color} onChange={(e) => set('primary_color', e.target.value)} />
-              <Input value={form.primary_color} onChange={(e) => set('primary_color', e.target.value)} />
-            </div>
-          </Field>
-          <Field label="Secondary">
-            <div className="color-row">
-              <input type="color" value={form.secondary_color} onChange={(e) => set('secondary_color', e.target.value)} />
-              <Input value={form.secondary_color} onChange={(e) => set('secondary_color', e.target.value)} />
-            </div>
-          </Field>
-        </div>
-        {brandContrast < 3 && (
-          <Notice tone="warn">
-            White text on this primary colour has a contrast ratio of {brandContrast.toFixed(1)}:1. Buttons will be hard
-            to read — the app will use dark text instead, but a deeper colour would look better.
-          </Notice>
-        )}
-      </Card>
-
-      <Card title="Tips">
+      <FoldCard title="Tips" summary={askOn === 'none' ? 'Never asked' : `Asked on the ${askOn === 'both' ? 'till and in the kitchen' : askOn}`}>
         <Field
           label="Where to ask for a tip"
           hint="A waiter closing a table and a cook handing a bag over a counter are different moments. You can have the box on one and not the other."
@@ -445,51 +441,117 @@ export function SettingsPage() {
           <strong>{savedAsks('kitchen') ? 'asking' : 'not asking'}</strong>.
           {askOn !== savedAskOn && ' Unsaved change — press Save changes.'}
         </p>
-        <h3 style={{ margin: '1.4rem 0 0.4rem' }}>What actually happened</h3>
-        <p className="small dim" style={{ marginTop: 0 }}>
-          The last few reports the server produced, and whether they reached anybody. If something is not
-          arriving, the reason is here rather than in a log nobody can read.
-        </p>
-        {deliveries === null ? (
-          <p className="small dim">Loading…</p>
-        ) : deliveries.length === 0 ? (
-          <p className="small dim" style={{ marginBottom: 0 }}>
-            Nothing produced yet. The end-of-shift report appears when a shift is closed; the daily ones after
-            the hour set above.
-          </p>
-        ) : (
-          <div className="table-wrap">
-            <table className="data">
-              <thead>
-                <tr><th>When</th><th>Report</th><th>Result</th></tr>
-              </thead>
-              <tbody>
-                {deliveries.map((d) => (
-                  <tr key={d.$id}>
-                    <td className="small dim">{new Date(d.$createdAt).toLocaleString()}</td>
-                    <td className="small">{REPORT_NAMES[d.kind] ?? d.kind}</td>
-                    <td className="small">
-                      {d.delivery_status === 'sent' ? (
-                        <>
-                          <Badge tone="ok">Sent</Badge>{' '}
-                          <span className="dim">{d.delivered_to || ''}</span>
-                        </>
-                      ) : (
-                        <>
-                          <Badge tone="danger">Not sent</Badge>{' '}
-                          <span className="dim">{d.last_error || 'No reason recorded.'}</span>
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+      </FoldCard>
 
-      <Card title="Order numbers">
+      <FoldCard title="Cash and shifts" summary={`${FLOAT_WORDS[form.shift_float_policy ?? 'zero']} · ${form.expense_paid_from === 'any' ? 'expenses any method' : 'expenses cash only'}`}>
+        <Field
+          label="What a shift starts with in the drawer"
+          hint="Starting at nothing every time only makes sense if somebody physically empties the till at the end of each shift."
+        >
+          <Select
+            value={form.shift_float_policy ?? 'zero'}
+            onChange={(e) => set('shift_float_policy', e.target.value as Settings['shift_float_policy'])}
+          >
+            <option value="zero">Nothing — count in whatever is there</option>
+            <option value="carry_over">Carry over what the last shift counted</option>
+            <option value="fixed">A fixed float, the same every time</option>
+            <option value="prompt">Ask, with nothing filled in</option>
+          </Select>
+        </Field>
+
+        {form.shift_float_policy === 'fixed' && (
+          <Field label={`The fixed float (${form.currency_symbol})`}>
+            <Input
+              inputMode="decimal"
+              value={toInput(form.shift_float_default ?? 0, form.currency_decimals ?? 2)}
+              onChange={(e) =>
+                set('shift_float_default', parseMoney(e.target.value, form.currency_decimals ?? 2) ?? 0)
+              }
+            />
+          </Field>
+        )}
+
+        <Toggle
+          checked={!!form.allow_negative_cash}
+          onChange={(v) => set('allow_negative_cash', v)}
+          label="Allow a drawer to close below nothing"
+        />
+        <p className="small dim">
+          Off is the safer setting and the default. A drawer cannot physically hold less than no money, so a negative
+          count nearly always means cash was paid out and never recorded — blocking it makes somebody enter the missing
+          expense instead of closing over it.
+        </p>
+
+        <Field
+          label="What money spent during a shift can come out of"
+          hint="This covers shop runs, gas, transport — anything staff record as spent while a shift is open."
+        >
+          <Select
+            value={form.expense_paid_from ?? 'cash_only'}
+            onChange={(e) => set('expense_paid_from', e.target.value as Settings['expense_paid_from'])}
+          >
+            <option value="cash_only">Cash only</option>
+            <option value="any">Any payment method</option>
+          </Select>
+        </Field>
+        <p className="small dim" style={{ marginBottom: 0 }}>
+          Cash only is the default, and it is not about tidiness. Money taken from the drawer has to be missing
+          from the drawer when it is counted at the end of the shift, so a wrong entry surfaces within hours.
+          An expense recorded against mobile money reduces nothing anybody counts — which makes it the easiest
+          entry in the whole system to write and never have questioned. Turn it on only if you genuinely pay
+          suppliers by transfer from this screen, and expect those entries to rest on the receipt rather than on
+          a count.
+        </p>
+
+        <h3 style={{ marginTop: '1.6rem' }}>The stock check at the end of a shift</h3>
+        <Field
+          label="What staff are asked"
+          hint="Both end up in the same place — an OK, Low or Out against every ingredient. The difference is who decides which."
+        >
+          <Select
+            value={form.stock_check_mode ?? 'levels'}
+            onChange={(e) => set('stock_check_mode', e.target.value as Settings['stock_check_mode'])}
+          >
+            <option value="levels">Tap OK, Low or Out</option>
+            <option value="counts">Type how much is left, and let the system decide</option>
+          </Select>
+        </Field>
+
+        <p className="small dim">
+          {form.stock_check_mode === 'counts' ? (
+            <>
+              Staff type what is actually on the shelf and the system reads it against each ingredient's low level. It
+              takes longer, and it buys two things a tapped level cannot: the same shelf gets filed the same way
+              whoever is closing, and what was counted can be set against what the recipes say should have gone —
+              which is the only way over-portioning, waste and theft ever show up. Set the low level for each
+              ingredient under <strong>Stock</strong>, or nothing above zero can be called low.
+            </>
+          ) : (
+            <>
+              Quick, and honest about being a glance at a shelf rather than a measurement. Fine for a small kitchen
+              where the same person closes most nights. Write a guide under each ingredient in <strong>Stock</strong>
+              {' '}so “low” means the same thing to everybody.
+            </>
+          )}
+        </p>
+
+        {form.stock_check_mode === 'counts' && (
+          <>
+            <Toggle
+              checked={form.stock_count_decimals !== false}
+              onChange={(v) => set('stock_count_decimals', v)}
+              label="Allow part amounts — 0.5, 0.25"
+            />
+            <p className="small dim" style={{ marginBottom: 0 }}>
+              On for anything measured: half a bucket of rice, a quarter bottle of oil. Off for anything counted in
+              pieces — nobody has 2.5 eggs, and a till with a numeric keypad will produce one by accident if the
+              decimal point is there to be pressed.
+            </p>
+          </>
+        )}
+      </FoldCard>
+
+      <FoldCard title="Orders and the kitchen" summary={`Numbers ${form.order_number_prefix ?? ''}0001 · ping every ${form.kitchen_ack_sla_seconds ?? 60}s`}>
         <p className="small dim" style={{ marginTop: 0 }}>
           These get shouted across a pass, so they are yours to shape. The number shown is{' '}
           <strong>
@@ -558,9 +620,8 @@ export function SettingsPage() {
             {' '}Remember to press Save.
           </p>
         )}
-      </Card>
 
-      <Card title="Kitchen">
+        <h3 style={{ marginTop: '1.6rem' }}>Kitchen</h3>
         <div className="grid-2">
           <Field label="Alarm escalates after (seconds)" hint="How long an order may sit unacknowledged before the alarm gets louder.">
             <Input
@@ -585,9 +646,14 @@ export function SettingsPage() {
             label="Staff must approve QR orders before the kitchen sees them"
           />
         </Field>
-      </Card>
+      </FoldCard>
 
-      <Card title="Email">
+      <FoldCard
+        title="Reports, backups and email"
+        summary={subs.filter((r) => r.active !== false).length === 0
+          ? 'Going to nobody'
+          : `${subs.filter((r) => r.active !== false).length} recipient${subs.filter((r) => r.active !== false).length === 1 ? '' : 's'}`}
+      >
         <div className="grid-2">
           <Field label="From name" hint="Shown as the sender on emailed receipts.">
             <Input value={form.email_from_name ?? ''} onChange={(e) => set('email_from_name', e.target.value)} />
@@ -605,118 +671,8 @@ export function SettingsPage() {
           so receipts show as <em>sent</em> here and never arrive. If that is happening, this is almost always why.
           Check Brevo → Senders, Domains &amp; Dedicated IPs → Senders, and put exactly that address here.
         </Notice>
-      </Card>
 
-      <Card title="Cash and shifts">
-        <Field
-          label="What a shift starts with in the drawer"
-          hint="Starting at nothing every time only makes sense if somebody physically empties the till at the end of each shift."
-        >
-          <Select
-            value={form.shift_float_policy ?? 'zero'}
-            onChange={(e) => set('shift_float_policy', e.target.value as Settings['shift_float_policy'])}
-          >
-            <option value="zero">Nothing — count in whatever is there</option>
-            <option value="carry_over">Carry over what the last shift counted</option>
-            <option value="fixed">A fixed float, the same every time</option>
-            <option value="prompt">Ask, with nothing filled in</option>
-          </Select>
-        </Field>
-
-        {form.shift_float_policy === 'fixed' && (
-          <Field label={`The fixed float (${form.currency_symbol})`}>
-            <Input
-              inputMode="decimal"
-              value={toInput(form.shift_float_default ?? 0, form.currency_decimals ?? 2)}
-              onChange={(e) =>
-                set('shift_float_default', parseMoney(e.target.value, form.currency_decimals ?? 2) ?? 0)
-              }
-            />
-          </Field>
-        )}
-
-        <Toggle
-          checked={!!form.allow_negative_cash}
-          onChange={(v) => set('allow_negative_cash', v)}
-          label="Allow a drawer to close below nothing"
-        />
-        <p className="small dim">
-          Off is the safer setting and the default. A drawer cannot physically hold less than no money, so a negative
-          count nearly always means cash was paid out and never recorded — blocking it makes somebody enter the missing
-          expense instead of closing over it.
-        </p>
-
-        <Field
-          label="What money spent during a shift can come out of"
-          hint="This covers shop runs, gas, transport — anything staff record as spent while a shift is open."
-        >
-          <Select
-            value={form.expense_paid_from ?? 'cash_only'}
-            onChange={(e) => set('expense_paid_from', e.target.value as Settings['expense_paid_from'])}
-          >
-            <option value="cash_only">Cash only</option>
-            <option value="any">Any payment method</option>
-          </Select>
-        </Field>
-        <p className="small dim" style={{ marginBottom: 0 }}>
-          Cash only is the default, and it is not about tidiness. Money taken from the drawer has to be missing
-          from the drawer when it is counted at the end of the shift, so a wrong entry surfaces within hours.
-          An expense recorded against mobile money reduces nothing anybody counts — which makes it the easiest
-          entry in the whole system to write and never have questioned. Turn it on only if you genuinely pay
-          suppliers by transfer from this screen, and expect those entries to rest on the receipt rather than on
-          a count.
-        </p>
-      </Card>
-
-      <Card title="The stock check at the end of a shift">
-        <Field
-          label="What staff are asked"
-          hint="Both end up in the same place — an OK, Low or Out against every ingredient. The difference is who decides which."
-        >
-          <Select
-            value={form.stock_check_mode ?? 'levels'}
-            onChange={(e) => set('stock_check_mode', e.target.value as Settings['stock_check_mode'])}
-          >
-            <option value="levels">Tap OK, Low or Out</option>
-            <option value="counts">Type how much is left, and let the system decide</option>
-          </Select>
-        </Field>
-
-        <p className="small dim">
-          {form.stock_check_mode === 'counts' ? (
-            <>
-              Staff type what is actually on the shelf and the system reads it against each ingredient's low level. It
-              takes longer, and it buys two things a tapped level cannot: the same shelf gets filed the same way
-              whoever is closing, and what was counted can be set against what the recipes say should have gone —
-              which is the only way over-portioning, waste and theft ever show up. Set the low level for each
-              ingredient under <strong>Stock</strong>, or nothing above zero can be called low.
-            </>
-          ) : (
-            <>
-              Quick, and honest about being a glance at a shelf rather than a measurement. Fine for a small kitchen
-              where the same person closes most nights. Write a guide under each ingredient in <strong>Stock</strong>
-              {' '}so “low” means the same thing to everybody.
-            </>
-          )}
-        </p>
-
-        {form.stock_check_mode === 'counts' && (
-          <>
-            <Toggle
-              checked={form.stock_count_decimals !== false}
-              onChange={(v) => set('stock_count_decimals', v)}
-              label="Allow part amounts — 0.5, 0.25"
-            />
-            <p className="small dim" style={{ marginBottom: 0 }}>
-              On for anything measured: half a bucket of rice, a quarter bottle of oil. Off for anything counted in
-              pieces — nobody has 2.5 eggs, and a till with a numeric keypad will produce one by accident if the
-              decimal point is there to be pressed.
-            </p>
-          </>
-        )}
-      </Card>
-
-      <Card title="Reports and backups by email">
+        <h3 style={{ marginTop: '1.6rem' }}>Who gets them</h3>
         <p className="small dim" style={{ marginTop: 0 }}>
           One address per line. Everyone listed gets whichever reports are ticked below.
         </p>
@@ -801,9 +757,75 @@ export function SettingsPage() {
         <Button onClick={() => void saveRecipients()} loading={savingSubs}>
           Save recipients
         </Button>
-      </Card>
 
-      <Card title="Who can see what">
+        <h3 style={{ margin: '1.4rem 0 0.4rem' }}>What actually happened</h3>
+        <p className="small dim" style={{ marginTop: 0 }}>
+          The last few reports the server produced, and whether they reached anybody. If something is not
+          arriving, the reason is here rather than in a log nobody can read.
+        </p>
+        {deliveries === null ? (
+          <p className="small dim">Loading…</p>
+        ) : deliveries.length === 0 ? (
+          <p className="small dim" style={{ marginBottom: 0 }}>
+            Nothing produced yet. The end-of-shift report appears when a shift is closed; the daily ones after
+            the hour set above.
+          </p>
+        ) : (
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr><th>When</th><th>Report</th><th>Result</th></tr>
+              </thead>
+              <tbody>
+                {deliveries.map((d) => (
+                  <tr key={d.$id}>
+                    <td className="small dim">{new Date(d.$createdAt).toLocaleString()}</td>
+                    <td className="small">{REPORT_NAMES[d.kind] ?? d.kind}</td>
+                    <td className="small">
+                      {d.delivery_status === 'sent' ? (
+                        <>
+                          <Badge tone="ok">Sent</Badge>{' '}
+                          <span className="dim">{d.delivered_to || ''}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Badge tone="danger">Not sent</Badge>{' '}
+                          <span className="dim">{d.last_error || 'No reason recorded.'}</span>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </FoldCard>
+
+      <FoldCard title="Colours and logo" summary="How the customer menu and receipts look">
+        <div className="grid-2">
+          <Field label="Primary">
+            <div className="color-row">
+              <input type="color" value={form.primary_color} onChange={(e) => set('primary_color', e.target.value)} />
+              <Input value={form.primary_color} onChange={(e) => set('primary_color', e.target.value)} />
+            </div>
+          </Field>
+          <Field label="Secondary">
+            <div className="color-row">
+              <input type="color" value={form.secondary_color} onChange={(e) => set('secondary_color', e.target.value)} />
+              <Input value={form.secondary_color} onChange={(e) => set('secondary_color', e.target.value)} />
+            </div>
+          </Field>
+        </div>
+        {brandContrast < 3 && (
+          <Notice tone="warn">
+            White text on this primary colour has a contrast ratio of {brandContrast.toFixed(1)}:1. Buttons will be hard
+            to read — the app will use dark text instead, but a deeper colour would look better.
+          </Notice>
+        )}
+      </FoldCard>
+
+      <FoldCard title="Who can see what" summary="Which admin pages each role may open">
         <p className="small dim" style={{ marginTop: 0 }}>
           Which parts of this admin app each role can open. Admins always see everything — there is no switch for that
           on purpose, because a checkbox that can lock the owner out of their own settings eventually will.
@@ -847,7 +869,8 @@ export function SettingsPage() {
         <p className="small dim">
           Changes take effect the next time that person loads the app.
         </p>
-      </Card>
+      </FoldCard>
+
     </>
   );
 }
