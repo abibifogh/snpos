@@ -399,9 +399,9 @@ export default async ({ req, res, log, error }) => {
                   'A group has ordered',
                   `<table style="width:100%;border-collapse:collapse;font-size:15px">
                      ${row('Order', doc.order_no)}
-                     ${row('People', String(doc.group_size || ', '))}
-                     ${row(label, doc.group_reference || ', ')}
-                     ${row('Booked by', doc.group_contact_name || doc.customer_name || ', ')}
+                     ${row('People', String(doc.group_size || '-'))}
+                     ${row(label, doc.group_reference || '-')}
+                     ${row('Booked by', doc.group_contact_name || doc.customer_name || '-')}
                      ${row('Total', money(doc.total, settings), true)}
                    </table>
                    <p style="margin:18px 0 0;color:#5d6b7a;font-size:13px">The kitchen has it on the pass now.</p>`,

@@ -140,7 +140,7 @@ export function StockPage() {
     }
   };
 
-  const supplierName = (id?: string) => suppliers.find((s) => s.$id === id)?.name ?? ', ';
+  const supplierName = (id?: string) => suppliers.find((s) => s.$id === id)?.name ?? '-';
 
   /**
    * Which dishes this ingredient goes into.
@@ -264,8 +264,8 @@ export function StockPage() {
                 {suppliers.map((s) => (
                   <tr key={s.$id}>
                     <td style={{ fontWeight: 550 }}>{s.name}</td>
-                    <td className="dim">{s.contact || ', '}</td>
-                    <td className="dim">{s.phone || ', '}</td>
+                    <td className="dim">{s.contact || '-'}</td>
+                    <td className="dim">{s.phone || '-'}</td>
                     <td>{s.active ? <Badge tone="ok">Active</Badge> : <Badge>Inactive</Badge>}</td>
                     <td className="num"><Button size="sm" variant="ghost" onClick={() => setEditingSupplier(s)}>Edit</Button></td>
                   </tr>

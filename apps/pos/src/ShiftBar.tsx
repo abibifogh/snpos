@@ -72,6 +72,10 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         userId: ctx.userId,
         floats: Object.fromEntries(Object.entries(floats).map(([k, v]) => [k, parseMoney(v, decimals) ?? 0])),
         floatSource: floatSource,
+        // The side this till is on. Without it every shift was opened as the
+        // kitchen's, and a craft till then looked for a craft shift, found
+        // none, and showed no shift open a moment after somebody opened one.
+        module: ctx.module,
       });
       await ctx.reloadShift();
       setOpening(false);
@@ -90,7 +94,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
     try {
       const [m, blocking] = await Promise.all([
         loadPaymentMethods(ctx.venue.$id),
-        shiftBlockers(ctx.venue.$id),
+        shiftBlockers(ctx.venue.$id, undefined, ctx.module),
       ]);
       setMethods(m);
       setBlockers(

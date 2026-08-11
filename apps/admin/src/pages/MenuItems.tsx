@@ -3,9 +3,11 @@ import { Button, Card, Empty, Field, Input, Modal, Notice, Spinner, Textarea, To
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, previewUrl, Query, loadConsignors, loadVariants, canEditCatalogue,
+  loadVariantTypes,
 } from '@snpos/core';
-import type { Category, MenuItem, Ingredient, Recipe, Doc, Consignor } from '@snpos/core';
+import type { Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
+import { KeyedListManager } from '../components/KeyedList';
 import { ImageField } from '../components/ImageField';
 import { RecipeEditor, draftFrom, type DraftRecipe } from '../components/RecipeEditor';
 import { StationPicker, useStations, legacyStationFor } from '../components/StationPicker';
@@ -62,6 +64,8 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
    */
   const [onHandText, setOnHandText] = useState('0');
   const [consignors, setConsignors] = useState<Consignor[]>([]);
+  const [variantTypes, setVariantTypes] = useState<VariantType[]>([]);
+  const [tab, setTab] = useState<'items' | 'types'>('items');
   const [variants, setVariants] = useState<DraftVariant[]>([]);
   const [removedVariantIds, setRemovedVariantIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -89,7 +93,11 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
     setIngredients(ing.filter((x) => x.active).sort((a, b) => a.name.localeCompare(b.name)));
     setRecipes(r);
     // Only the shop needs these, and only the shop pays for the round trip.
-    if (module === 'craft') setConsignors(await loadConsignors().catch(() => []));
+    if (module === 'craft') {
+      const [people, types] = await Promise.all([loadConsignors().catch(() => []), loadVariantTypes()]);
+      setConsignors(people);
+      setVariantTypes(types);
+    }
   };
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, [module]);
 
@@ -228,7 +236,9 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
         venue_id: 'main',
         menu_item_id: itemId,
         label: v.label.trim(),
-        kind: v.kind,
+        // The legacy enum only has to stay valid; kind_key is what is read.
+        kind: (['size', 'colour', 'finish'] as string[]).includes(v.kindKey) ? v.kindKey : 'other',
+        kind_key: v.kindKey,
         price,
         sku: v.sku.trim(),
         barcode: v.barcode.trim(),
@@ -327,6 +337,29 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
 
   return (
     <>
+      {/* The kinds of variation this shop sells by are the shop's own list, so
+          they are edited where the products that use them are, rather than
+          buried in a settings page nobody opens twice. */}
+      {module === 'craft' && (
+        <div className="row" style={{ gap: '0.4rem', marginBottom: '0.8rem' }}>
+          <Button size="sm" variant={tab === 'items' ? 'primary' : 'default'} onClick={() => setTab('items')}>
+            Products
+          </Button>
+          <Button size="sm" variant={tab === 'types' ? 'primary' : 'default'} onClick={() => setTab('types')}>
+            Variant types
+          </Button>
+        </div>
+      )}
+
+      {module === 'craft' && tab === 'types' ? (
+        <KeyedListManager
+          collection="variant_types"
+          singular="variant type"
+          hint="The kinds of variation your products come in. A pottery studio sells by glaze, a weaver by width. Rename freely: products already using one stay with it."
+          onChanged={() => void loadVariantTypes().then(setVariantTypes)}
+        />
+      ) : (
+      <>
       <div className="spread">
         <h1>{W.title}</h1>
         {/* Reading and changing are different jobs. Somebody who opens this
@@ -515,6 +548,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
               setEditing={setEditing}
               onHandText={onHandText}
               setOnHandText={setOnHandText}
+              variantTypes={variantTypes}
               consignors={consignors}
               variants={variants}
               setVariants={setVariants}
@@ -583,6 +617,8 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
           </>
           )}
         </Modal>
+      )}
+      </>
       )}
     </>
   );

@@ -237,7 +237,7 @@ export function TablesPage() {
                 {rows.map((t) => (
                   <tr key={t.$id}>
                     <td style={{ fontWeight: 550 }}>{t.label}</td>
-                    <td className="dim">{t.zone || ', '}</td>
+                    <td className="dim">{t.zone || '-'}</td>
                     <td className="num dim">{t.seats}</td>
                     <td>{t.active ? <Badge tone="ok">Active</Badge> : <Badge>Inactive</Badge>}</td>
                     <td className="num">

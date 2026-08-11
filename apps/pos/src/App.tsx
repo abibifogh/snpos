@@ -140,8 +140,15 @@ export function App() {
         void loadShift(venue.$id, m).then((s) => setCtx((c) => (c ? { ...c, shift: s } : c)));
       },
       reloadShift: async () => {
-        const s = await loadShift(venue.$id, startingModule);
-        setCtx((c) => (c ? { ...c, shift: s } : c));
+        // Whichever side the till is on NOW, not the one it booted on. Reading
+        // the captured value meant that after switching counters, opening a
+        // shift reloaded the other side's and the new one looked like it had
+        // not saved.
+        setCtx((c) => {
+          if (!c) return c;
+          void loadShift(venue.$id, c.module).then((s) => setCtx((x) => (x ? { ...x, shift: s } : x)));
+          return c;
+        });
       },
     });
   }, [loadShift]);

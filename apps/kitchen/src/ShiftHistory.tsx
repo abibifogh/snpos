@@ -223,7 +223,7 @@ export function ShiftHistory({
               {expenses.map((e) => (
                 <tr key={e.$id}>
                   <td className="dim small">{time(e.$createdAt)}</td>
-                  <td>{e.payee || ', '}</td>
+                  <td>{e.payee || '-'}</td>
                   <td className="dim small">
                     {e.category_key || e.category}
                     {e.note && <div>{e.note}</div>}

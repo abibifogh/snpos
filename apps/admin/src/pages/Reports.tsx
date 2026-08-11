@@ -424,7 +424,7 @@ function EmailPanel({ receipts }: { receipts: Receipt[] }) {
                 {recent.map((r) => (
                   <tr key={r.$id}>
                     <td className="dim small">{new Date(r.$createdAt).toLocaleString()}</td>
-                    <td className="small">{r.to_email || ', '}</td>
+                    <td className="small">{r.to_email || '-'}</td>
                     <td>
                       <Badge tone={r.status === 'sent' ? 'ok' : r.status === 'failed' || r.status === 'bounced' ? 'danger' : 'warn'}>
                         {r.status}

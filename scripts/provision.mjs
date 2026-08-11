@@ -11,6 +11,7 @@ import { Client, Databases, Storage, Teams, ID, Permission, Role, Query } from '
 import {
   DB_ID, TEAMS, BUCKETS, COLLECTIONS, FEATURES,
   SEED_ACCOUNTS, SEED_PAYMENT_METHODS, SEED_EXPENSE_CATEGORIES, SEED_INGREDIENT_CATEGORIES,
+  SEED_VARIANT_TYPES,
   SYSTEM_ACCOUNT_CODES,
 } from './schema.mjs';
 
@@ -464,6 +465,15 @@ async function main() {
     if (haveExpenseCats.includes(c.key)) continue;
     await ensure(`expense category ${c.key}`, () =>
       db.createDocument(DB_ID, 'expense_categories', ID.unique(), { ...c, active: true }),
+    );
+  }
+
+  await waitForAttributes('variant_types', ['key', 'name', 'singular', 'sort', 'active']);
+  const haveVariantTypes = (await allDocuments('variant_types')).map((d) => d.key);
+  for (const t of SEED_VARIANT_TYPES) {
+    if (haveVariantTypes.includes(t.key)) continue;
+    await ensure(`variant type ${t.key}`, () =>
+      db.createDocument(DB_ID, 'variant_types', ID.unique(), { ...t, active: true }),
     );
   }
 

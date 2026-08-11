@@ -93,7 +93,7 @@ export function WastePage() {
 
   const total = (rows ?? []).reduce((s, r) => s + r.value, 0);
   const name = (r: WasteRow) =>
-    ingredients.find((i) => i.$id === r.ingredient_id)?.name ?? items.find((i) => i.$id === r.menu_item_id)?.name ?? ', ';
+    ingredients.find((i) => i.$id === r.ingredient_id)?.name ?? items.find((i) => i.$id === r.menu_item_id)?.name ?? '-';
 
   return (
     <>
@@ -136,7 +136,7 @@ export function WastePage() {
                     <td>{name(r)}</td>
                     <td className="num">{r.qty} {r.unit}</td>
                     <td><Badge>{REASONS.find((x) => x.v === r.reason)?.l ?? r.reason}</Badge></td>
-                    <td className="num">{settings && r.value ? formatMoney(r.value, settings) : ', '}</td>
+                    <td className="num">{settings && r.value ? formatMoney(r.value, settings) : '-'}</td>
                   </tr>
                 ))}
               </tbody>

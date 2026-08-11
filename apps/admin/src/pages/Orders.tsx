@@ -342,7 +342,7 @@ export function OrdersPage() {
                     <td>
                       <Badge tone={o.payment_status === 'paid' ? 'ok' : 'warn'}>{o.payment_status}</Badge>
                     </td>
-                    <td className="dim small">{touchedBy(o).map(nameOf).join(', ') || ', '}</td>
+                    <td className="dim small">{touchedBy(o).map(nameOf).join(', ') || '-'}</td>
                     <td className="num">{money(o.total)}</td>
                     <td className="num">
                       <Button size="sm" variant="ghost" onClick={() => openOrder(o)}>Details</Button>
@@ -398,9 +398,9 @@ export function OrdersPage() {
                 <tbody>
                   {payments.filter((p) => p.order_id === open.$id).map((p) => (
                     <tr key={p.$id}>
-                      <td>{methods.find((m) => m.$id === p.method_id)?.name ?? ', '}</td>
+                      <td>{methods.find((m) => m.$id === p.method_id)?.name ?? '-'}</td>
                       <td className="num">{money(p.amount)}</td>
-                      <td className="num dim">{p.tip ? money(p.tip) : ', '}</td>
+                      <td className="num dim">{p.tip ? money(p.tip) : '-'}</td>
                       <td className="dim small">{nameOf(p.taken_by)}</td>
                     </tr>
                   ))}

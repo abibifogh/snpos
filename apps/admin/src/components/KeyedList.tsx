@@ -32,7 +32,7 @@ export function useKeyedList(collection: string) {
 
 /** The display name for a stored key, falling back to the key itself. */
 export const nameForKey = (rows: KeyedRow[] | null, key?: string) =>
-  (key ? rows?.find((r) => r.key === key)?.name : undefined) ?? key ?? ', ';
+  (key ? rows?.find((r) => r.key === key)?.name : undefined) ?? key ?? '-';
 
 /**
  * Manage one of the restaurant's own lists, expense categories, ingredient
@@ -140,7 +140,7 @@ export function KeyedListManager({
                     <td style={{ fontWeight: 550 }}>{r.name}</td>
                     {accounts && (
                       <td className="dim small">
-                        {accounts.find((a) => a.code === r.account_code)?.name ?? r.account_code ?? ', '}
+                        {accounts.find((a) => a.code === r.account_code)?.name ?? r.account_code ?? '-'}
                       </td>
                     )}
                     <td>{r.active === false ? <Badge>Off</Badge> : <Badge tone="ok">Active</Badge>}</td>

@@ -1,12 +1,12 @@
 import { Badge, Button, Field, Input, Select, Textarea, Toggle } from '@snpos/ui';
 import { parseMoney, toInput } from '@snpos/core';
-import type { Consignor, MenuItem, ProductVariant } from '@snpos/core';
+import type { Consignor, MenuItem, ProductVariant, VariantType } from '@snpos/core';
 
 /** A size row being edited, before it is written. */
 export interface DraftVariant {
   $id?: string;
   label: string;
-  kind: ProductVariant['kind'];
+  kindKey: string;
   priceText: string;
   sku: string;
   barcode: string;
@@ -18,7 +18,7 @@ export const draftVariantsFrom = (rows: ProductVariant[], decimals: number): Dra
   rows.map((v) => ({
     $id: v.$id,
     label: v.label,
-    kind: v.kind,
+    kindKey: v.kind_key || v.kind || 'size',
     priceText: toInput(v.price, decimals),
     sku: v.sku ?? '',
     barcode: v.barcode ?? '',
@@ -26,8 +26,8 @@ export const draftVariantsFrom = (rows: ProductVariant[], decimals: number): Dra
     active: v.active,
   }));
 
-export const blankVariant = (): DraftVariant => ({
-  label: '', kind: 'size', priceText: '', sku: '', barcode: '', onHandText: '1', active: true,
+export const blankVariant = (kindKey = 'size'): DraftVariant => ({
+  label: '', kindKey, priceText: '', sku: '', barcode: '', onHandText: '1', active: true,
 });
 
 /**
@@ -41,13 +41,15 @@ export const blankVariant = (): DraftVariant => ({
 export function ConsignmentFields({
   editing, setEditing, consignors, variants, setVariants,
   removedVariantIds, setRemovedVariantIds, symbol, decimals,
-  onHandText, setOnHandText,
+  onHandText, setOnHandText, variantTypes,
 }: {
   editing: Partial<MenuItem>;
   setEditing: (v: Partial<MenuItem>) => void;
   /** Held as text so backspacing the last digit does not refill itself. */
   onHandText: string;
   setOnHandText: (v: string) => void;
+  /** The kinds of variation this shop sells by, as the shop defined them. */
+  variantTypes: VariantType[];
   consignors: Consignor[];
   variants: DraftVariant[];
   setVariants: (f: (v: DraftVariant[]) => DraftVariant[]) => void;
@@ -138,13 +140,13 @@ export function ConsignmentFields({
 
       {/* -------------------------------------------------------- sizes ---- */}
       <Field
-        label="Sizes"
-        hint="A basket in small, medium and large is one product and three prices. Add a row for each; leave it empty if the piece has only one price."
+        label="Variants"
+        hint={`A basket in small, medium and large is one product and three prices. Add a row for each; leave it empty if the piece has only one price. The kinds offered here (${variantTypes.map((t) => t.name.toLowerCase()).join(', ')}) are yours to change under Craft shop, Products, Variant types.`}
       >
         <div>
           {variants.length === 0 && (
             <p className="small dim" style={{ margin: '0 0 0.5rem' }}>
-              No sizes, this sells at the single price above.
+              No variants; this sells at the single price above.
             </p>
           )}
 
@@ -156,13 +158,12 @@ export function ConsignmentFields({
                 onChange={(e) => setVariant(i, { label: e.target.value })}
               />
               <Select
-                value={v.kind}
-                onChange={(e) => setVariant(i, { kind: e.target.value as ProductVariant['kind'] })}
+                value={v.kindKey}
+                onChange={(e) => setVariant(i, { kindKey: e.target.value })}
               >
-                <option value="size">Size</option>
-                <option value="colour">Colour</option>
-                <option value="finish">Finish</option>
-                <option value="other">Other</option>
+                {variantTypes.map((t) => (
+                  <option key={t.key} value={t.key}>{t.singular || t.name}</option>
+                ))}
               </Select>
               <Input
                 placeholder={symbol}
@@ -192,7 +193,9 @@ export function ConsignmentFields({
             </div>
           ))}
 
-          <Button onClick={() => setVariants((rows) => [...rows, blankVariant()])}>Add a size</Button>
+          <Button onClick={() => setVariants((rows) => [...rows, blankVariant(variantTypes[0]?.key ?? 'size')])}>
+            Add a variant
+          </Button>
           {removedVariantIds.length > 0 && (
             <p className="small dim" style={{ marginBottom: 0 }}>
               {removedVariantIds.length} removed, saved when you press Save.

@@ -113,7 +113,7 @@ export function ShiftsPage() {
                     <tr key={s.$id}>
                       <td style={{ fontWeight: 550 }}>{s.code}</td>
                       <td className="dim small">{new Date(s.opened_at).toLocaleString()}</td>
-                      <td className="dim small">{s.closed_at ? new Date(s.closed_at).toLocaleString() : ', '}</td>
+                      <td className="dim small">{s.closed_at ? new Date(s.closed_at).toLocaleString() : '-'}</td>
                       <td className="num">{settings ? formatMoney(s.sales_total, settings) : s.sales_total}</td>
                       <td className="num">
                         {s.status === 'closed' ? (

@@ -52,7 +52,7 @@ function Stat({
           {/* An arrow as well as the colour. Red and green alone is the one
               encoding a colourblind reader cannot use, and this is the line
               the whole panel turns on. */}
-          <span aria-hidden="true">{tone === 'good' ? '▲' : tone === 'bad' ? '▼' : ', '}</span>
+          <span aria-hidden="true">{tone === 'good' ? '▲' : tone === 'bad' ? '▼' : '-'}</span>
           <span>{asPercent(delta.ratio)} on the period before</span>
         </div>
       ) : (

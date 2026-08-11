@@ -50,7 +50,10 @@ export interface ProductVariant extends Doc {
   venue_id?: string;
   menu_item_id: string;
   label: string;
+  /** The original fixed four, kept only so old rows still validate. */
   kind: 'size' | 'colour' | 'finish' | 'other';
+  /** What the shop calls this kind of variation. See `variant_types`. */
+  kind_key?: string;
   price: number;
   sku?: string;
   barcode?: string;
@@ -421,6 +424,32 @@ export const loadConsignors = (activeOnly = false) =>
   listAll<Consignor>('consignors', activeOnly ? [Query.equal('active', true)] : []).then((rows) =>
     rows.sort((a, b) => a.name.localeCompare(b.name)),
   );
+
+export interface VariantType extends Doc {
+  key: string;
+  name: string;
+  singular?: string;
+  sort: number;
+  active: boolean;
+}
+
+/**
+ * The kinds of variation this shop sells by.
+ *
+ * Falls back to the three it ships with when the list has not been provisioned
+ * yet, so a product form opened on a fresh database offers something sensible
+ * rather than an empty dropdown nobody can get past.
+ */
+export async function loadVariantTypes(): Promise<VariantType[]> {
+  const rows = await listAll<VariantType>('variant_types').catch(() => [] as VariantType[]);
+  const live = rows.filter((t) => t.active !== false).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name));
+  if (live.length) return live;
+  return [
+    { key: 'size', name: 'Sizes', singular: 'size', sort: 0, active: true },
+    { key: 'colour', name: 'Colours', singular: 'colour', sort: 1, active: true },
+    { key: 'finish', name: 'Finishes', singular: 'finish', sort: 2, active: true },
+  ] as VariantType[];
+}
 
 export const loadVariants = (menuItemId?: string) =>
   listAll<ProductVariant>('product_variants', menuItemId ? [Query.equal('menu_item_id', menuItemId)] : []).then(

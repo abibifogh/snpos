@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **67 collections, 909 fields and 227 indexes**. Entered by hand at a
+> This is **68 collections, 916 fields and 230 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -127,7 +127,7 @@ Attributes are created asynchronously. If an index refuses to save with
 "attribute not available", wait ten seconds and try again, the attribute is
 still being built.
 
-There are 67 collections. A progress checklist is at the end of this document.
+There are 68 collections. A progress checklist is at the end of this document.
 
 ---
 
@@ -2207,7 +2207,7 @@ There are 67 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: Team: managers, Team: admins · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: Team: managers, Team: admins
 
-**Attributes** (11)
+**Attributes** (12)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -2216,6 +2216,7 @@ There are 67 collections. A progress checklist is at the end of this document.
 | `menu_item_id` | String | size 64 | **Yes** | ,  | No |
 | `label` | String | size 60 | **Yes** | ,  | No |
 | `kind` | Enum | size, colour, finish, other | **Yes** | ,  | No |
+| `kind_key` | String | size 40 | No | ,  | No |
 | `price` | Integer | ,  | **Yes** | ,  | No |
 | `sku` | String | size 40 | No | ,  | No |
 | `barcode` | String | size 60 | No | ,  | No |
@@ -2234,7 +2235,32 @@ There are 67 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 65. `product_moves`, Product movements
+### 65. `variant_types`, Variant types
+
+**Read**: Any · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
+
+**Attributes** (6)
+
+| Key | Type | Size / Enum values | Required | Default | Array |
+| --- | --- | --- | --- | --- | --- |
+| `org_id` | String | size 64 | No | ,  | No |
+| `key` | String | size 40 | **Yes** | ,  | No |
+| `name` | String | size 60 | **Yes** | ,  | No |
+| `singular` | String | size 60 | No | ,  | No |
+| `sort` | Integer | ,  | **Yes** | ,  | No |
+| `active` | Boolean | ,  | **Yes** | ,  | No |
+
+**Indexes** (3)
+
+| Index key | Type | Attributes (in this order) |
+| --- | --- | --- |
+| `key_unique` | unique | `key` |
+| `sort` | key | `sort` |
+| `org` | key | `org_id` |
+
+---
+
+### 66. `product_moves`, Product movements
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: _none, server only_ · **Delete**: Team: admins
 
@@ -2268,7 +2294,7 @@ There are 67 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 66. `consignor_ledger`, Consignor ledger
+### 67. `consignor_ledger`, Consignor ledger
 
 **Read**: Team: managers, Team: admins · **Create**: _none, server only_ · **Update**: _none, server only_ · **Delete**: _none, server only_
 
@@ -2306,7 +2332,7 @@ There are 67 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 67. `consignor_payouts`, Consignor payouts
+### 68. `consignor_payouts`, Consignor payouts
 
 **Read**: Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
@@ -2573,10 +2599,11 @@ way mistakes creep in.
 - [ ] 61. `cash_handovers` (15 fields, 4 indexes)
 - [ ] 62. `consignors` (14 fields, 3 indexes)
 - [ ] 63. `consignment_intakes` (10 fields, 3 indexes)
-- [ ] 64. `product_variants` (11 fields, 4 indexes)
-- [ ] 65. `product_moves` (13 fields, 5 indexes)
-- [ ] 66. `consignor_ledger` (17 fields, 5 indexes)
-- [ ] 67. `consignor_payouts` (14 fields, 3 indexes)
+- [ ] 64. `product_variants` (12 fields, 4 indexes)
+- [ ] 65. `variant_types` (6 fields, 3 indexes)
+- [ ] 66. `product_moves` (13 fields, 5 indexes)
+- [ ] 67. `consignor_ledger` (17 fields, 5 indexes)
+- [ ] 68. `consignor_payouts` (14 fields, 3 indexes)
 
 **Stage 6, seed documents**
 
@@ -2597,7 +2624,7 @@ way mistakes creep in.
 
 Sanity-check before building on top of it:
 
-1. The `snpos` database lists **67 collections**.
+1. The `snpos` database lists **68 collections**.
 2. `settings/main` exists and `shift_float_policy` reads `zero`.
 3. `venues/main` exists and is active.
 4. `feature_flags` holds **19 rows**, each with a blank `venue_id`.

@@ -303,7 +303,7 @@ export function ExpensesPage() {
     }
   };
 
-  const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? ', ';
+  const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? '-';
 
   /** A readable "paid to", worked out the same way the kitchen works it out. */
   function payeeLabel(kind: PaidToKind, e: Partial<Expense>): string {
@@ -382,7 +382,7 @@ export function ExpensesPage() {
                         <td className="dim small">{new Date(r.$createdAt).toLocaleDateString()}</td>
                         <td>{nameForKey(categories, r.category_key || r.category)}</td>
                         <td className="dim">
-                          {r.payee || ', '}
+                          {r.payee || '-'}
                           {r.paid_to_kind === 'open_market' && <div className="small dim">Open market</div>}
                           {r.paid_to_kind === 'staff' && <div className="small dim">Staff</div>}
                         </td>

@@ -1995,7 +1995,14 @@ export const COLLECTIONS = [
       ['venue_id', 's', 64, false],
       ['menu_item_id', 's', 64, true],
       ['label', 's', 60, true], // "Large", "40cm", "Indigo"
+      // The original fixed four. Kept because an enum cannot be widened in
+      // place without dropping the column and its data, so `kind_key` is what
+      // the app reads and writes now and this only has to stay valid.
       ['kind', 'e', ['size', 'colour', 'finish', 'other'], true, 'size'],
+      // What the shop calls this kind of variation, pointing at a row the shop
+      // created in `variant_types`. A pottery studio sells by glaze, a weaver
+      // by width, and neither is a "size".
+      ['kind_key', 's', 40, false],
       ['price', 'i', null, true, 0],
       ['sku', 's', 40, false],
       ['barcode', 's', 60, false],
@@ -2012,6 +2019,30 @@ export const COLLECTIONS = [
       ['sku', 'key', ['sku']],
       ['barcode', 'key', ['barcode']],
     ],
+  },
+  {
+    /**
+     * The kinds of variation a shop's products come in.
+     *
+     * Shipped as size, colour and finish because most shops need at least one
+     * of them, and editable because most shops need something else as well. A
+     * pottery studio sells by glaze, a weaver by width, a framer by mount.
+     * Hard-coding four words was deciding what somebody's stock is on their
+     * behalf.
+     */
+    id: 'variant_types',
+    name: 'Variant types',
+    perms: { read: ['any'], create: MGMT, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['key', 's', 40, true],
+      ['name', 's', 60, true],
+      // What one of these is called on its own, for the label above a dropdown:
+      // "Size" as a group, "size" when asking which one.
+      ['singular', 's', 60, false],
+      ['sort', 'i', null, true, 0],
+      ['active', 'b', null, true, true],
+    ],
+    indexes: [['key_unique', 'unique', ['key']], ['sort', 'key', ['sort']]],
   },
   {
     /**
@@ -2537,6 +2568,19 @@ export const SEED_EXPENSE_CATEGORIES = [
 ];
 
 /** Ingredient groupings to start from. Rename or delete any of them. */
+/**
+ * The kinds of variation a shop starts with.
+ *
+ * Three, not four: "other" was in the original list and is what somebody picks
+ * when the list is wrong. The answer to that is to let them add the word they
+ * actually want, which is the whole point of this being a list they own.
+ */
+export const SEED_VARIANT_TYPES = [
+  { key: 'size', name: 'Sizes', singular: 'size', sort: 0 },
+  { key: 'colour', name: 'Colours', singular: 'colour', sort: 1 },
+  { key: 'finish', name: 'Finishes', singular: 'finish', sort: 2 },
+];
+
 export const SEED_INGREDIENT_CATEGORIES = [
   { key: 'produce', name: 'Produce', sort: 1 },
   { key: 'protein', name: 'Meat & fish', sort: 2 },

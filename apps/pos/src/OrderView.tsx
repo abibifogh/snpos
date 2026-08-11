@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Field, Input, Modal, Notice, Select, Badge, Spinner } from '@snpos/ui';
 import {
   db, DB_ID, Query, listAll, createOrder, computeTotals, lineTotal, formatMoney,
-  parseMoney, toInput, isEnabled, featureConfig, splitEvenly, visibleSections, recordPayment, asksForTip,
+  parseMoney, toInput, isEnabled, featureConfig, visibleSections, recordPayment, asksForTip,
   variantPriceRange,
 } from '@snpos/core';
 import type { CartLine, Order, OrderItem, Doc, MenuEntry, Settings } from '@snpos/core';
@@ -462,13 +462,28 @@ function PaymentModal({
   const [tip, setTip] = useState(toInput(0, decimals));
   const [reference, setReference] = useState('');
   const [email, setEmail] = useState('');
-  const [splitWays, setSplitWays] = useState(1);
+  /**
+   * What the customer physically handed over, which is not the same number as
+   * what is going against the bill.
+   *
+   * They were one box before, so working out change meant typing the tendered
+   * amount into "amount taken", which then looked like an overpayment and made
+   * a part payment impossible to record at the same time. Two boxes, two
+   * questions: how much of this bill is being settled, and what was handed
+   * over to settle it.
+   */
+  const [cash, setCash] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const method = methods.find((m) => m.$id === methodId);
   const paid = parseMoney(amount, decimals) ?? 0;
-  const change = method?.kind === 'cash' ? Math.max(0, paid - amountDue) : 0;
+  const tendered = parseMoney(cash, decimals) ?? 0;
+  const isCash = method?.kind === 'cash';
+  // Change comes off what was handed over, never off the bill. A customer
+  // paying half a bill with a large note is still owed change.
+  const change = isCash && tendered > paid ? tendered - paid : 0;
+  const short = isCash && cash.trim() !== '' && tendered > 0 && tendered < paid;
   const askEmail = isEnabled(ctx.features, 'receipts') && featureConfig(ctx.features, 'receipts', 'allow_staff_enter_email', true);
 
   const confirm = async () => {
@@ -477,6 +492,12 @@ function PaymentModal({
     // Less than the full amount is allowed and is not an error: a table
     // splitting the bill pays it in pieces. What is not allowed is nothing.
     if (paid <= 0) { setError('Enter how much is being paid.'); return; }
+    // Cash that does not cover what is being recorded is a typo somewhere. The
+    // drawer will not balance either way; better to catch it at the counter.
+    if (short) {
+      setError('The cash given is less than the amount being paid. Correct one of them.');
+      return;
+    }
     if (method?.requires_reference && !reference.trim()) { setError('Enter the reference from the card machine.'); return; }
 
     setBusy(true);
@@ -507,6 +528,8 @@ function PaymentModal({
           // The tip belongs to the tender, not to each order, so it goes on
           // the first row only rather than being counted once per order.
           tip: index === 0 ? parseMoney(tip, decimals) ?? 0 : 0,
+          // On the first order only; the change was given once, not once per
+          // order on a bill that covers several.
           changeGiven: index === 0 ? change : 0,
           reference: reference.trim(),
           takenBy: ctx.userId,
@@ -565,6 +588,14 @@ function PaymentModal({
         >
           <Input value={amount} inputMode="decimal" onChange={(e) => setAmount(e.target.value)} />
         </Field>
+        {isCash && (
+          <Field
+            label={`Cash given (${ctx.settings.currency_symbol})`}
+            hint="What the customer handed over. Leave blank if it was the exact amount."
+          >
+            <Input value={cash} inputMode="decimal" onChange={(e) => setCash(e.target.value)} />
+          </Field>
+        )}
         {asksForTip(ctx.settings, 'till') && (
           <Field label={`Tip (${ctx.settings.currency_symbol})`} hint="Not taxed as sales.">
             <Input value={tip} inputMode="decimal" onChange={(e) => setTip(e.target.value)} />
@@ -572,8 +603,28 @@ function PaymentModal({
         )}
       </div>
 
-      {method?.kind === 'cash' && change > 0 && (
+      {/* Quick ways to fill the two boxes, because a counter is not the place
+          to do arithmetic. Part of the bill, all of it, or the note in the
+          customer's hand. */}
+      <div className="row" style={{ gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
+        <Button size="sm" onClick={() => setAmount(toInput(amountDue, decimals))}>
+          Pay all · {formatMoney(amountDue, ctx.settings)}
+        </Button>
+        <Button size="sm" onClick={() => setAmount(toInput(Math.round(amountDue / 2), decimals))}>
+          Half
+        </Button>
+        {isCash && (
+          <Button size="sm" onClick={() => setCash(toInput(paid, decimals))}>Exact cash</Button>
+        )}
+      </div>
+
+      {change > 0 && (
         <Notice tone="ok">Change to give: <strong>{formatMoney(change, ctx.settings)}</strong></Notice>
+      )}
+      {short && (
+        <Notice tone="warn">
+          The cash given is less than the amount being paid. Change one of them before recording it.
+        </Notice>
       )}
 
       {method?.requires_reference && (
@@ -582,20 +633,6 @@ function PaymentModal({
         </Field>
       )}
 
-      <Field label="Split evenly between" hint="Shows what each person owes. Record the tender once.">
-        <div className="row">
-          <Input
-            type="number"
-            min={1}
-            value={splitWays}
-            style={{ width: '5rem' }}
-            onChange={(e) => setSplitWays(Math.max(1, Number(e.target.value)))}
-          />
-          <span className="small dim">
-            {splitEvenly(amountDue, splitWays).map((s) => formatMoney(s, ctx.settings)).join(' · ')}
-          </span>
-        </div>
-      </Field>
 
       {askEmail && (
         <Field label="Email the receipt to" hint="Optional. Leave blank to skip, no receipt is sent.">
