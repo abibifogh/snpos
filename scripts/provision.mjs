@@ -187,11 +187,29 @@ async function relaxIfNowOptional(colId, tuple, live) {
 
   const base = type.replace('[]', '');
   const d = def ?? null;
+
+  /**
+   * Bounds, only where there genuinely are any.
+   *
+   * An integer created without limits comes back from Appwrite carrying the
+   * full signed 64-bit range, and that number cannot survive a round trip
+   * through JavaScript: the boundary is larger than Number.MAX_SAFE_INTEGER, so
+   * it is read approximately and sent back a shade outside the range Appwrite
+   * will accept. The reply is "Invalid `min` param", about a bound nobody
+   * asked for, and the attribute stays required.
+   *
+   * Null means unbounded, which is what the schema says for every integer here.
+   * So anything outside the safe range is passed back as null rather than as a
+   * number that has already lost its last digits.
+   */
+  const bound = (v) =>
+    typeof v === 'number' && Number.isSafeInteger(v) ? v : null;
+
   try {
     switch (base) {
       case 's': await db.updateStringAttribute(DB_ID, colId, key, false, d, arg); break;
-      case 'i': await db.updateIntegerAttribute(DB_ID, colId, key, false, live.min, live.max, d); break;
-      case 'f': await db.updateFloatAttribute(DB_ID, colId, key, false, live.min, live.max, d); break;
+      case 'i': await db.updateIntegerAttribute(DB_ID, colId, key, false, bound(live.min), bound(live.max), d); break;
+      case 'f': await db.updateFloatAttribute(DB_ID, colId, key, false, bound(live.min), bound(live.max), d); break;
       case 'b': await db.updateBooleanAttribute(DB_ID, colId, key, false, d); break;
       case 'd': await db.updateDatetimeAttribute(DB_ID, colId, key, false, d); break;
       case 'e': await db.updateEnumAttribute(DB_ID, colId, key, arg, false, d); break;

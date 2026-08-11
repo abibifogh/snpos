@@ -223,8 +223,43 @@ for (const root of ROOTS) {
   }
 }
 
+/**
+ * Every index must point at a column that exists.
+ *
+ * Appwrite builds indexes last, so one naming a missing attribute does not fail
+ * until provisioning is most of the way through, and it takes the whole run
+ * down with it. It happened: an index meant for `orders` was pasted onto
+ * `receipts` as well, which has no `module` column, and provisioning stopped
+ * dead on a live project.
+ *
+ * It is entirely detectable from the schema file, which makes shipping it
+ * twice a choice.
+ */
+const indexFaults = [];
+for (const col of COLLECTIONS) {
+  const columns = new Set(col.attributes.map(([key]) => key));
+  const names = new Set();
+  for (const [name, , cols] of col.indexes ?? []) {
+    if (names.has(name)) indexFaults.push(`${col.id}#${name} is declared twice`);
+    names.add(name);
+    for (const c of cols) {
+      // $createdAt and friends are Appwrite's own and are always there.
+      if (c.startsWith('$')) continue;
+      if (!columns.has(c)) indexFaults.push(`${col.id}#${name} indexes "${c}", which ${col.id} does not have`);
+    }
+  }
+}
+
+if (indexFaults.length) {
+  console.error('These indexes cannot be built:\n');
+  for (const f of indexFaults) console.error(`  ${f}`);
+  console.error('\nProvisioning would stop part-way through, on a live project.');
+  process.exit(1);
+}
+
 if (problems.length === 0) {
-  console.log(`✓ every write matches the schema (${schema.size} collections checked)`);
+  console.log(`✓ every write matches the schema (${schema.size} collections checked, ${
+    COLLECTIONS.reduce((n, c) => n + (c.indexes?.length ?? 0), 0)} indexes verified)`);
   process.exit(0);
 }
 

@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **68 collections, 917 fields and 232 indexes**. Entered by hand at a
+> This is **68 collections, 917 fields and 231 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -1514,13 +1514,12 @@ There are 68 collections. A progress checklist is at the end of this document.
 | `resend_requested_by` | String | size 64 | No | ,  | No |
 | `email_source` | Enum | guest_at_order, staff_entered, customer_profile | No | ,  | No |
 
-**Indexes** (5)
+**Indexes** (4)
 
 | Index key | Type | Attributes (in this order) |
 | --- | --- | --- |
 | `order` | key | `order_id` |
 | `status_created` | key | `status`, `$createdAt` |
-| `module_status` | key | `module`, `status` |
 | `email` | key | `to_email` |
 | `org` | key | `org_id` |
 
@@ -2580,7 +2579,7 @@ way mistakes creep in.
 - [ ] 39. `devices` (8 fields, 3 indexes)
 - [ ] 40. `audit_log` (13 fields, 4 indexes)
 - [ ] 41. `feature_flags` (6 fields, 3 indexes)
-- [ ] 42. `receipts` (16 fields, 5 indexes)
+- [ ] 42. `receipts` (16 fields, 4 indexes)
 - [ ] 43. `pickup_points` (13 fields, 2 indexes)
 - [ ] 44. `delivery_zones` (9 fields, 2 indexes)
 - [ ] 45. `preorder_slots` (9 fields, 3 indexes)

@@ -1398,7 +1398,6 @@ export const COLLECTIONS = [
     indexes: [
       ['order', 'key', ['order_id']],
       ['status_created', 'key', ['status', '$createdAt']],
-      ['module_status', 'key', ['module', 'status']],
       ['email', 'key', ['to_email']],
     ],
   },
