@@ -292,6 +292,9 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
       // Consignment. Blank on every kitchen row, and nothing reads them there.
       consignor_id: editing.consignor_id ?? '',
       commission_bp: editing.commission_bp ?? undefined,
+      // Zero means "no flat amount on this piece, use the percentage". Written
+      // either way so switching a piece back to a share actually clears it.
+      commission_flat: editing.commission_flat ?? 0,
       barcode: editing.barcode ?? '',
       // Written explicitly. The count is what the shop floor reads, and
       // leaving it out of the payload left new pieces at whatever the column

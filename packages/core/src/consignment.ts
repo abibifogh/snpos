@@ -1,5 +1,5 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
-import { rateFor, splitSale } from './consignment-math';
+import { rateFor, flatFor, splitSale } from './consignment-math';
 import type { LedgerKind } from './consignment-math';
 import type { Doc, Settings } from './types';
 import type { Order, OrderItem } from './orders';
@@ -12,10 +12,10 @@ import type { Order, OrderItem } from './orders';
  * money logic can be tested without a database, not to make callers choose.
  */
 export {
-  rateFor, splitSale, balanceOf, buildStatement, labelForKind, onHandFor,
+  rateFor, flatFor, splitSale, dueFor, balanceOf, buildStatement, labelForKind, onHandFor,
 } from './consignment-math';
 export type {
-  Split, Statement, StatementLine, LedgerKind, LedgerLike,
+  Split, Statement, StatementLine, LedgerKind, LedgerLike, IntakeLine, UnsoldLine, IntakeLike,
 } from './consignment-math';
 
 /**
@@ -42,6 +42,8 @@ export interface Consignor extends Doc {
   address?: string;
   /** What the shop keeps, in basis points. 3000 = 30%. */
   commission_bp: number;
+  /** Or a flat amount per piece. Above zero, this wins over the percentage. */
+  commission_flat?: number;
   payout_method?: 'cash' | 'momo' | 'bank' | 'other';
   payout_details?: string;
   agreement_start?: string;
@@ -58,6 +60,8 @@ export interface ConsignmentIntake extends Doc {
   received_by?: string;
   piece_count: number;
   total_retail: number;
+  /** The consignor's share of that, at the rate agreed on the day. */
+  total_due?: number;
   notes?: string;
   status: 'open' | 'closed';
 }
@@ -112,6 +116,7 @@ export interface LedgerEntry extends Doc {
   gross?: number;
   commission?: number;
   commission_bp?: number;
+  commission_flat?: number;
   payout_id?: string;
   created_by?: string;
 }
@@ -172,7 +177,8 @@ export async function creditForOrder(opts: {
     // The rate written on the line wins over everything: it is what was agreed
     // at the moment of sale, and that is the only rate a statement may use.
     const bp = rateFor({ commission_bp: line.commission_bp }, consignor, settings);
-    const split = splitSale(line.line_total ?? 0, bp);
+    const flat = flatFor({ commission_flat: line.commission_flat }, consignor);
+    const split = splitSale(line.line_total ?? 0, bp, flat, line.qty ?? 1);
 
     try {
       await db.createDocument(DB_ID, 'consignor_ledger', ID.unique(), {
@@ -190,6 +196,7 @@ export async function creditForOrder(opts: {
         gross: split.gross,
         commission: split.commission,
         commission_bp: split.bp,
+        commission_flat: split.flat,
         created_by: userId ?? '',
       });
       credited += 1;
@@ -220,6 +227,18 @@ export const ledgerFor = (consignorId: string) =>
  * mean the statement had to know about payment methods, and the payout had to
  * know about balances.
  *
+ * Only the payout is written here. The ledger line is written by the server,
+ * on the payout's own creation event, because nothing in a browser may create a
+ * ledger entry: the ledger is the number a maker is paid from, and a balance
+ * anybody can type into is not evidence of anything. Trying to write it from
+ * the admin app is what produced "No permissions provided for action create",
+ * and the permission was right. This was wrong.
+ *
+ * So this waits for the server to catch up rather than reporting a payment
+ * whose effect on the balance has not landed yet. If it does not land, that is
+ * said out loud instead of leaving somebody to wonder why the figure has not
+ * moved.
+ *
  * Nothing here moves money. The shop pays by momo or hands over cash and then
  * records that it did, which is the same rule the whole system follows.
  */
@@ -235,7 +254,7 @@ export async function recordPayout(opts: {
   note?: string;
   userId?: string;
   at?: Date;
-}): Promise<ConsignorPayout> {
+}): Promise<{ payout: ConsignorPayout; postedToLedger: boolean }> {
   const at = (opts.at ?? new Date()).toISOString();
   if (!(opts.amount > 0)) throw new Error('A payout has to be more than nothing.');
 
@@ -254,19 +273,29 @@ export async function recordPayout(opts: {
     paid_by: opts.userId ?? '',
   })) as unknown as ConsignorPayout;
 
-  await db.createDocument(DB_ID, 'consignor_ledger', ID.unique(), {
-    venue_id: opts.venueId,
-    consignor_id: opts.consignor.$id,
-    entry_at: at,
-    kind: 'payout',
-    // Negative: paying somebody reduces what they are owed.
-    amount: -opts.amount,
-    description: `Paid ${opts.method}${opts.transactionRef ? ` · ${opts.transactionRef}` : ''}`,
-    payout_id: payout.$id,
-    created_by: opts.userId ?? '',
-  });
+  return { payout, postedToLedger: await waitForPayoutEntry(payout.$id) };
+}
 
-  return payout;
+/**
+ * Wait for the server's ledger line for a payout to appear.
+ *
+ * A few seconds at most. The function that writes it fires on the payout being
+ * created, so this is normally one or two attempts; the loop exists for the
+ * cold start, not for a failure. Returns false rather than throwing, because
+ * the payment itself is recorded either way and losing that would be the worse
+ * outcome by a distance.
+ */
+export async function waitForPayoutEntry(payoutId: string, attempts = 8): Promise<boolean> {
+  for (let i = 0; i < attempts; i += 1) {
+    // Half a second, then a second, then longer. A tight loop against a
+    // database achieves nothing except load.
+    await new Promise((r) => setTimeout(r, i === 0 ? 600 : 1200));
+    const rows = await listAll<LedgerEntry>('consignor_ledger', [Query.equal('payout_id', payoutId)]).catch(
+      () => [] as LedgerEntry[],
+    );
+    if (rows.length > 0) return true;
+  }
+  return false;
 }
 
 /* ------------------------------------------------------------------ loading */

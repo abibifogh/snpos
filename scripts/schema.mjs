@@ -450,6 +450,11 @@ export const COLLECTIONS = [
       // Overrides the consignor's rate for this piece. Used when one item is
       // negotiated differently, a large commissioned work, say.
       ['commission_bp', 'i', null, false],
+      // A commission agreed as a flat amount per piece instead of a share.
+      // Zero, or absent, means the percentage applies. Some agreements are
+      // genuinely "two cedis a basket, whatever it sells for", and forcing
+      // that into a percentage makes it a different number at every price.
+      ['commission_flat', 'i', null, false, 0],
       ['barcode', 's', 60, false],
       // Pieces on the shelf. Only meaningful when the product has no variants;
       // with variants the count lives on each one, because that is what sells.
@@ -788,6 +793,9 @@ export const COLLECTIONS = [
       ['variant_label', 's', 60, false],
       ['consignor_id', 's', 64, false],
       ['commission_bp', 'i', null, false],
+      // The flat per-piece commission agreed for this line, when that is what
+      // was agreed. Snapshotted for the same reason the rate is.
+      ['commission_flat', 'i', null, false, 0],
       ['void_reason', 's', 300, false],
       ['voided_by', 's', 64, false],
       ['course', 'i', null, true, 1],
@@ -1951,6 +1959,9 @@ export const COLLECTIONS = [
       ['address', 's', 300, false],
       // What the shop keeps, in basis points. 3000 = 30%.
       ['commission_bp', 'i', null, true, 3000],
+      // Or a flat amount per piece, when that is the agreement. Zero means the
+      // percentage above applies; anything above zero wins over it.
+      ['commission_flat', 'i', null, false, 0],
       ['payout_method', 'e', ['cash', 'momo', 'bank', 'other'], false, 'momo'],
       ['payout_details', 's', 200, false], // momo number, account, whatever
       ['agreement_start', 'd', null, false],
@@ -1982,6 +1993,10 @@ export const COLLECTIONS = [
       ['received_by', 's', 64, false],
       ['piece_count', 'i', null, true, 0],
       ['total_retail', 'i', null, true, 0], // what it would all sell for
+      // The consignor's share of that, worked out at the rate agreed on the
+      // day it arrived. Snapshotted rather than recomputed, because a rate
+      // changed next year must not rewrite what a delivery was worth.
+      ['total_due', 'i', null, false, 0],
       ['notes', 's', 1000, false],
       ['status', 'e', ['open', 'closed'], true, 'open'],
     ],
@@ -2129,6 +2144,7 @@ export const COLLECTIONS = [
       ['gross', 'i', null, false, 0], // what the customer paid
       ['commission', 'i', null, false, 0], // what the shop kept
       ['commission_bp', 'i', null, false, 0], // the rate used, snapshotted
+      ['commission_flat', 'i', null, false, 0], // or the flat amount, if that
       ['payout_id', 's', 64, false],
       ['created_by', 's', 64, false],
     ],

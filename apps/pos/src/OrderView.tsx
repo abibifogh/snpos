@@ -151,6 +151,7 @@ export function OrderView({
           // can credit the right person without looking anything up at payment.
           consignor_id: entry.item.consignor_id || undefined,
           commission_bp: entry.item.commission_bp ?? undefined,
+          commission_flat: entry.item.commission_flat ?? undefined,
         },
       ];
     });

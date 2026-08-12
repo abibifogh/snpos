@@ -144,6 +144,8 @@ export interface MenuItem extends Doc {
   consignor_id?: string;
   intake_id?: string;
   commission_bp?: number;
+  /** A flat per-piece commission. Above zero it wins over the percentage. */
+  commission_flat?: number;
   barcode?: string;
   on_hand?: number;
   is_one_off?: boolean;

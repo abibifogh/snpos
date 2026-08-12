@@ -6,8 +6,9 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, Query,
   loadConsignors, nextReference, moveStock, buildDeliverySlipHtml, openPrintable,
+  rateFor, flatFor, dueFor,
 } from '@snpos/core';
-import type { Consignor, ConsignmentIntake, MenuItem, Category } from '@snpos/core';
+import type { Consignor, ConsignmentIntake, MenuItem, Category, ProductMove, Settings } from '@snpos/core';
 import { useSession } from '../session';
 
 /**
@@ -56,16 +57,34 @@ export function IntakePage() {
   /**
    * The paper that goes back with the maker.
    *
-   * Built from the pieces as they stand rather than from a copy taken at
-   * intake, so a slip reprinted after a price correction shows the corrected
-   * price. The alternative, a frozen snapshot, would have the shop and the
-   * maker holding two different documents about the same delivery.
+   * Prices come from the pieces as they stand, so a slip reprinted after a
+   * price correction shows the corrected price. Quantities do not: they come
+   * from the arrival movements, which are the record of what was actually
+   * handed over on the day.
+   *
+   * That distinction is the whole fix. Counting the shelf meant a reprinted
+   * slip counted down as things sold, and once anything had gone out twice it
+   * printed a negative quantity, which is not something anybody ever brought
+   * in. A delivery slip is about a past event and has to read the same in a
+   * year as it did on the counter.
    */
   const slipFor = async (intake: ConsignmentIntake) => {
     const consignor = consignors.find((c) => c.$id === intake.consignor_id);
     if (!consignor || !settings) { setError('That delivery has no consignor on file.'); return; }
-    const pieces = await listAll<MenuItem>('menu_items', [Query.equal('intake_id', intake.$id)]).catch(() => []);
+
+    const [pieces, moves] = await Promise.all([
+      listAll<MenuItem>('menu_items', [Query.equal('intake_id', intake.$id)]).catch(() => [] as MenuItem[]),
+      listAll<ProductMove>('product_moves', [
+        Query.equal('ref_id', intake.$id), Query.equal('type', 'intake'),
+      ]).catch(() => [] as ProductMove[]),
+    ]);
     if (pieces.length === 0) { setError('Nothing is recorded against that delivery.'); return; }
+
+    const received = new Map<string, number>();
+    for (const m of moves) {
+      received.set(m.menu_item_id, (received.get(m.menu_item_id) ?? 0) + Math.abs(m.qty_delta));
+    }
+
     openPrintable(
       buildDeliverySlipHtml({
         intake,
@@ -73,7 +92,15 @@ export function IntakePage() {
         settings,
         pieces: pieces
           .sort((a, b) => a.name.localeCompare(b.name))
-          .map((p) => ({ name: p.name, qty: p.on_hand ?? 1, price: p.price })),
+          .map((p) => ({
+            name: p.name,
+            // The movement when there is one. Deliveries booked in before the
+            // movements existed fall back to the shelf, taken as a positive.
+            qty: received.get(p.$id) ?? Math.abs(p.on_hand ?? 1) ?? 1,
+            price: p.price,
+            // What one earns them, at this piece's own terms where it has any.
+            due: dueFor(p.price, rateFor(p, consignor, settings), flatFor(p, consignor)),
+          })),
       }),
       `Delivery slip ${intake.reference}`,
     );
@@ -153,6 +180,7 @@ export function IntakePage() {
           categories={categories}
           decimals={decimals}
           symbol={settings?.currency_symbol ?? ''}
+          settings={settings}
           userId={user?.$id ?? ''}
           onClose={() => setReceiving(false)}
           onDone={async (m, intake) => {
@@ -194,12 +222,13 @@ const blankPiece = (categoryId: string): DraftPiece => ({
  * rather than a form you open and close once per basket.
  */
 function ReceiveModal({
-  consignors, categories, decimals, symbol, userId, onClose, onDone,
+  consignors, categories, decimals, symbol, settings, userId, onClose, onDone,
 }: {
   consignors: Consignor[];
   categories: Category[];
   decimals: number;
   symbol: string;
+  settings: Settings | null;
   userId: string;
   onClose: () => void;
   onDone: (message: string, intake?: ConsignmentIntake) => Promise<void>;
@@ -226,6 +255,20 @@ function ReceiveModal({
   );
   const totalPieces = filled.reduce((sum, p) => sum + Math.max(1, Number(p.qtyText || 1)), 0);
 
+  /**
+   * What this delivery is worth to the maker, at today's agreed terms.
+   *
+   * Worked out here and stored on the delivery rather than recomputed when a
+   * statement is opened, because a rate renegotiated next year must not
+   * silently restate what a delivery last March was worth.
+   */
+  const consignor = consignors.find((c) => c.$id === consignorId) ?? null;
+  const totalDue = filled.reduce((sum, p) => {
+    const price = parseMoney(p.priceText, decimals) ?? 0;
+    const qty = Math.max(1, Number(p.qtyText || 1));
+    return sum + dueFor(price, rateFor(null, consignor, settings), flatFor(null, consignor)) * qty;
+  }, 0);
+
   const save = async () => {
     if (!consignorId) { setError('Say whose delivery this is.'); return; }
     if (filled.length === 0) { setError('Add at least one piece, with a name and a price.'); return; }
@@ -244,6 +287,7 @@ function ReceiveModal({
         received_by: userId,
         piece_count: totalPieces,
         total_retail: totalRetail,
+        total_due: totalDue,
         notes: notes.trim(),
         status: 'open',
       });
@@ -374,7 +418,8 @@ function ReceiveModal({
           </Button>
           {filled.length > 0 && (
             <p className="small dim" style={{ marginBottom: 0 }}>
-              {totalPieces} piece{totalPieces === 1 ? '' : 's'} worth {symbol}{(totalRetail / 100).toFixed(2)} so far.
+              {totalPieces} piece{totalPieces === 1 ? '' : 's'} at {symbol}{(totalRetail / 100).toFixed(2)} on the
+              shelf, {symbol}{(totalDue / 100).toFixed(2)} of that theirs.
             </p>
           )}
         </div>

@@ -88,7 +88,30 @@ const header = (settings: Settings, kind: string, reference: string, when: strin
   </header>
   <div class="rule"></div>`;
 
-const partyBlock = (consignor: Consignor, settings: Settings) => `
+/**
+ * What the shop keeps, said the way it was agreed.
+ *
+ * A flat amount printed as a percentage is a different percentage at every
+ * price, which is exactly the confusion a written agreement exists to prevent.
+ */
+const commissionLabel = (
+  c: Pick<Consignor, 'commission_bp' | 'commission_flat'>,
+  settings: Settings,
+): string =>
+  (c.commission_flat ?? 0) > 0
+    ? `${formatMoney(c.commission_flat as number, settings)} per piece`
+    : `${(c.commission_bp / 100).toFixed(c.commission_bp % 100 ? 1 : 0)}%`;
+
+/**
+ * Who this is between.
+ *
+ * `showCommission` is off for a statement. A statement is a maker's record of
+ * what they are owed, and the shop's own margin printed across the top of it
+ * turns a settlement into a negotiation. It stays on the delivery slip, where
+ * it belongs: a maker who signs a slip that does not mention the terms has
+ * agreed to nothing.
+ */
+const partyBlock = (consignor: Consignor, settings: Settings, showCommission = true) => `
   <div class="parties">
     <div class="party">
       <div class="label">Consignor</div>
@@ -98,25 +121,44 @@ const partyBlock = (consignor: Consignor, settings: Settings) => `
       <div class="line">Code ${esc(consignor.code)}</div>
     </div>
     <div class="party">
-      <div class="label">Received by</div>
+      <div class="label">${showCommission ? 'Received by' : 'From'}</div>
       <div class="who">${esc(settings.restaurant_name || 'The shop')}</div>
-      <div class="line">Commission ${(consignor.commission_bp / 100).toFixed(consignor.commission_bp % 100 ? 1 : 0)}%</div>
+      ${showCommission ? `<div class="line">Commission ${esc(commissionLabel(consignor, settings))}</div>` : ''}
     </div>
   </div>`;
 
 export interface SlipPiece {
   name: string;
+  /** How many were handed over. Always counted as a positive. */
   qty: number;
+  /** The shop's shelf price for one. */
   price: number;
+  /**
+   * What one earns the consignor at the agreed terms.
+   *
+   * Given rather than derived, because the terms can be a percentage or a flat
+   * amount per piece, and only the caller holds the piece's own override.
+   */
+  due: number;
 }
 
 /**
  * The slip that goes back with somebody who has just dropped work off.
  *
  * It exists to settle one question later: what was handed over, on what day,
- * at what price. So it carries the pieces, the agreed commission, and a line
- * for both signatures. The commission is on it because a maker who signs a
- * slip that does not mention it has agreed to nothing.
+ * and what it is worth to them. So it carries the pieces, the agreed
+ * commission, and a line for both signatures. The commission is on it because
+ * a maker who signs a slip that does not mention it has agreed to nothing.
+ *
+ * The money on it is the maker's, not the shop's. A slip that priced everything
+ * at the shelf price was handing somebody a document about a number they will
+ * never receive, and the difference is exactly the commission they had just
+ * agreed to; two figures for the same basket on the same piece of paper is how
+ * an argument starts.
+ *
+ * Quantities are what came in. Building it off what is currently on the shelf
+ * meant a reprinted slip counted down as things sold, and could print a
+ * negative, which is not a thing anybody has ever handed over.
  */
 export function buildDeliverySlipHtml(d: {
   intake: ConsignmentIntake;
@@ -126,21 +168,21 @@ export function buildDeliverySlipHtml(d: {
 }): string {
   const { intake, consignor, pieces, settings } = d;
   const money = (n: number) => formatMoney(n, settings);
+  const qtyOf = (p: SlipPiece) => Math.abs(Math.round(p.qty)) || 1;
 
   const rows = pieces
     .map(
       (p) => `<tr>
         <td>${esc(p.name)}</td>
-        <td class="num">${p.qty}</td>
-        <td class="num">${esc(money(p.price))}</td>
-        <td class="num">${esc(money(p.price * p.qty))}</td>
+        <td class="num">${qtyOf(p)}</td>
+        <td class="num">${esc(money(p.due))}</td>
+        <td class="num">${esc(money(p.due * qtyOf(p)))}</td>
       </tr>`,
     )
     .join('');
 
-  const total = pieces.reduce((sum, p) => sum + p.price * p.qty, 0);
-  const count = pieces.reduce((sum, p) => sum + p.qty, 0);
-  const theirs = total - Math.round((total * consignor.commission_bp) / 10000);
+  const total = pieces.reduce((sum, p) => sum + p.due * qtyOf(p), 0);
+  const count = pieces.reduce((sum, p) => sum + qtyOf(p), 0);
 
   return `<!doctype html>
 <html><head><meta charset="utf-8">
@@ -152,7 +194,7 @@ ${partyBlock(consignor, settings)}
 
 <table>
   <thead>
-    <tr><th>Piece</th><th class="num">Qty</th><th class="num">Price each</th><th class="num">Value</th></tr>
+    <tr><th>Piece</th><th class="num">Qty</th><th class="num">Yours, each</th><th class="num">Yours</th></tr>
   </thead>
   <tbody>${rows}</tbody>
   <tfoot>
@@ -165,8 +207,8 @@ ${partyBlock(consignor, settings)}
 </table>
 
 <p class="note">
-  Prices shown are what the shop will sell at. At the agreed commission,
-  a full sale of this delivery would earn you ${esc(money(theirs))}.
+  The amounts above are yours, after the agreed commission. A full sale of this
+  delivery would earn you ${esc(money(total))}.
   You are paid on what sells, not on what is received.
 </p>
 ${intake.notes ? `<p class="note">${esc(intake.notes)}</p>` : ''}
@@ -183,6 +225,17 @@ ${intake.notes ? `<p class="note">${esc(intake.notes)}</p>` : ''}
 /**
  * A consignor's statement as a document, not as a screenshot of a page.
  *
+ * Four questions, in the order a maker asks them: what did I bring you, what
+ * has sold, what have you paid me, and what is still sitting on your shelf.
+ * The balance follows from those and is shown last.
+ *
+ * The shop's own margin is not on it. It used to run down the middle of the
+ * page as "Sold for" and "Shop kept", which turned a settlement into a
+ * negotiation every time one was handed over: the commission was agreed at
+ * intake and signed for on the delivery slip, and repeating it beside every
+ * line invites the conversation to be had again from scratch. What belongs on a
+ * statement is what the maker is owed.
+ *
  * The opening balance is on it deliberately: a statement whose figures only
  * reconcile against something else is a statement that starts an argument
  * rather than settling one.
@@ -195,63 +248,140 @@ export function buildStatementHtml(d: {
 }): string {
   const { statement: st, settings } = d;
   const money = (n: number) => formatMoney(n, settings);
+  const date = (iso: string) => new Date(iso).toLocaleDateString();
 
-  const rows = st.lines
-    .map(
-      (l) => `<tr>
-        <td>${esc(new Date(l.at).toLocaleDateString())}</td>
+  /** A section, or nothing at all when there is nothing to say. */
+  const section = (title: string, head: string, body: string, foot: string) =>
+    body
+      ? `<h2>${esc(title)}</h2>
+         <table>
+           <thead><tr>${head}</tr></thead>
+           <tbody>${body}</tbody>
+           ${foot ? `<tfoot><tr>${foot}</tr></tfoot>` : ''}
+         </table>`
+      : '';
+
+  const broughtIn = section(
+    'What you brought in',
+    '<th>Date</th><th>Delivery</th><th class="num">Pieces</th><th class="num">Worth to you</th>',
+    st.broughtIn.lines
+      .map((l) => `<tr>
+        <td>${esc(date(l.at))}</td>
+        <td>${esc(l.reference)}${l.note ? `<div class="sub-note">${esc(l.note)}</div>` : ''}</td>
+        <td class="num">${l.pieces}</td>
+        <td class="num">${l.value ? esc(money(l.value)) : ''}</td>
+      </tr>`)
+      .join(''),
+    `<td colspan="2">${st.broughtIn.pieces} piece${st.broughtIn.pieces === 1 ? '' : 's'} received</td>
+     <td class="num"></td><td class="num">${esc(money(st.broughtIn.value))}</td>`,
+  );
+
+  const sold = section(
+    'What has sold',
+    '<th>Date</th><th>Piece</th><th class="num">Qty</th><th class="num">Yours</th>',
+    st.sold
+      .map((l) => `<tr>
+        <td>${esc(date(l.at))}</td>
         <td>${esc(l.description)}</td>
         <td class="num">${l.qty || ''}</td>
-        <td class="num">${l.gross ? esc(money(l.gross)) : ''}</td>
-        <td class="num">${l.commission ? esc(money(l.commission)) : ''}</td>
         <td class="num">${esc(money(l.amount))}</td>
-      </tr>`,
-    )
-    .join('');
+      </tr>`)
+      .join(''),
+    `<td colspan="2">${st.soldCount} piece${st.soldCount === 1 ? '' : 's'} sold</td>
+     <td class="num"></td><td class="num">${esc(money(st.earned))}</td>`,
+  );
 
-  const period = `${new Date(st.from).toLocaleDateString()} to ${new Date(st.to).toLocaleDateString()}`;
+  const paid = section(
+    'What you have been paid',
+    '<th>Date</th><th>How</th><th class="num"></th><th class="num">Paid</th>',
+    st.payments
+      .map((l) => `<tr>
+        <td>${esc(date(l.at))}</td>
+        <td>${esc(l.description)}</td>
+        <td class="num"></td>
+        <td class="num">${esc(money(Math.abs(l.amount)))}</td>
+      </tr>`)
+      .join(''),
+    `<td colspan="2">Paid to you in this period</td>
+     <td class="num"></td><td class="num">${esc(money(st.paidOut))}</td>`,
+  );
+
+  const other = section(
+    'Adjustments',
+    '<th>Date</th><th>What</th><th class="num"></th><th class="num">Amount</th>',
+    st.other
+      .map((l) => `<tr>
+        <td>${esc(date(l.at))}</td>
+        <td>${esc(l.description)}</td>
+        <td class="num"></td>
+        <td class="num">${esc(money(l.amount))}</td>
+      </tr>`)
+      .join(''),
+    '',
+  );
+
+  const unsold = section(
+    'Still to sell',
+    '<th>Piece</th><th></th><th class="num">Left</th><th class="num">Worth to you</th>',
+    st.unsold.lines
+      .map((l) => `<tr>
+        <td>${esc(l.name)}</td>
+        <td></td>
+        <td class="num">${l.qty}</td>
+        <td class="num">${esc(money(l.value))}</td>
+      </tr>`)
+      .join(''),
+    `<td colspan="2">${st.unsold.pieces} piece${st.unsold.pieces === 1 ? '' : 's'} still on the shelf</td>
+     <td class="num"></td><td class="num">${esc(money(st.unsold.value))}</td>`,
+  );
+
+  const period = `${date(st.from)} to ${date(st.to)}`;
   const differs =
     typeof d.owedNow === 'number' && Math.round(d.owedNow) !== Math.round(st.closingBalance);
+
+  const nothingAtAll =
+    !broughtIn && !sold && !paid && !other;
 
   return `<!doctype html>
 <html><head><meta charset="utf-8">
 <title>Statement ${esc(st.consignor.code)} ${esc(period)}</title>
-<style>${SHELL}</style>
+<style>${SHELL}
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; margin: 22px 0 6px; }
+  .sub-note { color: #666; font-size: 11px; }
+  .summary { margin-top: 26px; border-top: 2px solid #111; padding-top: 10px; }
+  .summary table { width: auto; min-width: 62%; margin-left: auto; }
+  .summary td { border-bottom: none; padding: 3px 0 3px 18px; }
+  .summary tr.total td { border-top: 1px solid #111; font-weight: 700; font-size: 13px; padding-top: 8px; }
+</style>
 </head><body>
 ${header(settings, 'Statement', st.consignor.code, period)}
-${partyBlock(st.consignor, settings)}
+${partyBlock(st.consignor, settings, false)}
 
-<table>
-  <thead>
-    <tr>
-      <th>Date</th><th>What</th>
-      <th class="num">Qty</th><th class="num">Sold for</th>
-      <th class="num">Shop kept</th><th class="num">Yours</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr class="sub">
-      <td colspan="5">Owed to you at ${esc(new Date(st.from).toLocaleDateString())}</td>
-      <td class="num">${esc(money(st.openingBalance))}</td>
-    </tr>
-    ${rows || '<tr><td colspan="6">Nothing between these dates.</td></tr>'}
-  </tbody>
-  <tfoot>
-    <tr>
-      <td colspan="5">Owed to you at ${esc(new Date(st.to).toLocaleDateString())}</td>
-      <td class="num">${esc(money(st.closingBalance))}</td>
-    </tr>
-  </tfoot>
-</table>
+${broughtIn}
+${sold}
+${paid}
+${other}
+${nothingAtAll ? '<p class="note">Nothing happened between these dates.</p>' : ''}
+${unsold}
 
-<p class="note">
-  ${st.soldCount} piece${st.soldCount === 1 ? '' : 's'} sold for ${esc(money(st.grossSales))}.
-  The shop kept ${esc(money(st.commissionKept))}; you earned ${esc(money(st.earned))}.
-  ${st.paidOut ? `Paid to you in this period: ${esc(money(st.paidOut))}.` : ''}
-</p>
+<div class="summary">
+  <table>
+    <tbody>
+      <tr><td>Owed to you at ${esc(date(st.from))}</td><td class="num">${esc(money(st.openingBalance))}</td></tr>
+      <tr><td>Earned in this period</td><td class="num">${esc(money(st.earned))}</td></tr>
+      ${st.adjustments ? `<tr><td>Adjustments</td><td class="num">${esc(money(st.adjustments))}</td></tr>` : ''}
+      <tr><td>Paid to you</td><td class="num">${st.paidOut ? `− ${esc(money(st.paidOut))}` : esc(money(0))}</td></tr>
+      <tr class="total">
+        <td>Owed to you at ${esc(date(st.to))}</td>
+        <td class="num">${esc(money(st.closingBalance))}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
 ${differs
   ? `<p class="note"><strong>Owed right now, including anything sold since
-     ${esc(new Date(st.to).toLocaleDateString())}: ${esc(money(d.owedNow as number))}.</strong></p>`
+     ${esc(date(st.to))}: ${esc(money(d.owedNow as number))}.</strong></p>`
   : ''}
 
 <footer>

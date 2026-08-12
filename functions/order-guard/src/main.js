@@ -1,5 +1,5 @@
 import { Client, Databases, Query } from 'node-appwrite';
-import { totalsFor, rateFor, splitSale, queueMinutes, quotedWait } from './money.js';
+import { totalsFor, rateFor, flatFor, splitSale, queueMinutes, quotedWait } from './money.js';
 
 /**
  * Re-prices every new order against the database.
@@ -241,17 +241,13 @@ async function creditConsignors({ db, DB_ID, payment, log }) {
   for (const line of mine) {
     const consignor = await db.getDocument(DB_ID, 'consignors', line.consignor_id).catch(() => null);
 
-    // Most specific rate wins: the piece, then the maker, then the shop's
-    // default. Mirrors rateFor() in packages/core/src/consignment.ts.
-    const bp = [line.commission_bp, consignor?.commission_bp, settings.default_commission_bp]
-      .find((v) => typeof v === 'number' && v >= 0) ?? 3000;
-    const rate = Math.max(0, Math.min(10000, Math.round(bp)));
-
-    const gross = line.line_total || 0;
-    // The shop's share is rounded and the maker gets the remainder. Rounding
-    // both independently does not have to add back up to what the customer
-    // paid, and the pesewa always went the same way.
-    const commission = Math.round((gross * rate) / 10000);
+    // Most specific first: the piece, then the maker, then the shop's default.
+    // Through money.js rather than open-coded here, so the browser and the
+    // server cannot drift; the parity suite fails the build if they do.
+    const rate = rateFor(line, consignor, settings);
+    const flat = flatFor(line, consignor);
+    const split = splitSale(line.line_total || 0, rate, flat, line.qty || 1);
+    const { gross, commission } = split;
 
     try {
       await db.createDocument(DB_ID, 'consignor_ledger', 'unique()', {
@@ -268,7 +264,8 @@ async function creditConsignors({ db, DB_ID, payment, log }) {
         qty: line.qty,
         gross,
         commission,
-        commission_bp: rate,
+        commission_bp: split.bp,
+        commission_flat: split.flat,
         created_by: payment.taken_by || '',
       });
       credited++;
@@ -281,6 +278,43 @@ async function creditConsignors({ db, DB_ID, payment, log }) {
 
   if (credited) log(`Credited ${credited} consignment line(s) on ${order.order_no}`);
   return { ok: true, credited };
+}
+
+/**
+ * Turn a recorded payout into the ledger line that moves the balance.
+ *
+ * The admin app writes the payout. It cannot write the ledger, and should not
+ * be able to: the ledger is what a maker is paid from, and a balance somebody
+ * can type into is not evidence. So the payment is recorded as an event and the
+ * server draws the conclusion, which is the same shape as a sale crediting on
+ * payment rather than at the till.
+ *
+ * Safe to run twice. A payout already carrying a ledger line is left alone, so
+ * a retried event cannot pay somebody down twice.
+ */
+async function postPayoutToLedger({ db, DB_ID, payout, log }) {
+  if (payout.status === 'reversed') return { skipped: 'reversed' };
+  if (!(payout.amount > 0)) return { skipped: 'nothing to post' };
+
+  const already = await db.listDocuments(DB_ID, 'consignor_ledger', [
+    Query.equal('payout_id', payout.$id), Query.limit(1),
+  ]).catch(() => ({ documents: [] }));
+  if (already.documents.length > 0) return { skipped: 'already posted' };
+
+  await db.createDocument(DB_ID, 'consignor_ledger', 'unique()', {
+    venue_id: payout.venue_id || '',
+    consignor_id: payout.consignor_id,
+    entry_at: payout.paid_at || new Date().toISOString(),
+    kind: 'payout',
+    // Negative: paying somebody reduces what they are owed.
+    amount: -payout.amount,
+    description: `Paid ${payout.method}${payout.transaction_ref ? ` · ${payout.transaction_ref}` : ''}`,
+    payout_id: payout.$id,
+    created_by: payout.paid_by || '',
+  });
+
+  log(`Posted payout ${payout.reference} to the ledger.`);
+  return { ok: true, posted: payout.amount };
 }
 
 /** How long after sending an order a customer may still call it back. */
@@ -389,6 +423,19 @@ export default async ({ req, res, log, error }) => {
       return res.json(await creditConsignors({ db, DB_ID, payment: doc, log }));
     } catch (e) {
       error(`Consignor credit failed for payment ${doc.$id}: ${e.message}`);
+      return res.json({ ok: false, error: e.message }, 500);
+    }
+  }
+
+  // ------------------------------------------------------- a consignor paid
+  //
+  // The admin app records the payment; the ledger line is drawn here, because
+  // nothing in a browser may write to the ledger.
+  if (events.some((e) => e.includes('collections.consignor_payouts'))) {
+    try {
+      return res.json(await postPayoutToLedger({ db, DB_ID, payout: doc, log }));
+    } catch (e) {
+      error(`Payout posting failed for ${doc.$id}: ${e.message}`);
       return res.json({ ok: false, error: e.message }, 500);
     }
   }

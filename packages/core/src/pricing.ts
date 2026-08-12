@@ -39,6 +39,7 @@ export interface CartLine {
   variant_label?: string;
   consignor_id?: string;
   commission_bp?: number;
+  commission_flat?: number;
 }
 
 /** Unit price plus every add-on, before quantity. */

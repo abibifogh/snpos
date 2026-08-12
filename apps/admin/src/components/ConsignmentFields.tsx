@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Badge, Button, Field, Input, Select, Textarea, Toggle } from '@snpos/ui';
 import { parseMoney, toInput } from '@snpos/core';
 import type { Consignor, MenuItem, ProductVariant, VariantType } from '@snpos/core';
@@ -60,6 +61,23 @@ export function ConsignmentFields({
 }) {
   const chosen = consignors.find((c) => c.$id === editing.consignor_id) ?? null;
 
+  /**
+   * Which kind of override this piece carries, worked out from what is on it.
+   *
+   * From the data rather than from a stored flag: a flat amount above zero IS a
+   * flat agreement, so there is nothing to keep in step and nothing that can
+   * disagree with the figure beside it.
+   */
+  const [pieceMode, setPieceMode] = useState<'percent' | 'amount'>(
+    (editing.commission_flat ?? 0) > 0 ? 'amount' : 'percent',
+  );
+
+  const usualTerms = chosen
+    ? (chosen.commission_flat ?? 0) > 0
+      ? `${symbol}${((chosen.commission_flat as number) / 10 ** decimals).toFixed(decimals)} a piece`
+      : `${(chosen.commission_bp / 100).toFixed(0)}%`
+    : '';
+
   const setVariant = (index: number, patch: Partial<DraftVariant>) =>
     setVariants((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
 
@@ -89,21 +107,60 @@ export function ConsignmentFields({
             ))}
           </Select>
         </Field>
+        {/* A share or a flat amount, the same choice the consignor's own terms
+            offer, because a piece negotiated differently is usually negotiated
+            differently in kind as well as in size: "keep two cedis on this
+            one" is a sentence people say. Blank in either box means the
+            maker's usual terms apply. */}
         <Field
-          label="Commission on this piece (%)"
-          hint={chosen ? `Blank uses ${chosen.name}'s usual ${(chosen.commission_bp / 100).toFixed(0)}%.` : 'Blank uses their usual rate.'}
+          label="Commission on this piece"
+          hint={
+            chosen
+              ? `Blank uses ${chosen.name}'s usual ${usualTerms}.`
+              : 'Blank uses their usual terms.'
+          }
         >
-          <Input
-            inputMode="decimal"
-            placeholder={chosen ? String(chosen.commission_bp / 100) : ''}
-            value={editing.commission_bp === undefined || editing.commission_bp === null ? '' : String(editing.commission_bp / 100)}
-            onChange={(e) => {
-              const raw = e.target.value.trim();
-              if (raw === '') { setEditing({ ...editing, commission_bp: undefined }); return; }
-              const pct = Number(raw);
-              if (Number.isFinite(pct)) setEditing({ ...editing, commission_bp: Math.round(pct * 100) });
-            }}
-          />
+          <div className="row" style={{ gap: '0.4rem', alignItems: 'center' }}>
+            <Select
+              value={pieceMode}
+              style={{ flex: 1 }}
+              onChange={(e) => {
+                const mode = e.target.value as 'percent' | 'amount';
+                // Clearing both is what makes the switch safe: 2 means two
+                // percent in one mode and two cedis in the other, and a figure
+                // that quietly changes meaning underpays somebody.
+                setEditing({ ...editing, commission_bp: undefined, commission_flat: mode === 'amount' ? 0 : undefined });
+                setPieceMode(mode);
+              }}
+            >
+              <option value="percent">Share (%)</option>
+              <option value="amount">Per piece ({symbol})</option>
+            </Select>
+            {pieceMode === 'percent' ? (
+              <Input
+                inputMode="decimal"
+                style={{ width: '6.5rem' }}
+                placeholder={chosen ? String(chosen.commission_bp / 100) : ''}
+                value={editing.commission_bp === undefined || editing.commission_bp === null ? '' : String(editing.commission_bp / 100)}
+                onChange={(e) => {
+                  const raw = e.target.value.trim();
+                  if (raw === '') { setEditing({ ...editing, commission_bp: undefined }); return; }
+                  const pct = Number(raw);
+                  if (Number.isFinite(pct)) setEditing({ ...editing, commission_bp: Math.round(pct * 100) });
+                }}
+              />
+            ) : (
+              <Input
+                inputMode="decimal"
+                style={{ width: '6.5rem' }}
+                value={editing.commission_flat ? toInput(editing.commission_flat, decimals) : ''}
+                onChange={(e) => {
+                  const raw = e.target.value.trim();
+                  setEditing({ ...editing, commission_flat: raw === '' ? 0 : parseMoney(raw, decimals) ?? 0 });
+                }}
+              />
+            )}
+          </div>
         </Field>
       </div>
 

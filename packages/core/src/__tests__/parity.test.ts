@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { splitSale, rateFor } from '../consignment-math.ts';
+import { splitSale, rateFor, flatFor } from '../consignment-math.ts';
 import { computeTotals } from '../pricing.ts';
 import { estimateMinutes, queueMinutes } from '../orders-time.ts';
 import * as guard from '../../../../functions/order-guard/src/money.js';
@@ -28,6 +28,38 @@ test('the commission split agrees, everywhere', () => {
         `core and order-guard disagree on ${gross} at ${bp}bp`,
       );
     }
+  }
+});
+
+test('a flat commission splits the same on both sides', () => {
+  for (let gross = 0; gross <= 20000; gross += 97) {
+    for (const flat of [1, 50, 200, 1500, 9000]) {
+      for (const qty of [1, 2, 7]) {
+        assert.deepEqual(
+          splitSale(gross, 3000, flat, qty),
+          guard.splitSale(gross, 3000, flat, qty),
+          `core and order-guard disagree on ${gross} at a flat ${flat} x${qty}`,
+        );
+      }
+    }
+  }
+});
+
+test('which flat amount applies agrees', () => {
+  const cases: [unknown, unknown][] = [
+    [{ commission_flat: 150 }, { commission_flat: 300 }],
+    [{}, { commission_flat: 300 }],
+    [{ commission_flat: 0 }, { commission_flat: 300 }],
+    [{ commission_flat: undefined }, null],
+    [{}, {}],
+    [null, null],
+  ];
+  for (const [item, consignor] of cases) {
+    assert.equal(
+      flatFor(item as never, consignor as never),
+      guard.flatFor(item, consignor),
+      `core and order-guard disagree on ${JSON.stringify({ item, consignor })}`,
+    );
   }
 });
 

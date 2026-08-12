@@ -35,6 +35,29 @@ export function rateFor(
   return 3000;
 }
 
+/**
+ * A commission agreed as a flat amount per piece rather than as a share.
+ *
+ * Some agreements are not a percentage at all: "two cedis a basket, whatever
+ * you sell it for". Expressed as a percentage that is a different number for
+ * every price, so it has to be stored as what it is.
+ *
+ * Zero means there is no flat amount and the percentage applies. Read most
+ * specific first, exactly like the rate: the piece, then the maker. There is no
+ * shop-wide default flat, because a flat amount that made sense for a basket
+ * would be nonsense on a necklace.
+ */
+export function flatFor(
+  item: { commission_flat?: number | null } | null | undefined,
+  consignor: { commission_flat?: number | null } | null | undefined,
+): number {
+  const candidates = [item?.commission_flat, consignor?.commission_flat];
+  for (const amount of candidates) {
+    if (typeof amount === 'number' && Number.isFinite(amount) && amount > 0) return Math.round(amount);
+  }
+  return 0;
+}
+
 export interface Split {
   /** What the customer paid for this line. */
   gross: number;
@@ -44,6 +67,8 @@ export interface Split {
   consignor: number;
   /** The rate used, so it can be written down beside the numbers. */
   bp: number;
+  /** The flat amount per piece, when that is what was agreed. Zero otherwise. */
+  flat: number;
 }
 
 /**
@@ -61,11 +86,40 @@ export interface Split {
  * does not pass the whole cost of its own promotion to them either. Pass the
  * line's actual money, after discount.
  */
-export function splitSale(gross: number, commissionBp: number): Split {
+export function splitSale(gross: number, commissionBp: number, flatPerUnit = 0, qty = 1): Split {
   const bp = Math.max(0, Math.min(10000, Math.round(commissionBp)));
-  const commission = Math.round((gross * bp) / 10000);
-  return { gross, commission, consignor: gross - commission, bp };
+
+  /**
+   * A flat amount wins over the percentage when one is set.
+   *
+   * Capped at the sale itself: a two cedi commission on a piece discounted to
+   * one cedi cannot leave the maker owing the shop money. The shop takes the
+   * whole of a sale that small and the maker gets nothing, which is the worst
+   * that can honestly happen, rather than a negative line on a statement.
+   */
+  const commission = flatPerUnit > 0
+    ? Math.min(Math.max(0, gross), Math.round(flatPerUnit) * Math.max(1, Math.round(qty)))
+    : Math.round((gross * bp) / 10000);
+
+  return {
+    gross,
+    commission,
+    consignor: gross - commission,
+    // The rate actually applied, so a statement line and an old ledger row can
+    // both be read the same way whichever kind of agreement produced them.
+    bp: flatPerUnit > 0 ? (gross > 0 ? Math.round((commission / gross) * 10000) : 0) : bp,
+    flat: flatPerUnit > 0 ? Math.round(flatPerUnit) : 0,
+  };
 }
+
+/**
+ * What the maker gets from a price, before anything is sold.
+ *
+ * Used on a delivery slip and on the "still to sell" figure, where nothing has
+ * happened yet and the question is what this piece is worth to them.
+ */
+export const dueFor = (price: number, bp: number, flatPerUnit = 0): number =>
+  splitSale(price, bp, flatPerUnit, 1).consignor;
 
 /* ---------------------------------------------------------------- ledgers */
 
@@ -104,13 +158,52 @@ export interface StatementLine {
   amount: number;
 }
 
+/** A delivery, as it reads on a statement. */
+export interface IntakeLine {
+  at: string;
+  reference: string;
+  pieces: number;
+  /** What the whole delivery is worth to the consignor if it all sells. */
+  value: number;
+  note?: string;
+}
+
+/** A piece still on the shelf. */
+export interface UnsoldLine {
+  name: string;
+  qty: number;
+  /** What this many of it would earn the consignor. */
+  value: number;
+}
+
+/** The fields a statement reads off a delivery. */
+export interface IntakeLike {
+  received_at: string;
+  reference: string;
+  piece_count: number;
+  /** Snapshotted when the goods were received. */
+  total_due?: number;
+  total_retail?: number;
+  notes?: string;
+}
+
 export interface Statement<C = unknown> {
   consignor: C;
   from: string;
   to: string;
   /** What was owed before the first line of this statement. */
   openingBalance: number;
+  /** Everything in the period, in order. The ledger, unchanged. */
   lines: StatementLine[];
+  /**
+   * The same period, split into the four questions a maker actually asks:
+   * what did I bring you, what has sold, what have you paid me, what is left.
+   */
+  broughtIn: { lines: IntakeLine[]; pieces: number; value: number };
+  sold: StatementLine[];
+  payments: StatementLine[];
+  other: StatementLine[];
+  unsold: { lines: UnsoldLine[]; pieces: number; value: number };
   soldCount: number;
   grossSales: number;
   commissionKept: number;
@@ -148,6 +241,17 @@ export function buildStatement<C>(
   entries: LedgerLike[],
   from: Date,
   to: Date,
+  /**
+   * What is not in the ledger.
+   *
+   * Deliveries and unsold stock are not money and never touch the balance, so
+   * they are not ledger entries. They are still half of what a maker wants
+   * from a statement: a page that only shows what sold cannot answer "so what
+   * happened to the other eleven baskets", which is the question that actually
+   * gets asked. Optional, so a caller with nothing to add gets the same
+   * statement it always got.
+   */
+  extras?: { intakes?: IntakeLike[]; unsold?: UnsoldLine[] },
 ): Statement<C> {
   const start = from.toISOString();
   // To the last instant of the closing day, so entries on it are included.
@@ -175,12 +279,40 @@ export function buildStatement<C>(
   const sales = within.filter((e) => e.kind === 'sale');
   const refunds = within.filter((e) => e.kind === 'refund');
 
+  // Deliveries inside the same window, on the same inclusive dates.
+  const intakes = (extras?.intakes ?? [])
+    .filter((i) => i.received_at >= start && i.received_at <= end)
+    .sort((a, b) => a.received_at.localeCompare(b.received_at));
+
+  const broughtInLines: IntakeLine[] = intakes.map((i) => ({
+    at: i.received_at,
+    reference: i.reference,
+    pieces: i.piece_count ?? 0,
+    value: i.total_due ?? 0,
+    note: i.notes,
+  }));
+
+  const unsoldLines = (extras?.unsold ?? []).filter((u) => u.qty > 0);
+
   return {
     consignor,
     from: start,
     to: end,
     openingBalance,
     lines,
+    broughtIn: {
+      lines: broughtInLines,
+      pieces: broughtInLines.reduce((n, l) => n + l.pieces, 0),
+      value: broughtInLines.reduce((n, l) => n + l.value, 0),
+    },
+    sold: lines.filter((l) => l.kind === 'sale' || l.kind === 'refund'),
+    payments: lines.filter((l) => l.kind === 'payout'),
+    other: lines.filter((l) => l.kind === 'adjustment' || l.kind === 'fee'),
+    unsold: {
+      lines: unsoldLines,
+      pieces: unsoldLines.reduce((n, l) => n + l.qty, 0),
+      value: unsoldLines.reduce((n, l) => n + l.value, 0),
+    },
     soldCount: sales.reduce((n, e) => n + (e.qty ?? 1), 0),
     grossSales:
       sales.reduce((n, e) => n + (e.gross ?? 0), 0) + refunds.reduce((n, e) => n + (e.gross ?? 0), 0),

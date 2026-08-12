@@ -103,6 +103,8 @@ export interface OrderItem extends Doc {
   variant_label?: string;
   consignor_id?: string;
   commission_bp?: number;
+  /** A flat per-piece commission, when that is what was agreed. */
+  commission_flat?: number;
 }
 
 /**
@@ -440,6 +442,7 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
         variant_label: line.variant_label ?? '',
         consignor_id: line.consignor_id ?? '',
         commission_bp: line.commission_bp ?? undefined,
+        commission_flat: line.commission_flat ?? undefined,
         status: 'queued',
         course: line.course ?? 1,
         seat_no: line.seat_no,

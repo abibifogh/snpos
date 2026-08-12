@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck, tests, schema check, build. Run this before deploying.
 ```
 
-44 tests, no database, about half a second. They cover the sums that decide what
+52 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -26,7 +26,7 @@ and no caller had to change.
 
 | Suite | What it protects |
 |---|---|
-| `money.test.ts` | The commission split never loses a pesewa at any price or rate. A statement adds up from its own opening balance. Tax, service and discounts. Splitting one tender across several bills. |
+| `money.test.ts` | The commission split never loses a pesewa at any price or rate, as a share or as a flat amount per piece. What a statement's four sections contain, and that only the ledger touches the balance. Tax, service and discounts. Splitting one tender across several bills. |
 | `parity.test.ts` | **The browser and the server agree.** |
 | `access.test.ts` | Who can open what, including the bug that hid the craft shop from every manager. |
 | `timing.test.ts` | Quoted waits, the hour cap, when a ticket is late, the cancel window, cash handovers. |
@@ -130,6 +130,9 @@ Run these every time. The restaurant is the part that is already earning.
 | G3 | A statement for a period with no sales | Opening equals closing. Nothing invented |
 | G4 | A payout larger than the balance | Refused |
 | G5 | A consignor marked inactive who is still owed | Stays on the payouts list |
+| G6 | Set a maker to a flat GH₵2 a piece, sell three at different prices | Shop keeps exactly GH₵6. Percentage never applied |
+| G7 | Flat GH₵2 on a piece discounted to GH₵1 | Shop keeps GH₵1, maker gets nothing. **Never negative** |
+| G8 | Set a flat amount, then switch that maker back to a share | The flat is cleared. Old sales keep their own terms |
 
 ### H. The counter payment box
 
@@ -155,6 +158,18 @@ Needs a shift whose opened_at is backdated, or patience.
 | J4 | Leave one open past a day with the hourly job running | Manager gets one email, not twenty four |
 | J5 | Set the device clock ahead, then back | The till never blocks on a clock it cannot trust |
 
+### K. The two documents
+
+| # | Do this | Must be true |
+|---|---|---|
+| K1 | Print a statement | **No commission line, no "Sold for", no "Shop kept"** anywhere on it |
+| K2 | Read a statement end to end | Brought in, sold, paid, still to sell, then the balance |
+| K3 | Statement for a month with no deliveries | Says so. Does not silently drop the section |
+| K4 | Print a delivery slip | Prices are what the **maker** gets, not the shelf price |
+| K5 | Sell some of a delivery, reprint its slip | Quantities unchanged, and **never negative** |
+| K6 | Record a payment from a statement | No permission error. Balance drops within a few seconds |
+| K7 | Record a payment twice on a bad connection | **One** ledger line, one deduction |
+
 ---
 
 ## Before every deploy
@@ -163,7 +178,8 @@ Needs a shift whose opened_at is backdated, or patience.
 npm run verify
 ```
 
-Then A1, A2, C2, C8 and F1 by hand. Those five cover the ways this system has
-actually broken: money credited wrongly, the two sides leaking into each other,
-a shift that would not stay open, one side's catalogue showing on the other,
-and the restaurant stopping.
+Then A1, A2, C2, C8, K6 and F1 by hand. Those six cover the ways this system
+has actually broken: money credited wrongly, the two sides leaking into each
+other, a shift that would not stay open, one side's catalogue showing on the
+other, a write the permissions were right to refuse, and the restaurant
+stopping.

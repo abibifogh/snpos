@@ -44,18 +44,45 @@ export function rateFor(line, consignor, settings) {
 }
 
 /**
+ * A commission agreed as a flat amount per piece rather than as a share.
+ *
+ * Zero means there is none and the percentage applies. No shop-wide default:
+ * a flat amount that suits a basket is nonsense on a necklace.
+ *
+ * Mirrors flatFor in packages/core/src/consignment-math.ts.
+ */
+export function flatFor(line, consignor) {
+  const candidates = [line?.commission_flat, consignor?.commission_flat];
+  for (const amount of candidates) {
+    if (typeof amount === 'number' && Number.isFinite(amount) && amount > 0) return Math.round(amount);
+  }
+  return 0;
+}
+
+/**
  * The shop's share and the maker's, from one line's money.
  *
  * The shop's share is rounded and the maker gets the remainder. Rounding both
  * independently does not have to add back up to what the customer paid, and the
  * pesewa always went the same way.
  *
+ * A flat amount, where one is agreed, wins over the percentage and is capped at
+ * the sale, so a discounted piece can never leave the maker owing the shop.
+ *
  * Mirrors splitSale in packages/core/src/consignment-math.ts.
  */
-export function splitSale(gross, commissionBp) {
+export function splitSale(gross, commissionBp, flatPerUnit = 0, qty = 1) {
   const bp = Math.max(0, Math.min(10000, Math.round(commissionBp)));
-  const commission = Math.round((gross * bp) / 10000);
-  return { gross, commission, consignor: gross - commission, bp };
+  const commission = flatPerUnit > 0
+    ? Math.min(Math.max(0, gross), Math.round(flatPerUnit) * Math.max(1, Math.round(qty)))
+    : Math.round((gross * bp) / 10000);
+  return {
+    gross,
+    commission,
+    consignor: gross - commission,
+    bp: flatPerUnit > 0 ? (gross > 0 ? Math.round((commission / gross) * 10000) : 0) : bp,
+    flat: flatPerUnit > 0 ? Math.round(flatPerUnit) : 0,
+  };
 }
 
 /** The cap on a quoted wait. Mirrors MAX_ETA_MINUTES in core. */

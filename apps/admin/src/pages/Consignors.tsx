@@ -3,12 +3,15 @@ import {
   Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Toggle, Badge, useToast,
 } from '@snpos/ui';
 import { db, DB_ID, ID, humanError } from '../lib';
+import { listAll, Query } from '@snpos/core';
 import {
   formatMoney, parseMoney, toInput,
   loadConsignors, balancesByConsignor, ledgerFor, buildStatement, recordPayout, nextReference,
-  buildStatementHtml, openPrintable,
+  buildStatementHtml, openPrintable, rateFor, flatFor, dueFor, onHandFor,
 } from '@snpos/core';
-import type { Consignor, LedgerEntry, Statement, Settings } from '@snpos/core';
+import type {
+  Consignor, LedgerEntry, Statement, Settings, ConsignmentIntake, MenuItem, ProductVariant, UnsoldLine,
+} from '@snpos/core';
 import { useSession } from '../session';
 
 /**
@@ -29,6 +32,15 @@ export function ConsignorsPage() {
   const [owed, setOwed] = useState<Record<string, number>>({});
   const [editing, setEditing] = useState<Partial<Consignor> | null>(null);
   const [rateText, setRateText] = useState('30');
+  /**
+   * Which kind of agreement this is.
+   *
+   * Not every deal is a share. "Two cedis a basket, whatever you sell it for"
+   * is a real agreement and expressing it as a percentage makes it a different
+   * number at every price, which is exactly the confusion a written rate is
+   * meant to remove. Stored as one field or the other, never both.
+   */
+  const [rateMode, setRateMode] = useState<'percent' | 'amount'>('percent');
   const [statementFor, setStatementFor] = useState<Consignor | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,19 +73,35 @@ export function ConsignorsPage() {
         active: true,
       },
     );
-    // Shown as a percentage because that is how the conversation happens. Stored
-    // in basis points because 33.5% is a real rate and floating-point money is
-    // not.
-    setRateText(String((row?.commission_bp ?? settings?.default_commission_bp ?? 3000) / 100));
+    // Shown as a percentage because that is how the conversation usually
+    // happens. Stored in basis points because 33.5% is a real rate and
+    // floating-point money is not.
+    const flat = row?.commission_flat ?? 0;
+    setRateMode(flat > 0 ? 'amount' : 'percent');
+    setRateText(
+      flat > 0
+        ? toInput(flat, decimals)
+        : String((row?.commission_bp ?? settings?.default_commission_bp ?? 3000) / 100),
+    );
     setError(null);
   };
 
   const save = async () => {
     if (!editing?.name?.trim()) { setError('Give the consignor a name.'); return; }
-    const rate = Number(rateText);
-    if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
-      setError('The commission has to be between 0 and 100 percent.');
-      return;
+
+    let commissionBp = editing.commission_bp ?? settings?.default_commission_bp ?? 3000;
+    let commissionFlat = 0;
+    if (rateMode === 'amount') {
+      const flat = parseMoney(rateText, decimals);
+      if (flat === null || flat <= 0) { setError('Enter what the shop keeps on each piece.'); return; }
+      commissionFlat = flat;
+    } else {
+      const rate = Number(rateText);
+      if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+        setError('The commission has to be between 0 and 100 percent.');
+        return;
+      }
+      commissionBp = Math.round(rate * 100);
     }
 
     setBusy(true);
@@ -88,7 +116,10 @@ export function ConsignorsPage() {
         phone: editing.phone?.trim() ?? '',
         email: editing.email?.trim() ?? '',
         address: editing.address?.trim() ?? '',
-        commission_bp: Math.round(rate * 100),
+        commission_bp: commissionBp,
+        // Zero means "the percentage applies". One field or the other, never
+        // both, so nothing has to guess which was meant.
+        commission_flat: commissionFlat,
         payout_method: editing.payout_method ?? 'momo',
         payout_details: editing.payout_details?.trim() ?? '',
         agreement_start: editing.agreement_start || undefined,
@@ -168,7 +199,11 @@ export function ConsignorsPage() {
                         {!c.active && <Badge> Inactive</Badge>}
                         {c.phone && <div className="dim small">{c.phone}</div>}
                       </td>
-                      <td>{(c.commission_bp / 100).toFixed(c.commission_bp % 100 ? 1 : 0)}%</td>
+                      <td>
+                        {(c.commission_flat ?? 0) > 0
+                          ? `${money(c.commission_flat as number)} a piece`
+                          : `${(c.commission_bp / 100).toFixed(c.commission_bp % 100 ? 1 : 0)}%`}
+                      </td>
                       {/* Nothing owed and money owed read differently at a
                           glance, which is the only thing this column is for. */}
                       <td className="num" style={balance > 0 ? { fontWeight: 650 } : { opacity: 0.55 }}>
@@ -231,12 +266,43 @@ export function ConsignorsPage() {
             </Field>
           </div>
 
+          {/* Two ways of saying the same thing, and a shop uses both. The
+              choice is in front of the box rather than hidden behind a
+              percentage that has to be recalculated for every price. */}
           <Field
-            label="Commission you keep (%)"
-            hint="What the shop keeps from each sale. The rest is theirs. This rate is saved onto every sale as it happens, so changing it here never rewrites what somebody has already earned."
+            label="What the shop keeps"
+            hint="Saved onto every sale as it happens, so changing it here never rewrites what somebody has already earned."
           >
-            <Input inputMode="decimal" value={rateText} onChange={(e) => setRateText(e.target.value)} />
+            <div className="row" style={{ gap: '0.4rem', alignItems: 'center' }}>
+              <Select
+                value={rateMode}
+                style={{ flex: 1 }}
+                onChange={(e) => {
+                  const mode = e.target.value as 'percent' | 'amount';
+                  setRateMode(mode);
+                  // Blank rather than carried across. 30 means thirty percent
+                  // in one mode and thirty pesewas in the other, and a figure
+                  // that quietly changes meaning is how somebody agrees to the
+                  // wrong terms.
+                  setRateText(mode === 'percent' ? '30' : '');
+                }}
+              >
+                <option value="percent">A share of each sale (%)</option>
+                <option value="amount">A fixed amount per piece ({settings?.currency_symbol ?? ''})</option>
+              </Select>
+              <Input
+                inputMode="decimal"
+                style={{ width: '7rem' }}
+                value={rateText}
+                onChange={(e) => setRateText(e.target.value)}
+              />
+            </div>
           </Field>
+          <p className="small dim" style={{ marginTop: '-0.4rem' }}>
+            {rateMode === 'percent'
+              ? 'The rest of each sale is theirs.'
+              : 'The shop keeps this much per piece sold, whatever it sells for. Never more than the sale itself.'}
+          </p>
 
           <div className="grid-2">
             <Field label="Pay them by">
@@ -304,6 +370,61 @@ function suggestCode(name: string): string {
   return words.slice(0, 3).map((w) => w[0]).join('').toUpperCase();
 }
 
+/**
+ * One block of a statement: a heading, four columns, and a total.
+ *
+ * Written once because the four blocks are the same shape and a statement
+ * whose sections are laid out four slightly different ways is a statement
+ * somebody reads wrongly. Empty sections say so rather than disappearing: a
+ * maker who brought nothing in this month wants to see that stated, not to
+ * wonder whether the page failed to load.
+ */
+function StatementSection({
+  title, head, rows, foot,
+}: {
+  title: string;
+  head: [string, string, string, string];
+  rows: [string, string, string, string][];
+  foot: [string, string, string, string] | null;
+}) {
+  return (
+    <>
+      <h3 style={{ margin: '1.1rem 0 0.35rem', fontSize: '0.95rem' }}>{title}</h3>
+      {rows.length === 0 ? (
+        <p className="small dim" style={{ margin: 0 }}>Nothing in this period.</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>{head[0]}</th><th>{head[1]}</th>
+                <th className="num">{head[2]}</th><th className="num">{head[3]}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i}>
+                  <td className="small">{r[0]}</td>
+                  <td>{r[1]}</td>
+                  <td className="num">{r[2]}</td>
+                  <td className="num">{r[3]}</td>
+                </tr>
+              ))}
+              {foot && (
+                <tr style={{ fontWeight: 650 }}>
+                  <td colSpan={2}>{foot[0]}</td>
+                  <td className="num">{foot[2]}</td>
+                  <td className="num">{foot[3]}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
 const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -326,6 +447,8 @@ function StatementModal({
   onPaid: (message: string) => Promise<void>;
 }) {
   const [entries, setEntries] = useState<LedgerEntry[] | null>(null);
+  const [intakes, setIntakes] = useState<ConsignmentIntake[]>([]);
+  const [unsold, setUnsold] = useState<UnsoldLine[]>([]);
   const [from, setFrom] = useState(iso(startOfMonth(new Date())));
   const [to, setTo] = useState(iso(new Date()));
   const [paying, setPaying] = useState(false);
@@ -336,12 +459,52 @@ function StatementModal({
 
   useEffect(() => {
     ledgerFor(consignor.$id).then(setEntries).catch((e) => setError(humanError(e)));
+
+    /**
+     * The half of a statement that is not money.
+     *
+     * Deliveries and unsold stock never touch the balance, so they are not
+     * ledger entries, but a page that only shows what sold cannot answer "so
+     * what happened to the other eleven baskets", which is the question that
+     * actually gets asked. Loaded alongside rather than folded into the
+     * ledger, so the balance stays a sum of the ledger and nothing else.
+     */
+    (async () => {
+      const [deliveries, products] = await Promise.all([
+        listAll<ConsignmentIntake>('consignment_intakes', [Query.equal('consignor_id', consignor.$id)]),
+        listAll<MenuItem>('menu_items', [Query.equal('consignor_id', consignor.$id)]),
+      ]);
+      setIntakes(deliveries);
+
+      const live = products.filter((p) => p.active !== false);
+      const variants = live.length
+        ? await listAll<ProductVariant>('product_variants', [
+            Query.equal('menu_item_id', live.map((p) => p.$id)),
+          ]).catch(() => [] as ProductVariant[])
+        : [];
+
+      const rows: UnsoldLine[] = [];
+      for (const p of live) {
+        const mine = variants.filter((v) => v.menu_item_id === p.$id);
+        const qty = onHandFor(p, mine);
+        if (qty <= 0) continue;
+        const bp = rateFor(p, consignor, settings);
+        const flat = flatFor(p, consignor);
+        // With sizes each one has its own price, so the value is summed size by
+        // size rather than taken off a price the shop never charges.
+        const value = mine.filter((v) => v.active).length
+          ? mine.filter((v) => v.active).reduce((n, v) => n + dueFor(v.price, bp, flat) * (v.on_hand ?? 0), 0)
+          : dueFor(p.price, bp, flat) * qty;
+        rows.push({ name: p.name, qty, value });
+      }
+      setUnsold(rows.sort((a, b) => a.name.localeCompare(b.name)));
+    })().catch(() => undefined);
   }, [consignor.$id]);
 
   const statement: Statement<Consignor> | null = useMemo(() => {
     if (!entries) return null;
-    return buildStatement(consignor, entries, new Date(from), new Date(to));
-  }, [entries, consignor, from, to]);
+    return buildStatement(consignor, entries, new Date(from), new Date(to), { intakes, unsold });
+  }, [entries, consignor, from, to, intakes, unsold]);
 
   /**
    * What is owed today, not what was owed at the end of the chosen period.
@@ -372,7 +535,11 @@ function StatementModal({
     setBusy(true);
     setError(null);
     try {
-      await recordPayout({
+      // The payment is written here; the line that moves the balance is written
+      // by the server, because nothing in a browser may write to the ledger.
+      // This waits a few seconds for that rather than reporting a payment whose
+      // effect has not landed.
+      const { postedToLedger } = await recordPayout({
         venueId: consignor.venue_id ?? 'main',
         consignor,
         amount,
@@ -384,7 +551,11 @@ function StatementModal({
       });
       setEntries(await ledgerFor(consignor.$id));
       setPaying(false);
-      await onPaid(`${money(amount)} recorded as paid to ${consignor.name}`);
+      await onPaid(
+        postedToLedger
+          ? `${money(amount)} recorded as paid to ${consignor.name}`
+          : `${money(amount)} recorded. The balance is still catching up, reopen this in a minute.`,
+      );
     } catch (e) {
       setError(humanError(e));
     } finally {
@@ -433,64 +604,105 @@ function StatementModal({
         <Spinner />
       ) : (
         <>
+          {/* Four questions in the order a maker asks them: what did I bring
+              you, what has sold, what have you paid me, what is left. The
+              shop's own margin is not among them, it was agreed at intake and
+              signed for on the delivery slip, and repeating it beside every
+              line turns a settlement into a fresh negotiation. */}
           <div className="stat-row">
+            <div className="stat">
+              <div className="label">Brought in</div>
+              <div className="value">{statement.broughtIn.pieces}</div>
+            </div>
             <div className="stat">
               <div className="label">Sold</div>
               <div className="value">{statement.soldCount}</div>
             </div>
             <div className="stat">
-              <div className="label">They sold for</div>
-              <div className="value">{money(statement.grossSales)}</div>
-            </div>
-            <div className="stat">
-              <div className="label">Shop kept</div>
-              <div className="value">{money(statement.commissionKept)}</div>
-            </div>
-            <div className="stat">
               <div className="label">They earned</div>
               <div className="value">{money(statement.earned)}</div>
             </div>
+            <div className="stat">
+              <div className="label">Still to sell</div>
+              <div className="value">{statement.unsold.pieces}</div>
+            </div>
           </div>
 
-          <div className="table-wrap">
+          <StatementSection
+            title="What they brought in"
+            head={['Date', 'Delivery', 'Pieces', 'Worth to them']}
+            rows={statement.broughtIn.lines.map((l) => [
+              new Date(l.at).toLocaleDateString(), l.reference, String(l.pieces),
+              l.value ? money(l.value) : '',
+            ])}
+            foot={[
+              `${statement.broughtIn.pieces} piece${statement.broughtIn.pieces === 1 ? '' : 's'}`,
+              '', '', money(statement.broughtIn.value),
+            ]}
+          />
+
+          <StatementSection
+            title="What has sold"
+            head={['Date', 'Piece', 'Qty', 'Theirs']}
+            rows={statement.sold.map((l) => [
+              new Date(l.at).toLocaleDateString(), l.description, l.qty ? String(l.qty) : '', money(l.amount),
+            ])}
+            foot={[
+              `${statement.soldCount} piece${statement.soldCount === 1 ? '' : 's'}`,
+              '', '', money(statement.earned),
+            ]}
+          />
+
+          <StatementSection
+            title="What they have been paid"
+            head={['Date', 'How', '', 'Paid']}
+            rows={statement.payments.map((l) => [
+              new Date(l.at).toLocaleDateString(), l.description, '', money(Math.abs(l.amount)),
+            ])}
+            foot={['Paid in this period', '', '', money(statement.paidOut)]}
+          />
+
+          {statement.other.length > 0 && (
+            <StatementSection
+              title="Adjustments"
+              head={['Date', 'What', '', 'Amount']}
+              rows={statement.other.map((l) => [
+                new Date(l.at).toLocaleDateString(), l.description, '', money(l.amount),
+              ])}
+              foot={null}
+            />
+          )}
+
+          <StatementSection
+            title="Still to sell"
+            head={['Piece', '', 'Left', 'Worth to them']}
+            rows={statement.unsold.lines.map((l) => [l.name, '', String(l.qty), money(l.value)])}
+            foot={[
+              `${statement.unsold.pieces} piece${statement.unsold.pieces === 1 ? '' : 's'} on the shelf`,
+              '', '', money(statement.unsold.value),
+            ]}
+          />
+
+          <div className="table-wrap" style={{ marginTop: '1rem' }}>
             <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>What</th>
-                  <th className="num">Qty</th>
-                  <th className="num">Sold for</th>
-                  <th className="num">Shop kept</th>
-                  <th className="num">Theirs</th>
-                </tr>
-              </thead>
               <tbody>
                 <tr>
-                  <td colSpan={5} className="dim">Owed at {new Date(from).toLocaleDateString()}</td>
+                  <td>Owed at {new Date(from).toLocaleDateString()}</td>
                   <td className="num">{money(statement.openingBalance)}</td>
                 </tr>
-                {statement.lines.length === 0 && (
-                  <tr><td colSpan={6} className="dim">Nothing between these dates.</td></tr>
-                )}
-                {statement.lines.map((l, i) => (
-                  <tr key={i}>
-                    <td className="small">{new Date(l.at).toLocaleDateString()}</td>
-                    <td>
-                      {l.description}
-                      {l.kind !== 'sale' && <Badge> {l.kind}</Badge>}
-                    </td>
-                    <td className="num">{l.qty || ''}</td>
-                    <td className="num">{l.gross ? money(l.gross) : ''}</td>
-                    <td className="num">{l.commission ? money(l.commission) : ''}</td>
-                    <td className="num" style={l.amount < 0 ? { opacity: 0.7 } : undefined}>
-                      {money(l.amount)}
-                    </td>
-                  </tr>
-                ))}
                 <tr>
-                  <td colSpan={5} style={{ fontWeight: 650 }}>
-                    Owed at {new Date(to).toLocaleDateString()}
-                  </td>
+                  <td>Earned in this period</td>
+                  <td className="num">{money(statement.earned)}</td>
+                </tr>
+                {statement.adjustments !== 0 && (
+                  <tr><td>Adjustments</td><td className="num">{money(statement.adjustments)}</td></tr>
+                )}
+                <tr>
+                  <td>Paid to them</td>
+                  <td className="num">{statement.paidOut ? `− ${money(statement.paidOut)}` : money(0)}</td>
+                </tr>
+                <tr>
+                  <td style={{ fontWeight: 650 }}>Owed at {new Date(to).toLocaleDateString()}</td>
                   <td className="num" style={{ fontWeight: 650 }}>{money(statement.closingBalance)}</td>
                 </tr>
               </tbody>

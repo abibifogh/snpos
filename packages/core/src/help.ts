@@ -230,7 +230,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       h('What you personally finished with'),
       p(
         'Closing the shift balances the drawer. It does not say who left with what, and on a shift worked by ' +
-        'three people that is a different question. Use Hand over cash when you finish \u2014 see the chapter ' +
+        'three people that is a different question. Use Hand over cash when you finish. See the chapter ' +
         'on handing your cash over.',
       ),
     ],
@@ -586,7 +586,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       h('Turning it on'),
       steps(
         'Settings \u2192 What this business runs. Switch on Craft shop.',
-        'You can have both sides on at once. A kitchen with a craft corner is one business, not two systems \u2014 one till, one set of staff, one Reports page you can read either way.',
+        'You can have both sides on at once. A kitchen with a craft corner is one business, not two systems: one till, one set of staff, one Reports page you can read either way.',
         'A new group appears in the sidebar: Categories, Products, Consignors, Goods received and Payouts.',
       ),
       h('Consignors'),
@@ -598,23 +598,43 @@ export const HELP_ARTICLES: HelpArticle[] = [
         'The commission is what the SHOP keeps. Thirty percent means a GH\u20b5 100 basket earns the shop ' +
         'GH\u20b5 30 and the maker GH\u20b5 70.',
       ),
+      h('A share, or a fixed amount'),
+      p(
+        'Not every agreement is a percentage. "Two cedis a basket, whatever you sell it for" is a real ' +
+        'deal, and forcing it into a percentage makes it a different number at every price. So the box ' +
+        'asks which kind first: a share of each sale, or a fixed amount per piece.',
+      ),
+      list(
+        'A share takes its percentage of whatever the piece sells for.',
+        'A fixed amount takes the same figure per piece however it is priced or discounted, and never more ' +
+        'than the sale itself. A GH\u20b5 2 commission on a piece sold for GH\u20b5 1 takes the cedi, not two.',
+      ),
+      p(
+        'The same choice sits on each product, for a piece negotiated on its own terms. Leave it blank and ' +
+        'the maker\u2019s usual terms apply.',
+      ),
       note(
-        'Changing somebody\u2019s rate never rewrites the past. The rate is written onto each sale as it ' +
-        'happens, so what a maker has already earned stays what they earned.',
+        'Changing somebody\u2019s terms never rewrites the past. What was agreed is written onto each sale ' +
+        'as it happens, so what a maker has already earned stays what they earned.',
       ),
       h('Booking work in'),
       steps(
         'Craft shop \u2192 Goods received \u2192 Receive a delivery.',
-        'Pick the maker, then type straight down the page \u2014 one row per piece, with its price and how many.',
+        'Pick the maker, then type straight down the page, one row per piece, with its price and how many.',
         'Each delivery gets a reference like INT-0007. Both of you keep it, so a question months later has one thing to look at.',
         'Everything booked in goes onto the shop floor immediately at the price you set.',
         'A delivery slip opens straight away, while the maker is still at the counter.',
       ),
       h('The delivery slip'),
       p(
-        'A proper page, not a screenshot: the pieces with their prices, the agreed commission, what a full '
-        + 'sale would earn them, and a line for each of you to sign. The commission is on it deliberately, '
+        'A proper page, not a screenshot: the pieces, how many of each came in, what each one earns THEM, '
+        + 'the agreed commission, and a line for each of you to sign. The commission is on it deliberately, '
         + 'because a maker who signs a slip that does not mention it has agreed to nothing.',
+      ),
+      note(
+        'The money on the slip is theirs, after commission, not the shelf price. Two figures for the same '
+        + 'basket on one piece of paper is how an argument starts. The quantities are what was handed over '
+        + 'on the day, so a slip reprinted next year reads exactly as it did at the counter.',
       ),
       p(
         'Print it, or choose Save as PDF in the print dialog to send it on. Reprint any time from the Slip '
@@ -627,7 +647,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       ),
       p(
         'The till then asks which size before it can add the line, and the product list shows a price range ' +
-        'rather than a single figure \u2014 because with sizes there is no single figure.',
+        'rather than a single figure, because with sizes there is no single figure.',
       ),
       note(
         'Removing a size that has already sold something switches it off rather than deleting it. Its name is ' +
@@ -642,13 +662,32 @@ export const HELP_ARTICLES: HelpArticle[] = [
       ),
       steps(
         'Craft shop \u2192 Payouts shows who is waiting, most owed first.',
-        'Open their statement to see every line: what sold, what it sold for, what you kept, what they earned.',
+        'Open their statement to see where every figure came from.',
         'Send the money the way you always do: mobile money, cash, transfer.',
         'Then press Record a payment inside the statement, so the figure and its workings are on one screen.',
+      ),
+      h('What is on a statement'),
+      p('Four questions, in the order a maker asks them:'),
+      list(
+        'What they brought in: each delivery, when, how many pieces, and what it is worth to them.',
+        'What has sold: the piece, how many, and what each earned them.',
+        'What they have been paid, and when.',
+        'What is left to sell, and what that is worth to them.',
+      ),
+      p(
+        'Then the balance: owed at the start, earned, paid, owed at the end. The shop\u2019s own share is '
+        + 'not printed on it. It was agreed at intake and signed for on the delivery slip, and repeating it '
+        + 'beside every line turns handing somebody a settlement into starting the negotiation again.',
       ),
       p(
         'Print or save as PDF prints the statement itself, as its own page, rather than the screen it is '
         + 'sitting on. It is something you can hand over.',
+      ),
+      note(
+        'Recording a payment takes a moment to show in the balance. The payment is written by this app and '
+        + 'the line that moves the balance is written by the system itself, because a balance anybody can '
+        + 'type into is not evidence of anything. If it says it is still catching up, reopen the statement '
+        + 'in a minute.',
       ),
       note(
         'A maker is credited when the bill is PAID, not when it is rung up. An order cancelled or walked out ' +
@@ -676,7 +715,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       h('On the till'),
       list(
         'A Kitchen / Craft shop switch appears at the top, left of the tabs.',
-        'It changes what every tab contains, not which tab is showing \u2014 the catalogue, the open shift and where a sale lands all follow it.',
+        'It changes what every tab contains, not which tab is showing: the catalogue, the open shift and where a sale lands all follow it.',
         'The device remembers the last choice, so a till that lives on the craft counter opens on the craft counter.',
       ),
       h('Staff who only work one side'),
@@ -709,7 +748,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     body: [
       p(
         'A shift is not a person. Three people can work one shift, take money in turn out of the same drawer ' +
-        'and leave at different times \u2014 so closing the shift, which happens once at the end, cannot say ' +
+        'and leave at different times, so closing the shift, which happens once at the end, cannot say ' +
         'who left with what.',
       ),
       p('This is how you say it, so there is a record in your name rather than a note on somebody\u2019s pad.'),
@@ -717,7 +756,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       steps(
         'On the till or the kitchen screen, press Hand over cash.',
         'Type how much you are handing over.',
-        'Say where it is going \u2014 a manager, the safe, the next shift, the owner.',
+        'Say where it is going: a manager, the safe, the next shift, the owner.',
         'Say who is taking it. Both names go on the record, because the conversation this settles is always between two people.',
         'Press Record it.',
       ),
@@ -726,7 +765,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         'do, then write it down here.',
       ),
       note(
-        'You can do this whenever you finish, not only at the close \u2014 people leave at different times.',
+        'You can do this whenever you finish, not only at the close. People leave at different times.',
       ),
       h('If you get it wrong'),
       p(
@@ -736,7 +775,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       ),
       h('What a manager sees'),
       p(
-        'Admin \u2192 Shifts \u2192 Details lists what each person handed over, to whom and at what time \u2014 ' +
+        'Admin \u2192 Shifts \u2192 Details lists what each person handed over, to whom and at what time, ' +
         'every trip, not just the total. Two trips to the safe and one of twice the size are different ' +
         'evenings, and only one of them is worth asking about.',
       ),

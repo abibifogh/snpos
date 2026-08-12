@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { splitSale, rateFor, balanceOf, buildStatement, onHandFor } from '../consignment-math.ts';
+import { splitSale, rateFor, flatFor, dueFor, balanceOf, buildStatement, onHandFor } from '../consignment-math.ts';
 import { computeTotals } from '../pricing.ts';
 import { sharesFor } from '../money.ts';
 import type { CartLine } from '../pricing.ts';
@@ -26,8 +26,47 @@ test('splitSale clamps a nonsense rate rather than inventing money', () => {
 });
 
 test('splitSale at the two ends', () => {
-  assert.deepEqual(splitSale(1000, 0), { gross: 1000, commission: 0, consignor: 1000, bp: 0 });
-  assert.deepEqual(splitSale(1000, 10000), { gross: 1000, commission: 1000, consignor: 0, bp: 10000 });
+  assert.deepEqual(splitSale(1000, 0), { gross: 1000, commission: 0, consignor: 1000, bp: 0, flat: 0 });
+  assert.deepEqual(splitSale(1000, 10000), { gross: 1000, commission: 1000, consignor: 0, bp: 10000, flat: 0 });
+});
+
+test('a flat commission is taken per piece, and beats the percentage', () => {
+  // Two cedis a basket at 30%: the flat wins, three baskets, six cedis.
+  const three = splitSale(9000, 3000, 200, 3);
+  assert.equal(three.commission, 600);
+  assert.equal(three.consignor, 8400);
+  assert.equal(three.flat, 200);
+
+  // The percentage still applies when no flat is set.
+  assert.equal(splitSale(9000, 3000, 0, 3).commission, 2700);
+});
+
+test('a flat commission can never leave the maker owing the shop', () => {
+  // Two cedis due on a piece discounted to one. The shop takes the sale, not
+  // more than the sale.
+  const tiny = splitSale(100, 3000, 200, 1);
+  assert.equal(tiny.commission, 100);
+  assert.equal(tiny.consignor, 0);
+  assert.ok(tiny.consignor >= 0);
+
+  // A free line, however it happens, is not a debt either.
+  const free = splitSale(0, 3000, 200, 2);
+  assert.equal(free.commission, 0);
+  assert.equal(free.consignor, 0);
+});
+
+test('flatFor prefers the piece, then the maker, and zero means no flat', () => {
+  assert.equal(flatFor({ commission_flat: 150 }, { commission_flat: 300 }), 150);
+  assert.equal(flatFor({}, { commission_flat: 300 }), 300);
+  assert.equal(flatFor({ commission_flat: 0 }, { commission_flat: 300 }), 300, 'zero on the piece is not an override');
+  assert.equal(flatFor({}, {}), 0);
+  assert.equal(flatFor(null, null), 0);
+});
+
+test('what a piece is worth to the maker before anything sells', () => {
+  assert.equal(dueFor(1000, 3000), 700);
+  assert.equal(dueFor(1000, 3000, 200), 800, 'a flat amount comes off instead of the share');
+  assert.equal(dueFor(100, 3000, 200), 0, 'never below nothing');
 });
 
 test('rateFor prefers the piece, then the maker, then the shop', () => {
@@ -137,4 +176,57 @@ test('a bill list totalling nothing does not divide by zero', () => {
   const shares = sharesFor([{ total: 0 }, { total: 0 }], 500);
   assert.equal(shares.reduce((a, b) => a + b, 0), 500);
   assert.ok(shares.every((n) => Number.isFinite(n)));
+});
+
+test('a statement separates the four questions a maker actually asks', () => {
+  const entries = [
+    { entry_at: '2026-02-10T10:00:00.000Z', kind: 'sale' as const, amount: 700, gross: 1000, commission: 300, qty: 1 },
+    { entry_at: '2026-02-14T10:00:00.000Z', kind: 'sale' as const, amount: 350, gross: 500, commission: 150, qty: 2 },
+    { entry_at: '2026-02-20T10:00:00.000Z', kind: 'payout' as const, amount: -800, description: 'Paid momo' },
+    { entry_at: '2026-02-22T10:00:00.000Z', kind: 'fee' as const, amount: -50, description: 'Label printing' },
+  ];
+  const intakes = [
+    { received_at: '2026-02-01T09:00:00.000Z', reference: 'INT-0009', piece_count: 6, total_due: 4200 },
+    // Outside the window. A statement for February is February.
+    { received_at: '2026-01-05T09:00:00.000Z', reference: 'INT-0008', piece_count: 3, total_due: 2100 },
+  ];
+  const unsold = [{ name: 'Woven basket', qty: 4, value: 2800 }];
+
+  const st = buildStatement(
+    { name: 'Ama' },
+    entries,
+    new Date('2026-02-01'),
+    new Date('2026-02-28'),
+    { intakes, unsold },
+  );
+
+  assert.equal(st.broughtIn.lines.length, 1, 'only deliveries inside the window');
+  assert.equal(st.broughtIn.pieces, 6);
+  assert.equal(st.broughtIn.value, 4200);
+
+  assert.equal(st.sold.length, 2);
+  assert.equal(st.soldCount, 3, 'quantities, not rows');
+  assert.equal(st.earned, 1050);
+
+  assert.equal(st.payments.length, 1);
+  assert.equal(st.paidOut, 800, 'reported as the positive amount handed over');
+
+  assert.equal(st.other.length, 1, 'a fee is neither a sale nor a payment');
+  assert.equal(st.unsold.pieces, 4);
+  assert.equal(st.unsold.value, 2800);
+
+  // The balance is still the ledger and only the ledger. Deliveries and unsold
+  // stock are not money and must never touch it.
+  assert.equal(st.closingBalance, 700 + 350 - 800 - 50);
+});
+
+test('a statement with nothing extra is the statement it always was', () => {
+  const entries = [
+    { entry_at: '2026-02-10T10:00:00.000Z', kind: 'sale' as const, amount: 700, gross: 1000, commission: 300, qty: 1 },
+  ];
+  const st = buildStatement({ name: 'Ama' }, entries, new Date('2026-02-01'), new Date('2026-02-28'));
+  assert.equal(st.broughtIn.pieces, 0);
+  assert.equal(st.broughtIn.value, 0);
+  assert.equal(st.unsold.pieces, 0);
+  assert.equal(st.closingBalance, 700);
 });
