@@ -303,7 +303,10 @@ export function App() {
 
       {offOpen && (
         <EightySixModal
-          items={itemsAvailableNow(ctx.menu).map((item) => ({
+          // This side's catalogue only. The shop counter listing every dish in
+          // the restaurant meant a cashier could take jollof off the menu from
+          // a screen that has never sold food.
+          items={itemsAvailableNow(ctx.menu, ctx.module).map((item) => ({
             $id: item.$id,
             name: item.name,
             off: isUnavailable(item),

@@ -193,6 +193,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       ),
       h('The stock check'),
       p('An admin chooses which of two questions staff are asked, under Settings. Both end in the same place, an OK, Low or Out against every ingredient. The difference is who decides which.'),
+      note('This is the kitchen\u2019s check only. Closing a shop counter shift does not ask it: ingredients are recipes and shelves, and the shop\u2019s stock moves through deliveries and sales, which count themselves.'),
       list(
         'Tap OK, Low or Out, quick, and honest about being a glance at a shelf rather than a measurement. Fine where the same person closes most nights.',
         'Type how much is left, staff enter the amount actually on the shelf and the system works out the status from that ingredient\'s own low level. Slower, and it buys two things tapping cannot.',
@@ -200,6 +201,28 @@ export const HELP_ARTICLES: HelpArticle[] = [
       p('The two things: the same four crates get filed the same way whoever is closing, because nobody is judging. And what was counted can be measured against what the recipes say should have gone, which is the only way over-portioning, waste and theft ever show up at all.'),
       p('The list is grouped the way your shelves are, in the order somebody walks the kitchen. Under each ingredient is the guide an admin wrote for it, "OK = 10pcs or more · Low = under 10pcs", in the units on the shelf rather than the units in the database. Set those under Stock; without them, "low" means whatever each person thinks it means.'),
       note('When staff type amounts, a shift will not close with rows left blank; it names what is still to count. Type 0 for anything that has run out. The ingredient nobody looked at is exactly the one that runs out on Saturday.'),
+      h('Money in and money out'),
+      p(
+        'The close opens with four figures before it asks you to count anything: what the drawers started '
+        + 'with, what came in, what was paid out, and what should therefore be in hand. A night where half '
+        + 'the takings went straight back out on a delivery and a quiet night used to look identical on '
+        + 'this screen.',
+      ),
+      h('A day is the limit'),
+      p(
+        'No shift may stay open longer than 24 hours. Past that, the till stops taking money against it '
+        + 'and says so, because a shift running two days measures today\u2019s cash against yesterday '
+        + 'morning\u2019s float and every figure that comes out of it is meaningless.',
+      ),
+      p(
+        'You are warned from 20 hours. Nothing is ever closed automatically: closing means writing down '
+        + 'what was counted in the drawer, and a system that has never seen the drawer would be inventing '
+        + 'that number. If one is left open, a manager gets an email.',
+      ),
+      note(
+        'Shift codes say which counter they belong to. The bistro\u2019s start with BIST and the shop\u2019s '
+        + 'with CRAF, so two rows in a list can be told apart without opening either.',
+      ),
       h('Being over or short'),
       p('A difference is recorded, not hidden, and a large one asks for an explanation. This is not an accusation, drawers drift for honest reasons, and a system that quietly rounded it away would be useless the day it mattered.'),
       note('Marking an ingredient OUT sets it to zero, and the shift summary that goes out at close lists anything that has been low three shifts running separately from anything low for the first time. Repeatedly low is a different problem from newly low.'),
@@ -486,11 +509,44 @@ export const HELP_ARTICLES: HelpArticle[] = [
         'Tap the pieces the customer is buying.',
         'If a piece comes in sizes, the till asks which before it can price the line.',
         'Press Take payment. It rings the sale up and opens the payment straight away.',
-        'Enter what was handed over, take the money, done.',
+        'Put what they paid against each way of paying, take the money, done.',
       ),
       p(
         'The till stays where it is afterwards, cleared and ready for the next customer. There is nothing '
         + 'to go back to.',
+      ),
+      h('Paying two ways at once'),
+      p(
+        'A customer at a counter often puts part of a basket on a card and the rest in cash. So the '
+        + 'payment box does not ask you to choose one: every way of paying has its own amount box, and you '
+        + 'type what went on each. The running total is on screen the whole time, so nobody is adding up '
+        + 'two numbers in their head with a queue waiting.',
+      ),
+      list(
+        'The amounts have to add up to the sale.',
+        'More than the sale is refused. That is a typo, not a tip; the tip has its own box.',
+        'Less than the sale is allowed, but you have to tick to say you meant it. The rest stays owing on '
+        + 'the sale and the sale stays on the counter until somebody pays it.',
+      ),
+      p(
+        'There is no "cash given" box here. That question only exists to work out change, and the change '
+        + 'is the note in your hand minus what the sale took. Type what the sale took.',
+      ),
+      note(
+        'Press All on a line to put the whole sale on it, which is what most sales are. Once one line has '
+        + 'something in it, Rest fills whatever is left onto another.',
+      ),
+      h('What have I sold today'),
+      p(
+        'Press This shift on the bar at the top. It lists every sale on this shift, what each came to, and '
+        + 'anything paid out of the drawer, with money in and money out at the top. A receipt can be '
+        + 'printed or emailed again from the same list.',
+      ),
+      h('Money paid out of the drawer'),
+      p(
+        'Press Record spend. Transport, a repair, anything paid out at the counter. Record it as it '
+        + 'happens: money that left the drawer without a record is a shortage at the end of the night that '
+        + 'nobody can explain. It is filed against the shop, not the kitchen.',
       ),
       h('Prices with a range'),
       p(

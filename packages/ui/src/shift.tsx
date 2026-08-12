@@ -44,6 +44,26 @@ export interface StockRow {
   guide?: string;
 }
 
+/**
+ * The shift's day in four numbers, shown before anybody counts anything.
+ *
+ * The table below it answers "does each drawer hold what it should", which is
+ * a checking question. This answers the one the person closing actually has in
+ * their head: what came in, what went out, and where that leaves us. Without
+ * it, the only figure on the screen was a per-drawer expectation with the
+ * float and the spending already folded invisibly into it, so a good night and
+ * a night where half the takings were paid straight back out looked identical.
+ */
+export interface ShiftFlow {
+  /** What each drawer started with. Not takings. */
+  opening: number;
+  /** Sales taken during the shift, tips excluded. */
+  sales: number;
+  tips: number;
+  /** Everything paid out of the drawers during the shift. */
+  out: number;
+}
+
 const TONE = { OK: 'ok', LOW: 'warn', OUT: 'danger' } as const;
 
 /**
@@ -147,6 +167,7 @@ export function ShiftCloseForm({
   symbol,
   money,
   tolerance,
+  flow,
 }: {
   blockers: BlockerRow[];
   rows: CountRow[];
@@ -165,6 +186,8 @@ export function ShiftCloseForm({
   symbol: string;
   money: (n: number) => string;
   tolerance: number;
+  /** Money in and money out for the shift. Omitted, the summary is not shown. */
+  flow?: ShiftFlow;
 }) {
   if (blockers.length > 0) {
     const unpaid = blockers.filter((b) => b.reason === 'unpaid');
@@ -233,6 +256,38 @@ export function ShiftCloseForm({
 
   return (
     <>
+      {flow && (
+        <div className="table-wrap" style={{ marginBottom: '1rem' }}>
+          <table className="data">
+            <tbody>
+              <tr>
+                <td>Started with</td>
+                <td className="num dim">{money(flow.opening)}</td>
+              </tr>
+              <tr>
+                <td>Money in {flow.tips > 0 && <span className="dim small">sales, tips counted apart</span>}</td>
+                <td className="num" style={{ fontWeight: 550 }}>
+                  {money(flow.sales)}
+                  {flow.tips > 0 && <div className="small dim">+ {money(flow.tips)} tips</div>}
+                </td>
+              </tr>
+              <tr>
+                <td>Money out <span className="dim small">paid out of the drawers</span></td>
+                <td className="num" style={{ fontWeight: 550 }}>
+                  {flow.out > 0 ? `− ${money(flow.out)}` : money(0)}
+                </td>
+              </tr>
+              <tr>
+                <td style={{ fontWeight: 650 }}>Should be in hand</td>
+                <td className="num" style={{ fontWeight: 650 }}>
+                  {money(flow.opening + flow.sales + flow.tips - flow.out)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <p className="small dim" style={{ marginTop: 0 }}>
         Count each drawer and enter what is actually in your hand. The system works out what should be there and shows
         you the difference as you type.

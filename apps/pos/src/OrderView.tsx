@@ -3,7 +3,7 @@ import { Button, Card, Field, Input, Modal, Notice, Select, Badge, Spinner } fro
 import {
   db, DB_ID, Query, listAll, createOrder, computeTotals, lineTotal, formatMoney,
   parseMoney, toInput, isEnabled, featureConfig, visibleSections, recordPayment, asksForTip,
-  variantPriceRange,
+  variantPriceRange, shiftUsable, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, sharesFor,
 } from '@snpos/core';
 import type { CartLine, Order, OrderItem, Doc, MenuEntry, Settings } from '@snpos/core';
 import { COUNTER_TABLE_ID } from './App';
@@ -161,8 +161,24 @@ export function OrderView({
   // What is already owed, plus whatever is being added right now.
   const billTotal = existing.reduce((s, o) => s + o.total, 0) + (cart.length ? newTotals.total : 0);
 
+  /**
+   * Can this shift still take money?
+   *
+   * A shift open past a day is one nobody forgot to close on purpose, and
+   * everything rung up against it lands in a night that ended. The counter
+   * says so and stops rather than filing today's cash under yesterday.
+   */
+  const usable = shiftUsable(ctx.shift);
+  const age = shiftAgeOf(ctx.shift);
+
   const send = async () => {
     if (cart.length === 0) return;
+    // At the counter, sending is ringing up, and ringing up a sale that cannot
+    // then be paid for just leaves an unpayable bill on the screen.
+    if (ctx.module === 'craft' && !usable) {
+      onToast(shiftAgeMessage(age, SHIFT_MAX_HOURS), 'err');
+      return;
+    }
     setSending(true);
     try {
       const { order } = await createOrder({
@@ -217,13 +233,19 @@ export function OrderView({
             <Button
               variant="primary"
               onClick={() => setPaying(true)}
-              disabled={!ctx.shift || !ctx.profile?.can_mark_paid}
+              disabled={!ctx.shift || !usable || !ctx.profile?.can_mark_paid}
             >
               Take payment · {formatMoney(billTotal, ctx.settings)}
             </Button>
           )}
         </div>
       </div>
+
+      {ctx.shift && !usable && (
+        <div style={{ padding: '0.6rem 1rem' }}>
+          <Notice tone="warn">{shiftAgeMessage(age, SHIFT_MAX_HOURS)}</Notice>
+        </div>
+      )}
 
       {!ctx.shift && (
         <div style={{ padding: '0.6rem 1rem' }}>
@@ -392,24 +414,30 @@ export function OrderView({
         );
       })()}
 
-      {paying && (
-        <PaymentModal
-          ctx={ctx}
-          methods={methods}
-          orders={existing}
-          amountDue={Math.max(0, billTotal - discount)}
-          onClose={() => setPaying(false)}
-          onDone={async () => {
+      {paying && (() => {
+        /* A shop counter splits one basket between a note and a card far more
+           often than a restaurant table does, so the two sides ask the question
+           differently: the till asks which method and how much, the counter
+           asks how much on each. Two components rather than one with branches,
+           so neither can quietly change the other. */
+        const props = {
+          ctx,
+          methods,
+          orders: existing,
+          amountDue: Math.max(0, billTotal - discount),
+          onClose: () => setPaying(false),
+          onDone: async () => {
             setPaying(false);
             if (!isTakeaway) await db.updateDocument(DB_ID, 'tables', table.$id, { status: 'dirty' }).catch(() => undefined);
             onToast('Payment recorded');
             // The shop till stays where it is, ready for the next customer.
             // Sending it "back" would land it on a screen that does not exist.
             if (ctx.module === 'craft') { setCart([]); setExisting([]); setExistingItems({}); } else onBack();
-          }}
-          onError={(m) => onToast(m, 'err')}
-        />
-      )}
+          },
+          onError: (m: string) => onToast(m, 'err'),
+        };
+        return ctx.module === 'craft' ? <CounterPaymentModal {...props} /> : <PaymentModal {...props} />;
+      })()}
     </div>
   );
 }
@@ -464,6 +492,241 @@ function DiscountModal({
       <p className="small dim">
         Your limit is {(ceilingBp / 100).toFixed(0)}%. Every discount is recorded against your name.
       </p>
+    </Modal>
+  );
+}
+
+/**
+ * Taking money at the shop counter, where one basket is often paid two ways.
+ *
+ * The restaurant's box asks which method and how much. That is wrong for a
+ * counter: somebody pays part in cash and the rest on the card machine in one
+ * movement, and asking twice means two trips through the same form with a
+ * queue behind them. So every method gets its own box and the cashier types
+ * what went on each.
+ *
+ * Three rules, in the order they matter:
+ *
+ *   1. Nothing over the total. More money than the bill is a typo, not a tip;
+ *      the tip has its own box.
+ *   2. Less than the total is allowed, and is a part payment: the bill stays
+ *      open and visible on the counter for the rest. It is never silently
+ *      accepted, the cashier has to say they meant it.
+ *   3. Exactly the total needs no confirming at all.
+ *
+ * There is no "cash given" box here on purpose. That question exists to work
+ * out change, and change is a cash-drawer conversation, not a split. Where a
+ * customer hands over a large note the cashier types what the sale took, and
+ * the change is the note minus that, which they are holding in their hand.
+ */
+function CounterPaymentModal({
+  ctx, methods, orders, amountDue, onClose, onDone, onError,
+}: {
+  ctx: PosContext;
+  methods: PaymentMethod[];
+  orders: Order[];
+  amountDue: number;
+  onClose: () => void;
+  onDone: () => void;
+  onError: (m: string) => void;
+}) {
+  const decimals = ctx.settings.currency_decimals ?? 2;
+  /** What went on each method, as typed. Blank is not zero; it is untouched. */
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [refs, setRefs] = useState<Record<string, string>>({});
+  const [tip, setTip] = useState(toInput(0, decimals));
+  const [email, setEmail] = useState('');
+  /** Ticked by the cashier when the customer is knowingly paying part of it. */
+  const [confirmShort, setConfirmShort] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const money = (n: number) => formatMoney(n, ctx.settings);
+  const amountOf = (id: string) => parseMoney(amounts[id] ?? '', decimals) ?? 0;
+  const entered = methods.reduce((sum, m) => sum + amountOf(m.$id), 0);
+  const over = entered > amountDue;
+  const shortBy = Math.max(0, amountDue - entered);
+  const askEmail =
+    isEnabled(ctx.features, 'receipts') && featureConfig(ctx.features, 'receipts', 'allow_staff_enter_email', true);
+
+  /** Put the whole bill on one method, the overwhelmingly common case. */
+  const allOn = (methodId: string) =>
+    setAmounts(Object.fromEntries(methods.map((m) => [m.$id, m.$id === methodId ? toInput(amountDue, decimals) : ''])));
+
+  /** Fill whatever is left onto a method, for the second half of a split. */
+  const restOn = (methodId: string) =>
+    setAmounts((a) => ({ ...a, [methodId]: toInput(amountOf(methodId) + shortBy, decimals) }));
+
+  const confirm = async () => {
+    if (!ctx.shift) { setError('No shift is open.'); return; }
+    if (entered <= 0) { setError('Enter how much was paid, on the cash or the card line.'); return; }
+    if (over) {
+      setError(
+        `That comes to ${money(entered)}, which is ${money(entered - amountDue)} more than the sale. ` +
+        'Correct the amounts, or put the extra in the tip box.',
+      );
+      return;
+    }
+    if (shortBy > 0 && !confirmShort) {
+      setError(
+        `That comes to ${money(entered)}, ${money(shortBy)} short of ${money(amountDue)}. ` +
+        'Tick the box to record it as a part payment, or correct the amounts.',
+      );
+      return;
+    }
+    for (const m of methods) {
+      if (amountOf(m.$id) > 0 && m.requires_reference && !(refs[m.$id] ?? '').trim()) {
+        setError(`Enter the reference for the ${m.name} payment.`);
+        return;
+      }
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      // How much of the tender each order carries. Worked out once, then
+      // filled method by method, so the two never disagree by a rounding step.
+      const owing = sharesFor(orders, entered);
+      const tipMinor = parseMoney(tip, decimals) ?? 0;
+      let tipPlaced = false;
+
+      for (const m of methods) {
+        let left = amountOf(m.$id);
+        if (left <= 0) continue;
+        for (const [index, order] of orders.entries()) {
+          if (left <= 0) break;
+          const share = Math.min(owing[index], left);
+          if (share <= 0) continue;
+          owing[index] -= share;
+          left -= share;
+          await recordPayment({
+            venueId: ctx.venue.$id,
+            order,
+            shiftId: ctx.shift.$id,
+            methodId: m.$id,
+            methodKind: m.kind,
+            amount: share,
+            // The tip belongs to the tender, not to each row, so it goes on
+            // the first one written rather than once per method per order.
+            tip: tipPlaced ? 0 : tipMinor,
+            // No change at the counter: there is no tendered figure to take it
+            // off. See the note at the top of this component.
+            changeGiven: 0,
+            reference: (refs[m.$id] ?? '').trim(),
+            takenBy: ctx.userId,
+            orderStatus: 'CLOSED',
+            customerEmail: email,
+          });
+          tipPlaced = true;
+        }
+      }
+
+      if (shortBy > 0) {
+        onError(`${money(entered)} taken · ${money(shortBy)} still to pay on this sale.`);
+      }
+      onDone();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Could not record the payment.';
+      onError(message);
+      setError(message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Take payment"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={confirm} loading={busy}>
+            {shortBy > 0 && entered > 0 ? 'Take part payment' : 'Mark as paid'}
+          </Button>
+        </>
+      }
+    >
+      <div className="bill-total grand" style={{ marginTop: 0 }}>
+        <span>To pay</span>
+        <span>{money(amountDue)}</span>
+      </div>
+
+      <p className="small dim" style={{ marginTop: '0.2rem' }}>
+        Put what the customer paid against each one. Split it however they paid it; the amounts have to add up to the
+        sale.
+      </p>
+
+      <div className="stack" style={{ gap: '0.55rem', marginBottom: '0.8rem' }}>
+        {methods.map((m) => (
+          <div key={m.$id}>
+            <div className="row" style={{ gap: '0.4rem', alignItems: 'center' }}>
+              <span style={{ flex: 1 }}>{m.name}</span>
+              <Input
+                value={amounts[m.$id] ?? ''}
+                inputMode="decimal"
+                placeholder={toInput(0, decimals)}
+                style={{ width: '8rem', textAlign: 'right' }}
+                aria-label={`${m.name} (${ctx.settings.currency_symbol})`}
+                onChange={(e) => setAmounts((a) => ({ ...a, [m.$id]: e.target.value }))}
+              />
+              <Button size="sm" variant="ghost" onClick={() => allOn(m.$id)}>All</Button>
+              {shortBy > 0 && entered > 0 && (
+                <Button size="sm" variant="ghost" onClick={() => restOn(m.$id)}>Rest</Button>
+              )}
+            </div>
+            {amountOf(m.$id) > 0 && m.requires_reference && (
+              <Field label={`${m.name} reference`} hint="From the card machine or the mobile money message.">
+                <Input value={refs[m.$id] ?? ''} onChange={(e) => setRefs((r) => ({ ...r, [m.$id]: e.target.value }))} />
+              </Field>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* The running answer, always on screen, so nobody has to add up two
+          boxes in their head with a customer waiting. */}
+      <div className="bill-total" style={{ fontWeight: 600 }}>
+        <span>Entered</span>
+        <span>{money(entered)}</span>
+      </div>
+
+      {over && (
+        <Notice>
+          That is {money(entered - amountDue)} more than the sale. Correct the amounts, or put the extra in the tip
+          box below.
+        </Notice>
+      )}
+
+      {shortBy > 0 && entered > 0 && (
+        <Notice tone="warn">
+          <div><strong>{money(shortBy)} short of {money(amountDue)}.</strong></div>
+          <label className="row" style={{ gap: '0.45rem', marginTop: '0.45rem', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={confirmShort}
+              onChange={(e) => setConfirmShort(e.target.checked)}
+            />
+            <span className="small">
+              Yes, they are paying {money(entered)} now. The rest stays owing on this sale.
+            </span>
+          </label>
+        </Notice>
+      )}
+
+      {asksForTip(ctx.settings, 'till') && (
+        <Field label={`Tip (${ctx.settings.currency_symbol})`} hint="Kept apart from the sale. Not taxed as sales.">
+          <Input value={tip} inputMode="decimal" onChange={(e) => setTip(e.target.value)} />
+        </Field>
+      )}
+
+      {askEmail && (
+        <Field label="Email the receipt to" hint="Optional. Leave blank to skip, no receipt is sent.">
+          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        </Field>
+      )}
+
+      {error && <Notice>{error}</Notice>}
     </Modal>
   );
 }
@@ -527,21 +790,14 @@ function PaymentModal({
     setBusy(true);
     setError(null);
     try {
-      const billTotal = Math.max(1, orders.reduce((s, o) => s + o.total, 0));
       // What was actually handed over, not what the bill came to, the two
       // differ whenever somebody pays part of it, and recording the bill total
       // against a part payment would mark the whole thing settled.
       const taken = Math.min(paid, amountDue);
+      const shares = sharesFor(orders, taken);
 
-      // Shared across the orders in proportion, with the rounding remainder
-      // going to the last one so the pieces add up to exactly what was taken.
-      let allocated = 0;
       for (const [index, order] of orders.entries()) {
-        const share =
-          index === orders.length - 1
-            ? taken - allocated
-            : Math.round((order.total / billTotal) * taken);
-        allocated += share;
+        const share = shares[index];
         await recordPayment({
           venueId: ctx.venue.$id,
           order,

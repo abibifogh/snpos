@@ -192,12 +192,18 @@ export const visibleSections = (menu: LoadedMenu): MenuSection[] =>
  *
  * A dish in two categories appears once. It is the same dish and the same
  * empty container.
+ *
+ * `module` narrows it to one side of the business. Without it, the craft
+ * counter's "Sold out" list offered every dish in the restaurant, so a cashier
+ * who has never seen the kitchen could take jollof off the menu by tapping the
+ * wrong row.
  */
-export function itemsAvailableNow(menu: LoadedMenu): MenuItem[] {
+export function itemsAvailableNow(menu: LoadedMenu, module?: 'kitchen' | 'craft'): MenuItem[] {
   const seen = new Set<string>();
   const out: MenuItem[] = [];
   for (const section of menu.sections) {
     if (!section.open) continue;
+    if (module && (section.category.module ?? 'kitchen') !== module) continue;
     for (const entry of section.entries) {
       if (seen.has(entry.item.$id)) continue;
       seen.add(entry.item.$id);

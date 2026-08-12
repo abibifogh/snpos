@@ -5,6 +5,9 @@ import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from
 import { postShift } from './ledger';
 import { featureConfig, isEnabled, type FeatureMap } from './features';
 import type { Module } from './access';
+import { shiftAge, shiftCode, SHIFT_MAX_HOURS } from './shift-rules';
+
+export * from './shift-rules';
 
 export interface Shift extends Doc {
   venue_id: string;
@@ -132,7 +135,9 @@ export async function openShift(opts: {
    */
   module?: Module;
 }): Promise<Shift> {
-  const code = `S${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Date.now().toString(36).slice(-4)}`;
+  // BIST for the bistro, CRAF for the shop. Which counter a shift belongs to is
+  // the first thing anybody needs from its code.
+  const code = shiftCode(opts.module);
   const doc = await db.createDocument(DB_ID, 'shifts', ID.unique(), {
     venue_id: opts.venueId,
     code,
@@ -261,10 +266,31 @@ export interface ExpectedTakings {
   takenByMethod: Record<string, number>;
   /** Cash paid out during the shift, which the drawer no longer holds. */
   cashExpenses: number;
+  /** Everything paid out during the shift, however it was paid. */
+  expensesTotal: number;
   salesTotal: number;
   tipsTotal: number;
   payments: ShiftPayment[];
 }
+
+/**
+ * How long an open shift has been running, and whether it may still be used.
+ *
+ * A closed shift is never overrun: it is finished, and the question of how
+ * long it stayed open is a matter for the report rather than the till.
+ */
+export const shiftAgeOf = (shift: Pick<Shift, 'opened_at' | 'closed_at'> | null | undefined) =>
+  shiftAge(shift?.closed_at ?? shift?.opened_at ?? new Date().toISOString());
+
+/**
+ * Can this shift still take money?
+ *
+ * No, once it has been open for a day. Everything after that would be filed
+ * under a night that ended, and a drawer counted against two days of takings
+ * balances by accident or not at all.
+ */
+export const shiftUsable = (shift: Pick<Shift, 'opened_at'> | null | undefined): boolean =>
+  !!shift && !shiftAge(shift.opened_at, new Date(), SHIFT_MAX_HOURS).over;
 
 /**
  * What the drawer should hold, worked out rather than typed.
@@ -303,7 +329,11 @@ export async function expectedTakings(shift: Shift, methods: PaymentMethod[]): P
     byMethod[m.$id] = (openingFloats[m.$id] ?? 0) + (takenByMethod[m.$id] ?? 0) - paidOut;
   }
 
-  return { byMethod, openingFloats, takenByMethod, cashExpenses, salesTotal, tipsTotal, payments };
+  const expensesTotal = expenses.reduce((a, e) => a + e.amount, 0);
+
+  return {
+    byMethod, openingFloats, takenByMethod, cashExpenses, expensesTotal, salesTotal, tipsTotal, payments,
+  };
 }
 
 export interface CloseShiftResult {

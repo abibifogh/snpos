@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { Button, Modal, Field, Input, Notice, Badge, ShiftCloseForm, resolveCounts } from '@snpos/ui';
-import type { BlockerRow, CountRow, StockRow } from '@snpos/ui';
+import {
+  Button, Modal, Field, Input, Notice, Badge, ShiftCloseForm, resolveCounts,
+  ShiftHistory, ExpenseModal, HandoverModal,
+} from '@snpos/ui';
+import type { BlockerRow, CountRow, StockRow, ShiftFlow } from '@snpos/ui';
 import {
   formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift as createShift, shiftBlockers, expectedTakings, closeShift,
-  openingFloats,
+  openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS,
 } from '@snpos/core';
 import type { PaymentMethod, Shift } from '@snpos/core';
 import type { PosContext } from './App';
@@ -29,12 +32,21 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   const [stockList, setStockList] = useState<StockRow[]>([]);
   // Typed amounts, kept as text so a half-finished "0." is not read as zero.
   const [stockCounts, setStockCounts] = useState<Record<string, string>>({});
+  const [flow, setFlow] = useState<ShiftFlow | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [floatSource, setFloatSource] = useState('zero');
   const [floatNote, setFloatNote] = useState('');
+  // What this shift has done, and what has been paid out of it. Both are
+  // things a cashier is asked about long before the shift ends.
+  const [history, setHistory] = useState(false);
+  const [spending, setSpending] = useState(false);
+  const [handingOver, setHandingOver] = useState(false);
 
   const decimals = ctx.settings.currency_decimals ?? 2;
+
+  // A day is the limit. See shift-rules.
+  const age = shiftAgeOf(ctx.shift);
   // Which question the restaurant has chosen to ask, and what the answers come
   // to. Worked out here rather than in the form so the close button and the
   // boxes on screen can never be judging different things.
@@ -114,10 +126,24 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           .map((x) => ({ methodId: x.$id, name: x.name, expected: takings.byMethod[x.$id] ?? 0, countedText: '' })),
       );
 
-      // Grouped the way the shelves are, with the written guide under each
-      // name. Built in one place so the till and the kitchen screen cannot
-      // show a cook two different lists.
-      const list = await stockCheckRows(ctx.venue.$id);
+      // What came in and what went out, before any drawer is counted.
+      setFlow({
+        opening: Object.values(takings.openingFloats).reduce((a, b) => a + b, 0),
+        sales: takings.salesTotal,
+        tips: takings.tipsTotal,
+        out: takings.expensesTotal,
+      });
+
+      /**
+       * The shelf check, and only where there is a shelf.
+       *
+       * Ingredients are the kitchen's: rice, tomatoes, gas. A craft cashier
+       * closing the counter was being asked whether the restaurant had run low
+       * on chicken, a question they cannot answer and whose answer goes into
+       * the kitchen's overnight report. The shop's own stock moves through
+       * consignment intakes and sales, which count themselves.
+       */
+      const list = ctx.module === 'craft' ? [] : await stockCheckRows(ctx.venue.$id);
       setStockList(list);
       setLevels(Object.fromEntries(list.map((i) => [i.$id, 'OK' as const])));
       setStockCounts({});
@@ -217,28 +243,94 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         <div className="row">
           {ctx.shift ? (
             <>
-              <Badge tone="ok">Shift open</Badge>
+              <Badge tone={age.over ? 'danger' : age.warning ? 'warn' : 'ok'}>
+                {age.over ? 'Shift overdue' : 'Shift open'}
+              </Badge>
               <span className="small dim">
                 {ctx.shift.code} · since {new Date(ctx.shift.opened_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             </>
           ) : (
             <span className="small" style={{ color: 'var(--warn)' }}>
-              No shift open, orders can be taken, but nothing can be marked paid until one is.
+              {/* A shop has no kitchen to fall back on, so the sentence about
+                  carrying on without a shift is only true on one side. */}
+              {ctx.module === 'craft'
+                ? 'No shift open, so nothing can be sold until one is.'
+                : 'No shift open, orders can be taken, but nothing can be marked paid until one is.'}
               {!ctx.profile?.can_open_shift && ' Ask someone who can open one, or have an admin grant you the permission.'}
             </span>
           )}
         </div>
-        {ctx.shift ? (
-          <Button size="sm" onClick={startClose} loading={busy && !closing} disabled={!ctx.profile?.can_close_shift}>
-            Close shift
-          </Button>
-        ) : (
-          <Button size="sm" variant="primary" onClick={startOpen} disabled={!ctx.profile?.can_open_shift}>
-            Open shift
-          </Button>
-        )}
+        <div className="row" style={{ gap: '0.35rem', flexWrap: 'wrap' }}>
+          {/* What have I sold today, and what have I paid out of the drawer.
+              Both were only on the kitchen screen, which a cashier at the shop
+              counter never looks at. */}
+          {ctx.shift && (
+            <>
+              <Button size="sm" onClick={() => setHistory(true)}>This shift</Button>
+              <Button size="sm" onClick={() => { setSpending(true); setError(null); }}>Record spend</Button>
+              <Button size="sm" onClick={() => { setHandingOver(true); setError(null); }}>Hand over cash</Button>
+            </>
+          )}
+          {ctx.shift ? (
+            <Button size="sm" onClick={startClose} loading={busy && !closing} disabled={!ctx.profile?.can_close_shift}>
+              Close shift
+            </Button>
+          ) : (
+            <Button size="sm" variant="primary" onClick={startOpen} disabled={!ctx.profile?.can_open_shift}>
+              Open shift
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Past a day the shift stops being a night anybody can reconcile: two
+          days of takings in one drawer, measured against yesterday morning's
+          float. So it says so, and at the limit refuses further sales. It is
+          never closed automatically, because an automatic close would record a
+          cash count that nobody made. */}
+      {ctx.shift && (age.over || age.warning) && (
+        <div style={{ padding: '0.5rem 1rem 0' }}>
+          <Notice tone={age.over ? 'warn' : 'info'}>
+            {shiftAgeMessage(age, SHIFT_MAX_HOURS)}
+            {age.over && !ctx.profile?.can_close_shift && ' Ask a manager to close it.'}
+          </Notice>
+        </div>
+      )}
+
+      {history && ctx.shift && (
+        <ShiftHistory
+          shift={ctx.shift}
+          venue={ctx.venue}
+          settings={ctx.settings}
+          who={ctx.profile}
+          onClose={() => setHistory(false)}
+          onToast={onToast}
+        />
+      )}
+
+      {spending && ctx.shift && (
+        <ExpenseModal
+          module={ctx.module}
+          venueId={ctx.venue.$id}
+          shiftId={ctx.shift.$id}
+          settings={ctx.settings}
+          userId={ctx.userId}
+          onClose={() => setSpending(false)}
+          onDone={(m) => { setSpending(false); onToast(m); }}
+        />
+      )}
+
+      {handingOver && (
+        <HandoverModal
+          venueId={ctx.venue.$id}
+          shiftId={ctx.shift?.$id}
+          settings={ctx.settings}
+          who={ctx.profile}
+          onClose={() => setHandingOver(false)}
+          onDone={(m) => { setHandingOver(false); onToast(m); }}
+        />
+      )}
 
       {opening && (
         <Modal
@@ -300,6 +392,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
             symbol={ctx.settings.currency_symbol ?? ''}
             money={money}
             tolerance={tolerance}
+            flow={flow}
           />
         </Modal>
       )}

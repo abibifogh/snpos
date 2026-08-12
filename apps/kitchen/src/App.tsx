@@ -551,7 +551,7 @@ export function App() {
                 reason,
               });
               const m = await loadMenu(venue.$id);
-              setOffItems(itemsAvailableNow(m));
+              setOffItems(itemsAvailableNow(m, 'kitchen'));
             } catch (e) {
               setError(e instanceof Error ? e.message : 'Could not take that off the menu.');
             } finally {
@@ -563,7 +563,7 @@ export function App() {
             try {
               await markAvailable({ item: { $id: i.$id }, userId: who?.user_id || who?.$id });
               const m = await loadMenu(venue.$id);
-              setOffItems(itemsAvailableNow(m));
+              setOffItems(itemsAvailableNow(m, 'kitchen'));
             } catch (e) {
               setError(e instanceof Error ? e.message : 'Could not put that back.');
             } finally {
@@ -622,7 +622,7 @@ export function App() {
               title="Mark a dish as run out"
               onClick={async () => {
                 const m = await loadMenu(venue?.$id ?? '');
-                setOffItems(itemsAvailableNow(m));
+                setOffItems(itemsAvailableNow(m, 'kitchen'));
                 setOffOpen(true);
               }}
             >

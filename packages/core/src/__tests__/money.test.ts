@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { splitSale, rateFor, balanceOf, buildStatement, onHandFor } from '../consignment-math.ts';
 import { computeTotals } from '../pricing.ts';
+import { sharesFor } from '../money.ts';
 import type { CartLine } from '../pricing.ts';
 
 const line = (over: Partial<CartLine> = {}): CartLine => ({
@@ -111,4 +112,29 @@ test('totals: a discount reduces the tax and service with it', () => {
   });
   assert.equal(t.service_total, 100, 'service is charged on the discounted figure');
   assert.equal(t.total, 1000 + 100 + 110);
+});
+
+test('a tender split across bills always adds back to what was taken', () => {
+  // The awkward case: three equal bills and a hundred. Thirds do not divide,
+  // and a naive split loses a pesewa every single time.
+  const bills = [{ total: 3334 }, { total: 3333 }, { total: 3333 }];
+  const shares = sharesFor(bills, 10000);
+  assert.equal(shares.reduce((a, b) => a + b, 0), 10000);
+
+  // Part payments too. Nothing about taking half changes the rule.
+  for (const taken of [1, 7, 99, 4999, 10000]) {
+    assert.equal(sharesFor(bills, taken).reduce((a, b) => a + b, 0), taken, `taken ${taken}`);
+  }
+});
+
+test('one bill takes the whole tender, and no bills take nothing', () => {
+  assert.deepEqual(sharesFor([{ total: 2500 }], 2500), [2500]);
+  assert.deepEqual(sharesFor([{ total: 2500 }], 1000), [1000], 'a part payment on a single bill');
+  assert.deepEqual(sharesFor([], 5000), []);
+});
+
+test('a bill list totalling nothing does not divide by zero', () => {
+  const shares = sharesFor([{ total: 0 }, { total: 0 }], 500);
+  assert.equal(shares.reduce((a, b) => a + b, 0), 500);
+  assert.ok(shares.every((n) => Number.isFinite(n)));
 });

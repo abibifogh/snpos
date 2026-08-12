@@ -72,3 +72,30 @@ export function axisMoney(minor: number, settings: { currency_symbol: string; cu
   const text = whole.toLocaleString(undefined, { maximumFractionDigits: 0 });
   return settings.symbol_position === 'after' ? `${text}${settings.currency_symbol}` : `${settings.currency_symbol}${text}`;
 }
+
+/**
+ * How much of one tender each bill takes.
+ *
+ * A counter sale is usually one bill, but somebody who put a basket back and
+ * started again has two, and the money they hand over covers both. Shares are
+ * worked out in proportion, with the rounding remainder going to the last one,
+ * so the pieces always add back to exactly what was taken. Splitting 100 three
+ * ways as 33, 33, 33 loses a pesewa every time somebody does it, and a pesewa
+ * lost per sale is a drawer that is short every night for no reason anybody
+ * can find.
+ *
+ * Takes and returns minor units. Pure: this is the arithmetic, not the write.
+ */
+export function sharesFor(bills: { total: number }[], taken: number): number[] {
+  // Guarded so a bill list totalling nothing cannot divide by zero. Nothing is
+  // ever allocated in that case anyway, since the shares round to the taken
+  // amount on the last row.
+  const billTotal = Math.max(1, bills.reduce((sum, b) => sum + b.total, 0));
+  let allocated = 0;
+  return bills.map((bill, index) => {
+    const share =
+      index === bills.length - 1 ? taken - allocated : Math.round((bill.total / billTotal) * taken);
+    allocated += share;
+    return share;
+  });
+}

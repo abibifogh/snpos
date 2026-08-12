@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck, tests, schema check, build. Run this before deploying.
 ```
 
-36 tests, no database, about half a second. They cover the sums that decide what
+44 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -26,10 +26,11 @@ and no caller had to change.
 
 | Suite | What it protects |
 |---|---|
-| `money.test.ts` | The commission split never loses a pesewa at any price or rate. A statement adds up from its own opening balance. Tax, service and discounts. |
+| `money.test.ts` | The commission split never loses a pesewa at any price or rate. A statement adds up from its own opening balance. Tax, service and discounts. Splitting one tender across several bills. |
 | `parity.test.ts` | **The browser and the server agree.** |
 | `access.test.ts` | Who can open what, including the bug that hid the craft shop from every manager. |
 | `timing.test.ts` | Quoted waits, the hour cap, when a ticket is late, the cancel window, cash handovers. |
+| `shift-rules.test.ts` | Shift codes per side, and the 24 hour limit including a device with the wrong clock. |
 
 ### The parity suite is the important one
 
@@ -82,6 +83,12 @@ not just what to press.
 | C5 | Reports → Both / Kitchen / Craft shop | Figures change; Both equals the two added up |
 | C6 | Record an expense on each side | Each appears only under its own filter |
 | C7 | Craft till, no shift open | Says nothing can be sold. Does **not** offer a kitchen |
+| C8 | Craft till, press Sold out | Shop products only. **No dishes** |
+| C9 | Close a craft shift | **No OK / Low / Out shelf check.** Money in and money out shown |
+| C10 | Close a kitchen shift | Shelf check still there, money in and out above it |
+| C11 | Record spend from the craft till | Saved against the shop. **No ingredient list** on the form |
+| C12 | Open one shift on each side | Codes read `BIST…` and `CRAF…` |
+| C13 | Craft till, press This shift | This shift's sales and spending. **No kitchen tickets** |
 
 ### D. Money that must never double
 
@@ -124,6 +131,30 @@ Run these every time. The restaurant is the part that is already earning.
 | G4 | A payout larger than the balance | Refused |
 | G5 | A consignor marked inactive who is still owed | Stays on the payouts list |
 
+### H. The counter payment box
+
+| # | Do this | Must be true |
+|---|---|---|
+| H1 | Craft sale, put the whole amount on cash | Recorded, sale settles, no "cash given" box anywhere |
+| H2 | Split it: some on cash, the rest on card | Both recorded against the same sale. Entered total matches the sale |
+| H3 | Enter more than the sale | Refused, and it says by how much |
+| H4 | Enter less than the sale, do not tick the box | Refused. The tick is required, not implied |
+| H5 | Enter less, tick the box, confirm | Part payment taken. Sale stays on the counter for the rest |
+| H6 | Put an amount on a card method that needs a reference | Refuses until the reference for **that** method is entered |
+| H7 | Two unpaid sales on the counter, pay both with one split | Every pesewa lands. Neither sale is over or under paid |
+
+### J. Shifts that outstay the day
+
+Needs a shift whose opened_at is backdated, or patience.
+
+| # | Do this | Must be true |
+|---|---|---|
+| J1 | A shift open 21 hours | Warned on the bar. Still sells |
+| J2 | A shift open 24 hours | Badge reads overdue. Take payment refused, and it says why |
+| J3 | Close it and open a fresh one | Normal service. Fresh code, fresh float |
+| J4 | Leave one open past a day with the hourly job running | Manager gets one email, not twenty four |
+| J5 | Set the device clock ahead, then back | The till never blocks on a clock it cannot trust |
+
 ---
 
 ## Before every deploy
@@ -132,6 +163,7 @@ Run these every time. The restaurant is the part that is already earning.
 npm run verify
 ```
 
-Then A1, A2, C2 and F1 by hand. Those four cover the four ways this system has
+Then A1, A2, C2, C8 and F1 by hand. Those five cover the ways this system has
 actually broken: money credited wrongly, the two sides leaking into each other,
-a shift that would not stay open, and the restaurant stopping.
+a shift that would not stay open, one side's catalogue showing on the other,
+and the restaurant stopping.

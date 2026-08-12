@@ -22,6 +22,7 @@ import { ensureLogin, revokeLogin } from './staff.js';
  *
  * Schedule, hourly (no document arrives):
  *   dishes still off the menu past the configured wait
+ *   shifts left open longer than a day
  *
  * The hourly sweep lives here rather than in a function of its own because
  * Appwrite's free plan allows four functions and this project has four. It
@@ -162,6 +163,73 @@ async function sweepUnavailable({ db, DB_ID, settings, transport, log, error }) 
 }
 
 /**
+ * Shifts that have been open longer than a day.
+ *
+ * The till itself refuses to take money against one past the limit, so the
+ * money is safe. What it cannot do is find the person: whoever left it open
+ * has gone home, and the next cashier arrives to a counter that will not sell
+ * and no idea why. This tells a manager, who can close it.
+ *
+ * Nothing is closed here. Closing a shift means writing down what was counted
+ * in the drawer, and a program that has never seen the drawer would be
+ * inventing that figure, which is worse than a shift left open.
+ *
+ * Alerted on the hour it crosses the limit, then once a day after that. There
+ * is nowhere on a shift to record that it has been mentioned, and adding a
+ * column for it would be a schema change for a nag; the hourly clock is enough
+ * to keep this from becoming noise.
+ */
+async function sweepStaleShifts({ db, DB_ID, settings, transport, from, shell, log, error }) {
+  const LIMIT_HOURS = 24;
+
+  const open = await db.listDocuments(DB_ID, 'shifts', [
+    Query.equal('status', 'open'),
+    Query.limit(50),
+  ]);
+
+  const stale = open.documents
+    .map((s) => ({ shift: s, hours: (Date.now() - new Date(s.opened_at).getTime()) / 3_600_000 }))
+    .filter(({ hours }) => hours >= LIMIT_HOURS)
+    // On the hour it passes a day, then the same hour each day after. Anything
+    // else and a shift nobody closes sends twenty four emails a day.
+    .filter(({ hours }) => (hours - LIMIT_HOURS) % 24 < 1);
+
+  if (stale.length === 0) return { nothing: true };
+
+  const to = await alertRecipients({ db, DB_ID });
+  if (!transport || to.length === 0) {
+    error(`${stale.length} shift(s) open over ${LIMIT_HOURS}h but ${!transport ? 'SMTP is not configured' : 'no recipients are set'}.`);
+    return { ok: false, error: 'cannot send' };
+  }
+
+  const rows = stale
+    .map(({ shift, hours }) =>
+      `<li><strong>${shift.code}</strong>, open for ${Math.floor(hours)} hours` +
+      `${shift.module === 'craft' ? ' (craft shop)' : ' (bistro)'}</li>`)
+    .join('');
+
+  await transport.sendMail({
+    from,
+    to: to.join(','),
+    subject: `${stale.length} shift${stale.length === 1 ? '' : 's'} left open over a day`,
+    html: shell(
+      'A shift is still open',
+      `<p style="margin:0 0 12px">These have been open longer than ${LIMIT_HOURS} hours:</p>
+       <ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.7">${rows}</ul>
+       <p style="margin:18px 0 0;color:#5d6b7a;font-size:13px">
+         The till will not take any more money against them until they are closed. Count the drawer, close the
+         shift and open a fresh one. Nothing has been closed automatically, because that would record a cash
+         count nobody made.
+       </p>`,
+      settings.primary_color || '#0f766e',
+    ),
+  });
+
+  log(`Alerted about ${stale.length} shift(s) open over ${LIMIT_HOURS}h.`);
+  return { alerted: stale.length };
+}
+
+/**
  * Everything flagged, in one table, colour-coded.
  *
  * This used to be two lists, "flagged for the first time" and "low for three
@@ -285,6 +353,7 @@ export default async ({ req, res, log, error }) => {
     // unrelated jobs sharing a timer because the plan allows four functions.
     for (const [name, job] of [
       ['availability', () => sweepUnavailable({ db, DB_ID, settings, transport, log, error })],
+      ['stale_shifts', () => sweepStaleShifts({ db, DB_ID, settings, transport, from, shell, log, error })],
       ['daily', () => dailyDigest({ db, DB_ID, settings, transport, from, shell, row, money, log, error })],
       ['backup', () => nightlyBackup({ db, DB_ID, settings, transport, from, shell, log, error })],
     ]) {

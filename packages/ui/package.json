@@ -5,6 +5,9 @@
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "dependencies": {
+    "@snpos/core": "*"
+  },
   "peerDependencies": {
     "react": ">=18",
     "react-dom": ">=18"

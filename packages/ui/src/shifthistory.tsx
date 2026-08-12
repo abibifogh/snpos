@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Badge, Button, Empty, Field, FormError, Input, Modal, Spinner } from '@snpos/ui';
+import { Badge, Button, Empty, Field, FormError, Input, Modal, Spinner } from './components';
 import {
   Query, formatMoney, listAll, displayOrderNo, requestReceipt,
   receiptForOrder, buildReceiptHtml, openPrintable, ordersForShift,
@@ -17,12 +17,21 @@ interface ExpenseRow extends Doc {
 }
 
 /**
- * What this shift has actually done, from the pass.
+ * What this shift has actually done.
  *
- * The kitchen screen is deliberately a list of what still needs cooking, 
+ * Shared by the kitchen screen and the till, because both answer the same
+ * question with the same figures and two versions of "what have I sold today"
+ * is one version too many.
+ *
+ * The kitchen screen is deliberately a list of what still needs cooking,
  * anything already dealt with disappears, which is right during service and
  * useless the moment somebody asks "did that order for the poolside ever go
- * out?" or "how much did I say the gas was?".
+ * out?" or "how much did I say the gas was?". A shop counter has the same gap
+ * for a different reason: the sale is rung up and cleared away in one movement,
+ * so by mid-afternoon the screen shows nothing a cashier has done all day.
+ *
+ * Scoped to the shift's own side of the business by `ordersForShift`, so a
+ * craft cashier is never shown the restaurant's tickets.
  *
  * Read-only on purpose. Correcting an order is an admin's job, with a reason
  * recorded; this is for answering a question without walking to another device.
