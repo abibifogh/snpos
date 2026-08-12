@@ -234,6 +234,10 @@ export const HELP_ARTICLES: HelpArticle[] = [
         + 'new shift is opened. Nothing is cancelled and nothing is written off: the food was cooked and '
         + 'is still owed for, on a night that has not already ended.',
       ),
+      p(
+        'Once an order has moved, it is an ordinary order of the shift that picked it up. It is paid there '
+        + 'like anything else, and it holds THAT shift open until it is.',
+      ),
       note(
         'This is the ONLY case where a shift may close with an order still open. Everything else keeps '
         + 'the ordinary rule, because a shift that closes over an unpaid bill loses the money silently.',

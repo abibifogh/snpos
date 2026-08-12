@@ -155,3 +155,36 @@ export function isPastLimit(
   const cutoff = overdueFrom(shift.opened_at, maxHours);
   return cutoff !== '' && order.$createdAt >= cutoff;
 }
+
+/**
+ * Must this order wait for the next shift before it can be paid?
+ *
+ * The question the till actually needs answered, and it is not the same as
+ * "was this created after the cutoff". That arithmetic describes an order's
+ * relationship to ONE shift, and re-running it against whichever shift happens
+ * to be loaded gets the wrong answer the moment the order has moved on: an
+ * order shelved on Sunday and picked up by Monday's shift is Monday's order,
+ * and no sum performed on Monday should be able to decide otherwise.
+ *
+ * So the record wins over the arithmetic, in this order:
+ *
+ *   1. It has already been through the shelf. Whatever it once was, it has
+ *      been dealt with, and it is an ordinary order from then on.
+ *   2. It is stamped with this shift. It belongs here; pay it.
+ *   3. Only then, the sum.
+ *
+ * That ordering is what stops a stale or duplicate open shift, which is a
+ * thing that happens, from making an order permanently unpayable. Being wrong
+ * towards "pay it" costs a figure landing on the wrong night. Being wrong the
+ * other way costs a customer standing at a counter that will not take their
+ * money, on any shift, ever.
+ */
+export function mustWaitForNextShift(
+  order: { $createdAt?: string; shift_id?: string; shelved_from_shift?: string },
+  shift: { $id?: string; opened_at: string } | null | undefined,
+  maxHours: number = SHIFT_MAX_HOURS,
+): boolean {
+  if (order.shelved_from_shift) return false;
+  if (shift?.$id && order.shift_id && order.shift_id === shift.$id) return false;
+  return isPastLimit(order, shift, maxHours);
+}

@@ -5,7 +5,7 @@ import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from
 import { postShift } from './ledger';
 import { featureConfig, isEnabled, type FeatureMap } from './features';
 import type { Module } from './access';
-import { shiftAge, shiftCode, isPastLimit, SHIFT_MAX_HOURS } from './shift-rules';
+import { shiftAge, shiftCode, mustWaitForNextShift, SHIFT_MAX_HOURS } from './shift-rules';
 
 export * from './shift-rules';
 
@@ -175,6 +175,12 @@ export async function loadOpenShift(venueId: string, module: Module = 'kitchen')
   const res = await db.listDocuments(DB_ID, 'shifts', [
     Query.equal('venue_id', venueId),
     Query.equal('status', 'open'),
+    // Newest first, so that if a stale one is somehow still open, a close that
+    // half-finished, two devices racing, the till works with the shift somebody
+    // just opened rather than with whichever row the database happened to
+    // return first. An arbitrary answer to "which shift am I on" is worse than
+    // a wrong one, because it changes between refreshes.
+    Query.orderDesc('opened_at'),
     Query.limit(25),
   ]);
   const open = res.documents as unknown as Shift[];
@@ -280,7 +286,7 @@ export async function shiftBlockers(
      * food is still cooked and the money is still owed, on a night that has
      * not already ended.
      */
-    if (isPastLimit(o, shift)) continue;
+    if (mustWaitForNextShift(o, shift)) continue;
     if (o.payment_status !== 'paid') blockers.push({ order: o, reason: 'unpaid' });
     else if (o.status !== 'SERVED') blockers.push({ order: o, reason: 'uncollected' });
   }
@@ -389,8 +395,11 @@ export async function shelvePastLimit(
   for (const o of orders) {
     if ((o.module ?? 'kitchen') !== module) continue;
     if (['CANCELLED', 'REJECTED', 'CLOSED', 'SCHEDULED'].includes(o.status)) continue;
-    if (o.shelved_at) continue;
-    if (!isPastLimit(o, shift)) continue;
+    // Already waiting, or already been through the shelf once. An order that
+    // has been moved is an ordinary order of whichever shift picked it up, and
+    // moving it a second time would be a way of never settling it at all.
+    if (o.shelved_at || o.shelved_from_shift) continue;
+    if (!mustWaitForNextShift(o, shift)) continue;
 
     await db
       .updateDocument(DB_ID, 'orders', o.$id, {
@@ -428,14 +437,17 @@ export async function adoptShelved(
     if ((o.module ?? 'kitchen') !== module) continue;
     if (['CANCELLED', 'REJECTED', 'CLOSED'].includes(o.status)) continue;
 
-    await db
-      .updateDocument(DB_ID, 'orders', o.$id, {
-        shift_id: shift.$id,
-        // Cleared, so it is an ordinary order again. It holds this shift open
-        // exactly like any other, which is the point of moving it.
-        shelved_at: null,
-      })
-      .catch(() => undefined);
+    // Two writes, and the order matters. The stamp is what makes this the new
+    // shift's order and what makes it payable; clearing the flag is only
+    // tidiness. One call would have meant a rejected `null` losing the stamp
+    // as well, and an order nobody could take money for.
+    const stamped = await db
+      .updateDocument(DB_ID, 'orders', o.$id, { shift_id: shift.$id })
+      .then(() => true)
+      .catch(() => false);
+    if (!stamped) continue;
+
+    await db.updateDocument(DB_ID, 'orders', o.$id, { shelved_at: null }).catch(() => undefined);
     taken.push(o);
   }
   return taken;

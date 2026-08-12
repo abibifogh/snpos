@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit,
+  shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit, mustWaitForNextShift,
   SHIFT_MAX_HOURS, SHIFT_WARN_HOURS,
 } from '../shift-rules.ts';
 
@@ -112,4 +112,41 @@ test('nothing is past the limit when there is nothing to measure against', () =>
 test('the moment a shift goes past its limit is a day after it opened', () => {
   assert.equal(overdueFrom('2026-08-10T06:00:00.000Z'), '2026-08-11T06:00:00.000Z');
   assert.equal(overdueFrom('2026-08-10T06:00:00.000Z', 12), '2026-08-10T18:00:00.000Z');
+});
+
+test('an order that has moved to a new shift is that shift\'s order, and payable', () => {
+  const sunday = { $id: 'shift-sun', opened_at: '2026-08-09T06:00:00.000Z' };
+  const monday = { $id: 'shift-mon', opened_at: '2026-08-11T12:00:00.000Z' };
+  // Taken on Sunday's shift, two days after it should have closed.
+  const order = { $createdAt: '2026-08-11T09:00:00.000Z' };
+
+  assert.equal(mustWaitForNextShift(order, sunday), true, 'not payable on the shift that overran');
+
+  // Once shelved and picked up, it is Monday's, and no sum done on Monday may
+  // say otherwise. This is the bug: the arithmetic was re-run against whatever
+  // shift was loaded, so a stale or duplicate open shift made it unpayable for
+  // ever.
+  const moved = { ...order, shift_id: monday.$id, shelved_from_shift: sunday.$id };
+  assert.equal(mustWaitForNextShift(moved, monday), false);
+  assert.equal(
+    mustWaitForNextShift(moved, sunday), false,
+    'even measured against the old shift again, it has been dealt with',
+  );
+
+  // The stamp alone is enough, in case clearing the flag never landed.
+  assert.equal(mustWaitForNextShift({ ...order, shift_id: monday.$id }, monday), false);
+});
+
+test('being stamped with a DIFFERENT shift is not a free pass', () => {
+  const sunday = { $id: 'shift-sun', opened_at: '2026-08-09T06:00:00.000Z' };
+  const order = { $createdAt: '2026-08-11T09:00:00.000Z', shift_id: 'some-other-shift' };
+  assert.equal(mustWaitForNextShift(order, sunday), true);
+});
+
+test('an ordinary unpaid order is never waved through', () => {
+  const shift = { $id: 'shift-a', opened_at: '2026-08-11T06:00:00.000Z' };
+  // Two hours in. Nothing about it is late, so the ordinary rules apply and it
+  // still has to be settled before the shift can close.
+  assert.equal(mustWaitForNextShift({ $createdAt: '2026-08-11T08:00:00.000Z' }, shift), false);
+  assert.equal(isPastLimit({ $createdAt: '2026-08-11T08:00:00.000Z' }, shift), false);
 });

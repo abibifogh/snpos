@@ -3,7 +3,7 @@ import { Button, Card, Field, Input, Modal, Notice, Select, Badge, Spinner } fro
 import {
   db, DB_ID, Query, listAll, createOrder, computeTotals, lineTotal, formatMoney,
   parseMoney, toInput, isEnabled, featureConfig, visibleSections, recordPayment, asksForTip,
-  variantPriceRange, shiftUsable, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, sharesFor, isPastLimit,
+  variantPriceRange, shiftUsable, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, sharesFor, mustWaitForNextShift,
 } from '@snpos/core';
 import type { CartLine, Order, OrderItem, Doc, MenuEntry, Settings } from '@snpos/core';
 import { COUNTER_TABLE_ID } from './App';
@@ -177,7 +177,7 @@ export function OrderView({
   const age = shiftAgeOf(ctx.shift);
 
   /** Bills on this screen that the shift ran past its limit to take. */
-  const shelvedHere = existing.filter((o) => isPastLimit(o, ctx.shift));
+  const shelvedHere = existing.filter((o) => mustWaitForNextShift(o, ctx.shift));
 
   const send = async () => {
     if (cart.length === 0) return;
@@ -579,7 +579,7 @@ function CounterPaymentModal({
 
   const confirm = async () => {
     if (!ctx.shift) { setError('No shift is open.'); return; }
-    const late = orders.find((o) => isPastLimit(o, ctx.shift));
+    const late = orders.find((o) => mustWaitForNextShift(o, ctx.shift));
     if (late) {
       setError(
         `${late.order_no} was rung up after this shift had already run past a day, so it cannot be paid on `
@@ -805,7 +805,7 @@ function PaymentModal({
     if (!ctx.shift) { setError('No shift is open.'); return; }
     // Taken after the shift should have closed. See the notice on the order
     // screen: the food happens, the money waits for the next shift.
-    const late = orders.find((o) => isPastLimit(o, ctx.shift));
+    const late = orders.find((o) => mustWaitForNextShift(o, ctx.shift));
     if (late) {
       setError(
         `${late.order_no} came in after this shift had already run past a day, so it cannot be paid on it. `

@@ -8,7 +8,7 @@ import { resolveCounts } from '@snpos/ui';
 import {
   formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift, loadOpenShift, shiftBlockers, expectedTakings, closeShift, openingFloats,
-  recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, isPastLimit,
+  recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, mustWaitForNextShift,
   HANDOVER_ENABLED,
 } from '@snpos/core';
 import type {
@@ -465,7 +465,7 @@ export function SettleModal({
      * limit exists to prevent. Closing the shift releases it: it moves onto the
      * next one and is paid there, a minute later.
      */
-    if (isPastLimit(order, shift)) {
+    if (mustWaitForNextShift(order, shift)) {
       setError(
         'This came in after the shift had already run past a day, so it cannot be paid on it. Close the '
         + 'shift and open a fresh one, this order will be waiting on it and can be settled then.',

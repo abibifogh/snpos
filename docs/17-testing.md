@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck, tests, schema check, build. Run this before deploying.
 ```
 
-55 tests, no database, about half a second. They cover the sums that decide what
+58 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -30,7 +30,7 @@ and no caller had to change.
 | `parity.test.ts` | **The browser and the server agree.** |
 | `access.test.ts` | Who can open what, including the bug that hid the craft shop from every manager. |
 | `timing.test.ts` | Quoted waits, the hour cap, when a ticket is late, the cancel window, cash handovers. |
-| `shift-rules.test.ts` | Shift codes per side, the 24 hour limit including a device with the wrong clock, and which orders a shift may close over. |
+| `shift-rules.test.ts` | Shift codes per side, the 24 hour limit including a device with the wrong clock, which orders a shift may close over, and that an order once moved is payable on the shift that took it. |
 
 ### The parity suite is the important one
 
@@ -158,6 +158,9 @@ Needs a shift whose opened_at is backdated, or patience.
 | J2b | Overdue shift, order that was open BEFORE the day ran out | Settles normally. Still blocks the close |
 | J2c | Close the overdue shift | Late orders **named on the close screen**, then it closes |
 | J2d | Open a fresh shift | Those orders are **on the pass**, and payable |
+| J2d2 | Pay one of them on that fresh shift | **Goes through.** No "came in after the shift" refusal |
+| J2d3 | Leave one unpaid and try to close the fresh shift | **Blocked.** It is an ordinary order now |
+| J2f | Two kitchen shifts somehow open at once | The till uses the one opened most recently |
 | J2e | The shift that shelved them | Its takings and summary do not include them |
 | J3 | Close it and open a fresh one | Normal service. Fresh code, fresh float |
 | J4 | Leave one open past a day with the hourly job running | Manager gets one email, not twenty four |
