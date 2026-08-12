@@ -7,7 +7,7 @@ import type { BlockerRow, CountRow, StockRow, ShiftFlow } from '@snpos/ui';
 import {
   formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift as createShift, shiftBlockers, expectedTakings, closeShift,
-  openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS,
+  openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, HANDOVER_ENABLED,
 } from '@snpos/core';
 import type { PaymentMethod, Shift } from '@snpos/core';
 import type { PosContext } from './App';
@@ -269,7 +269,10 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
             <>
               <Button size="sm" onClick={() => setHistory(true)}>This shift</Button>
               <Button size="sm" onClick={() => { setSpending(true); setError(null); }}>Record spend</Button>
-              <Button size="sm" onClick={() => { setHandingOver(true); setError(null); }}>Hand over cash</Button>
+              {/* Switched off for now. See HANDOVER_ENABLED. */}
+              {HANDOVER_ENABLED && (
+                <Button size="sm" onClick={() => { setHandingOver(true); setError(null); }}>Hand over cash</Button>
+              )}
             </>
           )}
           {ctx.shift ? (
@@ -321,7 +324,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         />
       )}
 
-      {handingOver && (
+      {handingOver && HANDOVER_ENABLED && (
         <HandoverModal
           venueId={ctx.venue.$id}
           shiftId={ctx.shift?.$id}

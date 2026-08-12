@@ -1,6 +1,17 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
 
 /**
+ * Whether the Hand over cash button appears at all.
+ *
+ * Off at the owner's request for now. Nothing else is removed: the collection,
+ * the arithmetic and the admin view of past handovers all stay exactly where
+ * they are, so putting the feature back is this one line. Deleting the screens
+ * instead would mean rebuilding them, and any handovers already recorded would
+ * have nowhere to be read.
+ */
+export const HANDOVER_ENABLED = false;
+
+/**
  * Reading handovers back is arithmetic, so it lives next door in a file that
  * imports nothing and can be tested. Re-exported so callers need not care.
  */

@@ -153,7 +153,8 @@ Needs a shift whose opened_at is backdated, or patience.
 | # | Do this | Must be true |
 |---|---|---|
 | J1 | A shift open 21 hours | Warned on the bar. Still sells |
-| J2 | A shift open 24 hours | Badge reads overdue. Take payment refused, and it says why |
+| J2 | A shift open 24 hours | Badge reads overdue. **No new sales**, and it says why |
+| J2a | Overdue shift with an unpaid order on it | **Settling still works.** The shift can then be closed |
 | J3 | Close it and open a fresh one | Normal service. Fresh code, fresh float |
 | J4 | Leave one open past a day with the hourly job running | Manager gets one email, not twenty four |
 | J5 | Set the device clock ahead, then back | The till never blocks on a clock it cannot trust |

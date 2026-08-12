@@ -215,6 +215,11 @@ export const HELP_ARTICLES: HelpArticle[] = [
         + 'morning\u2019s float and every figure that comes out of it is meaningless.',
       ),
       p(
+        'What stops is NEW business. Anything already open on the shift can still be settled, and has to '
+        + 'be, or the shift could never close over it. A rule with no way out of it is worse than the '
+        + 'thing it prevents.',
+      ),
+      p(
         'You are warned from 20 hours. Nothing is ever closed automatically: closing means writing down '
         + 'what was counted in the drawer, and a system that has never seen the drawer would be inventing '
         + 'that number. If one is left open, a manager gets an email.',
@@ -742,10 +747,16 @@ export const HELP_ARTICLES: HelpArticle[] = [
   {
     id: 'cash_handover',
     title: 'Handing your cash over at the end',
-    summary: 'How to record what you finished with, in your own name.',
+    summary: 'Switched off for now. How it works when it is back on.',
     area: 'pos',
     audience: ALL_STAFF,
     body: [
+      note(
+        'Switched off for now, at the owner\u2019s request. The Hand over cash button is not on any '
+        + 'screen. Nothing recorded before it was switched off has been lost, and the rest of this '
+        + 'chapter describes it as it works when it is on.',
+        'warn',
+      ),
       p(
         'A shift is not a person. Three people can work one shift, take money in turn out of the same drawer ' +
         'and leave at different times, so closing the shift, which happens once at the end, cannot say ' +

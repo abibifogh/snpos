@@ -9,6 +9,7 @@ import {
   formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift, loadOpenShift, shiftBlockers, expectedTakings, closeShift, openingFloats,
   recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS,
+  HANDOVER_ENABLED,
 } from '@snpos/core';
 import type {
   PaymentMethod, Shift, Settings, Venue, StaffProfile, FeatureMap, Order,
@@ -242,11 +243,13 @@ export function CombinedBar({
           <>
             <Button size="sm" onClick={() => setHistory(true)}>This shift</Button>
             <Button size="sm" onClick={() => { setSpending(true); setError(null); }}>Record spend</Button>
-            {/* Available whenever a shift is open, not only at the close.
-                People finish at different times and hand over as they leave;
-                a button that only appears at the end is a button that misses
-                everybody but the last person out. */}
-            <Button size="sm" onClick={() => { setHandingOver(true); setError(null); }}>Hand over cash</Button>
+            {/* Switched off for now. See HANDOVER_ENABLED. It was available
+                whenever a shift was open rather than only at the close,
+                because people finish at different times and hand over as they
+                leave. */}
+            {HANDOVER_ENABLED && (
+              <Button size="sm" onClick={() => { setHandingOver(true); setError(null); }}>Hand over cash</Button>
+            )}
           </>
         )}
         {shift ? (
@@ -350,7 +353,7 @@ export function CombinedBar({
         </Modal>
       )}
 
-      {handingOver && (
+      {handingOver && HANDOVER_ENABLED && (
         <HandoverModal
           venueId={venue.$id}
           shiftId={shift?.$id}
@@ -431,12 +434,6 @@ export function SettleModal({
   const settle = async () => {
     if (!methodId) { setError('Choose how they paid.'); return; }
     if (!shift) { setError('No shift is open. Open one first, or the money has nothing to be counted against.'); return; }
-    // Past a day the shift is no longer a night anybody can reconcile, so it
-    // stops taking money rather than filing today's cash under yesterday.
-    if (shiftAgeOf(shift).over) {
-      setError(shiftAgeMessage(shiftAgeOf(shift), SHIFT_MAX_HOURS));
-      return;
-    }
     if (paying <= 0) { setError('Enter how much they are paying.'); return; }
     if (paying > owed) {
       setError(`That is more than the ${formatMoney(owed, settings)} outstanding. Put the extra in the tip box if it is a tip.`);

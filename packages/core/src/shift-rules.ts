@@ -85,13 +85,13 @@ export function shiftAge(
 export function shiftAgeMessage(age: ShiftAge, maxHours: number = SHIFT_MAX_HOURS): string {
   if (age.over) {
     return (
-      `This shift has been open for ${Math.floor(age.hours)} hours. Nothing further can be sold or paid ` +
-      `against it. Count the drawer and close it, then open a fresh one.`
+      `This shift has been open for ${Math.floor(age.hours)} hours. Nothing new can be started on it. ` +
+      `Settle whatever is still open, count the drawer, close it, then open a fresh one.`
     );
   }
   if (age.warning) {
     return (
-      `This shift has been open for ${Math.floor(age.hours)} hours. It stops accepting sales at ` +
+      `This shift has been open for ${Math.floor(age.hours)} hours. It stops accepting new sales at ` +
       `${maxHours} hours, so close it before then.`
     );
   }

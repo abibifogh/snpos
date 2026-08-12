@@ -163,19 +163,23 @@ export function OrderView({
   const billTotal = existing.reduce((s, o) => s + o.total, 0) + (cart.length ? newTotals.total : 0);
 
   /**
-   * Can this shift still take money?
+   * Can new business be started on this shift?
    *
-   * A shift open past a day is one nobody forgot to close on purpose, and
-   * everything rung up against it lands in a night that ended. The counter
-   * says so and stops rather than filing today's cash under yesterday.
+   * Past a day, no. Everything rung up against it lands in a night that ended.
+   *
+   * Settling what is ALREADY on it stays allowed, and that distinction is the
+   * whole point. Blocking payment as well produced a shift that could not take
+   * the money for an order and could not close over the same order being
+   * unpaid: a locked door with the key on the other side. A rule with no way
+   * out of it is worse than the thing it was preventing.
    */
   const usable = shiftUsable(ctx.shift);
   const age = shiftAgeOf(ctx.shift);
 
   const send = async () => {
     if (cart.length === 0) return;
-    // At the counter, sending is ringing up, and ringing up a sale that cannot
-    // then be paid for just leaves an unpayable bill on the screen.
+    // Starting NEW business on a shift that should have closed a day ago is
+    // the thing being stopped. What is already on it can still be settled.
     if (ctx.module === 'craft' && !usable) {
       onToast(shiftAgeMessage(age, SHIFT_MAX_HOURS), 'err');
       return;
@@ -234,7 +238,7 @@ export function OrderView({
             <Button
               variant="primary"
               onClick={() => setPaying(true)}
-              disabled={!ctx.shift || !usable || !ctx.profile?.can_mark_paid}
+              disabled={!ctx.shift || !ctx.profile?.can_mark_paid}
             >
               Take payment · {formatMoney(billTotal, ctx.settings)}
             </Button>
