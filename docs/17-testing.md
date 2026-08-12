@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck, tests, schema check, build. Run this before deploying.
 ```
 
-52 tests, no database, about half a second. They cover the sums that decide what
+55 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -30,7 +30,7 @@ and no caller had to change.
 | `parity.test.ts` | **The browser and the server agree.** |
 | `access.test.ts` | Who can open what, including the bug that hid the craft shop from every manager. |
 | `timing.test.ts` | Quoted waits, the hour cap, when a ticket is late, the cancel window, cash handovers. |
-| `shift-rules.test.ts` | Shift codes per side, and the 24 hour limit including a device with the wrong clock. |
+| `shift-rules.test.ts` | Shift codes per side, the 24 hour limit including a device with the wrong clock, and which orders a shift may close over. |
 
 ### The parity suite is the important one
 
@@ -153,8 +153,12 @@ Needs a shift whose opened_at is backdated, or patience.
 | # | Do this | Must be true |
 |---|---|---|
 | J1 | A shift open 21 hours | Warned on the bar. Still sells |
-| J2 | A shift open 24 hours | Badge reads overdue. **No new sales**, and it says why |
-| J2a | Overdue shift with an unpaid order on it | **Settling still works.** The shift can then be closed |
+| J2 | Kitchen shift open 24 hours, place an order | **Accepted and cooked.** Payment refused, and it says why |
+| J2a | Craft shift open 24 hours | **No new sales at all.** Different message from the kitchen |
+| J2b | Overdue shift, order that was open BEFORE the day ran out | Settles normally. Still blocks the close |
+| J2c | Close the overdue shift | Late orders **named on the close screen**, then it closes |
+| J2d | Open a fresh shift | Those orders are **on the pass**, and payable |
+| J2e | The shift that shelved them | Its takings and summary do not include them |
 | J3 | Close it and open a fresh one | Normal service. Fresh code, fresh float |
 | J4 | Leave one open past a day with the hourly job running | Manager gets one email, not twenty four |
 | J5 | Set the device clock ahead, then back | The till never blocks on a clock it cannot trust |

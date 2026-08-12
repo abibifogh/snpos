@@ -81,19 +81,77 @@ export function shiftAge(
   };
 }
 
-/** The sentence to show somebody standing at the till. */
-export function shiftAgeMessage(age: ShiftAge, maxHours: number = SHIFT_MAX_HOURS): string {
+/**
+ * The sentence to show somebody standing at the till.
+ *
+ * The two sides stop differently, so they are told differently.
+ *
+ * A kitchen keeps cooking. A customer is standing there and food is food, so
+ * orders are still taken and still made; it is the MONEY that waits, because
+ * taking it would file tonight's cash under a night that ended yesterday.
+ * Closing the shift releases those orders onto the next one, where they are
+ * paid a minute later.
+ *
+ * A shop counter has nothing to keep doing. A sale is rung up and paid for in
+ * one movement, so there is nothing to gain by starting one that cannot be
+ * finished, and it stops at the beginning instead.
+ */
+export function shiftAgeMessage(
+  age: ShiftAge,
+  maxHours: number = SHIFT_MAX_HOURS,
+  module: Module = 'kitchen',
+): string {
+  const open = `This shift has been open for ${Math.floor(age.hours)} hours.`;
+
   if (age.over) {
-    return (
-      `This shift has been open for ${Math.floor(age.hours)} hours. Nothing new can be started on it. ` +
-      `Settle whatever is still open, count the drawer, close it, then open a fresh one.`
-    );
+    return module === 'craft'
+      ? `${open} Nothing new can be sold on it. Settle whatever is still open, count the drawer, close it, ` +
+        'then open a fresh one.'
+      : `${open} Orders can still be taken and cooked, but nothing that came in after the day was up can ` +
+        'be paid on it. Close the shift and open a fresh one, and those orders move across to be settled ' +
+        'there.';
   }
   if (age.warning) {
-    return (
-      `This shift has been open for ${Math.floor(age.hours)} hours. It stops accepting new sales at ` +
-      `${maxHours} hours, so close it before then.`
-    );
+    return module === 'craft'
+      ? `${open} It stops accepting new sales at ${maxHours} hours, so close it before then.`
+      : `${open} At ${maxHours} hours it stops taking payment for anything new, so close it before then.`;
   }
   return '';
+}
+
+/* ------------------------------------------------- orders past the limit */
+
+/**
+ * The moment a shift went past its limit.
+ *
+ * Everything created after this is work the shift should never have taken. It
+ * is real work, though, cooked and handed to somebody, so the question is not
+ * whether to keep it but which night it belongs to. The answer is: the next
+ * one.
+ */
+export function overdueFrom(openedAt: string, maxHours: number = SHIFT_MAX_HOURS): string {
+  const opened = new Date(openedAt).getTime();
+  if (!Number.isFinite(opened)) return '';
+  return new Date(opened + maxHours * 3_600_000).toISOString();
+}
+
+/**
+ * Was this order taken after the shift should have closed?
+ *
+ * These are the only orders a shift may close over, and they do not close: they
+ * are shelved, and the next shift picks them up. That is the whole exception,
+ * and it is narrow on purpose.
+ *
+ * Everything else keeps the ordinary rule. A shift that closes over an unpaid
+ * bill loses the money silently, and an exception wide enough to be convenient
+ * would be an exception people learn to lean on.
+ */
+export function isPastLimit(
+  order: { $createdAt?: string },
+  shift: { opened_at: string } | null | undefined,
+  maxHours: number = SHIFT_MAX_HOURS,
+): boolean {
+  if (!shift?.opened_at || !order.$createdAt) return false;
+  const cutoff = overdueFrom(shift.opened_at, maxHours);
+  return cutoff !== '' && order.$createdAt >= cutoff;
 }

@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, SHIFT_MAX_HOURS, SHIFT_WARN_HOURS,
+  shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit,
+  SHIFT_MAX_HOURS, SHIFT_WARN_HOURS,
 } from '../shift-rules.ts';
 
 const at = (iso: string) => new Date(iso);
@@ -61,12 +62,54 @@ test('a clock that is wrong never stops a till', () => {
 test('the message tells somebody what to do, not just what is wrong', () => {
   const opened = '2026-08-12T06:00:00.000Z';
   const over = shiftAge(opened, new Date(Date.parse(opened) + 30 * HOURS));
-  const text = shiftAgeMessage(over);
-  assert.match(text, /close it/i);
-  assert.match(text, /30 hours/);
+
+  // Both sides say how long, and both say to close it. What differs is what
+  // has actually stopped, and that is the part staff act on.
+  for (const side of ['kitchen', 'craft'] as const) {
+    const text = shiftAgeMessage(over, SHIFT_MAX_HOURS, side);
+    assert.match(text, /close/i, side);
+    assert.match(text, /30 hours/, side);
+  }
+
+  // The kitchen keeps cooking; only the money waits.
+  const kitchen = shiftAgeMessage(over, SHIFT_MAX_HOURS, 'kitchen');
+  assert.match(kitchen, /cooked/i);
+  assert.match(kitchen, /paid/i);
+
+  // The counter has nothing to keep doing, so it stops at the beginning.
+  assert.match(shiftAgeMessage(over, SHIFT_MAX_HOURS, 'craft'), /nothing new can be sold/i);
 
   const warn = shiftAge(opened, new Date(Date.parse(opened) + 21 * HOURS));
   assert.match(shiftAgeMessage(warn), /24 hours/);
+  assert.match(shiftAgeMessage(warn, SHIFT_MAX_HOURS, 'craft'), /24 hours/);
 
   assert.equal(shiftAgeMessage(shiftAge(opened, new Date(Date.parse(opened) + HOURS))), '', 'nothing to say yet');
+});
+
+test('an order is past the limit only if it came in after the shift should have closed', () => {
+  const shift = { opened_at: '2026-08-10T06:00:00.000Z' };
+  const at = (hours: number) => ({ $createdAt: new Date(Date.parse(shift.opened_at) + hours * HOURS).toISOString() });
+
+  assert.equal(isPastLimit(at(1), shift), false, 'the first hour of an ordinary shift');
+  assert.equal(isPastLimit(at(23.9), shift), false, 'still inside the day');
+  assert.equal(isPastLimit(at(SHIFT_MAX_HOURS), shift), true, 'exactly at the limit is already past it');
+  assert.equal(isPastLimit(at(53), shift), true);
+
+  // An order from before the shift even opened is not a late order. Pre-orders
+  // land there and must keep holding the shift open the ordinary way.
+  assert.equal(isPastLimit({ $createdAt: '2026-08-09T20:00:00.000Z' }, shift), false);
+});
+
+test('nothing is past the limit when there is nothing to measure against', () => {
+  // No shift, no creation date, or an unreadable one. Each has to answer "no",
+  // because "yes" would let a shift close over an ordinary unpaid order.
+  assert.equal(isPastLimit({ $createdAt: '2026-08-12T06:00:00.000Z' }, null), false);
+  assert.equal(isPastLimit({}, { opened_at: '2026-08-10T06:00:00.000Z' }), false);
+  assert.equal(isPastLimit({ $createdAt: '2026-08-12T06:00:00.000Z' }, { opened_at: 'nonsense' }), false);
+  assert.equal(overdueFrom('nonsense'), '');
+});
+
+test('the moment a shift goes past its limit is a day after it opened', () => {
+  assert.equal(overdueFrom('2026-08-10T06:00:00.000Z'), '2026-08-11T06:00:00.000Z');
+  assert.equal(overdueFrom('2026-08-10T06:00:00.000Z', 12), '2026-08-10T18:00:00.000Z');
 });

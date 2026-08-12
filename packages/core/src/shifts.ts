@@ -5,7 +5,7 @@ import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from
 import { postShift } from './ledger';
 import { featureConfig, isEnabled, type FeatureMap } from './features';
 import type { Module } from './access';
-import { shiftAge, shiftCode, SHIFT_MAX_HOURS } from './shift-rules';
+import { shiftAge, shiftCode, isPastLimit, SHIFT_MAX_HOURS } from './shift-rules';
 
 export * from './shift-rules';
 
@@ -151,7 +151,15 @@ export async function openShift(opts: {
     stock_check_status: 'pending', posted_to_ledger: false,
     module: opts.module ?? 'kitchen',
   });
-  return doc as unknown as Shift;
+
+  const shift = doc as unknown as Shift;
+
+  // Anything the last shift ran past its limit to take comes onto this one, at
+  // the moment it opens. Surfaced rather than left waiting to be found: an
+  // order nobody is shown is an order nobody cooks.
+  await adoptShelved(opts.venueId, shift).catch(() => undefined);
+
+  return shift;
 }
 
 /**
@@ -236,6 +244,15 @@ export async function shiftBlockers(
   venueId: string,
   _shiftId?: string,
   module: Module = 'kitchen',
+  /**
+   * The shift being closed, when there is one.
+   *
+   * Only needed for the single exception: an order taken after this shift had
+   * already run past its limit does not hold it open. Without the shift, this
+   * cannot tell such an order from any other, so it treats them all the
+   * ordinary way, which is the safe direction to be wrong in.
+   */
+  shift?: Pick<Shift, 'opened_at'> | null,
 ): Promise<ShiftBlocker[]> {
   // Every live order for the venue, not only those stamped with this shift.
   //
@@ -253,6 +270,17 @@ export async function shiftBlockers(
     if ((o.module ?? 'kitchen') !== module) continue;
     // A pre-order for tomorrow is not this shift's problem.
     if (['CANCELLED', 'REJECTED', 'CLOSED', 'SCHEDULED'].includes(o.status)) continue;
+    /**
+     * The one exception.
+     *
+     * An order taken after the shift had already run past a day is work the
+     * shift should never have accepted, and holding the shift open over it
+     * would be holding it open over the very thing that is keeping it open. It
+     * is shelved at the close instead and picked up by the next shift, so the
+     * food is still cooked and the money is still owed, on a night that has
+     * not already ended.
+     */
+    if (isPastLimit(o, shift)) continue;
     if (o.payment_status !== 'paid') blockers.push({ order: o, reason: 'unpaid' });
     else if (o.status !== 'SERVED') blockers.push({ order: o, reason: 'uncollected' });
   }
@@ -336,12 +364,91 @@ export async function expectedTakings(shift: Shift, methods: PaymentMethod[]): P
   };
 }
 
+/**
+ * Park the orders a shift ran past its limit to take, so it can close.
+ *
+ * They are not cancelled and not closed. The food was cooked and is still owed
+ * for; what is wrong with them is only which night they are filed under, and
+ * that is fixed by moving them to the next one rather than by pretending they
+ * did not happen.
+ *
+ * The shift they came off is written down, because "why is this order on
+ * tonight when it was ordered on Sunday" is a question somebody will ask and
+ * the answer has to be on the order itself.
+ */
+export async function shelvePastLimit(
+  venueId: string,
+  shift: Pick<Shift, '$id' | 'opened_at' | 'module'>,
+): Promise<Order[]> {
+  const module = shift.module ?? 'kitchen';
+  const orders = await listAll<Order>('orders', [Query.equal('venue_id', venueId)]).catch(
+    () => [] as Order[],
+  );
+
+  const shelved: Order[] = [];
+  for (const o of orders) {
+    if ((o.module ?? 'kitchen') !== module) continue;
+    if (['CANCELLED', 'REJECTED', 'CLOSED', 'SCHEDULED'].includes(o.status)) continue;
+    if (o.shelved_at) continue;
+    if (!isPastLimit(o, shift)) continue;
+
+    await db
+      .updateDocument(DB_ID, 'orders', o.$id, {
+        shelved_at: new Date().toISOString(),
+        shelved_from_shift: shift.$id,
+        // Off this shift's books. It takes no money for these and its takings
+        // must not carry them.
+        shift_id: '',
+      })
+      .catch(() => undefined);
+    shelved.push(o);
+  }
+  return shelved;
+}
+
+/**
+ * Hand shelved orders to a shift that has just opened.
+ *
+ * Called at the moment a new shift starts, so the first thing whoever opens it
+ * sees is the work still outstanding rather than an empty pass. An order that
+ * quietly waited for somebody to go looking for it is an order nobody finds.
+ */
+export async function adoptShelved(
+  venueId: string,
+  shift: Pick<Shift, '$id' | 'module'>,
+): Promise<Order[]> {
+  const module = shift.module ?? 'kitchen';
+  const orders = await listAll<Order>('orders', [
+    Query.equal('venue_id', venueId),
+    Query.isNotNull('shelved_at'),
+  ]).catch(() => [] as Order[]);
+
+  const taken: Order[] = [];
+  for (const o of orders) {
+    if ((o.module ?? 'kitchen') !== module) continue;
+    if (['CANCELLED', 'REJECTED', 'CLOSED'].includes(o.status)) continue;
+
+    await db
+      .updateDocument(DB_ID, 'orders', o.$id, {
+        shift_id: shift.$id,
+        // Cleared, so it is an ordinary order again. It holds this shift open
+        // exactly like any other, which is the point of moving it.
+        shelved_at: null,
+      })
+      .catch(() => undefined);
+    taken.push(o);
+  }
+  return taken;
+}
+
 export interface CloseShiftResult {
   variance: Record<string, number>;
   totalOff: number;
   cogs: number;
   stockNote: string;
   ledgerError: string | null;
+  /** Orders moved onto the next shift because this one ran past its limit. */
+  shelved: Order[];
 }
 
 /**
@@ -375,6 +482,12 @@ export async function closeShift(opts: {
 }): Promise<CloseShiftResult> {
   const { venueId, shift, userId, settings, features, methods, counted, levels } = opts;
   const stockCounts = opts.stockCounts ?? {};
+
+  // First, before anything is counted. An order taken after this shift ran past
+  // its limit is moved off its books, so the takings below and the summary that
+  // goes out cover the night this shift actually worked. It is not lost: the
+  // next shift opened picks it up.
+  const shelved = await shelvePastLimit(venueId, shift);
 
   const takings = await expectedTakings(shift, methods);
   const variance = Object.fromEntries(
@@ -511,5 +624,5 @@ export async function closeShift(opts: {
     ledgerError = e instanceof Error ? e.message : 'unknown';
   }
 
-  return { variance, totalOff, cogs, stockNote, ledgerError };
+  return { variance, totalOff, cogs, stockNote, ledgerError, shelved };
 }

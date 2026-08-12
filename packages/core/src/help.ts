@@ -210,14 +210,34 @@ export const HELP_ARTICLES: HelpArticle[] = [
       ),
       h('A day is the limit'),
       p(
-        'No shift may stay open longer than 24 hours. Past that, the till stops taking money against it '
-        + 'and says so, because a shift running two days measures today\u2019s cash against yesterday '
-        + 'morning\u2019s float and every figure that comes out of it is meaningless.',
+        'No shift may stay open longer than 24 hours. A shift running two days measures today\u2019s cash '
+        + 'against yesterday morning\u2019s float, and every figure that comes out of it is meaningless.',
       ),
       p(
-        'What stops is NEW business. Anything already open on the shift can still be settled, and has to '
-        + 'be, or the shift could never close over it. A rule with no way out of it is worse than the '
-        + 'thing it prevents.',
+        'The two sides stop differently, because they work differently.'
+      ),
+      list(
+        'The KITCHEN keeps cooking. A customer is standing there and food is food, so orders are still '
+        + 'taken and still made. What waits is the money: anything that came in after the day was up '
+        + 'cannot be paid on that shift.',
+        'The SHOP COUNTER stops at the beginning. A sale is rung up and paid for in one movement, so '
+        + 'there is nothing to gain from starting one that cannot be finished.',
+      ),
+      p(
+        'Anything that was already open BEFORE the day ran out is settled the ordinary way, and still has '
+        + 'to be before the shift can close.',
+      ),
+      h('Orders that move to the next shift'),
+      p(
+        'When you close an overdue shift, the orders it took after the day was up do not hold it open. '
+        + 'They are named on the close screen, moved off that shift, and appear on the pass the moment a '
+        + 'new shift is opened. Nothing is cancelled and nothing is written off: the food was cooked and '
+        + 'is still owed for, on a night that has not already ended.',
+      ),
+      note(
+        'This is the ONLY case where a shift may close with an order still open. Everything else keeps '
+        + 'the ordinary rule, because a shift that closes over an unpaid bill loses the money silently.',
+        'warn',
       ),
       p(
         'You are warned from 20 hours. Nothing is ever closed automatically: closing means writing down '

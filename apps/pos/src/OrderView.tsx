@@ -3,7 +3,7 @@ import { Button, Card, Field, Input, Modal, Notice, Select, Badge, Spinner } fro
 import {
   db, DB_ID, Query, listAll, createOrder, computeTotals, lineTotal, formatMoney,
   parseMoney, toInput, isEnabled, featureConfig, visibleSections, recordPayment, asksForTip,
-  variantPriceRange, shiftUsable, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, sharesFor,
+  variantPriceRange, shiftUsable, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, sharesFor, isPastLimit,
 } from '@snpos/core';
 import type { CartLine, Order, OrderItem, Doc, MenuEntry, Settings } from '@snpos/core';
 import { COUNTER_TABLE_ID } from './App';
@@ -176,12 +176,15 @@ export function OrderView({
   const usable = shiftUsable(ctx.shift);
   const age = shiftAgeOf(ctx.shift);
 
+  /** Bills on this screen that the shift ran past its limit to take. */
+  const shelvedHere = existing.filter((o) => isPastLimit(o, ctx.shift));
+
   const send = async () => {
     if (cart.length === 0) return;
     // Starting NEW business on a shift that should have closed a day ago is
     // the thing being stopped. What is already on it can still be settled.
     if (ctx.module === 'craft' && !usable) {
-      onToast(shiftAgeMessage(age, SHIFT_MAX_HOURS), 'err');
+      onToast(shiftAgeMessage(age, SHIFT_MAX_HOURS, ctx.module), 'err');
       return;
     }
     setSending(true);
@@ -248,7 +251,19 @@ export function OrderView({
 
       {ctx.shift && !usable && (
         <div style={{ padding: '0.6rem 1rem' }}>
-          <Notice tone="warn">{shiftAgeMessage(age, SHIFT_MAX_HOURS)}</Notice>
+          <Notice tone="warn">
+            {shiftAgeMessage(age, SHIFT_MAX_HOURS, ctx.module)}
+            {shelvedHere.length > 0 && (
+              <div style={{ marginTop: '0.35rem' }}>
+                {/* The cooking carries on; the money is what waits. Said here
+                    rather than only when somebody presses the button, so
+                    nobody promises a customer a receipt they cannot print. */}
+                {shelvedHere.length === 1 ? 'One order here came' : `${shelvedHere.length} orders here came`}
+                {' '}in after that and cannot be paid on this shift. Close it, open a fresh one, and they will
+                be waiting on it.
+              </div>
+            )}
+          </Notice>
         </div>
       )}
 
@@ -564,6 +579,14 @@ function CounterPaymentModal({
 
   const confirm = async () => {
     if (!ctx.shift) { setError('No shift is open.'); return; }
+    const late = orders.find((o) => isPastLimit(o, ctx.shift));
+    if (late) {
+      setError(
+        `${late.order_no} was rung up after this shift had already run past a day, so it cannot be paid on `
+        + 'it. Close the shift and open a fresh one; it will be waiting there.',
+      );
+      return;
+    }
     if (entered <= 0) { setError('Enter how much was paid, on the cash or the card line.'); return; }
     if (over) {
       setError(
@@ -780,6 +803,16 @@ function PaymentModal({
 
   const confirm = async () => {
     if (!ctx.shift) { setError('No shift is open.'); return; }
+    // Taken after the shift should have closed. See the notice on the order
+    // screen: the food happens, the money waits for the next shift.
+    const late = orders.find((o) => isPastLimit(o, ctx.shift));
+    if (late) {
+      setError(
+        `${late.order_no} came in after this shift had already run past a day, so it cannot be paid on it. `
+        + 'Close the shift and open a fresh one; it will be waiting there.',
+      );
+      return;
+    }
     if (!methodId) { setError('Choose how it was paid.'); return; }
     // Less than the full amount is allowed and is not an error: a table
     // splitting the bill pays it in pieces. What is not allowed is nothing.

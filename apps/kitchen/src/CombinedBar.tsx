@@ -8,7 +8,7 @@ import { resolveCounts } from '@snpos/ui';
 import {
   formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift, loadOpenShift, shiftBlockers, expectedTakings, closeShift, openingFloats,
-  recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS,
+  recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, isPastLimit,
   HANDOVER_ENABLED,
 } from '@snpos/core';
 import type {
@@ -55,6 +55,8 @@ export function CombinedBar({
   // Typed amounts, kept as text so a half-finished "0." is not read as zero.
   const [stockCounts, setStockCounts] = useState<Record<string, string>>({});
   const [flow, setFlow] = useState<ShiftFlow | undefined>(undefined);
+  /** Orders this shift ran past its limit to take. Named before it closes. */
+  const [shelving, setShelving] = useState<{ id: string; label: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -124,11 +126,21 @@ export function CombinedBar({
     setBusy(true);
     setError(null);
     try {
-      const [m, blocking] = await Promise.all([
+      const [m, blocking, everything] = await Promise.all([
         loadPaymentMethods(venue.$id),
-        shiftBlockers(venue.$id, undefined, 'kitchen'),
+        shiftBlockers(venue.$id, undefined, 'kitchen', shift),
+        // Shown, not merely done. These leave the shift at the close and
+        // somebody is still owed for them; a close that quietly moved them
+        // would be a close nobody could explain the next morning.
+        shiftBlockers(venue.$id, undefined, 'kitchen', null),
       ]);
       setMethods(m);
+      const held = new Set(blocking.map((b) => b.order.$id));
+      setShelving(
+        everything
+          .filter((b) => !held.has(b.order.$id))
+          .map((b) => ({ id: b.order.$id, label: `${b.order.order_no} · ${money(b.order.total)}` })),
+      );
       setBlockers(
         blocking.map((b) => ({
           id: b.order.$id,
@@ -216,6 +228,14 @@ export function CombinedBar({
       const total = Object.values(result.variance).reduce((a, b) => a + Math.abs(b), 0);
       const base = total === 0 ? 'Shift closed and balanced' : `Shift closed, ${money(total)} out`;
       onToast(result.stockNote ? `${base}. ${result.stockNote}` : base, total > tolerance ? 'err' : 'ok');
+      // Said out loud, because those orders are still owed for and the person
+      // who opens the next shift needs to be expecting them.
+      if (result.shelved.length > 0) {
+        onToast(
+          `${result.shelved.length} order${result.shelved.length === 1 ? '' : 's'} moved to the next shift. `
+          + 'They will be on the pass as soon as one is opened.',
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not close the shift.');
     } finally {
@@ -272,7 +292,7 @@ export function CombinedBar({
       {shift && (age.over || age.warning) && (
         <div style={{ padding: '0.5rem 0.9rem' }}>
           <Notice tone={age.over ? 'warn' : 'info'}>
-            {shiftAgeMessage(age, SHIFT_MAX_HOURS)}
+            {shiftAgeMessage(age, SHIFT_MAX_HOURS, 'kitchen')}
             {age.over && !who?.can_close_shift && ' Ask a manager to close it.'}
           </Notice>
         </div>
@@ -349,6 +369,7 @@ export function CombinedBar({
             money={money}
             tolerance={tolerance}
             flow={flow}
+            shelving={shelving}
           />
         </Modal>
       )}
@@ -434,6 +455,23 @@ export function SettleModal({
   const settle = async () => {
     if (!methodId) { setError('Choose how they paid.'); return; }
     if (!shift) { setError('No shift is open. Open one first, or the money has nothing to be counted against.'); return; }
+    /**
+     * An order taken after the shift had already run past a day cannot be paid
+     * on that shift.
+     *
+     * The cooking still happens: a customer is standing there and food is food.
+     * The money is what has to wait, because taking it here would file today's
+     * cash under a night that ended yesterday, which is the whole thing the
+     * limit exists to prevent. Closing the shift releases it: it moves onto the
+     * next one and is paid there, a minute later.
+     */
+    if (isPastLimit(order, shift)) {
+      setError(
+        'This came in after the shift had already run past a day, so it cannot be paid on it. Close the '
+        + 'shift and open a fresh one, this order will be waiting on it and can be settled then.',
+      );
+      return;
+    }
     if (paying <= 0) { setError('Enter how much they are paying.'); return; }
     if (paying > owed) {
       setError(`That is more than the ${formatMoney(owed, settings)} outstanding. Put the extra in the tip box if it is a tip.`);

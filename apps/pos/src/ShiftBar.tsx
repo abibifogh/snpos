@@ -33,6 +33,8 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   // Typed amounts, kept as text so a half-finished "0." is not read as zero.
   const [stockCounts, setStockCounts] = useState<Record<string, string>>({});
   const [flow, setFlow] = useState<ShiftFlow | undefined>(undefined);
+  /** Orders this shift ran past its limit to take. Named before it closes. */
+  const [shelving, setShelving] = useState<{ id: string; label: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [floatSource, setFloatSource] = useState('zero');
@@ -104,11 +106,20 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
     setBusy(true);
     setError(null);
     try {
-      const [m, blocking] = await Promise.all([
+      const [m, blocking, everything] = await Promise.all([
         loadPaymentMethods(ctx.venue.$id),
-        shiftBlockers(ctx.venue.$id, undefined, ctx.module),
+        shiftBlockers(ctx.venue.$id, undefined, ctx.module, ctx.shift),
+        // The same question without the exception, so the difference between
+        // the two is exactly what is about to be moved to the next shift.
+        shiftBlockers(ctx.venue.$id, undefined, ctx.module, null),
       ]);
       setMethods(m);
+      const held = new Set(blocking.map((b) => b.order.$id));
+      setShelving(
+        everything
+          .filter((b) => !held.has(b.order.$id))
+          .map((b) => ({ id: b.order.$id, label: `${b.order.order_no} · ${money(b.order.total)}` })),
+      );
       setBlockers(
         blocking.map((b) => ({
           id: b.order.$id,
@@ -227,6 +238,13 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       const off = Object.values(result.variance).reduce((a, b) => a + Math.abs(b), 0);
       const base = off === 0 ? 'Shift closed and balanced' : `Shift closed, ${money(off)} out`;
       onToast(result.stockNote ? `${base}. ${result.stockNote}` : base, off > tolerance ? 'err' : 'ok');
+      // Still owed for, and now somebody else's to collect. Not a footnote.
+      if (result.shelved.length > 0) {
+        onToast(
+          `${result.shelved.length} order${result.shelved.length === 1 ? '' : 's'} moved to the next shift, `
+          + 'and will appear as soon as one is opened.',
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not close the shift.');
     } finally {
@@ -295,7 +313,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       {ctx.shift && (age.over || age.warning) && (
         <div style={{ padding: '0.5rem 1rem 0' }}>
           <Notice tone={age.over ? 'warn' : 'info'}>
-            {shiftAgeMessage(age, SHIFT_MAX_HOURS)}
+            {shiftAgeMessage(age, SHIFT_MAX_HOURS, ctx.module)}
             {age.over && !ctx.profile?.can_close_shift && ' Ask a manager to close it.'}
           </Notice>
         </div>
@@ -396,6 +414,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
             money={money}
             tolerance={tolerance}
             flow={flow}
+            shelving={shelving}
           />
         </Modal>
       )}

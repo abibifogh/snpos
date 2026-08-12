@@ -30,6 +30,12 @@ export interface Order extends Doc {
   table_id?: string;
   session_id?: string;
   shift_id?: string;
+  /**
+   * Set when this order was taken after its shift had already run past its
+   * limit. The shift closes without it; the next shift opened picks it up.
+   */
+  shelved_at?: string | null;
+  shelved_from_shift?: string;
   status: OrderStatus;
   alert_level: number;
   accepted_at?: string;

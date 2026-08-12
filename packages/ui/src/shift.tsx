@@ -168,6 +168,7 @@ export function ShiftCloseForm({
   money,
   tolerance,
   flow,
+  shelving = [],
 }: {
   blockers: BlockerRow[];
   rows: CountRow[];
@@ -188,6 +189,12 @@ export function ShiftCloseForm({
   tolerance: number;
   /** Money in and money out for the shift. Omitted, the summary is not shown. */
   flow?: ShiftFlow;
+  /**
+   * Orders this shift ran past its limit to take, which will move to the next
+   * shift rather than hold this one open. Named here so the close is not a
+   * surprise: somebody is still owed for these and somebody else will collect.
+   */
+  shelving?: { id: string; label: string }[];
 }) {
   if (blockers.length > 0) {
     const unpaid = blockers.filter((b) => b.reason === 'unpaid');
@@ -256,6 +263,26 @@ export function ShiftCloseForm({
 
   return (
     <>
+      {shelving.length > 0 && (
+        <div style={{ marginBottom: '1rem' }}>
+          <Notice tone="warn">
+            <strong>
+              {shelving.length === 1
+                ? 'One order will move to the next shift.'
+                : `${shelving.length} orders will move to the next shift.`}
+            </strong>
+            <div className="small" style={{ marginTop: '0.3rem' }}>
+              They came in after this shift had already run past a day, so they are not this shift's to
+              settle and do not hold it open. They are not cancelled: they appear on the pass the moment a
+              new shift is opened, and are paid for there.
+            </div>
+            <ul style={{ margin: '0.45rem 0 0', paddingLeft: '1.2rem' }}>
+              {shelving.map((b) => <li key={b.id} className="small">{b.label}</li>)}
+            </ul>
+          </Notice>
+        </div>
+      )}
+
       {flow && (
         <div className="table-wrap" style={{ marginBottom: '1rem' }}>
           <table className="data">

@@ -634,6 +634,12 @@ export const COLLECTIONS = [
       // Optional: a pre-order placed while the restaurant is closed belongs to no
       // shift yet. It is stamped with the shift that is open when it fires.
       ['shift_id', 's', 64, false],
+      // Set when an order was taken after its shift had already run past its
+      // limit. The shift is allowed to close over it; the order is not closed,
+      // it waits here and the next shift opened picks it up. The one exception
+      // to a shift never closing over an open order, and deliberately narrow.
+      ['shelved_at', 'd', null, false],
+      ['shelved_from_shift', 's', 64, false],
       // SCHEDULED = a pre-order waiting for its fire time. It is not shown to
       // the kitchen and does not alarm until then.
       ['status', 'e', ['SCHEDULED', 'PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'CLOSED', 'REJECTED', 'CANCELLED'], true, 'PENDING'],
