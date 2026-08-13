@@ -128,6 +128,10 @@ Run these every time. The restaurant is the part that is already earning.
 | F4 | Cancel within two minutes | Cancelled. After two minutes, refused |
 | F5 | Close a shift with an unpaid order | Blocked, and it names the order |
 | F6 | Close a shift properly | Summary email arrives, with the stock table |
+| F7 | Press the name at the top right | PIN pad, headed "Who is taking over?" |
+| F8 | Enter a second cook's PIN | Name changes. Their Accepts are recorded against them |
+| F9 | Press the name, then Cancel | Back to the tickets, **still the first cook** |
+| F10 | A wrong PIN during a handover | Refused. Nobody is signed out by a failed attempt |
 
 ### G. Money at the edges
 

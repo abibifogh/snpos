@@ -58,6 +58,15 @@ export function App() {
   const [settling, setSettling] = useState<Order | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
+  /**
+   * Somebody is handing the screen over.
+   *
+   * Separate from `ready`, which is about starting service at all. The PIN pad
+   * is the same pad either way, but a handover can be thought better of and
+   * must be escapable: an accidental tap on a busy pass must not lock the
+   * tickets away behind a PIN nobody standing there knows.
+   */
+  const [switching, setSwitching] = useState(false);
   const [pinEntry, setPinEntry] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -460,15 +469,18 @@ export function App() {
 
   return (
     <div className="kds">
-      {!ready && (
+      {(!ready || switching) && (
         <div className="audio-gate">
           <div style={{ maxWidth: '22rem' }}>
-            <h1>Kitchen display</h1>
+            <h1>{switching ? 'Who is taking over?' : 'Kitchen display'}</h1>
             {staff.length > 0 ? (
               <>
                 <p className="dim" style={{ marginTop: '0.6rem' }}>
-                  Enter your PIN to start. Tapping also lets the alarm sound, browsers keep a page silent until
-                  someone touches it.
+                  {switching
+                    ? `${who?.display_name ?? 'Somebody'} is on this screen now. Enter your PIN to take over; `
+                      + 'everything accepted from then on is recorded against you.'
+                    : 'Enter your PIN to start. Tapping also lets the alarm sound, browsers keep a page silent '
+                      + 'until someone touches it.'}
                 </p>
                 <div
                   style={{
@@ -493,6 +505,7 @@ export function App() {
                           if (await verifyPin(pinEntry, person.pin_hash)) {
                             setWho(person);
                             setPinEntry('');
+                            setSwitching(false);
                             setReady(true);
                             return;
                           }
@@ -505,6 +518,18 @@ export function App() {
                     </button>
                   ))}
                 </div>
+                {/* Only during a handover. At the start of service there is
+                    nothing to go back to, and a way out of the first gate
+                    would be a way to cook anonymously. */}
+                {switching && (
+                  <Button
+                    className="btn"
+                    style={{ marginTop: '0.9rem' }}
+                    onClick={() => { setSwitching(false); setPinEntry(''); setPinError(null); }}
+                  >
+                    Cancel, {who?.display_name ?? 'stay signed in'} carries on
+                  </Button>
+                )}
               </>
             ) : (
               <>
@@ -643,7 +668,21 @@ export function App() {
           <span>Cooking <b>{visible.filter((o) => o.status === 'PREPARING').length}</b></span>
           <span>Ready <b>{visible.filter((o) => o.status === 'READY').length}</b></span>
           {overdue.length > 0 && <span style={{ color: '#ff6b5e' }}>Late <b>{overdue.length}</b></span>}
-          {who && <span>· {who.display_name}</span>}
+          {/* The name was here already, saying who is answerable for what
+              gets accepted. It is now also the way to change that: a cook
+              going home had no way to hand the screen over except reloading
+              the page, so whatever the next person did was recorded against
+              the person who had left. */}
+          {who && (
+            <button
+              className="kds-help"
+              style={{ width: 'auto', padding: '0 0.7rem' }}
+              title="Hand this screen to somebody else"
+              onClick={() => { setSwitching(true); setPinEntry(''); setPinError(null); }}
+            >
+              {who.display_name} · hand over
+            </button>
+          )}
         </div>
       </div>
 

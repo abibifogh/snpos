@@ -159,6 +159,17 @@ export const HELP_ARTICLES: HelpArticle[] = [
     area: 'kitchen',
     audience: ['cook', 'manager', 'admin'],
     body: [
+      h('Who is on the screen'),
+      p(
+        'Whoever entered their PIN is named at the top right, and everything accepted or marked ready from '
+        + 'then on is recorded against them. Press that name to hand the screen to somebody else: they enter '
+        + 'their own PIN and the name changes. Cancel if it was pressed by mistake.',
+      ),
+      note(
+        'Worth doing at every changeover. Without it the next person\u2019s work is recorded against whoever '
+        + 'started the shift, and "who accepted this" stops meaning anything.',
+      ),
+      h('The four states'),
       p('Every ticket moves through four states, and moving it is how everyone else knows where the food is.'),
       list(
         'New, just arrived. Tap Accept to say you have seen it.',
