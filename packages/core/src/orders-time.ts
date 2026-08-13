@@ -246,12 +246,53 @@ export const LINES_GRACE_MS = 60_000;
  * is true.
  */
 export function ticketLines(
-  order: { $createdAt: string },
-  lines: unknown[] | undefined,
+  order: { $createdAt: string; subtotal?: number },
+  lines: { line_total?: number }[] | undefined,
   now: number = Date.now(),
-): 'ready' | 'loading' | 'missing' {
-  if (lines && lines.length > 0) return 'ready';
+): 'ready' | 'loading' | 'missing' | 'partial' {
   const placed = Date.parse(order.$createdAt);
+  const settled = Number.isFinite(placed) && now - placed > LINES_GRACE_MS;
+
+  if (lines && lines.length > 0) {
+    if (linesComplete(order, lines)) return 'ready';
+    // Some of them arrived and some did not. Still ordinary for a moment;
+    // a lasting fault after that, and a dangerous one, because a ticket that
+    // looks whole is a ticket somebody cooks.
+    return settled ? 'partial' : 'loading';
+  }
+
   if (!Number.isFinite(placed)) return 'loading';
-  return now - placed > LINES_GRACE_MS ? 'missing' : 'loading';
+  return settled ? 'missing' : 'loading';
+}
+
+/**
+ * Are these all of the order's lines, or only the ones that had been written
+ * when somebody asked?
+ *
+ * An order and its lines are separate writes that land within a moment of each
+ * other but not together. A read landing in that moment comes back with some
+ * of them, and nothing about that answer says it is incomplete: a ticket with
+ * two of three dishes on it looks exactly like an order for two dishes. The
+ * cook makes two, the customer is charged for three, and the only person who
+ * finds out is the one waiting for the third.
+ *
+ * The order already carries the answer. `subtotal` is the sum of the line
+ * totals, worked out from the whole cart before anything was written, so it is
+ * a figure the lines have to add up to. If they do not, some are missing.
+ *
+ * `>=` rather than exactly equal: a line voided at the till stays on the
+ * ticket while the order's subtotal drops, and that must not read as an order
+ * that is for ever incomplete. Missing lines can only ever make the sum too
+ * small, because no line is worth less than nothing.
+ *
+ * An order whose subtotal is zero, or absent on an old row, has nothing to
+ * check against and is taken at face value.
+ */
+export function linesComplete(
+  order: { subtotal?: number },
+  lines: { line_total?: number }[] | undefined,
+): boolean {
+  if (!lines || lines.length === 0) return false;
+  if (!order.subtotal || order.subtotal <= 0) return true;
+  return lines.reduce((sum, l) => sum + (l.line_total ?? 0), 0) >= order.subtotal;
 }

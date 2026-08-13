@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   cookMinutes, estimateMinutes, queueMinutes, dueMinutes, shownEta,
   cancelWindowLeft, CANCEL_WINDOW_MS, MAX_ETA_MINUTES, ticketLines, LINES_GRACE_MS, isOverdue, minutesOver,
+  linesComplete,
 } from '../orders-time.ts';
 import { byStaff, totalHandedOver } from '../handover-math.ts';
 
@@ -190,4 +191,55 @@ test('a late order rings at the same second the ticket says it is due', () => {
     if (over >= 1) assert.equal(ringing, true, `says ${over} min over but is not ringing`);
     if (over <= -1) assert.equal(ringing, false, `says ${-over} min left but is ringing`);
   }
+});
+
+test('a ticket knows when it is only half of the order', () => {
+  /**
+   * The failure this exists to catch: an order and its lines are separate
+   * writes, and a read landing between them comes back with some of them.
+   * Nothing about that answer says it is incomplete — a ticket showing two of
+   * three dishes looks exactly like an order for two dishes. The cook makes
+   * two, the customer is charged for three, and the only person who finds out
+   * is the one still waiting.
+   *
+   * The order carries the answer already: its subtotal is the sum of the lines,
+   * worked out from the whole cart before any of them were written.
+   */
+  const order = { subtotal: 3000 };
+  assert.equal(linesComplete(order, [{ line_total: 1000 }]), false, 'one of three');
+  assert.equal(linesComplete(order, [{ line_total: 1000 }, { line_total: 1000 }]), false, 'two of three');
+  assert.equal(
+    linesComplete(order, [{ line_total: 1000 }, { line_total: 1000 }, { line_total: 1000 }]),
+    true,
+  );
+
+  assert.equal(linesComplete(order, []), false, 'none at all is not complete either');
+  assert.equal(linesComplete(order, undefined), false, 'and neither is not having asked');
+});
+
+test('a voided line does not make an order incomplete for ever', () => {
+  // Voiding removes the value from the order but leaves the line on the ticket,
+  // so the lines can add up to MORE than the subtotal. Insisting on exactly
+  // equal would leave that ticket warning until the end of time.
+  assert.equal(linesComplete({ subtotal: 1000 }, [{ line_total: 1000 }, { line_total: 500 }]), true);
+});
+
+test('an order with nothing to check against is taken at its word', () => {
+  // A comped order, or a row from before the subtotal was stored. Being wrong
+  // towards "this is fine" costs nothing here; the count-based retries still run.
+  assert.equal(linesComplete({ subtotal: 0 }, [{ line_total: 0 }]), true);
+  assert.equal(linesComplete({}, [{ line_total: 0 }]), true);
+});
+
+test('a half-loaded ticket says so, but only after the lines have had time', () => {
+  const placed = '2026-08-13T12:00:00.000Z';
+  const at = (ms: number) => Date.parse(placed) + ms;
+  const order = { $createdAt: placed, subtotal: 3000 };
+  const some = [{ line_total: 1000 }];
+  const all = [{ line_total: 3000 }];
+
+  assert.equal(ticketLines(order, some, at(2_000)), 'loading', 'still arriving');
+  assert.equal(ticketLines(order, some, at(LINES_GRACE_MS + 1)), 'partial', 'and now a real fault');
+  assert.equal(ticketLines(order, all, at(0)), 'ready');
+  assert.equal(ticketLines(order, [], at(LINES_GRACE_MS + 1)), 'missing', 'none at all reads differently');
 });

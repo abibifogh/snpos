@@ -10,7 +10,7 @@ import { cookMinutes, estimateMinutes, fireTimeFor } from './orders-time';
  */
 export {
   MAX_ETA_MINUTES, shownEta, cookMinutes, estimateMinutes, queueMinutes, dueMinutes, fireTimeFor,
-  CANCEL_WINDOW_MS, cancelWindowLeft, LINES_GRACE_MS, ticketLines, isOverdue, minutesOver,
+  CANCEL_WINDOW_MS, cancelWindowLeft, LINES_GRACE_MS, ticketLines, linesComplete, isOverdue, minutesOver,
 } from './orders-time';
 import { createOrQueue, isOffline } from './offline';
 import { computeTotals, lineUnitPrice, lineTotal } from './pricing';

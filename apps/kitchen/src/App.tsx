@@ -8,7 +8,7 @@ import {
   db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
   verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
-  itemsAvailableNow, dueMinutes, ticketLines, isOverdue, minutesOver, seatFor, amountOutstanding,
+  itemsAvailableNow, dueMinutes, ticketLines, linesComplete, isOverdue, minutesOver, seatFor, amountOutstanding,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback,
 } from '@snpos/core';
 import type {
@@ -132,11 +132,22 @@ export function App() {
    * most of the time the customer is waiting.
    */
   const loadItemsSoon = useCallback(
-    async (orderId: string) => {
+    async (order: Order) => {
       for (const wait of [0, 700, 2000, 5000]) {
         if (wait) await new Promise((r) => setTimeout(r, wait));
-        await loadItemsFor([orderId]).catch(() => undefined);
-        if (itemsRef.current[orderId]?.length) return;
+        await loadItemsFor([order.$id]).catch(() => undefined);
+        /**
+         * Whole, not merely non-empty.
+         *
+         * This stopped as soon as it had found ANY line. The lines are written
+         * together but land one by one, so a first read that caught one of
+         * three ended the retries there — and the reconciler then skipped the
+         * order for ever, because it had an answer on file. The ticket showed
+         * two dishes out of three and looked completely normal: the cook made
+         * two, the customer was charged for three, and the only person who
+         * found out was the one still waiting.
+         */
+        if (linesComplete(order, itemsRef.current[order.$id])) return;
       }
     },
     [loadItemsFor],
@@ -249,7 +260,7 @@ export function App() {
         return live ? [...without, order].sort((a, b) => a.$createdAt.localeCompare(b.$createdAt)) : without;
       });
       if (isCreate(events) && (order.module ?? 'kitchen') === 'kitchen'
-          && ['PENDING', 'SCHEDULED'].includes(order.status)) void loadItemsSoon(order.$id);
+          && ['PENDING', 'SCHEDULED'].includes(order.status)) void loadItemsSoon(order);
     });
     return off;
   }, [venue, loadItemsSoon]);
@@ -291,7 +302,12 @@ export function App() {
             fresh.every((o) => prev.some((p) => p.$id === o.$id && p.status === o.status && p.$updatedAt === o.$updatedAt));
           return same ? prev : fresh;
         });
-        const missing = fresh.filter((o) => !itemsRef.current[o.$id]).map((o) => o.$id);
+        // Not just the ones with nothing: the ones with SOME of their lines
+        // too. A half-loaded ticket is the one that gets cooked wrongly,
+        // because it is the one that looks finished.
+        const missing = fresh
+          .filter((o) => !linesComplete(o, itemsRef.current[o.$id]))
+          .map((o) => o.$id);
         if (missing.length) void loadItemsFor(missing);
       } catch {
         // Offline, most likely. The next tick tries again.
@@ -1104,6 +1120,23 @@ function Ticket({
         {lineState === 'missing' && (
           <li style={{ color: 'var(--warn)' }}>
             Nothing is listed on this ticket. Check with whoever sent it before cooking.
+          </li>
+        )}
+        {/*
+          Some of it arrived and some did not, and this is the dangerous case:
+          a ticket with two of three dishes on it looks exactly like an order
+          for two dishes. Nothing about it is wrong to look at, so the cook
+          makes two, the customer is charged for three, and the only person who
+          finds out is the one still waiting for the third.
+
+          The order's own subtotal is what gives it away — it is the sum of the
+          lines, worked out before any of them were written. See linesComplete.
+        */}
+        {lineState === 'partial' && (
+          <li style={{ color: 'var(--warn)' }}>
+            Part of this ticket is missing. What is listed does not add up to
+            {settings ? ` ${formatMoney(order.subtotal, settings)}` : ' the order'}.
+            Check with whoever sent it before cooking.
           </li>
         )}
         {(items ?? []).map((i) => {

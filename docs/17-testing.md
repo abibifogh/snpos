@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck (apps AND tests), tests, schema check, build. Before deploying.
 ```
 
-121 tests, no database, about half a second. They cover the sums that decide what
+125 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -169,6 +169,9 @@ Run these every time. The restaurant is the part that is already earning.
 | F3b | Let it run past 20 | "due now", then "1 min over". The pill follows at the grace |
 | F3c | Place an order and watch the ticket land | Items appear within a second or two. **No warning at all** |
 | F3d | Watch a normal order for a minute | Never says "nothing is listed". That is for real faults |
+| F3v | Order **three different dishes** at once | All three on the ticket. **Amounts add up to the order** |
+| F3w | Order five dishes on a slow connection | Still all five. The screen keeps asking until they add up |
+| F3x | Void a line at the till, watch the ticket | No warning. A void is not a missing line |
 | F3e | An order genuinely sent with no lines | Says so, after a minute, in warning colour |
 | F4 | Cancel within two minutes | Cancelled. After two minutes, refused |
 | F5 | Close a shift with an unpaid order | Blocked, and it names the order |
