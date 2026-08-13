@@ -233,8 +233,10 @@
  * this is glanced at, not held.
  */
 .screen-thanks { max-width: 34rem; margin: 0 auto; }
-.screen-thanks h1 { font-size: 2rem; margin-bottom: 0.35rem; }
-.screen-thanks .lead { font-size: 1.05rem; margin: 0 0 1rem; }
+/* The gap the order-number line used to provide. Without it the heading sat
+   against the wait, and the two read as one block rather than as a greeting
+   and the figure somebody came for. */
+.screen-thanks h1 { font-size: 2rem; margin-bottom: 1rem; }
 
 /* The tick, drawn rather than fetched: a screen on a counter is the one place
    a missing image is certain to be noticed and impossible to explain. */

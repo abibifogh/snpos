@@ -32,12 +32,10 @@ export const SCREEN_THANKS_MS = 10_000;
  * anybody who is done reading before then.
  */
 export function ScreenThanks({
-  orderNo,
   etaMinutes,
   venue,
   onDone,
 }: {
-  orderNo: string;
   /** What the kitchen quoted, queue included. Absent when nothing was worked out. */
   etaMinutes?: number;
   settings: Settings;
@@ -70,10 +68,10 @@ export function ScreenThanks({
     <div className="centered screen-thanks">
       <div>
         <div className="tick" aria-hidden>✓</div>
-        <h1>Thank you</h1>
-        <p className="lead">
-          Your order is <strong>{orderNo}</strong>.
-        </p>
+        {/* The whole sentence, not the half of it. "Thank you" alone reads as
+            the start of something that has not finished loading; naming what
+            is being thanked for is what makes it an acknowledgement. */}
+        <h1>Thank you for your order</h1>
 
         {/* The one thing they came to this screen for. Big, on its own, and
             said in words rather than left as a number to interpret. */}
@@ -85,8 +83,13 @@ export function ScreenThanks({
           <p className="eta-big">The kitchen has it now.</p>
         )}
 
+        {/* Your NAME, not your number. The number is no longer on this screen,
+            and telling somebody to listen for a figure they were never shown
+            is worse than saying nothing. The name is the thing actually called
+            out across a counter anyway — it is what the kitchen ticket puts
+            beside the order number for exactly that reason. */}
         <p className="dim small">
-          Listen for your number{venue.name ? ` at ${venue.name}` : ''}.
+          Listen for your name{venue.name ? ` at ${venue.name}` : ''}.
         </p>
 
         {/* Counted down out loud. A screen that changes on its own without

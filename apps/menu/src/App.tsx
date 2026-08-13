@@ -341,7 +341,6 @@ export function App() {
   if (screenMode && thanks) {
     return (
       <ScreenThanks
-        orderNo={thanks.no}
         etaMinutes={thanks.eta}
         settings={boot.settings}
         venue={boot.venue}
