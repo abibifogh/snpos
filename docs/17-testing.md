@@ -126,6 +126,10 @@ Run these every time. The restaurant is the part that is already earning.
 | F3l | A 20 min order, watch it reach 20 | **Late and ringing at 20, not 25.** No silent cushion |
 | F3m | Mark an order Ready and leave it sitting | Late pill after a few minutes. **No sound** |
 | F3n | Order as a guest called Ama, look at the ticket | **Ama**, beside the order number, not in the small grey |
+| F3o | Answer "where are you sitting?" with Table 7 | Ticket says **Table 7**, not "Table order" |
+| F3p | Order from an area, eg Poolside | Ticket names the area, and the zone after it if set |
+| F3q | Retire that table in admin, look at the open ticket | Still named. The plate still has to get there |
+| F3r | A takeaway order | Says Takeaway. No table invented |
 | F3i | Sleep the kitchen tablet an hour, wake it, let a ticket go late | **It rings.** The sound comes back with the screen |
 | F3j | Wake it and look before any order is late | Either no banner, or a red bar offering to turn sound back on |
 | F3k | Press that bar | Bar goes. Test the late sound from settings and it plays |

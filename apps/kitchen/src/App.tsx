@@ -16,6 +16,31 @@ import type {
 } from '@snpos/core';
 
 interface Station extends Doc { venue_id: string; key: string; name: string; colour?: string; sort: number; active: boolean }
+
+/**
+ * A table, or a whole area with no table numbers in it.
+ *
+ * Here only so a ticket can print the answer to "where are you sitting?". An
+ * order stores the id it was given, and an id is no use to somebody carrying
+ * a plate.
+ */
+interface TableRow extends Doc { venue_id: string; label: string; zone?: string; kind?: 'table' | 'area' }
+
+/**
+ * Where to take the food, in the words a guest would recognise.
+ *
+ * "Table 7", or "Poolside" for an area, with the part of the room after it
+ * when there is one. Falls back to the plain description when the seating
+ * cannot be named — a ticket that says "Table order" is thin, but a ticket
+ * that says nothing because a lookup failed is worse.
+ */
+function seatLabel(order: Order, seating: Record<string, TableRow>): string {
+  if (!order.table_id) return order.fulfilment === 'delivery' ? 'Delivery' : 'Takeaway';
+  const t = seating[order.table_id];
+  if (!t) return 'Table order';
+  const name = t.kind === 'area' ? t.label : `Table ${t.label}`;
+  return t.zone ? `${name} · ${t.zone}` : name;
+}
 import { unlockAudio, setAlarm, stopAlarm, audioReady, type AlarmKind } from './alarm';
 import { CombinedBar, SettleModal } from './CombinedBar';
 
@@ -45,6 +70,8 @@ export function App() {
   const itemsRef = useRef(items);
   itemsRef.current = items;
   const [stations, setStations] = useState<Station[]>([]);
+  // Tables by id, so a ticket can say where the food is going.
+  const [seating, setSeating] = useState<Record<string, TableRow>>({});
   const [station, setStation] = useState<string>(() => localStorage.getItem('kds-station') || 'all');
   const [features, setFeatures] = useState<FeatureMap>({});
   // Who is at the screen. The device holds the session; the PIN says which
@@ -161,11 +188,18 @@ export function App() {
         setVenue(v ?? null);
         if (!v) return;
 
-        const [st, ft, sp] = await Promise.all([
+        const [st, ft, sp, tb] = await Promise.all([
           listAll<Station>('stations', [Query.equal('venue_id', v.$id)]),
           loadFeatures(v.$id),
           listAll<StaffProfile>('staff_profiles'),
+          // Read once and kept, because a ticket needs to name a table and an
+          // order only stores its id. Tables change perhaps twice a year; the
+          // list would be reloaded every night anyway when the screen is
+          // switched on. Inactive ones are kept: an order placed at a table
+          // that was retired an hour ago still has to be delivered to it.
+          listAll<TableRow>('tables', [Query.equal('venue_id', v.$id)]).catch(() => [] as TableRow[]),
         ]);
+        setSeating(Object.fromEntries(tb.map((t) => [t.$id, t])));
         setStations(st.filter((x) => x.active !== false).sort((a, b) => a.sort - b.sort));
         setFeatures(ft);
         setStaff(sp.filter((p) => p.active && p.pin_hash));
@@ -810,6 +844,7 @@ export function App() {
               key={order.$id}
               order={order}
               items={items[order.$id]}
+              seating={seating}
               sla={sla}
               overdue={overdue.some((o) => o.$id === order.$id)}
               cookMinutes={promisedMinutes(order)}
@@ -873,12 +908,14 @@ export function App() {
 }
 
 function Ticket({
-  order, items, sla, overdue, cookMinutes,
+  order, items, seating, sla, overdue, cookMinutes,
   settings, canSettle, onAccept, onStart, onDone, onCollect, onSettle, onReject,
 }: {
   order: Order;
   /** Undefined until the lines have arrived. Empty means there are none. */
   items: OrderItem[] | undefined;
+  /** Tables by id, so the ticket can name the one the guest chose. */
+  seating: Record<string, TableRow>;
   sla: number;
   overdue: boolean;
   /** The cooking time this ticket is judged against, the same figure the alarm uses. */
@@ -944,8 +981,17 @@ function Ticket({
             information about the order rather than an order without a name.
           */}
           {order.customer_name && <div className="who">{order.customer_name}</div>}
-          <div className="where">
-            {order.table_id ? 'Table order' : order.fulfilment === 'delivery' ? 'Delivery' : 'Takeaway'}
+          {/*
+            The answer the guest gave to "where are you sitting?".
+
+            This said "Table order" for every single seated order, whichever
+            table it was, because an order stores the table's id and nothing
+            here had the list to turn that back into a name. So the one piece
+            of information a person carrying a plate actually needs was the one
+            piece the ticket would not tell them, and they had to go and ask.
+          */}
+          <div className="where seat">
+            {seatLabel(order, seating)}
             {order.guest_count > 1 && ` · ${order.guest_count} guests`}
           </div>
           {/* An area has no number, so where in it they are sitting is the

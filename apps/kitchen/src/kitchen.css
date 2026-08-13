@@ -74,6 +74,15 @@ body { background: var(--bg); color: var(--text); }
   overflow-wrap: anywhere;
 }
 .ticket-head .where { font-size: 0.85rem; color: var(--text-dim); }
+/* Where the food is going. Not the dim grey the rest of the detail sits in:
+   this and the name are the two things somebody carrying a plate reads, and
+   they are read at arm's length, in a hurry, past a pass. */
+.ticket-head .where.seat {
+  font-size: 0.92rem;
+  font-weight: 550;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
 .ticket-head .age { font-variant-numeric: tabular-nums; font-weight: 650; }
 .ticket-head .age.warn { color: #f5a524; }
 .ticket-head .age.bad { color: #ff6b5e; }
