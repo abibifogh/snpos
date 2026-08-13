@@ -314,6 +314,28 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           float. So it says so, and at the limit refuses further sales. It is
           never closed automatically, because an automatic close would record a
           cash count that nobody made. */}
+      {/* Said out loud, because it is otherwise invisible and looks like a
+          close that did not work. Each is closed on its own: closing this one
+          brings the next up, until none are left. */}
+      {ctx.alsoOpen.length > 0 && (
+        <div style={{ padding: '0.5rem 1rem 0' }}>
+          <Notice tone="warn">
+            <strong>
+              {ctx.alsoOpen.length === 1
+                ? 'Another shift is also open on this side.'
+                : `${ctx.alsoOpen.length} other shifts are also open on this side.`}
+            </strong>
+            <div className="small" style={{ marginTop: '0.3rem' }}>
+              There should only ever be one. Close this one and the next will appear here, until none are left.
+              Nothing is lost: each keeps whatever was taken against it.
+            </div>
+            <div className="small dim" style={{ marginTop: '0.3rem' }}>
+              Waiting: {ctx.alsoOpen.map((s) => s.code).join(', ')}
+            </div>
+          </Notice>
+        </div>
+      )}
+
       {ctx.shift && (age.over || age.warning) && (
         <div style={{ padding: '0.5rem 1rem 0' }}>
           <Notice tone={age.over ? 'warn' : 'info'}>

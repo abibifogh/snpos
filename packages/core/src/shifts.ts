@@ -5,7 +5,7 @@ import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from
 import { postShift } from './ledger';
 import { featureConfig, isEnabled, type FeatureMap } from './features';
 import type { Module } from './access';
-import { shiftAge, shiftCode, mustWaitForNextShift, SHIFT_MAX_HOURS } from './shift-rules';
+import { shiftAge, shiftCode, mustWaitForNextShift, openShiftsFor, SHIFT_MAX_HOURS } from './shift-rules';
 
 export * from './shift-rules';
 
@@ -171,33 +171,24 @@ export async function openShift(opts: {
  * opened this morning had vanished. A venue has at most a couple of open shifts
  * at once, so reading them and choosing costs nothing.
  */
-export async function loadOpenShift(venueId: string, module: Module = 'kitchen'): Promise<Shift | null> {
+export async function loadOpenShifts(venueId: string, module: Module = 'kitchen'): Promise<Shift[]> {
   const res = await db.listDocuments(DB_ID, 'shifts', [
     Query.equal('venue_id', venueId),
     Query.equal('status', 'open'),
     Query.limit(25),
   ]);
+  return openShiftsFor(res.documents as unknown as Shift[], module);
+}
 
-  /**
-   * Newest first, sorted here rather than by the database.
-   *
-   * The ordering matters: if a stale shift is somehow still open, a close that
-   * half-finished, two devices racing, the till has to work with the one
-   * somebody just opened. An arbitrary answer to "which shift am I on" is
-   * worse than a wrong one, because it changes between refreshes.
-   *
-   * But asking the database to sort needs an index it may not have, and a
-   * query that throws here is worse than any ordering: every caller of this
-   * either swallows the failure or never resolves, so the screen quietly keeps
-   * whatever it was already showing. A shift closed a minute ago carries on
-   * looking open. There are at most a couple of open shifts for one venue, so
-   * sorting them in memory costs nothing and cannot fail.
-   */
-  const open = (res.documents as unknown as Shift[])
-    .slice()
-    .sort((a, b) => (b.opened_at ?? '').localeCompare(a.opened_at ?? ''));
-
-  return open.find((s) => (s.module ?? 'kitchen') === module) ?? null;
+/**
+ * The one this side is on. Newest, when more than one is somehow open.
+ *
+ * Callers that need to know there ARE more than one should use
+ * `loadOpenShifts` and say so, because a second open shift is invisible from
+ * here and closing the first only reveals it.
+ */
+export async function loadOpenShift(venueId: string, module: Module = 'kitchen'): Promise<Shift | null> {
+  return (await loadOpenShifts(venueId, module))[0] ?? null;
 }
 
 /**

@@ -8,7 +8,7 @@ import {
   account, db, DB_ID, Query, listAll, loadMenu, loadFeatures, humanError, isEnabled,
   articlesFor, featureConfig, HELP_AREAS,
   markUnavailable, markAvailable, isUnavailable, loadMenu as reloadMenu, itemsAvailableNow,
-  requireStaff, signOutCompletely, staffProfileFor, loadOpenShift, modulesForStaff,
+  requireStaff, signOutCompletely, staffProfileFor, loadOpenShifts, modulesForStaff,
   onQueueChange, startOfflineSync, flushQueue,
 } from '@snpos/core';
 import type { Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc, Module } from '@snpos/core';
@@ -62,6 +62,14 @@ export interface PosContext {
   profile: StaffProfile | null;
   userId: string;
   shift: Shift | null;
+  /**
+   * Other shifts open on this side. Should be none.
+   *
+   * Only the newest was ever fetched, so any others were invisible: closing
+   * the one on screen put the next one there, and every close looked like it
+   * had failed when all of them had worked.
+   */
+  alsoOpen: Shift[];
   reloadShift: () => Promise<void>;
   /** Say what the shift is now, without going back to the database. */
   setShift: (shift: Shift | null) => void;
@@ -90,7 +98,7 @@ export function App() {
   // Each side of the business has its own open shift, so this asks for one
   // rather than for whichever happened to be first.
   const loadShift = useCallback(
-    (venueId: string, module: Module = 'kitchen') => loadOpenShift(venueId, module),
+    (venueId: string, module: Module = 'kitchen') => loadOpenShifts(venueId, module),
     [],
   );
 
@@ -127,7 +135,7 @@ export function App() {
       ? (remembered === 'craft' || remembered === 'kitchen' ? remembered : 'kitchen')
       : mine.craft ? 'craft' : 'kitchen';
 
-    const shift = await loadShift(venue.$id, startingModule);
+    const open = await loadShift(venue.$id, startingModule);
 
     setCtx({
       settings,
@@ -136,7 +144,8 @@ export function App() {
       features,
       profile,
       userId: me.userId,
-      shift,
+      shift: open[0] ?? null,
+      alsoOpen: open.slice(1),
       module: startingModule,
       canSwitch,
       setModule: (m) => {
@@ -145,7 +154,8 @@ export function App() {
         // The other side has its own open shift, so switching has to go and
         // find it. Showing the kitchen's shift on the craft till would put the
         // day's takings under the wrong roof.
-        void loadShift(venue.$id, m).then((s) => setCtx((c) => (c ? { ...c, shift: s } : c)));
+        void loadShift(venue.$id, m).then((open) =>
+          setCtx((c) => (c ? { ...c, shift: open[0] ?? null, alsoOpen: open.slice(1) } : c)));
       },
       // Said directly, rather than discovered by asking again.
       //
@@ -161,7 +171,8 @@ export function App() {
         // not saved.
         setCtx((c) => {
           if (!c) return c;
-          void loadShift(venue.$id, c.module).then((s) => setCtx((x) => (x ? { ...x, shift: s } : x)));
+          void loadShift(venue.$id, c.module).then((open) =>
+            setCtx((x) => (x ? { ...x, shift: open[0] ?? null, alsoOpen: open.slice(1) } : x)));
           return c;
         });
       },

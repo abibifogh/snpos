@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit, mustWaitForNextShift, shouldWarnLateOrder,
   SHIFT_MAX_HOURS, SHIFT_WARN_HOURS,
-  shiftAgeOf,
+  shiftAgeOf, openShiftsFor,
 } from '../shift-rules.ts';
 
 const at = (iso: string) => new Date(iso);
@@ -219,4 +219,34 @@ test('a closed shift is never overdue, however long it was open', () => {
   // An OPEN shift still reports honestly.
   const open = { opened_at: new Date(Date.now() - 30 * HOURS).toISOString() };
   assert.equal(shiftAgeOf(open).over, true);
+});
+
+test('every shift open on a side comes back, newest first', () => {
+  /**
+   * The one that made every close look broken. Only the newest was ever
+   * returned, so a second open shift was invisible: you closed the one on
+   * screen, the email arrived, and the next one appeared in its place looking
+   * exactly like the close had failed.
+   */
+  const shifts = [
+    { $id: 'a', opened_at: '2026-08-11T06:00:00.000Z', module: 'kitchen' as const },
+    { $id: 'c', opened_at: '2026-08-13T06:00:00.000Z', module: 'kitchen' as const },
+    { $id: 'b', opened_at: '2026-08-12T06:00:00.000Z', module: 'kitchen' as const },
+    { $id: 'craft', opened_at: '2026-08-13T07:00:00.000Z', module: 'craft' as const },
+  ];
+
+  assert.deepEqual(openShiftsFor(shifts, 'kitchen').map((s) => s.$id), ['c', 'b', 'a']);
+  assert.deepEqual(openShiftsFor(shifts, 'craft').map((s) => s.$id), ['craft']);
+});
+
+test('a shift from before the two sides existed is the restaurant', () => {
+  // No module at all. A database filter would step straight over it and the
+  // shift somebody opened this morning would look like it had vanished.
+  const shifts = [{ $id: 'old', opened_at: '2026-08-11T06:00:00.000Z' }];
+  assert.deepEqual(openShiftsFor(shifts, 'kitchen').map((s) => s.$id), ['old']);
+  assert.deepEqual(openShiftsFor(shifts, 'craft'), []);
+});
+
+test('nothing open is an empty list, not a crash', () => {
+  assert.deepEqual(openShiftsFor([], 'kitchen'), []);
 });

@@ -144,6 +144,36 @@ export function shiftAgeOf(
   return shiftAge(shift.opened_at, now, maxHours);
 }
 
+/**
+ * Which of the open shifts this side is actually on, and what else is open.
+ *
+ * A venue is meant to have one open shift per side. It can end up with more:
+ * a close that half-finished, two devices opening one within a moment of each
+ * other, a night nobody closed followed by a morning somebody opened.
+ *
+ * Only one was ever returned, and the rest were invisible. Closing the one you
+ * could see put the next one on the screen, so the banner came back and the
+ * whole thing looked like a close that had not worked, when every close had
+ * worked. Nothing anywhere said there were three.
+ *
+ * Newest first, so the till works with the shift somebody just opened rather
+ * than whichever row a database happened to return. Sorted here, in memory:
+ * asking the database to sort needs an index it may not have, and a query that
+ * throws leaves every screen showing whatever it had before.
+ *
+ * Filtered by side in memory too, because shifts opened before the two sides
+ * existed carry no side at all and a database filter steps straight over them.
+ */
+export function openShiftsFor<T extends { opened_at?: string; module?: Module }>(
+  shifts: T[],
+  module: Module = 'kitchen',
+): T[] {
+  return shifts
+    .filter((s) => (s.module ?? 'kitchen') === module)
+    .slice()
+    .sort((a, b) => (b.opened_at ?? '').localeCompare(a.opened_at ?? ''));
+}
+
 /* ------------------------------------------------- orders past the limit */
 
 /**

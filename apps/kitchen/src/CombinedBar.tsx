@@ -7,7 +7,7 @@ import type { BlockerRow, CountRow, StockRow, ShiftFlow } from '@snpos/ui';
 import { resolveCounts } from '@snpos/ui';
 import {
   formatMoney, parseMoney, toInput, stockCheckRows,
-  loadPaymentMethods, openShift, loadOpenShift, shiftBlockers, expectedTakings, closeShift, openingFloats,
+  loadPaymentMethods, openShift, loadOpenShift, loadOpenShifts, shiftBlockers, expectedTakings, closeShift, openingFloats,
   recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, shouldWarnLateOrder,
   HANDOVER_ENABLED,
 } from '@snpos/core';
@@ -38,6 +38,8 @@ export function CombinedBar({
   onToast: (m: string, tone?: 'ok' | 'err') => void;
 }) {
   const [shift, setShift] = useState<Shift | null>(null);
+  /** Other shifts open on this side. Should be none; occasionally is not. */
+  const [alsoOpen, setAlsoOpen] = useState<Shift[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [opening, setOpening] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -78,7 +80,15 @@ export function CombinedBar({
   const reload = useCallback(async () => {
     // This screen is the kitchen, so it opens and closes the kitchen's shift.
     // The craft counter has its own, on the till.
-    setShift(await loadOpenShift(venue.$id, 'kitchen'));
+    //
+    // All of them, not just the one being worked on. A venue is meant to have
+    // one open per side and can end up with more; only ever fetching the first
+    // meant the others were invisible, and closing the one on screen simply
+    // put the next one there. Every close worked and none of them looked like
+    // it had.
+    const open = await loadOpenShifts(venue.$id, 'kitchen');
+    setShift(open[0] ?? null);
+    setAlsoOpen(open.slice(1));
   }, [venue.$id]);
 
   useEffect(() => { void reload(); }, [reload]);
@@ -298,6 +308,28 @@ export function CombinedBar({
           <Notice tone={age.over ? 'warn' : 'info'}>
             {shiftAgeMessage(age, SHIFT_MAX_HOURS, 'kitchen')}
             {age.over && !who?.can_close_shift && ' Ask a manager to close it.'}
+          </Notice>
+        </div>
+      )}
+
+      {/* Said out loud, because it is otherwise invisible and looks like a
+          close that did not work. Each one is closed on its own; the bar shows
+          the newest, and closing it brings the next up. */}
+      {alsoOpen.length > 0 && (
+        <div style={{ padding: '0.5rem 0.9rem' }}>
+          <Notice tone="warn">
+            <strong>
+              {alsoOpen.length === 1
+                ? 'Another shift is also open on this side.'
+                : `${alsoOpen.length} other shifts are also open on this side.`}
+            </strong>
+            <div className="small" style={{ marginTop: '0.3rem' }}>
+              There should only ever be one. Close this one and the next will appear here, until none are left.
+              Nothing is lost by doing that: each keeps whatever was taken against it.
+            </div>
+            <div className="small dim" style={{ marginTop: '0.3rem' }}>
+              Waiting: {alsoOpen.map((s) => s.code).join(', ')}
+            </div>
           </Notice>
         </div>
       )}
