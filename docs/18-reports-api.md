@@ -1,5 +1,10 @@
 # The reporting API
 
+> **Switched off.** The `notify` function's execute permission is empty, so
+> Appwrite refuses every call from outside, whatever it carries. Nothing about
+> the code has been removed: turning it back on is one line in `appwrite.json`
+> and a deploy. See "Turning it back on" at the end.
+
 A read-only door onto the records, so another system can pull the data and do
 its own analysis.
 
@@ -298,3 +303,32 @@ curl -sS -i "$BASE/reports/summary" | head -1     # expect 401
 
 The third one matters most. If it returns anything but a 401, stop and check the
 key was actually deployed.
+
+---
+
+## Turning it off, and back on
+
+There are three locks. They are independent on purpose, so no single mistake
+opens the door.
+
+1. **Appwrite's execute permission.** `"execute": []` on the notify function in
+   `appwrite.json`. Nothing outside can invoke the function at all, so no
+   request ever reaches the code. This is the outermost lock and the one
+   currently closed.
+2. **The key.** With no `REPORTS_API_KEY`, every report is refused with a 503.
+3. **The trigger check.** Anything that is not a report, a database event or the
+   hourly schedule does nothing, so an unexpected call cannot reach the parts of
+   notify that send email.
+
+**To shut it:** set `"execute": []` and run **Deploy functions**. That is the
+current state. If a domain was created for the function, it can be left; it will
+simply refuse everything. Removing it is tidier.
+
+**To open it:** set `"execute": ["any"]`, make sure the `REPORTS_API_KEY`
+repository secret is set, and run **Deploy functions**. Then check with:
+
+```bash
+curl -sS -i "$BASE/reports/summary" | head -1   # expect 401, not 200 and not 404
+```
+
+A 401 means the door is open and the lock is working. Anything else, stop.

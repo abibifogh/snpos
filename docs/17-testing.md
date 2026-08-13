@@ -186,10 +186,13 @@ Needs a shift whose opened_at is backdated, or patience.
 
 ### L. The reporting API
 
-Needs `REPORTS_API_KEY` set and functions deployed. See `docs/18-reports-api.md`.
+**Currently switched off** at the function's execute permission, so only L9 and
+L10 apply. The rest are for whenever it is turned back on. See
+`docs/18-reports-api.md`.
 
 | # | Do this | Must be true |
 |---|---|---|
+| L0 | Call any report while it is off | Refused by Appwrite before any code runs |
 | L1 | Call any report with no key | **401.** Nothing is served |
 | L2 | Call with a wrong key | 401, and it says no more than that |
 | L3 | Call with the right key | Data, with `currency` on the response |

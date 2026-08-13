@@ -66,8 +66,8 @@
       "$id": "notify",
       "name": "Notify: emails and reports",
       "runtime": "node-18.0",
-      "_execute_note": "Open so the read-only reporting API can be called from outside. Every request to it is refused unless it carries REPORTS_API_KEY, and anything that is not a report, an event or the timer does nothing at all.",
-      "execute": ["any"],
+      "_execute_note": "Closed. The reporting API is built and tested but switched off at the door: with execute empty, Appwrite refuses every call from outside, whatever it carries. To reopen, set this to [\"any\"] and deploy. The key check and the trigger check inside the function are unchanged and remain the second and third locks.",
+      "execute": [],
       "events": [
         "databases.snpos.collections.orders.documents.*.update",
         "databases.snpos.collections.shifts.documents.*.update",
