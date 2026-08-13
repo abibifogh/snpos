@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
-import { db, DB_ID, ID, listAll, humanError } from '../lib';
+import { db, DB_ID, ID, listAll, humanError, saveDropping } from '../lib';
 import {
   formatMoney, parseMoney, toInput, previewUrl, Query, loadConsignors, loadVariants, canEditCatalogue,
   loadVariantTypes,
@@ -306,13 +306,30 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
       maker_note: editing.maker_note ?? '',
     };
     try {
-      const itemId = editing.$id
-        ? (await db.updateDocument(DB_ID, 'menu_items', editing.$id, payload)).$id
-        : (await db.createDocument(DB_ID, 'menu_items', ID.unique(), payload)).$id;
+      /**
+       * Saved field by field rather than all or nothing.
+       *
+       * Appwrite refuses an entire document when one attribute is unknown, and
+       * this payload carries fields that arrive with a release: a database
+       * provisioned before the last deploy has never heard of them. Without
+       * this, a craft-shop column would take down saving a plate of jollof,
+       * because the payload is one payload for both sides. The restaurant is
+       * the part already earning and it must not be able to break on the way
+       * past somewhere it has no business being.
+       *
+       * Whatever could not be stored is named rather than swallowed.
+       */
+      const { id: itemId, dropped } = await saveDropping('menu_items', editing.$id ?? null, payload);
 
       await syncLinks(itemId);
       setEditing(null);
       await load();
+      if (dropped.length > 0) {
+        toast(
+          `Saved, but ${dropped.join(', ')} could not be stored. Run Provision, then save this again.`,
+          'err',
+        );
+      }
       toast('Saved');
     } catch (e) {
       setError(humanError(e));

@@ -1,4 +1,4 @@
-export { account, db, storage, teams, client, DB_ID, ID, Query, Permission, Role, listAll } from '@snpos/core';
+export { account, db, storage, teams, client, DB_ID, ID, Query, Permission, Role, listAll, saveDropping } from '@snpos/core';
 export { applyTheme } from '@snpos/ui';
 
 import { applyTheme } from '@snpos/ui';
