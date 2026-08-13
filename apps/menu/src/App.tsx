@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Modal, Spinner, Notice, useToast, Logo, HelpModal, OfflineBar, useOfflineQueue } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
-  ensureGuestSession, db, DB_ID, Query, listAll, loadMenu, visibleSections, computeTotals,
+  ensureGuestSession, db, DB_ID, Query, listAll, loadMenu, visibleSections, computeTotals, selfOrderModule,
   formatMoney, isAvailable, parseWindows, nextAvailable, describeWindows, loadFeatures, isEnabled,
   articlesFor, HELP_AREAS,
   featureConfig, previewUrl, humanError,
@@ -151,7 +151,13 @@ export function App() {
           .filter((t) => t.active !== false && t.guest_selectable !== false)
           .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.label.localeCompare(b.label));
         setBoot({ settings, venue, table, seating, menu, features });
-        setActiveSection(visibleSections(menu)[0]?.category.$id ?? null);
+        // The first section of the menu this guest is actually being shown.
+        // Reading it off the whole catalogue could open the page on a heading
+        // that is not in the list below it.
+        const side = selfOrderModule(settings);
+        setActiveSection(
+          visibleSections(menu).find((sec) => (sec.category.module ?? 'kitchen') === side)?.category.$id ?? null,
+        );
       } catch (e) {
         setError(humanError(e));
       }
@@ -324,13 +330,24 @@ export function App() {
   // since turned off would be the worst of both.
   const inGroupMode = groupMode && isEnabled(features, 'group_orders');
 
+  /**
+   * One side of the business, never both.
+   *
+   * A guest who scans a table code is in the dining room, and the shop's
+   * baskets and beads were appearing on that menu alongside the food. Worse
+   * than untidy: nothing here says which side an order is for, so a basket
+   * ordered from a phone became a kitchen ticket, landed on the pass and
+   * alarmed a cook about a woven basket nobody can cook.
+   */
+  const side = selfOrderModule(settings);
+
   // Two menus, one list. Group-only sections are hidden from the ordinary
   // menu and are the only thing shown on the group one, a hotel party
   // ordering platters does not want the a la carte list, and a walk-in
   // should not be offered a set meal for twenty.
-  const sections = visibleSections(menu).filter((sec) =>
-    inGroupMode ? sec.category.group_only : !sec.category.group_only,
-  );
+  const sections = visibleSections(menu)
+    .filter((sec) => (sec.category.module ?? 'kitchen') === side)
+    .filter((sec) => (inGroupMode ? sec.category.group_only : !sec.category.group_only));
   const venueHours = parseWindows(venue.opening_hours);
   const venueOpen = isAvailable(venueHours);
   const preordersOn = isEnabled(features, 'preorders');

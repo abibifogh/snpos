@@ -3,7 +3,7 @@ import { Button, Modal, Input, Field, Notice, Select, FormError } from '@snpos/u
 import {
   computeTotals, formatMoney, lineTotal, createOrder, parseWindows,
   isEnabled, featureConfig, db, DB_ID, ID, Query, isProvisionalOrderNo,
-  ensureGuestSession, humanError,
+  ensureGuestSession, humanError, selfOrderModule,
 } from '@snpos/core';
 import type { CartLine, Settings, Venue, FeatureMap, LoadedMenu, Doc, Order } from '@snpos/core';
 
@@ -254,6 +254,14 @@ export function CartSheet({
       for (const line of cart) prepById[line.menu_item_id] = menu.byId[line.menu_item_id]?.item.prep_minutes ?? 10;
 
       const { order } = await createOrder({
+        // Said out loud, not left to the default.
+        //
+        // Nothing here named a side, so every phone order was a kitchen order
+        // whatever was in it. Combined with a menu that listed both
+        // catalogues, a guest could order a woven basket and put it on the
+        // pass as something to cook. The same value decides which sections are
+        // shown, so what is offered and what is recorded can never disagree.
+        module: selfOrderModule(settings),
         venueId: venue.$id,
         lines: cart,
         settings,

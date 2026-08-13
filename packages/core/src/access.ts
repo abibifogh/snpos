@@ -63,6 +63,22 @@ export function modulesOf(settings: Settings | null): Modules {
   return on.kitchen || on.craft ? on : { kitchen: true, craft: false };
 }
 
+/**
+ * Which catalogue a customer scanning a code should be shown.
+ *
+ * The restaurant's, wherever there is one. A phone menu is reached through a
+ * table code or a walk-in code, and both of those are dining-room things; a
+ * business running both sides has a shop counter for the shop, which is where
+ * baskets are bought.
+ *
+ * A shop with no kitchen still gets its own goods, rather than an empty page.
+ * That is the whole reason this reads the settings instead of saying 'kitchen'.
+ */
+export const selfOrderModule = (settings: Settings | null): Module => {
+  const { kitchen } = modulesOf(settings);
+  return kitchen ? 'kitchen' : 'craft';
+};
+
 export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'dashboard', label: 'Dashboard', path: '/', group: 'Overview' },
   { key: 'orders', label: 'Orders', path: '/orders', group: 'Overview' },

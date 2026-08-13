@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   modulesOf, modulesForStaff, parseAccess, canOpen, inTrade, sectionsFor,
-  canEditCatalogue, ADMIN_SECTIONS, DEFAULT_ACCESS,
+  canEditCatalogue, selfOrderModule, ADMIN_SECTIONS, DEFAULT_ACCESS,
 } from '../access.ts';
 import type { Settings, StaffProfile } from '../types.ts';
 
@@ -104,4 +104,23 @@ test('a craft-only person is offered no kitchen pages', () => {
   assert.ok(keys.includes('consignors'));
   assert.ok(!keys.includes('waste'), 'a shop has no waste log');
   assert.ok(!keys.includes('stations'));
+});
+
+test('a customer scanning a code is shown one catalogue, and it is the restaurant\'s', () => {
+  /**
+   * The bug this pins down: the phone menu listed both catalogues, so a guest
+   * at a table was offered woven baskets alongside the jollof. Nothing on the
+   * order said which side it was for either, so ordering one put a basket on
+   * the kitchen pass as something to cook.
+   */
+  assert.equal(selfOrderModule({ kitchen_enabled: true, craft_enabled: true } as never), 'kitchen');
+  assert.equal(selfOrderModule({ kitchen_enabled: true, craft_enabled: false } as never), 'kitchen');
+
+  // A shop with no kitchen still gets a working menu rather than a blank page.
+  assert.equal(selfOrderModule({ kitchen_enabled: false, craft_enabled: true } as never), 'craft');
+
+  // Nothing configured, and setups from before the switches existed.
+  assert.equal(selfOrderModule(null), 'kitchen');
+  assert.equal(selfOrderModule({} as never), 'kitchen');
+  assert.equal(selfOrderModule({ business_type: 'craft_shop' } as never), 'craft');
 });

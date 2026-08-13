@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck, tests, schema check, build. Run this before deploying.
 ```
 
-61 tests, no database, about half a second. They cover the sums that decide what
+62 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -28,7 +28,7 @@ and no caller had to change.
 |---|---|
 | `money.test.ts` | The commission split never loses a pesewa at any price or rate, as a share or as a flat amount per piece. What a statement's four sections contain, and that only the ledger touches the balance. Tax, service and discounts. Splitting one tender across several bills. |
 | `parity.test.ts` | **The browser and the server agree.** |
-| `access.test.ts` | Who can open what, including the bug that hid the craft shop from every manager. |
+| `access.test.ts` | Who can open what, including the bug that hid the craft shop from every manager, and which catalogue a customer's phone is shown. |
 | `timing.test.ts` | Quoted waits, the hour cap, when a ticket is late, the cancel window, cash handovers. |
 | `shift-rules.test.ts` | Shift codes per side, the 24 hour limit including a device with the wrong clock, which orders a shift may close over, and that an order once moved is payable on the shift that took it. |
 
@@ -89,6 +89,9 @@ not just what to press.
 | C11 | Record spend from the craft till | Saved against the shop. **No ingredient list** on the form |
 | C12 | Open one shift on each side | Codes read `BIST…` and `CRAF…` |
 | C13 | Craft till, press This shift | This shift's sales and spending. **No kitchen tickets** |
+| C14 | Scan a table QR as a customer | Food only. **No craft products anywhere on the menu** |
+| C15 | Order from that phone menu | Lands as a kitchen order. Nothing craft can reach the pass |
+| C16 | A shop with the kitchen switched off, scan its code | Shows the shop's goods, not a blank page |
 
 ### D. Money that must never double
 
