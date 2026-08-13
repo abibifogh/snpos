@@ -638,7 +638,18 @@ export const COLLECTIONS = [
     // session that lets them order is indistinguishable from any other. Staff
     // read the collection; a guest is granted read on their own order document
     // as it is created (see createOrder), which is all they ever needed.
-    perms: { read: ALL_STAFF, create: ['users'], update: ALL_STAFF, delete: [] },
+    //
+    // delete is an admin's, and nobody else's. It was nobody's at all, which
+    // read as "an order is never thrown away" and is right for a cook, a
+    // waiter and a cashier — an order is the record that money is owed, and
+    // deleting one is how a night's takings quietly shrink.
+    //
+    // But the Erase records page is an admin deliberately clearing a period,
+    // and it could not: the deletes failed, silently, while the same run
+    // removed the order's ITEMS, which staff may delete. So a purge left every
+    // order in place with nothing on it, and reported success. Something a
+    // screen offers has to be something the database allows.
+    perms: { read: ALL_STAFF, create: ['users'], update: ALL_STAFF, delete: ADMIN },
     attributes: [
       ['order_no', 's', 20, true],
       ['idem_key', 's', 64, true],
@@ -828,7 +839,10 @@ export const COLLECTIONS = [
     id: 'payments',
     name: 'Payments',
     // Taking money is front-line work; reversing it is not.
-    perms: { read: ALL_STAFF, create: ALL_STAFF, update: MGMT, delete: [] },
+    // delete is an admin's, for the Erase records page and nothing else. A
+    // payment is the record that money came in; a cashier who could remove one
+    // could remove a night's takings. Nobody else has it.
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: MGMT, delete: ADMIN },
     attributes: [
       ['order_id', 's', 64, true],
       ['shift_id', 's', 64, true],
@@ -856,7 +870,9 @@ export const COLLECTIONS = [
     // a decision the restaurant makes per person (can_open_shift on their
     // profile), not one we make for them by job title. On a quiet shift the
     // cook IS the cashier.
-    perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: [] },
+    // delete is an admin's, for the Erase records page. A shift is what the
+    // money hangs off, so it goes last and only ever deliberately.
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: ADMIN },
     attributes: [
       ['code', 's', 40, true],
       ['status', 'e', ['open', 'closing', 'closed', 'reopened'], true, 'open'],
@@ -1118,7 +1134,9 @@ export const COLLECTIONS = [
   {
     id: 'shift_stock_checks',
     name: 'Shift stock checks',
-    perms: { read: ALL_STAFF, create: ['team:cashiers', 'team:cooks', ...MGMT], update: ['team:cashiers', 'team:cooks', ...MGMT], delete: [] },
+    // delete is an admin's, so a shift can be erased with its counts rather
+    // than leaving rows pointing at a shift that no longer exists.
+    perms: { read: ALL_STAFF, create: ['team:cashiers', 'team:cooks', ...MGMT], update: ['team:cashiers', 'team:cooks', ...MGMT], delete: ADMIN },
     attributes: [
       ['shift_id', 's', 64, true],
       ['ingredient_id', 's', 64, true],
@@ -1253,7 +1271,9 @@ export const COLLECTIONS = [
     name: 'Stock movements',
     // A movement is something that happened. It is never edited; a mistake is
     // corrected by recording the opposite movement, so the trail stays honest.
-    perms: { read: ALL_STAFF, create: ALL_STAFF, update: [], delete: [] },
+    // delete is an admin's, for the Erase records page. Erasing these does not
+    // recalculate what is on the shelf, which is said on the page itself.
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: [], delete: ADMIN },
     attributes: [
       ['ingredient_id', 's', 64, true],
       ['type', 'e', ['purchase', 'sale_depletion', 'waste', 'adjustment', 'count_correction', 'transfer'], true],

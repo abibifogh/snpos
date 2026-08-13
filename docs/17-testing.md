@@ -129,6 +129,9 @@ not just what to press.
 
 | # | Do this | Must be true |
 |---|---|---|
+| E5 | Admin → Erase records, erase a day of orders | **They are gone and stay gone** after a reload |
+| E6 | Look at any order left from a neighbouring day | Still has its items. Nothing was stripped |
+| E7 | Run an erase as a manager, not an admin | Refused, **and it says so**. Nothing half-deleted |
 | E1 | Sign in as a cashier, open Products | Can look. **No Add, no Save, no Delete** |
 | E2 | Staff set to "Craft shop only" | No kitchen pages, no stations, no waste |
 | E3 | Staff set to "Both" | Both groups in the sidebar |

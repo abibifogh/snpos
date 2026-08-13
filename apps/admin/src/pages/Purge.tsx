@@ -139,29 +139,71 @@ export function PurgePage() {
     setBusy(true);
     setError(null);
     let deleted = 0;
+    /**
+     * What would not go, and why.
+     *
+     * Every delete here was wrapped in a catch that threw the reason away, and
+     * the counter was incremented regardless — so a run that deleted nothing
+     * at all still announced that it had. That is exactly what happened:
+     * orders could not be deleted by anybody, the same run removed their
+     * ITEMS, which staff may delete, and the page reported success. Every
+     * order stayed in the list with nothing on it.
+     *
+     * A failure that reports itself as a success is worse than a failure.
+     */
+    const refused: Record<string, number> = {};
+    let firstReason = '';
+    const tryDelete = async (collection: string, id: string) => {
+      try {
+        await db.deleteDocument(DB_ID, collection, id);
+        deleted += 1;
+      } catch (e) {
+        refused[collection] = (refused[collection] ?? 0) + 1;
+        if (!firstReason) firstReason = humanError(e);
+      }
+    };
     try {
       for (const g of GROUPS.filter((x) => picked.includes(x.key))) {
         setProgress(`Reading ${g.label.toLowerCase()}…`);
         const parents = await rowsIn(g.collection);
         if (parents.length === 0) continue;
 
+        /**
+         * Ask whether the parent can go, before removing anything it owns.
+         *
+         * Children are deleted first below, which is right when the run
+         * works: a line with no order is worse than one that was removed. It
+         * is exactly wrong when the parent cannot be deleted at all, and that
+         * was the case for orders — nobody could delete one, staff could
+         * delete their items, so a purge stripped every order bare and left
+         * them all in the list.
+         *
+         * One real delete answers the question that no amount of reading can.
+         * If it is refused, the group is left completely untouched.
+         */
+        const probe = parents[0];
+        await tryDelete(g.collection, probe.$id);
+        if (refused[g.collection]) {
+          setProgress('');
+          continue;
+        }
+        const rest = parents.slice(1);
+
         // Children first, in id batches, a headless line is worse than a
         // deleted one, so nothing is orphaned even if this stops half way.
         for (const child of g.children ?? []) {
           for (let i = 0; i < parents.length; i += 25) {
+            // Every parent, the probed one included: its children still need
+            // to go now that it has.
             const ids = parents.slice(i, i + 25).map((p) => p.$id);
             const rows = await listAll<Doc>(child.collection, [Query.equal(child.field, ids)]).catch(() => []);
-            for (const r of rows) {
-              await db.deleteDocument(DB_ID, child.collection, r.$id).catch(() => undefined);
-              deleted += 1;
-            }
+            for (const r of rows) await tryDelete(child.collection, r.$id);
           }
         }
 
-        let done = 0;
-        for (const p of parents) {
-          await db.deleteDocument(DB_ID, g.collection, p.$id).catch(() => undefined);
-          deleted += 1;
+        let done = 1;
+        for (const p of rest) {
+          await tryDelete(g.collection, p.$id);
           done += 1;
           if (done % 20 === 0) setProgress(`${g.label}: ${done} of ${parents.length}`);
         }
@@ -176,13 +218,31 @@ export function PurgePage() {
         action: 'records_erased',
         entity_type: 'period',
         entity_id: `${from}..${to}`,
-        after: JSON.stringify({ from, to, groups: picked, deleted, scope: 'all venues' }),
+        after: JSON.stringify({
+          from, to, groups: picked, deleted, scope: 'all venues',
+          // What would not go is part of the record too. "Where did March go"
+          // and "why is March still here" are both questions somebody asks.
+          refused: Object.keys(refused).length ? refused : undefined,
+        }),
       }).catch(() => undefined);
 
       setConfirming(false);
       setTyped('');
       setCounts(null);
       setPicked([]);
+
+      const stuck = Object.entries(refused);
+      if (stuck.length) {
+        // Named, counted, and left on screen rather than in a toast that goes
+        // away. Somebody has to know the records are still there.
+        setError(
+          `${deleted} erased, but ${stuck.reduce((a, [, n]) => a + n, 0)} could not be: `
+          + `${stuck.map(([c, n]) => `${n} in ${c}`).join(', ')}. `
+          + (firstReason ? `${firstReason} ` : '')
+          + 'If this says permission, run "Provision Appwrite" in GitHub Actions and try again.',
+        );
+        return;
+      }
       toast(`${deleted} record${deleted === 1 ? '' : 's'} erased`);
     } catch (e) {
       setError(humanError(e));
