@@ -509,3 +509,60 @@ export async function loadOpenOrders(venueId: string, module: Module = 'kitchen'
 
 export const orderItemsFor = (orderId: string): Promise<OrderItem[]> =>
   listAll<OrderItem>('order_items', [Query.equal('order_id', orderId)]);
+
+/**
+ * Work an order's totals out again from the lines it actually has.
+ *
+ * For orders whose stored total is already wrong. The server reprices an order
+ * a second after it lands, and it used to start as soon as it saw the FIRST of
+ * its lines — so an order read a moment too early was priced from one dish of
+ * three, and that figure was written onto the order and stayed. The ticket
+ * showed a number that did not add up to what was ordered, and reloading
+ * changed nothing, because the stored figure itself was wrong.
+ *
+ * That is fixed at the source, but a wrong number already written stays wrong
+ * until somebody works it out again. This is that.
+ *
+ * The lines are taken as they stand — they were priced from the menu when the
+ * order was placed, and re-pricing them from today's menu would rewrite what a
+ * customer was charged weeks ago. Voided lines are left out, and the discount
+ * the order already carries is kept.
+ *
+ * Returns what changed, or null when the figures were right all along, so a
+ * caller can say "nothing to fix" rather than claiming to have fixed it.
+ */
+export async function recomputeOrderTotals(
+  order: Pick<Order, '$id' | 'subtotal' | 'total' | 'discount_total'>,
+  settings: Settings,
+): Promise<{ from: number; to: number } | null> {
+  const lines = await orderItemsFor(order.$id);
+  if (lines.length === 0) return null;
+
+  // Each stored line total, taken whole. `lineTotal` multiplies unit by
+  // quantity, so a line is presented as one unit of itself.
+  const totals = computeTotals({
+    lines: lines
+      .filter((l) => l.status !== 'void')
+      .map((l) => ({
+        key: l.$id,
+        menu_item_id: l.menu_item_id,
+        name: l.name_snapshot,
+        unit_price: l.line_total,
+        qty: 1,
+        addons: [],
+      })),
+    discount: order.discount_total ?? 0,
+    settings,
+  });
+
+  if (totals.subtotal === order.subtotal && totals.total === order.total) return null;
+
+  await db.updateDocument(DB_ID, 'orders', order.$id, {
+    subtotal: totals.subtotal,
+    discount_total: totals.discount_total,
+    service_total: totals.service_total,
+    tax_total: totals.tax_total,
+    total: totals.total,
+  });
+  return { from: order.total, to: totals.total };
+}

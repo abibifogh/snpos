@@ -538,18 +538,57 @@ export default async ({ req, res, log, error }) => {
       }
     }
 
-    // Order items are written just after the order, so give them a moment
-    // rather than judging an order that only looks empty.
+    /**
+     * Wait for ALL of the order's lines, not for the first of them.
+     *
+     * The order is written and its lines follow, one document each, landing
+     * within a moment but not together. This stopped as soon as it saw any
+     * line at all — so a three-dish order read a moment too early was repriced
+     * from one dish, and the wrong subtotal and total were written back onto
+     * the order and stayed there. The ticket then showed a figure that did not
+     * add up to what was ordered, for ever, and no amount of reloading fixed
+     * it because the stored figure itself was wrong.
+     *
+     * How many to expect is not something to guess at: the order carries its
+     * own subtotal, which is the sum of the line totals worked out from the
+     * whole basket before any of them were written. That is used ONLY to know
+     * the lines have all arrived. What they cost is still worked out from the
+     * menu below, because a client is never trusted on a price — but a client
+     * saying "there were three of them" is a different question from a client
+     * saying what they cost.
+     */
+    const claimed = order.subtotal || 0;
+    const sumOf = (rows) => rows.reduce((n, i) => n + (i.line_total || 0), 0);
     let items = { documents: [], total: 0 };
-    for (let attempt = 0; attempt < 5; attempt++) {
+    for (let attempt = 0; attempt < 6; attempt++) {
       items = await db.listDocuments(DB_ID, 'order_items', [
         Query.equal('order_id', order.$id),
         Query.limit(100),
       ]);
-      if (items.total > 0) break;
+      // Greater or equal, so a line voided between the write and this read
+      // does not keep it waiting for value that has been taken away.
+      if (items.total > 0 && (claimed <= 0 || sumOf(items.documents) >= claimed)) break;
       await new Promise((r) => setTimeout(r, 700));
     }
     if (items.total === 0) return res.json({ ok: true, skipped: 'no items yet' });
+
+    /**
+     * Still short after all that, so write nothing.
+     *
+     * Repricing from a partial set produces a total LOWER than the order's
+     * own, and writing it replaces a figure that is probably right with one
+     * that is certainly wrong. Leaving the order alone keeps the sender's
+     * total, which is unverified but complete; the mismatch is logged so it
+     * can be looked at rather than silently accepted.
+     */
+    if (claimed > 0 && sumOf(items.documents) < claimed) {
+      error(
+        `Not repricing ${order.order_no || order.$id}: found ${items.total} line(s) worth `
+        + `${sumOf(items.documents)} against an order claiming ${claimed}. `
+        + 'Some of its lines never arrived, so the order keeps the total it was sent with.',
+      );
+      return res.json({ ok: true, skipped: 'lines incomplete' });
+    }
 
     // Per-venue price overrides beat the base menu price.
     const overrides = await db.listDocuments(DB_ID, 'venue_menu_items', [

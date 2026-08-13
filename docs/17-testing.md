@@ -175,6 +175,8 @@ Run these every time. The restaurant is the part that is already earning.
 | F3v | Order **three different dishes** at once | All three on the ticket. **Amounts add up to the order** |
 | F3w | Order five dishes on a slow connection | Still all five. The screen keeps asking until they add up |
 | F3x | Void a line at the till, watch the ticket | No warning. A void is not a missing line |
+| F3y | Order three dishes, read the total on the ticket | **Adds up to all three.** Not one of them |
+| F3z | Admin → Orders, open one, press Recheck total | Says it already matches, or corrects it and says by how much |
 | F3e | An order genuinely sent with no lines | Says so, after a minute, in warning colour |
 | F4 | Cancel within two minutes | Cancelled. After two minutes, refused |
 | F5 | Close a shift with an unpaid order | Blocked, and it names the order |

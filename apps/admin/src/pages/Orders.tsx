@@ -3,7 +3,7 @@ import { Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinne
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, Query, toCsv, downloadCsv, buildReceiptHtml, openPrintable, receiptForOrder,
-  settleOrderNumbers,
+  settleOrderNumbers, recomputeOrderTotals,
 } from '@snpos/core';
 import type { Order, OrderItem, StaffProfile, Doc, Venue } from '@snpos/core';
 import { useSession } from '../session';
@@ -65,6 +65,27 @@ export function OrdersPage() {
   const [error, setError] = useState<string | null>(null);
 
   const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+
+  /**
+   * For orders whose stored total is already wrong. See recomputeOrderTotals:
+   * an order repriced from one line of three kept that figure, and reloading
+   * never helped because the stored number itself was the wrong one.
+   */
+  const [fixing, setFixing] = useState(false);
+  const fixTotals = async (order: Order) => {
+    if (!settings) return;
+    setFixing(true);
+    try {
+      const changed = await recomputeOrderTotals(order, settings);
+      if (!changed) { toast('That total already matches its items.'); return; }
+      toast(`Total corrected from ${money(changed.from)} to ${money(changed.to)}`);
+      await load();
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setFixing(false);
+    }
+  };
 
   const load = async () => {
     setOrders(null);
@@ -387,6 +408,30 @@ export function OrdersPage() {
               </tbody>
             </table>
           </div>
+          {/*
+            For orders whose stored total is already wrong.
+
+            The server reprices an order a second after it lands, and it used
+            to begin as soon as it saw the first of its lines — so an order
+            read a moment too early was priced from one dish of three, and that
+            figure was written onto the order and stayed. Reloading changed
+            nothing, because the stored figure itself was wrong.
+
+            Fixed at the source, but a wrong number already written stays wrong
+            until somebody works it out again. The lines are taken as they
+            stand, so this cannot rewrite what a customer was charged; it only
+            makes the order agree with its own items.
+          */}
+          {(items[open.$id] ?? []).length > 0 && (
+            <div className="row" style={{ justifyContent: 'space-between', marginTop: '0.6rem' }}>
+              <span className="small dim">
+                If this total does not match the items above, work it out again from them.
+              </span>
+              <Button size="sm" loading={fixing} onClick={() => void fixTotals(open)}>
+                Recheck total
+              </Button>
+            </div>
+          )}
 
           <h3 style={{ margin: '1.2rem 0 0.4rem' }}>Payment</h3>
           {payments.filter((p) => p.order_id === open.$id).length === 0 ? (
