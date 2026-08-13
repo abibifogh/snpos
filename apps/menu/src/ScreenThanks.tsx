@@ -6,12 +6,16 @@ import type { Settings, Venue } from '@snpos/core';
 /**
  * How long the thank-you stays before the menu comes back.
  *
- * Long enough to read the number and take it in, short enough that the person
- * behind is not waiting on a screen showing somebody else's order. Thirty
- * seconds is the owner's figure and it matches what happens in a queue: the
- * customer steps away as soon as they have the wait.
+ * Ten seconds, which is about how long a queue actually gives you: somebody
+ * reads their number, reads the wait, and steps away. It was half a minute,
+ * and half a minute is a long time to stand behind a screen still showing the
+ * order of the person who has already gone.
+ *
+ * Nothing is lost by cutting it. The number is called out at the counter, and
+ * anybody who wants longer simply does not walk away — the countdown is on
+ * screen, so they can see what it is about to do.
  */
-export const SCREEN_THANKS_MS = 30_000;
+export const SCREEN_THANKS_MS = 10_000;
 
 /**
  * What a shared ordering screen shows after an order is sent.
