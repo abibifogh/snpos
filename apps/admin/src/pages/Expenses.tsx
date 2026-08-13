@@ -508,10 +508,15 @@ export function ExpensesPage() {
             </Field>
           )}
 
-          {(editing.paid_to_kind === 'open_market' || editing.paid_to_kind === 'other') && (
+          {/* Only where a name is the thing that is missing. A supplier and a
+              member of staff have both been picked from a list already, and the
+              open market has no name to give. */}
+          {(editing.paid_to_kind === 'other' || editing.paid_to_kind === 'staff') && (
             <Field
               label="Name"
-              hint={editing.paid_to_kind === 'open_market' ? 'The market or stall, if it is worth recording. Leave blank for just "Open market".' : 'Whoever received the money.'}
+              hint={editing.paid_to_kind === 'staff'
+                ? 'Optional. Only if the person is not in the list above.'
+                : 'Whoever received the money.'}
             >
               <Input value={editing.payee ?? ''} onChange={(e) => setEditing({ ...editing, payee: e.target.value })} />
             </Field>

@@ -77,7 +77,12 @@ export function payeeLabel(
   parts: { supplierName?: string; staffName?: string; payee?: string },
 ): string {
   if (kind === 'supplier') return parts.supplierName?.trim() ?? '';
-  if (kind === 'staff') return parts.staffName?.trim() ?? '';
+  // The chosen member of staff, or a typed name when the person is not on the
+  // list. Without the fallback the Name box beside the staff dropdown would
+  // take an answer and throw it away, which is worse than not asking.
+  if (kind === 'staff') return parts.staffName?.trim() || parts.payee?.trim() || '';
+  // No name is asked for at the open market, because there is rarely one to
+  // give. Anything already recorded on an older row still reads.
   if (kind === 'open_market') return parts.payee?.trim() || 'Open market';
   return parts.payee?.trim() ?? '';
 }

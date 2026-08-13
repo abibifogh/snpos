@@ -140,7 +140,14 @@ export function ExpenseModal({
     if (amount === null || amount <= 0) { setError('Enter the amount spent.'); return; }
     if (!methodId) { setError('Choose how it was paid.'); return; }
     if (paidToKind === 'supplier' && !supplierId) { setError('Choose which supplier was paid.'); return; }
-    if (paidToKind === 'staff' && !staffId) { setError('Choose which member of staff took the money.'); return; }
+    // Either the person from the list, or their name typed in. Somebody who
+    // has left, or a casual hand for the day, is still somebody the money went
+    // to, and refusing to record that is how it becomes an unexplained
+    // shortage instead.
+    if (paidToKind === 'staff' && !staffId && !payee.trim()) {
+      setError('Choose which member of staff took the money, or type their name.');
+      return;
+    }
     for (const l of filledLines) {
       if (parseMoney(l.costText, decimals) === null) {
         setError('One of the items does not have a valid unit cost.');
@@ -359,11 +366,16 @@ export function ExpenseModal({
           </Select>
         </Field>
       )}
-      {(paidToKind === 'open_market' || paidToKind === 'other') && (
+      {/* Only where a name is the thing that is missing.
+          A supplier and a member of staff have both already been picked from a
+          list, and the open market has no name to give: asking for one there
+          was asking a question with no answer, which is how a form teaches
+          people to skip past its boxes. */}
+      {(paidToKind === 'other' || paidToKind === 'staff') && (
         <Field
           label="Name"
-          hint={paidToKind === 'open_market'
-            ? 'The market or stall, if it is worth recording. Leave blank for just "Open market".'
+          hint={paidToKind === 'staff'
+            ? 'Optional. Only if the person is not in the list above.'
             : 'Whoever received the money.'}
         >
           <Input value={payee} onChange={(e) => setPayee(e.target.value)} />
