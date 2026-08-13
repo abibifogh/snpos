@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck (apps AND tests), tests, schema check, build. Before deploying.
 ```
 
-116 tests, no database, about half a second. They cover the sums that decide what
+121 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -33,6 +33,7 @@ and no caller had to change.
 | `stock-import.test.ts` | Everything a bulk upload must refuse, which is most of what it does. |
 | `timing.test.ts` | Quoted waits, the hour cap, when a ticket is late, the cancel window, cash handovers. |
 | `seating.test.ts` | That the ticket names the place the guest actually picked, in the guest's own words. |
+| `expenses.test.ts` | Whether a drawer is counted short for money it never held, and who spending is filed against. |
 | `shift-rules.test.ts` | Shift codes per side, the 24 hour limit including a device with the wrong clock, which orders a shift may close over, and that an order once moved is payable on the shift that took it. |
 
 ### The parity suite is the important one
@@ -97,6 +98,15 @@ not just what to press.
 | C11b | Pick an item whose cost is not set | Cost box **blank**, nothing to clear first |
 | C11c | Two items, then GH₵3 in the Extra box | Total is items **plus 3**, and it saves that |
 | C11d | Read that expense in admin | Note says GH₵3 was not itemised |
+| C11e | Record 5 kg of rice for GH₵120 | Line shows **GH₵24.00 per kg**. No unit price to type |
+| G9 | Record spend, answer "from the money taken this shift" | Close the shift: **Should be in hand is lower by it** |
+| G10 | Record spend, answer "from my own money" | Recorded, listed at close, **not taken off the count** |
+| G11 | This shift → Money out | Every spend listed, with where the money came from |
+| G12 | Press Correct on one, change the amount | Saved. Close screen uses the new figure |
+| G13 | Close the shift, press Correct again | **Not offered.** That is an admin's from here |
+| G14 | Admin → Expenses, switch a closed shift's spend to own money | Saved, and **that shift is worked out again** |
+| G15 | Look at the shift after G14 | Expected and over/short have moved. **Counted is untouched** |
+| G16 | An ingredient with "Counted at the end of a shift" off | **Not on the closing list.** Still enterable on a spend |
 | C12 | Open one shift on each side | Codes read `BIST…` and `CRAF…` |
 | C13 | Craft till, press This shift | This shift's sales and spending. **No kitchen tickets** |
 | C14 | Scan a table QR as a customer | Food only. **No craft products anywhere on the menu** |

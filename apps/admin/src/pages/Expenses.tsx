@@ -4,7 +4,7 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, uploadFile, downloadUrl, deleteFile, receiveStock, Query,
   PAID_TO_KINDS, payeeLabel as sharedPayeeLabel, legacyExpenseCategory as legacyFor,
-  isPostableExpenseAccount, expenseMethods, modulesOf,
+  isPostableExpenseAccount, expenseMethods, modulesOf, recomputeClosedShift,
 } from '@snpos/core';
 import type { Doc, Ingredient, PaidToKind } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
@@ -24,6 +24,8 @@ interface Expense extends Doc {
   paid_to_staff_id?: string;
   amount: number;
   paid_from_method_id: string;
+  /** Whether the drawer is short by this. See fromTakings in core. */
+  from_takings?: boolean;
   note?: string;
   receipt_file_id?: string;
   created_by: string;
@@ -225,6 +227,8 @@ export function ExpensesPage() {
         payee: payeeLabel(kind, editing),
         amount,
         paid_from_method_id: editing.paid_from_method_id,
+        // Absent means yes, for every row written before the question existed.
+        from_takings: editing.from_takings !== false,
         // Which side's books this comes out of. Defaults to the kitchen for a
         // business that runs one side, where the question has one answer.
         module: editing.module ?? 'kitchen',
@@ -236,6 +240,24 @@ export function ExpensesPage() {
       const expenseId = editing.$id
         ? (await db.updateDocument(DB_ID, 'shift_expenses', editing.$id, payload)).$id
         : (await db.createDocument(DB_ID, 'shift_expenses', ID.unique(), payload)).$id;
+
+      /**
+       * A shift that has already closed is worked out again.
+       *
+       * Its expected figures and its over-or-short were written at the moment
+       * it closed and do not recompute themselves. Without this, saying "that
+       * taxi was my own money" a week later corrects the expense and leaves
+       * the shift still reporting a shortage nobody caused, which is the whole
+       * reason somebody went looking for the setting.
+       *
+       * What was counted is never touched. A person counted that, it is the
+       * one figure here that was never derived, and nothing found out
+       * afterwards changes what was in the till that night.
+       */
+      let recomputed = false;
+      if (payload.shift_id) {
+        recomputed = (await recomputeClosedShift(payload.shift_id).catch(() => null)) !== null;
+      }
 
       // Each line is written, then delivered into stock. Recording it and
       // raising the stock are one action from the user's point of view, so a
@@ -279,7 +301,9 @@ export function ExpensesPage() {
           ? `Expense saved, but ${stockFailures} stock line${stockFailures > 1 ? 's' : ''} did not go through`
           : filled.length
             ? `Expense recorded and ${filled.length} item${filled.length > 1 ? 's' : ''} added to stock`
-            : 'Expense recorded',
+            : recomputed
+              ? 'Expense saved, and that shift has been worked out again'
+              : 'Expense recorded',
         stockFailures > 0 ? 'err' : 'ok',
       );
     } catch (e) {
@@ -480,6 +504,33 @@ export function ExpensesPage() {
                 disabled={methods.length === 1}
               >
                 {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
+              </Select>
+            </Field>
+            {/*
+              The setting somebody comes here to change.
+
+              A cook records this at the till and can get it wrong in either
+              direction: money from their own pocket filed as the drawer's, or
+              the drawer's money filed as their own. Both leave a shift
+              reporting an over-or-short that nobody caused.
+
+              Changing it here reaches back. If the shift has already closed,
+              its expected figures and its over-or-short are worked out again
+              from the rows as they now stand — see recomputeClosedShift. What
+              was physically counted that night is never touched.
+            */}
+            <Field
+              label="Where the money came from"
+              hint={editing.from_takings !== false
+                ? 'Taken off what that shift\'s drawer should have held.'
+                : 'Recorded as spent, but not taken off the drawer count.'}
+            >
+              <Select
+                value={editing.from_takings !== false ? 'drawer' : 'own'}
+                onChange={(e) => setEditing({ ...editing, from_takings: e.target.value === 'drawer' })}
+              >
+                <option value="drawer">The money taken that shift</option>
+                <option value="own">Somebody's own money, or money brought in</option>
               </Select>
             </Field>
           </div>

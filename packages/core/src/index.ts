@@ -29,3 +29,4 @@ export * from './stock-import';
 export * from './offline';
 export * from './reportdoc';
 export * from './seating';
+export * from './expense-rules';

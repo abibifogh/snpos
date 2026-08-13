@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **68 collections, 924 fields and 231 indexes**. Entered by hand at a
+> This is **68 collections, 926 fields and 231 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -850,9 +850,9 @@ There are 68 collections. A progress checklist is at the end of this document.
 
 ### 20. `shift_expenses`, Shift expenses
 
-**Read**: Team: cashiers, Team: managers, Team: admins · **Create**: Team: cashiers, Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
+**Read**: Team: cashiers, Team: managers, Team: admins · **Create**: Team: cashiers, Team: managers, Team: admins · **Update**: Team: cashiers, Team: managers, Team: admins · **Delete**: Team: admins
 
-**Attributes** (17)
+**Attributes** (18)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -868,6 +868,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 | `paid_to_staff_id` | String | size 64 | No | ,  | No |
 | `amount` | Integer | ,  | **Yes** | ,  | No |
 | `paid_from_method_id` | String | size 64 | **Yes** | ,  | No |
+| `from_takings` | Boolean | ,  | No | true | No |
 | `note` | String | size 500 | No | ,  | No |
 | `receipt_file_id` | String | size 64 | No | ,  | No |
 | `created_by` | String | size 64 | **Yes** | ,  | No |
@@ -1076,7 +1077,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
-**Attributes** (18)
+**Attributes** (19)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -1093,6 +1094,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 | `category` | String | size 80 | No | ,  | No |
 | `check_guide` | String | size 160 | No | ,  | No |
 | `expense_category_key` | String | size 60 | No | ,  | No |
+| `counted_at_close` | Boolean | ,  | No | true | No |
 | `shelf_life_days` | Integer | ,  | No | ,  | No |
 | `consecutive_low_count` | Integer | ,  | No | 0 | No |
 | `consecutive_low_since` | Datetime | ,  | No | ,  | No |
@@ -2564,7 +2566,7 @@ way mistakes creep in.
 - [ ] 17. `order_items` (24 fields, 4 indexes)
 - [ ] 18. `payments` (16 fields, 4 indexes)
 - [ ] 19. `shifts` (29 fields, 5 indexes)
-- [ ] 20. `shift_expenses` (17 fields, 4 indexes)
+- [ ] 20. `shift_expenses` (18 fields, 4 indexes)
 - [ ] 21. `item_availability` (12 fields, 4 indexes)
 - [ ] 22. `order_notices` (7 fields, 2 indexes)
 - [ ] 23. `order_cancellations` (6 fields, 2 indexes)
@@ -2572,7 +2574,7 @@ way mistakes creep in.
 - [ ] 25. `expense_items` (8 fields, 3 indexes)
 - [ ] 26. `ingredient_categories` (5 fields, 2 indexes)
 - [ ] 27. `shift_stock_checks` (13 fields, 3 indexes)
-- [ ] 28. `ingredients` (18 fields, 4 indexes)
+- [ ] 28. `ingredients` (19 fields, 4 indexes)
 - [ ] 29. `recipes` (6 fields, 4 indexes)
 - [ ] 30. `suppliers` (8 fields, 2 indexes)
 - [ ] 31. `purchases` (12 fields, 3 indexes)

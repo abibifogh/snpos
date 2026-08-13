@@ -908,7 +908,27 @@ export const COLLECTIONS = [
   {
     id: 'shift_expenses',
     name: 'Shift expenses',
-    perms: { read: ['team:cashiers', ...MGMT], create: ['team:cashiers', ...MGMT], update: MGMT, delete: ADMIN },
+    /**
+     * Cashiers may correct what they wrote.
+     *
+     * They could record an expense and then not touch it, so a figure typed
+     * wrongly at eight o'clock stood until an admin noticed, which is usually
+     * after the drawer has been counted against it. The person who was there
+     * is the person who knows what the receipt says.
+     *
+     * The app only offers this while the shift is still open, because after it
+     * closes the number has been counted against and correcting it is a
+     * decision with consequences elsewhere — that is an admin's to make. The
+     * permission itself cannot express "while open", so that part is the app's
+     * rule rather than the database's. Deleting is still an admin's alone: a
+     * corrected expense leaves a trail, a deleted one leaves a hole.
+     */
+    perms: {
+      read: ['team:cashiers', ...MGMT],
+      create: ['team:cashiers', ...MGMT],
+      update: ['team:cashiers', ...MGMT],
+      delete: ADMIN,
+    },
     attributes: [
       ['shift_id', 's', 64, false], // blank = recorded outside a shift
       // Which side of the business paid for this. Carried on the row rather
@@ -930,6 +950,23 @@ export const COLLECTIONS = [
       ['paid_to_staff_id', 's', 64, false],
       ['amount', 'i', null, true, 0],
       ['paid_from_method_id', 's', 64, true],
+      /**
+       * Whether this came out of the money taken during the shift.
+       *
+       * Two different things were being filed as one. A cook sent to the market
+       * with cash from the drawer has spent the drawer's money, and the count
+       * at the end of the night must expect that much less. A cook who paid out
+       * of their own pocket, or from money brought from home, has spent
+       * something the drawer never held — recording it as a deduction makes the
+       * drawer look short by an amount that was never in it, and the shift is
+       * chased for a shortage that did not happen.
+       *
+       * Optional and true by default, because everything written before this
+       * existed was money out of the drawer and must keep counting that way.
+       * Optional rather than required for the reason set out on menu_items:
+       * a field that arrives after the rows do can never be required.
+       */
+      ['from_takings', 'b', null, false, true],
       ['note', 's', 500, false],
       ['receipt_file_id', 's', 64, false],
       ['created_by', 's', 64, true],
@@ -1128,6 +1165,21 @@ export const COLLECTIONS = [
       // somebody to classify it. Rice is always Supplies; nobody should have
       // to say so twice a week.
       ['expense_category_key', 's', 60, false],
+      /**
+       * Whether somebody has to count this at the end of a shift.
+       *
+       * Not everything bought sits on a shelf. Transport, a delivery fee, gas
+       * for the van, a repair: these are worth recording as items so a shop run
+       * can be broken down and the spending is not one lump called "other" —
+       * but there is nothing to walk over and look at, and putting them on the
+       * closing list asks a cook to count a taxi. A list with nonsense in it is
+       * a list people learn to tap through, which costs the count on the things
+       * that do matter.
+       *
+       * True by default: everything that existed before this question is food
+       * on a shelf and must keep being counted.
+       */
+      ['counted_at_close', 'b', null, false, true],
       ['shelf_life_days', 'i', null, false],
       // Persistence tracking for the shift-close summary: how many shifts in a
       // row this has come out low or out of stock. Reset the moment a count

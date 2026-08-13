@@ -332,6 +332,15 @@ export interface ExpectedTakings {
   cashExpenses: number;
   /** Everything paid out during the shift, however it was paid. */
   expensesTotal: number;
+  /**
+   * Of that, what somebody paid from their own money rather than the drawer.
+   *
+   * Spent by the business and owed back to whoever spent it, but never in the
+   * till, so it is deliberately not part of what the count is measured
+   * against. Reported separately so the two figures cannot be mistaken for
+   * each other at closing time.
+   */
+  ownMoneyTotal: number;
   salesTotal: number;
   tipsTotal: number;
   payments: ShiftPayment[];
@@ -357,7 +366,7 @@ export const shiftUsable = (shift: Pick<Shift, 'opened_at'> | null | undefined):
 export async function expectedTakings(shift: Shift, methods: PaymentMethod[]): Promise<ExpectedTakings> {
   const [payments, expenses] = await Promise.all([
     listAll<ShiftPayment>('payments', [Query.equal('shift_id', shift.$id)]),
-    listAll<{ amount: number; paid_from_method_id: string }>('shift_expenses', [
+    listAll<{ amount: number; paid_from_method_id: string; from_takings?: boolean }>('shift_expenses', [
       Query.equal('shift_id', shift.$id),
     ]),
   ]);
@@ -372,22 +381,47 @@ export async function expectedTakings(shift: Shift, methods: PaymentMethod[]): P
     tipsTotal += p.tip ?? 0;
   }
 
+  /**
+   * Only spending that actually came out of this drawer reduces this drawer.
+   *
+   * Two different things used to be filed as one. A cook sent to the market
+   * with money from the till has spent the till's money, and the count at the
+   * end of the night must expect that much less. A cook who paid out of their
+   * own pocket has spent something the drawer never held, and deducting it
+   * makes the drawer look short by an amount that was never in it — the shift
+   * is then chased over a shortage that did not happen, which is exactly the
+   * kind of accusation that makes people stop recording expenses at all.
+   *
+   * The expense is recorded either way. It is money the business spent and it
+   * belongs in the books; what it is not, in the second case, is money missing
+   * from a drawer.
+   *
+   * Absent means yes, because every row written before this question existed
+   * was money out of the drawer and has been counted that way all along.
+   */
+  const fromTakings = expenses.filter((e) => e.from_takings !== false);
+
   const byMethod: Record<string, number> = {};
   let cashExpenses = 0;
   for (const m of methods) {
     // Money paid out of a drawer is money that drawer no longer holds. Leaving
     // this out is the single most common source of a phantom shortage.
-    const paidOut = expenses
+    const paidOut = fromTakings
       .filter((e) => e.paid_from_method_id === m.$id)
       .reduce((a, e) => a + e.amount, 0);
     if (m.kind === 'cash') cashExpenses += paidOut;
     byMethod[m.$id] = (openingFloats[m.$id] ?? 0) + (takenByMethod[m.$id] ?? 0) - paidOut;
   }
 
+  // Everything spent, whoever's pocket it came from. This is the P&L figure and
+  // it is a different question from what the drawer should hold; the two were
+  // the same number only for as long as there was no way to say otherwise.
   const expensesTotal = expenses.reduce((a, e) => a + e.amount, 0);
+  const ownMoneyTotal = expenses.filter((e) => e.from_takings === false).reduce((a, e) => a + e.amount, 0);
 
   return {
-    byMethod, openingFloats, takenByMethod, cashExpenses, expensesTotal, salesTotal, tipsTotal, payments,
+    byMethod, openingFloats, takenByMethod, cashExpenses, expensesTotal, ownMoneyTotal,
+    salesTotal, tipsTotal, payments,
   };
 }
 
@@ -589,7 +623,10 @@ export async function closeShift(opts: {
     const after = await loadIngredients(venueId);
     const threshold = featureConfig(features, 'shift_summary', 'persistent_stock_threshold', 3);
     const { fresh, persistent } = await updateStockAlerts(
-      after.filter((i) => i.active),
+      // Same list the closing check shows. Something nobody counts cannot be
+      // reported as running low, and saying a taxi is low on stock is how an
+      // alert email teaches people to ignore alert emails.
+      after.filter((i) => i.active && i.counted_at_close !== false),
       settings.low_stock_default_bp ?? 3000,
       threshold,
       // What the cook reported wins over what the recipes imply. Without this,
@@ -658,4 +695,63 @@ export async function closeShift(opts: {
   }
 
   return { variance, totalOff, cogs, stockNote, ledgerError, shelved };
+}
+
+/* -------------------------------------------- correcting a shift after the fact */
+
+/**
+ * Work the drawer figures out again, for a shift that has already closed.
+ *
+ * An expense can be reclassified long after the night it belongs to: somebody
+ * says "that taxi came out of my own pocket, not the till", and until then the
+ * shift was short by that much on paper and whoever held the drawer was
+ * carrying a shortage they never caused. Correcting the row is only half of
+ * it; the shift stored what it expected and what was over or short at the
+ * moment it closed, and those figures do not recompute themselves.
+ *
+ * What the drawer actually held is left exactly as it was. That was counted by
+ * a person, it is the one number here that was never derived, and nothing
+ * discovered afterwards can change what was in the till that night. Only what
+ * SHOULD have been there moves, and the over-or-short with it.
+ *
+ * An open shift needs none of this: it works its figures out from the rows
+ * every time it is looked at, so a correction is already in them.
+ */
+export async function recomputeClosedShift(shiftId: string): Promise<{
+  expected: Record<string, number>;
+  variance: Record<string, number>;
+  totalOff: number;
+} | null> {
+  const shift = (await db.getDocument(DB_ID, 'shifts', shiftId)) as unknown as Shift & {
+    counted?: string;
+    venue_id: string;
+  };
+  if (shift.status !== 'closed') return null;
+
+  const methods = await loadPaymentMethods(shift.venue_id);
+  const takings = await expectedTakings(shift, methods);
+
+  let counted: Record<string, number> = {};
+  try {
+    counted = JSON.parse(shift.counted || '{}');
+  } catch {
+    // A count that cannot be read is not a count. Better to leave the variance
+    // alone than to invent one against nothing.
+    return null;
+  }
+
+  const variance = Object.fromEntries(
+    Object.keys(counted).map((k) => [k, (counted[k] ?? 0) - (takings.byMethod[k] ?? 0)]),
+  );
+  const totalOff = Object.values(variance).reduce((a, b) => a + b, 0);
+
+  await db.updateDocument(DB_ID, 'shifts', shiftId, {
+    expected: JSON.stringify(takings.byMethod),
+    variance: JSON.stringify(variance),
+    // Everything spent, whoever paid for it. Unchanged by whose money it was,
+    // because the business spent it either way; only the drawer figures move.
+    expense_total: takings.expensesTotal,
+  });
+
+  return { expected: takings.byMethod, variance, totalOff };
 }

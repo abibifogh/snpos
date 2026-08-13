@@ -17,6 +17,14 @@ export interface Ingredient extends Doc {
   check_guide?: string;
   /** Which expense category a delivery of this counts as. */
   expense_category_key?: string;
+  /**
+   * Whether somebody has to count this at the end of a shift.
+   *
+   * Absent means yes. Transport, a delivery fee, a repair: things worth
+   * itemising on a shop run so the spending is not one lump called "other",
+   * with nothing on a shelf to walk over and look at.
+   */
+  counted_at_close?: boolean;
   consecutive_low_count?: number;
   consecutive_low_since?: string;
   last_low_severity?: 'low' | 'out';
@@ -421,7 +429,10 @@ export async function stockCheckRows(venueId: string): Promise<StockCheckRow[]> 
   const rank = (key?: string) => (key && order.has(key) ? (order.get(key) as number) : 9999);
 
   return ingredients
-    .filter((i) => i.active)
+    // Everything active that is actually on a shelf. A list with a taxi in it
+    // is a list people learn to tap through, which costs the count on the
+    // things that do matter.
+    .filter((i) => i.active && i.counted_at_close !== false)
     .sort(
       (a, b) =>
         rank(a.category) - rank(b.category) ||

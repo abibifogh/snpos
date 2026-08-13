@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import { Badge, Button, Empty, Field, FormError, Input, Modal, Spinner } from './components';
 import {
   Query, formatMoney, listAll, displayOrderNo, requestReceipt,
-  receiptForOrder, buildReceiptHtml, openPrintable, ordersForShift,
+  receiptForOrder, buildReceiptHtml, openPrintable, ordersForShift, fromTakings,
 } from '@snpos/core';
-import type { Order, OrderItem, Settings, Shift, Doc, Venue, StaffProfile } from '@snpos/core';
+import type {
+  Order, OrderItem, Settings, Shift, Doc, Venue, StaffProfile, PaidToKind, Module,
+} from '@snpos/core';
+import { ExpenseModal } from './till';
 
 interface ExpenseRow extends Doc {
   shift_id?: string;
@@ -14,6 +17,11 @@ interface ExpenseRow extends Doc {
   category_key?: string;
   category: string;
   created_by: string;
+  paid_to_kind?: PaidToKind;
+  supplier_id?: string;
+  paid_to_staff_id?: string;
+  paid_from_method_id: string;
+  from_takings?: boolean;
 }
 
 /**
@@ -63,6 +71,14 @@ export function ShiftHistory({
   const [emailText, setEmailText] = useState('');
   const [sendError, setSendError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /**
+   * An expense being corrected by the person who recorded it.
+   *
+   * Here rather than anywhere new, because this is already the screen a cook
+   * opens to see what the shift has spent. A mistake nobody can look at is a
+   * mistake nobody fixes.
+   */
+  const [fixing, setFixing] = useState<ExpenseRow | null>(null);
 
   const startSend = (o: Order) => {
     setSending(o);
@@ -111,6 +127,13 @@ export function ShiftHistory({
   };
 
   const money = (n: number) => formatMoney(n, settings);
+
+  /** Read again after a correction, so the figures on this screen are the
+      figures that were just saved rather than the ones that were wrong. */
+  const reloadExpenses = () =>
+    listAll<ExpenseRow>('shift_expenses', [Query.equal('shift_id', shift.$id)])
+      .then((e) => setExpenses(e.sort((a, b) => b.$createdAt.localeCompare(a.$createdAt))))
+      .catch(() => undefined);
 
   useEffect(() => {
     (async () => {
@@ -226,7 +249,10 @@ export function ShiftHistory({
         <div className="table-wrap">
           <table className="data">
             <thead>
-              <tr><th>Time</th><th>Paid to</th><th>What for</th><th className="num">Amount</th></tr>
+              <tr>
+                <th>Time</th><th>Paid to</th><th>What for</th>
+                <th>From</th><th className="num">Amount</th><th />
+              </tr>
             </thead>
             <tbody>
               {expenses.map((e) => (
@@ -237,13 +263,45 @@ export function ShiftHistory({
                     {e.category_key || e.category}
                     {e.note && <div>{e.note}</div>}
                   </td>
+                  {/* Whether the drawer is short by this or not. The one thing
+                      about an expense that changes what somebody is counted
+                      against at the end of the night, so it is a column rather
+                      than something to be found by opening each row. */}
+                  <td className="dim small">
+                    {fromTakings(e) ? 'The drawer' : 'Own money'}
+                  </td>
                   <td className="num">{money(e.amount)}</td>
+                  <td>
+                    {/* Only while the shift is open. After it closes the count
+                        has already been made against this figure, and changing
+                        it then has consequences elsewhere — an admin's call. */}
+                    {shift.status === 'open' && (
+                      <Button size="sm" variant="ghost" onClick={() => setFixing(e)}>Correct</Button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+      {fixing && (
+        <ExpenseModal
+          module={(shift.module ?? 'kitchen') as Module}
+          venueId={venueId}
+          shiftId={shift.$id}
+          settings={settings}
+          userId={who?.user_id || who?.$id || ''}
+          expense={fixing}
+          onClose={() => setFixing(null)}
+          onDone={(m) => {
+            setFixing(null);
+            void reloadExpenses();
+            onToast(m);
+          }}
+        />
+      )}
+
       {sending && (
         <Modal
           title={`Receipt for ${displayOrderNo(sending.order_no)}`}

@@ -96,6 +96,7 @@ export function StockPage() {
         category: editing.category ?? '',
         expense_category_key: editing.expense_category_key ?? '',
         check_guide: (editing.check_guide ?? '').trim(),
+        counted_at_close: editing.counted_at_close !== false,
         active: editing.active ?? true,
       };
       Object.keys(payload).forEach((k) => (payload as Record<string, unknown>)[k] === undefined && delete (payload as Record<string, unknown>)[k]);
@@ -381,6 +382,25 @@ export function StockPage() {
               maxLength={160}
               placeholder={guideExample(editing.unit)}
               onChange={(e) => setEditing({ ...editing, check_guide: e.target.value })}
+            />
+          </Field>
+
+          {/*
+            Not everything bought sits on a shelf.
+
+            Transport, a delivery fee, gas for the van, a repair. Worth having
+            as items so a shop run breaks down into what it was actually spent
+            on rather than one lump called "other" — but there is nothing to
+            walk over and look at, and putting them on the closing list asks a
+            cook to count a taxi. A list with nonsense in it is a list people
+            learn to tap through, which costs the count on the things that do
+            matter.
+          */}
+          <Field hint="Turn this off for things with nothing on a shelf: transport, delivery fees, repairs. They can still be entered on an expense.">
+            <Toggle
+              checked={editing.counted_at_close !== false}
+              onChange={(v) => setEditing({ ...editing, counted_at_close: v })}
+              label="Counted at the end of a shift"
             />
           </Field>
 

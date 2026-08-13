@@ -169,7 +169,11 @@ export function CombinedBar({
         opening: Object.values(takings.openingFloats).reduce((a, b) => a + b, 0),
         sales: takings.salesTotal,
         tips: takings.tipsTotal,
-        out: takings.expensesTotal,
+        // What actually left the drawers. Spending somebody covered from their
+        // own money is real spending and is shown, but a drawer cannot be
+        // short of money it never held.
+        out: takings.expensesTotal - takings.ownMoneyTotal,
+        ownMoney: takings.ownMoneyTotal,
       });
       const list = await stockCheckRows(venue.$id);
       setStockList(list);

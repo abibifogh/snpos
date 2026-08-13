@@ -4,10 +4,11 @@ import {
   db, DB_ID, ID, formatMoney, parseMoney, toInput, loadIngredients, loadPaymentMethods,
   PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions, receiveStock, uploadFile,
   expenseMethods, recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
+  fromTakings,
 } from '@snpos/core';
 import type {
   PaymentMethod, Settings, StaffProfile, PaidToKind, Supplier, ExpenseCategoryDoc, Ingredient,
-  CashHandover, HandoverDestination, Module,
+  CashHandover, HandoverDestination, Module, ShiftExpense,
 } from '@snpos/core';
 
 /**
@@ -20,8 +21,17 @@ import type {
  * night for a reason nobody had written down.
  */
 
-/** One item on a shop run, while it is being typed. */
-interface DraftLine { ingredientId: string; qtyText: string; costText: string }
+/**
+ * One item on a shop run, while it is being typed.
+ *
+ * Quantity and what was PAID for it, which is what a market receipt says and
+ * what the person remembers: "five kilos of rice, a hundred and twenty". The
+ * price per kilo is arithmetic done afterwards, and asking for it up front
+ * asked somebody standing at a till to do a division in their head and then
+ * type the answer — which is how a hundred and twenty cedis of rice gets
+ * recorded as six hundred.
+ */
+interface DraftLine { ingredientId: string; qtyText: string; totalText: string }
 
 /**
  * Money out, recorded where it was spent rather than remembered until later.
@@ -32,24 +42,39 @@ interface DraftLine { ingredientId: string; qtyText: string; costText: string }
  * which screen it was entered from.
  */
 export function ExpenseModal({
-  module, venueId, shiftId, settings, userId, onClose, onDone,
+  module, venueId, shiftId, settings, userId, expense, onClose, onDone,
 }: {
   module: Module;
   venueId: string;
   shiftId: string;
   settings: Settings;
   userId: string;
+  /**
+   * An expense already recorded, being corrected.
+   *
+   * A figure typed wrongly at eight o'clock used to stand until an admin
+   * noticed, which is usually after the drawer has been counted against it.
+   * The person who was there is the person who knows what the receipt said.
+   *
+   * Only offered while the shift is open. Once it has closed the number has
+   * been counted against and changing it has consequences elsewhere, which is
+   * a decision for an admin.
+   */
+  expense?: ShiftExpense | null;
   onClose: () => void;
   onDone: (message: string) => void;
 }) {
+  const editing = expense ?? null;
   const [categories, setCategories] = useState<ExpenseCategoryDoc[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
-  const [categoryKey, setCategoryKey] = useState('');
-  const [methodId, setMethodId] = useState('');
-  const [amountText, setAmountText] = useState('');
+  const [categoryKey, setCategoryKey] = useState(editing?.category_key || editing?.category || '');
+  const [methodId, setMethodId] = useState(editing?.paid_from_method_id ?? '');
+  const [amountText, setAmountText] = useState(
+    editing ? toInput(editing.amount, settings.currency_decimals ?? 2) : '',
+  );
   /**
    * Anything on the receipt that is not one of the items.
    *
@@ -57,15 +82,26 @@ export function ExpenseModal({
    * by hand there is nothing to add it to and nothing to reconcile.
    */
   const [extraText, setExtraText] = useState('');
-  const [paidToKind, setPaidToKind] = useState<PaidToKind>('open_market');
-  const [supplierId, setSupplierId] = useState('');
-  const [staffId, setStaffId] = useState('');
-  const [payee, setPayee] = useState('');
-  const [noteText, setNoteText] = useState('');
+  const [paidToKind, setPaidToKind] = useState<PaidToKind>(editing?.paid_to_kind ?? 'open_market');
+  const [supplierId, setSupplierId] = useState(editing?.supplier_id ?? '');
+  const [staffId, setStaffId] = useState(editing?.paid_to_staff_id ?? '');
+  const [payee, setPayee] = useState(editing?.paid_to_kind === 'supplier' ? '' : editing?.payee ?? '');
+  const [noteText, setNoteText] = useState(editing?.note ?? '');
+  /**
+   * Was this paid with money taken during the shift?
+   *
+   * Yes for anything out of the drawer, which is most of it and so the
+   * default. No when somebody used their own money, or money brought from
+   * home: the business still spent it and still owes it back, but the drawer
+   * never held it, and deducting it makes the count come up short by an amount
+   * that was never there. Being chased over a shortage that did not happen is
+   * exactly what teaches people to stop recording expenses.
+   */
+  const [fromDrawer, setFromDrawer] = useState<boolean>(editing ? fromTakings(editing) : true);
   // What was actually bought. A shop run is rarely one thing, and an expense
   // recorded as a single number tells you money left without telling you what
   // came back with it.
-  const [lines, setLines] = useState<DraftLine[]>([{ ingredientId: '', qtyText: '', costText: '' }]);
+  const [lines, setLines] = useState<DraftLine[]>([{ ingredientId: '', qtyText: '', totalText: '' }]);
   const [receipt, setReceipt] = useState<{ file: File; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,8 +115,14 @@ export function ExpenseModal({
    * goods arrive from consignors through a delivery, not out of the drawer, so
    * offering a rice-and-tomatoes list to a craft cashier would be offering
    * somebody else's larder.
+   *
+   * And never while correcting an expense. Its items were delivered into stock
+   * when it was recorded, and re-listing them here would deliver them a second
+   * time; unpicking that properly is a reversal, which is an admin's job and
+   * not a cook's. A correction changes the figures on the expense, and what
+   * already reached the shelf stays reached.
    */
-  const stocks = module !== 'craft';
+  const stocks = module !== 'craft' && !editing;
 
   useEffect(() => {
     (async () => {
@@ -92,15 +134,19 @@ export function ExpenseModal({
       setCategories(opts.categories);
       setSuppliers(opts.suppliers);
       setStaff(opts.staff);
-      setCategoryKey(opts.categories[0]?.key ?? 'other');
+      // Only chosen for a new expense. An edit already knows its own answers,
+      // and overwriting them here would silently refile somebody's correction
+      // under whatever happens to be first in the list.
+      if (!editing) setCategoryKey(opts.categories[0]?.key ?? 'other');
       // Only what an expense is allowed to be paid out of ever reaches the
       // form, so the restriction cannot be got round by leaving the dropdown
       // where it was.
       const allowed = expenseMethods(m, settings);
       setMethods(allowed);
-      setMethodId(allowed.find((x) => x.kind === 'cash')?.$id ?? allowed[0]?.$id ?? '');
+      if (!editing) setMethodId(allowed.find((x) => x.kind === 'cash')?.$id ?? allowed[0]?.$id ?? '');
       setIngredients(ing.filter((i) => i.active).sort((a, b) => a.name.localeCompare(b.name)));
     })().catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [venueId, settings.expense_paid_from, stocks]);
 
   const filledLines = stocks ? lines.filter((l) => l.ingredientId && Number(l.qtyText) > 0) : [];
@@ -111,10 +157,21 @@ export function ExpenseModal({
    * Kept editable when there are no lines at all, plenty of spending (a taxi,
    * a gas refill) has nothing to put into stock.
    */
-  const linesTotal = filledLines.reduce(
-    (sum, l) => sum + Math.round(Number(l.qtyText) * (parseMoney(l.costText, decimals) ?? 0)),
-    0,
-  );
+  const linesTotal = filledLines.reduce((sum, l) => sum + (parseMoney(l.totalText, decimals) ?? 0), 0);
+
+  /**
+   * The price per unit, worked back from what was paid.
+   *
+   * This is the figure stock keeps, because a recipe costs a portion of rice
+   * and not a trip to the market. Nobody types it: it is a division, and a
+   * division at a counter at nine o'clock at night is a mistake waiting to
+   * happen.
+   */
+  const unitCostOf = (l: DraftLine): number => {
+    const qty = Number(l.qtyText);
+    const total = parseMoney(l.totalText, decimals) ?? 0;
+    return qty > 0 ? Math.round(total / qty) : 0;
+  };
 
   /** The remainder, and only ever a positive one. */
   const extra = Math.max(0, parseMoney(extraText, decimals) ?? 0);
@@ -130,23 +187,16 @@ export function ExpenseModal({
    */
   const pickIngredient = (index: number, ingredientId: string) => {
     const ing = ingredients.find((i) => i.$id === ingredientId);
-    setLine(index, {
-      ingredientId,
-      /* Prefilled only where there is a real price to prefill. An ingredient
-         with no cost recorded used to drop "0.00" into the box, which then had
-         to be cleared before the true price could be typed — the one keystroke
-         a form should never ask for. */
-      costText:
-        ing && ing.base_unit_cost > 0 && !lines[index].costText
-          ? toInput(ing.base_unit_cost, decimals)
-          : lines[index].costText,
-    });
+    // Nothing is prefilled. What was paid at the market today is not something
+    // this system knows, and a figure it guessed at would be a figure somebody
+    // saved without reading.
+    setLine(index, { ingredientId });
     if (ing?.expense_category_key) setCategoryKey(ing.expense_category_key);
     // Always keep one blank row at the end, so adding another is just typing.
     setLines((rows) =>
       rows.some((r, i) => i !== index && !r.ingredientId)
         ? rows
-        : [...rows, { ingredientId: '', qtyText: '', costText: '' }],
+        : [...rows, { ingredientId: '', qtyText: '', totalText: '' }],
     );
   };
 
@@ -172,8 +222,8 @@ export function ExpenseModal({
       return;
     }
     for (const l of filledLines) {
-      if (parseMoney(l.costText, decimals) === null) {
-        setError('One of the items does not have a valid unit cost.');
+      if (parseMoney(l.totalText, decimals) === null) {
+        setError('One of the items does not have a valid amount paid.');
         return;
       }
     }
@@ -189,9 +239,7 @@ export function ExpenseModal({
         receiptFileId = (await uploadFile(receipt.file, 'receipt', settings).catch(() => null))?.fileId ?? '';
       }
 
-      const expense = await db.createDocument(DB_ID, 'shift_expenses', ID.unique(), {
-        venue_id: venueId,
-        shift_id: shiftId,
+      const fields = {
         // Which side's books this comes out of. Carried on the row rather than
         // read back from the shift, because an expense outlives the shift it
         // was recorded in and still belongs to one side.
@@ -223,6 +271,27 @@ export function ExpenseModal({
             ? `Includes ${formatMoney(extra, settings)} not itemised.`
             : '',
         ].filter(Boolean).join(' · ').slice(0, 500), // the column's own limit
+        from_takings: fromDrawer,
+      };
+
+      /**
+       * A correction changes the figures and leaves everything else alone.
+       *
+       * Not the receipt photo, not who recorded it, and not the approval it is
+       * waiting on: none of those are what somebody is fixing when they notice
+       * the amount is wrong, and quietly resetting them would lose work that
+       * was done properly the first time.
+       */
+      if (editing) {
+        await db.updateDocument(DB_ID, 'shift_expenses', editing.$id, fields);
+        onDone('Spend corrected');
+        return;
+      }
+
+      const expense = await db.createDocument(DB_ID, 'shift_expenses', ID.unique(), {
+        venue_id: venueId,
+        shift_id: shiftId,
+        ...fields,
         receipt_file_id: receiptFileId,
         created_by: userId,
         approval_status: 'pending',
@@ -236,7 +305,9 @@ export function ExpenseModal({
         const ing = ingredients.find((i) => i.$id === l.ingredientId);
         if (!ing) continue;
         const qty = Number(l.qtyText);
-        const unitCost = parseMoney(l.costText, decimals) ?? ing.base_unit_cost;
+        // Worked out from what was paid, not typed. See unitCostOf.
+        const unitCost = unitCostOf(l);
+        const lineTotal = parseMoney(l.totalText, decimals) ?? 0;
         try {
           await db.createDocument(DB_ID, 'expense_items', ID.unique(), {
             expense_id: expense.$id,
@@ -244,7 +315,10 @@ export function ExpenseModal({
             name_snapshot: ing.name,
             qty,
             unit_cost: unitCost,
-            line_total: Math.round(qty * unitCost),
+            // What was actually handed over, not the rounded unit price
+            // multiplied back up: those differ by a pesewa or two on anything
+            // that does not divide evenly, and the receipt is the truth.
+            line_total: lineTotal,
             stocked: true,
           });
           await receiveStock({
@@ -279,18 +353,22 @@ export function ExpenseModal({
 
   return (
     <Modal
-      title="Record spend"
+      title={editing ? 'Correct this spend' : 'Record spend'}
       onClose={onClose}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={save} loading={busy}>Save</Button>
+          <Button variant="primary" onClick={save} loading={busy}>
+            {editing ? 'Save the correction' : 'Save'}
+          </Button>
         </>
       }
     >
       <FormError message={error} />
       <p className="small dim" style={{ marginTop: 0 }}>
-        Cash paid out of the drawer now, so the drawer still balances at the end of the night.
+        {editing
+          ? 'Fix what was typed wrongly. What was added to stock stays as it is.'
+          : 'Money paid out now, so the drawer still balances at the end of the night.'}
       </p>
 
       {/* What was bought, before what it cost. A shop run is several things,
@@ -303,39 +381,56 @@ export function ExpenseModal({
         hint="Leave empty for spending with nothing to stock: transport, gas, repairs."
       >
         <div className="stack" style={{ gap: '0.45rem' }}>
-          {lines.map((l, i) => (
-            <div className="row" key={i} style={{ gap: '0.35rem', alignItems: 'flex-start' }}>
-              <Select
-                value={l.ingredientId}
-                onChange={(e) => pickIngredient(i, e.target.value)}
-                style={{ flex: 2 }}
-              >
-                <option value="">Item</option>
-                {ingredients.map((ing) => (
-                  <option key={ing.$id} value={ing.$id}>{ing.name} ({ing.unit})</option>
-                ))}
-              </Select>
-              <Input
-                value={l.qtyText}
-                inputMode="decimal"
-                placeholder="Qty"
-                style={{ flex: 1 }}
-                onChange={(e) => setLine(i, { qtyText: e.target.value })}
-              />
-              <Input
-                value={l.costText}
-                inputMode="decimal"
-                placeholder={`Cost / ${ingredients.find((x) => x.$id === l.ingredientId)?.unit ?? 'unit'}`}
-                style={{ flex: 1 }}
-                onChange={(e) => setLine(i, { costText: e.target.value })}
-              />
-              {lines.length > 1 && (
-                <Button size="sm" variant="ghost" onClick={() => setLines((r) => r.filter((_, x) => x !== i))}>
-                  ×
-                </Button>
-              )}
-            </div>
-          ))}
+          {lines.map((l, i) => {
+            const unit = ingredients.find((x) => x.$id === l.ingredientId)?.unit ?? 'unit';
+            const per = unitCostOf(l);
+            return (
+              <div key={i}>
+                <div className="row" style={{ gap: '0.35rem', alignItems: 'flex-start' }}>
+                  <Select
+                    value={l.ingredientId}
+                    onChange={(e) => pickIngredient(i, e.target.value)}
+                    style={{ flex: 2 }}
+                  >
+                    <option value="">Item</option>
+                    {ingredients.map((ing) => (
+                      <option key={ing.$id} value={ing.$id}>{ing.name} ({ing.unit})</option>
+                    ))}
+                  </Select>
+                  <Input
+                    value={l.qtyText}
+                    inputMode="decimal"
+                    placeholder={`How many ${unit}`}
+                    style={{ flex: 1 }}
+                    onChange={(e) => setLine(i, { qtyText: e.target.value })}
+                  />
+                  {/* What was handed over for this item. The market's own
+                      figure, which is the one the person remembers. */}
+                  <Input
+                    value={l.totalText}
+                    inputMode="decimal"
+                    placeholder="Paid"
+                    style={{ flex: 1 }}
+                    onChange={(e) => setLine(i, { totalText: e.target.value })}
+                  />
+                  {lines.length > 1 && (
+                    <Button size="sm" variant="ghost" onClick={() => setLines((r) => r.filter((_, x) => x !== i))}>
+                      ×
+                    </Button>
+                  )}
+                </div>
+                {/* The division, done and shown. Stock is costed per unit, so
+                    this figure is what the recipes will use, and a price that
+                    looks wrong to somebody who was at the market is caught
+                    here rather than in a costing report next month. */}
+                {per > 0 && (
+                  <div className="small dim" style={{ marginTop: '0.15rem' }}>
+                    {formatMoney(per, settings)} per {unit}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </Field>}
 
@@ -429,6 +524,35 @@ export function ExpenseModal({
           </Select>
         </Field>
       )}
+      {/*
+        Whose money it was.
+
+        Asked plainly and asked every time, because the two cases look
+        identical on a form and are completely different at closing time.
+        Money from the drawer must come off what the drawer should hold. Money
+        from somebody's own pocket must not: the till never had it, and
+        deducting it makes the count come up short by an amount that was never
+        there, which is somebody being accused of losing money they actually
+        lent the business.
+
+        Yes is the default and the common case. Answering no records the spend
+        exactly as before; it only stops it being taken off the count.
+      */}
+      <Field
+        label="Where did the money come from"
+        hint={fromDrawer
+          ? 'Taken off what the drawer should hold at the end of the shift.'
+          : 'Still recorded as money the business spent. Not taken off the drawer count.'}
+      >
+        <Select
+          value={fromDrawer ? 'drawer' : 'own'}
+          onChange={(e) => setFromDrawer(e.target.value === 'drawer')}
+        >
+          <option value="drawer">From the money taken this shift</option>
+          <option value="own">From my own money, or money brought in</option>
+        </Select>
+      </Field>
+
       <Field label="Paid to" hint="Not every purchase has a supplier behind it.">
         <Select value={paidToKind} onChange={(e) => setPaidToKind(e.target.value as PaidToKind)}>
           {PAID_TO_KINDS.map((k) => <option key={k.v} value={k.v}>{k.l}</option>)}
@@ -468,7 +592,10 @@ export function ExpenseModal({
       {/* Photographed here, at the moment the money changes hands. A receipt
           "attached later from the admin app" is a receipt in somebody's
           pocket at the end of the night. */}
-      <Field label="Receipt" hint="Optional. Take a photo of it now if there is one.">
+      {/* Not offered on a correction: the photo already attached is the one
+          taken when the money changed hands, and replacing it from a form
+          headed "correct this" is how the original disappears. */}
+      <Field label="Receipt" hidden={!!editing} hint="Optional. Take a photo of it now if there is one.">
         {receipt ? (
           <div className="row" style={{ justifyContent: 'space-between' }}>
             <span className="small">{receipt.name}</span>

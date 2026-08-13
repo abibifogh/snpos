@@ -62,6 +62,16 @@ export interface ShiftFlow {
   tips: number;
   /** Everything paid out of the drawers during the shift. */
   out: number;
+  /**
+   * Of the shift's spending, what somebody paid from their own money.
+   *
+   * Spent by the business and owed back to whoever spent it, but never in a
+   * drawer, so it is not taken off what the count is measured against. Shown
+   * anyway: a cook who paid for a taxi themselves wants to see it written
+   * down at the moment the shift is being closed, and an owner reading the
+   * summary needs to know it is owed.
+   */
+  ownMoney?: number;
 }
 
 const TONE = { OK: 'ok', LOW: 'warn', OUT: 'danger' } as const;
@@ -304,6 +314,26 @@ export function ShiftCloseForm({
                   {flow.out > 0 ? `− ${money(flow.out)}` : money(0)}
                 </td>
               </tr>
+              {/*
+                Spent, owed back, and never in the drawer.
+
+                Shown here and deliberately NOT subtracted. Somebody who paid
+                for a taxi out of their own pocket wants to see it written down
+                at the moment the shift is being counted, and an owner reading
+                the summary needs to know it is owed — but taking it off the
+                count would make the drawer look short by money that was never
+                in it, and the person who lent it is then the person answering
+                for the shortage.
+              */}
+              {(flow.ownMoney ?? 0) > 0 && (
+                <tr>
+                  <td>
+                    Paid from own money
+                    <span className="dim small">recorded, and owed back. Not taken off the count</span>
+                  </td>
+                  <td className="num dim">{money(flow.ownMoney ?? 0)}</td>
+                </tr>
+              )}
               <tr>
                 <td style={{ fontWeight: 650 }}>Should be in hand</td>
                 <td className="num" style={{ fontWeight: 650 }}>
