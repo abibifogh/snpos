@@ -82,6 +82,20 @@ export const COLLECTIONS = [
       // menu entirely: a walk-in should not be offered a set meal for twenty,
       // and a hotel's platter prices are not for the whole dining room to read.
       ['group_token', 's', 64, false],
+      /**
+       * A screen that stays where it is and serves one customer after another.
+       *
+       * A tablet on a counter or a wall, not somebody's phone. Everything
+       * about the ordinary menu assumes the person holding it is the person
+       * who ordered: it goes to a live status page and stays there, which is
+       * right on a phone and wrong on a shared screen, where it leaves the
+       * next customer looking at a stranger's food and a member of staff
+       * having to reset it between every order.
+       *
+       * So this mode thanks them, says how long it will be, and puts the menu
+       * back by itself.
+       */
+      ['screen_token', 's', 64, false],
     ],
     indexes: [['slug_unique', 'unique', ['slug']], ['active_sort', 'key', ['active', 'sort']]],
   },

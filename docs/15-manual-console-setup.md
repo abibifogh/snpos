@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **68 collections, 926 fields and 231 indexes**. Entered by hand at a
+> This is **68 collections, 927 fields and 231 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -135,7 +135,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: Team: admins · **Update**: Team: admins · **Delete**: Team: admins
 
-**Attributes** (19)
+**Attributes** (20)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -158,6 +158,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 | `holiday_closures` | String | size 4000 | No | ,  | No |
 | `walkin_token` | String | size 64 | No | ,  | No |
 | `group_token` | String | size 64 | No | ,  | No |
+| `screen_token` | String | size 64 | No | ,  | No |
 
 **Indexes** (3)
 
@@ -626,7 +627,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 
 ### 16. `orders`, Orders
 
-**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: All users · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: _none, server only_
+**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: All users · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: Team: admins
 
 **Attributes** (64)
 
@@ -764,7 +765,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 
 ### 18. `payments`, Payments
 
-**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: _none, server only_
+**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
 **Attributes** (16)
 
@@ -800,7 +801,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 
 ### 19. `shifts`, Shifts
 
-**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: _none, server only_
+**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: Team: admins
 
 **Attributes** (29)
 
@@ -1043,7 +1044,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 
 ### 27. `shift_stock_checks`, Shift stock checks
 
-**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cashiers, Team: cooks, Team: managers, Team: admins · **Update**: Team: cashiers, Team: cooks, Team: managers, Team: admins · **Delete**: _none, server only_
+**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cashiers, Team: cooks, Team: managers, Team: admins · **Update**: Team: cashiers, Team: cooks, Team: managers, Team: admins · **Delete**: Team: admins
 
 **Attributes** (13)
 
@@ -1224,7 +1225,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 
 ### 33. `stock_movements`, Stock movements
 
-**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: _none, server only_ · **Delete**: _none, server only_
+**Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: _none, server only_ · **Delete**: Team: admins
 
 **Attributes** (11)
 
@@ -2547,7 +2548,7 @@ way mistakes creep in.
 
 **Stage 5, collections**
 
-- [ ]  1. `venues` (19 fields, 3 indexes)
+- [ ]  1. `venues` (20 fields, 3 indexes)
 - [ ]  2. `venue_menu_items` (7 fields, 2 indexes)
 - [ ]  3. `organisations` (13 fields, 3 indexes)
 - [ ]  4. `org_requests` (10 fields, 1 indexes)

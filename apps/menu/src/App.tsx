@@ -14,6 +14,7 @@ import type {
 import { DishSheet } from './DishSheet';
 import { CartSheet } from './CartSheet';
 import { OrderStatus } from './OrderStatus';
+import { ScreenThanks } from './ScreenThanks';
 import { myOrders, rememberOrder, orderIdFromHash, showOrderInAddress } from './myOrders';
 import type { MyOrder } from './myOrders';
 
@@ -67,6 +68,16 @@ export function App() {
   const [viewing, setViewing] = useState<string | null>(() => orderIdFromHash());
   const [mine, setMine] = useState<MyOrder[]>(() => myOrders());
   const [historyOpen, setHistoryOpen] = useState(false);
+  /**
+   * This device is a screen the restaurant owns, not a customer's phone.
+   *
+   * Set only once the token has been matched against the venue, so a guessed
+   * or stale address gets the ordinary walk-in menu rather than a mode it was
+   * not given.
+   */
+  const [screenMode, setScreenMode] = useState(false);
+  /** The order just sent, while the thank-you is up. */
+  const [thanks, setThanks] = useState<{ no: string; eta?: number } | null>(null);
   const queued = useOfflineQueue(onQueueChange, startOfflineSync);
 
   // Two kinds of QR: /?t=<token> is a specific table, /?v=<token> is a walk-in
@@ -83,6 +94,14 @@ export function App() {
    * an events contact, and nobody else has a way in.
    */
   const groupToken = params.get('g');
+  /**
+   * A screen that stays put and serves one customer after another.
+   *
+   * Read here rather than looked up, because everything else about this mode
+   * is a matter of what happens AFTER an order is sent. The menu itself, the
+   * prices and the ordering are the walk-in's, unchanged.
+   */
+  const screenToken = params.get('s');
 
   useEffect(() => {
     (async () => {
@@ -125,6 +144,7 @@ export function App() {
         const venue =
           venues.find((v) => v.$id === table?.venue_id) ??
           (walkInToken ? venues.find((v) => v.walkin_token === walkInToken) : undefined) ??
+          (screenToken ? venues.find((v) => v.screen_token === screenToken) : undefined) ??
           (groupToken ? venues.find((v) => v.group_token === groupToken) : undefined) ??
           venues[0];
         if (!venue) throw new Error('This restaurant has no venue set up yet.');
@@ -133,6 +153,7 @@ export function App() {
         // A guessed or stale one quietly gets the ordinary menu rather than an
         // error, which tells somebody poking at addresses nothing at all.
         setGroupMode(!!groupToken && venue.group_token === groupToken);
+        setScreenMode(!!screenToken && venue.screen_token === screenToken);
 
         // Remembered on the device, so a guest whose signal drops between the
         // car park and the table still gets a menu rather than a spinner.
@@ -309,6 +330,30 @@ export function App() {
   // "Sent to the kitchen" answers the question for about ninety seconds; this
   // keeps answering it, and now survives a refresh, because it is in the
   // address rather than only in memory.
+  /**
+   * A shared screen never opens somebody's order status.
+   *
+   * The status page follows one order through to collection and stays on it,
+   * which is right on the phone of the person who ordered and wrong on a
+   * tablet that the next customer will pick up within the minute. On this
+   * screen the thank-you IS the confirmation, and it clears itself.
+   */
+  if (screenMode && thanks) {
+    return (
+      <ScreenThanks
+        orderNo={thanks.no}
+        etaMinutes={thanks.eta}
+        settings={boot.settings}
+        venue={boot.venue}
+        onDone={() => {
+          setThanks(null);
+          setCart([]);
+          showOrderInAddress(null);
+        }}
+      />
+    );
+  }
+
   if (viewing) {
     return (
       <OrderStatus
@@ -380,7 +425,12 @@ export function App() {
           {/* The way back to an order already placed. Only shown when there is
               one, and it is the only route back after a refresh, without it a
               guest who reloads has no way to reach their own order again. */}
-          {mine.length > 0 && (
+          {/* Never on a shared screen. "Your orders" is a list kept on this
+              device, and on a counter tablet this device is everybody — it
+              would offer each customer the last few strangers' orders, and
+              open them. Hidden rather than only stopped from growing, because
+              a screen may have been used as a walk-in before it was a screen. */}
+          {!screenMode && mine.length > 0 && (
             <>
               {' · '}
               <button className="linkish" onClick={() => setHistoryOpen(true)}>
@@ -530,10 +580,23 @@ export function App() {
           venueOpen={venueOpen}
           menu={menu}
           onClose={() => setShowCart(false)}
-          onPlaced={(orderNo, orderId) => {
+          onPlaced={(orderNo, orderId, _slot, etaMinutes) => {
             setShowCart(false);
-            rememberOrder({ id: orderId, no: orderNo, at: new Date().toISOString(), venueId: venue.$id });
-            setMine(myOrders());
+            /**
+             * A shared screen keeps no history of who ordered what.
+             *
+             * "Your orders" is a list on this device, and on a counter tablet
+             * this device is everybody. Remembering them would show each
+             * customer the last five strangers' orders and offer to open them.
+             */
+            if (!screenMode) {
+              rememberOrder({ id: orderId, no: orderNo, at: new Date().toISOString(), venueId: venue.$id });
+              setMine(myOrders());
+            }
+            if (screenMode) {
+              setThanks({ no: orderNo, eta: etaMinutes });
+              return;
+            }
             showOrderInAddress(orderId);
             setViewing(orderId);
           }}

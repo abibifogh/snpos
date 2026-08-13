@@ -80,6 +80,8 @@ export interface Venue extends Doc {
   holiday_closures?: string;
   walkin_token?: string;
   group_token?: string;
+  /** A screen that stays put and serves one customer after another. */
+  screen_token?: string;
   order_number_prefix?: string;
 }
 

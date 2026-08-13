@@ -65,15 +65,20 @@ function buildSlots(venue: Venue, features: FeatureMap, from = new Date()): Date
  * annoying; a confirmation screen that never appears is a customer who orders
  * the same food twice.
  */
-async function settledOrderNo(order: Order): Promise<string> {
-  if (!isProvisionalOrderNo(order.order_no)) return order.order_no;
+async function settledOrder(order: Order): Promise<{ no: string; eta?: number }> {
+  let eta = order.eta_minutes;
+  if (!isProvisionalOrderNo(order.order_no)) return { no: order.order_no, eta };
   for (let i = 0; i < 12; i++) {
     await new Promise((r) => setTimeout(r, 500));
-    const fresh = await db.getDocument(DB_ID, 'orders', order.$id).catch(() => null);
-    const no = (fresh as unknown as Order | null)?.order_no;
-    if (no && !isProvisionalOrderNo(no)) return no;
+    const fresh = (await db.getDocument(DB_ID, 'orders', order.$id).catch(() => null)) as unknown as Order | null;
+    // The wait is settled by the same pass that settles the number: the server
+    // reprices the order and works the queue out again. Taking the browser's
+    // figure would show a wait that ignored everything already on the pass.
+    if (typeof fresh?.eta_minutes === 'number') eta = fresh.eta_minutes;
+    const no = fresh?.order_no;
+    if (no && !isProvisionalOrderNo(no)) return { no, eta };
   }
-  return '';
+  return { no: '', eta };
 }
 
 export function CartSheet({
@@ -93,7 +98,13 @@ export function CartSheet({
   venueOpen: boolean;
   menu: LoadedMenu;
   onClose: () => void;
-  onPlaced: (orderNo: string, orderId: string, scheduled?: string) => void;
+  /**
+   * `eta` is what the order was quoted, queue included. Read back from the
+   * order rather than worked out here: the server checks the prices and the
+   * queue a moment after it lands, and a shared screen shows this figure and
+   * nothing else, so it has to be the settled one.
+   */
+  onPlaced: (orderNo: string, orderId: string, scheduled?: string, eta?: number) => void;
   onError: (message: string) => void;
 }) {
   const needReference = featureConfig(features, 'group_orders', 'require_reservation_number', true);
@@ -303,7 +314,8 @@ export function CartSheet({
       // counter, so it has to be the real one. It is settled server-side a
       // moment after the order lands; wait for it rather than showing the
       // placeholder. The guest can read their own order, and nothing else.
-      onPlaced(await settledOrderNo(order), order.$id, slot || undefined);
+      const settled = await settledOrder(order);
+      onPlaced(settled.no, order.$id, slot || undefined, settled.eta);
       setCart(() => []);
     } catch (e) {
       // Through humanError, so the server's own vocabulary, roles, scopes,

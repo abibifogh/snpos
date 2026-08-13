@@ -313,6 +313,13 @@ L10 apply. The rest are for whenever it is turned back on. See
 | N5 | Install the customer menu on a phone | Installs. Fullscreen, named after the restaurant |
 | N6 | Try to install the admin app | Not offered. The back button is wanted there |
 | N9 | Walk-in menu header | **No "Collect at the counter".** Says Takeaway |
+| N13 | Admin → Tables, create the screen ordering link | An address ending `?s=` appears |
+| N14 | Open it and send an order | **Thank you, and the wait in minutes.** No status page |
+| N15 | Wait without touching it | Menu comes back **on its own**, about 30 seconds |
+| N16 | Press "Order something else" first | Menu comes back at once. Basket empty |
+| N17 | Order twice in a row on that screen | **No "Your orders" list.** Nobody sees the last customer's |
+| N18 | The walk-in QR, unchanged | Still goes to the live status page as before |
+| N19 | Order on the screen while the pass is busy | The wait quoted **includes the queue** |
 | N7 | Open the till in a browser tab, as before | Still works, unchanged |
 | N8 | On github.io rather than a domain | Opens on the till, not on the site root |
 | N10 | Landscape till, Record expense, tap Amount | **Save is still on screen** with the keyboard up |

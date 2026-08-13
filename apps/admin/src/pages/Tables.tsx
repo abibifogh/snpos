@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
-import { db, DB_ID, ID, listAll, humanError } from '../lib';
+import { db, DB_ID, ID, listAll, humanError, saveDropping } from '../lib';
 import type { Doc } from '@snpos/core';
 import { useSession } from '../session';
 
@@ -17,7 +17,7 @@ interface TableRow extends Doc {
   sort: number;
 }
 
-interface VenueRow extends Doc { name: string; walkin_token?: string; group_token?: string }
+interface VenueRow extends Doc { name: string; walkin_token?: string; group_token?: string; screen_token?: string }
 
 /**
  * The QR token is the table's identity to a customer who has scanned nothing
@@ -125,6 +125,7 @@ export function TablesPage() {
    * a flyer. It opens the menu in takeaway mode.
    */
   const walkInUrl = (v: VenueRow) => (v.walkin_token ? `${menuBase}/?v=${v.walkin_token}` : null);
+  const screenUrl = (v: VenueRow) => (v.screen_token ? `${menuBase}/?s=${v.screen_token}` : null);
 
   const makeWalkIn = async (v: VenueRow) => {
     try {
@@ -132,6 +133,32 @@ export function TablesPage() {
       await db.updateDocument(DB_ID, 'venues', v.$id, { walkin_token: token });
       await load();
       toast('Walk-in QR created');
+    } catch (e) {
+      toast(humanError(e), 'err');
+    }
+  };
+
+  /**
+   * The address for a screen the restaurant owns.
+   *
+   * Separate from the walk-in QR rather than a setting on it, because the two
+   * are read by different people in different situations and behave
+   * differently after an order is sent. One address that sometimes follows an
+   * order and sometimes clears itself is an address nobody can reason about,
+   * and printing the wrong behaviour onto a sticker is not something you find
+   * out about quickly.
+   */
+  const makeScreen = async (v: VenueRow) => {
+    try {
+      const token = newToken();
+      const { dropped } = await saveDropping('venues', v.$id, { screen_token: token });
+      await load();
+      toast(
+        dropped.includes('screen_token')
+          ? 'The database has no place for this yet. Run "Provision Appwrite" in GitHub Actions, then try again.'
+          : 'Screen ordering link created',
+        dropped.length ? 'err' : undefined,
+      );
     } catch (e) {
       toast(humanError(e), 'err');
     }
@@ -191,6 +218,39 @@ export function TablesPage() {
                 </div>
               ) : (
                 <Button size="sm" onClick={() => makeWalkIn(v)}>Create walk-in QR</Button>
+              )}
+            </div>
+          );
+        })}
+      </Card>
+
+      {/*
+        A screen that stays where it is and serves one customer after another.
+
+        The ordinary menu goes to a live status page and stays there, which is
+        right on the phone of the person who ordered and wrong on a tablet the
+        next customer picks up within the minute — they would find a stranger's
+        order, and somebody would have to reset the thing between every sale.
+      */}
+      <Card title="Screen ordering">
+        <p className="small dim" style={{ marginTop: 0 }}>
+          For a tablet you own, propped on the counter or fixed to a wall, used by one customer after another.
+          Same menu as the walk-in QR. The difference is what happens after the order is sent: it says thank
+          you and how long the food will be, then puts the menu back by itself after half a minute, so nobody
+          has to reset it and nobody sees the last customer's order.
+        </p>
+        {venues.map((v) => {
+          const url = screenUrl(v);
+          return (
+            <div className="row" key={v.$id} style={{ justifyContent: 'space-between', padding: '0.4rem 0' }}>
+              <span>{v.name}</span>
+              {url ? (
+                <div className="row">
+                  <Input readOnly value={url} style={{ width: '22rem' }} onFocus={(e) => e.currentTarget.select()} />
+                  <Button size="sm" onClick={() => { navigator.clipboard.writeText(url); toast('Link copied'); }}>Copy</Button>
+                </div>
+              ) : (
+                <Button size="sm" onClick={() => makeScreen(v)}>Create screen link</Button>
               )}
             </div>
           );
