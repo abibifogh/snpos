@@ -175,6 +175,65 @@ export function Modal({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  /**
+   * Fit inside what the keyboard has left, not inside the screen.
+   *
+   * A modal was sized against the window, and the window does not shrink when
+   * an on-screen keyboard opens: it slides over the page. So half the form
+   * ended up underneath it, Save included. On a till lying flat in landscape
+   * this is not a nuisance, it is most of the screen — a keyboard takes a
+   * fixed share of the height and a landscape screen has very little height
+   * to start with. Somebody types an amount and can no longer see or reach the
+   * button that records it.
+   *
+   * `visualViewport` is the part still actually visible, and it is the only
+   * thing that reports the keyboard. Its height and its offset both matter:
+   * the offset is how far the browser has scrolled the page up to keep the
+   * cursor in view, and without it the panel is pinned to a top that is no
+   * longer on screen.
+   *
+   * Falls back to the window where there is no such thing, which is every
+   * desktop browser, where there is no keyboard to make room for anyway.
+   */
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const fit = () => {
+      const root = document.documentElement;
+      root.style.setProperty('--vv-height', `${Math.round(vv.height)}px`);
+      root.style.setProperty('--vv-top', `${Math.round(vv.offsetTop)}px`);
+    };
+    fit();
+    vv.addEventListener('resize', fit);
+    vv.addEventListener('scroll', fit);
+    return () => {
+      vv.removeEventListener('resize', fit);
+      vv.removeEventListener('scroll', fit);
+      // Cleared on the way out so a stale height cannot outlive the modal that
+      // measured it.
+      document.documentElement.style.removeProperty('--vv-height');
+      document.documentElement.style.removeProperty('--vv-top');
+    };
+  }, []);
+
+  /**
+   * Keep whatever is being typed into on screen.
+   *
+   * The browser does this by itself for a page, and does it badly for a panel
+   * that scrolls inside its own box: it will happily leave the field one line
+   * below the fold. Asking directly costs nothing and is the difference
+   * between typing a figure and typing a figure you cannot see.
+   */
+  useEffect(() => {
+    const onFocus = (e: FocusEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (!el?.closest?.('.modal-body')) return;
+      window.setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250);
+    };
+    document.addEventListener('focusin', onFocus);
+    return () => document.removeEventListener('focusin', onFocus);
+  }, []);
+
   // Clicking the background does NOT close.
   //
   // It used to, and it threw away everything typed. A cook recording gas money

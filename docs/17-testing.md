@@ -132,6 +132,8 @@ Run these every time. The restaurant is the part that is already earning.
 | F3q | Retire that table in admin, look at the open ticket | Still named. The plate still has to get there |
 | F3r | A takeaway order | Says Takeaway. No table invented |
 | F16 | Kitchen, ready order, take **half** the payment | **Ticket stays on the pass**, marked Part paid |
+| F16a | Read that ticket | Says **how much is left**, not what the bill came to |
+| F16b | Take a deposit on an order still cooking | Part paid shows at the top too, not only when ready |
 | F17 | Press Collect & take the rest, pay the balance | Now it clears off the pass, once |
 | F18 | Take half, then look at the till's floor plan | Table still shows its bill, marked part paid |
 | F19 | Take half at the till, reopen that table | The order is there and the balance is what is left |
@@ -273,6 +275,9 @@ L10 apply. The rest are for whenever it is turned back on. See
 | N9 | Walk-in menu header | **No "Collect at the counter".** Says Takeaway |
 | N7 | Open the till in a browser tab, as before | Still works, unchanged |
 | N8 | On github.io rather than a domain | Opens on the till, not on the site root |
+| N10 | Landscape till, Record expense, tap Amount | **Save is still on screen** with the keyboard up |
+| N11 | Scroll that form with the keyboard up | Everything reachable. Nothing hidden behind the keys |
+| N12 | The same on a phone held upright | Unchanged from before |
 
 ---
 

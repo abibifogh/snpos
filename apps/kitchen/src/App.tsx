@@ -8,7 +8,7 @@ import {
   db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
   verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
-  itemsAvailableNow, dueMinutes, ticketLines, isOverdue, minutesOver, seatFor,
+  itemsAvailableNow, dueMinutes, ticketLines, isOverdue, minutesOver, seatFor, amountOutstanding,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback,
 } from '@snpos/core';
 import type {
@@ -342,6 +342,36 @@ export function App() {
   );
 
   const pending = visible.filter((o) => o.status === 'PENDING');
+
+  /**
+   * What is still owed on a part-paid order.
+   *
+   * Kept apart from the order itself because it is not on it: an order records
+   * what the bill came to, and what has been taken against it is the payments,
+   * added up. Storing a running balance on the order would be a second copy of
+   * a figure that is already derivable, and the two would disagree the first
+   * time a payment was voided.
+   *
+   * Read only for the handful of tickets that are part paid, and read again
+   * whenever one of them changes, which is what happens when somebody pays a
+   * little more. Everything else on this screen never asks.
+   */
+  const [owed, setOwed] = useState<Record<string, number>>({});
+  const owedAsked = useRef<Record<string, string>>({});
+  useEffect(() => {
+    const part = orders.filter((o) => o.payment_status === 'partial');
+    for (const o of part) {
+      // Keyed by the order's own version, so a further payment re-asks and a
+      // re-render does not.
+      if (owedAsked.current[o.$id] === o.$updatedAt) continue;
+      owedAsked.current[o.$id] = o.$updatedAt;
+      void amountOutstanding(o)
+        .then((left) => setOwed((prev) => (prev[o.$id] === left ? prev : { ...prev, [o.$id]: left })))
+        // Left unknown rather than shown as zero. A ticket that says nothing is
+        // owed when something is would send food out unpaid.
+        .catch(() => undefined);
+    }
+  }, [orders]);
 
   /**
    * Orders that should have been out by now.
@@ -830,6 +860,7 @@ export function App() {
               order={order}
               items={items[order.$id]}
               seating={seating}
+              owed={owed[order.$id]}
               sla={sla}
               overdue={overdue.some((o) => o.$id === order.$id)}
               cookMinutes={promisedMinutes(order)}
@@ -913,7 +944,7 @@ export function App() {
 }
 
 function Ticket({
-  order, items, seating, sla, overdue, cookMinutes,
+  order, items, seating, owed, sla, overdue, cookMinutes,
   settings, canSettle, onAccept, onStart, onDone, onCollect, onSettle, onReject,
 }: {
   order: Order;
@@ -921,6 +952,8 @@ function Ticket({
   items: OrderItem[] | undefined;
   /** Tables by id, so the ticket can name the one the guest chose. */
   seating: Record<string, TableRow>;
+  /** What is left to pay on a part-paid bill. Undefined until it is known. */
+  owed?: number;
   sla: number;
   overdue: boolean;
   /** The cooking time this ticket is judged against, the same figure the alarm uses. */
@@ -1024,6 +1057,24 @@ function Ticket({
           <div style={{ marginTop: '0.2rem' }}>
             {order.channel === 'qr' && <span className="pill qr">QR</span>}
             {order.is_preorder && <span className="pill preorder">Pre-order</span>}
+            {/*
+              Part paid, at the top, at every stage.
+
+              Not only on a finished ticket. A deposit is taken on an order
+              that has not been cooked yet, and that is precisely the one that
+              gets handed over without anybody asking for the rest.
+
+              What is LEFT, never what the bill came to: the total is the one
+              figure on this ticket that is now certainly wrong, and it is the
+              figure a tired person would read out. Silent until the answer is
+              known, because a balance showing zero while it is still being
+              looked up is food going out of the door unpaid.
+            */}
+            {order.payment_status === 'partial' && (
+              <span className="pill" style={{ background: '#3a2d14', color: '#f5c451' }}>
+                Part paid{owed !== undefined && settings ? ` · ${formatMoney(owed, settings)} left` : ''}
+              </span>
+            )}
             {overdue && <span className="pill" style={{ background: '#3a1714', color: '#ff9b90' }}>Late</span>}
           </div>
         </div>
@@ -1076,26 +1127,28 @@ function Ticket({
               </>
             ) : (
               <>
-                {/* Part paid is its own state and has to look like one. Read as
-                    simply unpaid, somebody chases the whole bill again; read as
-                    paid, the rest is never asked for. The figure is left off
-                    here on purpose: this screen knows the bill, not what has
-                    been taken against it, and a total beside "part paid" would
-                    be the wrong number in the most confusing possible place.
-                    The box that opens next says exactly what is left. */}
-                {order.payment_status === 'partial' && (
-                  <span className="pill" style={{ background: '#3a2d14', color: '#f5c451' }}>Part paid</span>
-                )}
+                {/*
+                  Part paid is its own state and has to look like one, with the
+                  figure that matters on it. Read as simply unpaid, somebody
+                  chases the whole bill again; read as paid, the rest is never
+                  asked for; read without a number, whoever is standing there
+                  has to open a box to find out whether it is five cedis or
+                  fifty.
+
+                  What is left, never what the bill came to. The total is the
+                  one number on this ticket that is now certainly wrong, and it
+                  is the number a tired person would read out.
+                */}
                 {canSettle ? (
                   <Button variant="primary" onClick={onSettle}>
                     {order.payment_status === 'partial'
-                      ? 'Collect & take the rest'
+                      ? `Collect & take the rest${owed !== undefined && settings ? ` · ${formatMoney(owed, settings)}` : ''}`
                       : `Collect & take payment${settings ? ` · ${formatMoney(order.total, settings)}` : ''}`}
                   </Button>
                 ) : (
                   <span className="small" style={{ opacity: 0.75 }}>
                     {order.payment_status === 'partial'
-                      ? 'Waiting for the rest of the payment'
+                      ? `Waiting for the rest${owed !== undefined && settings ? ` · ${formatMoney(owed, settings)}` : ''}`
                       : `Waiting for payment${settings ? ` · ${formatMoney(order.total, settings)}` : ''}`}
                   </span>
                 )}

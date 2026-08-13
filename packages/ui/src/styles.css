@@ -220,19 +220,73 @@ table.data tbody tr:hover { background: var(--surface-2); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---- modal ------------------------------------------------------------ */
+/*
+ * The backdrop covers the screen; the panel lives inside what is left of it.
+ *
+ * --vv-height and --vv-top are written by the Modal component from
+ * visualViewport, which is the only thing that knows an on-screen keyboard has
+ * opened. The fallbacks are for browsers without it, where nothing slides over
+ * the page in the first place.
+ */
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(16, 24, 40, 0.45);
   display: flex; align-items: center; justify-content: center; padding: 1rem; z-index: 50;
+  /* Pulled up by however far the browser scrolled the page to follow the
+     cursor, so the panel stays with the part of the screen still visible. */
+  top: var(--vv-top, 0px);
+  height: var(--vv-height, 100%);
 }
 .modal {
   background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-lg);
-  width: 100%; max-width: 560px; max-height: 90vh; display: flex; flex-direction: column;
+  width: 100%; max-width: 560px; display: flex; flex-direction: column;
+  /* All of the room there is, less the backdrop's own padding. Was 90vh, and
+     vh does not know about keyboards. */
+  max-height: 100%;
 }
 .modal-wide { max-width: 900px; }
 .modal-body { padding: 1.25rem; overflow-y: auto; }
 .modal-foot {
   padding: 0.9rem 1.25rem; border-top: 1px solid var(--border);
   display: flex; justify-content: flex-end; gap: 0.6rem;
+}
+
+/*
+ * Short and wide: a till lying flat in landscape, usually with a keyboard up.
+ *
+ * There is very little height to spend, so the padding goes first, then the
+ * gaps between fields. The heading shrinks but stays, because a form with no
+ * title is a form somebody has to guess at. Nothing is hidden and nothing is
+ * made smaller than a thumb can hit; this only buys back the space that was
+ * being used for air.
+ */
+@media (max-height: 520px) {
+  .modal-backdrop { padding: 0.35rem; }
+  .modal { max-width: 720px; }
+  .modal > .card-head { padding: 0.5rem 0.85rem; }
+  .modal > .card-head h2 { font-size: 1rem; }
+  .modal-body { padding: 0.6rem 0.85rem; }
+  .modal-body .field { margin-bottom: 0.55rem; }
+  /* The hints are for the first few times somebody uses a form, and they are
+     the first thing to go when the alternative is not seeing the field. */
+  .modal-body .field .hint { display: none; }
+  .modal-foot { padding: 0.5rem 0.85rem; }
+}
+
+/*
+ * Two columns where the screen is wide but not tall.
+ *
+ * The same fields, half the scrolling. A landscape till has width to spare and
+ * none of the height that a stack of one-per-row fields wants.
+ */
+@media (max-height: 520px) and (min-width: 700px) {
+  .modal-body { display: flex; flex-wrap: wrap; gap: 0 0.7rem; align-content: flex-start; }
+  /* Everything spans by default — headings, notices, the item rows — so only
+     the plain fields pair up, and anything unrecognised is left alone rather
+     than squeezed into half a row. */
+  .modal-body > * { flex: 1 1 100%; min-width: 0; }
+  .modal-body > .field { flex: 1 1 calc(50% - 0.7rem); }
+  /* A box somebody writes a sentence into wants the whole width. */
+  .modal-body > .field:has(textarea) { flex-basis: 100%; }
 }
 
 /* ---- toast ------------------------------------------------------------ */
