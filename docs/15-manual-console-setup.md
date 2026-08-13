@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **68 collections, 917 fields and 231 indexes**. Entered by hand at a
+> This is **68 collections, 924 fields and 231 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -389,7 +389,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: managers, Team: admins
 
-**Attributes** (30)
+**Attributes** (31)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -419,9 +419,10 @@ There are 68 collections. A progress checklist is at the end of this document.
 | `consignor_id` | String | size 64 | No | ,  | No |
 | `intake_id` | String | size 64 | No | ,  | No |
 | `commission_bp` | Integer | ,  | No | ,  | No |
+| `commission_flat` | Integer | ,  | No | 0 | No |
 | `barcode` | String | size 60 | No | ,  | No |
 | `on_hand` | Integer | ,  | No | 0 | No |
-| `is_one_off` | Boolean | ,  | **Yes** | ,  | No |
+| `is_one_off` | Boolean | ,  | No | false | No |
 | `maker_note` | String | size 500 | No | ,  | No |
 
 **Indexes** (6)
@@ -627,7 +628,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: All users · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: _none, server only_
 
-**Attributes** (62)
+**Attributes** (64)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -640,6 +641,8 @@ There are 68 collections. A progress checklist is at the end of this document.
 | `table_id` | String | size 64 | No | ,  | No |
 | `session_id` | String | size 64 | No | ,  | No |
 | `shift_id` | String | size 64 | No | ,  | No |
+| `shelved_at` | Datetime | ,  | No | ,  | No |
+| `shelved_from_shift` | String | size 64 | No | ,  | No |
 | `status` | Enum | SCHEDULED, PENDING, ACCEPTED, PREPARING, READY, SERVED, CLOSED, REJECTED, CANCELLED | **Yes** | ,  | No |
 | `alert_level` | Integer | ,  | **Yes** | ,  | No |
 | `accepted_at` | Datetime | ,  | No | ,  | No |
@@ -719,7 +722,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: All users · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins
 
-**Attributes** (23)
+**Attributes** (24)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -742,6 +745,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 | `variant_label` | String | size 60 | No | ,  | No |
 | `consignor_id` | String | size 64 | No | ,  | No |
 | `commission_bp` | Integer | ,  | No | ,  | No |
+| `commission_flat` | Integer | ,  | No | 0 | No |
 | `void_reason` | String | size 300 | No | ,  | No |
 | `voided_by` | String | size 64 | No | ,  | No |
 | `course` | Integer | ,  | **Yes** | ,  | No |
@@ -2147,7 +2151,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
-**Attributes** (14)
+**Attributes** (15)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -2159,6 +2163,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 | `email` | String | size 160 | No | ,  | No |
 | `address` | String | size 300 | No | ,  | No |
 | `commission_bp` | Integer | ,  | **Yes** | ,  | No |
+| `commission_flat` | Integer | ,  | No | 0 | No |
 | `payout_method` | Enum | cash, momo, bank, other | No | momo | No |
 | `payout_details` | String | size 200 | No | ,  | No |
 | `agreement_start` | Datetime | ,  | No | ,  | No |
@@ -2180,7 +2185,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
-**Attributes** (10)
+**Attributes** (11)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -2192,6 +2197,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 | `received_by` | String | size 64 | No | ,  | No |
 | `piece_count` | Integer | ,  | **Yes** | ,  | No |
 | `total_retail` | Integer | ,  | **Yes** | ,  | No |
+| `total_due` | Integer | ,  | No | 0 | No |
 | `notes` | String | size 1000 | No | ,  | No |
 | `status` | Enum | open, closed | **Yes** | ,  | No |
 
@@ -2300,7 +2306,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: managers, Team: admins · **Create**: _none, server only_ · **Update**: _none, server only_ · **Delete**: _none, server only_
 
-**Attributes** (17)
+**Attributes** (18)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -2319,6 +2325,7 @@ There are 68 collections. A progress checklist is at the end of this document.
 | `gross` | Integer | ,  | No | 0 | No |
 | `commission` | Integer | ,  | No | 0 | No |
 | `commission_bp` | Integer | ,  | No | 0 | No |
+| `commission_flat` | Integer | ,  | No | 0 | No |
 | `payout_id` | String | size 64 | No | ,  | No |
 | `created_by` | String | size 64 | No | ,  | No |
 
@@ -2545,7 +2552,7 @@ way mistakes creep in.
 - [ ]  5. `settings` (54 fields, 1 indexes)
 - [ ]  6. `payment_methods` (11 fields, 3 indexes)
 - [ ]  7. `categories` (12 fields, 3 indexes)
-- [ ]  8. `menu_items` (30 fields, 6 indexes)
+- [ ]  8. `menu_items` (31 fields, 6 indexes)
 - [ ]  9. `menu_item_categories` (5 fields, 4 indexes)
 - [ ] 10. `stations` (7 fields, 3 indexes)
 - [ ] 11. `addon_groups` (7 fields, 1 indexes)
@@ -2553,8 +2560,8 @@ way mistakes creep in.
 - [ ] 13. `menu_item_addon_groups` (6 fields, 2 indexes)
 - [ ] 14. `tables` (13 fields, 4 indexes)
 - [ ] 15. `dining_sessions` (9 fields, 3 indexes)
-- [ ] 16. `orders` (62 fields, 14 indexes)
-- [ ] 17. `order_items` (23 fields, 4 indexes)
+- [ ] 16. `orders` (64 fields, 14 indexes)
+- [ ] 17. `order_items` (24 fields, 4 indexes)
 - [ ] 18. `payments` (16 fields, 4 indexes)
 - [ ] 19. `shifts` (29 fields, 5 indexes)
 - [ ] 20. `shift_expenses` (17 fields, 4 indexes)
@@ -2599,12 +2606,12 @@ way mistakes creep in.
 - [ ] 59. `discounts` (29 fields, 4 indexes)
 - [ ] 60. `discount_redemptions` (13 fields, 5 indexes)
 - [ ] 61. `cash_handovers` (15 fields, 4 indexes)
-- [ ] 62. `consignors` (14 fields, 3 indexes)
-- [ ] 63. `consignment_intakes` (10 fields, 3 indexes)
+- [ ] 62. `consignors` (15 fields, 3 indexes)
+- [ ] 63. `consignment_intakes` (11 fields, 3 indexes)
 - [ ] 64. `product_variants` (12 fields, 4 indexes)
 - [ ] 65. `variant_types` (6 fields, 3 indexes)
 - [ ] 66. `product_moves` (13 fields, 5 indexes)
-- [ ] 67. `consignor_ledger` (17 fields, 5 indexes)
+- [ ] 67. `consignor_ledger` (18 fields, 5 indexes)
 - [ ] 68. `consignor_payouts` (14 fields, 3 indexes)
 
 **Stage 6, seed documents**

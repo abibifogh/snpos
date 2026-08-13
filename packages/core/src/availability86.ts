@@ -28,10 +28,28 @@ export interface AvailabilityEvent extends Doc {
   alerted_at?: string;
 }
 
+/**
+ * Fields this write does not care about but has to carry anyway.
+ *
+ * `is_one_off` was added to the menu table for the craft shop, and was added as
+ * required. Appwrite checks a document against the requirements as they stand
+ * now, not as they stood when it was written, so every dish that existed before
+ * that day fails the check on ANY change — and marking one sold out came back
+ * as "missing required attribute is_one_off", which is a craft shop field being
+ * quoted at a cook who has run out of chicken.
+ *
+ * The attribute is no longer required in the schema, which is the actual fix,
+ * but that only takes effect when the project is next provisioned. Passing the
+ * item's own value through means the pass keeps working tonight either way.
+ * Its own value, never a flat false: a handmade one-off is still a one-off
+ * after it sells out, and quietly turning that off would lose it.
+ */
+const carried = (item: Pick<MenuItem, 'is_one_off'>) => ({ is_one_off: item.is_one_off ?? false });
+
 /** Take a dish off the menu now. */
 export async function markUnavailable(opts: {
   venueId: string;
-  item: Pick<MenuItem, '$id' | 'name'>;
+  item: Pick<MenuItem, '$id' | 'name' | 'is_one_off'>;
   userId?: string;
   userName?: string;
   shiftId?: string;
@@ -47,6 +65,7 @@ export async function markUnavailable(opts: {
     unavailable_since: now,
     unavailable_by: opts.userId ?? '',
     unavailable_reason: opts.reason ?? '',
+    ...carried(opts.item),
   });
 
   await db.createDocument(DB_ID, 'item_availability', ID.unique(), {
@@ -63,7 +82,7 @@ export async function markUnavailable(opts: {
 
 /** Put it back on the menu. */
 export async function markAvailable(opts: {
-  item: Pick<MenuItem, '$id'>;
+  item: Pick<MenuItem, '$id' | 'is_one_off'>;
   userId?: string;
 }): Promise<void> {
   const now = new Date().toISOString();
@@ -73,6 +92,9 @@ export async function markAvailable(opts: {
     unavailable_since: '',
     unavailable_by: '',
     unavailable_reason: '',
+    // See the note on `carried`. Putting a dish back had the same fault as
+    // taking it off, and would have been found an hour later.
+    ...carried(opts.item),
   });
 
   // Close the open log row rather than writing a second one, so one absence

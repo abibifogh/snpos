@@ -341,7 +341,10 @@ export function App() {
             try {
               await markUnavailable({
                 venueId: ctx.venue.$id,
-                item: { $id: i.$id, name: i.name },
+                // The dish itself, not a copy of two of its fields. The write
+                // has to carry a value it is not changing; see `carried`.
+                item: itemsAvailableNow(ctx.menu, ctx.module).find((x) => x.$id === i.$id)
+                  ?? { $id: i.$id, name: i.name },
                 userId: ctx.userId,
                 userName: ctx.profile?.display_name,
                 shiftId: ctx.shift?.$id,
@@ -361,7 +364,10 @@ export function App() {
           onRestore={async (i) => {
             setOffBusy(i.$id);
             try {
-              await markAvailable({ item: { $id: i.$id }, userId: ctx.userId });
+              await markAvailable({
+                item: itemsAvailableNow(ctx.menu, ctx.module).find((x) => x.$id === i.$id) ?? { $id: i.$id },
+                userId: ctx.userId,
+              });
               const fresh = await reloadMenu(ctx.venue.$id);
               setCtx((c) => (c ? { ...c, menu: fresh } : c));
               toast(`${i.name} back on the menu`);

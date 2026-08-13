@@ -463,7 +463,22 @@ export const COLLECTIONS = [
       // forgot it failed with "Missing required attribute on_hand" rather
       // than quietly using the zero it already had.
       ['on_hand', 'i', null, false, 0],
-      ['is_one_off', 'b', null, true, false], // a single handmade piece
+      /**
+       * A single handmade piece. Optional, and the note above on_hand is the
+       * whole reason why.
+       *
+       * This was required, and it was added to a table that already held every
+       * dish the restaurant sells. Appwrite checks a document against the
+       * requirements as they stand NOW, so a dish written before this existed
+       * has no value for it and fails the check — not only when saved, but on
+       * any change at all. Marking jollof sold out at the pass came back
+       * "missing required attribute is_one_off", which names a craft shop
+       * field to a cook who has run out of chicken.
+       *
+       * A field that arrives after the rows do cannot be required. There is no
+       * moment at which the existing rows were ever going to have it.
+       */
+      ['is_one_off', 'b', null, false, false],
       ['maker_note', 's', 500, false], // the card that sits beside it
     ],
     indexes: [

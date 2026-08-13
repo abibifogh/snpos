@@ -87,6 +87,9 @@ not just what to press.
 | C6 | Record an expense on each side | Each appears only under its own filter |
 | C7 | Craft till, no shift open | Says nothing can be sold. Does **not** offer a kitchen |
 | C8 | Craft till, press Sold out | Shop products only. **No dishes** |
+| C8a | Take a dish added before the craft work off the menu | **Works.** No "missing required attribute" |
+| C8b | Put it back | Works too |
+| C8c | Take a craft one-off piece off, then look at it in admin | **Still marked a one-off** |
 | C9 | Close a craft shift | **No OK / Low / Out shelf check.** Money in and money out shown |
 | C10 | Close a kitchen shift | Shelf check still there, money in and out above it |
 | C11 | Record spend from the craft till | Saved against the shop. **No ingredient list** on the form |

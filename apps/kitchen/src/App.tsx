@@ -702,7 +702,9 @@ export function App() {
             try {
               await markUnavailable({
                 venueId: venue.$id,
-                item: { $id: i.$id, name: i.name },
+                // The dish itself, not a copy of two of its fields. The write
+                // has to carry a value it is not changing; see `carried`.
+                item: offItems.find((x) => x.$id === i.$id) ?? { $id: i.$id, name: i.name },
                 userId: who?.user_id || who?.$id,
                 userName: who?.display_name,
                 reason,
@@ -718,7 +720,10 @@ export function App() {
           onRestore={async (i) => {
             setOffBusy(i.$id);
             try {
-              await markAvailable({ item: { $id: i.$id }, userId: who?.user_id || who?.$id });
+              await markAvailable({
+                item: offItems.find((x) => x.$id === i.$id) ?? { $id: i.$id },
+                userId: who?.user_id || who?.$id,
+              });
               const m = await loadMenu(venue.$id);
               setOffItems(itemsAvailableNow(m, 'kitchen'));
             } catch (e) {
