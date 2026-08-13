@@ -102,6 +102,11 @@ not just what to press.
 | G9 | Record spend, answer "from the money taken this shift" | Close the shift: **Should be in hand is lower by it** |
 | G10 | Record spend, answer "from my own money" | Recorded, listed at close, **not taken off the count** |
 | G11 | This shift → Money out | Every spend listed, with where the money came from |
+| G20 | Take one cash sale and one card sale, open This shift | **Two figures, named.** Not one lump |
+| G21 | Leave an order unpaid, and reject another | Neither appears in money in. Nothing to count |
+| G22 | Pay half a bill, then look | The half that was paid is counted, under its method |
+| G23 | Void a payment, then look | Gone from the figures. Money taken back was not taken |
+| G24 | A sale with a tip | Counted, and said to be a tip rather than a sale |
 | G12 | Press Correct on one, change the amount | Saved. Close screen uses the new figure |
 | G13 | Close the shift, press Correct again | **Not offered.** That is an admin's from here |
 | G14 | Admin → Expenses, switch a closed shift's spend to own money | Saved, and **that shift is worked out again** |

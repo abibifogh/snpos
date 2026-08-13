@@ -554,3 +554,44 @@ table.data tbody tr:hover { background: var(--surface-2); }
   .fold > div { display: block !important; }
   .fold-caret { display: none; }
 }
+
+/* ---- what came in, and by what means ----------------------------------- */
+
+/*
+ * Read at the end of a shift by somebody about to count a drawer, so the
+ * figures are set out as separate blocks rather than a sentence: cash and card
+ * answer different questions and only one of them is in the till.
+ *
+ * Wraps rather than scrolls. A figure half off the side of a kitchen screen is
+ * a figure nobody counts.
+ */
+.cash-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+.cash-split-item {
+  flex: 1 1 8rem;
+  min-width: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.cash-split-item .label {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.cash-split-item .figure {
+  font-size: 1.15rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  margin-top: 0.1rem;
+}
+/* The sum, marked as the sum. Without this it reads as one more method. */
+.cash-split-item.total {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 10%, transparent);
+}

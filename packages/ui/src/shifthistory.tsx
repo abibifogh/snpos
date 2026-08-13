@@ -3,10 +3,21 @@ import { Badge, Button, Empty, Field, FormError, Input, Modal, Spinner } from '.
 import {
   Query, formatMoney, listAll, displayOrderNo, requestReceipt,
   receiptForOrder, buildReceiptHtml, openPrintable, ordersForShift, fromTakings,
+  loadPaymentMethods,
 } from '@snpos/core';
 import type {
   Order, OrderItem, Settings, Shift, Doc, Venue, StaffProfile, PaidToKind, Module,
+  PaymentMethod,
 } from '@snpos/core';
+
+/** A payment as this screen needs it: how much, in tips, and by what means. */
+interface PaymentRow extends Doc {
+  shift_id?: string;
+  method_id: string;
+  amount: number;
+  tip?: number;
+  status?: string;
+}
 import { ExpenseModal } from './till';
 
 interface ExpenseRow extends Doc {
@@ -64,6 +75,17 @@ export function ShiftHistory({
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [items, setItems] = useState<Record<string, OrderItem[]>>({});
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
+  /**
+   * What came in, and by what means.
+   *
+   * Read from the payments rather than added up from the orders. An order
+   * total says what a bill came to; a payment says what was actually handed
+   * over and in what form, which is the question being asked here — and it is
+   * the only one of the two that knows about a bill settled half in cash and
+   * half by card, or one that has only been part paid.
+   */
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Sending a receipt again, and asking for an address when the order has none.
@@ -141,12 +163,16 @@ export function ShiftHistory({
       // before the till was opened and settled during this shift belongs here,
       // and reading only the clock left it out of the very list its money was
       // sitting in.
-      const [sorted, e] = await Promise.all([
+      const [sorted, e, pays, meths] = await Promise.all([
         ordersForShift(venueId, shift),
         listAll<ExpenseRow>('shift_expenses', [Query.equal('shift_id', shift.$id)]),
+        listAll<PaymentRow>('payments', [Query.equal('shift_id', shift.$id)]).catch(() => [] as PaymentRow[]),
+        loadPaymentMethods(venueId).catch(() => [] as PaymentMethod[]),
       ]);
       setOrders(sorted);
       setExpenses(e.sort((a, b) => b.$createdAt.localeCompare(a.$createdAt)));
+      setPayments(pays);
+      setMethods(meths);
 
       if (sorted.length) {
         const lines = await listAll<OrderItem>('order_items', [
@@ -159,9 +185,40 @@ export function ShiftHistory({
     })().catch((e) => setError(e instanceof Error ? e.message : 'Could not load this shift.'));
   }, [shift.$id, shift.opened_at, shift.closed_at, venueId]);
 
-  const takings = (orders ?? [])
-    .filter((o) => o.payment_status === 'paid')
-    .reduce((s, o) => s + o.total, 0);
+  /**
+   * Money in, split by how it arrived.
+   *
+   * A cook closing a shift is about to count a drawer, and "four hundred and
+   * twenty came in" is no help when three hundred of it went through a card
+   * machine. The two figures answer different questions and only one of them
+   * is in the till.
+   *
+   * Voided and refunded payments are left out: money that was taken back was
+   * not taken. Tips are counted, because they were physically handed over and
+   * are in the drawer to be counted, and shown apart so nobody mistakes them
+   * for sales.
+   */
+  const live = payments.filter((p) => p.status !== 'voided' && p.status !== 'refunded');
+  const byMethod = methods
+    .map((m) => {
+      const mine = live.filter((p) => p.method_id === m.$id);
+      return {
+        id: m.$id,
+        name: m.name,
+        amount: mine.reduce((s, p) => s + (p.amount ?? 0), 0),
+        tips: mine.reduce((s, p) => s + (p.tip ?? 0), 0),
+      };
+    })
+    .filter((m) => m.amount > 0 || m.tips > 0);
+
+  // Anything paid against a method this venue no longer lists. Rare, and worth
+  // showing rather than quietly losing from a total somebody is counting to.
+  const known = new Set(methods.map((m) => m.$id));
+  const strayAmount = live.filter((p) => !known.has(p.method_id))
+    .reduce((s, p) => s + (p.amount ?? 0) + (p.tip ?? 0), 0);
+
+  const takings = live.reduce((s, p) => s + (p.amount ?? 0) + (p.tip ?? 0), 0);
+  const tipsTotal = live.reduce((s, p) => s + (p.tip ?? 0), 0);
   const spent = expenses.reduce((s, e) => s + e.amount, 0);
 
   const time = (iso: string) =>
@@ -183,6 +240,39 @@ export function ShiftHistory({
           {money(takings)} in · {money(spent)} out
         </span>
       </div>
+
+      {/*
+        What came in, split by how it arrived.
+        
+        A cook closing a shift is about to count a drawer, and "four hundred
+        and twenty came in" is no help when three hundred of it went through a
+        card machine. Every figure here is a payment somebody actually took:
+        an order nobody paid for and one the kitchen turned away have no
+        payments against them, so neither can appear.
+      */}
+      {(byMethod.length > 0 || strayAmount > 0) && (
+        <div className="cash-split">
+          {byMethod.map((m) => (
+            <div className="cash-split-item" key={m.id}>
+              <div className="label">{m.name}</div>
+              <div className="figure">{money(m.amount + m.tips)}</div>
+              {m.tips > 0 && <div className="small dim">incl. {money(m.tips)} tips</div>}
+            </div>
+          ))}
+          {strayAmount > 0 && (
+            <div className="cash-split-item">
+              <div className="label">Other</div>
+              <div className="figure">{money(strayAmount)}</div>
+              <div className="small dim">a method no longer listed</div>
+            </div>
+          )}
+          <div className="cash-split-item total">
+            <div className="label">All money in</div>
+            <div className="figure">{money(takings)}</div>
+            {tipsTotal > 0 && <div className="small dim">incl. {money(tipsTotal)} tips</div>}
+          </div>
+        </div>
+      )}
 
       {!orders ? (
         <Spinner />
