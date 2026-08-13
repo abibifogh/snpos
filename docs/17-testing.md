@@ -9,10 +9,10 @@ that need a real database, a real till and a real person are a checklist.
 
 ```
 npm test          # the logic suite
-npm run verify    # typecheck, tests, schema check, build. Run this before deploying.
+npm run verify    # typecheck (apps AND tests), tests, schema check, build. Before deploying.
 ```
 
-107 tests, no database, about half a second. They cover the sums that decide what
+111 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a

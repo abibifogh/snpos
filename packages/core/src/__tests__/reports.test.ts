@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   authorised, readRange, readLimit, readModule, summarise,
   shapeOrder, shapePayment, shapeShift,
-// @ts-expect-error plain JavaScript, deliberately importing nothing so it can be tested here
+  // Plain JavaScript, deliberately importing nothing at runtime so it can be
+  // tested from here without a database. Typed by the JSDoc it carries.
 } from '../../../../functions/notify/src/report-shape.js';
 
 /**

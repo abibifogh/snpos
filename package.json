@@ -20,7 +20,7 @@
     "check:writes": "node scripts/check-writes.mjs",
     "test": "node --experimental-strip-types --test \"packages/core/src/__tests__/*.test.ts\"",
     "typecheck:tests": "npx -y tsc --noEmit -p packages/core/tsconfig.test.json",
-    "verify": "npm run typecheck && npm run test && npm run check:writes && npm run build"
+    "verify": "npm run typecheck && npm run typecheck:tests && npm run test && npm run check:writes && npm run build"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

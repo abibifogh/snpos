@@ -309,6 +309,20 @@ export const shapeMove = (m) => ({
  *
  * `net_sales` is what was actually taken, minus what was paid out again. It is
  * not profit; nothing here knows what anything cost to make.
+ *
+ * The shapes are spelled out because the empty defaults below say nothing on
+ * their own: an empty list with no annotation is a list of nothing, and
+ * anything handed to it afterwards is the wrong type. That is a note to the
+ * checker rather than a change of behaviour, and it doubles as the only
+ * written record of which fields these totals actually depend on.
+ *
+ * @param {{
+ *   orders?: { status: string, payment_status: string, module: string, total: number,
+ *              guest_count: number, discount_total: number, tax_total: number,
+ *              service_total: number }[],
+ *   payments?: { status: string, method_kind: string, amount: number, tip: number }[],
+ *   expenses?: { amount: number }[],
+ * }} rows
  */
 export function summarise({ orders = [], payments = [], expenses = [] }) {
   const counted = orders.filter((o) => !['CANCELLED', 'REJECTED', 'SCHEDULED'].includes(o.status));
