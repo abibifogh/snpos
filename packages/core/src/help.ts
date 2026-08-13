@@ -177,6 +177,13 @@ export const HELP_ARTICLES: HelpArticle[] = [
         'Cooking, in progress. Tap Ready when it can go out.',
         'Ready, waiting to be collected.',
       ),
+      h('The clock'),
+      p(
+        'The countdown on a ticket, and the moment it rings, both start when the customer PLACED the order, '
+        + 'not when the kitchen accepted it. Their wait started when they pressed send, and so did the time '
+        + 'they were quoted. A ticket left sitting for ten minutes therefore has ten fewer minutes on it, '
+        + 'which is exactly what the person waiting would say.',
+      ),
       h('The alarm'),
       p('Each dish has an expected prep time. When a ticket passes it, the ticket turns red and an alarm sounds. It gets more insistent the longer nobody touches it.'),
       p('There is deliberately no snooze. Accepting the ticket stops it, which is the point, because it means the alarm can only be silenced by someone who has actually looked.'),

@@ -374,15 +374,28 @@ export function App() {
     const grace = graceMinutes * 60_000;
 
     return visible.filter((o) => {
-      // Two different late moments, both worth a noise.
-      //
-      // Still cooking, past the time the customer was given. Measured from
-      // when the kitchen took it, not from when it was placed, an order that
-      // sat unacknowledged for ten minutes is a different failure, and the
-      // acknowledgement alarm has already been shouting about that one.
+      /**
+       * Still cooking, past the time the customer was given.
+       *
+       * Measured from when the order was PLACED, not from when the kitchen
+       * took it. This used to start at acceptance, on the reasoning that a
+       * ticket left sitting is a different failure with its own alarm, and
+       * that a kitchen should not be judged for minutes before it had the
+       * ticket.
+       *
+       * True about the kitchen, and beside the point for the person waiting.
+       * They were quoted from the moment they pressed send, and ten minutes
+       * spent unacknowledged is ten minutes of their wait however it is filed.
+       * Starting the clock at acceptance meant a ticket sitting for ten
+       * minutes still showed twenty minutes left, and the food arrived half an
+       * hour after a twenty minute promise with nothing having looked late.
+       *
+       * The same instant the countdown on the ticket uses, so the number a
+       * cook reads and the moment it rings can never disagree.
+       */
       if (['ACCEPTED', 'PREPARING'].includes(o.status)) {
-        const started = new Date(o.accepted_at || o.$createdAt).getTime();
-        return now > started + promisedMinutes(o) * 60_000 + grace;
+        const placed = new Date(o.$createdAt).getTime();
+        return now > placed + promisedMinutes(o) * 60_000 + grace;
       }
 
       // Ready, and still sitting there. Food going cold on the pass is the
@@ -851,21 +864,21 @@ function Ticket({
   /**
    * The same sum the alarm does, shown on the ticket.
    *
-   * The clock in the corner counts from when the order was PLACED, and lateness
-   * is judged from when the kitchen ACCEPTED it. Those differ by however long
-   * the ticket sat unacknowledged, so a cook could read 18:32 on a
-   * fifteen-minute dish, expect the alarm, and not get it, which teaches
-   * people the alarm is unreliable when it is doing exactly what it was told.
-   *
-   * This says what it is actually counting, in whole minutes, so the ping never
-   * arrives as a surprise. The grace period is included: what is shown here is
-   * precisely the moment it will ring.
+   * The clock in the corner and this countdown now start at the same instant,
+   * the moment the order was placed, and so does the alarm. They used to
+   * differ: the clock counted from placing and lateness from accepting, so a
+   * cook could read 18:32 on a fifteen minute dish, expect the alarm, and not
+   * get it, which teaches people the alarm is unreliable when it is doing
+   * exactly what it was told.
    */
   // Still arriving, or genuinely empty. The clock decides, not the absence.
   const lineState = ticketLines(order, items);
 
   const cooking = order.status === 'ACCEPTED' || order.status === 'PREPARING';
-  const cookedFor = secondsSince(order.accepted_at || order.$createdAt);
+  // From when the customer placed it. Their wait started there, and so did the
+  // promise they were given. See the overdue rule above, which uses the same
+  // instant so the countdown and the alarm cannot disagree.
+  const cookedFor = secondsSince(order.$createdAt);
   /**
    * Counting down to the dish's own time, not to the moment the alarm rings.
    *

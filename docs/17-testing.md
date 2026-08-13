@@ -120,9 +120,12 @@ Run these every time. The restaurant is the part that is already earning.
 | # | Do this | Must be true |
 |---|---|---|
 | F1 | Scan a table QR, order as a guest | Lands on the kitchen screen with an estimate |
+| F1a | The status page after ordering | **Order something else** is the obvious next step, full width |
 | F2 | Order with several dishes | Estimate adds the prep times, never past an hour |
 | F3 | Leave a ticket past its time | Late pill and alarm, at the moment the ticket predicted |
 | F3a | Accept a 20 minute dish, read the ticket | Counts down from **20**, not 25. The two figures agree |
+| F3g | Leave a ticket 5 min before accepting it | Shows about **15 left**, not 20. The clock started when placed |
+| F3h | Leave one unaccepted past its prep time, then accept | Already over, and the pill agrees |
 | F3b | Let it run past 20 | "due now", then "1 min over". The pill follows at the grace |
 | F3c | Place an order and watch the ticket land | Items appear within a second or two. **No warning at all** |
 | F3d | Watch a normal order for a minute | Never says "nothing is listed". That is for real faults |

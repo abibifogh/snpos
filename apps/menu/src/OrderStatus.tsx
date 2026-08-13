@@ -266,11 +266,23 @@ export function OrderStatus({
         </p>
       </div>
 
-      <p className="small dim" style={{ textAlign: 'center' }}>
-        This page updates itself. You can leave it open.
-      </p>
-      <div style={{ textAlign: 'center' }}>
-        <Button onClick={onBack}>Order something else</Button>
+      {/* The one thing a guest is most likely to want next, and it was a
+          plain grey button below a line of small print, which reads as the way
+          out of the page rather than the way to order a second round. Wanting
+          another drink is the commonest thing that happens after food arrives,
+          and it was the least visible thing on the screen. */}
+      <div style={{ textAlign: 'center', marginTop: '1.4rem' }}>
+        <Button variant="primary" onClick={onBack} style={{ width: '100%', padding: '0.95rem' }}>
+          Order something else
+        </Button>
+        <p className="small dim" style={{ marginTop: '0.6rem' }}>
+          {/* Careful with this sentence: ordering again makes a SECOND order,
+              it is not added to this one, and a walk-in has no table to add it
+              to either. Both of those would be untrue promises about where
+              somebody's food is going. */}
+          Anything else comes through as its own order. This page keeps updating by itself, so you can leave it
+          open.
+        </p>
       </div>
     </div>
   );
