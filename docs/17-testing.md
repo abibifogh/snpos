@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck (apps AND tests), tests, schema check, build. Before deploying.
 ```
 
-111 tests, no database, about half a second. They cover the sums that decide what
+116 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -32,6 +32,7 @@ and no caller had to change.
 | `reports.test.ts` | **The only door to the outside world.** Who gets in, what a window means, and that nothing personal leaves. |
 | `stock-import.test.ts` | Everything a bulk upload must refuse, which is most of what it does. |
 | `timing.test.ts` | Quoted waits, the hour cap, when a ticket is late, the cancel window, cash handovers. |
+| `seating.test.ts` | That the ticket names the place the guest actually picked, in the guest's own words. |
 | `shift-rules.test.ts` | Shift codes per side, the 24 hour limit including a device with the wrong clock, which orders a shift may close over, and that an order once moved is payable on the shift that took it. |
 
 ### The parity suite is the important one
@@ -127,7 +128,7 @@ Run these every time. The restaurant is the part that is already earning.
 | F3m | Mark an order Ready and leave it sitting | Late pill after a few minutes. **No sound** |
 | F3n | Order as a guest called Ama, look at the ticket | **Ama**, beside the order number, not in the small grey |
 | F3o | Answer "where are you sitting?" with Table 7 | Ticket says **Table 7**, not "Table order" |
-| F3p | Order from an area, eg Poolside | Ticket names the area, and the zone after it if set |
+| F3p | Order from an area, eg Poolside or Notice board area | Ticket says **that exact name**, never "Table Poolside" |
 | F3q | Retire that table in admin, look at the open ticket | Still named. The plate still has to get there |
 | F3r | A takeaway order | Says Takeaway. No table invented |
 | F3i | Sleep the kitchen tablet an hour, wake it, let a ticket go late | **It rings.** The sound comes back with the screen |

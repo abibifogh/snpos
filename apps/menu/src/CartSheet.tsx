@@ -3,7 +3,7 @@ import { Button, Modal, Input, Field, Notice, Select, FormError } from '@snpos/u
 import {
   computeTotals, formatMoney, lineTotal, createOrder, parseWindows,
   isEnabled, featureConfig, db, DB_ID, ID, Query, isProvisionalOrderNo,
-  ensureGuestSession, humanError, selfOrderModule,
+  ensureGuestSession, humanError, selfOrderModule, seatName,
 } from '@snpos/core';
 import type { CartLine, Settings, Venue, FeatureMap, LoadedMenu, Doc, Order } from '@snpos/core';
 
@@ -336,11 +336,10 @@ export function CartSheet({
         <Field label="Where are you sitting?" hint="So we can bring your food to you.">
           <Select value={seatId} onChange={(e) => { setSeatId(e.target.value); setProblem(null); }}>
             <option value="">Please choose</option>
+            {/* The same words the kitchen ticket will carry, from the same
+                place, so the guest's answer reaches the pass unchanged. */}
             {areasFirst.map((t) => (
-              <option key={t.$id} value={t.$id}>
-                {t.kind === 'area' ? t.label : `Table ${t.label}`}
-                {t.zone ? ` · ${t.zone}` : ''}
-              </option>
+              <option key={t.$id} value={t.$id}>{seatName(t)}</option>
             ))}
           </Select>
         </Field>

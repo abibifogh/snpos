@@ -8,7 +8,7 @@ import {
   db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
   verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
-  itemsAvailableNow, dueMinutes, ticketLines, isOverdue, minutesOver,
+  itemsAvailableNow, dueMinutes, ticketLines, isOverdue, minutesOver, seatFor,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback,
 } from '@snpos/core';
 import type {
@@ -26,21 +26,6 @@ interface Station extends Doc { venue_id: string; key: string; name: string; col
  */
 interface TableRow extends Doc { venue_id: string; label: string; zone?: string; kind?: 'table' | 'area' }
 
-/**
- * Where to take the food, in the words a guest would recognise.
- *
- * "Table 7", or "Poolside" for an area, with the part of the room after it
- * when there is one. Falls back to the plain description when the seating
- * cannot be named — a ticket that says "Table order" is thin, but a ticket
- * that says nothing because a lookup failed is worse.
- */
-function seatLabel(order: Order, seating: Record<string, TableRow>): string {
-  if (!order.table_id) return order.fulfilment === 'delivery' ? 'Delivery' : 'Takeaway';
-  const t = seating[order.table_id];
-  if (!t) return 'Table order';
-  const name = t.kind === 'area' ? t.label : `Table ${t.label}`;
-  return t.zone ? `${name} · ${t.zone}` : name;
-}
 import { unlockAudio, setAlarm, stopAlarm, audioReady, type AlarmKind } from './alarm';
 import { CombinedBar, SettleModal } from './CombinedBar';
 
@@ -991,7 +976,7 @@ function Ticket({
             piece the ticket would not tell them, and they had to go and ask.
           */}
           <div className="where seat">
-            {seatLabel(order, seating)}
+            {seatFor(order, seating)}
             {order.guest_count > 1 && ` · ${order.guest_count} guests`}
           </div>
           {/* An area has no number, so where in it they are sitting is the

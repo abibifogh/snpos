@@ -28,3 +28,4 @@ export * from './csv';
 export * from './stock-import';
 export * from './offline';
 export * from './reportdoc';
+export * from './seating';
