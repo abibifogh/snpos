@@ -175,6 +175,8 @@ Needs a shift whose opened_at is backdated, or patience.
 | J3 | Close it and open a fresh one | Normal service. Fresh code, fresh float |
 | J3a | Close an overdue shift, watch the bar | **Banner and badge go at once**, without a refresh |
 | J3c | Two shifts open on one side | Says so, and names the one still waiting |
+| J3e | Open a kitchen shift, try to open another | **Refused**, naming the open one's code |
+| J3f | With a kitchen shift open, open a craft one | **Allowed.** The two sides are independent |
 | J3d | Close them one after another | Each closes. The notice counts down and then goes |
 | J3b | Close it with the network briefly off, then back | Still says closed. Never reverts to overdue |
 | J4 | Leave one open past a day with the hourly job running | Manager gets one email, not twenty four |
@@ -237,8 +239,9 @@ L10 apply. The rest are for whenever it is turned back on. See
 | N2 | Open it from the icon | **No address bar, no status bar.** The whole screen |
 | N3 | iPad Safari, Share, Add to Home Screen, open it | No Safari chrome. Content clear of the notch and the corners |
 | N4 | The same on the kitchen screen | Same again |
-| N5 | Try to install the customer menu | **Not offered.** It is not an app anybody keeps |
+| N5 | Install the customer menu on a phone | Installs. Fullscreen, named after the restaurant |
 | N6 | Try to install the admin app | Not offered. The back button is wanted there |
+| N9 | Walk-in menu header | **No "Collect at the counter".** Says Takeaway |
 | N7 | Open the till in a browser tab, as before | Still works, unchanged |
 | N8 | On github.io rather than a domain | Opens on the till, not on the site root |
 

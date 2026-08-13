@@ -9,10 +9,17 @@
 
    `clip` rather than `hidden`: hidden would make this a scrolling box and the
    category bar would stop sticking to the top. */
+/*
+ * Installed to a phone, this fills the screen, which makes the screen's own
+ * furniture the page's problem. See the note in pos.css.
+ *
+ * The bottom inset is added to the space already left for the basket bar, so
+ * the home indicator does not sit across it.
+ */
 .menu-app {
   max-width: 620px;
   margin: 0 auto;
-  padding-bottom: 6rem;
+  padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0));
   overflow-x: clip;
 }
 
@@ -27,6 +34,12 @@
 
 .menu-header {
   padding: 1.1rem 1rem 0.9rem;
+  /* Clear of the notch and the rounded corners. The brand colour runs up
+     behind the status bar, which is what makes an installed page look like an
+     app rather than a page with a gap above it. */
+  padding-top: calc(1.1rem + env(safe-area-inset-top, 0));
+  padding-left: calc(1rem + env(safe-area-inset-left, 0));
+  padding-right: calc(1rem + env(safe-area-inset-right, 0));
   background: var(--brand);
   color: var(--brand-ink);
 }

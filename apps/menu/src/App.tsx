@@ -371,13 +371,11 @@ export function App() {
           <h1 style={{ margin: 0 }}>{venue.name || settings.restaurant_name}</h1>
         </div>
         <div className="sub">
-          {inGroupMode
-            ? 'Group ordering'
-            : table
-              ? `Table ${table.label}`
-              : walkInToken
-                ? 'Collect at the counter'
-                : 'Takeaway'}
+          {/* A walk-in used to be labelled "Collect at the counter" here, which
+              is an instruction rather than a place, given before anybody has
+              ordered anything. Where the order is going is on the order; this
+              line is for where the guest IS. */}
+          {inGroupMode ? 'Group ordering' : table ? `Table ${table.label}` : 'Takeaway'}
           {venueOpen ? ' · Open now' : ' · Closed'}
           {/* The way back to an order already placed. Only shown when there is
               one, and it is the only route back after a refresh, without it a

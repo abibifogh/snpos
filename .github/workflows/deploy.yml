@@ -75,7 +75,8 @@ jobs:
           # not at localhost, so the admin app is told where it lives.
           export VITE_MENU_URL="${{ steps.base.outputs.url }}/menu"
           for app in admin menu kitchen pos; do
-            BASE_PATH="$ROOT/$app/" npm run build -w "@snpos/$app"
+            BASE_PATH="$ROOT/$app/" RESTAURANT_NAME="${{ vars.RESTAURANT_NAME }}" \
+              npm run build -w "@snpos/$app"
           done
 
       - name: Assemble the site

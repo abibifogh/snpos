@@ -135,9 +135,35 @@ export async function openShift(opts: {
    */
   module?: Module;
 }): Promise<Shift> {
+  const module = opts.module ?? 'kitchen';
+
+  /**
+   * One shift per side, never two.
+   *
+   * Each side of the business runs exactly one at a time: a kitchen shift and
+   * a craft shift, side by side and independent, and nothing else. Two on one
+   * side splits a day's takings across two sets of books that neither balances
+   * against, and until it was surfaced they were invisible, so closing one
+   * simply revealed the next and every close looked like it had failed.
+   *
+   * Refused here rather than only hidden in the till, because the till is not
+   * the only way one gets opened: two devices, a double tap, a retried request
+   * on a bad connection. A check is not a lock, and this database has no
+   * transactions, so a genuine simultaneous open on two devices can still slip
+   * through. That is why the bars still say when more than one is open. This
+   * closes the case that actually happens; that catches the rest.
+   */
+  const already = await loadOpenShifts(opts.venueId, module).catch(() => [] as Shift[]);
+  if (already.length > 0) {
+    throw new Error(
+      `A ${module === 'craft' ? 'craft shop' : 'kitchen'} shift is already open (${already[0].code}). ` +
+      'Close that one before opening another.',
+    );
+  }
+
   // BIST for the bistro, CRAF for the shop. Which counter a shift belongs to is
   // the first thing anybody needs from its code.
-  const code = shiftCode(opts.module);
+  const code = shiftCode(module);
   const doc = await db.createDocument(DB_ID, 'shifts', ID.unique(), {
     venue_id: opts.venueId,
     code,
@@ -149,7 +175,7 @@ export async function openShift(opts: {
     sales_total: 0, expense_total: 0, tax_total: 0, tip_total: 0, discount_total: 0,
     void_total: 0, refund_total: 0, cogs_total: 0, covers: 0,
     stock_check_status: 'pending', posted_to_ledger: false,
-    module: opts.module ?? 'kitchen',
+    module,
   });
 
   const shift = doc as unknown as Shift;

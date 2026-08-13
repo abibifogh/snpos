@@ -184,6 +184,11 @@ export const HELP_ARTICLES: HelpArticle[] = [
     body: [
       h('Opening'),
       p('Someone opens a shift at the start of service and enters the float, the money already in the drawer. Orders can be taken without a shift, but nothing can be settled, so open one first.'),
+      note(
+        'One shift per side, and no more. The kitchen has one and the shop has one, running independently, and '
+        + 'a second on the same side is refused with the code of the one already open. Two on one side splits a '
+        + 'day across two sets of books that balance against neither.',
+      ),
       h('Closing'),
       steps(
         'Settle or transfer any open bills. Nothing is left dangling.',

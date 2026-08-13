@@ -31,14 +31,26 @@ const APPS = ['admin', 'menu', 'kitchen', 'pos'];
  * that only ever gets pressed by accident, and an address bar is an invitation
  * to somewhere else.
  *
+ * The customer menu is here at the owner's request. Most guests scan and
+ * leave, but a phone that offers to keep it is a phone that can be ordered
+ * from again without hunting for a sticker, and a tablet left on a table is
+ * better off without an address bar too.
+ *
  * Not the admin app: it is used on somebody's own laptop between other things,
  * and taking the back button away from a page of settings is a nuisance rather
- * than a kiosk. Not the customer menu either, which lives for ninety seconds
- * on a stranger's phone and has no business asking to be installed.
+ * than a kiosk.
  */
 const KIOSK = {
   pos: { name: 'NiceOps Till', short: 'Till', description: 'Take orders and record payment.' },
   kitchen: { name: 'NiceOps Kitchen', short: 'Kitchen', description: 'Tickets as they come in.' },
+  // Named after the place where one is given, because "Menu" on somebody's
+  // home screen a week later says nothing about whose. Set RESTAURANT_NAME as
+  // a repository variable to use it.
+  menu: {
+    name: process.env.RESTAURANT_NAME ? `${process.env.RESTAURANT_NAME} menu` : 'Menu',
+    short: process.env.RESTAURANT_NAME || 'Menu',
+    description: 'Order from your table.',
+  },
 };
 
 for (const app of APPS) {
