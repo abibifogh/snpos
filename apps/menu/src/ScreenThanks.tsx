@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@snpos/ui';
 import { shownEta } from '@snpos/core';
-import type { Settings, Venue } from '@snpos/core';
 
 /**
  * How long the thank-you stays before the menu comes back.
@@ -32,14 +31,23 @@ export const SCREEN_THANKS_MS = 10_000;
  * anybody who is done reading before then.
  */
 export function ScreenThanks({
+  orderNo,
   etaMinutes,
-  venue,
+  emailed,
   onDone,
 }: {
+  orderNo: string;
   /** What the kitchen quoted, queue included. Absent when nothing was worked out. */
   etaMinutes?: number;
-  settings: Settings;
-  venue: Venue;
+  /**
+   * Whether a notice will actually reach this customer.
+   *
+   * Only true when they gave an address AND the receipts feature is on, which
+   * is what decides whether anything is sent at all. Promising an email to
+   * somebody who will not get one is worse than promising nothing: they stop
+   * watching the counter and wait for a message that is not coming.
+   */
+  emailed: boolean;
   onDone: () => void;
 }) {
   const [left, setLeft] = useState(Math.round(SCREEN_THANKS_MS / 1000));
@@ -73,23 +81,22 @@ export function ScreenThanks({
             is being thanked for is what makes it an acknowledgement. */}
         <h1>Thank you for your order</h1>
 
+        {/* The number, in the words it will be called out in. Set apart from
+            the heading and from the wait, because it is the one thing on this
+            screen somebody has to carry away with them. */}
+        <p className="order-no">
+          Your order number is <strong>{orderNo}</strong>
+        </p>
+
         {/* The one thing they came to this screen for. Big, on its own, and
             said in words rather than left as a number to interpret. */}
-        {eta ? (
-          <p className="eta-big">
-            It will be about <strong>{eta} minutes</strong>.
-          </p>
-        ) : (
-          <p className="eta-big">The kitchen has it now.</p>
-        )}
-
-        {/* Your NAME, not your number. The number is no longer on this screen,
-            and telling somebody to listen for a figure they were never shown
-            is worse than saying nothing. The name is the thing actually called
-            out across a counter anyway — it is what the kitchen ticket puts
-            beside the order number for exactly that reason. */}
-        <p className="dim small">
-          Listen for your name{venue.name ? ` at ${venue.name}` : ''}.
+        <p className="eta-big">
+          {eta
+            ? <>It will be ready in about <strong>{eta} minutes</strong>.</>
+            : <>The kitchen has it now.</>}
+          {/* Only where a message will genuinely arrive. Somebody told to
+              expect an email stops watching the counter. */}
+          {emailed && ' You will receive an email when it is ready.'}
         </p>
 
         {/* Counted down out loud. A screen that changes on its own without

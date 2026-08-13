@@ -236,7 +236,13 @@
 /* The gap the order-number line used to provide. Without it the heading sat
    against the wait, and the two read as one block rather than as a greeting
    and the figure somebody came for. */
-.screen-thanks h1 { font-size: 2rem; margin-bottom: 1rem; }
+.screen-thanks h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+
+/* The number, which is the one thing somebody has to carry away from this
+   screen. Large enough to read at a step back and to remember at the counter,
+   with the number itself heavier than the words around it. */
+.screen-thanks .order-no { font-size: 1.15rem; margin: 0 0 1rem; }
+.screen-thanks .order-no strong { font-size: 1.6rem; letter-spacing: 0.01em; }
 
 /* The tick, drawn rather than fetched: a screen on a counter is the one place
    a missing image is certain to be noticed and impossible to explain. */

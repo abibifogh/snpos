@@ -104,7 +104,7 @@ export function CartSheet({
    * queue a moment after it lands, and a shared screen shows this figure and
    * nothing else, so it has to be the settled one.
    */
-  onPlaced: (orderNo: string, orderId: string, scheduled?: string, eta?: number) => void;
+  onPlaced: (orderNo: string, orderId: string, scheduled?: string, eta?: number, emailed?: boolean) => void;
   onError: (message: string) => void;
 }) {
   const needReference = featureConfig(features, 'group_orders', 'require_reservation_number', true);
@@ -315,7 +315,10 @@ export function CartSheet({
       // moment after the order lands; wait for it rather than showing the
       // placeholder. The guest can read their own order, and nothing else.
       const settled = await settledOrder(order);
-      onPlaced(settled.no, order.$id, slot || undefined, settled.eta);
+      // `collectEmail` is the receipts feature: with it off nothing is ever
+      // sent, so an address typed into a box that is not being shown cannot
+      // be promised a message either.
+      onPlaced(settled.no, order.$id, slot || undefined, settled.eta, collectEmail && !!email.trim());
       setCart(() => []);
     } catch (e) {
       // Through humanError, so the server's own vocabulary, roles, scopes,

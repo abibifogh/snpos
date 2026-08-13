@@ -314,7 +314,9 @@ L10 apply. The rest are for whenever it is turned back on. See
 | N6 | Try to install the admin app | Not offered. The back button is wanted there |
 | N9 | Walk-in menu header | **No "Collect at the counter".** Says Takeaway |
 | N13 | Admin → Tables, create the screen ordering link | An address ending `?s=` appears |
-| N14 | Open it and send an order | **Thank you for your order**, and the wait. **No order number** |
+| N14 | Open it and send an order | **Thank you for your order**, the number, and the wait |
+| N14a | Order on the screen leaving the email box empty | **No promise of an email.** Just the wait |
+| N14b | Order giving an email, with Receipts on | Says an email will come when it is ready. And it does |
 | N15 | Wait without touching it | Menu comes back **on its own**, about 10 seconds |
 | N16 | Press "Order something else" first | Menu comes back at once. Basket empty |
 | N17 | Order twice in a row on that screen | **No "Your orders" list.** Nobody sees the last customer's |

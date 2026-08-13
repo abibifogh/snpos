@@ -77,7 +77,7 @@ export function App() {
    */
   const [screenMode, setScreenMode] = useState(false);
   /** The order just sent, while the thank-you is up. */
-  const [thanks, setThanks] = useState<{ no: string; eta?: number } | null>(null);
+  const [thanks, setThanks] = useState<{ no: string; eta?: number; emailed: boolean } | null>(null);
   const queued = useOfflineQueue(onQueueChange, startOfflineSync);
 
   // Two kinds of QR: /?t=<token> is a specific table, /?v=<token> is a walk-in
@@ -341,9 +341,9 @@ export function App() {
   if (screenMode && thanks) {
     return (
       <ScreenThanks
+        orderNo={thanks.no}
         etaMinutes={thanks.eta}
-        settings={boot.settings}
-        venue={boot.venue}
+        emailed={thanks.emailed}
         onDone={() => {
           setThanks(null);
           setCart([]);
@@ -579,7 +579,7 @@ export function App() {
           venueOpen={venueOpen}
           menu={menu}
           onClose={() => setShowCart(false)}
-          onPlaced={(orderNo, orderId, _slot, etaMinutes) => {
+          onPlaced={(orderNo, orderId, _slot, etaMinutes, emailed) => {
             setShowCart(false);
             /**
              * A shared screen keeps no history of who ordered what.
@@ -593,7 +593,7 @@ export function App() {
               setMine(myOrders());
             }
             if (screenMode) {
-              setThanks({ no: orderNo, eta: etaMinutes });
+              setThanks({ no: orderNo, eta: etaMinutes, emailed: !!emailed });
               return;
             }
             showOrderInAddress(orderId);
