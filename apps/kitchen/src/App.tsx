@@ -853,9 +853,29 @@ export function App() {
           settings={settings}
           who={who}
           onClose={() => setSettling(null)}
-          onDone={(m) => {
-            setSettling(null);
-            setOrders((prev) => prev.filter((o) => o.$id !== settling.$id));
+          /**
+           * A ticket comes off the pass when the bill is CLEARED, not when
+           * money changes hands.
+           *
+           * This used to close the box and drop the ticket on any payment at
+           * all. So a customer who paid half — a table splitting it, somebody
+           * short of cash who went to find more — disappeared off the kitchen
+           * screen while still waiting for their food. Nobody was cooking it,
+           * nobody could see the rest was owed, and the only way back was to
+           * wait for the screen to reconcile itself a minute later.
+           *
+           * On a part payment the order stays, with its balance updated, and
+           * the box stays open for whoever is paying next.
+           */
+          onDone={(m, outcome) => {
+            if (outcome?.settled ?? true) {
+              setSettling(null);
+              setOrders((prev) => prev.filter((o) => o.$id !== settling.$id));
+            } else {
+              setOrders((prev) =>
+                prev.map((o) => (o.$id === settling.$id ? { ...o, payment_status: 'partial' } : o)),
+              );
+            }
             setToast(m);
             window.setTimeout(() => setToast(null), 4000);
           }}
@@ -1054,14 +1074,32 @@ function Ticket({
                 <span className="pill">Paid</span>
                 <Button variant="primary" onClick={onCollect}>Collected</Button>
               </>
-            ) : canSettle ? (
-              <Button variant="primary" onClick={onSettle}>
-                Collect &amp; take payment{settings ? ` · ${formatMoney(order.total, settings)}` : ''}
-              </Button>
             ) : (
-              <span className="small" style={{ opacity: 0.75 }}>
-                Waiting for payment{settings ? ` · ${formatMoney(order.total, settings)}` : ''}
-              </span>
+              <>
+                {/* Part paid is its own state and has to look like one. Read as
+                    simply unpaid, somebody chases the whole bill again; read as
+                    paid, the rest is never asked for. The figure is left off
+                    here on purpose: this screen knows the bill, not what has
+                    been taken against it, and a total beside "part paid" would
+                    be the wrong number in the most confusing possible place.
+                    The box that opens next says exactly what is left. */}
+                {order.payment_status === 'partial' && (
+                  <span className="pill" style={{ background: '#3a2d14', color: '#f5c451' }}>Part paid</span>
+                )}
+                {canSettle ? (
+                  <Button variant="primary" onClick={onSettle}>
+                    {order.payment_status === 'partial'
+                      ? 'Collect & take the rest'
+                      : `Collect & take payment${settings ? ` · ${formatMoney(order.total, settings)}` : ''}`}
+                  </Button>
+                ) : (
+                  <span className="small" style={{ opacity: 0.75 }}>
+                    {order.payment_status === 'partial'
+                      ? 'Waiting for the rest of the payment'
+                      : `Waiting for payment${settings ? ` · ${formatMoney(order.total, settings)}` : ''}`}
+                  </span>
+                )}
+              </>
             )}
           </>
         )}

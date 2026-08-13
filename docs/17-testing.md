@@ -131,6 +131,10 @@ Run these every time. The restaurant is the part that is already earning.
 | F3p | Order from an area, eg Poolside or Notice board area | Ticket says **that exact name**, never "Table Poolside" |
 | F3q | Retire that table in admin, look at the open ticket | Still named. The plate still has to get there |
 | F3r | A takeaway order | Says Takeaway. No table invented |
+| F16 | Kitchen, ready order, take **half** the payment | **Ticket stays on the pass**, marked Part paid |
+| F17 | Press Collect & take the rest, pay the balance | Now it clears off the pass, once |
+| F18 | Take half, then look at the till's floor plan | Table still shows its bill, marked part paid |
+| F19 | Take half at the till, reopen that table | The order is there and the balance is what is left |
 | F3i | Sleep the kitchen tablet an hour, wake it, let a ticket go late | **It rings.** The sound comes back with the screen |
 | F3j | Wake it and look before any order is late | Either no banner, or a red bar offering to turn sound back on |
 | F3k | Press that bar | Bar goes. Test the late sound from settings and it plays |

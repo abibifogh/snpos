@@ -452,7 +452,15 @@ export function SettleModal({
   settings: Settings;
   who: StaffProfile | null;
   onClose: () => void;
-  onDone: (message: string, tone?: 'ok' | 'err') => void;
+  /**
+   * Told what happened, not merely that something did.
+   *
+   * `settled` is the whole point of this signature. Without it the caller has
+   * to guess from a message, and the caller that guessed took the ticket off
+   * the pass on a part payment: a customer who had paid half their bill and
+   * was still waiting for their food vanished off the kitchen screen.
+   */
+  onDone: (message: string, outcome?: { tone?: 'ok' | 'err'; settled?: boolean }) => void;
 }) {
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [methodId, setMethodId] = useState('');
@@ -525,10 +533,13 @@ export function SettleModal({
         setTipText('');
         setReference('');
         setBusy(false);
-        onDone(`${formatMoney(paying, settings)} taken · ${formatMoney(remaining, settings)} still to pay`, 'ok');
+        onDone(
+          `${formatMoney(paying, settings)} taken · ${formatMoney(remaining, settings)} still to pay`,
+          { tone: 'ok', settled: false },
+        );
         return;
       }
-      onDone(`${order.order_no} collected and paid`);
+      onDone(`${order.order_no} collected and paid`, { settled: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not record that payment.');
       setBusy(false);
