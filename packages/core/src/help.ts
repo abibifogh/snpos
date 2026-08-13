@@ -217,9 +217,9 @@ export const HELP_ARTICLES: HelpArticle[] = [
         'The two sides stop differently, because they work differently.'
       ),
       list(
-        'The KITCHEN keeps cooking. A customer is standing there and food is food, so orders are still '
-        + 'taken and still made. What waits is the money: anything that came in after the day was up '
-        + 'cannot be paid on that shift.',
+        'The KITCHEN keeps cooking, and keeps taking money. Anything that came in after the day was up is '
+        + 'flagged when you settle it, so you know it belongs to the night before, but it is never '
+        + 'refused. A customer must always be able to pay for food they have eaten.',
         'The SHOP COUNTER stops at the beginning. A sale is rung up and paid for in one movement, so '
         + 'there is nothing to gain from starting one that cannot be finished.',
       ),
@@ -237,6 +237,10 @@ export const HELP_ARTICLES: HelpArticle[] = [
       p(
         'Once an order has moved, it is an ordinary order of the shift that picked it up. It is paid there '
         + 'like anything else, and it holds THAT shift open until it is.',
+      ),
+      p(
+        'If somebody settles a late order before you close, that is fine too. It simply lands on the shift '
+        + 'that was open when the money was taken, which is where it belongs.',
       ),
       note(
         'This is the ONLY case where a shift may close with an order still open. Everything else keeps '

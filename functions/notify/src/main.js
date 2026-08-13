@@ -217,9 +217,9 @@ async function sweepStaleShifts({ db, DB_ID, settings, transport, from, shell, l
       `<p style="margin:0 0 12px">These have been open longer than ${LIMIT_HOURS} hours:</p>
        <ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.7">${rows}</ul>
        <p style="margin:18px 0 0;color:#5d6b7a;font-size:13px">
-         The kitchen carries on cooking, but nothing that came in after the day was up can be paid for
-         until the shift is closed. Count the drawer, close it and open a fresh one; those orders move
-         across and are settled there. Nothing has been closed automatically, because that would record a
+         The kitchen carries on cooking and taking money. Anything that came in after the day was up
+         belongs to the night before, so count the drawer, close it and open a fresh one; whatever is
+         still unpaid moves across. Nothing has been closed automatically, because that would record a
          cash count nobody made.
        </p>`,
       settings.primary_color || '#0f766e',

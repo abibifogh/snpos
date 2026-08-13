@@ -8,7 +8,7 @@ import { resolveCounts } from '@snpos/ui';
 import {
   formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift, loadOpenShift, shiftBlockers, expectedTakings, closeShift, openingFloats,
-  recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, mustWaitForNextShift,
+  recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, shouldWarnLateOrder,
   HANDOVER_ENABLED,
 } from '@snpos/core';
 import type {
@@ -455,23 +455,6 @@ export function SettleModal({
   const settle = async () => {
     if (!methodId) { setError('Choose how they paid.'); return; }
     if (!shift) { setError('No shift is open. Open one first, or the money has nothing to be counted against.'); return; }
-    /**
-     * An order taken after the shift had already run past a day cannot be paid
-     * on that shift.
-     *
-     * The cooking still happens: a customer is standing there and food is food.
-     * The money is what has to wait, because taking it here would file today's
-     * cash under a night that ended yesterday, which is the whole thing the
-     * limit exists to prevent. Closing the shift releases it: it moves onto the
-     * next one and is paid there, a minute later.
-     */
-    if (mustWaitForNextShift(order, shift)) {
-      setError(
-        'This came in after the shift had already run past a day, so it cannot be paid on it. Close the '
-        + 'shift and open a fresh one, this order will be waiting on it and can be settled then.',
-      );
-      return;
-    }
     if (paying <= 0) { setError('Enter how much they are paying.'); return; }
     if (paying > owed) {
       setError(`That is more than the ${formatMoney(owed, settings)} outstanding. Put the extra in the tip box if it is a tip.`);
@@ -516,6 +499,8 @@ export function SettleModal({
     }
   };
 
+  const late = shouldWarnLateOrder(order, shift);
+
   return (
     <Modal
       title={`Collect and settle ${order.order_no}`}
@@ -530,6 +515,16 @@ export function SettleModal({
       }
     >
       <FormError message={error} />
+
+      {/* A warning, never a refusal. Money can always be taken; see
+          shouldWarnLateOrder for why that is the right way round. */}
+      {late && (
+        <Notice tone="warn">
+          This came in after the shift had already run past a day. Taking the money here records it against
+          the shift that is open now, which is the right place for it. If you would rather it went on a fresh
+          shift, close this one first and it will be waiting there.
+        </Notice>
+      )}
       <p style={{ marginTop: 0, fontSize: '1.3rem', fontWeight: 650 }}>{formatMoney(owed, settings)}</p>
       <p className="small dim" style={{ marginTop: '-0.5rem' }}>
         {owed < order.total

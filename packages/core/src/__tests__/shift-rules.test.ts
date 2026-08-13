@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit, mustWaitForNextShift,
+  shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit, mustWaitForNextShift, shouldWarnLateOrder,
   SHIFT_MAX_HOURS, SHIFT_WARN_HOURS,
 } from '../shift-rules.ts';
 
@@ -149,4 +149,49 @@ test('an ordinary unpaid order is never waved through', () => {
   // still has to be settled before the shift can close.
   assert.equal(mustWaitForNextShift({ $createdAt: '2026-08-11T08:00:00.000Z' }, shift), false);
   assert.equal(isPastLimit({ $createdAt: '2026-08-11T08:00:00.000Z' }, shift), false);
+});
+
+test('a shift that is not itself overdue never calls anything late', () => {
+  // The single check that would have caught the whole failure. A shift opened
+  // minutes ago has no business judging an order late for a limit it is
+  // nowhere near, whatever the other fields say.
+  const fresh = { $id: 'fresh', opened_at: new Date().toISOString(), $createdAt: new Date().toISOString() };
+  const old = { $createdAt: '2020-01-01T00:00:00.000Z' };
+  assert.equal(mustWaitForNextShift(old, fresh), false);
+});
+
+test('a tablet with the wrong clock cannot decide whether somebody may pay', () => {
+  /**
+   * `$createdAt` is written by the server. `opened_at` is written by whatever
+   * the tablet thinks the time is. Comparing one against the other meant a
+   * device running a day behind made every order look late on any shift opened
+   * from it, and the customer could not pay on any shift at all.
+   */
+  const skewed = {
+    $id: 'shift-now',
+    // The server knows this shift was made a minute ago.
+    $createdAt: '2026-08-12T12:00:00.000Z',
+    // The tablet thinks it is three days earlier.
+    opened_at: '2026-08-09T12:00:00.000Z',
+  };
+  const order = { $createdAt: '2026-08-12T12:30:00.000Z' };
+
+  assert.equal(
+    isPastLimit(order, skewed), false,
+    'server against server: half an hour old is not past a day',
+  );
+
+  // And with only the tablet's figure to go on, the old comparison is what
+  // produced the false answer. Kept as the fallback, so this documents what
+  // the $createdAt anchor is protecting against.
+  assert.equal(isPastLimit(order, { opened_at: skewed.opened_at }), true);
+});
+
+test('paying late is a warning, and warnings are the same question', () => {
+  // One rule, two names, so the till and the close can never disagree about
+  // which orders are late. What differs is only what each does about it.
+  const overdue = { $id: 'a', $createdAt: '2026-08-09T06:00:00.000Z', opened_at: '2026-08-09T06:00:00.000Z' };
+  const late = { $createdAt: '2026-08-11T09:00:00.000Z' };
+  assert.equal(shouldWarnLateOrder(late, overdue), mustWaitForNextShift(late, overdue));
+  assert.equal(shouldWarnLateOrder(late, overdue), true);
 });

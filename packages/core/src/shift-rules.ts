@@ -107,14 +107,15 @@ export function shiftAgeMessage(
     return module === 'craft'
       ? `${open} Nothing new can be sold on it. Settle whatever is still open, count the drawer, close it, ` +
         'then open a fresh one.'
-      : `${open} Orders can still be taken and cooked, but nothing that came in after the day was up can ` +
-        'be paid on it. Close the shift and open a fresh one, and those orders move across to be settled ' +
-        'there.';
+      : `${open} Orders can still be taken, cooked and paid for. Anything that came in after the day was ` +
+        'up belongs to the night before, so close this shift and open a fresh one; anything still unpaid ' +
+        'moves across.';
   }
   if (age.warning) {
     return module === 'craft'
       ? `${open} It stops accepting new sales at ${maxHours} hours, so close it before then.`
-      : `${open} At ${maxHours} hours it stops taking payment for anything new, so close it before then.`;
+      : `${open} At ${maxHours} hours anything new starts belonging to the next shift, so close it before ` +
+        'then.';
   }
   return '';
 }
@@ -145,14 +146,30 @@ export function overdueFrom(openedAt: string, maxHours: number = SHIFT_MAX_HOURS
  * Everything else keeps the ordinary rule. A shift that closes over an unpaid
  * bill loses the money silently, and an exception wide enough to be convenient
  * would be an exception people learn to lean on.
+ *
+ * ## Both times have to come from the same clock
+ *
+ * This compared `$createdAt`, which the SERVER writes, against `opened_at`,
+ * which the browser writes from the tablet's own clock. Those are two different
+ * clocks, and the gap between them is whatever somebody set on the device. A
+ * tablet running a day or more behind made every order look late on any shift
+ * opened from it, which is exactly what happened: an order moved onto a fresh
+ * shift and was still refused, because the fresh shift's "opened_at" was in the
+ * tablet's past while the order's "$createdAt" was in the server's present.
+ *
+ * So the shift's own `$createdAt` is used whenever it is there. Server against
+ * server, and a wrong clock on a tablet can no longer decide whether somebody
+ * gets to pay for their food. `opened_at` remains the fallback, for the shift
+ * rows written before this and for callers that only hold that much.
  */
 export function isPastLimit(
   order: { $createdAt?: string },
-  shift: { opened_at: string } | null | undefined,
+  shift: { $createdAt?: string; opened_at?: string } | null | undefined,
   maxHours: number = SHIFT_MAX_HOURS,
 ): boolean {
-  if (!shift?.opened_at || !order.$createdAt) return false;
-  const cutoff = overdueFrom(shift.opened_at, maxHours);
+  const anchor = shift?.$createdAt || shift?.opened_at;
+  if (!anchor || !order.$createdAt) return false;
+  const cutoff = overdueFrom(anchor, maxHours);
   return cutoff !== '' && order.$createdAt >= cutoff;
 }
 
@@ -181,10 +198,38 @@ export function isPastLimit(
  */
 export function mustWaitForNextShift(
   order: { $createdAt?: string; shift_id?: string; shelved_from_shift?: string },
-  shift: { $id?: string; opened_at: string } | null | undefined,
+  shift: { $id?: string; $createdAt?: string; opened_at?: string } | null | undefined,
   maxHours: number = SHIFT_MAX_HOURS,
 ): boolean {
+  if (!shift) return false;
+  /**
+   * A shift that is not itself overdue never calls anything late.
+   *
+   * Obvious once written down, and it was missing. A fresh shift had no
+   * business judging an order late for a limit it is nowhere near, and this one
+   * line would have caught the whole failure on its own.
+   */
+  if (!shiftAge(shift.opened_at ?? shift.$createdAt ?? '', new Date(), maxHours).over) return false;
   if (order.shelved_from_shift) return false;
-  if (shift?.$id && order.shift_id && order.shift_id === shift.$id) return false;
+  if (shift.$id && order.shift_id && order.shift_id === shift.$id) return false;
   return isPastLimit(order, shift, maxHours);
 }
+
+/**
+ * Should the till WARN that this order belongs to the night before?
+ *
+ * The same question as `mustWaitForNextShift`, asked where the answer must not
+ * be a locked door.
+ *
+ * Refusing payment for this was the wrong trade, and it took two customers
+ * standing at a counter to see it. What the refusal buys is a figure landing on
+ * the right night. What it costs, whenever anything about the judgement is
+ * wrong, is somebody who cannot pay for food they have already eaten, with no
+ * way round it from any screen. Those are not the same size of problem, and the
+ * cheap one has to be the one we accept.
+ *
+ * So the money is always takeable and the cashier is told. The order still
+ * moves to the next shift at the close if nobody settles it, which is where
+ * most of the accounting value was in the first place.
+ */
+export const shouldWarnLateOrder = mustWaitForNextShift;

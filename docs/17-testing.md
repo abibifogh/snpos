@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck, tests, schema check, build. Run this before deploying.
 ```
 
-58 tests, no database, about half a second. They cover the sums that decide what
+61 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -153,7 +153,7 @@ Needs a shift whose opened_at is backdated, or patience.
 | # | Do this | Must be true |
 |---|---|---|
 | J1 | A shift open 21 hours | Warned on the bar. Still sells |
-| J2 | Kitchen shift open 24 hours, place an order | **Accepted and cooked.** Payment refused, and it says why |
+| J2 | Kitchen shift open 24 hours, place an order | Accepted, cooked, **and payable.** Flagged, never refused |
 | J2a | Craft shift open 24 hours | **No new sales at all.** Different message from the kitchen |
 | J2b | Overdue shift, order that was open BEFORE the day ran out | Settles normally. Still blocks the close |
 | J2c | Close the overdue shift | Late orders **named on the close screen**, then it closes |
@@ -161,6 +161,8 @@ Needs a shift whose opened_at is backdated, or patience.
 | J2d2 | Pay one of them on that fresh shift | **Goes through.** No "came in after the shift" refusal |
 | J2d3 | Leave one unpaid and try to close the fresh shift | **Blocked.** It is an ordinary order now |
 | J2f | Two kitchen shifts somehow open at once | The till uses the one opened most recently |
+| J2g | Set the tablet's clock a few days behind, open a shift, take an order | **Payable.** A device clock never decides this |
+| J2h | Any fresh shift, any old order | Never flagged late. A shift under a day judges nothing |
 | J2e | The shift that shelved them | Its takings and summary do not include them |
 | J3 | Close it and open a fresh one | Normal service. Fresh code, fresh float |
 | J4 | Leave one open past a day with the hourly job running | Manager gets one email, not twenty four |

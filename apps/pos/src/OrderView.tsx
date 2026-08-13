@@ -3,7 +3,7 @@ import { Button, Card, Field, Input, Modal, Notice, Select, Badge, Spinner } fro
 import {
   db, DB_ID, Query, listAll, createOrder, computeTotals, lineTotal, formatMoney,
   parseMoney, toInput, isEnabled, featureConfig, visibleSections, recordPayment, asksForTip,
-  variantPriceRange, shiftUsable, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, sharesFor, mustWaitForNextShift,
+  variantPriceRange, shiftUsable, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, sharesFor, shouldWarnLateOrder,
 } from '@snpos/core';
 import type { CartLine, Order, OrderItem, Doc, MenuEntry, Settings } from '@snpos/core';
 import { COUNTER_TABLE_ID } from './App';
@@ -177,7 +177,7 @@ export function OrderView({
   const age = shiftAgeOf(ctx.shift);
 
   /** Bills on this screen that the shift ran past its limit to take. */
-  const shelvedHere = existing.filter((o) => mustWaitForNextShift(o, ctx.shift));
+  const shelvedHere = existing.filter((o) => shouldWarnLateOrder(o, ctx.shift));
 
   const send = async () => {
     if (cart.length === 0) return;
@@ -255,12 +255,11 @@ export function OrderView({
             {shiftAgeMessage(age, SHIFT_MAX_HOURS, ctx.module)}
             {shelvedHere.length > 0 && (
               <div style={{ marginTop: '0.35rem' }}>
-                {/* The cooking carries on; the money is what waits. Said here
-                    rather than only when somebody presses the button, so
-                    nobody promises a customer a receipt they cannot print. */}
+                {/* Said, not enforced. Anything here can still be paid for; it
+                    simply lands on the shift that is open at the time. */}
                 {shelvedHere.length === 1 ? 'One order here came' : `${shelvedHere.length} orders here came`}
-                {' '}in after that and cannot be paid on this shift. Close it, open a fresh one, and they will
-                be waiting on it.
+                {' '}in after that. Paying now records it against this shift; close first and it moves to the
+                next one instead.
               </div>
             )}
           </Notice>
@@ -579,14 +578,6 @@ function CounterPaymentModal({
 
   const confirm = async () => {
     if (!ctx.shift) { setError('No shift is open.'); return; }
-    const late = orders.find((o) => mustWaitForNextShift(o, ctx.shift));
-    if (late) {
-      setError(
-        `${late.order_no} was rung up after this shift had already run past a day, so it cannot be paid on `
-        + 'it. Close the shift and open a fresh one; it will be waiting there.',
-      );
-      return;
-    }
     if (entered <= 0) { setError('Enter how much was paid, on the cash or the card line.'); return; }
     if (over) {
       setError(
@@ -803,16 +794,6 @@ function PaymentModal({
 
   const confirm = async () => {
     if (!ctx.shift) { setError('No shift is open.'); return; }
-    // Taken after the shift should have closed. See the notice on the order
-    // screen: the food happens, the money waits for the next shift.
-    const late = orders.find((o) => mustWaitForNextShift(o, ctx.shift));
-    if (late) {
-      setError(
-        `${late.order_no} came in after this shift had already run past a day, so it cannot be paid on it. `
-        + 'Close the shift and open a fresh one; it will be waiting there.',
-      );
-      return;
-    }
     if (!methodId) { setError('Choose how it was paid.'); return; }
     // Less than the full amount is allowed and is not an error: a table
     // splitting the bill pays it in pieces. What is not allowed is nothing.
