@@ -50,6 +50,13 @@ export function ExpenseModal({
   const [categoryKey, setCategoryKey] = useState('');
   const [methodId, setMethodId] = useState('');
   const [amountText, setAmountText] = useState('');
+  /**
+   * Anything on the receipt that is not one of the items.
+   *
+   * Only ever added to a total that came from items; where the amount is typed
+   * by hand there is nothing to add it to and nothing to reconcile.
+   */
+  const [extraText, setExtraText] = useState('');
   const [paidToKind, setPaidToKind] = useState<PaidToKind>('open_market');
   const [supplierId, setSupplierId] = useState('');
   const [staffId, setStaffId] = useState('');
@@ -109,6 +116,9 @@ export function ExpenseModal({
     0,
   );
 
+  /** The remainder, and only ever a positive one. */
+  const extra = Math.max(0, parseMoney(extraText, decimals) ?? 0);
+
   const setLine = (index: number, patch: Partial<DraftLine>) =>
     setLines((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
 
@@ -122,7 +132,14 @@ export function ExpenseModal({
     const ing = ingredients.find((i) => i.$id === ingredientId);
     setLine(index, {
       ingredientId,
-      costText: ing && !lines[index].costText ? toInput(ing.base_unit_cost, decimals) : lines[index].costText,
+      /* Prefilled only where there is a real price to prefill. An ingredient
+         with no cost recorded used to drop "0.00" into the box, which then had
+         to be cleared before the true price could be typed — the one keystroke
+         a form should never ask for. */
+      costText:
+        ing && ing.base_unit_cost > 0 && !lines[index].costText
+          ? toInput(ing.base_unit_cost, decimals)
+          : lines[index].costText,
     });
     if (ing?.expense_category_key) setCategoryKey(ing.expense_category_key);
     // Always keep one blank row at the end, so adding another is just typing.
@@ -135,9 +152,15 @@ export function ExpenseModal({
 
   const save = async () => {
     // The lines win when there are any: they are the itemised truth, and a
-    // total that disagrees with them is a total somebody mistyped.
-    const amount = filledLines.length > 0 ? linesTotal : parseMoney(amountText, decimals);
+    // total that disagrees with them is a total somebody mistyped. Plus
+    // whatever was on the receipt and not in the bag, which is money that
+    // genuinely left the drawer and has to be recorded as such.
+    const amount = filledLines.length > 0 ? linesTotal + extra : parseMoney(amountText, decimals);
     if (amount === null || amount <= 0) { setError('Enter the amount spent.'); return; }
+    if (filledLines.length > 0 && extraText.trim() !== '' && parseMoney(extraText, decimals) === null) {
+      setError('The extra amount is not a number. Clear it or correct it.');
+      return;
+    }
     if (!methodId) { setError('Choose how it was paid.'); return; }
     if (paidToKind === 'supplier' && !supplierId) { setError('Choose which supplier was paid.'); return; }
     // Either the person from the list, or their name typed in. Somebody who
@@ -185,7 +208,21 @@ export function ExpenseModal({
         }),
         amount,
         paid_from_method_id: methodId,
-        note: noteText.trim(),
+        /**
+         * The remainder explains itself, in the record rather than in
+         * somebody's memory.
+         *
+         * The items are stored line by line and the total is stored once. Left
+         * unsaid, an extra makes those two disagree, and whoever checks the
+         * books in a month finds a total three cedis above the things it is
+         * made of and no way to tell a taxi from a typing mistake.
+         */
+        note: [
+          noteText.trim(),
+          extra > 0 && filledLines.length > 0
+            ? `Includes ${formatMoney(extra, settings)} not itemised.`
+            : '',
+        ].filter(Boolean).join(' · ').slice(0, 500), // the column's own limit
         receipt_file_id: receiptFileId,
         created_by: userId,
         approval_status: 'pending',
@@ -322,12 +359,59 @@ export function ExpenseModal({
       )}
 
       {filledLines.length > 0 ? (
-        <Field label={`Amount (${settings.currency_symbol ?? ''})`} hint="Added up from the items above.">
-          <Input value={toInput(linesTotal, decimals)} disabled />
+        <Field
+          label={`Amount (${settings.currency_symbol ?? ''})`}
+          hint="Added up from the items above. Anything else goes in the box beside it."
+        >
+          <div className="row" style={{ gap: '0.4rem', alignItems: 'center' }}>
+            {/* Blank while it is nothing. "0.00" in a box reads as a figure
+                somebody entered, and this one is worked out; showing zero
+                where nothing has been added yet says the form did the sum
+                and got nought, which is not what happened. */}
+            <Input value={linesTotal > 0 ? toInput(linesTotal, decimals) : ''} disabled style={{ flex: 2 }} />
+            <span aria-hidden style={{ fontWeight: 650 }}>+</span>
+            {/*
+              The bit that never fits on a line.
+
+              A shop run comes back with a total that is a few cedis above the
+              things in the bag: a taxi both ways, a tip to the boy who
+              carried it, a small item nobody wants to itemise. Without
+              somewhere to put it, the choice was to invent a stock line that
+              did not exist or to leave the drawer short by three cedis every
+              time. Both of those are worse than a small box.
+
+              Deliberately narrow and deliberately blank. It is for the
+              remainder, not for the shopping, and a box that starts at 0.00
+              invites somebody to type the whole total into it.
+            */}
+            <Input
+              value={extraText}
+              inputMode="decimal"
+              placeholder="Extra"
+              aria-label="Anything else, added to the total"
+              style={{ flex: 1 }}
+              onChange={(e) => setExtraText(e.target.value)}
+            />
+          </div>
+          {extra > 0 && (
+            <span className="small" style={{ fontWeight: 600 }}>
+              Total {formatMoney(linesTotal + extra, settings)}
+            </span>
+          )}
         </Field>
       ) : (
         <Field label={`Amount (${settings.currency_symbol ?? ''})`}>
-          <Input value={amountText} inputMode="decimal" autoFocus onChange={(e) => setAmountText(e.target.value)} />
+          {/*
+            No autoFocus.
+
+            Opening a form used to open the keyboard with it, before anybody
+            had decided what they were recording, and on a landscape till that
+            is half the screen gone at the moment somebody is trying to read
+            the form. The amount is rarely the first thing typed anyway; it is
+            near the bottom of what a person actually chooses. The keyboard
+            arrives when a box is touched, which is when it is wanted.
+          */}
+          <Input value={amountText} inputMode="decimal" onChange={(e) => setAmountText(e.target.value)} />
         </Field>
       )}
       {/* One option is not a choice. When the restaurant pays for shop runs out

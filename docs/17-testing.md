@@ -93,6 +93,10 @@ not just what to press.
 | C9 | Close a craft shift | **No OK / Low / Out shelf check.** Money in and money out shown |
 | C10 | Close a kitchen shift | Shelf check still there, money in and out above it |
 | C11 | Record spend from the craft till | Saved against the shop. **No ingredient list** on the form |
+| C11a | Open Record expense | **No keyboard until a box is tapped.** Amount is blank, not 0.00 |
+| C11b | Pick an item whose cost is not set | Cost box **blank**, nothing to clear first |
+| C11c | Two items, then GH₵3 in the Extra box | Total is items **plus 3**, and it saves that |
+| C11d | Read that expense in admin | Note says GH₵3 was not itemised |
 | C12 | Open one shift on each side | Codes read `BIST…` and `CRAF…` |
 | C13 | Craft till, press This shift | This shift's sales and spending. **No kitchen tickets** |
 | C14 | Scan a table QR as a customer | Food only. **No craft products anywhere on the menu** |
