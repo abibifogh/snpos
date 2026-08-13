@@ -61,13 +61,57 @@ the id on the small chip under the name.
 
 ---
 
-## Calling it
+## Giving it an address
 
-The base address is the notify function's own domain. Open the function in the
-console and look under **Domains** (on some versions, **Settings → Domains**).
-Appwrite gives each function a domain that looks like
-`https://<something>.appwrite.run`; if there is not one yet, add one from that
-screen. That address plus `/reports/...` is what the other system calls.
+A function has no address until one is created. The Domains screen starts
+empty, and nothing on it is an address you already own: Appwrite makes one.
+
+Press **Create domain**. Two ways:
+
+**An Appwrite subdomain.** You type only the first part, a label of your
+choosing, such as `snpos-reports`. Appwrite appends its own domain and shows
+you the result. No DNS, nothing to wait for. This is the one to pick unless
+somebody has asked otherwise.
+
+**Your own subdomain**, such as `reports.niceoperation.com`. Appwrite gives you
+a CNAME record to add wherever the domain's DNS lives, the same way
+`pos.niceoperation.com` was set up. Tidier to hand to another team, but it is a
+DNS change and a wait.
+
+Whichever it is, that address plus `/reports/...` is what the other system
+calls.
+
+---
+
+## If a domain cannot be created
+
+Every function can also be called through Appwrite's own API, with no domain at
+all. It is clumsier and worth avoiding, but it works.
+
+```bash
+curl -sS -X POST \
+  "https://fra.cloud.appwrite.io/v1/functions/notify/executions" \
+  -H "X-Appwrite-Project: <project id>" \
+  -H "X-Appwrite-Key: <an API key with execution.write>" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "path": "/reports/summary?from=2026-08-01",
+        "method": "GET",
+        "headers": { "authorization": "Bearer <REPORTS_API_KEY>" },
+        "async": false
+      }'
+```
+
+The report comes back in the `responseBody` field of what that returns, as a
+string of JSON.
+
+Prefer a domain. This route needs an Appwrite API key as well as the reporting
+key, and an API key is a far larger thing to hand to an outside system: it can
+do everything, where the reporting key can only read reports.
+
+---
+
+## Calling it
 
 ```
 GET  https://<function-domain>/reports/summary?from=2026-08-01&to=2026-08-12
