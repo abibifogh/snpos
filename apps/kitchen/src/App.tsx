@@ -687,11 +687,10 @@ export function App() {
             <Ticket
               key={order.$id}
               order={order}
-              items={items[order.$id] ?? []}
+              items={items[order.$id]}
               sla={sla}
               overdue={overdue.some((o) => o.$id === order.$id)}
               cookMinutes={promisedMinutes(order)}
-              graceMinutes={graceMinutes}
               settings={settings}
               canSettle={combined && (who?.can_mark_paid ?? false)}
               onAccept={() => accept(order)}
@@ -752,16 +751,16 @@ export function App() {
 }
 
 function Ticket({
-  order, items, sla, overdue, cookMinutes, graceMinutes,
+  order, items, sla, overdue, cookMinutes,
   settings, canSettle, onAccept, onStart, onDone, onCollect, onSettle, onReject,
 }: {
   order: Order;
-  items: OrderItem[];
+  /** Undefined until the lines have arrived. Empty means there are none. */
+  items: OrderItem[] | undefined;
   sla: number;
   overdue: boolean;
   /** The cooking time this ticket is judged against, the same figure the alarm uses. */
   cookMinutes: number;
-  graceMinutes: number;
   settings: Settings | null;
   /** Combined mode, and this person is allowed to take money. */
   canSettle: boolean;
@@ -791,7 +790,22 @@ function Ticket({
    */
   const cooking = order.status === 'ACCEPTED' || order.status === 'PREPARING';
   const cookedFor = secondsSince(order.accepted_at || order.$createdAt);
-  const leftMinutes = Math.round((cookMinutes + graceMinutes) - cookedFor / 60);
+  /**
+   * Counting down to the dish's own time, not to the moment the alarm rings.
+   *
+   * The grace period used to be folded in here, so a twenty minute dish said
+   * "23 min left" two minutes after it was accepted. Read beside "20 min dish"
+   * on the same line, that says the system has quietly handed every order five
+   * extra minutes, and a cook working to the bigger number is five minutes
+   * later than the customer was told.
+   *
+   * The grace is still there and still decides when the ping happens. It is
+   * tolerance for the alarm, not cooking time, and it belongs to the alarm.
+   * What a cook now sees is the promise: twenty minutes counting down, "due
+   * now", then "1 min over", "2 min over". The ring at five is no longer a
+   * surprise, it is the end of a count they have been watching.
+   */
+  const leftMinutes = Math.round(cookMinutes - cookedFor / 60);
 
   return (
     <div className={`ticket ${order.status === 'PENDING' ? 'pending' : ''} ${late ? 'late' : ''}`}>
@@ -833,8 +847,18 @@ function Ticket({
       </div>
 
       <ul className="ticket-items">
-        {items.length === 0 && <li className="dim">Loading items…</li>}
-        {items.map((i) => {
+        {/* Three different things, and they were one message. Undefined is a
+            list that has not arrived; empty is one that has, and is empty,
+            which means somebody sent a ticket with nothing on it. Saying
+            "loading" for the second leaves a cook waiting for a list that is
+            never coming. */}
+        {items === undefined && <li className="dim">Loading items…</li>}
+        {items !== undefined && items.length === 0 && (
+          <li style={{ color: 'var(--warn)' }}>
+            Nothing is listed on this ticket. Check with whoever sent it before cooking.
+          </li>
+        )}
+        {(items ?? []).map((i) => {
           const addons: { name: string }[] = i.addons ? JSON.parse(i.addons) : [];
           return (
             <li key={i.$id}>

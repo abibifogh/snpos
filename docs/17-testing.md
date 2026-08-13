@@ -122,6 +122,9 @@ Run these every time. The restaurant is the part that is already earning.
 | F1 | Scan a table QR, order as a guest | Lands on the kitchen screen with an estimate |
 | F2 | Order with several dishes | Estimate adds the prep times, never past an hour |
 | F3 | Leave a ticket past its time | Late pill and alarm, at the moment the ticket predicted |
+| F3a | Accept a 20 minute dish, read the ticket | Counts down from **20**, not 25. The two figures agree |
+| F3b | Let it run past 20 | "due now", then "1 min over". The pill follows at the grace |
+| F3c | A ticket whose lines have not arrived | Says loading. A ticket with **no** lines says so instead |
 | F4 | Cancel within two minutes | Cancelled. After two minutes, refused |
 | F5 | Close a shift with an unpaid order | Blocked, and it names the order |
 | F6 | Close a shift properly | Summary email arrives, with the stock table |
