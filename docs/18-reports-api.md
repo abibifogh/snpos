@@ -73,13 +73,38 @@ choosing, such as `snpos-reports`. Appwrite appends its own domain and shows
 you the result. No DNS, nothing to wait for. This is the one to pick unless
 somebody has asked otherwise.
 
-**Your own subdomain**, such as `reports.niceoperation.com`. Appwrite gives you
-a CNAME record to add wherever the domain's DNS lives, the same way
-`pos.niceoperation.com` was set up. Tidier to hand to another team, but it is a
-DNS change and a wait.
+**Your own subdomain**, such as `reports.niceoperation.com`. Tidier to hand to
+another team, but it is a DNS change and a wait. See below.
 
 Whichever it is, that address plus `/reports/...` is what the other system
 calls.
+
+### A subdomain of your own, in Cloudflare
+
+Do it in this order. Appwrite only tells you what to point at once you have
+told it the name you want, so starting in Cloudflare means guessing.
+
+1. **In Appwrite**, Domains → Create domain → your own domain →
+   `reports.niceoperation.com`. It answers with a CNAME target. Copy it.
+
+2. **In Cloudflare**, choose `niceoperation.com`, then DNS → Records → Add
+   record:
+
+   | Field | Value |
+   |---|---|
+   | Type | `CNAME` |
+   | Name | `reports` (the label only, not the whole address) |
+   | Target | what Appwrite gave you |
+   | Proxy status | **DNS only**, the grey cloud |
+   | TTL | Auto |
+
+3. **Back in Appwrite**, press Verify. A minute or two, sometimes longer.
+
+**The proxy toggle is what goes wrong.** Cloudflare turns the orange cloud on
+by default. Appwrite has to reach the address itself to prove the domain is
+yours and to issue a certificate, and a proxy in front of it stops that, so
+verification fails and says very little about why. Grey cloud. There is nothing
+to gain from proxying an API that one system calls.
 
 ---
 
