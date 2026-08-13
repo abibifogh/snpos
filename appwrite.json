@@ -64,7 +64,7 @@
     },
     {
       "$id": "notify",
-      "name": "Receipts, summaries and watches",
+      "name": "Notify: emails and reports",
       "runtime": "node-18.0",
       "_execute_note": "Open so the read-only reporting API can be called from outside. Every request to it is refused unless it carries REPORTS_API_KEY, and anything that is not a report, an event or the timer does nothing at all.",
       "execute": ["any"],

@@ -15,6 +15,11 @@ The Appwrite plan this runs on allows four functions and this project has four:
 branch inside `notify`, checked before anything else that function does. It is
 the same reason the hourly stock sweep lives there.
 
+That is why `notify` is now called **"Notify: emails and reports"** in the
+console. It was "Receipts, summaries and watches", which said nothing about
+reports and, truncated to the width of a card, said nothing about notify
+either.
+
 That has one consequence worth writing down. `notify` now accepts requests from
 outside, so its dispatch was changed: the timer branch used to be "no document
 arrived", which an empty POST from anywhere would have satisfied and started
@@ -42,10 +47,27 @@ delete the variable from the notify function in the Appwrite console.
 
 ---
 
+## Finding it in the Appwrite console
+
+The console lists functions by their **display name**, not by their id. The one
+you want is:
+
+> **Notify: emails and reports**  ·  id `notify`
+
+If it still reads "Receipts, summaries and watches", that is the same function
+under its old name; the next **Deploy functions** run renames it. Everything in
+this document, and everything in the code, refers to it as `notify`, which is
+the id on the small chip under the name.
+
+---
+
 ## Calling it
 
-The base address is the notify function's own domain, from the Appwrite console
-under **Functions → notify → Domains**.
+The base address is the notify function's own domain. Open the function in the
+console and look under **Domains** (on some versions, **Settings → Domains**).
+Appwrite gives each function a domain that looks like
+`https://<something>.appwrite.run`; if there is not one yet, add one from that
+screen. That address plus `/reports/...` is what the other system calls.
 
 ```
 GET  https://<function-domain>/reports/summary?from=2026-08-01&to=2026-08-12
