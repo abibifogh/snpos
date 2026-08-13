@@ -70,10 +70,19 @@ export function EightySixModal({
         </div>
       )}
 
+      {/*
+        No autoFocus.
+
+        This screen is a list first and a search box second: most of the time
+        the dish is already on it and the answer is one tap. Opening the
+        keyboard on the way in covers the list somebody came here to read —
+        half the screen on a till lying flat — so the first thing they have to
+        do is dismiss it. Searching is for when the list is long, and touching
+        the box brings the keyboard then, which is when it is wanted.
+      */}
       <Field>
         <Input
           value={filter}
-          autoFocus
           placeholder="Search the menu…"
           onChange={(e) => setFilter(e.target.value)}
         />

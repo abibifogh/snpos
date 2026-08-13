@@ -95,6 +95,7 @@ not just what to press.
 | C10 | Close a kitchen shift | Shelf check still there, money in and out above it |
 | C11 | Record spend from the craft till | Saved against the shop. **No ingredient list** on the form |
 | C11a | Open Record expense | **No keyboard until a box is tapped.** Amount is blank, not 0.00 |
+| C8d | Press Sold out | **No keyboard.** The list is readable straight away |
 | C11b | Pick an item whose cost is not set | Cost box **blank**, nothing to clear first |
 | C11c | Two items, then GH₵3 in the Extra box | Total is items **plus 3**, and it saves that |
 | C11d | Read that expense in admin | Note says GH₵3 was not itemised |
@@ -142,7 +143,10 @@ Run these every time. The restaurant is the part that is already earning.
 | F2 | Order with several dishes | Estimate adds the prep times, never past an hour |
 | F3 | Leave a ticket past its time | Late pill and alarm, at the moment the ticket predicted |
 | F3l | A 20 min order, watch it reach 20 | **Late and ringing at 20, not 25.** No silent cushion |
-| F3m | Mark an order Ready and leave it sitting | Late pill after a few minutes. **No sound** |
+| F3m | Let an order go late, then press Ready | **Late tag gone, clock stopped.** Says Ready |
+| F3s | Leave that ready ticket an hour | Still no Late tag, still no sound, clock still stopped |
+| F3t | A ready ticket nobody has paid for | **Unpaid**, with the amount, in place of Late |
+| F3u | Take the payment on it | Unpaid tag goes. Collected can be pressed |
 | F3n | Order as a guest called Ama, look at the ticket | **Ama**, beside the order number, not in the small grey |
 | F3o | Answer "where are you sitting?" with Table 7 | Ticket says **Table 7**, not "Table order" |
 | F3p | Order from an area, eg Poolside or Notice board area | Ticket says **that exact name**, never "Table Poolside" |

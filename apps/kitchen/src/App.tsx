@@ -381,16 +381,6 @@ export function App() {
    * order can be accepted promptly and still be forgotten on the shelf.
    */
   const overdueOn = isEnabled(features, 'overdue_alerts');
-  /**
-   * Only food that is already cooked gets a wait, and only because somebody
-   * has to walk over and fetch it.
-   *
-   * This setting used to apply to cooking as well, which meant an order was
-   * not late until five minutes after the time it was promised. Past the time
-   * allowed is now simply late, so this figure no longer touches the cooking
-   * rule at all — see isOverdue.
-   */
-  const collectMinutes = featureConfig(features, 'overdue_alerts', 'grace_minutes', 5);
 
   /**
    * A coarse clock, and the reason this list works at all.
@@ -441,8 +431,8 @@ export function App() {
     if (!overdueOn) return [];
     void nowSlice; // the clock this depends on
     const now = Date.now();
-    return visible.filter((o) => isOverdue(o, promisedMinutes(o), now, collectMinutes));
-  }, [visible, overdueOn, collectMinutes, promisedMinutes, nowSlice]);
+    return visible.filter((o) => isOverdue(o, promisedMinutes(o), now));
+  }, [visible, overdueOn, promisedMinutes, nowSlice]);
 
   /**
    * Escalation is driven by the oldest unacknowledged ticket, not by each one
@@ -450,17 +440,6 @@ export function App() {
    */
   const combined = isEnabled(features, 'combined_mode');
   const sla = settings?.kitchen_ack_sla_seconds ?? 60;
-
-  /**
-   * What the alarm is allowed to ring for: food that is still on a stove.
-   *
-   * An order sitting on the pass still shows the Late pill, because a plate
-   * going cold is worth seeing, but it no longer makes a noise. The kitchen
-   * has done its part; the sound would be aimed at a cook who cannot act on
-   * it, and an alarm that goes off at the wrong person is one that gets
-   * ignored when it goes off at the right one.
-   */
-  const ringable = useMemo(() => overdue.filter((o) => o.status !== 'READY'), [overdue]);
 
   /**
    * One alarm, and which of the two sounds it should be.
@@ -478,9 +457,9 @@ export function App() {
       const oldest = Math.max(...pending.map((o) => secondsSince(o.$createdAt)));
       level = Math.min(Math.floor(oldest / sla) + 1, maxLevel);
     }
-    if (ringable.length > 0) return { level: Math.max(level, 2), kind: 'late' };
+    if (overdue.length > 0) return { level: Math.max(level, 2), kind: 'late' };
     return { level, kind: 'new' };
-  }, [pending, ringable, ready, sla, settings]);
+  }, [pending, overdue, ready, sla, settings]);
 
   /**
    * Whether this screen can actually make a noise, checked rather than assumed.
@@ -978,6 +957,19 @@ function Ticket({
   const ageClass = age > sla * 2 ? 'bad' : age > sla ? 'warn' : '';
 
   /**
+   * The kitchen's part is over.
+   *
+   * Once the food is up, every clock on this ticket stops: no countdown, no
+   * climbing timer, no Late tag. The cook was asked to have it ready by a time
+   * and it is ready; whatever happens between here and the customer is the
+   * collection, and nobody standing at a pass can act on it. A counter still
+   * running on a finished plate reads as the kitchen being timed for somebody
+   * else's delay, and it crowds out the one thing on a finished ticket that
+   * IS still worth acting on, which is whether it has been paid for.
+   */
+  const finished = order.status === 'READY';
+
+  /**
    * The same sum the alarm does, shown on the ticket.
    *
    * The clock in the corner and this countdown now start at the same instant,
@@ -1048,7 +1040,9 @@ function Ticket({
           )}
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div className={`age ${ageClass}`}>{mmss(age)}</div>
+          {finished
+            ? <div className="age done">Ready</div>
+            : <div className={`age ${ageClass}`}>{mmss(age)}</div>}
           {cooking && (
             <div className="due" style={leftMinutes < 0 ? { color: '#ff9b90' } : undefined}>
               {leftMinutes < 0
@@ -1078,6 +1072,21 @@ function Ticket({
             {order.payment_status === 'partial' && (
               <span className="pill" style={{ background: '#3a2d14', color: '#f5c451' }}>
                 Part paid{owed !== undefined && settings ? ` · ${formatMoney(owed, settings)} left` : ''}
+              </span>
+            )}
+            {/*
+              The tag that replaces Late once the food is up.
+
+              A finished plate cannot be late — the cooking was done on time or
+              it was not, and that was settled before this. What can still go
+              wrong is that it leaves the pass without being paid for, and that
+              is money nobody can chase afterwards: the customer has gone and
+              the shift balances as though nothing happened. So the loud tag on
+              a ready ticket is the one somebody can still act on.
+            */}
+            {finished && order.payment_status === 'unpaid' && (
+              <span className="pill" style={{ background: '#4a1410', color: '#ff9b90' }}>
+                Unpaid{settings ? ` · ${formatMoney(order.total, settings)}` : ''}
               </span>
             )}
             {overdue && <span className="pill" style={{ background: '#3a1714', color: '#ff9b90' }}>Late</span>}

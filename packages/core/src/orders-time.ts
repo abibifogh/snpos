@@ -148,31 +148,27 @@ export function dueMinutes(
  * already showing that instant — "due now", then "1 min over" — so this is
  * also the alarm finally agreeing with the number a cook has been watching.
  *
- * Food already cooked keeps a short wait, and this is not the same thing. A
- * plate going up is not late while somebody walks to the counter to fetch it;
- * that delay is the collection, not the cooking, and pinging the instant a
- * cook presses Ready would ring on every single order.
+ * Food already cooked is not late, and the clock on it stops.
+ *
+ * The kitchen was asked to have it ready by a time and it was ready by that
+ * time; whatever happens next is the collection, and a cook standing at a pass
+ * can do nothing about a customer who has not come for their food. A Late tag
+ * that stays on a finished plate is the kitchen being marked down for
+ * somebody else's delay, and it crowds out the tags that are still theirs to
+ * act on. What IS worth showing on a finished ticket is whether it has been
+ * paid for — see the pills on the ticket head.
  *
  * Anything else — waiting to be accepted, cancelled, paid — is not this
  * question. A ticket nobody has acknowledged has its own alarm.
  */
 export function isOverdue(
-  order: { status: string; $createdAt: string; $updatedAt?: string },
+  order: { status: string; $createdAt: string },
   dueMins: number,
   now: number = Date.now(),
-  readyGraceMinutes = 5,
 ): boolean {
-  if (COOKING.includes(order.status) && order.status !== 'PENDING') {
-    const placed = Date.parse(order.$createdAt);
-    return Number.isFinite(placed) && now > placed + dueMins * 60_000;
-  }
-
-  if (order.status === 'READY') {
-    const since = Date.parse(order.$updatedAt ?? '');
-    return Number.isFinite(since) && now > since + readyGraceMinutes * 60_000;
-  }
-
-  return false;
+  if (!COOKING.includes(order.status) || order.status === 'PENDING') return false;
+  const placed = Date.parse(order.$createdAt);
+  return Number.isFinite(placed) && now > placed + dueMins * 60_000;
 }
 
 /**

@@ -144,16 +144,19 @@ test('an order is late the moment it passes the time allowed, not five minutes a
   assert.equal(isOverdue({ ...order, status: 'PAID' }, 20, at(99)), false);
 });
 
-test('food already cooked keeps its short wait, because somebody has to fetch it', () => {
-  const ready = '2026-08-13T12:00:00.000Z';
-  const at = (mins: number) => Date.parse(ready) + mins * 60_000;
-  const order = { status: 'READY', $createdAt: '2026-08-13T11:00:00.000Z', $updatedAt: ready };
+test('food that is already up is never late, however long it sits there', () => {
+  /**
+   * The kitchen was asked to have it ready by a time and it was. Everything
+   * after that is the collection, and nobody standing at a pass can act on a
+   * customer who has not come for their food. A Late tag left on a finished
+   * plate marks the kitchen down for somebody else's delay and crowds out the
+   * tag that IS still theirs to act on, which is that it has not been paid for.
+   */
+  const ready = { status: 'READY', $createdAt: '2026-08-13T11:00:00.000Z' };
+  const hoursOn = Date.parse('2026-08-13T20:00:00.000Z');
 
-  // Measured from when it was marked ready, not from when it was ordered:
-  // otherwise every order is late the instant a cook presses Ready.
-  assert.equal(isOverdue(order, 20, at(2)), false);
-  assert.equal(isOverdue(order, 20, at(6)), true);
-  assert.equal(isOverdue(order, 20, at(6), 10), false, 'and the wait is settable');
+  assert.equal(isOverdue(ready, 20, hoursOn), false, 'nine hours later, still not late');
+  assert.equal(isOverdue({ ...ready, status: 'SERVED' }, 20, hoursOn), false);
 });
 
 test('minutes over counts both ways, so one figure covers left and over', () => {

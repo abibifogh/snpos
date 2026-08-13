@@ -86,6 +86,9 @@ body { background: var(--bg); color: var(--text); }
 .ticket-head .age { font-variant-numeric: tabular-nums; font-weight: 650; }
 .ticket-head .age.warn { color: #f5a524; }
 .ticket-head .age.bad { color: #ff6b5e; }
+/* The clock, stopped. Quiet on purpose: a finished ticket should not be
+   competing for attention with one still on a stove. */
+.ticket-head .age.done { color: var(--text-dim); font-weight: 550; }
 /* What the alarm is actually counting, under the clock that counts something
    else. Smaller than the age on purpose; it is the explanation, not the
    headline, and a second big number in the same corner would fight the first. */
