@@ -1,4 +1,16 @@
 /*
+ * `hidden` means hidden.
+ *
+ * The browser's own stylesheet says [hidden] { display: none }, but anything
+ * written here beats it, because author rules outrank the user agent's. So
+ * `<div class="station-tabs" hidden>` stayed on screen: .station-tabs sets
+ * display:flex, and flex won. That is a silent failure with nothing to see in
+ * the markup, which is the worst kind, so it is settled once here for every
+ * element in every app rather than remembered at each call site.
+ */
+[hidden] { display: none !important; }
+
+/*
  * Design tokens. Brand colours are injected at runtime from the settings
  * document (see applyTheme), so changing the restaurant's colours never
  * requires a rebuild.

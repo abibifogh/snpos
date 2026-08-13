@@ -594,10 +594,16 @@ export function App() {
           <Logo size={28} />
           <h1>{venue.name}</h1>
         </div>
-        {/* Only worth showing when there is a choice to make. With one station
+        {/* Only worth showing when there is a choice to make. With one station,
             "All" and that station are the same list of tickets, and a tab bar
-            that never changes anything is just something else on the screen. */}
-        <div className="station-tabs" hidden={stations.length < 2}>
+            that never changes anything is just something else on the screen.
+
+            Not rendered, rather than rendered and hidden. The `hidden`
+            attribute only sets display:none in the browser's own stylesheet,
+            and .station-tabs sets display:flex, which is an author rule and
+            therefore wins. The bar has been on screen this whole time. */}
+        {stations.length >= 2 && (
+        <div className="station-tabs">
           {['all', ...stations.map((s) => s.key)].map((key) => {
             const st = stations.find((x) => x.key === key);
             return (
@@ -615,6 +621,7 @@ export function App() {
             );
           })}
         </div>
+        )}
         <div className="kds-stats">
           {isEnabled(features, 'item_availability') && (
             <button
