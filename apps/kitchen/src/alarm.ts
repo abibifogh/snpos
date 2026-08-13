@@ -55,6 +55,12 @@ export function unlockAudio(): boolean {
   }
 }
 
+/**
+ * Is this screen actually capable of making a sound right now?
+ *
+ * Worth asking, and for a long time nothing did. An alarm nobody can hear is
+ * the one failure in a kitchen that must not be quiet about itself.
+ */
 export const audioReady = (): boolean => !!ctx && ctx.state === 'running';
 
 /** One voice of a chime: a tone with its own shape and envelope. */
@@ -134,7 +140,34 @@ function chimeLate(level: number): void {
   }
 }
 
-const play = (kind: AlarmKind, level: number) => (kind === 'late' ? chimeLate(level) : chimeNew(level));
+/**
+ * Wake the audio context before trying to make a noise through it.
+ *
+ * A browser suspends an AudioContext when its page is hidden, and a tablet
+ * does it again for power. The screen this runs on sits on a counter all day
+ * and gets slept, glanced at and woken constantly, so this happens routinely.
+ *
+ * The failure was total and completely silent: oscillators were still created,
+ * still started and still stopped, into a context that was not running, and
+ * produced nothing at all. No error, no warning, no sound. The alarm simply
+ * stopped existing at some point in the evening and the only symptom was food
+ * going cold.
+ *
+ * Resuming needs no gesture in most browsers once one has been given, which is
+ * why the PIN gate exists. Where it does need one, this returns false and the
+ * screen says so rather than pretending.
+ */
+function ensureRunning(): boolean {
+  if (!ctx) return false;
+  if (ctx.state === 'running') return true;
+  void ctx.resume().catch(() => undefined);
+  return false;
+}
+
+const play = (kind: AlarmKind, level: number) => {
+  ensureRunning();
+  return kind === 'late' ? chimeLate(level) : chimeNew(level);
+};
 
 /**
  * Start or update the alarm. Repeats faster as the level rises.

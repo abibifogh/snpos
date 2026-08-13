@@ -521,13 +521,34 @@ export default async ({ req, res, log, error }) => {
     // the order, and the food is ready. Sent before the receipt block because
     // an order can be accepted and paid in the same breath at a counter, and
     // "your food is ready" is worth more to them than arriving second.
-    if (events.some((e) => e.includes('collections.orders')) && doc.customer_email) {
+    if (events.some((e) => e.includes('collections.orders'))) {
       const stage = doc.status === 'ACCEPTED' ? 'accepted' : doc.status === 'READY' ? 'ready' : null;
 
-      if (stage) {
+      /**
+       * Every reason for not sending is said out loud.
+       *
+       * All of these used to be silence. An owner asking "why did my customer
+       * not hear that their food was ready" had nowhere to look: the function
+       * ran, decided not to send, and logged nothing, so the only way to find
+       * out was to read this file. Three lines of logging turn that into one
+       * glance at the executions list.
+       */
+      if (stage && !doc.customer_email) {
+        log(
+          `No ${stage} notice for ${doc.order_no}: the order has no customer email. `
+          + 'Guests are asked for one only when the Receipts feature is on, and it is optional to them.',
+        );
+      }
+
+      if (stage && doc.customer_email) {
         const wanted = await featureConfig('receipts', `notify_on_${stage}`, true);
-        if (wanted === null || wanted === false) {
-          // Feature off, or this particular notification switched off.
+        if (wanted === null) {
+          log(
+            `No ${stage} notice for ${doc.order_no}: the Receipts feature is switched off, which is what `
+            + 'these notices hang from. Turn it on under Features to send them.',
+          );
+        } else if (wanted === false) {
+          log(`No ${stage} notice for ${doc.order_no}: notify_on_${stage} is switched off under Features.`);
         } else {
           // One notification per stage per order. The update event fires on
           // every edit, and a customer told four times that their food is
@@ -538,6 +559,9 @@ export default async ({ req, res, log, error }) => {
             Query.limit(1),
           ]).catch(() => ({ total: 0 }));
 
+          if (already.total > 0) {
+            log(`No ${stage} notice for ${doc.order_no}: one has already been sent.`);
+          }
           if (already.total === 0) {
             await db.createDocument(DB_ID, 'order_notices', 'unique()', {
               venue_id: doc.venue_id, order_id: doc.$id, stage,
@@ -547,6 +571,14 @@ export default async ({ req, res, log, error }) => {
 
             if (transport) {
               const isGroup = !!doc.group_reference;
+              // Where to come for it, in words. Absent for a table order, and
+              // absent rather than wrong if the point has since been deleted.
+              const collectAt = doc.pickup_point_id
+                ? await db
+                    .getDocument(DB_ID, 'pickup_points', doc.pickup_point_id)
+                    .then((p) => p.name || '')
+                    .catch(() => '')
+                : '';
               const body =
                 stage === 'accepted'
                   ? `<p style="margin:0 0 10px">We have your order. The kitchen will start on it shortly.</p>
@@ -559,7 +591,11 @@ export default async ({ req, res, log, error }) => {
                      }</p>`
                   : `<p style="margin:0 0 10px">Your order is ready.</p>
                      <p style="margin:0;color:#5d6b7a;font-size:14px">Order ${doc.order_no}${
-                       doc.pickup_point ? ` · collect at ${doc.pickup_point}` : ''
+                       // Looked up by name. This read doc.pickup_point, which
+                       // is not a column on an order, so the line never
+                       // appeared; and the column that does exist holds an id,
+                       // which is not something to put in front of a customer.
+                       collectAt ? ` · collect at ${collectAt}` : ''
                      }</p>`;
               try {
                 await transport.sendMail({

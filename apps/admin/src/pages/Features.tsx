@@ -6,7 +6,18 @@ import type { FeatureFlag } from '@snpos/core';
 
 /** Plain-language labels. The keys come from scripts/schema.mjs. */
 const LABELS: Record<string, { title: string; blurb: string }> = {
-  receipts: { title: 'Receipts and kitchen slips', blurb: 'Email receipts to customers. Kitchen slips print separately and can be left off.' },
+  // Named for receipts, but it carries every email a customer gets, and it is
+  // also what makes the ordering page ask for an address in the first place.
+  // Left unsaid, an owner switches this off to stop receipts and quietly stops
+  // "we have your order" and "your order is ready" as well, with no sign of it
+  // anywhere. It is the one switch here that does more than its name suggests.
+  receipts: {
+    title: 'Receipts and customer emails',
+    blurb:
+      'Every email a customer gets: the receipt, "we have your order" when it is accepted, and "your order is ready". '
+      + 'It is also what makes the ordering page ask for an email address at all, so switching it off stops all three. '
+      + 'Kitchen slips print separately and can be left off.',
+  },
   preorders: { title: 'Order ahead / order while closed', blurb: 'Customers order outside opening hours for a time when you are open. The kitchen stays silent until it needs cooking.' },
   takeaway: { title: 'Takeaway and delivery', blurb: 'Orders not tied to a table, with as many pickup points per venue as you need.' },
   waste_log: { title: 'Waste log', blurb: 'Staff record spoiled or dropped food as it happens. This is what makes the stock alerts trustworthy.' },

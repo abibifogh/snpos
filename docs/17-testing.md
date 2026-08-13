@@ -123,6 +123,9 @@ Run these every time. The restaurant is the part that is already earning.
 | F1a | The status page after ordering | **Order something else** is the obvious next step, full width |
 | F2 | Order with several dishes | Estimate adds the prep times, never past an hour |
 | F3 | Leave a ticket past its time | Late pill and alarm, at the moment the ticket predicted |
+| F3i | Sleep the kitchen tablet an hour, wake it, let a ticket go late | **It rings.** The sound comes back with the screen |
+| F3j | Wake it and look before any order is late | Either no banner, or a red bar offering to turn sound back on |
+| F3k | Press that bar | Bar goes. Test the late sound from settings and it plays |
 | F3a | Accept a 20 minute dish, read the ticket | Counts down from **20**, not 25. The two figures agree |
 | F3g | Leave a ticket 5 min before accepting it | Shows about **15 left**, not 20. The clock started when placed |
 | F3h | Leave one unaccepted past its prep time, then accept | Already over, and the pill agrees |
@@ -133,6 +136,11 @@ Run these every time. The restaurant is the part that is already earning.
 | F4 | Cancel within two minutes | Cancelled. After two minutes, refused |
 | F5 | Close a shift with an unpaid order | Blocked, and it names the order |
 | F6 | Close a shift properly | Summary email arrives, with the stock table |
+| F11 | Order as a guest, leaving an email | Accept it: **"we have your order"** arrives. Mark ready: **"your order is ready"** arrives |
+| F12 | The ready email, for a collection order | Names the pickup point in words, not a code |
+| F13 | Accept the same order twice | One email, not two |
+| F14 | Switch the Receipts feature off, accept an order | No email, and the function's log **says that is why** |
+| F15 | Order without leaving an email | No email, and the log says the order had none |
 | F7 | Press the name at the top right | PIN pad, headed "Who is taking over?" |
 | F8 | Enter a second cook's PIN | Name changes. Their Accepts are recorded against them |
 | F9 | Press the name, then Cancel | Back to the tickets, **still the first cook** |

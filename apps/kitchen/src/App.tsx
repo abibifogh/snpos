@@ -16,7 +16,7 @@ import type {
 } from '@snpos/core';
 
 interface Station extends Doc { venue_id: string; key: string; name: string; colour?: string; sort: number; active: boolean }
-import { unlockAudio, setAlarm, stopAlarm, type AlarmKind } from './alarm';
+import { unlockAudio, setAlarm, stopAlarm, audioReady, type AlarmKind } from './alarm';
 import { CombinedBar, SettleModal } from './CombinedBar';
 
 
@@ -437,6 +437,30 @@ export function App() {
     return { level, kind: 'new' };
   }, [pending, overdue, ready, sla, settings]);
 
+  /**
+   * Whether this screen can actually make a noise, checked rather than assumed.
+   *
+   * The audio is unlocked once, at the PIN gate, and a browser suspends it
+   * again whenever the page is hidden: a tablet sleeping on a counter, a cook
+   * switching to something else, a screen left overnight. Nothing noticed. The
+   * alarm carried on being "set", oscillators carried on being created, and
+   * not one sound came out.
+   *
+   * Rechecked on the same slow clock the late list uses, and whenever the
+   * screen is looked at again, which is the moment it can be put right.
+   */
+  const [soundOk, setSoundOk] = useState(true);
+  useEffect(() => {
+    const check = () => setSoundOk(audioReady());
+    check();
+    const t = window.setInterval(check, 5_000);
+    document.addEventListener('visibilitychange', check);
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener('visibilitychange', check);
+    };
+  }, []);
+
   const lastAlarm = useRef({ level: 0, kind: 'new' as AlarmKind });
   useEffect(() => {
     if (alarm.level !== lastAlarm.current.level || alarm.kind !== lastAlarm.current.kind) {
@@ -516,6 +540,22 @@ export function App() {
 
   return (
     <div className="kds">
+      {/* An alarm nobody can hear is the one failure in a kitchen that must not
+          be quiet about itself. Whole width, top of the screen, and it fixes
+          itself when pressed, because the fix genuinely is one touch. */}
+      {ready && !soundOk && (
+        <button
+          onClick={() => { unlockAudio(); setSoundOk(audioReady()); }}
+          style={{
+            width: '100%', padding: '0.85rem 1rem', border: 'none', cursor: 'pointer',
+            background: '#7a1d16', color: '#ffd9d4', font: 'inherit', fontWeight: 600,
+            fontSize: '1rem', textAlign: 'center',
+          }}
+        >
+          Sound is off on this screen, so late orders will not ring. Tap here to turn it back on.
+        </button>
+      )}
+
       {(!ready || switching) && (
         <div className="audio-gate">
           <div style={{ maxWidth: '22rem' }}>
