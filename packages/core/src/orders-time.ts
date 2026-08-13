@@ -166,3 +166,38 @@ export function cancelWindowLeft(order: { $createdAt: string }, now: number = Da
   if (!Number.isFinite(placed)) return 0;
   return Math.max(0, CANCEL_WINDOW_MS - (now - placed));
 }
+
+/* ------------------------------------------------------- a ticket's lines */
+
+/**
+ * How long to wait before an empty ticket is treated as a real problem.
+ *
+ * An order and the lines on it are two writes, not one. The kitchen is told
+ * about the order the instant it exists, which is before the lines have
+ * finished being written, so a ticket with nothing on it is the normal state
+ * for a second or two and a lasting fault after that.
+ */
+export const LINES_GRACE_MS = 60_000;
+
+/**
+ * What a ticket should say about its own lines.
+ *
+ * Three states, and they were being shown as one message, then as the wrong
+ * one. An empty list a moment after the order arrived means the lines are
+ * still on their way. The same empty list a minute later means somebody has a
+ * ticket they cannot cook from, and telling them that is the whole point.
+ *
+ * Announcing it immediately is worse than saying nothing: "check with whoever
+ * sent it" on every single order teaches a kitchen to ignore the one time it
+ * is true.
+ */
+export function ticketLines(
+  order: { $createdAt: string },
+  lines: unknown[] | undefined,
+  now: number = Date.now(),
+): 'ready' | 'loading' | 'missing' {
+  if (lines && lines.length > 0) return 'ready';
+  const placed = Date.parse(order.$createdAt);
+  if (!Number.isFinite(placed)) return 'loading';
+  return now - placed > LINES_GRACE_MS ? 'missing' : 'loading';
+}

@@ -8,7 +8,7 @@ import {
   db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
   verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
-  itemsAvailableNow, dueMinutes,
+  itemsAvailableNow, dueMinutes, ticketLines,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback,
 } from '@snpos/core';
 import type {
@@ -88,13 +88,47 @@ export function App() {
     const rows = await loadWithFallback(`items:${orderIds.slice(0, 100).join(',').slice(0, 120)}`, () =>
       listAll<OrderItem>('order_items', [Query.equal('order_id', orderIds.slice(0, 100))]),
     );
+    /**
+     * Only what was actually found is recorded.
+     *
+     * Every requested id used to be stamped with an empty list before the rows
+     * were filled in, which made "we asked and there were none" indistinguish-
+     * able from "we have not asked yet". That mattered because the kitchen is
+     * told about an order the instant it exists, which is BEFORE its lines
+     * finish being written: the fetch found nothing, wrote an empty list, and
+     * the reconciler then skipped that order for ever because it had an answer
+     * on file. The ticket stayed blank until somebody reloaded the page.
+     *
+     * Left undefined, an order with no rows yet is simply still unanswered, so
+     * the reconciler picks it up again a minute later and the retry below
+     * usually beats it to it.
+     */
     setItems((prev) => {
+      if (rows.length === 0) return prev;
       const next = { ...prev };
-      for (const id of orderIds) next[id] = [];
+      for (const id of orderIds) if (rows.some((r) => r.order_id === id)) next[id] = [];
       for (const r of rows) (next[r.order_id] ??= []).push(r);
       return next;
     });
   }, []);
+
+  /**
+   * Ask again shortly, for the lines that had not been written yet.
+   *
+   * The gap is normally under a second. Waiting a whole minute for the
+   * reconciler would leave a cook looking at a ticket with nothing on it for
+   * most of the time the customer is waiting.
+   */
+  const loadItemsSoon = useCallback(
+    async (orderId: string) => {
+      for (const wait of [0, 700, 2000, 5000]) {
+        if (wait) await new Promise((r) => setTimeout(r, wait));
+        await loadItemsFor([orderId]).catch(() => undefined);
+        if (itemsRef.current[orderId]?.length) return;
+      }
+    },
+    [loadItemsFor],
+  );
 
   useEffect(() => {
     (async () => {
@@ -196,10 +230,10 @@ export function App() {
         return live ? [...without, order].sort((a, b) => a.$createdAt.localeCompare(b.$createdAt)) : without;
       });
       if (isCreate(events) && (order.module ?? 'kitchen') === 'kitchen'
-          && ['PENDING', 'SCHEDULED'].includes(order.status)) void loadItemsFor([order.$id]);
+          && ['PENDING', 'SCHEDULED'].includes(order.status)) void loadItemsSoon(order.$id);
     });
     return off;
-  }, [venue, loadItemsFor]);
+  }, [venue, loadItemsSoon]);
 
   /**
    * A net under the live connection.
@@ -827,6 +861,9 @@ function Ticket({
    * arrives as a surprise. The grace period is included: what is shown here is
    * precisely the moment it will ring.
    */
+  // Still arriving, or genuinely empty. The clock decides, not the absence.
+  const lineState = ticketLines(order, items);
+
   const cooking = order.status === 'ACCEPTED' || order.status === 'PREPARING';
   const cookedFor = secondsSince(order.accepted_at || order.$createdAt);
   /**
@@ -886,13 +923,13 @@ function Ticket({
       </div>
 
       <ul className="ticket-items">
-        {/* Three different things, and they were one message. Undefined is a
-            list that has not arrived; empty is one that has, and is empty,
-            which means somebody sent a ticket with nothing on it. Saying
-            "loading" for the second leaves a cook waiting for a list that is
-            never coming. */}
-        {items === undefined && <li className="dim">Loading items…</li>}
-        {items !== undefined && items.length === 0 && (
+        {/* An order and its lines are two writes, and the kitchen hears about
+            the order first. So an empty ticket is ordinary for a second or two
+            and a real fault after that; saying "check with whoever sent it" on
+            every order as it lands teaches a kitchen to ignore the one time it
+            means something. See ticketLines. */}
+        {lineState === 'loading' && <li className="dim">Loading items…</li>}
+        {lineState === 'missing' && (
           <li style={{ color: 'var(--warn)' }}>
             Nothing is listed on this ticket. Check with whoever sent it before cooking.
           </li>

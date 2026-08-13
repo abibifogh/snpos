@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cookMinutes, estimateMinutes, queueMinutes, dueMinutes, shownEta,
-  cancelWindowLeft, CANCEL_WINDOW_MS, MAX_ETA_MINUTES,
+  cancelWindowLeft, CANCEL_WINDOW_MS, MAX_ETA_MINUTES, ticketLines, LINES_GRACE_MS,
 } from '../orders-time.ts';
 import { byStaff, totalHandedOver } from '../handover-math.ts';
 
@@ -93,4 +93,31 @@ test('a handover from somebody with no name still reads', () => {
   const [line] = byStaff([{ staff_id: 'x', amount: 100 }]);
   assert.equal(line.name, 'Unknown');
   assert.equal(line.handedOver, 100, 'a row with no status counts');
+});
+
+test('an empty ticket is ordinary at first and a problem later', () => {
+  /**
+   * An order and its lines are two writes, and the kitchen is told about the
+   * order first. Announcing "nothing is listed" the instant a ticket lands
+   * fired on every single order; announcing it never left a cook staring at
+   * "Loading items" for a list that was not coming.
+   */
+  const placed = '2026-08-13T12:00:00.000Z';
+  const at = (ms: number) => Date.parse(placed) + ms;
+  const order = { $createdAt: placed };
+
+  assert.equal(ticketLines(order, undefined, at(0)), 'loading', 'the moment it arrives');
+  assert.equal(ticketLines(order, [], at(2_000)), 'loading', 'two seconds in, still normal');
+  assert.equal(ticketLines(order, undefined, at(LINES_GRACE_MS + 1)), 'missing');
+  assert.equal(ticketLines(order, [], at(LINES_GRACE_MS + 1)), 'missing');
+
+  // Lines present is always ready, however old the order is.
+  assert.equal(ticketLines(order, [{}], at(0)), 'ready');
+  assert.equal(ticketLines(order, [{}], at(LINES_GRACE_MS * 10)), 'ready');
+});
+
+test('a ticket with an unreadable date never accuses anybody', () => {
+  // Being wrong towards "still loading" costs a cook a moment. Being wrong the
+  // other way tells them a real order is broken.
+  assert.equal(ticketLines({ $createdAt: 'nonsense' }, [], Date.now()), 'loading');
 });
