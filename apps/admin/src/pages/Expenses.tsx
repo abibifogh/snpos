@@ -276,8 +276,13 @@ export function ExpensesPage() {
             qty,
             unit_cost: unitCost,
             line_total: Math.round(qty * unitCost),
-            stocked: true,
+            // An overhead is used up in the buying. See the note in the till
+            // form: raising a quantity nobody counts creates a balance that
+            // only ever goes up, and puts four hundred cedis of taxi rides on
+            // the books as something the restaurant owns.
+            stocked: ing.counted_at_close !== false,
           });
+          if (ing.counted_at_close === false) continue;
           await receiveStock({
             venueId: payload.venue_id,
             ingredient: ing,
@@ -523,14 +528,14 @@ export function ExpensesPage() {
               label="Where the money came from"
               hint={editing.from_takings !== false
                 ? 'Taken off what that shift\'s drawer should have held.'
-                : 'Recorded as spent, but not taken off the drawer count.'}
+                : 'Recorded as spent, but not taken off that shift\'s drawer.'}
             >
               <Select
-                value={editing.from_takings !== false ? 'drawer' : 'own'}
-                onChange={(e) => setEditing({ ...editing, from_takings: e.target.value === 'drawer' })}
+                value={editing.from_takings !== false ? 'shift' : 'petty'}
+                onChange={(e) => setEditing({ ...editing, from_takings: e.target.value === 'shift' })}
               >
-                <option value="drawer">The money taken that shift</option>
-                <option value="own">Somebody's own money, or money brought in</option>
+                <option value="shift">The shift</option>
+                <option value="petty">Petty cash</option>
               </Select>
             </Field>
           </div>

@@ -268,7 +268,7 @@ export function ShiftHistory({
                       against at the end of the night, so it is a column rather
                       than something to be found by opening each row. */}
                   <td className="dim small">
-                    {fromTakings(e) ? 'The drawer' : 'Own money'}
+                    {fromTakings(e) ? 'The shift' : 'Petty cash'}
                   </td>
                   <td className="num">{money(e.amount)}</td>
                   <td>

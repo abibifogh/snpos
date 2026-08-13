@@ -97,8 +97,7 @@ not just what to press.
 | C11a | Open Record expense | **No keyboard until a box is tapped.** Amount is blank, not 0.00 |
 | C8d | Press Sold out | **No keyboard.** The list is readable straight away |
 | C11b | Pick an item whose cost is not set | Cost box **blank**, nothing to clear first |
-| C11c | Two items, then GH₵3 in the Extra box | Total is items **plus 3**, and it saves that |
-| C11d | Read that expense in admin | Note says GH₵3 was not itemised |
+| C11c | Record spend before Provision has run | **Still saves.** Says the money source could not be kept |
 | C11e | Record 5 kg of rice for GH₵120 | Line shows **GH₵24.00 per kg**. No unit price to type |
 | G9 | Record spend, answer "from the money taken this shift" | Close the shift: **Should be in hand is lower by it** |
 | G10 | Record spend, answer "from my own money" | Recorded, listed at close, **not taken off the count** |
@@ -108,6 +107,9 @@ not just what to press.
 | G14 | Admin → Expenses, switch a closed shift's spend to own money | Saved, and **that shift is worked out again** |
 | G15 | Look at the shift after G14 | Expected and over/short have moved. **Counted is untouched** |
 | G16 | An ingredient with "Counted at the end of a shift" off | **Not on the closing list.** Still enterable on a spend |
+| G17 | Record 4 trips of transport on an expense | Line saved and costed. **Stock quantity does not move** |
+| G18 | Record 5 kg of rice on the same expense | Rice goes up by 5. Only the overhead is skipped |
+| G19 | The money-source dropdown | Reads **From my shift** and **From petty cash** |
 | C12 | Open one shift on each side | Codes read `BIST…` and `CRAF…` |
 | C13 | Craft till, press This shift | This shift's sales and spending. **No kitchen tickets** |
 | C14 | Scan a table QR as a customer | Food only. **No craft products anywhere on the menu** |

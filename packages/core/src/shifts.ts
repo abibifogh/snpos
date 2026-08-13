@@ -333,12 +333,12 @@ export interface ExpectedTakings {
   /** Everything paid out during the shift, however it was paid. */
   expensesTotal: number;
   /**
-   * Of that, what somebody paid from their own money rather than the drawer.
+   * Of that, what came from petty cash rather than the shift's own takings.
    *
-   * Spent by the business and owed back to whoever spent it, but never in the
-   * till, so it is deliberately not part of what the count is measured
-   * against. Reported separately so the two figures cannot be mistaken for
-   * each other at closing time.
+   * Spent by the business, but out of money this shift never took, so it is
+   * deliberately not part of what the count is measured against. Reported
+   * separately so the two figures cannot be mistaken for each other at
+   * closing time.
    */
   ownMoneyTotal: number;
   salesTotal: number;
@@ -386,10 +386,10 @@ export async function expectedTakings(shift: Shift, methods: PaymentMethod[]): P
    *
    * Two different things used to be filed as one. A cook sent to the market
    * with money from the till has spent the till's money, and the count at the
-   * end of the night must expect that much less. A cook who paid out of their
-   * own pocket has spent something the drawer never held, and deducting it
-   * makes the drawer look short by an amount that was never in it — the shift
-   * is then chased over a shortage that did not happen, which is exactly the
+   * end of the night must expect that much less. A cook who was given petty
+   * cash has spent something this shift never took, and deducting it makes
+   * the drawer look short by an amount that was never in it — the shift is
+   * then chased over a shortage that did not happen, which is exactly the
    * kind of accusation that makes people stop recording expenses at all.
    *
    * The expense is recorded either way. It is money the business spent and it

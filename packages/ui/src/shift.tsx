@@ -63,13 +63,12 @@ export interface ShiftFlow {
   /** Everything paid out of the drawers during the shift. */
   out: number;
   /**
-   * Of the shift's spending, what somebody paid from their own money.
+   * Of the shift's spending, what came from petty cash rather than the till.
    *
-   * Spent by the business and owed back to whoever spent it, but never in a
-   * drawer, so it is not taken off what the count is measured against. Shown
-   * anyway: a cook who paid for a taxi themselves wants to see it written
-   * down at the moment the shift is being closed, and an owner reading the
-   * summary needs to know it is owed.
+   * Spent by the business, but out of money this shift never took, so it is
+   * not part of what the count is measured against. Shown anyway: it is real
+   * spending and it belongs in front of whoever is closing, and an owner
+   * reading the summary needs to see it went out.
    */
   ownMoney?: number;
 }
@@ -328,8 +327,8 @@ export function ShiftCloseForm({
               {(flow.ownMoney ?? 0) > 0 && (
                 <tr>
                   <td>
-                    Paid from own money
-                    <span className="dim small">recorded, and owed back. Not taken off the count</span>
+                    Paid from petty cash
+                    <span className="dim small">recorded as spent. Not taken off this shift</span>
                   </td>
                   <td className="num dim">{money(flow.ownMoney ?? 0)}</td>
                 </tr>

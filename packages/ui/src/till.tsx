@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Field, FormError, Input, Modal, Notice, Select, Textarea } from './components';
 import {
-  db, DB_ID, ID, formatMoney, parseMoney, toInput, loadIngredients, loadPaymentMethods,
+  db, DB_ID, ID, saveDropping, formatMoney, parseMoney, toInput, loadIngredients, loadPaymentMethods,
   PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions, receiveStock, uploadFile,
   expenseMethods, recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
   fromTakings,
@@ -32,6 +32,16 @@ import type {
  * recorded as six hundred.
  */
 interface DraftLine { ingredientId: string; qtyText: string; totalText: string }
+
+/**
+ * Said when the spend saved but the answer to "where did the money come from"
+ * could not be kept, because the database has not been provisioned since that
+ * question was added. Named rather than typed twice: it is the same sentence
+ * whether an expense is being recorded or corrected.
+ */
+const CANNOT_STORE_SOURCE =
+  'Spend recorded, but where the money came from could not be saved. '
+  + 'Run "Provision Appwrite" in GitHub Actions, then set it again from the admin app.';
 
 /**
  * Money out, recorded where it was spent rather than remembered until later.
@@ -78,10 +88,12 @@ export function ExpenseModal({
   /**
    * Anything on the receipt that is not one of the items.
    *
-   * Only ever added to a total that came from items; where the amount is typed
-   * by hand there is nothing to add it to and nothing to reconcile.
+   * Switched off at the owner's request, so nothing sets this and `extra` is
+   * always nought. Kept rather than torn out: the arithmetic, the validation
+   * and the note it writes are all correct and were tested, and putting the
+   * box back is one input. Ripping it out would mean writing it again.
    */
-  const [extraText, setExtraText] = useState('');
+  const [extraText] = useState('');
   const [paidToKind, setPaidToKind] = useState<PaidToKind>(editing?.paid_to_kind ?? 'open_market');
   const [supplierId, setSupplierId] = useState(editing?.supplier_id ?? '');
   const [staffId, setStaffId] = useState(editing?.paid_to_staff_id ?? '');
@@ -90,12 +102,11 @@ export function ExpenseModal({
   /**
    * Was this paid with money taken during the shift?
    *
-   * Yes for anything out of the drawer, which is most of it and so the
-   * default. No when somebody used their own money, or money brought from
-   * home: the business still spent it and still owes it back, but the drawer
-   * never held it, and deducting it makes the count come up short by an amount
-   * that was never there. Being chased over a shortage that did not happen is
-   * exactly what teaches people to stop recording expenses.
+   * Yes for anything out of the till, which is most of it and so the default.
+   * No when it came from petty cash: the business still spent it, but this
+   * shift never took it, and deducting it makes the count come up short by an
+   * amount that was never there. Being chased over a shortage that did not
+   * happen is exactly what teaches people to stop recording expenses.
    */
   const [fromDrawer, setFromDrawer] = useState<boolean>(editing ? fromTakings(editing) : true);
   // What was actually bought. A shop run is rarely one thing, and an expense
@@ -283,12 +294,22 @@ export function ExpenseModal({
        * was done properly the first time.
        */
       if (editing) {
-        await db.updateDocument(DB_ID, 'shift_expenses', editing.$id, fields);
-        onDone('Spend corrected');
+        const { dropped } = await saveDropping('shift_expenses', editing.$id, fields);
+        onDone(dropped.includes('from_takings') ? CANNOT_STORE_SOURCE : 'Spend corrected');
         return;
       }
 
-      const expense = await db.createDocument(DB_ID, 'shift_expenses', ID.unique(), {
+      /**
+       * Saved even if the database has not caught up with the form.
+       *
+       * `from_takings` is newer than some projects, and Appwrite refuses a
+       * whole write for one attribute it does not recognise — so recording a
+       * taxi failed outright with "unknown attribute", which is the form
+       * refusing to do its job over a detail. The spend matters more than the
+       * detail: it is written without the field, and the message says the
+       * answer to that one question could not be kept.
+       */
+      const { id: expenseId, dropped } = await saveDropping('shift_expenses', null, {
         venue_id: venueId,
         shift_id: shiftId,
         ...fields,
@@ -296,6 +317,8 @@ export function ExpenseModal({
         created_by: userId,
         approval_status: 'pending',
       });
+      const expense = { $id: expenseId };
+      const lostSource = dropped.includes('from_takings');
 
       // Each line is recorded and then delivered into stock. From where the
       // person is standing these are one action, so a line that fails to stock
@@ -308,6 +331,21 @@ export function ExpenseModal({
         // Worked out from what was paid, not typed. See unitCostOf.
         const unitCost = unitCostOf(l);
         const lineTotal = parseMoney(l.totalText, decimals) ?? 0;
+        /**
+         * Overheads are spent the moment they are bought.
+         *
+         * Anything nobody counts at the end of a shift — transport, a delivery
+         * fee, gas for the van, a repair — is used up in the buying. There is
+         * no shelf for it, so raising a stock quantity would create a balance
+         * that only ever goes up: nothing depletes it, no recipe draws on it,
+         * and the value sits in the books as though the restaurant owned four
+         * hundred cedis of taxi rides.
+         *
+         * The line is still written, so the shop run still breaks down into
+         * what it was actually spent on, and it is marked as not stocked so
+         * anybody reading it later can see which of the two it was.
+         */
+        const overhead = ing.counted_at_close === false;
         try {
           await db.createDocument(DB_ID, 'expense_items', ID.unique(), {
             expense_id: expense.$id,
@@ -319,26 +357,30 @@ export function ExpenseModal({
             // multiplied back up: those differ by a pesewa or two on anything
             // that does not divide evenly, and the receipt is the truth.
             line_total: lineTotal,
-            stocked: true,
+            stocked: !overhead,
           });
-          await receiveStock({
-            venueId,
-            ingredient: ing,
-            qty,
-            unitCost,
-            refType: 'expense',
-            refId: expense.$id,
-            shiftId,
-            createdBy: userId,
-            note: payee.trim() ? `Bought from ${payee.trim()}` : 'Expense',
-          });
+          if (!overhead) {
+            await receiveStock({
+              venueId,
+              ingredient: ing,
+              qty,
+              unitCost,
+              refType: 'expense',
+              refId: expense.$id,
+              shiftId,
+              createdBy: userId,
+              note: payee.trim() ? `Bought from ${payee.trim()}` : 'Expense',
+            });
+          }
         } catch {
           stockFailures += 1;
         }
       }
 
       onDone(
-        stockFailures > 0
+        lostSource
+          ? CANNOT_STORE_SOURCE
+          : stockFailures > 0
           ? `Spend recorded, but ${stockFailures} item${stockFailures > 1 ? 's' : ''} did not reach stock`
           : filledLines.length
             ? `Spend recorded and ${filledLines.length} item${filledLines.length > 1 ? 's' : ''} added to stock`
@@ -456,43 +498,20 @@ export function ExpenseModal({
       {filledLines.length > 0 ? (
         <Field
           label={`Amount (${settings.currency_symbol ?? ''})`}
-          hint="Added up from the items above. Anything else goes in the box beside it."
+          hint="Added up from the items above."
         >
-          <div className="row" style={{ gap: '0.4rem', alignItems: 'center' }}>
-            {/* Blank while it is nothing. "0.00" in a box reads as a figure
-                somebody entered, and this one is worked out; showing zero
-                where nothing has been added yet says the form did the sum
-                and got nought, which is not what happened. */}
-            <Input value={linesTotal > 0 ? toInput(linesTotal, decimals) : ''} disabled style={{ flex: 2 }} />
-            <span aria-hidden style={{ fontWeight: 650 }}>+</span>
-            {/*
-              The bit that never fits on a line.
+          {/* Blank while it is nothing. "0.00" in a box reads as a figure
+              somebody entered, and this one is worked out; showing zero where
+              nothing has been added yet says the form did the sum and got
+              nought, which is not what happened.
 
-              A shop run comes back with a total that is a few cedis above the
-              things in the bag: a taxi both ways, a tip to the boy who
-              carried it, a small item nobody wants to itemise. Without
-              somewhere to put it, the choice was to invent a stock line that
-              did not exist or to leave the drawer short by three cedis every
-              time. Both of those are worse than a small box.
-
-              Deliberately narrow and deliberately blank. It is for the
-              remainder, not for the shopping, and a box that starts at 0.00
-              invites somebody to type the whole total into it.
-            */}
-            <Input
-              value={extraText}
-              inputMode="decimal"
-              placeholder="Extra"
-              aria-label="Anything else, added to the total"
-              style={{ flex: 1 }}
-              onChange={(e) => setExtraText(e.target.value)}
-            />
-          </div>
-          {extra > 0 && (
-            <span className="small" style={{ fontWeight: 600 }}>
-              Total {formatMoney(linesTotal + extra, settings)}
-            </span>
-          )}
+              There was a small box beside this for anything on the receipt
+              that was not one of the items — a taxi, a tip to the boy who
+              carried it. Switched off at the owner's request; the code for it
+              is still here, minus its box, so putting it back is a matter of
+              rendering one input again. Until then `extra` is always nought
+              and the total is the items and nothing else. */}
+          <Input value={linesTotal > 0 ? toInput(linesTotal, decimals) : ''} disabled />
         </Field>
       ) : (
         <Field label={`Amount (${settings.currency_symbol ?? ''})`}>
@@ -541,15 +560,15 @@ export function ExpenseModal({
       <Field
         label="Where did the money come from"
         hint={fromDrawer
-          ? 'Taken off what the drawer should hold at the end of the shift.'
-          : 'Still recorded as money the business spent. Not taken off the drawer count.'}
+          ? 'Taken off what your drawer should hold at the end of the shift.'
+          : 'Recorded as money the business spent. Not taken off your drawer.'}
       >
         <Select
-          value={fromDrawer ? 'drawer' : 'own'}
-          onChange={(e) => setFromDrawer(e.target.value === 'drawer')}
+          value={fromDrawer ? 'shift' : 'petty'}
+          onChange={(e) => setFromDrawer(e.target.value === 'shift')}
         >
-          <option value="drawer">From the money taken this shift</option>
-          <option value="own">From my own money, or money brought in</option>
+          <option value="shift">From my shift</option>
+          <option value="petty">From petty cash</option>
         </Select>
       </Field>
 
