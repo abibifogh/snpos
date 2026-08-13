@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cookMinutes, estimateMinutes, queueMinutes, dueMinutes, shownEta,
-  cancelWindowLeft, CANCEL_WINDOW_MS, MAX_ETA_MINUTES, ticketLines, LINES_GRACE_MS,
+  cancelWindowLeft, CANCEL_WINDOW_MS, MAX_ETA_MINUTES, ticketLines, LINES_GRACE_MS, isOverdue, minutesOver,
 } from '../orders-time.ts';
 import { byStaff, totalHandedOver } from '../handover-math.ts';
 
@@ -120,4 +120,71 @@ test('a ticket with an unreadable date never accuses anybody', () => {
   // Being wrong towards "still loading" costs a cook a moment. Being wrong the
   // other way tells them a real order is broken.
   assert.equal(ticketLines({ $createdAt: 'nonsense' }, [], Date.now()), 'loading');
+});
+
+test('an order is late the moment it passes the time allowed, not five minutes after', () => {
+  /**
+   * The rule the owner asked for, and the one the ticket already displayed.
+   * A twenty minute order used to run to twenty-five before anything said a
+   * word, so the five minutes where a nudge still saves the order were the
+   * five minutes with no signal at all.
+   */
+  const placed = '2026-08-13T12:00:00.000Z';
+  const at = (mins: number) => Date.parse(placed) + mins * 60_000;
+  const order = { status: 'ACCEPTED', $createdAt: placed, $updatedAt: placed };
+
+  assert.equal(isOverdue(order, 20, at(19)), false, 'a minute to go');
+  assert.equal(isOverdue(order, 20, at(20)), false, 'exactly on time is on time');
+  assert.equal(isOverdue(order, 20, at(20.01)), true, 'a moment past, and it is late');
+  assert.equal(isOverdue(order, 20, at(24)), true, 'no longer waiting for the old cushion');
+
+  // PREPARING is the same question; PENDING has its own alarm and is not it.
+  assert.equal(isOverdue({ ...order, status: 'PREPARING' }, 20, at(21)), true);
+  assert.equal(isOverdue({ ...order, status: 'PENDING' }, 20, at(99)), false);
+  assert.equal(isOverdue({ ...order, status: 'PAID' }, 20, at(99)), false);
+});
+
+test('food already cooked keeps its short wait, because somebody has to fetch it', () => {
+  const ready = '2026-08-13T12:00:00.000Z';
+  const at = (mins: number) => Date.parse(ready) + mins * 60_000;
+  const order = { status: 'READY', $createdAt: '2026-08-13T11:00:00.000Z', $updatedAt: ready };
+
+  // Measured from when it was marked ready, not from when it was ordered:
+  // otherwise every order is late the instant a cook presses Ready.
+  assert.equal(isOverdue(order, 20, at(2)), false);
+  assert.equal(isOverdue(order, 20, at(6)), true);
+  assert.equal(isOverdue(order, 20, at(6), 10), false, 'and the wait is settable');
+});
+
+test('minutes over counts both ways, so one figure covers left and over', () => {
+  const placed = '2026-08-13T12:00:00.000Z';
+  const at = (mins: number) => Date.parse(placed) + mins * 60_000;
+  const order = { $createdAt: placed };
+
+  assert.equal(minutesOver(order, 20, at(8)), -12, 'twelve minutes left');
+  assert.equal(minutesOver(order, 20, at(20)), 0, 'due now');
+  assert.equal(minutesOver(order, 20, at(23)), 3, 'three minutes over');
+  assert.equal(minutesOver({ $createdAt: 'nonsense' }, 20, at(23)), 0, 'never invents a number');
+});
+
+test('a late order rings at the same second the ticket says it is due', () => {
+  // The two used to be five minutes apart, which taught a kitchen that the
+  // countdown on the ticket was not the number that mattered.
+  const placed = '2026-08-13T12:00:00.000Z';
+  const order = { status: 'ACCEPTED', $createdAt: placed, $updatedAt: placed };
+
+  // Checked every ten seconds across the hand-over, which is the granularity
+  // the kitchen screen rebuilds its late list on.
+  for (let s = 15 * 60; s < 30 * 60; s += 10) {
+    const now = Date.parse(placed) + s * 1000;
+    const over = minutesOver(order, 20, now);
+    const ringing = isOverdue(order, 20, now);
+
+    // Away from the rounding boundary the two must say the same thing. Within
+    // half a minute of due they may differ by that rounding alone: the ticket
+    // reads "due now" while the pill has just come on, which is not a
+    // contradiction, and a second later it reads "1 min over".
+    if (over >= 1) assert.equal(ringing, true, `says ${over} min over but is not ringing`);
+    if (over <= -1) assert.equal(ringing, false, `says ${-over} min left but is ringing`);
+  }
 });

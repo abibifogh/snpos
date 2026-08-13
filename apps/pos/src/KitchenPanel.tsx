@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Badge, Spinner, Notice } from '@snpos/ui';
-import { db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, displayOrderNo } from '@snpos/core';
+import {
+  db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, displayOrderNo,
+  dueMinutes, isOverdue,
+} from '@snpos/core';
 import type { Order, OrderItem } from '@snpos/core';
 import type { PosContext } from './App';
 
@@ -90,9 +93,15 @@ export function KitchenPanel({
           {live.map((o) => {
             const age = minutesSince(o.$createdAt);
             const lines = items[o.$id] ?? [];
-            const overdue =
-              ['ACCEPTED', 'PREPARING'].includes(o.status) &&
-              lines.some((i) => i.due_at && new Date(i.due_at).getTime() < Date.now());
+            /**
+             * The same rule as the kitchen screen, from core.
+             *
+             * This asked its own question — was any single line past its own
+             * due time — and so it disagreed with the display in the kitchen
+             * about which orders were late. Two screens in one room showing
+             * different answers is worse than either answer.
+             */
+            const overdue = isOverdue(o, dueMinutes(o, lines));
             return (
               <Card key={o.$id} title={displayOrderNo(o.order_no)}>
                 <div className="row" style={{ marginBottom: '0.5rem' }}>

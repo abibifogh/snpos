@@ -2397,6 +2397,11 @@ export const FEATURES = [
     config: {
       // Separate from the acknowledgement alarm: that one asks "has anyone
       // SEEN this?", this one asks "should this have been out by now?".
+      //
+      // Cooking has no cushion at all: past the time allowed for the order is
+      // late, full stop. This figure now covers only food already cooked and
+      // waiting to be collected, where somebody still has to walk over and
+      // fetch it. See isOverdue in packages/core/src/orders-time.ts.
       grace_minutes: 5,
       repeat_minutes: 3,
       escalate_to_manager_after_minutes: 15,

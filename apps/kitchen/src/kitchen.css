@@ -63,6 +63,16 @@ body { background: var(--bg); color: var(--text); }
   display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem;
 }
 .ticket-head .no { font-size: 1.15rem; font-weight: 700; }
+/* The name is what gets called out, so it is nearly as loud as the number and
+   in full colour, not the dim grey the rest of the detail sits in. A long name
+   wraps rather than pushing the clock off the side of the ticket. */
+.ticket-head .who {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.25;
+  margin-top: 0.1rem;
+  overflow-wrap: anywhere;
+}
 .ticket-head .where { font-size: 0.85rem; color: var(--text-dim); }
 .ticket-head .age { font-variant-numeric: tabular-nums; font-weight: 650; }
 .ticket-head .age.warn { color: #f5a524; }

@@ -8,7 +8,7 @@ import {
   db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
   verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
-  itemsAvailableNow, dueMinutes, ticketLines,
+  itemsAvailableNow, dueMinutes, ticketLines, isOverdue, minutesOver,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback,
 } from '@snpos/core';
 import type {
@@ -332,7 +332,16 @@ export function App() {
    * order can be accepted promptly and still be forgotten on the shelf.
    */
   const overdueOn = isEnabled(features, 'overdue_alerts');
-  const graceMinutes = featureConfig(features, 'overdue_alerts', 'grace_minutes', 5);
+  /**
+   * Only food that is already cooked gets a wait, and only because somebody
+   * has to walk over and fetch it.
+   *
+   * This setting used to apply to cooking as well, which meant an order was
+   * not late until five minutes after the time it was promised. Past the time
+   * allowed is now simply late, so this figure no longer touches the cooking
+   * rule at all — see isOverdue.
+   */
+  const collectMinutes = featureConfig(features, 'overdue_alerts', 'grace_minutes', 5);
 
   /**
    * A coarse clock, and the reason this list works at all.
@@ -367,48 +376,24 @@ export function App() {
    */
   const promisedMinutes = useCallback((o: Order) => dueMinutes(o, items[o.$id] ?? []), [items]);
 
+  /**
+   * Which of these should have been out by now.
+   *
+   * The rule itself is in core, so the ticket's own countdown, this list, the
+   * Late pill, the header count, the alarm and the queue on the till are all
+   * one sentence rather than six that agree until one of them is edited.
+   *
+   * Measured from when the order was PLACED, not from when the kitchen took
+   * it. The clock a customer is watching started when they pressed send, and
+   * ten minutes spent waiting to be acknowledged is ten minutes of their wait
+   * however it is filed.
+   */
   const overdue = useMemo(() => {
     if (!overdueOn) return [];
     void nowSlice; // the clock this depends on
     const now = Date.now();
-    const grace = graceMinutes * 60_000;
-
-    return visible.filter((o) => {
-      /**
-       * Still cooking, past the time the customer was given.
-       *
-       * Measured from when the order was PLACED, not from when the kitchen
-       * took it. This used to start at acceptance, on the reasoning that a
-       * ticket left sitting is a different failure with its own alarm, and
-       * that a kitchen should not be judged for minutes before it had the
-       * ticket.
-       *
-       * True about the kitchen, and beside the point for the person waiting.
-       * They were quoted from the moment they pressed send, and ten minutes
-       * spent unacknowledged is ten minutes of their wait however it is filed.
-       * Starting the clock at acceptance meant a ticket sitting for ten
-       * minutes still showed twenty minutes left, and the food arrived half an
-       * hour after a twenty minute promise with nothing having looked late.
-       *
-       * The same instant the countdown on the ticket uses, so the number a
-       * cook reads and the moment it rings can never disagree.
-       */
-      if (['ACCEPTED', 'PREPARING'].includes(o.status)) {
-        const placed = new Date(o.$createdAt).getTime();
-        return now > placed + promisedMinutes(o) * 60_000 + grace;
-      }
-
-      // Ready, and still sitting there. Food going cold on the pass is the
-      // quietest failure in a kitchen: the screen says done, the cook has moved
-      // on, and the only person who knows is the customer who is still waiting.
-      if (o.status === 'READY') {
-        const since = new Date(o.$updatedAt).getTime();
-        return now > since + grace;
-      }
-
-      return false;
-    });
-  }, [visible, overdueOn, graceMinutes, promisedMinutes, nowSlice]);
+    return visible.filter((o) => isOverdue(o, promisedMinutes(o), now, collectMinutes));
+  }, [visible, overdueOn, collectMinutes, promisedMinutes, nowSlice]);
 
   /**
    * Escalation is driven by the oldest unacknowledged ticket, not by each one
@@ -416,6 +401,17 @@ export function App() {
    */
   const combined = isEnabled(features, 'combined_mode');
   const sla = settings?.kitchen_ack_sla_seconds ?? 60;
+
+  /**
+   * What the alarm is allowed to ring for: food that is still on a stove.
+   *
+   * An order sitting on the pass still shows the Late pill, because a plate
+   * going cold is worth seeing, but it no longer makes a noise. The kitchen
+   * has done its part; the sound would be aimed at a cook who cannot act on
+   * it, and an alarm that goes off at the wrong person is one that gets
+   * ignored when it goes off at the right one.
+   */
+  const ringable = useMemo(() => overdue.filter((o) => o.status !== 'READY'), [overdue]);
 
   /**
    * One alarm, and which of the two sounds it should be.
@@ -433,9 +429,9 @@ export function App() {
       const oldest = Math.max(...pending.map((o) => secondsSince(o.$createdAt)));
       level = Math.min(Math.floor(oldest / sla) + 1, maxLevel);
     }
-    if (overdue.length > 0) return { level: Math.max(level, 2), kind: 'late' };
+    if (ringable.length > 0) return { level: Math.max(level, 2), kind: 'late' };
     return { level, kind: 'new' };
-  }, [pending, overdue, ready, sla, settings]);
+  }, [pending, ringable, ready, sla, settings]);
 
   /**
    * Whether this screen can actually make a noise, checked rather than assumed.
@@ -915,32 +911,39 @@ function Ticket({
   const lineState = ticketLines(order, items);
 
   const cooking = order.status === 'ACCEPTED' || order.status === 'PREPARING';
-  // From when the customer placed it. Their wait started there, and so did the
-  // promise they were given. See the overdue rule above, which uses the same
-  // instant so the countdown and the alarm cannot disagree.
-  const cookedFor = secondsSince(order.$createdAt);
   /**
-   * Counting down to the dish's own time, not to the moment the alarm rings.
+   * The count a cook watches, and the exact moment it rings.
    *
-   * The grace period used to be folded in here, so a twenty minute dish said
-   * "23 min left" two minutes after it was accepted. Read beside "20 min dish"
-   * on the same line, that says the system has quietly handed every order five
-   * extra minutes, and a cook working to the bigger number is five minutes
-   * later than the customer was told.
+   * Both from when the customer placed it, because that is when their wait
+   * started and when the promise was made. Both from the same figure in core,
+   * so "due now" and the Late pill land on the same second: twenty minutes
+   * counting down, "due now", then "1 min over" with the alarm already going.
    *
-   * The grace is still there and still decides when the ping happens. It is
-   * tolerance for the alarm, not cooking time, and it belongs to the alarm.
-   * What a cook now sees is the promise: twenty minutes counting down, "due
-   * now", then "1 min over", "2 min over". The ring at five is no longer a
-   * surprise, it is the end of a count they have been watching.
+   * A cushion used to sit between them — the count reached zero and nothing
+   * happened for another five minutes — which taught a kitchen that the number
+   * on the ticket was not the number that mattered.
    */
-  const leftMinutes = Math.round(cookMinutes - cookedFor / 60);
+  const leftMinutes = -minutesOver(order, cookMinutes);
 
   return (
     <div className={`ticket ${order.status === 'PENDING' ? 'pending' : ''} ${late ? 'late' : ''}`}>
       <div className="ticket-head">
         <div>
           <div className="no">{displayOrderNo(order.order_no)}</div>
+          {/*
+            Whose food this is.
+
+            A number gets a plate as far as the pass and no further. Calling
+            "forty-one" across a room full of people is how the wrong person
+            collects, and how the right one keeps waiting. A name is what is
+            actually said out loud, so it is set beside the number rather than
+            tucked in with the rest of the detail.
+
+            Left out entirely when nobody gave one, which is most table
+            orders. An empty line where a name should be reads as missing
+            information about the order rather than an order without a name.
+          */}
+          {order.customer_name && <div className="who">{order.customer_name}</div>}
           <div className="where">
             {order.table_id ? 'Table order' : order.fulfilment === 'delivery' ? 'Delivery' : 'Takeaway'}
             {order.guest_count > 1 && ` · ${order.guest_count} guests`}

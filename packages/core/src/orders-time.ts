@@ -133,6 +133,64 @@ export function dueMinutes(
 }
 
 /**
+ * Late is late: past the time allowed, with nothing added on.
+ *
+ * There used to be a five minute cushion here. A twenty minute dish did not
+ * count as late, did not show the pill and did not ring until twenty-five, so
+ * every order quietly carried five minutes the customer was never told about
+ * and nobody in the kitchen could see. Worse, it was five minutes of the wait
+ * spent with no signal at all, which is exactly the stretch where a nudge
+ * still recovers the order. By the time it rang, the food was five minutes
+ * late and the customer had usually noticed first.
+ *
+ * So the rule is the promise: the moment an order passes the time allowed for
+ * it, it is late, it says so, and it rings. The countdown on the ticket was
+ * already showing that instant — "due now", then "1 min over" — so this is
+ * also the alarm finally agreeing with the number a cook has been watching.
+ *
+ * Food already cooked keeps a short wait, and this is not the same thing. A
+ * plate going up is not late while somebody walks to the counter to fetch it;
+ * that delay is the collection, not the cooking, and pinging the instant a
+ * cook presses Ready would ring on every single order.
+ *
+ * Anything else — waiting to be accepted, cancelled, paid — is not this
+ * question. A ticket nobody has acknowledged has its own alarm.
+ */
+export function isOverdue(
+  order: { status: string; $createdAt: string; $updatedAt?: string },
+  dueMins: number,
+  now: number = Date.now(),
+  readyGraceMinutes = 5,
+): boolean {
+  if (COOKING.includes(order.status) && order.status !== 'PENDING') {
+    const placed = Date.parse(order.$createdAt);
+    return Number.isFinite(placed) && now > placed + dueMins * 60_000;
+  }
+
+  if (order.status === 'READY') {
+    const since = Date.parse(order.$updatedAt ?? '');
+    return Number.isFinite(since) && now > since + readyGraceMinutes * 60_000;
+  }
+
+  return false;
+}
+
+/**
+ * How far past its time an order is, in whole minutes. Negative while there is
+ * still time left, so one number covers "12 min left" and "3 min over" and the
+ * two can never drift apart.
+ */
+export function minutesOver(
+  order: { $createdAt: string },
+  dueMins: number,
+  now: number = Date.now(),
+): number {
+  const placed = Date.parse(order.$createdAt);
+  if (!Number.isFinite(placed)) return 0;
+  return Math.round((now - placed) / 60_000 - dueMins);
+}
+
+/**
  * Work back from when the customer wants it to when the kitchen must start,
  * using the slowest dish on the order plus a small buffer.
  */
