@@ -515,6 +515,46 @@ export const HELP_ARTICLES: HelpArticle[] = [
     ],
   },
   {
+    id: 'install',
+    title: 'Putting the till on a device',
+    summary: 'Installed, it fills the screen and behaves like an app.',
+    area: 'pos',
+    audience: ALL_STAFF,
+    body: [
+      p(
+        'The till and the kitchen screen can be installed onto the device that runs them. Once installed they '
+        + 'take the whole screen: no address bar, no tabs, nothing to press by accident and nothing to wander '
+        + 'off to.',
+      ),
+      h('On an Android tablet or phone'),
+      steps(
+        'Open the till in Chrome.',
+        'Menu, then Install app, or Add to Home screen.',
+        'Open it from the icon that appears, not from the browser.',
+      ),
+      h('On an iPad or iPhone'),
+      steps(
+        'Open the till in Safari. It has to be Safari.',
+        'Share, then Add to Home Screen.',
+        'Open it from the icon on the home screen.',
+      ),
+      note(
+        'Open it from the icon from then on. Opening the same address in the browser gives you the page again, '
+        + 'with the bars, which looks like the install did not work.',
+      ),
+      h('On a computer'),
+      p(
+        'Chrome and Edge show a small install button at the right-hand end of the address bar. It behaves the '
+        + 'same way afterwards.',
+      ),
+      note(
+        'If you install it and it still shows an address bar, it was probably installed before this was '
+        + 'switched on. Remove the icon and add it again.',
+        'warn',
+      ),
+    ],
+  },
+  {
     id: 'craft_till',
     title: 'Selling at the shop counter',
     summary: 'The till in craft mode: one screen, pick, charge, done.',

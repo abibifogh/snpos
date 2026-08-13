@@ -1,10 +1,33 @@
 /* Terminal. Tablet-sized touch targets; nothing smaller than a fingertip. */
 
-.pos { min-height: 100vh; display: flex; flex-direction: column; }
+/*
+ * Installed, this fills the screen, which means the screen's own furniture is
+ * now the page's problem.
+ *
+ * `100dvh` rather than `100vh`: on a phone, `vh` is the height with the
+ * browser bars hidden, so a page that is exactly 100vh tall is taller than
+ * what you can see whenever they are showing, and the last row of buttons
+ * sits below the fold. `dvh` is what is actually visible right now.
+ *
+ * The insets keep the bar clear of a notch, a rounded corner and the home
+ * indicator. Under `apple-mobile-web-app-status-bar-style: black-translucent`
+ * the page starts at the very top of the display, so without this the clock is
+ * drawn on top of the first row of controls.
+ */
+.pos {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
 
 .pos-top {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: 0.65rem 1rem; background: var(--surface); border-bottom: 1px solid var(--border);
+  padding-top: calc(0.65rem + env(safe-area-inset-top, 0));
+  padding-left: calc(1rem + env(safe-area-inset-left, 0));
+  padding-right: calc(1rem + env(safe-area-inset-right, 0));
 }
 .pos-top .who { font-size: 0.85rem; color: var(--text-dim); }
 .pos-tabs { display: flex; gap: 0.4rem; }

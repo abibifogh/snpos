@@ -13,11 +13,25 @@
 
 body { background: var(--bg); color: var(--text); }
 
-.kds { min-height: 100vh; display: flex; flex-direction: column; }
+/*
+ * Installed, this fills the screen. See the note in pos.css: `dvh` is what is
+ * actually visible, and the insets keep the bar out from under a notch and the
+ * status bar the page is now drawn beneath.
+ */
+.kds {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
 
 .kds-top {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: 0.7rem 1rem; background: var(--surface); border-bottom: 1px solid var(--border);
+  padding-top: calc(0.7rem + env(safe-area-inset-top, 0));
+  padding-left: calc(1rem + env(safe-area-inset-left, 0));
+  padding-right: calc(1rem + env(safe-area-inset-right, 0));
 }
 .kds-top h1 { font-size: 1.05rem; }
 .kds-stats { display: flex; gap: 1.25rem; font-size: 0.85rem; color: var(--text-dim); }

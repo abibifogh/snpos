@@ -1,22 +1,109 @@
 /**
- * Put the shared service worker where each app's build can serve it.
+ * Put the shared service worker, the icon and each app's manifest where its
+ * build can serve them.
  *
  * A service worker only controls pages inside its own folder, so every app
  * needs its own copy at its own root. Copying at build time rather than
  * checking in four files means there is still only one to edit, four copies of
  * a caching policy would drift, and a stale one is invisible until somebody is
  * looking at last week's app on a dead connection.
+ *
+ * The manifest is generated rather than checked in for a harder reason: it has
+ * to name the address the app is actually served from, and that is only known
+ * at build time. The same build runs at a domain root and inside a repository
+ * folder on github.io, and a manifest whose start_url points at the wrong one
+ * installs an app that opens on somebody else's page.
  */
-import { copyFileSync, mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const source = join(root, 'packages/ui/src/sw.js');
+const ui = join(root, 'packages/ui/src');
 
-for (const app of ['admin', 'menu', 'kitchen', 'pos']) {
+const APPS = ['admin', 'menu', 'kitchen', 'pos'];
+
+/**
+ * Which apps are installed onto a device and want the whole screen.
+ *
+ * The till and the kitchen display live on one device each, propped on a
+ * counter, doing one job all day. Browser chrome on those is a row of pixels
+ * that only ever gets pressed by accident, and an address bar is an invitation
+ * to somewhere else.
+ *
+ * Not the admin app: it is used on somebody's own laptop between other things,
+ * and taking the back button away from a page of settings is a nuisance rather
+ * than a kiosk. Not the customer menu either, which lives for ninety seconds
+ * on a stranger's phone and has no business asking to be installed.
+ */
+const KIOSK = {
+  pos: { name: 'NiceOps Till', short: 'Till', description: 'Take orders and record payment.' },
+  kitchen: { name: 'NiceOps Kitchen', short: 'Kitchen', description: 'Tickets as they come in.' },
+};
+
+for (const app of APPS) {
   const dir = join(root, 'apps', app, 'public');
   mkdirSync(dir, { recursive: true });
-  copyFileSync(source, join(dir, 'sw.js'));
+  copyFileSync(join(ui, 'sw.js'), join(dir, 'sw.js'));
 }
-console.log('service worker copied into all four apps');
+
+/**
+ * Only the app being built gets a manifest, because only it knows its own base.
+ *
+ * npm runs a workspace script from inside that workspace, so the working
+ * directory names the app. Built from the repository root with no app in
+ * particular, every kiosk app gets one at the default base, which is what a
+ * local `npm run build` wants.
+ */
+const here = basename(process.cwd());
+const building = APPS.includes(here) ? [here] : Object.keys(KIOSK);
+
+for (const app of building) {
+  const meta = KIOSK[app];
+  if (!meta) continue;
+
+  const dir = join(root, 'apps', app, 'public');
+  copyFileSync(join(ui, 'icon.svg'), join(dir, 'icon.svg'));
+
+  // Vite's BASE_PATH, the same value the app is built with. Always ends in a
+  // slash, so joining a filename onto it needs nothing added.
+  const base = process.env.BASE_PATH || '/';
+
+  const manifest = {
+    name: meta.name,
+    short_name: meta.short,
+    description: meta.description,
+    // Where it opens. Relative to this file, which is why the manifest has to
+    // be generated with the base rather than checked in.
+    start_url: base,
+    scope: base,
+    id: base,
+    /**
+     * The whole screen, with a ladder down to something workable.
+     *
+     * `fullscreen` takes the status bar as well, which is right for a device
+     * that does one job on a counter. A browser that will not do that falls to
+     * `standalone`, which at least loses the address bar, and then to
+     * `minimal-ui`. The ladder matters: without it, a browser that does not
+     * support the first value silently gives you a browser tab.
+     */
+    display: 'fullscreen',
+    display_override: ['fullscreen', 'standalone', 'minimal-ui'],
+    orientation: 'any',
+    background_color: '#f6f7f9',
+    theme_color: '#0f766e',
+    icons: [
+      // One scalable icon rather than a ladder of PNGs. It is a flat mark of
+      // three shapes; there is nothing a raster copy at each size would add
+      // except four more files to keep in step.
+      { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+      { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
+    ],
+  };
+
+  writeFileSync(join(dir, 'manifest.webmanifest'), `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+console.log(
+  `service worker copied into all four apps; manifest written for ${building.filter((a) => KIOSK[a]).join(', ') || 'none'}`,
+);

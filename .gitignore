@@ -7,3 +7,8 @@ dist/
 .appwrite/
 .admin-login-preview.png
 apps/*/public/sw.js
+# Written by scripts/sync-sw.mjs at build time, like the service worker above.
+# The manifest in particular cannot be checked in: it names the address the app
+# is served from, which differs between a domain root and a github.io folder.
+apps/*/public/manifest.webmanifest
+apps/*/public/icon.svg

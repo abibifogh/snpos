@@ -222,6 +222,19 @@ L10 apply. The rest are for whenever it is turned back on. See
 | M11 | That maker's statement | The delivery is in "what you brought in" |
 | M12 | Sell an uploaded piece at the till | Consignor credited, stock down by one |
 
+### N. Installed on a device
+
+| # | Do this | Must be true |
+|---|---|---|
+| N1 | Android Chrome, open the till, Install app | Offers to install. Icon is the cloche, not a screenshot |
+| N2 | Open it from the icon | **No address bar, no status bar.** The whole screen |
+| N3 | iPad Safari, Share, Add to Home Screen, open it | No Safari chrome. Content clear of the notch and the corners |
+| N4 | The same on the kitchen screen | Same again |
+| N5 | Try to install the customer menu | **Not offered.** It is not an app anybody keeps |
+| N6 | Try to install the admin app | Not offered. The back button is wanted there |
+| N7 | Open the till in a browser tab, as before | Still works, unchanged |
+| N8 | On github.io rather than a domain | Opens on the till, not on the site root |
+
 ---
 
 ## Before every deploy
