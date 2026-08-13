@@ -256,6 +256,18 @@ export async function ordersForShift(
     // including the other side's. The stamp is precise; the clock is not, so
     // the side has to be checked after the merge rather than before it.
     if ((o.module ?? 'kitchen') !== module) continue;
+    /**
+     * A cancelled order is not part of the shift.
+     *
+     * It sold nothing, and the money already ignored it: shiftBlockers skips
+     * it, the takings never counted it. Leaving it in the list meant the one
+     * place a cook looks to see what the shift did still showed an order that
+     * did not happen, and an admin who cancelled one had no way to make it go.
+     *
+     * Rejections stay. A cook turning an order away is something the kitchen
+     * did, and worth being able to look back at.
+     */
+    if (o.status === 'CANCELLED') continue;
     byId.set(o.$id, o);
   }
   return [...byId.values()].sort((a, b) => b.$createdAt.localeCompare(a.$createdAt));
@@ -751,6 +763,11 @@ export async function recomputeClosedShift(shiftId: string): Promise<{
     // Everything spent, whoever paid for it. Unchanged by whose money it was,
     // because the business spent it either way; only the drawer figures move.
     expense_total: takings.expensesTotal,
+    // And what it took. An order cancelled or removed afterwards takes its
+    // money out of the shift with it, so this has to be worked out again too
+    // or the summary keeps reporting a sale that no longer exists.
+    sales_total: takings.salesTotal,
+    tip_total: takings.tipsTotal,
   });
 
   return { expected: takings.byMethod, variance, totalOff };

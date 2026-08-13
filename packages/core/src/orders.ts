@@ -1,5 +1,5 @@
 import { db, DB_ID, ID, Query, Permission, Role, account, listAll } from './client';
-import { cookMinutes, estimateMinutes, fireTimeFor } from './orders-time';
+import { cookMinutes, estimateMinutes, fireTimeFor, queueMinutes } from './orders-time';
 
 /**
  * The timing arithmetic lives next door, in a file that imports nothing.
@@ -377,7 +377,16 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
     is_preorder: isPreorder,
     placed_while_closed: input.placedWhileClosed ?? false,
     quoted_wait_minutes: input.quotedWaitMinutes ?? undefined,
-    eta_minutes: estimateMinutes(lines),
+    /**
+     * The wait, including the queue this order is joining.
+     *
+     * This was the cooking time alone, so an order arriving behind four others
+     * was quoted the minutes its own food takes and nothing else. On a quiet
+     * pass those are the same number and it looked correct; on a busy one it
+     * was wrong by however long the kitchen was already behind, which is
+     * exactly when a customer is deciding whether to wait.
+     */
+    eta_minutes: estimateMinutes(lines, await queueAheadFor(venueId, input.module ?? 'kitchen')),
     // Which side of the business rang this up, so the two sets of books can be
     // read apart afterwards.
     module: input.module ?? 'kitchen',
@@ -511,6 +520,33 @@ export const orderItemsFor = (orderId: string): Promise<OrderItem[]> =>
   listAll<OrderItem>('order_items', [Query.equal('order_id', orderId)]);
 
 /**
+ * How long the tickets already on the pass will take before this one starts.
+ *
+ * The rule itself is `queueMinutes`; this is the reading that feeds it. An
+ * order joining a busy kitchen waits for everything in front of it, so its
+ * estimate has to be the work still left on those plus its own cooking — a
+ * customer told twenty minutes while four orders sit ahead of them is being
+ * told the time it takes to cook their food, not the time until they eat.
+ *
+ * Only this side of the business: a craft shop sale is rung up at a counter
+ * and never sees a stove, so counting one would add a wait that no cook is
+ * working through.
+ *
+ * Returns nought if the orders cannot be read, which is the case for a guest —
+ * the collection is staff-only, and their phone is not allowed to see what
+ * everybody else has ordered. order-guard works it out again server-side a
+ * moment later and corrects the order, so the guest's figure is briefly short
+ * rather than wrong for ever.
+ */
+export async function queueAheadFor(venueId: string, module: Module = 'kitchen'): Promise<number> {
+  const live = await listAll<Order>('orders', [
+    Query.equal('venue_id', venueId),
+    Query.equal('status', ['PENDING', 'ACCEPTED', 'PREPARING']),
+  ]).catch(() => [] as Order[]);
+  return queueMinutes(live.filter((o) => (o.module ?? 'kitchen') === module));
+}
+
+/**
  * Work an order's totals out again from the lines it actually has.
  *
  * For orders whose stored total is already wrong. The server reprices an order
@@ -565,4 +601,91 @@ export async function recomputeOrderTotals(
     total: totals.total,
   });
   return { from: order.total, to: totals.total };
+}
+
+/* ------------------------------------------------ putting an order right */
+
+/**
+ * Call an order off, whatever state it reached.
+ *
+ * The kitchen can reject one before cooking and a customer can call one back
+ * within two minutes; neither helps with an order that ran all the way to the
+ * end and should not have — a duplicate, a walkout, a bill rung up against the
+ * wrong table. That has to be an admin's to undo, and it has to reach the
+ * shift, or the figures keep counting a sale that did not happen.
+ *
+ * Cancelling keeps the record. What was ordered, what was charged and who took
+ * it are all still readable; the order simply no longer counts, and it drops
+ * out of the shift's list because it sold nothing. Use `removeOrder` when the
+ * record itself should not exist.
+ */
+export async function cancelOrder(
+  order: Pick<Order, '$id' | 'venue_id' | 'shift_id'>,
+  opts: { reason: string; userId: string },
+): Promise<void> {
+  await db.updateDocument(DB_ID, 'orders', order.$id, {
+    status: 'CANCELLED',
+    reject_reason_code: 'admin_cancelled',
+    reject_reason_note: opts.reason.slice(0, 500),
+    alert_level: 0,
+  });
+
+  await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
+    venue_id: order.venue_id,
+    actor_id: opts.userId,
+    action: 'order_cancelled',
+    entity_type: 'order',
+    entity_id: order.$id,
+    after: JSON.stringify({ reason: opts.reason, shift_id: order.shift_id ?? '' }),
+  }).catch(() => undefined);
+}
+
+/**
+ * Erase an order and everything that hangs off it.
+ *
+ * A delete, not an archive, and it takes the payments with it — which is the
+ * point. "Remove it from the shift" and "leave the money on the shift" cannot
+ * both be true: a payment left behind is a payment the takings still count,
+ * against an order nobody can open. So they go together or not at all.
+ *
+ * The order goes FIRST, before anything it owns. Children-first is the tidier
+ * order when a run works and exactly the wrong one when the delete is going to
+ * be refused: that is what stripped every order bare in the Erase records page
+ * and left them all sitting in the list. If the order itself will not go,
+ * nothing else has been touched.
+ *
+ * A closed shift is worked out again afterwards, so its takings, its expected
+ * figures and its over-or-short stop counting money that no longer exists.
+ * What was physically counted that night is never touched.
+ */
+export async function removeOrder(
+  order: Pick<Order, '$id' | 'venue_id' | 'shift_id'>,
+  opts: { userId: string },
+): Promise<{ removed: number }> {
+  // The one write that decides whether any of this is allowed.
+  await db.deleteDocument(DB_ID, 'orders', order.$id);
+  let removed = 1;
+
+  for (const [collection, field] of [
+    ['order_items', 'order_id'],
+    ['order_notices', 'order_id'],
+    ['payments', 'order_id'],
+  ] as const) {
+    const rows = await listAll<Doc>(collection, [Query.equal(field, order.$id)]).catch(() => [] as Doc[]);
+    for (const r of rows) {
+      await db.deleteDocument(DB_ID, collection, r.$id).catch(() => undefined);
+      removed += 1;
+    }
+  }
+
+  await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
+    venue_id: order.venue_id,
+    actor_id: opts.userId,
+    action: 'order_deleted',
+    entity_type: 'order',
+    entity_id: order.$id,
+    after: JSON.stringify({ removed, shift_id: order.shift_id ?? '' }),
+  }).catch(() => undefined);
+
+  return { removed };
 }

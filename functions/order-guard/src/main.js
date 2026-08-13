@@ -697,6 +697,9 @@ export default async ({ req, res, log, error }) => {
       let ahead = 0;
       for (const o of live.documents) {
         if (o.$id === order.$id) continue;
+        // This side only. A shop sale is rung up at a counter and never sees a
+        // stove, so counting one would add a wait no cook is working through.
+        if ((o.module || 'kitchen') !== (order.module || 'kitchen')) continue;
         // Cooking time, not the wait that order's own customer was quoted, 
         // their quote already contains the queue that was ahead of them, and
         // adding up quotes counts the same stove time again for every ticket

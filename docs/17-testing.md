@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck (apps AND tests), tests, schema check, build. Before deploying.
 ```
 
-125 tests, no database, about half a second. They cover the sums that decide what
+127 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -132,6 +132,11 @@ not just what to press.
 | E5 | Admin → Erase records, erase a day of orders | **They are gone and stay gone** after a reload |
 | E6 | Look at any order left from a neighbouring day | Still has its items. Nothing was stripped |
 | E7 | Run an erase as a manager, not an admin | Refused, **and it says so**. Nothing half-deleted |
+| E8 | Admin → Orders, open a paid order, Cancel it | Gone from **This shift** in the kitchen. Record still readable |
+| E9 | The shift's takings after E8 | Lower by that order. Counted cash untouched |
+| E10 | Delete a paid order entirely | Order, items **and its payments** all gone |
+| E11 | The closed shift after E10 | Takings and over/short worked out again |
+| E12 | Open Orders as a manager | **No Cancel, no Delete.** Admins only |
 | E1 | Sign in as a cashier, open Products | Can look. **No Add, no Save, no Delete** |
 | E2 | Staff set to "Craft shop only" | No kitchen pages, no stations, no waste |
 | E3 | Staff set to "Both" | Both groups in the sidebar |
@@ -146,6 +151,10 @@ Run these every time. The restaurant is the part that is already earning.
 | F1 | Scan a table QR, order as a guest | Lands on the kitchen screen with an estimate |
 | F1a | The status page after ordering | **Order something else** is the obvious next step, full width |
 | F2 | Order with several dishes | Estimate adds the prep times, never past an hour |
+| F2a | Order while one 15 min ticket is already cooking | Quoted **its own time plus what is left on that one** |
+| F2b | Order with three tickets ahead | All three counted, not just the first |
+| F2c | Order on an empty pass | Just its own cooking time. Nothing added |
+| F2d | A craft sale sitting unpaid, then a kitchen order | The shop sale adds **nothing** to the kitchen wait |
 | F3 | Leave a ticket past its time | Late pill and alarm, at the moment the ticket predicted |
 | F3l | A 20 min order, watch it reach 20 | **Late and ringing at 20, not 25.** No silent cushion |
 | F3m | Let an order go late, then press Ready | **Late tag gone, clock stopped.** Says Ready |

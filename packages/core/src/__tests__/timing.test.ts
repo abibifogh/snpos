@@ -243,3 +243,42 @@ test('a half-loaded ticket says so, but only after the lines have had time', () 
   assert.equal(ticketLines(order, all, at(0)), 'ready');
   assert.equal(ticketLines(order, [], at(LINES_GRACE_MS + 1)), 'missing', 'none at all reads differently');
 });
+
+test('an order joining a busy pass waits for everything in front of it', () => {
+  /**
+   * What a customer is quoted is the work still left on the tickets ahead
+   * plus the cooking on their own. Told twenty minutes with four orders in
+   * front of them, they are being told how long their food takes, not how
+   * long until they eat — and that gap is widest exactly when they are
+   * deciding whether to wait at all.
+   */
+  const now = Date.parse('2026-08-13T19:00:00.000Z');
+  const ago = (mins: number) => new Date(now - mins * 60_000).toISOString();
+
+  // One accepted eight minutes ago with fifteen to cook: seven left.
+  // One nobody has touched, twelve to cook: all twelve.
+  const ahead = queueMinutes(
+    [
+      { status: 'ACCEPTED', prep_minutes: 15, accepted_at: ago(8), $createdAt: ago(9) },
+      { status: 'PENDING', prep_minutes: 12, $createdAt: ago(2) },
+    ],
+    now,
+  );
+  assert.equal(ahead, 19, 'every ticket in front, not just the first');
+
+  // A new ten minute order behind them is quoted the lot.
+  assert.equal(estimateMinutes([{ prep_minutes: 10 }], ahead), 29);
+
+  // And with nothing in front, it is quoted its own cooking and no more.
+  assert.equal(estimateMinutes([{ prep_minutes: 10 }], 0), 10);
+});
+
+test('a queue only ever grows the quote, never shrinks it', () => {
+  // Whatever is ahead, the answer is at least the time this food takes.
+  const own = [{ prep_minutes: 18 }];
+  for (const ahead of [0, 1, 5, 30, 500]) {
+    assert.ok(estimateMinutes(own, ahead) >= Math.min(18, MAX_ETA_MINUTES));
+  }
+  // And never past the cap, however long the queue is.
+  assert.equal(estimateMinutes(own, 500), MAX_ETA_MINUTES);
+});

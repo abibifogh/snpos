@@ -3,7 +3,7 @@ import { Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinne
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, Query, toCsv, downloadCsv, buildReceiptHtml, openPrintable, receiptForOrder,
-  settleOrderNumbers, recomputeOrderTotals,
+  settleOrderNumbers, recomputeOrderTotals, cancelOrder, removeOrder, recomputeClosedShift,
 } from '@snpos/core';
 import type { Order, OrderItem, StaffProfile, Doc, Venue } from '@snpos/core';
 import { useSession } from '../session';
@@ -42,7 +42,7 @@ const todayStr = () => new Date().toLocaleDateString('en-CA');
 const daysAgoStr = (n: number) => new Date(Date.now() - n * 86400_000).toLocaleDateString('en-CA');
 
 export function OrdersPage() {
-  const { settings, profile } = useSession();
+  const { settings, profile, user } = useSession();
   const toast = useToast();
 
   const [from, setFrom] = useState(daysAgoStr(7));
@@ -71,6 +71,52 @@ export function OrdersPage() {
    * an order repriced from one line of three kept that figure, and reloading
    * never helped because the stored number itself was the wrong one.
    */
+  /**
+   * Cancelling and deleting a finished order.
+   *
+   * An admin's, and nobody else's. The kitchen can reject an order before
+   * cooking it and a customer can call one back within two minutes; neither
+   * helps with one that ran all the way to the end and should not have — a
+   * duplicate, a walkout, a bill rung up against the wrong table.
+   */
+  const isAdmin = profile?.role === 'admin';
+  const [killing, setKilling] = useState<{ order: Order; how: 'cancel' | 'delete' } | null>(null);
+  const [killReason, setKillReason] = useState('');
+  const [killBusy, setKillBusy] = useState(false);
+
+  const doKill = async () => {
+    if (!killing) return;
+    const { order, how } = killing;
+    if (how === 'cancel' && !killReason.trim()) return;
+    setKillBusy(true);
+    try {
+      if (how === 'cancel') {
+        await cancelOrder(order, { reason: killReason.trim(), userId: user?.$id ?? '' });
+      } else {
+        await removeOrder(order, { userId: user?.$id ?? '' });
+      }
+      /**
+       * The shift it belonged to is worked out again.
+       *
+       * An order taken off a shift takes its money with it. A closed shift
+       * stored what it took and what it expected at the moment it closed, and
+       * those figures do not recompute themselves, so without this the summary
+       * keeps reporting a sale that no longer exists. An open shift works
+       * itself out from the rows every time it is looked at.
+       */
+      if (order.shift_id) await recomputeClosedShift(order.shift_id).catch(() => null);
+      setKilling(null);
+      setKillReason('');
+      setOpen(null);
+      await load();
+      toast(how === 'cancel' ? `${order.order_no} cancelled` : `${order.order_no} deleted`);
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setKillBusy(false);
+    }
+  };
+
   const [fixing, setFixing] = useState(false);
   const fixTotals = async (order: Order) => {
     if (!settings) return;
@@ -433,6 +479,40 @@ export function OrdersPage() {
             </div>
           )}
 
+          {/*
+            Undoing an order that ran all the way to the end.
+
+            Whatever state it reached, including paid and closed. Cancelling
+            keeps the record and stops it counting; deleting takes it and its
+            payments away entirely. Either way it leaves the shift, which is
+            the whole point — an order removed from the books but still sitting
+            in the shift's list is an order somebody will ask about.
+          */}
+          {isAdmin && (
+            <>
+              <h3 style={{ margin: '1.4rem 0 0.4rem' }}>Put this right</h3>
+              <p className="small dim" style={{ marginTop: 0 }}>
+                For an order that should not have happened: a duplicate, a walkout, a bill rung up against
+                the wrong table. Both take it off the shift it belongs to, and the shift's figures are worked
+                out again.
+              </p>
+              <div className="row" style={{ gap: '0.5rem' }}>
+                {open.status !== 'CANCELLED' && (
+                  <Button size="sm" onClick={() => { setKillReason(''); setKilling({ order: open, how: 'cancel' }); }}>
+                    Cancel this order
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => { setKillReason(''); setKilling({ order: open, how: 'delete' }); }}
+                >
+                  Delete it entirely
+                </Button>
+              </div>
+            </>
+          )}
+
           <h3 style={{ margin: '1.2rem 0 0.4rem' }}>Payment</h3>
           {payments.filter((p) => p.order_id === open.$id).length === 0 ? (
             <p className="small dim" style={{ margin: 0 }}>Nothing recorded against this order.</p>
@@ -452,6 +532,49 @@ export function OrdersPage() {
                 </tbody>
               </table>
             </div>
+          )}
+        </Modal>
+      )}
+
+      {killing && (
+        <Modal
+          title={killing.how === 'cancel'
+            ? `Cancel ${killing.order.order_no}`
+            : `Delete ${killing.order.order_no}`}
+          onClose={() => setKilling(null)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setKilling(null)}>Leave it</Button>
+              <Button
+                variant="danger"
+                loading={killBusy}
+                disabled={killing.how === 'cancel' && !killReason.trim()}
+                onClick={() => void doKill()}
+              >
+                {killing.how === 'cancel' ? 'Cancel the order' : 'Delete for good'}
+              </Button>
+            </>
+          }
+        >
+          {killing.how === 'cancel' ? (
+            <>
+              <p className="small dim" style={{ marginTop: 0 }}>
+                The record stays and stays readable. It stops counting towards the shift, and it comes off
+                the list the kitchen sees under “This shift”.
+              </p>
+              <Field label="Why" hint="Goes on the order and into the audit log. Somebody will ask.">
+                <Input value={killReason} onChange={(e) => setKillReason(e.target.value)} />
+              </Field>
+            </>
+          ) : (
+            <Notice>
+              This removes the order, its items, and <strong>any payments recorded against it</strong>. The
+              money comes off the shift with it — leaving a payment behind would mean the takings still
+              counted money for an order nobody can open. There is no undo, and nothing keeps a copy.
+              <div style={{ marginTop: '0.6rem' }}>
+                Cancelling instead keeps the record and still takes it off the shift.
+              </div>
+            </Notice>
           )}
         </Modal>
       )}
