@@ -175,15 +175,28 @@ export async function loadOpenShift(venueId: string, module: Module = 'kitchen')
   const res = await db.listDocuments(DB_ID, 'shifts', [
     Query.equal('venue_id', venueId),
     Query.equal('status', 'open'),
-    // Newest first, so that if a stale one is somehow still open, a close that
-    // half-finished, two devices racing, the till works with the shift somebody
-    // just opened rather than with whichever row the database happened to
-    // return first. An arbitrary answer to "which shift am I on" is worse than
-    // a wrong one, because it changes between refreshes.
-    Query.orderDesc('opened_at'),
     Query.limit(25),
   ]);
-  const open = res.documents as unknown as Shift[];
+
+  /**
+   * Newest first, sorted here rather than by the database.
+   *
+   * The ordering matters: if a stale shift is somehow still open, a close that
+   * half-finished, two devices racing, the till has to work with the one
+   * somebody just opened. An arbitrary answer to "which shift am I on" is
+   * worse than a wrong one, because it changes between refreshes.
+   *
+   * But asking the database to sort needs an index it may not have, and a
+   * query that throws here is worse than any ordering: every caller of this
+   * either swallows the failure or never resolves, so the screen quietly keeps
+   * whatever it was already showing. A shift closed a minute ago carries on
+   * looking open. There are at most a couple of open shifts for one venue, so
+   * sorting them in memory costs nothing and cannot fail.
+   */
+  const open = (res.documents as unknown as Shift[])
+    .slice()
+    .sort((a, b) => (b.opened_at ?? '').localeCompare(a.opened_at ?? ''));
+
   return open.find((s) => (s.module ?? 'kitchen') === module) ?? null;
 }
 
@@ -306,15 +319,6 @@ export interface ExpectedTakings {
   tipsTotal: number;
   payments: ShiftPayment[];
 }
-
-/**
- * How long an open shift has been running, and whether it may still be used.
- *
- * A closed shift is never overrun: it is finished, and the question of how
- * long it stayed open is a matter for the report rather than the till.
- */
-export const shiftAgeOf = (shift: Pick<Shift, 'opened_at' | 'closed_at'> | null | undefined) =>
-  shiftAge(shift?.closed_at ?? shift?.opened_at ?? new Date().toISOString());
 
 /**
  * Can this shift still take money?

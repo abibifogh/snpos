@@ -222,6 +222,10 @@ export function CombinedBar({
         levels: counting ? resolved.levels : levels,
         stockCounts: counting ? resolved.counts : undefined,
       });
+      // Closed is closed, said before asking again. A read that fails after a
+      // successful close would otherwise leave the shift, and its overdue
+      // warning, sitting on the bar.
+      setShift(null);
       await reload();
       setClosing(false);
       if (result.ledgerError) onToast(`Shift closed, but the accounts entry failed: ${result.ledgerError}`, 'err');

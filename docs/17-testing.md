@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck, tests, schema check, build. Run this before deploying.
 ```
 
-101 tests, no database, about half a second. They cover the sums that decide what
+102 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -170,6 +170,8 @@ Needs a shift whose opened_at is backdated, or patience.
 | J2h | Any fresh shift, any old order | Never flagged late. A shift under a day judges nothing |
 | J2e | The shift that shelved them | Its takings and summary do not include them |
 | J3 | Close it and open a fresh one | Normal service. Fresh code, fresh float |
+| J3a | Close an overdue shift, watch the bar | **Banner and badge go at once**, without a refresh |
+| J3b | Close it with the network briefly off, then back | Still says closed. Never reverts to overdue |
 | J4 | Leave one open past a day with the hourly job running | Manager gets one email, not twenty four |
 | J5 | Set the device clock ahead, then back | The till never blocks on a clock it cannot trust |
 

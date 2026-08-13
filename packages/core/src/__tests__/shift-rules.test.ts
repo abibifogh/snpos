@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit, mustWaitForNextShift, shouldWarnLateOrder,
   SHIFT_MAX_HOURS, SHIFT_WARN_HOURS,
+  shiftAgeOf,
 } from '../shift-rules.ts';
 
 const at = (iso: string) => new Date(iso);
@@ -194,4 +195,28 @@ test('paying late is a warning, and warnings are the same question', () => {
   const late = { $createdAt: '2026-08-11T09:00:00.000Z' };
   assert.equal(shouldWarnLateOrder(late, overdue), mustWaitForNextShift(late, overdue));
   assert.equal(shouldWarnLateOrder(late, overdue), true);
+});
+
+test('a closed shift is never overdue, however long it was open', () => {
+  /**
+   * The banner that would not go away. This measured from `closed_at`, treating
+   * the moment a shift ENDED as the moment it started, so a shift closed two
+   * days ago reported two days and asked to be closed again.
+   */
+  const closed = {
+    opened_at: '2026-08-09T06:00:00.000Z',
+    closed_at: '2026-08-11T09:00:00.000Z',
+  };
+  const age = shiftAgeOf(closed);
+  assert.equal(age.over, false);
+  assert.equal(age.warning, false);
+
+  // Nothing at all is not overdue either, which is what a till holds the
+  // moment after a shift is closed.
+  assert.equal(shiftAgeOf(null).over, false);
+  assert.equal(shiftAgeOf(undefined).over, false);
+
+  // An OPEN shift still reports honestly.
+  const open = { opened_at: new Date(Date.now() - 30 * HOURS).toISOString() };
+  assert.equal(shiftAgeOf(open).over, true);
 });

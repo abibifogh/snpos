@@ -229,6 +229,10 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         stockCounts: counting ? resolved.counts : undefined,
       });
 
+      // Closed is closed. Said first, so the screen is right even if the read
+      // that follows fails; a stale open shift here keeps its overdue warning
+      // on the bar with nothing to explain it.
+      ctx.setShift(null);
       await ctx.reloadShift();
       setClosing(false);
 

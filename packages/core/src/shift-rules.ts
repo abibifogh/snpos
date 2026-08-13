@@ -120,6 +120,30 @@ export function shiftAgeMessage(
   return '';
 }
 
+/**
+ * How long a shift has been running, and whether it may still be used.
+ *
+ * A closed shift is never overdue. It is finished, and how long it stayed open
+ * is a question for a report rather than for a banner above a till.
+ *
+ * This said as much and did the opposite: it measured from `closed_at`,
+ * treating the moment a shift ENDED as the moment it started, so a shift closed
+ * two days ago reported two days and asked to be closed again. Anywhere a
+ * closed shift reached a screen, the warning stayed up after it had been acted
+ * on, which is the fastest way to teach somebody to ignore a warning.
+ *
+ * Here rather than in shifts.ts, which opens a database connection the moment
+ * it is imported and so cannot be tested. This needs two dates and no database.
+ */
+export function shiftAgeOf(
+  shift: { opened_at?: string; closed_at?: string } | null | undefined,
+  now: Date = new Date(),
+  maxHours: number = SHIFT_MAX_HOURS,
+): ShiftAge {
+  if (!shift?.opened_at || shift.closed_at) return shiftAge(now.toISOString(), now, maxHours);
+  return shiftAge(shift.opened_at, now, maxHours);
+}
+
 /* ------------------------------------------------- orders past the limit */
 
 /**

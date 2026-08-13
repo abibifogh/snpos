@@ -63,6 +63,8 @@ export interface PosContext {
   userId: string;
   shift: Shift | null;
   reloadShift: () => Promise<void>;
+  /** Say what the shift is now, without going back to the database. */
+  setShift: (shift: Shift | null) => void;
   /** Which side of the business this till is selling for. */
   module: Module;
   /** Both sides running and this person works on both, so the till can switch. */
@@ -145,6 +147,13 @@ export function App() {
         // day's takings under the wrong roof.
         void loadShift(venue.$id, m).then((s) => setCtx((c) => (c ? { ...c, shift: s } : c)));
       },
+      // Said directly, rather than discovered by asking again.
+      //
+      // A shift that has just closed IS closed, and the screen should say so
+      // whether or not the next read succeeds. Leaving it to reloadShift meant
+      // one failed query left a closed shift on screen with its overdue
+      // warning still up, and nothing anywhere to explain why.
+      setShift: (s) => setCtx((c) => (c ? { ...c, shift: s } : c)),
       reloadShift: async () => {
         // Whichever side the till is on NOW, not the one it booted on. Reading
         // the captured value meant that after switching counters, opening a
