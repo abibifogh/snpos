@@ -426,3 +426,190 @@ export async function moveStock(opts: {
     });
   }
 }
+
+/* ------------------------------------------------------------ bulk intake */
+
+export interface ImportOutcome {
+  intakes: { reference: string; consignorName: string; pieces: number }[];
+  products: number;
+  variants: number;
+  failures: { name: string; reason: string }[];
+}
+
+/**
+ * Write a whole spreadsheet of stock in, as deliveries rather than as products.
+ *
+ * The difference matters. Creating the products alone would put stock on the
+ * shelf that arrived from nowhere: no delivery to reprint a slip from, nothing
+ * in the "what you brought in" half of a maker's statement, and no movement
+ * behind the count. A bulk upload has to leave the same trail the intake desk
+ * leaves, or it is a side door around the records the whole craft side is
+ * built on.
+ *
+ * So the rows are grouped by maker and each maker gets a delivery, exactly as
+ * if somebody had stood at the counter and typed it. Pieces the shop owns
+ * outright have no maker and so get no delivery, which is right: there is
+ * nobody to give a slip to and nobody to credit.
+ *
+ * Failures are collected rather than thrown. Nothing is written until the file
+ * has already been judged clean by readImport, so anything failing here is the
+ * database refusing a write, and stopping halfway would leave the shop in the
+ * state this is trying to avoid. What did not land is named at the end.
+ */
+export async function importStock(opts: {
+  venueId: string;
+  products: {
+    name: string;
+    categoryId: string;
+    description: string;
+    price: number;
+    quantity: number;
+    consignorId: string;
+    commissionBp: number | null;
+    commissionFlat: number;
+    barcode: string;
+    oneOff: boolean;
+    makerNote: string;
+    variants: { kindKey: string; label: string; price: number; quantity: number; barcode: string }[];
+  }[];
+  consignors: Consignor[];
+  settings?: Pick<Settings, 'default_commission_bp'>;
+  userId?: string;
+  receivedAt?: Date;
+}): Promise<ImportOutcome> {
+  const { venueId, products, consignors, settings, userId } = opts;
+  const at = (opts.receivedAt ?? new Date()).toISOString();
+
+  const outcome: ImportOutcome = { intakes: [], products: 0, variants: 0, failures: [] };
+
+  // Grouped by maker, so one delivery covers everything that came from one
+  // person, which is what both sides will remember it as.
+  const byConsignor = new Map<string, typeof products>();
+  for (const p of products) {
+    byConsignor.set(p.consignorId, [...(byConsignor.get(p.consignorId) ?? []), p]);
+  }
+
+  for (const [consignorId, mine] of byConsignor) {
+    const consignor = consignors.find((c) => c.$id === consignorId) ?? null;
+
+    let intakeId = '';
+    if (consignorId && consignor) {
+      const pieces = mine.reduce((n, p) => n + p.quantity, 0);
+      const retail = mine.reduce(
+        (n, p) => n + (p.variants.length
+          ? p.variants.reduce((v, x) => v + x.price * x.quantity, 0)
+          : p.price * p.quantity),
+        0,
+      );
+      // What it is worth to them, at the terms agreed today. Snapshotted for
+      // the same reason the intake desk snapshots it: a rate renegotiated next
+      // year must not restate what this delivery was worth.
+      const bp = rateFor(null, consignor, settings);
+      const flat = flatFor(null, consignor);
+      const due = mine.reduce(
+        (n, p) => n + (p.variants.length
+          ? p.variants.reduce((v, x) => v + splitSale(x.price, bp, flat, 1).consignor * x.quantity, 0)
+          : splitSale(p.price, bp, flat, 1).consignor * p.quantity),
+        0,
+      );
+
+      const reference = await nextReference('consignment_intakes', 'INT').catch(() => `INT-${Date.now()}`);
+      try {
+        const intake = await db.createDocument(DB_ID, 'consignment_intakes', ID.unique(), {
+          venue_id: venueId,
+          consignor_id: consignorId,
+          reference,
+          received_at: at,
+          received_by: userId ?? '',
+          piece_count: pieces,
+          total_retail: retail,
+          total_due: due,
+          notes: 'Received by bulk upload.',
+          status: 'open',
+        });
+        intakeId = intake.$id;
+        outcome.intakes.push({ reference, consignorName: consignor.name, pieces });
+      } catch (e) {
+        outcome.failures.push({
+          name: consignor.name,
+          reason: `The delivery could not be created: ${e instanceof Error ? e.message : 'unknown'}`,
+        });
+      }
+    }
+
+    for (const p of mine) {
+      try {
+        const item = await db.createDocument(DB_ID, 'menu_items', ID.unique(), {
+          category_id: p.categoryId,
+          name: p.name,
+          description: p.description,
+          price: p.price,
+          active: true,
+          // Not a dish. The kitchen's own fields are required by the database
+          // and mean nothing here, so they get the quietest values they can.
+          prep_minutes: 0,
+          station: 'inherit',
+          station_key: '',
+          sort: 0,
+          track_stock: false,
+          image_focal_x: 0.5,
+          image_focal_y: 0.5,
+          module: 'craft',
+          consignor_id: consignorId,
+          intake_id: intakeId,
+          // With sizes the count lives on each one, and a figure here as well
+          // would be the same stock counted twice.
+          on_hand: p.variants.length ? 0 : p.quantity,
+          is_one_off: p.oneOff,
+          maker_note: p.makerNote,
+          barcode: p.barcode,
+          commission_bp: p.commissionBp ?? undefined,
+          commission_flat: p.commissionFlat,
+        });
+        outcome.products += 1;
+
+        for (const [i, v] of p.variants.entries()) {
+          await db.createDocument(DB_ID, 'product_variants', ID.unique(), {
+            venue_id: venueId,
+            menu_item_id: item.$id,
+            label: v.label,
+            // The original fixed four, kept only so old rows still validate.
+            kind: ['size', 'colour', 'finish'].includes(v.kindKey) ? v.kindKey : 'other',
+            kind_key: v.kindKey,
+            price: v.price,
+            barcode: v.barcode,
+            on_hand: v.quantity,
+            sort: i,
+            active: true,
+          });
+          outcome.variants += 1;
+        }
+
+        // The arrival, written down. A product can be edited and a movement
+        // cannot, which is what makes the history worth having.
+        await moveStock({
+          venueId,
+          menuItemId: item.$id,
+          consignorId: consignorId || undefined,
+          type: 'intake',
+          qtyDelta: p.quantity,
+          unitPrice: p.price,
+          refType: 'intake',
+          refId: intakeId,
+          userId,
+          note: 'Bulk upload',
+          // The counts were set as the rows were created, so this must not add
+          // them a second time.
+          item: null,
+        }).catch(() => undefined);
+      } catch (e) {
+        outcome.failures.push({
+          name: p.name,
+          reason: e instanceof Error ? e.message : 'unknown',
+        });
+      }
+    }
+  }
+
+  return outcome;
+}

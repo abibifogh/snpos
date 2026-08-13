@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck, tests, schema check, build. Run this before deploying.
 ```
 
-74 tests, no database, about half a second. They cover the sums that decide what
+101 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -30,6 +30,7 @@ and no caller had to change.
 | `parity.test.ts` | **The browser and the server agree.** |
 | `access.test.ts` | Who can open what, including the bug that hid the craft shop from every manager, and which catalogue a customer's phone is shown. |
 | `reports.test.ts` | **The only door to the outside world.** Who gets in, what a window means, and that nothing personal leaves. |
+| `stock-import.test.ts` | Everything a bulk upload must refuse, which is most of what it does. |
 | `timing.test.ts` | Quoted waits, the hour cap, when a ticket is late, the cancel window, cash handovers. |
 | `shift-rules.test.ts` | Shift codes per side, the 24 hour limit including a device with the wrong clock, which orders a shift may close over, and that an order once moved is payable on the shift that took it. |
 
@@ -203,6 +204,23 @@ L10 apply. The rest are for whenever it is turned back on. See
 | L8 | Page with `cursor` to the end | Stops on `next_cursor: null`, and nothing is missed |
 | L9 | POST an empty body to the function's URL | **No email is sent.** The sweep only runs on the timer |
 | L10 | Wait for the hour | The stock sweep and daily digest still run |
+
+### M. Bulk stock upload
+
+| # | Do this | Must be true |
+|---|---|---|
+| M1 | Download the template and upload it unchanged | Reads clean. Two products, five pieces |
+| M2 | Upload a file with a category that does not exist | **Nothing added.** Names the line and the real categories |
+| M3 | Upload with an unknown consignor code | Refused. Nobody is credited by guesswork |
+| M4 | Two rows, same name, different categories | Refused. A later row is never silently ignored |
+| M5 | A piece with two sizes | One product, two sizes, quantities added up |
+| M6 | Mix a sized and an unsized row under one name | Refused. Otherwise the count is read twice |
+| M7 | A price cell reading "120 or 130" | Refused, **not read as 120** |
+| M8 | A name containing a comma | Survives. One product, not two |
+| M9 | A good file, imported | Products on the shop floor, priced right |
+| M10 | Goods received, after M9 | **A delivery per maker.** Slip prints |
+| M11 | That maker's statement | The delivery is in "what you brought in" |
+| M12 | Sell an uploaded piece at the till | Consignor credited, stock down by one |
 
 ---
 

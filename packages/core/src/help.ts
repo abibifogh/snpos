@@ -673,6 +673,33 @@ export const HELP_ARTICLES: HelpArticle[] = [
         'Print it, or choose Save as PDF in the print dialog to send it on. Reprint any time from the Slip '
         + 'button on the delivery.',
       ),
+      h('Booking a whole crate in at once'),
+      p(
+        'Ninety pieces is not ninety forms. Craft shop \u2192 Products \u2192 Upload a spreadsheet takes a file '
+        + 'and books the lot in.',
+      ),
+      steps(
+        'Download the template. It comes with example rows showing the two shapes a row can take.',
+        'Delete the examples, paste your own rows in, save it as CSV.',
+        'Choose the file. Nothing is written yet.',
+        'Read what it says it found, then press the button.',
+      ),
+      p(
+        'A piece with no sizes is one row. A piece with sizes is one row per size, all sharing the same name, '
+        + 'and they become one product the till asks about. The category has to already exist and the maker\u2019s '
+        + 'short code has to match one on your list.',
+      ),
+      note(
+        'It is all of the file or none of it. Anything wrong is listed with the line it is on, and nothing is '
+        + 'added until it is fixed. Importing the good rows and reporting the rest would leave you half loaded '
+        + 'with no way to tell by looking which pieces went in.',
+      ),
+      note(
+        'Every upload creates a proper delivery, one per maker, exactly as if it had been booked in at the '
+        + 'counter. So a slip can be printed for it and it appears in the "what you brought in" part of that '
+        + 'maker\u2019s statement. Pieces the shop owns outright get no delivery, because there is nobody to '
+        + 'give a slip to.',
+      ),
       h('Sizes'),
       p(
         'A basket in small, medium and large is one product and three prices. Open the product under Craft shop ' +

@@ -11,6 +11,7 @@ import { KeyedListManager } from '../components/KeyedList';
 import { ImageField } from '../components/ImageField';
 import { RecipeEditor, draftFrom, type DraftRecipe } from '../components/RecipeEditor';
 import { StationPicker, useStations, legacyStationFor } from '../components/StationPicker';
+import { StockUpload } from '../components/StockUpload';
 import { useSession } from '../session';
 
 interface ItemCategory extends Doc { menu_item_id: string; category_id: string; sort: number; active: boolean }
@@ -36,7 +37,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
   const W = module === 'craft'
     ? { title: 'Products', one: 'product', many: 'products', first: 'Add your first piece, with its price.' }
     : { title: 'Dishes & drinks', one: 'dish', many: 'dishes', first: 'Add your first dish or drink, with its price.' };
-  const { settings, profile } = useSession();
+  const { settings, profile, user } = useSession();
   const mayEdit = canEditCatalogue(profile);
   const toast = useToast();
   const stations = useStations();
@@ -53,6 +54,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
   const [pickedCategories, setPickedCategories] = useState<string[]>([]);
   const [pickedAddons, setPickedAddons] = useState<string[]>([]);
   const [filter, setFilter] = useState('');
+  const [uploading, setUploading] = useState(false);
   const [editing, setEditing] = useState<Partial<MenuItem> | null>(null);
   const [priceText, setPriceText] = useState('');
   /**
@@ -369,11 +371,21 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
             page twenty times a day to check a price needs to create a product
             roughly never, and every person who can create one is a person whose
             slip reaches the shop floor at a price customers get charged. */}
-        {mayEdit && (
-          <Button variant="primary" onClick={() => open()} disabled={categories.length === 0}>
-            Add {W.one}
-          </Button>
-        )}
+        <div className="row" style={{ gap: '0.4rem' }}>
+          {/* Only the shop. A restaurant's dishes come with recipes, stations
+              and option groups, none of which fit in a row of a spreadsheet,
+              so an upload here would be a worse version of the form. */}
+          {mayEdit && module === 'craft' && (
+            <Button onClick={() => setUploading(true)} disabled={categories.length === 0}>
+              Upload a spreadsheet
+            </Button>
+          )}
+          {mayEdit && (
+            <Button variant="primary" onClick={() => open()} disabled={categories.length === 0}>
+              Add {W.one}
+            </Button>
+          )}
+        </div>
       </div>
 
       {categories.length === 0 && (
@@ -463,6 +475,19 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
           </div>
         )}
       </Card>
+
+      {uploading && settings && (
+        <StockUpload
+          venueId="main"
+          categories={categories}
+          consignors={consignors}
+          variantTypes={variantTypes}
+          settings={settings}
+          userId={user?.$id ?? ''}
+          onClose={() => setUploading(false)}
+          onDone={async (m) => { await load(); toast(m); }}
+        />
+      )}
 
       {editing && (
         <Modal

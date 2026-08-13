@@ -25,5 +25,6 @@ export * from './expenses';
 export * from './access';
 export * from './receipt';
 export * from './csv';
+export * from './stock-import';
 export * from './offline';
 export * from './reportdoc';
