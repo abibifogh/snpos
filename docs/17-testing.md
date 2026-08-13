@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck, tests, schema check, build. Run this before deploying.
 ```
 
-62 tests, no database, about half a second. They cover the sums that decide what
+74 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -29,6 +29,7 @@ and no caller had to change.
 | `money.test.ts` | The commission split never loses a pesewa at any price or rate, as a share or as a flat amount per piece. What a statement's four sections contain, and that only the ledger touches the balance. Tax, service and discounts. Splitting one tender across several bills. |
 | `parity.test.ts` | **The browser and the server agree.** |
 | `access.test.ts` | Who can open what, including the bug that hid the craft shop from every manager, and which catalogue a customer's phone is shown. |
+| `reports.test.ts` | **The only door to the outside world.** Who gets in, what a window means, and that nothing personal leaves. |
 | `timing.test.ts` | Quoted waits, the hour cap, when a ticket is late, the cancel window, cash handovers. |
 | `shift-rules.test.ts` | Shift codes per side, the 24 hour limit including a device with the wrong clock, which orders a shift may close over, and that an order once moved is payable on the shift that took it. |
 
@@ -182,6 +183,23 @@ Needs a shift whose opened_at is backdated, or patience.
 | K5 | Sell some of a delivery, reprint its slip | Quantities unchanged, and **never negative** |
 | K6 | Record a payment from a statement | No permission error. Balance drops within a few seconds |
 | K7 | Record a payment twice on a bad connection | **One** ledger line, one deduction |
+
+### L. The reporting API
+
+Needs `REPORTS_API_KEY` set and functions deployed. See `docs/18-reports-api.md`.
+
+| # | Do this | Must be true |
+|---|---|---|
+| L1 | Call any report with no key | **401.** Nothing is served |
+| L2 | Call with a wrong key | 401, and it says no more than that |
+| L3 | Call with the right key | Data, with `currency` on the response |
+| L4 | POST to a report | **405.** This API never writes |
+| L5 | Read an order from it | **No customer email, no phone.** Name is there |
+| L6 | `summary` for a day, against the shift close for that day | Takings agree to the pesewa |
+| L7 | `?module=craft` | Craft only. Compare against Reports → Craft shop |
+| L8 | Page with `cursor` to the end | Stops on `next_cursor: null`, and nothing is missed |
+| L9 | POST an empty body to the function's URL | **No email is sent.** The sweep only runs on the timer |
+| L10 | Wait for the hour | The stock sweep and daily digest still run |
 
 ---
 

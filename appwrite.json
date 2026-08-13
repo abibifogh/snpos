@@ -66,7 +66,8 @@
       "$id": "notify",
       "name": "Receipts, summaries and watches",
       "runtime": "node-18.0",
-      "execute": [],
+      "_execute_note": "Open so the read-only reporting API can be called from outside. Every request to it is refused unless it carries REPORTS_API_KEY, and anything that is not a report, an event or the timer does nothing at all.",
+      "execute": ["any"],
       "events": [
         "databases.snpos.collections.orders.documents.*.update",
         "databases.snpos.collections.shifts.documents.*.update",

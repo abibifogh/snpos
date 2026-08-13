@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer';
 import { receiptPdf } from './receipt-pdf.js';
 import { dailyDigest, nightlyBackup } from './daily.js';
 import { ensureLogin, revokeLogin } from './staff.js';
+import { handleReports } from './reports.js';
 
 /**
  * Everything that sends an email.
@@ -318,6 +319,29 @@ export default async ({ req, res, log, error }) => {
   const DB_ID = process.env.DB_ID || 'snpos';
 
   const events = (req.headers['x-appwrite-event'] || '').split(',').filter(Boolean);
+  /**
+   * The reporting API, before anything else happens.
+   *
+   * First on purpose. Everything below this line either sends email or reads
+   * the whole database on a timer, and a request from the outside world must
+   * not be able to reach any of it by accident. This returns null when the
+   * request is not for the API, and has already answered when it is not.
+   */
+  const reported = await handleReports({ req, res, db, DB_ID, log, error });
+  if (reported) return reported;
+
+  /**
+   * What kind of invocation this is, according to Appwrite rather than
+   * according to a guess.
+   *
+   * The hourly sweep used to be "there is no document", which was true while
+   * the only ways in were an event and the timer. Opening an HTTP door makes
+   * it false: an empty POST from anywhere would have looked exactly like the
+   * timer and started sending email. So the trigger is read directly, and an
+   * unrecognised request does nothing at all.
+   */
+  const trigger = String(req.headers['x-appwrite-trigger'] || '').toLowerCase();
+
   const doc = req.bodyJson ?? (req.body ? JSON.parse(req.body) : null);
 
   const transport = mailer();
@@ -347,7 +371,12 @@ export default async ({ req, res, log, error }) => {
   // Nothing arrived, so this is the timer. The only thing worth checking on a
   // clock is the absence of an event: a dish taken off the menu that nobody
   // has put back.
-  if (!doc) {
+  if (!doc && trigger !== 'event') {
+    // Only the clock runs the sweep. Anything else that reaches here without a
+    // document is somebody knocking on a door that is not for them.
+    if (trigger && trigger !== 'schedule') {
+      return res.json({ ok: false, error: 'Nothing to do.' }, 400);
+    }
     const results = {};
     // Each is tried on its own. A failing backup must not stop the daily
     // summary going out, and neither must stop the availability sweep, three

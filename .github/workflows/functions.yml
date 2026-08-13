@@ -67,6 +67,7 @@ jobs:
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           SITE_DOMAIN: ${{ vars.SITE_DOMAIN }}
+          REPORTS_API_KEY: ${{ secrets.REPORTS_API_KEY }}
         run: |
           set -e
           FAILED=""
@@ -130,6 +131,16 @@ jobs:
             echo "Email is configured against $SMTP_HOST."
           else
             echo "::warning::No SMTP secrets set — receipts and summaries will be recorded but not emailed."
+          fi
+
+          # The reporting API. Without this key it refuses every request, which
+          # is the right default: an endpoint that serves a business's takings
+          # to anybody who finds the address is worse than no endpoint.
+          if [ -n "$REPORTS_API_KEY" ]; then
+            setvar notify REPORTS_API_KEY "$REPORTS_API_KEY"
+            echo "The reporting API is open to callers holding REPORTS_API_KEY."
+          else
+            echo "The reporting API is switched off. Set the REPORTS_API_KEY secret to turn it on."
           fi
 
           # Fail at the end rather than in the middle, so the log shows every
