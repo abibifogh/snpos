@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   naturalBalance, isDebitNormal, profitAndLoss, balanceSheet, entryProblem,
   depreciationSchedule, bookValue, chargeForMonth, monthOf, nextMonth, within,
+  openAccounts,
 } from '../ledger-math.ts';
 import { reconcile } from '../ledger-math.ts';
 import { matchStatement, readStatement, isLocked } from '../ledger-math.ts';
@@ -338,4 +339,48 @@ test('a closed period includes the whole of its last day', () => {
 test('nothing is locked when no line has been drawn', () => {
   assert.equal(isLocked('2020-01-01', undefined), false);
   assert.equal(isLocked('2020-01-01', ''), false);
+});
+
+/* --------------------------------------------------------- retired accounts */
+
+test('an archived account is off the lists and still on the reports', () => {
+  /**
+   * The whole bargain of archiving. An account with money posted to it can
+   * never be deleted — the postings are what make last month's figures
+   * readable — so the only honest way to stop using one is to take it off
+   * every list that offers a choice and leave it everywhere it has been used.
+   *
+   * The two halves are tested together because failing either way is bad in
+   * a different direction: still offered means the house keeps filing against
+   * something it retired, and dropped from the reports means a total with no
+   * rows adding up to it.
+   */
+  const chart: AccountRow[] = [
+    ...CHART,
+    { code: '6100', name: 'Okada runs', type: 'expense', active: false },
+  ];
+
+  assert.equal(
+    openAccounts(chart).some((a) => a.code === '6100'),
+    false,
+    'not offered as somewhere to file new money',
+  );
+
+  const lines: LineRow[] = [
+    { account_code: '4000', debit: 0, credit: 50000 },
+    { account_code: '6100', debit: 12000, credit: 0 },
+  ];
+  const pl = profitAndLoss(chart, lines);
+  assert.equal(pl.expenses.find((e) => e.code === '6100')?.amount, 12000, 'still on the profit and loss');
+  assert.equal(pl.netProfit, 38000);
+});
+
+test('an account with no flag is in use', () => {
+  /**
+   * The flag arrives after the accounts do, so it can never be required and
+   * every account seeded before it exists has nothing in the field. Reading
+   * that absence as "archived" would empty the chart in one deploy.
+   */
+  assert.equal(openAccounts(CHART).length, CHART.length);
+  assert.equal(openAccounts([{ code: '9000', name: 'x', type: 'expense', active: true }]).length, 1);
 });

@@ -62,6 +62,7 @@ export function KeyedListManager({
   const [editing, setEditing] = useState<Partial<KeyedRow> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   const save = async () => {
     if (!editing?.name?.trim()) { setError(`Give the ${singular} a name.`); return; }
@@ -96,8 +97,30 @@ export function KeyedListManager({
     }
   };
 
+  /**
+   * Stop offering it, without unpicking what is already filed under it.
+   *
+   * The active flag was already here, buried in the edit form as a toggle, and
+   * buried is the problem: retiring a category is a common thing to want and
+   * it looked like the only options were keep it or delete it. Deleting is the
+   * one that costs something — every expense filed under the key keeps
+   * pointing at a name that no longer exists, so a year of "Gas" turns into a
+   * year of "gas_refill". Archiving is the same act done safely, so it is on
+   * the row where somebody will find it.
+   */
+  const archive = async (row: KeyedRow, active: boolean) => {
+    try {
+      await db.updateDocument(DB_ID, collection, row.$id, { active });
+      await reload();
+      onChanged?.();
+      toast(active ? `${row.name} is back in use` : `${row.name} archived`);
+    } catch (e) {
+      toast(humanError(e), 'err');
+    }
+  };
+
   const remove = async (row: KeyedRow) => {
-    if (!confirm(`Delete "${row.name}"? Anything already filed under it keeps the label but you will not be able to choose it again.`)) return;
+    if (!confirm(`Delete "${row.name}"? Everything already filed under it loses the name and shows the bare key instead. Archive keeps the name and takes it off the lists.`)) return;
     try {
       await db.deleteDocument(DB_ID, collection, row.$id);
       await reload();
@@ -108,21 +131,33 @@ export function KeyedListManager({
     }
   };
 
+  const archivedCount = (rows ?? []).filter((r) => r.active === false).length;
+  const shown = (rows ?? []).filter((r) => showArchived || r.active !== false);
+
   return (
     <>
       <Card
         pad={false}
         actions={
-          <Button size="sm" variant="primary" onClick={() => { setEditing({ name: '', active: true }); setError(null); }}>
-            Add {singular}
-          </Button>
+          <div className="row" style={{ gap: '0.5rem' }}>
+            {archivedCount > 0 && (
+              <Button size="sm" onClick={() => setShowArchived((s) => !s)}>
+                {showArchived ? 'Hide archived' : `Show archived (${archivedCount})`}
+              </Button>
+            )}
+            <Button size="sm" variant="primary" onClick={() => { setEditing({ name: '', active: true }); setError(null); }}>
+              Add {singular}
+            </Button>
+          </div>
         }
       >
         {hint && <p className="small dim card-pad" style={{ margin: 0 }}>{hint}</p>}
         {!rows ? (
           <div className="card-pad"><Spinner /></div>
-        ) : rows.length === 0 ? (
-          <Empty title={`No ${singular} yet`} />
+        ) : shown.length === 0 ? (
+          <Empty title={rows.length === 0 ? `No ${singular} yet` : 'All archived'}>
+            {rows.length > 0 ? 'Show archived to bring one back.' : undefined}
+          </Empty>
         ) : (
           <div className="table-wrap">
             <table className="data">
@@ -135,17 +170,20 @@ export function KeyedListManager({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.$id}>
+                {shown.map((r) => (
+                  <tr key={r.$id} className={r.active === false ? 'dim' : undefined}>
                     <td style={{ fontWeight: 550 }}>{r.name}</td>
                     {accounts && (
                       <td className="dim small">
                         {accounts.find((a) => a.code === r.account_code)?.name ?? r.account_code ?? '-'}
                       </td>
                     )}
-                    <td>{r.active === false ? <Badge>Off</Badge> : <Badge tone="ok">Active</Badge>}</td>
+                    <td>{r.active === false ? <Badge tone="warn">Archived</Badge> : <Badge tone="ok">Active</Badge>}</td>
                     <td className="num">
                       <Button size="sm" variant="ghost" onClick={() => { setEditing(r); setError(null); }}>Edit</Button>
+                      <Button size="sm" variant="ghost" onClick={() => archive(r, r.active === false)}>
+                        {r.active === false ? 'Use again' : 'Archive'}
+                      </Button>
                       <Button size="sm" variant="ghost" onClick={() => remove(r)}>Delete</Button>
                     </td>
                   </tr>

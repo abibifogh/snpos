@@ -44,6 +44,7 @@ export function StockPage() {
   const [costText, setCostText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   const load = async () => {
     const [i, s, r, d] = await Promise.all([
@@ -59,11 +60,49 @@ export function StockPage() {
   };
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
 
+  const archivedCount = (ingredients ?? []).filter((i) => !i.active).length;
+  const shownIngredients = (ingredients ?? []).filter((i) => showArchived || i.active);
+
   const lowDefaultBp = settings?.low_stock_default_bp ?? 3000;
   const alerts = useMemo(
     () => (ingredients ?? []).filter((i) => i.active && levelOf(i, lowDefaultBp) !== 'ok'),
     [ingredients, lowDefaultBp],
   );
+
+  /**
+   * An ingredient the kitchen has stopped buying.
+   *
+   * It goes off the count sheet at shift close, off the expense form's item
+   * picker and off this list, and it stays on every expense, stock movement
+   * and count it already appears in. That last part is the whole point:
+   * deleting an ingredient would leave last quarter's food cost with lines
+   * that no longer name anything.
+   *
+   * It also stays attached to any recipe that uses it, which is deliberate —
+   * a dish quietly losing an ingredient would change what the kitchen is told
+   * to make. If a dish still uses it, that is worth knowing before archiving,
+   * so it is said rather than blocked.
+   */
+  const archiveIngredient = async (i: Ingredient, active: boolean) => {
+    if (!active) {
+      const dishNames = recipes
+        .filter((r) => r.ingredient_id === i.$id)
+        .map((r) => dishes.find((d) => d.$id === r.menu_item_id)?.name)
+        .filter(Boolean) as string[];
+      if (dishNames.length && !confirm(
+        `${i.name} is still in ${dishNames.slice(0, 4).join(', ')}`
+        + `${dishNames.length > 4 ? ` and ${dishNames.length - 4} more` : ''}. `
+        + 'Archive it anyway? Those recipes keep it; it just stops being counted and stops being offered.',
+      )) return;
+    }
+    try {
+      await db.updateDocument(DB_ID, 'ingredients', i.$id, { active });
+      await load();
+      toast(active ? `${i.name} is back in use` : `${i.name} archived`);
+    } catch (e) {
+      toast(humanError(e), 'err');
+    }
+  };
 
   const open = (i?: Ingredient) => {
     const base: Partial<Ingredient> = i ?? {
@@ -168,6 +207,11 @@ export function StockPage() {
         <h1>Stock</h1>
         {tab !== 'categories' && (
           <div className="row">
+            {tab === 'ingredients' && archivedCount > 0 && (
+              <Button onClick={() => setShowArchived((s) => !s)}>
+                {showArchived ? 'Hide archived' : `Show archived (${archivedCount})`}
+              </Button>
+            )}
             {tab === 'ingredients' && (
               <Button onClick={() => setImporting(true)}>Import from a spreadsheet</Button>
             )}
@@ -212,10 +256,12 @@ export function StockPage() {
         {!ingredients ? (
           <div className="card-pad"><Spinner /></div>
         ) : tab === 'ingredients' ? (
-          ingredients.length === 0 ? (
-            <Empty title="No ingredients yet">
-              Add what you buy and count. Link them to dishes as recipes, and the system can tell you what you should
-              have used versus what you actually did.
+          shownIngredients.length === 0 ? (
+            <Empty title={ingredients.length === 0 ? 'No ingredients yet' : 'All archived'}>
+              {ingredients.length === 0
+                ? 'Add what you buy and count. Link them to dishes as recipes, and the system can tell you what you '
+                  + 'should have used versus what you actually did.'
+                : 'Every ingredient here has been archived. Show archived to bring one back.'}
             </Empty>
           ) : (
             <div className="table-wrap">
@@ -228,14 +274,15 @@ export function StockPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {ingredients.map((i) => {
+                  {shownIngredients.map((i) => {
                     const level = levelOf(i, lowDefaultBp);
                     const run = i.consecutive_low_count ?? 0;
                     return (
-                      <tr key={i.$id}>
+                      <tr key={i.$id} className={i.active ? undefined : 'dim'}>
                         <td>
                           <div style={{ fontWeight: 550 }}>{i.name}</div>
                           {i.critical && <span className="badge badge-warn">Critical</span>}
+                          {!i.active && <Badge tone="warn">Archived</Badge>}
                         </td>
                         <td className="dim small">{nameForKey(categories, i.category) === ', ' ? '' : nameForKey(categories, i.category)}</td>
                         <td className="dim small">{supplierName(i.supplier_id)}</td>
@@ -247,7 +294,12 @@ export function StockPage() {
                           {level === 'out' ? <Badge tone="danger">Out</Badge> : level === 'low' ? <Badge tone="warn">Low</Badge> : <Badge tone="ok">OK</Badge>}
                           {run >= 3 && <div className="small dim">{run} shifts running</div>}
                         </td>
-                        <td className="num"><Button size="sm" variant="ghost" onClick={() => open(i)}>Edit</Button></td>
+                        <td className="num">
+                          <Button size="sm" variant="ghost" onClick={() => open(i)}>Edit</Button>
+                          <Button size="sm" variant="ghost" onClick={() => archiveIngredient(i, !i.active)}>
+                            {i.active ? 'Archive' : 'Use again'}
+                          </Button>
+                        </td>
                       </tr>
                     );
                   })}

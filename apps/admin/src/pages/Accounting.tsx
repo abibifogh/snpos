@@ -8,7 +8,7 @@ import {
   bookValue, monthOf, reconcile, db, DB_ID, ID,
   matchStatement, readStatement, parseCsv, loadStatementLines, importStatementLines,
   postFromStatement, attachReceipt, downloadUrl, areasOf,
-  loadLocks, lockPeriod,
+  loadLocks, lockPeriod, openAccounts,
 } from '@snpos/core';
 import type {
   AccountRow, JournalEntry, JournalLine, FixedAsset, LineRow, Doc, BankStatementLine, Settings,
@@ -40,6 +40,20 @@ const today = () => new Date().toISOString().slice(0, 10);
 interface DraftLine { account_code: string; debitText: string; creditText: string; memo: string }
 
 const BLANK: DraftLine = { account_code: '', debitText: '', creditText: '', memo: '' };
+
+/**
+ * What a dropdown may offer: the accounts still in use, plus the one already
+ * chosen.
+ *
+ * `openAccounts` alone is right for a blank form and wrong for one being
+ * edited. An entry posted in March against an account archived in June still
+ * names it, and a select whose value is not among its options shows the first
+ * option instead — so opening that entry and pressing Save would quietly move
+ * the posting to a different account. Keeping the chosen one on the list makes
+ * the edit show what is actually there, and leaves changing it a deliberate act.
+ */
+const choices = (accounts: AccountRow[], chosen?: string): AccountRow[] =>
+  accounts.filter((a) => a.active !== false || a.code === chosen);
 
 export function AccountingPage() {
   const { settings, user, profile } = useSession();
@@ -725,7 +739,7 @@ function Journal({
                     <td>
                       <Select value={d.account_code} onChange={(e) => setLine(i, { account_code: e.target.value })}>
                         <option value="">Choose</option>
-                        {accounts.map((a) => (
+                        {choices(accounts, d.account_code).map((a) => (
                           <option key={a.code} value={a.code}>{a.code} · {a.name}</option>
                         ))}
                       </Select>
@@ -1035,9 +1049,11 @@ function Assets({
                     value={(editing[key] as string) ?? ''}
                     onChange={(e) => setEditing({ ...editing, [key]: e.target.value })}
                   >
-                    {accounts.filter((a) => a.type === type).map((a) => (
-                      <option key={a.code} value={a.code}>{a.code} · {a.name}</option>
-                    ))}
+                    {choices(accounts, editing[key] as string)
+                      .filter((a) => a.type === type)
+                      .map((a) => (
+                        <option key={a.code} value={a.code}>{a.code} · {a.name}</option>
+                      ))}
                   </Select>
                 </Field>
               ))}
@@ -1082,7 +1098,9 @@ function Reconcile({
 }) {
   // Only accounts money actually sits in. Reconciling "Food sales" against a
   // statement is not a thing anybody does, and offering it invites the attempt.
-  const cashLike = accounts.filter((a) => a.type === 'asset' && a.code < '1200');
+  // Archived ones drop out: a closed bank account is not something to
+  // reconcile this month against. Past reconciliations of it are untouched.
+  const cashLike = openAccounts(accounts).filter((a) => a.type === 'asset' && a.code < '1200');
 
   const [code, setCode] = useState(cashLike[0]?.code ?? '1000');
   const [statementDate, setStatementDate] = useState(today());
@@ -1440,7 +1458,7 @@ function Reconcile({
           <Field label="What this was">
             <Select value={newAccount} onChange={(e) => setNewAccount(e.target.value)}>
               <option value="">Choose an account</option>
-              {accounts
+              {choices(accounts, newAccount)
                 .filter((a) => a.code !== code)
                 .map((a) => <option key={a.code} value={a.code}>{a.code} · {a.name}</option>)}
             </Select>

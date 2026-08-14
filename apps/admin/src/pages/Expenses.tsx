@@ -47,7 +47,7 @@ interface PaymentMethod extends Doc { name: string; kind: string; enabled: boole
 interface VenueRow extends Doc { name: string }
 interface Supplier extends Doc { name: string; active: boolean }
 interface Staff extends Doc { display_name: string; active: boolean }
-interface AccountRow extends Doc { code: string; name: string; type: string }
+interface AccountRow extends Doc { code: string; name: string; type: string; active?: boolean }
 
 /** A line being entered, before it becomes an expense_item. */
 interface DraftItem {
@@ -108,7 +108,14 @@ export function ExpensesPage() {
     // Expense lines only, minus the two the system fills in by itself. See
     // isPostableExpenseAccount, offering "Food sales" as a destination for a
     // gas refill is offering a way to make the books wrong.
-    setAccounts(a.filter(isPostableExpenseAccount).sort((a2, b) => a2.code.localeCompare(b.code)));
+    // Archived ones drop out too: an account the house has retired should not
+    // be offered as somewhere to file next week's gas. Categories already
+    // pointing at one keep pointing at it, which KeyedListManager handles by
+    // keeping the chosen account on its list whether or not it is on offer.
+    setAccounts(
+      a.filter((a2) => isPostableExpenseAccount(a2) && a2.active !== false)
+        .sort((a2, b) => a2.code.localeCompare(b.code)),
+    );
   };
   useEffect(() => { load().catch((err) => setError(humanError(err))); }, []);
 
@@ -117,7 +124,10 @@ export function ExpensesPage() {
     setEditing(
       row ?? {
         venue_id: venues[0]?.$id ?? 'main',
-        category_key: categories?.[0]?.key ?? 'other',
+        // The first one still in use, not simply the first one. A new expense
+        // defaulting to a category the house archived is a wrong answer that
+        // looks like a chosen one.
+        category_key: categories?.find((c) => c.active !== false)?.key ?? 'other',
         paid_to_kind: 'supplier',
         payee: '',
         note: '',

@@ -1337,6 +1337,19 @@ export const COLLECTIONS = [
       ['type', 'e', ['asset', 'liability', 'equity', 'revenue', 'expense'], true],
       ['parent_code', 's', 10, false],
       ['system', 'b', null, true, false],
+      /**
+       * Retired, not removed.
+       *
+       * An account with money posted to it can never be deleted — the postings
+       * are what make last month's figures readable, and taking the account
+       * away turns them into a row of bare numbers. So the only honest way to
+       * stop using one is to archive it: it disappears from every list that
+       * offers a choice, and stays wherever it has already been used.
+       *
+       * Optional and true by default, for the reason set out on menu_items: a
+       * field that arrives after the rows do can never be required.
+       */
+      ['active', 'b', null, false, true],
     ],
     indexes: [['code_unique', 'unique', ['code']]],
   },

@@ -507,6 +507,14 @@ export function ExpenseModal({
         <Field label="What for">
           <Select value={categoryKey} onChange={(e) => setCategoryKey(e.target.value)}>
             {categories.map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}
+            {/* An expense filed under a category that has since been archived
+                keeps showing it. The list here is only what is still on offer,
+                and a select whose value is not among its options displays the
+                first one instead — so opening somebody's old expense to fix
+                the amount would quietly refile it. */}
+            {categoryKey && !categories.some((c) => c.key === categoryKey) && (
+              <option value={categoryKey}>{categoryKey} (no longer used)</option>
+            )}
           </Select>
         </Field>
       )}

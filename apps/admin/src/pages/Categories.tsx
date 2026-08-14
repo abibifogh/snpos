@@ -34,6 +34,7 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'c
   const [editing, setEditing] = useState<Partial<Category> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   const load = () =>
     listAll<Category>('categories').then((r) =>
@@ -94,10 +95,36 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'c
     }
   };
 
+  /**
+   * Put a category away without losing the dishes in it.
+   *
+   * Deleting one orphans every dish it held; archiving takes it off the menu
+   * and out of this list and leaves the dishes attached, so a category the
+   * house has finished with — a Christmas menu, a supplier they no longer
+   * use — can be put away and brought back a year later intact.
+   *
+   * This is the same flag the Active toggle in the edit form already set. It
+   * is on the row because that is where somebody deciding to stop using a
+   * category is looking, and because the button they were finding there
+   * instead was Delete.
+   */
+  const archive = async (c: Category, active: boolean) => {
+    try {
+      await db.updateDocument(DB_ID, 'categories', c.$id, { active });
+      await load();
+      toast(active ? `${c.name} is back on the menu` : `${c.name} archived`);
+    } catch (e) {
+      toast(humanError(e), 'err');
+    }
+  };
+
+  const archivedCount = (rows ?? []).filter((c) => !c.active).length;
+  const shown = (rows ?? []).filter((c) => showArchived || c.active);
+
   const remove = async (c: Category) => {
     // Deleting a category orphans its dishes, so say so plainly rather than
     // discovering it later on the customer menu.
-    if (!confirm(`Delete "${c.name}"? Dishes in it will remain but will have no category and will not appear on the menu.`)) return;
+    if (!confirm(`Delete "${c.name}"? Dishes in it will remain but will have no category and will not appear on the menu. Archive instead if you may want it back; that keeps the dishes in it.`)) return;
     try {
       await db.deleteDocument(DB_ID, 'categories', c.$id);
       await load();
@@ -111,7 +138,14 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'c
     <>
       <div className="spread">
         <h1>Categories</h1>
-        {mayEdit && <Button variant="primary" onClick={() => open()}>Add category</Button>}
+        <div className="row" style={{ gap: '0.5rem' }}>
+          {archivedCount > 0 && (
+            <Button onClick={() => setShowArchived((s) => !s)}>
+              {showArchived ? 'Hide archived' : `Show archived (${archivedCount})`}
+            </Button>
+          )}
+          {mayEdit && <Button variant="primary" onClick={() => open()}>Add category</Button>}
+        </div>
       </div>
 
       {error && !editing && <Notice>{error}</Notice>}
@@ -119,9 +153,11 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'c
       <Card pad={false}>
         {!rows ? (
           <div className="card-pad"><Spinner /></div>
-        ) : rows.length === 0 ? (
-          <Empty title="No categories yet">
-            Categories group your menu, Starters, Mains, Drinks. Add one to begin.
+        ) : shown.length === 0 ? (
+          <Empty title={rows.length === 0 ? 'No categories yet' : 'All archived'}>
+            {rows.length === 0
+              ? 'Categories group your menu, Starters, Mains, Drinks. Add one to begin.'
+              : 'Every category is archived, so the menu is empty. Show archived to bring one back.'}
           </Empty>
         ) : (
           <div className="table-wrap">
@@ -137,8 +173,8 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'c
                 </tr>
               </thead>
               <tbody>
-                {rows.map((c) => (
-                  <tr key={c.$id}>
+                {shown.map((c) => (
+                  <tr key={c.$id} className={c.active ? undefined : 'dim'}>
                     <td className="num dim">{c.sort}</td>
                     <td>
                       <div style={{ fontWeight: 550 }}>{c.name}</div>
@@ -152,9 +188,14 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'c
                         return isAvailable(w) ? <Badge tone="ok">Now</Badge> : <span>{describeWindows(w)}</span>;
                       })()}
                     </td>
-                    <td>{c.active ? <Badge tone="ok">Active</Badge> : <Badge>Hidden</Badge>}</td>
+                    <td>{c.active ? <Badge tone="ok">Active</Badge> : <Badge tone="warn">Archived</Badge>}</td>
                     <td className="num">
                       <Button size="sm" variant="ghost" onClick={() => open(c)}>Edit</Button>
+                      {mayEdit && (
+                        <Button size="sm" variant="ghost" onClick={() => archive(c, !c.active)}>
+                          {c.active ? 'Archive' : 'Use again'}
+                        </Button>
+                      )}
                       <Button size="sm" variant="ghost" onClick={() => remove(c)}>Delete</Button>
                     </td>
                   </tr>

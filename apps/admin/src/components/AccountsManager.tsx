@@ -11,6 +11,8 @@ export interface AccountRow extends Doc {
   type: 'asset' | 'liability' | 'equity' | 'revenue' | 'expense';
   parent_code?: string;
   system?: boolean;
+  /** Retired. Missing means active: the flag arrived after the accounts did. */
+  active?: boolean;
 }
 
 const TYPES: AccountRow['type'][] = ['expense', 'revenue', 'asset', 'liability', 'equity'];
@@ -64,6 +66,7 @@ export function AccountsManager() {
   const [editing, setEditing] = useState<Partial<AccountRow> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   const load = () =>
     listAll<AccountRow>('accounts')
@@ -116,18 +119,47 @@ export function AccountsManager() {
     }
   };
 
+  /**
+   * Stop using an account without losing what was posted to it.
+   *
+   * The honest end of an account's life, and for most of them the only one
+   * available: the moment money has been posted to it, deleting it is refused
+   * below, because the postings are what make last month's figures readable
+   * and taking the account away turns them into a row of bare numbers.
+   *
+   * So archiving does exactly one thing — it takes the account off every list
+   * that offers a choice. It stays on the trial balance, on the profit and
+   * loss, and behind every figure that drills down to it. A restaurant that
+   * stopped using "Okada runs" in March should still see March's okada runs.
+   *
+   * Built-in accounts are excluded. The system posts to those by code when a
+   * shift closes, so an archived one would surface as a shift that will not
+   * close, which is a bad way to find out.
+   */
+  const archive = async (a: AccountRow, active: boolean) => {
+    if (isSystemAccount(a.code)) return;
+    try {
+      await db.updateDocument(DB_ID, 'accounts', a.$id, { active });
+      await load();
+      toast(active ? `${a.name} is back in use` : `${a.name} archived`);
+    } catch (e) {
+      toast(humanError(e), 'err');
+    }
+  };
+
   const remove = async (a: AccountRow) => {
     if (isSystemAccount(a.code)) return;
     try {
       // Nothing is deleted out from under history. An account with postings
       // behind it is what makes an old report readable; removing it would turn
-      // last month's figures into a row of bare numbers.
+      // last month's figures into a row of bare numbers. Archiving is the way
+      // out of that, and is offered by name rather than left to be guessed at.
       const [posted, used] = await Promise.all([
         db.listDocuments(DB_ID, 'journal_lines', [Query.equal('account_code', a.code), Query.limit(1)]),
         listAll<{ name: string; account_code?: string }>('expense_categories'),
       ]);
       if (posted.total > 0) {
-        toast(`${a.name} already has money posted to it, so it has to stay. Rename it if it is wrong.`, 'err');
+        toast(`${a.name} already has money posted to it, so it cannot be deleted. Archive it instead — it comes off the lists and stays on the reports.`, 'err');
         return;
       }
       const pointing = used.filter((c) => c.account_code === a.code).map((c) => c.name);
@@ -144,15 +176,26 @@ export function AccountsManager() {
     }
   };
 
+  const archivedCount = (rows ?? []).filter((a) => a.active === false).length;
+  const shown = (rows ?? []).filter((a) => showArchived || a.active !== false);
+
   return (
     <>
       <div className="spread">
         <p className="dim small" style={{ marginTop: 0, maxWidth: '46rem' }}>
           The lines your money lands on. Expense categories point at one of these, and Reports adds up by them, so
           this is what decides whether your report says “GH₵4,200 other” or “GH₵2,800 gas, GH₵1,400 transport”.
-          Add whatever your outgoings actually are.
+          Add whatever your outgoings actually are. One you have stopped using can be archived: it comes off every
+          list you choose from, and stays on every report it already appears in.
         </p>
-        {canEdit && <Button variant="primary" onClick={() => open()}>Add account</Button>}
+        <div className="row" style={{ gap: '0.5rem' }}>
+          {archivedCount > 0 && (
+            <Button size="sm" onClick={() => setShowArchived((s) => !s)}>
+              {showArchived ? 'Hide archived' : `Show archived (${archivedCount})`}
+            </Button>
+          )}
+          {canEdit && <Button variant="primary" onClick={() => open()}>Add account</Button>}
+        </div>
       </div>
 
       {error && !editing && <Notice>{error}</Notice>}
@@ -160,8 +203,12 @@ export function AccountsManager() {
       <Card pad={false}>
         {!rows ? (
           <div className="card-pad"><Spinner /></div>
-        ) : rows.length === 0 ? (
-          <Empty title="No accounts yet">Run Provision Appwrite to seed the standard set, or add your own.</Empty>
+        ) : shown.length === 0 ? (
+          <Empty title={rows.length === 0 ? 'No accounts yet' : 'All archived'}>
+            {rows.length === 0
+              ? 'Run Provision Appwrite to seed the standard set, or add your own.'
+              : 'Every account here has been archived. Show archived to bring one back.'}
+          </Empty>
         ) : (
           <div className="table-wrap">
             <table className="data">
@@ -169,18 +216,25 @@ export function AccountsManager() {
                 <tr><th>Code</th><th>Name</th><th>Kind</th><th /></tr>
               </thead>
               <tbody>
-                {rows.map((a) => {
+                {shown.map((a) => {
                   const locked = isSystemAccount(a.code);
+                  const archived = a.active === false;
                   return (
-                    <tr key={a.$id}>
+                    <tr key={a.$id} className={archived ? 'dim' : undefined}>
                       <td className="dim">{a.code}</td>
                       <td>
                         {a.name}
                         {locked && <Badge> built in</Badge>}
+                        {archived && <Badge tone="warn"> archived</Badge>}
                       </td>
                       <td className="dim">{a.type}</td>
                       <td className="num">
                         {canEdit && <Button size="sm" variant="ghost" onClick={() => open(a)}>Edit</Button>}
+                        {canEdit && !locked && (
+                          <Button size="sm" variant="ghost" onClick={() => archive(a, archived)}>
+                            {archived ? 'Use again' : 'Archive'}
+                          </Button>
+                        )}
                         {canEdit && !locked && (
                           <Button size="sm" variant="ghost" onClick={() => remove(a)}>Remove</Button>
                         )}

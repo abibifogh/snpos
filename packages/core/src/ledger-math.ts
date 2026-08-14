@@ -19,7 +19,21 @@ export interface AccountRow {
   name: string;
   type: AccountType;
   parent_code?: string;
+  /** Retired. Off every list that offers a choice, still on every statement. */
+  active?: boolean;
 }
+
+/**
+ * The accounts still on offer.
+ *
+ * Archived ones are gone from anywhere somebody PICKS an account and present
+ * everywhere one has already been used — a statement, a trial balance, the
+ * postings behind a figure. Hiding a retired account from the books it is
+ * already in would not tidy anything; it would leave last month with a total
+ * and no rows adding up to it.
+ */
+export const openAccounts = (accounts: AccountRow[]): AccountRow[] =>
+  accounts.filter((a) => a.active !== false);
 
 export interface LineRow {
   account_code: string;
