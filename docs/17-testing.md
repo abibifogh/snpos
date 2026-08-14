@@ -390,7 +390,7 @@ L10 apply. The rest are for whenever it is turned back on. See
 | N14 | Open it and send an order | **Thank you for your order**, the number, and the wait |
 | N14a | Order on the screen leaving the email box empty | **No promise of an email.** Just the wait |
 | N14b | Order giving an email, with Receipts on | Says an email will come when it is ready. And it does |
-| N15 | Wait without touching it | Menu comes back **on its own**, about 10 seconds |
+| N15 | Wait without touching it | Menu comes back **on its own**, about 20 seconds |
 | N16 | Press "Order something else" first | Menu comes back at once. Basket empty |
 | N17 | Order twice in a row on that screen | **No "Your orders" list.** Nobody sees the last customer's |
 | N18 | The walk-in QR, unchanged | Still goes to the live status page as before |

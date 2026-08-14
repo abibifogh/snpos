@@ -5,16 +5,16 @@ import { shownEta } from '@snpos/core';
 /**
  * How long the thank-you stays before the menu comes back.
  *
- * Ten seconds, which is about how long a queue actually gives you: somebody
- * reads their number, reads the wait, and steps away. It was half a minute,
- * and half a minute is a long time to stand behind a screen still showing the
- * order of the person who has already gone.
+ * Twenty seconds. There is a real order number on this screen now, and ten
+ * seconds is not long to read one, take it in and be sure of it while somebody
+ * is also being handed change — which is the difference between a number
+ * somebody remembers and a number they have to ask for again at the counter.
  *
- * Nothing is lost by cutting it. The number is called out at the counter, and
- * anybody who wants longer simply does not walk away — the countdown is on
- * screen, so they can see what it is about to do.
+ * Still short enough that the person behind is not waiting on a screen showing
+ * the order of somebody who has already gone, and the way out is on screen the
+ * whole time for anybody who is finished sooner.
  */
-export const SCREEN_THANKS_MS = 10_000;
+export const SCREEN_THANKS_MS = 20_000;
 
 /**
  * What a shared ordering screen shows after an order is sent.

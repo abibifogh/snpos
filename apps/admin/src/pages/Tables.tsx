@@ -236,7 +236,7 @@ export function TablesPage() {
         <p className="small dim" style={{ marginTop: 0 }}>
           For a tablet you own, propped on the counter or fixed to a wall, used by one customer after another.
           Same menu as the walk-in QR. The difference is what happens after the order is sent: it says thank
-          you and how long the food will be, then puts the menu back by itself after ten seconds, so nobody
+          you and how long the food will be, then puts the menu back by itself after twenty seconds, so nobody
           has to reset it and nobody sees the last customer's order.
         </p>
         {venues.map((v) => {
