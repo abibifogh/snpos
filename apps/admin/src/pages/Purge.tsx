@@ -20,6 +20,21 @@ interface Group {
   collection: string;
   /** Children, keyed by the field on the child holding the parent's id. */
   children?: { collection: string; field: string }[];
+  /**
+   * Which date decides whether a row is "in" the period.
+   *
+   * Almost everything here is picked by when it was written, which for an
+   * order or a payment is also when it happened. A journal entry is the
+   * exception: it carries the date the money moved, and that is the date the
+   * accounting reports group by. Picking those by when the row was written
+   * meant the erase and the report were answering two different questions —
+   * a shift that opened on the 31st and closed after midnight was written in
+   * the new month, and an entry backdated by an accountant was written today.
+   * Either way the report kept a figure the erase believed it had removed.
+   */
+  dateField?: string;
+  /** Erasing this normally means erasing the books behind it too. */
+  leavesBooks?: boolean;
 }
 
 const GROUPS: Group[] = [
@@ -28,6 +43,7 @@ const GROUPS: Group[] = [
     label: 'Orders',
     hint: 'Every order in the period, with its items, its notices and its dining sessions.',
     collection: 'orders',
+    leavesBooks: true,
     children: [
       { collection: 'order_items', field: 'order_id' },
       { collection: 'order_notices', field: 'order_id' },
@@ -44,6 +60,7 @@ const GROUPS: Group[] = [
     label: 'Expenses',
     hint: 'Money paid out, with the stock lines recorded against it. Stock levels themselves are left alone.',
     collection: 'shift_expenses',
+    leavesBooks: true,
     children: [{ collection: 'expense_items', field: 'expense_id' }],
   },
   {
@@ -51,6 +68,7 @@ const GROUPS: Group[] = [
     label: 'Shifts',
     hint: 'Opening floats, counts and variances. Erase these last; a shift is what the money hangs off.',
     collection: 'shifts',
+    leavesBooks: true,
     children: [{ collection: 'shift_stock_checks', field: 'shift_id' }],
   },
   {
@@ -80,6 +98,10 @@ const GROUPS: Group[] = [
     hint: 'Every journal entry in the period, and the lines under it. This is what the accounting reports read, '
       + 'so leaving it out means the figures stay even after the orders behind them are gone.',
     collection: 'journal_entries',
+    // The date the money moved, not the date the row was written. See the
+    // note on `dateField`: these two drifting apart is what kept figures on a
+    // profit and loss for a period that had supposedly been erased.
+    dateField: 'date',
     // Reconciliation ticks are deliberately left alone. They point at journal
     // LINES, which are a level below what this deletes, and a tick against a
     // line that no longer exists counts towards nothing: the reconciliation
@@ -134,15 +156,29 @@ export function PurgePage() {
   const startIso = () => new Date(`${from}T00:00:00`).toISOString();
   const endIso = () => new Date(`${to}T23:59:59.999`).toISOString();
 
+  /**
+   * Ticking orders, expenses or shifts ticks the books as well.
+   *
+   * "Erase March" means March is gone, and being told afterwards that the
+   * accounting reports keep their own copy is a distinction that reads as a
+   * failure — twice now. So the books come along by default. Unticking them
+   * is still there for the accountant who wants the trading history kept
+   * after the tills are cleared out, which is a real thing to want; it is
+   * just no longer the thing that happens when nobody chose it.
+   */
   const toggle = (key: string) => {
     setCounts(null);
-    setPicked((p) => (p.includes(key) ? p.filter((x) => x !== key) : [...p, key]));
+    setPicked((p) => {
+      if (p.includes(key)) return p.filter((x) => x !== key);
+      const group = GROUPS.find((g) => g.key === key);
+      return group?.leavesBooks && !p.includes('ledger') ? [...p, key, 'ledger'] : [...p, key];
+    });
   };
 
-  const rowsIn = async (collection: string) =>
+  const rowsIn = async (collection: string, dateField = '$createdAt') =>
     listAll<Doc>(collection, [
-      Query.greaterThanEqual('$createdAt', startIso()),
-      Query.lessThanEqual('$createdAt', endIso()),
+      Query.greaterThanEqual(dateField, startIso()),
+      Query.lessThanEqual(dateField, endIso()),
     ]);
 
   const check = async () => {
@@ -153,7 +189,7 @@ export function PurgePage() {
     try {
       const found: Record<string, number> = {};
       for (const g of GROUPS.filter((x) => picked.includes(x.key))) {
-        found[g.key] = (await rowsIn(g.collection)).length;
+        found[g.key] = (await rowsIn(g.collection, g.dateField)).length;
       }
       setCounts(found);
     } catch (e) {
@@ -193,7 +229,7 @@ export function PurgePage() {
     try {
       for (const g of GROUPS.filter((x) => picked.includes(x.key))) {
         setProgress(`Reading ${g.label.toLowerCase()}…`);
-        const parents = await rowsIn(g.collection);
+        const parents = await rowsIn(g.collection, g.dateField);
         if (parents.length === 0) continue;
 
         /**
@@ -306,14 +342,17 @@ export function PurgePage() {
         when the shift closed, and those are separate records — which is what
         makes a set of accounts survive a till being wiped, and which meant
         erasing a period's orders left every figure standing in the accounting
-        report with nothing here to say so. Somebody erasing March and then
-        opening the profit and loss reasonably concluded the erase had failed.
+        report with nothing here to say so.
+
+        Explaining it was not enough; the books are now ticked for you. This
+        notice stays because the tick can be taken off again, and somebody who
+        does that should know what they are keeping.
       */}
       <Notice tone="info">
         <strong>Orders and the books are separate records.</strong> A sale is an order and a payment, and it is also a
-        journal entry written when the shift closed. Erasing the orders does not erase the books, so the accounting
-        reports keep their figures — which is what an accountant would want, and is not what most people expect.
-        Tick <em>The books</em> as well if you want the accounting reports cleared too.
+        journal entry written when the shift closed — which is why <em>The books</em> is ticked for you whenever you
+        choose orders, expenses or shifts. Take that tick off only if you want the accounting reports to keep their
+        figures after the orders behind them are gone.
       </Notice>
 
       {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
