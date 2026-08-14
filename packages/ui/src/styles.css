@@ -244,7 +244,10 @@ table.data tbody tr:hover { background: var(--surface-2); }
   max-height: 100%;
 }
 .modal-wide { max-width: 900px; }
-.modal-body { padding: 1.25rem; overflow-y: auto; }
+/* The same room at the bottom as a page has, and for the same reason: a modal
+   that scrolls ends in a table too, and its last row sat against the footer
+   with nothing to say the list had ended rather than been clipped. */
+.modal-body { padding: 1.25rem; padding-bottom: 2.5rem; overflow-y: auto; }
 .modal-foot {
   padding: 0.9rem 1.25rem; border-top: 1px solid var(--border);
   display: flex; justify-content: flex-end; gap: 0.6rem;

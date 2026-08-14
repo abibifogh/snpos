@@ -37,7 +37,25 @@
   background: var(--surface); border-bottom: 1px solid var(--border);
   padding: 0.85rem 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem;
 }
-.page { padding: 1.5rem; max-width: 1100px; width: 100%; }
+/*
+ * Room under the last thing on the page.
+ *
+ * Every page here ends with a table, and the last row of it sat hard against
+ * the bottom of the window: nothing to say the list had ended rather than been
+ * cut off, and on a phone the browser's own bar finished the job by covering
+ * it. The last row of a table of figures is the one somebody has scrolled all
+ * the way down to read.
+ *
+ * Generous rather than tidy — a few rows of empty space costs nothing on a
+ * page somebody scrolls, and it is what makes the end of a list feel like the
+ * end of it.
+ */
+.page {
+  padding: 1.5rem;
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0));
+  max-width: 1100px;
+  width: 100%;
+}
 .page > * + * { margin-top: 1.15rem; }
 
 .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 1.5rem; }
@@ -56,7 +74,7 @@
   .sidebar { position: static; height: auto; }
   .sidebar nav { display: flex; flex-wrap: wrap; gap: 0.25rem; }
   .sidebar .group { display: none; }
-  .page { padding: 1rem; }
+  .page { padding: 1rem; padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0)); }
 }
 
 /* A size row in the product editor.

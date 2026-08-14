@@ -218,6 +218,11 @@ not just what to press.
 | E16 | Sign in as an admin after E15 | Still sees everything. Nothing here can lock the owner out |
 | E17 | Mark a manager kitchen-only, open Shifts | **No Craft shop tab, and no craft shifts in the list** |
 | E18 | The same on Reports and Expenses | Kitchen figures only, with no tab offering the other side |
+| E19 | Scroll to the bottom of any admin page | **The last row is clear of the edge**, not against it |
+| E20 | The same on a phone | Clear of the browser's own bar too |
+| E21 | Shifts → Details → Details on an expense | The things bought, with quantity, each and paid |
+| E22 | The same on a taxi with nothing itemised | Says so plainly rather than showing an empty table |
+| E23 | An expense with an overhead line on it | That line is marked as not stocked |
 
 ### F. The kitchen still works
 

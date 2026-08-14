@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Card, Empty, Notice, Spinner, Badge, Modal, Button } from '@snpos/ui';
-import { listAll, humanError } from '../lib';
+import { listAll, humanError, Query } from '../lib';
 import { formatMoney, byStaff, destinationLabel } from '@snpos/core';
 import type { Doc, CashHandover } from '@snpos/core';
 import { useSession } from '../session';
@@ -25,7 +25,25 @@ interface Shift extends Doc {
 }
 
 interface PaymentMethod extends Doc { name: string }
-interface Expense extends Doc { shift_id?: string; amount: number; category: string }
+interface Expense extends Doc {
+  shift_id?: string;
+  amount: number;
+  category: string;
+  category_key?: string;
+  payee?: string;
+  note?: string;
+  from_takings?: boolean;
+}
+
+/** One thing bought on a shop run, under the expense that paid for it. */
+interface ExpenseItem extends Doc {
+  expense_id: string;
+  name_snapshot: string;
+  qty: number;
+  unit_cost: number;
+  line_total: number;
+  stocked?: boolean;
+}
 
 const parseMap = (raw?: string): Record<string, number> => {
   if (!raw) return {};
@@ -41,6 +59,25 @@ export function ShiftsPage() {
   const [rows, setRows] = useState<Shift[] | null>(null);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  /**
+   * The expense being opened, and what was actually bought with it.
+   *
+   * "Supplies, four hundred and eighty" is where the question starts, not
+   * where it ends: a shop run is a list of things, and the whole point of
+   * itemising one at the till was so somebody could read it afterwards. Loaded
+   * when it is asked for rather than for every expense on every shift, because
+   * most of them are never opened.
+   */
+  const [openExpense, setOpenExpense] = useState<Expense | null>(null);
+  const [expenseItems, setExpenseItems] = useState<ExpenseItem[] | null>(null);
+
+  const openLines = async (e: Expense) => {
+    setOpenExpense(e);
+    setExpenseItems(null);
+    setExpenseItems(
+      await listAll<ExpenseItem>('expense_items', [Query.equal('expense_id', e.$id)]).catch(() => []),
+    );
+  };
   const [handovers, setHandovers] = useState<CashHandover[]>([]);
   const [detail, setDetail] = useState<Shift | null>(null);
   const [side, setSide] = useState<Side>('all');
@@ -257,10 +294,79 @@ export function ShiftsPage() {
                     .filter((e) => e.shift_id === detail.$id)
                     .map((e) => (
                       <tr key={e.$id}>
-                        <td>{e.category}</td>
+                        <td>
+                          {e.category_key || e.category}
+                          {e.payee && <div className="small dim">{e.payee}</div>}
+                          {/* The one thing about an expense that changes what
+                              the drawer was counted against. */}
+                          {e.from_takings === false && <div className="small dim">from petty cash</div>}
+                        </td>
                         <td className="num">{settings ? formatMoney(e.amount, settings) : e.amount}</td>
+                        <td style={{ width: '1%' }}>
+                          <Button size="sm" variant="ghost" onClick={() => void openLines(e)}>Details</Button>
+                        </td>
                       </tr>
                     ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Modal>
+      )}
+
+      {/*
+        What one expense was actually spent on.
+        
+        A shop run is a list of things, and itemising it at the till was done so
+        somebody could read it back. Until now the only way to see that list was
+        the admin expenses page, which meant leaving the shift you were looking
+        at and finding the same row again.
+      */}
+      {openExpense && (
+        <Modal
+          title={`${openExpense.category_key || openExpense.category} · ${settings ? formatMoney(openExpense.amount, settings) : openExpense.amount}`}
+          onClose={() => setOpenExpense(null)}
+          footer={<Button onClick={() => setOpenExpense(null)}>Close</Button>}
+        >
+          {openExpense.payee && <p className="small dim" style={{ marginTop: 0 }}>Paid to {openExpense.payee}</p>}
+          {openExpense.note && <p className="small">{openExpense.note}</p>}
+
+          {expenseItems === null ? (
+            <Spinner />
+          ) : expenseItems.length === 0 ? (
+            <p className="small dim">
+              Nothing was itemised on this one. Plenty of spending has nothing to list — a taxi, a gas refill, a
+              repair — and it was recorded as a single amount.
+            </p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr><th>What</th><th className="num">How many</th><th className="num">Each</th><th className="num">Paid</th></tr>
+                </thead>
+                <tbody>
+                  {expenseItems.map((i) => (
+                    <tr key={i.$id}>
+                      <td>
+                        {i.name_snapshot}
+                        {/* An overhead is used up in the buying and never
+                            reached a shelf, which is worth saying beside the
+                            things that did. */}
+                        {i.stocked === false && <div className="small dim">not stocked, used up in the buying</div>}
+                      </td>
+                      <td className="num">{i.qty}</td>
+                      <td className="num dim">{settings ? formatMoney(i.unit_cost, settings) : i.unit_cost}</td>
+                      <td className="num">{settings ? formatMoney(i.line_total, settings) : i.line_total}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td colSpan={3} style={{ fontWeight: 650 }}>Itemised</td>
+                    <td className="num" style={{ fontWeight: 650 }}>
+                      {settings
+                        ? formatMoney(expenseItems.reduce((s2, i) => s2 + i.line_total, 0), settings)
+                        : expenseItems.reduce((s2, i) => s2 + i.line_total, 0)}
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
