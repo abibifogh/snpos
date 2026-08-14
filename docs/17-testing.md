@@ -184,6 +184,11 @@ not just what to press.
 | P42 | Reopen to an earlier date | Warned first, then done, **with your name on it** |
 | P43 | The history after P42 | Both acts listed, the reopening marked in red |
 | P44 | Give somebody the journal but not Close a period | They can post; they cannot move the line |
+| P45 | Profit & loss, press a cost line | Every posting behind it, **adding to that figure** |
+| P46 | Read the running column to the bottom | It ends on the figure you pressed |
+| P47 | Press a balance sheet line | Everything **from the beginning**, not just this month |
+| P48 | A posting with a receipt attached | View opens it from inside the list |
+| P49 | Change the dates, press the same line again | The list changes with them |
 
 ### E. Permissions
 

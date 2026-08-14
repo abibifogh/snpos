@@ -183,7 +183,10 @@ export function AccountingPage() {
       )}
 
       {tab === 'statements' && can('statements') && (
-        <Statements pl={pl} bs={bs} money={money} from={from} to={to} />
+        <Statements
+          pl={pl} bs={bs} money={money} from={from} to={to}
+          lines={lines} entries={entries} settings={settings}
+        />
       )}
 
       {tab === 'trial' && can('trial') && (
@@ -284,16 +287,56 @@ export function AccountingPage() {
 /* ------------------------------------------------------------- statements */
 
 function Statements({
-  pl, bs, money, from, to,
+  pl, bs, money, from, to, lines, entries, settings,
 }: {
   pl: ReturnType<typeof profitAndLoss>;
   bs: ReturnType<typeof balanceSheet>;
   money: (n: number) => string;
   from: string;
   to: string;
+  lines: (JournalLine & { date: string })[];
+  entries: JournalEntry[];
+  settings: Settings | null;
 }) {
+  /**
+   * The account being looked into, and over what stretch.
+   *
+   * A figure on a statement is a question, not an answer. Nobody reads
+   * "Supplies 4,180" and stops there; they want to know what the four thousand
+   * was. Printing a total and leaving somebody to go and find the postings
+   * themselves is how a set of accounts becomes something people nod at rather
+   * than read.
+   *
+   * The window travels with the line, because the two statements ask different
+   * questions of the same postings: a profit and loss is a period, a balance
+   * sheet is everything up to a day. One window for both would open a list
+   * that does not add up to the figure that was pressed, which is worse than
+   * not opening at all.
+   */
+  const [open, setOpen] = useState<{ line: ReturnType<typeof profitAndLoss>['revenue'][number]; since?: string } | null>(null);
+
+  const row = (l: ReturnType<typeof profitAndLoss>['revenue'][number], since?: string) => (
+    <tr key={l.code} onClick={() => setOpen({ line: l, since })} style={{ cursor: 'pointer' }} title="See the postings behind this">
+      <td>{l.name}</td>
+      <td className="num">{money(l.amount)}</td>
+    </tr>
+  );
+
   return (
     <>
+      {open && (
+        <AccountDetail
+          line={open.line}
+          since={open.since}
+          until={to}
+          lines={lines}
+          entries={entries}
+          money={money}
+          settings={settings}
+          onClose={() => setOpen(null)}
+        />
+      )}
+
       <Card title={`Profit and loss · ${from} to ${to}`} pad>
         {pl.revenue.length === 0 && pl.expenses.length === 0 ? (
           <Empty title="Nothing in this period">Close a shift, or widen the dates.</Empty>
@@ -302,15 +345,11 @@ function Statements({
             <table className="data">
               <tbody>
                 <tr><td colSpan={2} style={{ fontWeight: 650 }}>Income</td></tr>
-                {pl.revenue.map((l) => (
-                  <tr key={l.code}><td>{l.name}</td><td className="num">{money(l.amount)}</td></tr>
-                ))}
+                {pl.revenue.map((l) => row(l, from))}
                 <tr><td style={{ fontWeight: 600 }}>Total income</td><td className="num" style={{ fontWeight: 600 }}>{money(pl.totalRevenue)}</td></tr>
 
                 <tr><td colSpan={2} style={{ fontWeight: 650, paddingTop: '1rem' }}>Costs</td></tr>
-                {pl.expenses.map((l) => (
-                  <tr key={l.code}><td>{l.name}</td><td className="num">{money(l.amount)}</td></tr>
-                ))}
+                {pl.expenses.map((l) => row(l, from))}
                 <tr><td style={{ fontWeight: 600 }}>Total costs</td><td className="num" style={{ fontWeight: 600 }}>{money(pl.totalExpenses)}</td></tr>
 
                 <tr>
@@ -324,7 +363,7 @@ function Statements({
           </div>
         )}
         <p className="small dim" style={{ marginBottom: 0 }}>
-          Profit is not cash. Money can be owed to you and still be earned, and spent without being a cost yet.
+          Press any line to see the postings behind it. Profit is not cash: money can be owed to you and still be earned, and spent without being a cost yet.
         </p>
       </Card>
 
@@ -343,21 +382,15 @@ function Statements({
           <table className="data">
             <tbody>
               <tr><td colSpan={2} style={{ fontWeight: 650 }}>What the business owns</td></tr>
-              {bs.assets.map((l) => (
-                <tr key={l.code}><td>{l.name}</td><td className="num">{money(l.amount)}</td></tr>
-              ))}
+              {bs.assets.map((l) => row(l))}
               <tr><td style={{ fontWeight: 600 }}>Total</td><td className="num" style={{ fontWeight: 600 }}>{money(bs.totalAssets)}</td></tr>
 
               <tr><td colSpan={2} style={{ fontWeight: 650, paddingTop: '1rem' }}>What it owes</td></tr>
-              {bs.liabilities.map((l) => (
-                <tr key={l.code}><td>{l.name}</td><td className="num">{money(l.amount)}</td></tr>
-              ))}
+              {bs.liabilities.map((l) => row(l))}
               <tr><td style={{ fontWeight: 600 }}>Total</td><td className="num" style={{ fontWeight: 600 }}>{money(bs.totalLiabilities)}</td></tr>
 
               <tr><td colSpan={2} style={{ fontWeight: 650, paddingTop: '1rem' }}>The owner&apos;s share</td></tr>
-              {bs.equity.map((l) => (
-                <tr key={l.code}><td>{l.name}</td><td className="num">{money(l.amount)}</td></tr>
-              ))}
+              {bs.equity.map((l) => row(l))}
               {/* Profit that has never been moved into equity, which is every
                   set of books that has not closed a year. Left out, the sheet
                   is short by exactly the trading and looks broken. */}
@@ -1550,5 +1583,113 @@ function Locks({
         )}
       </Card>
     </>
+  );
+}
+
+/* ------------------------------------------------ what a figure is made of */
+
+/**
+ * The postings behind one line on a statement.
+ *
+ * Opened by pressing the figure, because that is the moment somebody wants it:
+ * "Supplies four thousand one hundred and eighty" is a question, and sending
+ * them off to the journal to filter it themselves is how a set of accounts
+ * becomes something people nod at rather than read.
+ *
+ * The running total is the point of the list. Reading down it, the figure at
+ * the bottom is the figure that was pressed — which is the proof that this
+ * really is what makes it up, rather than a list of things that look related.
+ */
+function AccountDetail({
+  line, since, until, lines, entries, money, settings, onClose,
+}: {
+  line: { code: string; name: string; type: string; amount: number };
+  /** Set for a profit and loss line, absent for a balance sheet one. */
+  since?: string;
+  until: string;
+  lines: (JournalLine & { date: string })[];
+  entries: JournalEntry[];
+  money: (n: number) => string;
+  settings: Settings | null;
+  onClose: () => void;
+}) {
+  const entryOf = new Map(entries.map((e) => [e.$id, e]));
+  // The same direction the statement shows it in. An expense of 4,180 reads as
+  // 4,180 here too, not as a column of debits somebody has to interpret.
+  const debitNormal = line.type === 'asset' || line.type === 'expense';
+
+  const rows = useMemo(() => {
+    const mine = lines
+      .filter((l) => l.account_code === line.code)
+      .filter((l) => (since ? (l.date ?? '') >= since : true))
+      .filter((l) => (l.date ?? '') <= `${until}￿`)
+      .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''));
+
+    let running = 0;
+    return mine.map((l) => {
+      const amount = debitNormal ? (l.debit ?? 0) - (l.credit ?? 0) : (l.credit ?? 0) - (l.debit ?? 0);
+      running += amount;
+      return { line: l, entry: entryOf.get(l.entry_id), amount, running };
+    });
+  }, [lines, line.code, since, until, debitNormal]);
+
+  return (
+    <Modal title={`${line.name} · ${money(line.amount)}`} wide onClose={onClose} footer={<Button onClick={onClose}>Close</Button>}>
+      <p className="small dim" style={{ marginTop: 0 }}>
+        {since
+          ? `Everything posted to ${line.code} between ${since} and ${until}.`
+          : `Everything posted to ${line.code} up to ${until}, from the beginning.`}
+      </p>
+
+      {rows.length === 0 ? (
+        <Empty title="Nothing posted here">This account has no postings in that window.</Empty>
+      ) : (
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Date</th><th>What for</th><th>Source</th>
+                <th className="num">Amount</th><th className="num">Running</th><th>Receipt</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ line: l, entry, amount, running }) => (
+                <tr key={l.$id}>
+                  <td className="dim small">{(l.date ?? '').slice(0, 10)}</td>
+                  <td>
+                    {entry?.memo || l.memo || '-'}
+                    {l.memo && entry?.memo && l.memo !== entry.memo && (
+                      <div className="small dim">{l.memo}</div>
+                    )}
+                  </td>
+                  <td className="dim small">{(entry?.source ?? '').replace('_', ' ')}</td>
+                  <td className="num">{money(amount)}</td>
+                  {/* Reading down, the last figure here is the one that was
+                      pressed. That is the proof this is what makes it up. */}
+                  <td className="num dim">{money(running)}</td>
+                  <td>
+                    {entry?.receipt_file_id && (
+                      <a
+                        href={downloadUrl(entry.receipt_file_id, 'receipt', settings)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="small"
+                      >
+                        View
+                      </a>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              <tr>
+                <td colSpan={3} style={{ fontWeight: 650 }}>Total</td>
+                <td className="num" style={{ fontWeight: 650 }}>{money(line.amount)}</td>
+                <td colSpan={2} />
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Modal>
   );
 }
