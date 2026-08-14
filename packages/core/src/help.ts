@@ -432,8 +432,8 @@ export const HELP_ARTICLES: HelpArticle[] = [
       p('Each one shows a total, and underneath it, how that total compares with the period before. Everything on this page is built around that second line, because a total on its own cannot tell you whether it was a good week.'),
       list(
         'Revenue, money from bills that were actually settled. An order sitting unpaid is not counted, because it is not money yet.',
-        'Costs, expenses recorded in this period: the market run, the gas, the repair. Only what somebody entered. Money that left the building without being recorded cannot appear here.',
-        'Kept, revenue minus costs. What the business held on to. It is not profit in the accountant\'s sense: rent, wages and anything else you have not recorded as an expense are not in it.',
+        'Costs, expenses recorded in this period: the market run, the gas, the repair. Only what somebody entered. Money that left the building without being recorded cannot appear here. By default this is every expense, but an admin can choose which accounts it adds up — use "Choose accounts" under the four figures to leave out things like rent or equipment that do not move with how much you sold.',
+        'Kept, revenue minus costs. What the business held on to. It is not profit in the accountant\'s sense: anything you have not recorded as an expense is not in it, and neither is anything you have chosen to leave out of Costs. The profit and loss under Accounting is the figure that counts everything.',
         'Average order, revenue divided by the number of bills. The quickest early warning there is: takings can hold steady while this quietly falls, which means more people spending less each.',
       ),
       note('Every comparison is against the SAME LENGTH of time immediately before, the 30 days before your 30 days. Not "last month". Comparing 30 days with a 31-day month reports the extra day as growth.'),

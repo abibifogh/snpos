@@ -322,6 +322,18 @@ export const COLLECTIONS = [
       /** What the shop keeps by default, in basis points. 3000 = 30%. */
       ['default_commission_bp', 'i', null, false, 3000],
       ['low_stock_default_bp', 'i', null, true, 3000],
+      /**
+       * Which accounts add up to "Costs" on the reports dashboard.
+       *
+       * A comma-separated list of account codes. Empty — which is what every
+       * existing venue has — means every expense counts, which is what the
+       * figure did before this setting existed. A new setting must never
+       * silently rewrite last month's dashboard.
+       *
+       * Optional, for the reason set out on menu_items: a field that arrives
+       * after the rows do can never be required.
+       */
+      ['cost_account_codes', 's', 2000, false],
       // How the shift-end stock check asks its question.
       //
       // 'levels', a cook taps OK, Low or Out. Fast, and honest about being a

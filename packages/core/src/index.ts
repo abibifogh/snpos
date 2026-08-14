@@ -30,3 +30,4 @@ export * from './offline';
 export * from './reportdoc';
 export * from './seating';
 export * from './expense-rules';
+export * from './cost-accounts';

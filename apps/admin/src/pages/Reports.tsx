@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Notice, Spinner, Badge, Input, Field } from '@snpos/ui';
-import { listAll, humanError } from '../lib';
+import { Button, Card, Empty, Modal, Notice, Spinner, Badge, Input, Field, useToast } from '@snpos/ui';
+import { listAll, humanError, db, DB_ID } from '../lib';
 import {
   formatMoney, axisMoney, trialBalance, buildReportHtml, openPrintable, downloadUrl,
   toCsv, downloadCsv,
+  parseCostAccounts, serialiseCostAccounts, startingCostChoice, hasCostChoice, splitCosts, costCodeFor,
 } from '@snpos/core';
 import type { Order, OrderItem, Doc, TrialBalanceRow } from '@snpos/core';
 import { useSession } from '../session';
@@ -12,8 +13,9 @@ import { Insights } from '../components/Insights';
 
 interface Payment extends Doc { order_id: string; method_id: string; method_kind_snapshot: string; amount: number; tip: number; shift_id: string }
 interface PaymentMethod extends Doc { name: string }
-interface Expense extends Doc { amount: number; category: string; module?: 'kitchen' | 'craft' }
-interface AccountRow extends Doc { code: string; name: string; type: string }
+interface Expense extends Doc { amount: number; category: string; category_key?: string; module?: 'kitchen' | 'craft' }
+interface AccountRow extends Doc { code: string; name: string; type: string; active?: boolean }
+interface ExpenseCategoryRow extends Doc { key: string; name: string; account_code?: string }
 interface Receipt extends Doc {
   to_email?: string;
   status: 'queued' | 'sent' | 'failed' | 'skipped' | 'bounced';
@@ -33,7 +35,11 @@ const todayStr = () => new Date().toLocaleDateString('en-CA');
 const daysAgoStr = (n: number) => new Date(Date.now() - n * 86400_000).toLocaleDateString('en-CA');
 
 export function ReportsPage() {
-  const { settings, profile } = useSession();
+  const { settings, profile, refreshSettings } = useSession();
+  const toast = useToast();
+  // A manager may read the reports; what the headline figure is made of is the
+  // owner's decision, not something to change from a screen you are reviewing.
+  const isAdmin = profile?.role === 'admin';
   const [from, setFrom] = useState(daysAgoStr(30));
   const [to, setTo] = useState(todayStr());
   const [orders, setOrders] = useState<Order[] | null>(null);
@@ -42,6 +48,8 @@ export function ReportsPage() {
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
+  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategoryRow[]>([]);
+  const [pickingCosts, setPickingCosts] = useState(false);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [tb, setTb] = useState<{ rows: TrialBalanceRow[]; balanced: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +59,7 @@ export function ReportsPage() {
 
   useEffect(() => {
     (async () => {
-      const [o, i, p, m, e, a, r] = await Promise.all([
+      const [o, i, p, m, e, a, r, ec] = await Promise.all([
         listAll<Order>('orders'),
         listAll<OrderItem>('order_items'),
         listAll<Payment>('payments'),
@@ -59,9 +67,12 @@ export function ReportsPage() {
         listAll<Expense>('shift_expenses'),
         listAll<AccountRow>('accounts'),
         listAll<Receipt>('receipts'),
+        // An expense names a category; the category names the account. Costs
+        // are chosen by account, so the middle step has to be here too.
+        listAll<ExpenseCategoryRow>('expense_categories').catch(() => [] as ExpenseCategoryRow[]),
       ]);
       setOrders(o); setItems(i); setPayments(p); setMethods(m); setExpenses(e); setAccounts(a);
-      setReceipts(r);
+      setReceipts(r); setExpenseCategories(ec);
       setTb(await trialBalance('main').catch(() => null));
     })().catch((err) => setError(humanError(err)));
   }, []);
@@ -141,9 +152,62 @@ export function ReportsPage() {
       .map((o) => ({ at: o.$createdAt, amount: o.total, covers: o.guest_count || 1 })),
     [orders],
   );
+  /**
+   * Which accounts the house counts as Costs.
+   *
+   * Nothing chosen means all of them, which is what this figure did before it
+   * was a choice. See hasCostChoice.
+   */
+  const costCodes = useMemo(
+    () => parseCostAccounts(settings?.cost_account_codes),
+    [settings?.cost_account_codes],
+  );
+
+  /** Every expense with the account it lands on, worked out once. */
+  const costed = useMemo(
+    () => expenses.map((e) => ({ ...e, code: costCodeFor(e, expenseCategories) })),
+    [expenses, expenseCategories],
+  );
+
   const insightCost = useMemo(
-    () => expenses.map((e) => ({ at: e.$createdAt, amount: e.amount })),
-    [expenses],
+    () => costed
+      .filter((e) => costCodes.length === 0 || costCodes.includes(e.code))
+      .map((e) => ({ at: e.$createdAt, amount: e.amount })),
+    [costed, costCodes],
+  );
+
+  /**
+   * What the choice leaves out of the visible period.
+   *
+   * Shown on the page, not just subtracted. A headline that quietly excludes
+   * money is one somebody eventually compares against the bank and cannot
+   * explain, and the explanation is a setting three screens away that they may
+   * not have made themselves.
+   */
+  /**
+   * Spent per account in the visible period, for the picker.
+   *
+   * The whole reason the picker lives on this page: "should rent be in cost of
+   * sales" is an abstract question, and "should this GH₵2,400 be in the figure
+   * I am reading" is one somebody can actually answer.
+   */
+  const spentByCode = useMemo(() => {
+    const acc = new Map<string, number>();
+    for (const e of costed) {
+      if (!inRange(e.$createdAt) || !onSide(e, mine)) continue;
+      acc.set(e.code, (acc.get(e.code) ?? 0) + e.amount);
+    }
+    return acc;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [costed, since, until, mine]);
+
+  const costSplit = useMemo(
+    () => splitCosts(
+      costed.filter((e) => inRange(e.$createdAt) && onSide(e, mine)),
+      costCodes,
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [costed, costCodes, since, until, mine],
   );
 
   const accountName = (code: string) => accounts.find((a) => a.code === code)?.name ?? code;
@@ -179,7 +243,18 @@ export function ReportsPage() {
           note: gross ? `${((discounts / gross) * 100).toFixed(1)}% of gross` : undefined,
         },
         { label: 'Tips', value: money(tips) },
-        { label: 'Expenses', value: money(spend) },
+        // Both, and named apart. Expenses is every pesewa that left; Costs is
+        // the part the house counts against trading. A report showing one
+        // figure that is quietly the other is how a printed page and a screen
+        // end up disagreeing.
+        { label: 'Expenses', value: money(spend), note: 'everything recorded' },
+        ...(hasCostChoice(costCodes)
+          ? [{
+            label: 'Costs',
+            value: money(costSplit.counted),
+            note: `${costCodes.length} account${costCodes.length === 1 ? '' : 's'} counted`,
+          }]
+          : []),
       ],
       tables: [
         {
@@ -225,6 +300,7 @@ export function ReportsPage() {
       ['Discounts', (discounts / 100).toFixed(2)],
       ['Tips', (tips / 100).toFixed(2)],
       ['Expenses', (spend / 100).toFixed(2)],
+      ...(hasCostChoice(costCodes) ? [['Costs', (costSplit.counted / 100).toFixed(2)]] : []),
       [],
       ['Payment method', 'Taken'],
       ...byMethod.map(([id, v]) => [methodName(id), (v / 100).toFixed(2)]),
@@ -293,6 +369,37 @@ export function ReportsPage() {
             money={money}
             tickMoney={tickMoney}
           />
+
+          {/*
+            What Costs is made of, next to the figure it explains.
+
+            Deliberately not buried in Settings. Somebody querying this number
+            is looking at it right now, and the answer to "why is that so low"
+            should be within reach of the thing that raised the question.
+          */}
+          <Card>
+            <div className="spread" style={{ alignItems: 'flex-start', gap: '0.8rem' }}>
+              <div style={{ minWidth: 0 }}>
+                <strong>Costs counts {hasCostChoice(costCodes) ? `${costCodes.length} account${costCodes.length === 1 ? '' : 's'}` : 'every expense'}.</strong>
+                <div className="small dim" style={{ marginTop: '0.2rem', maxWidth: '44rem' }}>
+                  {hasCostChoice(costCodes)
+                    ? costCodes.map(accountName).join(', ')
+                    : 'Rent, equipment and the owner’s drawings are in there with the market run. '
+                      + 'Choose the accounts that move with how much you sold, and the comparison against last month starts meaning something.'}
+                </div>
+                {costSplit.excludedCount > 0 && (
+                  <div className="small" style={{ marginTop: '0.4rem', color: 'var(--warn)' }}>
+                    {money(costSplit.excluded)} of recorded spending is left out of Costs this period
+                    {' '}({costSplit.excludedCount} expense{costSplit.excludedCount === 1 ? '' : 's'}):
+                    {' '}{costSplit.excludedByCode.slice(0, 4).map((x) => `${accountName(x.code)} ${money(x.amount)}`).join(', ')}
+                    {costSplit.excludedByCode.length > 4 && `, and ${costSplit.excludedByCode.length - 4} more`}.
+                    {' '}It is still on the profit and loss.
+                  </div>
+                )}
+              </div>
+              {isAdmin && <Button onClick={() => setPickingCosts(true)}>Choose accounts</Button>}
+            </div>
+          </Card>
 
           <div className="grid-2">
             <Card title="Discounts given"><p style={{ margin: 0, fontSize: '1.7rem', fontWeight: 650 }}>{money(discounts)}</p><span className="dim small">{sales ? ((discounts / (sales + discounts)) * 100).toFixed(1) : '0'}% of gross</span></Card>
@@ -387,7 +494,161 @@ export function ReportsPage() {
       </Card>
 
       <EmailPanel receipts={receipts} />
+
+      {pickingCosts && (
+        <CostAccountPicker
+          accounts={accounts}
+          chosen={costCodes}
+          spentByCode={spentByCode}
+          money={money}
+          onClose={() => setPickingCosts(false)}
+          onSave={async (codes) => {
+            if (!settings) return;
+            await db.updateDocument(DB_ID, 'settings', settings.$id, {
+              cost_account_codes: serialiseCostAccounts(codes),
+            });
+            // Pulled back through the session rather than left for a reload:
+            // the whole point of choosing here is to see the figure change.
+            await refreshSettings();
+            setPickingCosts(false);
+            toast('Saved');
+          }}
+        />
+      )}
     </>
+  );
+}
+
+/**
+ * Choosing what Costs is made of.
+ *
+ * Every expense account, with what has actually been spent on each in the
+ * period being looked at. That column is the point of doing this here rather
+ * than in a settings screen: "should rent be in my cost of sales" is an
+ * abstract question, and "should this GH₵2,400 be in the figure I am reading"
+ * is one somebody can answer.
+ *
+ * Only expense accounts are offered. Costs is a figure about spending, and
+ * offering the cash account as something to add to it is offering a way to
+ * produce a number that means nothing.
+ */
+function CostAccountPicker({
+  accounts, chosen, spentByCode, money, onClose, onSave,
+}: {
+  accounts: AccountRow[];
+  chosen: string[];
+  spentByCode: Map<string, number>;
+  money: (n: number) => string;
+  onClose: () => void;
+  onSave: (codes: string[]) => Promise<void>;
+}) {
+  const options = useMemo(
+    () => accounts
+      .filter((a) => a.type === 'expense')
+      .sort((a, b) => a.code.localeCompare(b.code)),
+    [accounts],
+  );
+  const allCodes = useMemo(() => options.map((a) => a.code), [options]);
+
+  // Everything ticked when nobody has chosen yet, because that is what the
+  // figure has been showing. An admin who came to remove rent should find rent
+  // ticked and untick it, not rebuild their own books from an empty list.
+  const [picked, setPicked] = useState<string[]>(() => startingCostChoice(allCodes, chosen));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggle = (code: string) =>
+    setPicked((p) => (p.includes(code) ? p.filter((c) => c !== code) : [...p, code]));
+
+  const total = picked.reduce((s, c) => s + (spentByCode.get(c) ?? 0), 0);
+  const left = allCodes.filter((c) => !picked.includes(c)).reduce((s, c) => s + (spentByCode.get(c) ?? 0), 0);
+
+  const save = async () => {
+    /*
+      Everything ticked is stored as no choice at all.
+
+      The two mean the same thing today, and they stop meaning the same thing
+      the moment somebody adds an account: a stored list would leave the new
+      account silently outside Costs, while "no choice" keeps counting
+      everything, which is what the person who ticked every box meant.
+    */
+    const codes = picked.length === allCodes.length ? [] : picked;
+    if (picked.length === 0) {
+      setError('Tick at least one account, or Costs would always read zero.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await onSave(codes);
+    } catch (e) {
+      setError(humanError(e));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="What counts as Costs?"
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={save} loading={busy}>Save</Button>
+        </>
+      }
+    >
+      {error && <div style={{ marginBottom: '0.8rem' }}><Notice>{error}</Notice></div>}
+
+      <p className="small dim" style={{ marginTop: 0 }}>
+        Tick the accounts that should add up to the Costs figure. The amounts are what you actually spent on each in
+        the dates you are looking at. Everything you leave out stays on the profit and loss; it just stops being part
+        of this one headline.
+      </p>
+
+      <div className="row" style={{ gap: '0.4rem', marginBottom: '0.6rem' }}>
+        <Button size="sm" onClick={() => setPicked(allCodes)}>Tick all</Button>
+        <Button size="sm" onClick={() => setPicked([])}>Untick all</Button>
+      </div>
+
+      {options.length === 0 ? (
+        <Notice>There are no expense accounts yet. Add them under Expenses → Accounts.</Notice>
+      ) : (
+        <div style={{ maxHeight: '46vh', overflowY: 'auto' }}>
+          {options.map((a) => (
+            <label
+              key={a.code}
+              className="check-row"
+              style={{
+                display: 'flex', justifyContent: 'space-between', gap: '0.6rem',
+                padding: '0.45rem 0', borderBottom: '1px solid var(--border)',
+              }}
+            >
+              <span style={{ minWidth: 0 }}>
+                <input type="checkbox" checked={picked.includes(a.code)} onChange={() => toggle(a.code)} />{' '}
+                {a.name}
+                <span className="dim small"> · {a.code}</span>
+                {a.active === false && <Badge tone="warn"> archived</Badge>}
+              </span>
+              <span className={spentByCode.get(a.code) ? undefined : 'dim'}>
+                {money(spentByCode.get(a.code) ?? 0)}
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+
+      <div className="spread" style={{ marginTop: '0.8rem', fontWeight: 600 }}>
+        <span>Costs would read</span>
+        <span>{money(total)}</span>
+      </div>
+      {left > 0 && (
+        <div className="spread small dim">
+          <span>Left out, still on the profit and loss</span>
+          <span>{money(left)}</span>
+        </div>
+      )}
+    </Modal>
   );
 }
 

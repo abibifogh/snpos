@@ -35,6 +35,8 @@ export interface Settings extends Doc {
   order_number_reset_on?: string;
   tips_enabled?: boolean;
   low_stock_default_bp: number;
+  /** Account codes counted as Costs. Empty or absent means all of them. */
+  cost_account_codes?: string;
   /** Which screens ask for a tip. `tips_enabled: false` overrides all of them. */
   tips_ask_on?: 'both' | 'till' | 'kitchen' | 'none';
   /** How the shift-end check asks: tap a level, or type what is there. */
