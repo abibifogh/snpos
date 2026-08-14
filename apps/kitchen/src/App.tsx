@@ -543,7 +543,19 @@ export function App() {
    * the bill is settled, and conflating the two would make one of them a lie.
    */
   const collect = (o: Order) =>
-    patch(o, { status: 'SERVED', served_at: new Date().toISOString() });
+    patch(o, {
+      status: 'SERVED',
+      served_at: new Date().toISOString(),
+      /**
+       * A bill that came to nothing is settled by being handed over.
+       *
+       * Nothing is owed and nothing ever will be, so leaving it marked unpaid
+       * makes it look like money still to come — on the shift close, on the
+       * reports, and to whoever is asked about it a week later. No payment is
+       * recorded, because none happened; only the bill is closed.
+       */
+      ...((o.total ?? 0) <= 0 ? { payment_status: 'paid' as const } : {}),
+    });
 
   /** Release a booked order to the pass now, ahead of its time. */
   const fireNow = (o: Order) =>

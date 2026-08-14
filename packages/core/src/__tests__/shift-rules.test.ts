@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit, mustWaitForNextShift, shouldWarnLateOrder,
   SHIFT_MAX_HOURS, SHIFT_WARN_HOURS,
-  shiftAgeOf, openShiftsFor,
+  shiftAgeOf, openShiftsFor, blockerFor,
 } from '../shift-rules.ts';
 
 const at = (iso: string) => new Date(iso);
@@ -249,4 +249,28 @@ test('a shift from before the two sides existed is the restaurant', () => {
 
 test('nothing open is an empty list, not a crash', () => {
   assert.deepEqual(openShiftsFor([], 'kitchen'), []);
+});
+
+test('a bill that comes to nothing does not hold a shift open', () => {
+  /**
+   * A staff meal, a comp, a mistake put right with a full discount. Nothing is
+   * owed and nothing ever will be, so nobody is coming to pay it. Held as a
+   * blocker, the only way to close is to close over the warning — and a
+   * warning people are taught to ignore is worse than no warning at all.
+   */
+  assert.equal(blockerFor({ status: 'SERVED', payment_status: 'unpaid', total: 0 }), null);
+  assert.equal(blockerFor({ status: 'SERVED', payment_status: 'paid', total: 0 }), null);
+
+  // Still on the pass is still a reason, whatever it costs.
+  assert.equal(blockerFor({ status: 'READY', payment_status: 'unpaid', total: 0 }), 'uncollected');
+
+  // And a real bill nobody has paid is exactly what this is for.
+  assert.equal(blockerFor({ status: 'SERVED', payment_status: 'unpaid', total: 5000 }), 'unpaid');
+  assert.equal(blockerFor({ status: 'READY', payment_status: 'paid', total: 5000 }), 'uncollected');
+  assert.equal(blockerFor({ status: 'SERVED', payment_status: 'paid', total: 5000 }), null);
+});
+
+test('a part paid bill still holds the shift', () => {
+  // Part of the money is not the money.
+  assert.equal(blockerFor({ status: 'SERVED', payment_status: 'partial', total: 5000 }), 'unpaid');
 });

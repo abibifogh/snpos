@@ -287,3 +287,26 @@ export function mustWaitForNextShift(
  * most of the accounting value was in the first place.
  */
 export const shouldWarnLateOrder = mustWaitForNextShift;
+
+/**
+ * Why one order holds a shift open, if it does.
+ *
+ * The rule itself, with nothing behind it, so it can be checked without a
+ * database. `shiftBlockers` does the reading and asks this the question.
+ *
+ * A bill that comes to nothing is not an unpaid bill. A staff meal, a comp, a
+ * mistake put right with a full discount: nothing is owed and nothing ever
+ * will be, so nobody is coming to pay it. Held open over it, the only way to
+ * close is to close over the warning — and a warning people are taught to
+ * ignore is worse than no warning at all.
+ */
+export function blockerFor(order: {
+  status: string;
+  payment_status?: string;
+  total?: number;
+}): 'unpaid' | 'uncollected' | null {
+  const owesNothing = (order.total ?? 0) <= 0;
+  if (!owesNothing && order.payment_status !== 'paid') return 'unpaid';
+  if (order.status !== 'SERVED') return 'uncollected';
+  return null;
+}

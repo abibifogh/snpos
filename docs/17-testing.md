@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck (apps AND tests), tests, schema check, build. Before deploying.
 ```
 
-153 tests, no database, about half a second. They cover the sums that decide what
+155 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -247,7 +247,10 @@ Run these every time. The restaurant is the part that is already earning.
 | F21 | Press it | Goes off the pass. **No payment recorded**, nothing added to takings |
 | F22 | Open the payment box on such an order | Says **Nothing to pay**. No method, no amount, no tip asked |
 | F23 | The same order at the till | Settles without asking for a figure |
-| F24 | Close the shift after F21 | Not blocked, and the takings are unchanged |
+| F24 | Close the shift after F21 | **Not blocked**, and the takings are unchanged |
+| F25 | A comped order already stuck from before this | Also stops blocking. Judged on the total, not a flag |
+| F26 | A comped order still on the pass | **Does** block, as uncollected. Nothing to do with money |
+| F27 | A real unpaid bill | Blocks, as it always did |
 | F3i | Sleep the kitchen tablet an hour, wake it, let a ticket go late | **It rings.** The sound comes back with the screen |
 | F3j | Wake it and look before any order is late | Either no banner, or a red bar offering to turn sound back on |
 | F3k | Press that bar | Bar goes. Test the late sound from settings and it plays |

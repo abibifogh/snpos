@@ -5,7 +5,7 @@ import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from
 import { postShift } from './ledger';
 import { featureConfig, isEnabled, type FeatureMap } from './features';
 import type { Module } from './access';
-import { shiftAge, shiftCode, mustWaitForNextShift, openShiftsFor, SHIFT_MAX_HOURS } from './shift-rules';
+import { shiftAge, shiftCode, mustWaitForNextShift, openShiftsFor, blockerFor, SHIFT_MAX_HOURS } from './shift-rules';
 
 export * from './shift-rules';
 
@@ -329,8 +329,10 @@ export async function shiftBlockers(
      * not already ended.
      */
     if (mustWaitForNextShift(o, shift)) continue;
-    if (o.payment_status !== 'paid') blockers.push({ order: o, reason: 'unpaid' });
-    else if (o.status !== 'SERVED') blockers.push({ order: o, reason: 'uncollected' });
+    // The rule itself is in shift-rules, so it can be checked without a
+    // database. This does the reading and asks it the question.
+    const reason = blockerFor(o);
+    if (reason) blockers.push({ order: o, reason });
   }
   return blockers;
 }
