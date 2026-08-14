@@ -319,3 +319,52 @@ function previousMonth(month: string): string {
   const [y, m] = month.split('-').map(Number);
   return m <= 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
 }
+
+/* ------------------------------------------------------- reconciliation */
+
+export interface RecLine {
+  line_id: string;
+  date: string;
+  memo: string;
+  /** Positive into the account, negative out of it. */
+  amount: number;
+  cleared: boolean;
+}
+
+export interface RecSummary {
+  /** The account's own balance, everything up to the statement date. */
+  perBooks: number;
+  /** What has been ticked off as also seen by the bank. */
+  cleared: number;
+  /** Posted, but the bank has not seen it yet. */
+  outstanding: number;
+  /** What the statement says was there. */
+  perStatement: number;
+  /**
+   * What is still unexplained.
+   *
+   * Nought means the two agree: every posting the bank has seen is ticked, and
+   * everything left over is genuinely still in transit. Anything else is a
+   * transaction one side has and the other does not, and it is the whole point
+   * of doing this — the difference is not an error to be written off, it is a
+   * pointer at the thing that is missing.
+   */
+  difference: number;
+  agreed: boolean;
+}
+
+/**
+ * Where a reconciliation stands.
+ *
+ * Cleared postings are what the bank has also seen. The statement's closing
+ * balance should equal them, because both sides are then describing the same
+ * set of transactions. What is left over is outstanding — written by the
+ * business, not yet processed by the bank — and it is not part of the check.
+ */
+export function reconcile(lines: RecLine[], perStatement: number): RecSummary {
+  const perBooks = lines.reduce((s, l) => s + l.amount, 0);
+  const cleared = lines.filter((l) => l.cleared).reduce((s, l) => s + l.amount, 0);
+  const outstanding = perBooks - cleared;
+  const difference = perStatement - cleared;
+  return { perBooks, cleared, outstanding, perStatement, difference, agreed: difference === 0 };
+}

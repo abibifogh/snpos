@@ -133,7 +133,7 @@ export interface ShiftPosting {
   discounts: number;
   cogs: number;
   cashVariance: number;
-  expenses: { amount: number; accountCode: string }[];
+  expenses: { amount: number; accountCode: string; expenseId?: string }[];
 }
 
 /**
@@ -178,13 +178,29 @@ export async function postShift(p: ShiftPosting): Promise<string[]> {
     posted.push(entry.$id);
   }
 
-  // --- money paid out during the shift
+  /**
+   * Money paid out during the shift.
+   *
+   * Each one posted by id rather than as a batch, and skipped if it is already
+   * on the books. Expenses used to reach the ledger only here, at shift close,
+   * which meant one recorded outside a shift — from the admin form, or after
+   * the till had been closed for the night — never reached it at all. The
+   * books were short by every one of those, and nothing said so.
+   *
+   * They now post themselves the moment they are recorded, so most are already
+   * there by the time a shift closes. This stays as the net under that: an
+   * expense whose own posting failed still lands, and one that landed is not
+   * counted twice.
+   */
   for (const e of p.expenses.filter((x) => x.amount > 0)) {
-    const entry = await postEntry(p.venueId, { ...common, memo: 'Shift expense' }, [
-      { account_code: e.accountCode, debit: e.amount, credit: 0 },
-      { account_code: ACCOUNTS.cash, debit: 0, credit: e.amount },
-    ]);
-    posted.push(entry.$id);
+    const id = await postExpense(p.venueId, {
+      expenseId: e.expenseId,
+      amount: e.amount,
+      accountCode: e.accountCode,
+      postedBy: p.postedBy,
+      shiftId: p.shiftId,
+    });
+    if (id) posted.push(id);
   }
 
   // --- the drawer being over or short is itself a cost, and belongs on record
@@ -430,4 +446,154 @@ function endOfMonth(month: string): Date {
   // Day 0 of the next month is the last day of this one, which is also how
   // February gets its length right without anybody writing it down.
   return new Date(Date.UTC(y, m, 0, 23, 59, 59));
+}
+
+/* ------------------------------------------------- money out, wherever it was */
+
+/**
+ * Put one expense on the books, once.
+ *
+ * Expenses reached the ledger only at shift close, so one recorded outside a
+ * shift — from the admin form, or after the till had been shut for the night —
+ * never reached it at all. Those are real money that really left, and the
+ * books were short by every one of them with nothing to say so.
+ *
+ * Keyed by the expense's own id, and refused if that id is already posted. The
+ * key is what makes this safe to call from everywhere it should be called
+ * from: the till form, the admin form, and the shift close that used to be the
+ * only one. Calling it twice does nothing the second time, which is the
+ * property that lets all three exist without anybody having to reason about
+ * which of them got there first.
+ *
+ * Returns the entry id when it posted, and null when there was nothing to do.
+ */
+export async function postExpense(
+  venueId: string,
+  e: { expenseId?: string; amount: number; accountCode: string; postedBy: string; shiftId?: string; date?: Date },
+): Promise<string | null> {
+  if (!e.amount || e.amount <= 0) return null;
+
+  const key = e.expenseId ? `expense:${e.expenseId}` : '';
+  if (key) {
+    const already = await db.listDocuments(DB_ID, 'journal_entries', [
+      Query.equal('venue_id', venueId),
+      Query.equal('source_id', key),
+      Query.limit(1),
+    ]).catch(() => ({ total: 0 }));
+    if (already.total > 0) return null;
+  }
+
+  const entry = await postEntry(
+    venueId,
+    {
+      date: e.date,
+      source: 'expense',
+      sourceId: key || undefined,
+      shiftId: e.shiftId,
+      memo: 'Money paid out',
+      postedBy: e.postedBy,
+    },
+    [
+      { account_code: e.accountCode, debit: e.amount, credit: 0 },
+      // Out of the drawer. What it was paid FROM is on the expense; every
+      // method a business may pay an expense from is cash or a cash-like
+      // float, and none of them is a card the customer holds.
+      { account_code: ACCOUNTS.cash, debit: 0, credit: e.amount },
+    ],
+  );
+  return entry.$id;
+}
+
+/**
+ * Which account an expense's category points at.
+ *
+ * Shared so the till, the admin form and the shift close cannot disagree about
+ * where a taxi lands. Falls back to Other expenses rather than refusing: an
+ * expense filed imperfectly is a great deal better than an expense that would
+ * not save.
+ */
+export async function accountForExpense(e: { category_key?: string; category?: string }): Promise<string> {
+  const cats = await listAll<{ key: string; account_code?: string }>('expense_categories').catch(() => []);
+  return cats.find((c) => c.key === (e.category_key || e.category))?.account_code || '6090';
+}
+
+/* --------------------------------------------------------- editing an entry */
+
+/**
+ * Change an entry that has already been posted.
+ *
+ * Against the usual rule, and deliberately so. The usual rule is that a wrong
+ * entry is corrected by posting its opposite and both halves stay, because an
+ * auditor's question is not "what does it say" but "what did it say, and who
+ * changed it". That is right, and it is why `reverseEntry` still exists and is
+ * still the better answer on anything a third party has already seen.
+ *
+ * It is also why reversals double the length of a journal, and a journal
+ * nobody can read is its own kind of unreliable. For a business of this size
+ * the owner asked for the simpler thing, and the trade is theirs to make.
+ *
+ * What is not given up is the history. Every edit writes what the entry said
+ * before into the audit log, which this page cannot reach and the erase page
+ * never clears, so the old version survives somewhere an admin cannot quietly
+ * remove it from. Editing was worth allowing; QUIETLY editing was the part
+ * worth preventing.
+ *
+ * The lines are replaced rather than patched. An edit changes how many there
+ * are, and matching an old line to a new one is guesswork that gets the
+ * account wrong in exactly the case somebody was fixing.
+ */
+export async function editEntry(
+  entry: JournalEntry,
+  next: { date?: Date; memo: string; lines: PostingLine[] },
+  opts: { editedBy: string },
+): Promise<void> {
+  if (entry.reversed_by) throw new Error('That entry has been reversed. Edit the reversal, or post a fresh entry.');
+  const problem = entryProblem(next.lines);
+  if (problem) throw new Error(problem);
+
+  const before = await listAll<JournalLine>('journal_lines', [Query.equal('entry_id', entry.$id)]);
+
+  // Written first, so the old version is safe before anything is taken away.
+  // An audit trail that is written last is an audit trail that is missing for
+  // exactly the runs that failed half way.
+  await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
+    venue_id: entry.venue_id,
+    actor_id: opts.editedBy,
+    action: 'journal_edited',
+    entity_type: 'journal_entry',
+    entity_id: entry.$id,
+    before: JSON.stringify({
+      date: entry.date,
+      memo: entry.memo,
+      lines: before.map((l) => ({ account_code: l.account_code, debit: l.debit, credit: l.credit, memo: l.memo })),
+    }).slice(0, 4000),
+    after: JSON.stringify({
+      date: next.date?.toISOString() ?? entry.date,
+      memo: next.memo,
+      lines: next.lines,
+    }).slice(0, 4000),
+  });
+
+  const keep = next.lines.filter((l) => l.debit !== 0 || l.credit !== 0);
+  for (const l of keep) {
+    await db.createDocument(DB_ID, 'journal_lines', ID.unique(), {
+      venue_id: entry.venue_id,
+      entry_id: entry.$id,
+      account_code: l.account_code,
+      debit: l.debit,
+      credit: l.credit,
+      memo: l.memo ?? '',
+    });
+  }
+  // The old lines go only once the new ones are down. The other order leaves a
+  // window in which the entry exists with nothing on it, and anything reading
+  // the books in that window sees an unbalanced ledger.
+  for (const l of before) {
+    await db.deleteDocument(DB_ID, 'journal_lines', l.$id).catch(() => undefined);
+  }
+
+  await db.updateDocument(DB_ID, 'journal_entries', entry.$id, {
+    memo: next.memo,
+    ...(next.date ? { date: next.date.toISOString() } : {}),
+  });
 }

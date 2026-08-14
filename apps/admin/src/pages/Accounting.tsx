@@ -3,9 +3,9 @@ import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Text
 import { listAll, humanError, saveDropping } from '../lib';
 import {
   formatMoney, parseMoney, toInput, Query,
-  ledgerLines, loadAccounts, postManualEntry, reverseEntry, loadFixedAssets, postDepreciation,
+  ledgerLines, loadAccounts, postManualEntry, reverseEntry, editEntry, loadFixedAssets, postDepreciation,
   profitAndLoss, balanceSheet, totalsByAccount, naturalBalance, entryProblem, within,
-  bookValue, monthOf,
+  bookValue, monthOf, reconcile, db, DB_ID, ID,
 } from '@snpos/core';
 import type {
   AccountRow, JournalEntry, JournalLine, FixedAsset, LineRow, Doc,
@@ -27,7 +27,7 @@ import { AccountsManager } from '../components/AccountsManager';
  * sitting, and each of those is the same figures read a different way; putting
  * them behind separate navigation makes it feel like separate work.
  */
-type Tab = 'statements' | 'journal' | 'trial' | 'assets' | 'chart';
+type Tab = 'statements' | 'journal' | 'trial' | 'assets' | 'bank' | 'chart';
 
 /** A month back from today, as YYYY-MM-DD, for the default window. */
 const monthStart = (d = new Date()) => `${d.toISOString().slice(0, 7)}-01`;
@@ -127,6 +127,7 @@ export function AccountingPage() {
           ['journal', 'Journal'],
           ['trial', 'Trial balance'],
           ['assets', 'Fixed assets'],
+          ['bank', 'Reconcile'],
           ['chart', 'Chart of accounts'],
         ] as [Tab, string][]).map(([key, label]) => (
           <Button key={key} size="sm" variant={tab === key ? 'primary' : 'default'} onClick={() => setTab(key)}>
@@ -135,7 +136,7 @@ export function AccountingPage() {
         ))}
       </div>
 
-      {tab !== 'chart' && tab !== 'assets' && (
+      {tab !== 'chart' && tab !== 'assets' && tab !== 'bank' && (
         <Card pad>
           <div className="grid-2">
             <Field label="From" hint="The profit and loss covers these dates.">
@@ -221,6 +222,18 @@ export function AccountingPage() {
           onChanged={load}
           toast={toast}
           isOwner={profile?.role === 'admin'}
+        />
+      )}
+
+      {tab === 'bank' && (
+        <Reconcile
+          accounts={accounts}
+          lines={lines}
+          money={money}
+          decimals={decimals}
+          venueId={venueId}
+          userId={user?.$id ?? ''}
+          toast={toast}
         />
       )}
 
@@ -342,6 +355,14 @@ function Journal({
   toast: (m: string, t?: 'ok' | 'err') => void;
 }) {
   const [writing, setWriting] = useState(false);
+  /**
+   * The entry being changed, or null when this is a new one.
+   *
+   * Editing rather than reversing was asked for, and the same form does both:
+   * a correction is the same shape as the thing it corrects, and a second form
+   * would drift away from the first.
+   */
+  const [changing, setChanging] = useState<JournalEntry | null>(null);
   const [date, setDate] = useState(today());
   const [memo, setMemo] = useState('');
   const [draft, setDraft] = useState<DraftLine[]>([{ ...BLANK }, { ...BLANK }]);
@@ -368,6 +389,31 @@ function Journal({
   const setLine = (i: number, patch: Partial<DraftLine>) =>
     setDraft((rows) => rows.map((r, x) => (x === i ? { ...r, ...patch } : r)));
 
+  /** Load an entry into the form so it can be changed in place. */
+  const edit = (entry: JournalEntry) => {
+    const own = linesOf(entry.$id);
+    setChanging(entry);
+    setDate((entry.date ?? today()).slice(0, 10));
+    setMemo(entry.memo ?? '');
+    setDraft(own.map((l) => ({
+      account_code: l.account_code,
+      debitText: l.debit ? toInput(l.debit, decimals) : '',
+      creditText: l.credit ? toInput(l.credit, decimals) : '',
+      memo: l.memo ?? '',
+    })));
+    setProblem(null);
+    setWriting(true);
+  };
+
+  const startNew = () => {
+    setChanging(null);
+    setDate(today());
+    setMemo('');
+    setDraft([{ ...BLANK }, { ...BLANK }]);
+    setProblem(null);
+    setWriting(true);
+  };
+
   const save = async () => {
     const trouble = entryProblem(asLines());
     if (trouble) { setProblem(trouble); return; }
@@ -375,16 +421,26 @@ function Journal({
     setBusy(true);
     setProblem(null);
     try {
-      await postManualEntry(
-        venueId,
-        { date: new Date(`${date}T12:00:00`), memo: memo.trim(), postedBy: userId },
-        asLines().map((l, i) => ({ ...l, memo: draft[i].memo })),
-      );
+      const withNotes = asLines().map((l, i) => ({ ...l, memo: draft[i].memo }));
+      if (changing) {
+        await editEntry(
+          changing,
+          { date: new Date(`${date}T12:00:00`), memo: memo.trim(), lines: withNotes },
+          { editedBy: userId },
+        );
+      } else {
+        await postManualEntry(
+          venueId,
+          { date: new Date(`${date}T12:00:00`), memo: memo.trim(), postedBy: userId },
+          withNotes,
+        );
+      }
       setWriting(false);
+      setChanging(null);
       setDraft([{ ...BLANK }, { ...BLANK }]);
       setMemo('');
       await onChanged();
-      toast('Entry posted');
+      toast(changing ? 'Entry changed. The old version is in the audit log.' : 'Entry posted');
     } catch (e) {
       setProblem(humanError(e));
     } finally {
@@ -406,12 +462,14 @@ function Journal({
     <>
       <Card
         title="Journal"
-        actions={<Button size="sm" variant="primary" onClick={() => setWriting(true)}>New entry</Button>}
+        actions={<Button size="sm" variant="primary" onClick={startNew}>New entry</Button>}
         pad
       >
         <p className="small dim" style={{ marginTop: 0 }}>
-          Every posting, whether the system wrote it or somebody did. Nothing here can be edited: a wrong entry
-          is corrected by posting its opposite, so the record of what was thought at the time survives.
+          Every posting, whether the system wrote it or somebody did. An entry can be changed, and what it said
+          before goes into the audit log, which this page cannot reach and erasing records never clears.
+          Reversing instead leaves both halves standing, which is the better answer for anything an accountant
+          or a bank has already seen.
         </p>
         {shown.length === 0 ? (
           <Empty title="Nothing in this period">Close a shift, or widen the dates.</Empty>
@@ -443,10 +501,13 @@ function Journal({
                       <td>
                         {e.reversed_by ? (
                           <span className="small dim">reversed</span>
-                        ) : e.reversal_of ? (
-                          <span className="small dim">a reversal</span>
                         ) : (
-                          <Button size="sm" variant="ghost" onClick={() => void undo(e)}>Reverse</Button>
+                          <div className="row" style={{ gap: '0.25rem' }}>
+                            <Button size="sm" variant="ghost" onClick={() => edit(e)}>Edit</Button>
+                            {!e.reversal_of && (
+                              <Button size="sm" variant="ghost" onClick={() => void undo(e)}>Reverse</Button>
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -460,23 +521,23 @@ function Journal({
 
       {writing && (
         <Modal
-          title="New journal entry"
+          title={changing ? `Change ${changing.memo || changing.source}` : 'New journal entry'}
           wide
-          onClose={() => setWriting(false)}
+          onClose={() => { setWriting(false); setChanging(null); }}
           footer={
             <>
-              <Button variant="ghost" onClick={() => setWriting(false)}>Cancel</Button>
+              <Button variant="ghost" onClick={() => { setWriting(false); setChanging(null); }}>Cancel</Button>
               <Button variant="primary" loading={busy} disabled={!!liveProblem} onClick={() => void save()}>
-                Post it
+                {changing ? 'Save the change' : 'Post it'}
               </Button>
             </>
           }
         >
           {problem && <Notice>{problem}</Notice>}
           <p className="small dim" style={{ marginTop: 0 }}>
-            For anything that never passes a till: rent, a bank charge, money the owner has put in, a correction
-            an accountant has asked for. Debits on the left, credits on the right, and the two must come to the
-            same figure.
+            {changing
+              ? 'Change what this says. The version it had before is written to the audit log first, so the old figures survive even though the entry no longer shows them.'
+              : 'For anything that never passes a till: rent, a bank charge, money the owner has put in, a correction an accountant has asked for. Debits on the left, credits on the right, and the two must come to the same figure.'}
           </p>
 
           <div className="grid-2">
@@ -818,6 +879,242 @@ function Assets({
             </div>
           </details>
         </Modal>
+      )}
+    </>
+  );
+}
+
+/* ------------------------------------------------------- reconciliation */
+
+interface RecRow extends Doc {
+  account_code: string;
+  statement_date: string;
+  closing_balance: number;
+  status: 'open' | 'agreed';
+  note?: string;
+}
+
+/**
+ * Checking an account against what somebody else says is there.
+ *
+ * The books say what the business believes it holds. A bank statement, or a
+ * counted cash box, says what the other side believes. The difference that
+ * will not go away is not an error to write off — it is a pointer at the
+ * transaction one side has and the other does not, and finding it is the whole
+ * exercise.
+ */
+function Reconcile({
+  accounts, lines, money, decimals, venueId, userId, toast,
+}: {
+  accounts: AccountRow[];
+  lines: (JournalLine & { date: string })[];
+  money: (n: number) => string;
+  decimals: number;
+  venueId: string;
+  userId: string;
+  toast: (m: string, t?: 'ok' | 'err') => void;
+}) {
+  // Only accounts money actually sits in. Reconciling "Food sales" against a
+  // statement is not a thing anybody does, and offering it invites the attempt.
+  const cashLike = accounts.filter((a) => a.type === 'asset' && a.code < '1200');
+
+  const [code, setCode] = useState(cashLike[0]?.code ?? '1000');
+  const [statementDate, setStatementDate] = useState(today());
+  const [balanceText, setBalanceText] = useState('');
+  const [cleared, setCleared] = useState<Set<string>>(new Set());
+  const [saved, setSaved] = useState<RecRow[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    listAll<RecRow>('bank_reconciliations')
+      .then((r) => setSaved(r.filter((x) => x.account_code === code).sort((a, b) => b.statement_date.localeCompare(a.statement_date))))
+      .catch(() => setSaved([]));
+  }, [code, busy]);
+
+  // Everything ticked off on a previous statement is settled and out of the
+  // way; leaving it on the list would mean working through a year of postings
+  // to reconcile one month.
+  const [done, setDone] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    listAll<{ line_id: string; account_code: string }>('reconciled_lines')
+      .then((r) => setDone(new Set(r.filter((x) => x.account_code === code).map((x) => x.line_id))))
+      .catch(() => setDone(new Set()));
+  }, [code, busy]);
+
+  const rows = useMemo(
+    () =>
+      lines
+        .filter((l) => l.account_code === code)
+        .filter((l) => (l.date ?? '') <= `${statementDate}￿`)
+        .filter((l) => !done.has(l.$id))
+        .map((l) => ({
+          line_id: l.$id,
+          date: (l.date ?? '').slice(0, 10),
+          memo: l.memo ?? '',
+          amount: (l.debit ?? 0) - (l.credit ?? 0),
+          cleared: cleared.has(l.$id),
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date)),
+    [lines, code, statementDate, cleared, done],
+  );
+
+  // What was settled before this statement is part of the opening position,
+  // so it counts towards the balance even though it is off the list.
+  const broughtForward = useMemo(
+    () =>
+      lines
+        .filter((l) => l.account_code === code && done.has(l.$id))
+        .reduce((s, l) => s + (l.debit ?? 0) - (l.credit ?? 0), 0),
+    [lines, code, done],
+  );
+
+  const perStatement = parseMoney(balanceText, decimals) ?? 0;
+  const summary = reconcile(rows, perStatement - broughtForward);
+
+  const agree = async () => {
+    setBusy(true);
+    try {
+      const rec = await db.createDocument(DB_ID, 'bank_reconciliations', ID.unique(), {
+        venue_id: venueId,
+        account_code: code,
+        statement_date: new Date(`${statementDate}T12:00:00`).toISOString(),
+        closing_balance: perStatement,
+        status: summary.agreed ? 'agreed' : 'open',
+        reconciled_by: userId,
+        reconciled_at: new Date().toISOString(),
+      });
+      for (const r of rows.filter((x) => x.cleared)) {
+        await db.createDocument(DB_ID, 'reconciled_lines', ID.unique(), {
+          venue_id: venueId,
+          rec_id: rec.$id,
+          line_id: r.line_id,
+          account_code: code,
+        }).catch(() => undefined);
+      }
+      setCleared(new Set());
+      setBalanceText('');
+      toast(summary.agreed ? 'Reconciled and agreed' : 'Saved, still out. The ticked ones are settled.');
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Card title="Check an account against a statement" pad>
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Tick every posting the bank has also seen. What is left over is money you have written down and they
+          have not processed yet, which is normal. What must come to nothing is the difference.
+        </p>
+        <div className="grid-2">
+          <Field label="Account">
+            <Select value={code} onChange={(e) => { setCode(e.target.value); setCleared(new Set()); }}>
+              {cashLike.map((a) => <option key={a.code} value={a.code}>{a.code} · {a.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Statement date">
+            <Input type="date" value={statementDate} onChange={(e) => setStatementDate(e.target.value)} />
+          </Field>
+        </div>
+        <Field label="What the statement says was there on that day">
+          <Input inputMode="decimal" value={balanceText} onChange={(e) => setBalanceText(e.target.value)} />
+        </Field>
+
+        <div className="cash-split">
+          <div className="cash-split-item">
+            <div className="label">Settled before this</div>
+            <div className="figure">{money(broughtForward)}</div>
+          </div>
+          <div className="cash-split-item">
+            <div className="label">Ticked off now</div>
+            <div className="figure">{money(summary.cleared)}</div>
+          </div>
+          <div className="cash-split-item">
+            <div className="label">Not yet seen by the bank</div>
+            <div className="figure">{money(summary.outstanding)}</div>
+          </div>
+          <div className="cash-split-item total">
+            <div className="label">{summary.agreed ? 'Agreed' : 'Still to explain'}</div>
+            <div className="figure" style={{ color: summary.agreed ? 'var(--ok)' : 'var(--danger)' }}>
+              {money(summary.difference)}
+            </div>
+          </div>
+        </div>
+
+        {!summary.agreed && balanceText.trim() !== '' && (
+          <Notice tone="warn">
+            {money(Math.abs(summary.difference))} is unexplained. That is not a rounding to write off: it is a
+            transaction one side has and the other does not. Look for a payment nobody recorded, or one recorded
+            twice.
+          </Notice>
+        )}
+
+        <div className="row" style={{ justifyContent: 'flex-end', marginTop: '0.6rem' }}>
+          <Button
+            variant="primary"
+            loading={busy}
+            disabled={rows.filter((r) => r.cleared).length === 0}
+            onClick={() => void agree()}
+          >
+            {summary.agreed ? 'Agree and settle these' : 'Save what is ticked'}
+          </Button>
+        </div>
+      </Card>
+
+      <Card title="Postings on this account" pad>
+        {rows.length === 0 ? (
+          <Empty title="Nothing left to check">Everything up to that date has been settled already.</Empty>
+        ) : (
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr><th /><th>Date</th><th>What</th><th className="num">In</th><th className="num">Out</th></tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.line_id}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={r.cleared}
+                        onChange={(e) => setCleared((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(r.line_id); else next.delete(r.line_id);
+                          return next;
+                        })}
+                      />
+                    </td>
+                    <td className="dim small">{r.date}</td>
+                    <td>{r.memo || '-'}</td>
+                    <td className="num">{r.amount > 0 ? money(r.amount) : '-'}</td>
+                    <td className="num">{r.amount < 0 ? money(-r.amount) : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {saved.length > 0 && (
+        <Card title="Already reconciled" pad>
+          <div className="table-wrap">
+            <table className="data">
+              <thead><tr><th>To</th><th className="num">Statement said</th><th>Result</th></tr></thead>
+              <tbody>
+                {saved.map((r) => (
+                  <tr key={r.$id}>
+                    <td className="dim small">{r.statement_date.slice(0, 10)}</td>
+                    <td className="num">{money(r.closing_balance)}</td>
+                    <td>{r.status === 'agreed' ? 'Agreed' : 'Left out'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </>
   );

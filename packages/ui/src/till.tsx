@@ -4,7 +4,7 @@ import {
   db, DB_ID, ID, saveDropping, formatMoney, parseMoney, toInput, loadIngredients, loadPaymentMethods,
   PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions, receiveStock, uploadFile,
   expenseMethods, recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
-  fromTakings,
+  fromTakings, postExpense, accountForExpense,
 } from '@snpos/core';
 import type {
   PaymentMethod, Settings, StaffProfile, PaidToKind, Supplier, ExpenseCategoryDoc, Ingredient,
@@ -319,6 +319,28 @@ export function ExpenseModal({
       });
       const expense = { $id: expenseId };
       const lostSource = dropped.includes('from_takings');
+
+      /**
+       * On the books straight away, not at shift close.
+       *
+       * Expenses used to reach the ledger only when a shift closed, so one
+       * recorded outside a shift never reached it at all. Keyed by the
+       * expense's own id, so the shift close doing it again later is a no-op
+       * rather than a second charge.
+       *
+       * Best effort on purpose. The spend is recorded either way, and an
+       * expense missing from the ledger is a bookkeeping job; an expense that
+       * would not save is a hole in the drawer nobody can explain.
+       */
+      void accountForExpense({ category_key: categoryKey })
+        .then((accountCode) => postExpense(venueId, {
+          expenseId,
+          amount,
+          accountCode,
+          postedBy: userId,
+          shiftId: shiftId || undefined,
+        }))
+        .catch(() => undefined);
 
       // Each line is recorded and then delivered into stock. From where the
       // person is standing these are one action, so a line that fails to stock

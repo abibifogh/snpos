@@ -4,7 +4,8 @@ import {
   naturalBalance, isDebitNormal, profitAndLoss, balanceSheet, entryProblem,
   depreciationSchedule, bookValue, chargeForMonth, monthOf, nextMonth, within,
 } from '../ledger-math.ts';
-import type { AccountRow, LineRow } from '../ledger-math.ts';
+import { reconcile } from '../ledger-math.ts';
+import type { AccountRow, LineRow, RecLine } from '../ledger-math.ts';
 
 const CHART: AccountRow[] = [
   { code: '1000', name: 'Cash on hand', type: 'asset' },
@@ -187,4 +188,43 @@ test('a window includes the whole of its last day', () => {
   assert.equal(august.length, 2);
   assert.equal(august[0].date, '2026-08-01T08:00:00.000Z');
   assert.equal(august[1].date, '2026-08-31T21:30:00.000Z');
+});
+
+/* ------------------------------------------------------- reconciliation */
+
+test('a reconciliation agrees when what the bank saw matches what was ticked', () => {
+  /**
+   * The statement's closing balance should equal the postings the bank has
+   * also seen. What is left over was written by the business and not yet
+   * processed, and is not part of the check.
+   */
+  const lines: RecLine[] = [
+    { line_id: 'a', date: '2026-08-02', memo: 'Takings banked', amount: 50000, cleared: true },
+    { line_id: 'b', date: '2026-08-05', memo: 'Rent', amount: -20000, cleared: true },
+    { line_id: 'c', date: '2026-08-31', memo: 'Cheque not yet presented', amount: -5000, cleared: false },
+  ];
+  const r = reconcile(lines, 30000);
+
+  assert.equal(r.perBooks, 25000, 'what the business believes it has');
+  assert.equal(r.cleared, 30000, 'what the bank has seen');
+  assert.equal(r.outstanding, -5000, 'written, not yet processed');
+  assert.equal(r.difference, 0);
+  assert.equal(r.agreed, true);
+});
+
+test('a difference that will not go is the missing transaction, not a rounding', () => {
+  // The whole point of the exercise: the gap points at what one side has and
+  // the other does not.
+  const lines: RecLine[] = [
+    { line_id: 'a', date: '2026-08-02', memo: 'Takings banked', amount: 50000, cleared: true },
+  ];
+  const r = reconcile(lines, 48000);
+  assert.equal(r.difference, -2000);
+  assert.equal(r.agreed, false);
+});
+
+test('nothing ticked and nothing on the statement still agrees', () => {
+  const r = reconcile([], 0);
+  assert.equal(r.agreed, true);
+  assert.equal(r.outstanding, 0);
 });

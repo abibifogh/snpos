@@ -654,7 +654,7 @@ export async function closeShift(opts: {
   }
 
   const totalOff = Object.values(variance).reduce((a, b) => a + b, 0);
-  const shiftExpenses = await listAll<{ amount: number; category_key?: string; category?: string }>(
+  const shiftExpenses = await listAll<{ $id: string; amount: number; category_key?: string; category?: string }>(
     'shift_expenses',
     [Query.equal('shift_id', shift.$id)],
   );
@@ -699,7 +699,13 @@ export async function closeShift(opts: {
       discounts: shiftOrders.reduce((a, o) => a + o.discount_total, 0),
       cogs,
       cashVariance: totalOff,
-      expenses: shiftExpenses.map((e) => ({ amount: e.amount, accountCode: accountForExpense(e) })),
+      // By id, so an expense already posted when it was recorded is not
+      // posted again here. See postExpense.
+      expenses: shiftExpenses.map((e) => ({
+        expenseId: e.$id,
+        amount: e.amount,
+        accountCode: accountForExpense(e),
+      })),
     });
     await db.updateDocument(DB_ID, 'shifts', shift.$id, { posted_to_ledger: true });
   } catch (e) {

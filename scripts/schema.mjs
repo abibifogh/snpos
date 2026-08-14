@@ -1389,12 +1389,80 @@ export const COLLECTIONS = [
     indexes: [['venue', 'key', ['venue_id']], ['acquired', 'key', ['acquired_on']]],
   },
   {
+    /**
+     * A bank or cash account, checked against what the bank says.
+     *
+     * The books say what the business believes it has. A statement says what
+     * somebody else believes. Reconciling is the act of finding out which
+     * postings the other side has seen — and the difference that will not go
+     * away is where the missing transaction is.
+     *
+     * One row per statement checked. The lines ticked off live next door, one
+     * row each, rather than as a list inside this one: a list in a text field
+     * has a length limit, and the limit is reached on the night somebody is
+     * doing a busy month.
+     */
+    id: 'bank_reconciliations',
+    name: 'Reconciliations',
+    perms: { read: MGMT, create: MGMT, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['account_code', 's', 10, true],
+      // The date the statement runs to, and what it says was there on that day.
+      ['statement_date', 'd', null, true],
+      ['closing_balance', 'i', null, true, 0],
+      ['status', 'e', ['open', 'agreed'], true, 'open'],
+      ['note', 's', 500, false],
+      ['reconciled_by', 's', 64, false],
+      ['reconciled_at', 'd', null, false],
+    ],
+    indexes: [['account', 'key', ['account_code', 'statement_date']]],
+  },
+  {
+    /**
+     * One posting the bank has also seen.
+     *
+     * Kept as its own row rather than a flag on the journal line, because a
+     * line belongs to an entry and an entry is a fact about the business;
+     * whether a bank has got round to processing it is a fact about the bank.
+     * Mixing the two means every reconciliation rewrites the books.
+     */
+    id: 'reconciled_lines',
+    name: 'Reconciled lines',
+    perms: { read: MGMT, create: MGMT, update: MGMT, delete: MGMT },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['rec_id', 's', 64, true],
+      ['line_id', 's', 64, true],
+      ['account_code', 's', 10, true],
+    ],
+    indexes: [
+      ['rec', 'key', ['rec_id']],
+      // One line cannot be ticked off twice, on one statement or across two.
+      ['line_unique', 'unique', ['line_id']],
+    ],
+  },
+  {
     id: 'journal_entries',
     name: 'Journal entries',
-    // Append-only on purpose: a wrong entry is corrected by posting a reversal,
-    // never by editing history. Books that can be quietly edited are not books.
-    // Created by whoever closes the shift, which may be the cook.
-    perms: { read: MGMT, create: ALL_STAFF, update: [], delete: [] },
+    /**
+     * Created by whoever closes the shift, which may be the cook. Edited and
+     * removed by an admin, and by nobody else.
+     *
+     * This was append-only, on the usual argument: a wrong entry is corrected
+     * by posting its opposite, never by editing history, because books that
+     * can be quietly edited are not books. That argument is sound and it is
+     * why an auditor asks what a ledger USED to say.
+     *
+     * The owner asked for editing anyway, and for a business of this size the
+     * trade is theirs to make: reversals double the length of a journal, and a
+     * journal nobody can read is its own kind of unreliable. So the edit is
+     * allowed and the history is kept elsewhere — every change writes the
+     * previous version into the audit log, which this page cannot touch and
+     * the erase page never clears. Quietly is the part that was worth
+     * preventing, not editing.
+     */
+    perms: { read: MGMT, create: ALL_STAFF, update: ADMIN, delete: ADMIN },
     attributes: [
       ['date', 'd', null, true],
       ['source', 'e', ['shift_close', 'purchase', 'expense', 'refund', 'adjustment', 'reversal'], true],
@@ -1418,7 +1486,10 @@ export const COLLECTIONS = [
   {
     id: 'journal_lines',
     name: 'Journal lines',
-    perms: { read: MGMT, create: ALL_STAFF, update: [], delete: [] },
+    // An edit replaces an entry's lines rather than patching them: the number
+    // of lines changes, and matching old to new is guesswork. See the note on
+    // journal_entries for why this is editable at all.
+    perms: { read: MGMT, create: ALL_STAFF, update: ADMIN, delete: ADMIN },
     attributes: [
       ['entry_id', 's', 64, true],
       ['account_code', 's', 10, true],

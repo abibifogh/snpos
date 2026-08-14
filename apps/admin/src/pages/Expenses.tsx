@@ -5,6 +5,7 @@ import {
   formatMoney, parseMoney, toInput, uploadFile, downloadUrl, deleteFile, receiveStock, Query,
   PAID_TO_KINDS, payeeLabel as sharedPayeeLabel, legacyExpenseCategory as legacyFor,
   isPostableExpenseAccount, expenseMethods, modulesOf, recomputeClosedShift,
+  postExpense, accountForExpense,
 } from '@snpos/core';
 import type { Doc, Ingredient, PaidToKind } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
@@ -254,6 +255,19 @@ export function ExpensesPage() {
        * one figure here that was never derived, and nothing found out
        * afterwards changes what was in the till that night.
        */
+      // On the books, keyed by the expense's own id so it cannot be posted
+      // twice however many routes reach it. An expense recorded here, outside
+      // any shift, used to reach the ledger through no route at all.
+      void accountForExpense(payload)
+        .then((accountCode) => postExpense(payload.venue_id, {
+          expenseId,
+          amount,
+          accountCode,
+          postedBy: user?.$id ?? '',
+          shiftId: payload.shift_id || undefined,
+        }))
+        .catch(() => undefined);
+
       let recomputed = false;
       if (payload.shift_id) {
         recomputed = (await recomputeClosedShift(payload.shift_id).catch(() => null)) !== null;

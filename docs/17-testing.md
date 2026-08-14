@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck (apps AND tests), tests, schema check, build. Before deploying.
 ```
 
-138 tests, no database, about half a second. They cover the sums that decide what
+141 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -150,6 +150,15 @@ not just what to press.
 | P13 | The balance sheet after P11 | Equipment less accumulated depreciation, and it still balances |
 | P14 | Mark it sold last month, post this month | Nothing charged. It stopped when it went |
 | P15 | Open Accounting as a manager | **Not in the menu, and refused by address** |
+| P16 | Journal → Edit an entry, change a figure | Saved in place. **One entry, not two** |
+| P17 | Look at the audit log after P16 | The old figures are there, under journal_edited |
+| P18 | Edit an entry so it no longer balances | Refused, with the amount it is out by |
+| P19 | Try to edit an entry that has been reversed | Refused. Edit the reversal instead |
+| P20 | Record an expense with **no shift open** | On the trial balance straight away |
+| P21 | Record one during a shift, then close the shift | On the books **once**, not twice |
+| P22 | Reconcile → tick postings, enter the statement figure | Difference goes to nought, and it says Agreed |
+| P23 | Enter a figure that does not match | Says how much is unexplained, and does not call it rounding |
+| P24 | Agree it, then come back | The settled postings are off the list, counted as brought forward |
 
 ### E. Permissions
 
