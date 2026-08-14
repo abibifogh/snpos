@@ -20,6 +20,8 @@
  * prose. Wide on purpose: the honest ranges overlap heavily, and a narrow band
  * would imply a precision that does not exist.
  */
+import { sentenceSpans } from '../spans.mjs';
+
 const BANDS = {
   burstiness: { machine: [0.0, 0.42], mixed: [0.42, 0.55], human: [0.55, 3] },
   mattr: { machine: [0.0, 0.68], mixed: [0.68, 0.74], human: [0.74, 1] },
@@ -155,33 +157,18 @@ function band(key, value, findings, copy) {
 }
 
 /**
- * Sentence splitting that survives abbreviations and decimals.
+ * Sentence text, from the same boundaries the locator uses.
  *
- * Getting this wrong matters more than it looks: every length statistic is
- * built on it, and splitting "Dr. Mensah" into two sentences would fabricate
- * exactly the short-sentence variance the burstiness metric is looking for.
+ * Shared rather than reimplemented, because the two must agree: if the metrics
+ * counted a boundary the locator did not, a finding reported as "sentence 3"
+ * would point at sentence 2 on the page. Getting the boundaries right matters
+ * on its own account too, since splitting "Dr. Mensah" in two would fabricate
+ * exactly the short-sentence variance burstiness is looking for.
  */
-const ABBREVIATIONS = /\b(?:mr|mrs|ms|dr|prof|sr|jr|st|vs|etc|e\.g|i\.e|cf|al|fig|no|vol|pp|ed|approx|dept|univ)\.$/i;
-
 export function splitSentences(text) {
-  const out = [];
-  let current = '';
-  const parts = text.replace(/\s+/g, ' ').split(/([.!?]+["'”’)\]]*\s)/);
-
-  for (let i = 0; i < parts.length; i += 2) {
-    current += parts[i] + (parts[i + 1] ?? '');
-    const trimmed = current.trim();
-    const endsOnAbbreviation = ABBREVIATIONS.test(trimmed);
-    const endsOnInitial = /\b[A-Z]\.$/.test(trimmed);
-    const endsOnDecimal = /\d\.$/.test(trimmed) && /^\s*\d/.test(parts[i + 2] ?? '');
-
-    if (!endsOnAbbreviation && !endsOnInitial && !endsOnDecimal && trimmed) {
-      out.push(trimmed);
-      current = '';
-    }
-  }
-  if (current.trim()) out.push(current.trim());
-  return out.filter((s) => tokenise(s).length > 0);
+  return sentenceSpans(text)
+    .map((s) => text.slice(s.start, s.end).replace(/\s+/g, ' ').trim())
+    .filter((s) => tokenise(s).length > 0);
 }
 
 export function tokenise(text) {

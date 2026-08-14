@@ -1,6 +1,7 @@
 import { SEVERITY_LABEL } from '../score.mjs';
 import { WORDLIST_UPDATED } from '../analyze/lexical.mjs';
 import { summaryParts, count } from './summary.mjs';
+import { annotatedHtml, noteList, ANNOTATION_CSS } from './annotate.mjs';
 
 /**
  * A standalone HTML report.
@@ -21,7 +22,7 @@ export function htmlReport(result, opts = {}) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Submission check${opts.title ? ` — ${esc(opts.title)}` : ''}</title>
-<style>${CSS}</style>
+<style>${CSS}${ANNOTATION_CSS}</style>
 </head>
 <body>
 <main>
@@ -102,12 +103,37 @@ function documentCard(doc) {
     ${!direct.length && !supporting.length && !inference.length ? '<p class="clean">Nothing flagged.</p>' : ''}
     ${doc.styleNote ? `<p class="hint">${esc(doc.styleNote)}</p>` : ''}
 
+    ${annotationsSection(doc)}
+
     ${doc.facts?.length ? `<details><summary>File details</summary><ul class="facts">${
       doc.facts.map((f) => `<li>${esc(f)}</li>`).join('')
     }</ul></details>` : ''}
 
     ${doc.metrics?.words ? `<details><summary>Measurements</summary>${metricsTable(doc.metrics)}</details>` : ''}
   </section>`;
+}
+
+/**
+ * The marked-up document and its suggestions.
+ *
+ * Open by default rather than folded away: locating the flagged strings is
+ * most of the value, and a reader who has to go looking for that will not.
+ */
+function annotationsSection(doc) {
+  if (!doc.annotations?.length || !doc.text?.trim()) return '';
+
+  const withFix = doc.annotations.filter((a) => a.suggestion).length;
+
+  return `<div class="group">
+    <h3>Where it is, and what to say instead</h3>
+    <p class="hint">${esc(count(doc.annotations.length, 'flagged string'))} marked in place${
+      withFix ? `, ${withFix} with a suggested rewrite` : ''
+    }. Paragraph numbers in the margin match the ones quoted above. The suggestions are plain-English
+    alternatives you can paste into feedback — most of what gets flagged is padding, which is worth
+    cutting whoever wrote it.</p>
+    <div class="annotated">${annotatedHtml(doc.text, doc.annotations)}</div>
+    ${noteList(doc.annotations)}
+  </div>`;
 }
 
 function group(title, hint, findings) {

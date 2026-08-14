@@ -25,6 +25,7 @@ Options
   --json <path>          write the full findings as JSON
   --verify-citations     look references up against Crossref (sends titles to crossref.org)
   --email <addr>         contact address for the Crossref polite pool
+  --all                  list every flagged string, not just the first 15 per file
   --metrics              include the raw measurements in terminal output
   --quiet                findings only, no per-file details
   --serve [port]         start the upload interface instead (default port 4321)
@@ -57,6 +58,7 @@ async function main() {
     contactEmail: flagValue(argv, '--email'),
     metrics: argv.includes('--metrics'),
     verbose: !argv.includes('--quiet'),
+    allAnnotations: argv.includes('--all'),
   };
 
   const targets = argv.filter((a, i) => !a.startsWith('--') && !isFlagValue(argv, i));

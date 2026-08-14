@@ -67,9 +67,9 @@ const HOMOGLYPHS = new Map(Object.entries({
 export function analyseHidden(text, meta = {}) {
   const findings = [];
   const counts = new Map();
-  const positions = new Map();
+  const hits = new Map();
 
-  for (const { cp, index } of codepoints(text)) {
+  for (const { cp, index, width } of codepoints(text)) {
     let label = null;
     if (ZERO_WIDTH[cp]) label = `zero-width:${ZERO_WIDTH[cp]}`;
     else if (BIDI[cp]) label = `bidi:${BIDI[cp]}`;
@@ -80,22 +80,37 @@ export function analyseHidden(text, meta = {}) {
     if (!label) continue;
 
     counts.set(label, (counts.get(label) ?? 0) + 1);
-    if (!positions.has(label)) positions.set(label, index);
+    if (!hits.has(label)) hits.set(label, []);
+    hits.get(label).push({ index, width });
   }
 
   // Non-breaking spaces arrive legitimately from Word's own autoformatting, so
   // a handful is noise. A run of them, or one per line, is a signature.
   for (const [label, count] of counts) {
     const [group, name] = label.split(':');
-    const benign = group === 'space' && count <= 3;
-    if (benign) continue;
+    if (group === 'space' && count <= 3) continue;
+
+    const occurrences = runsOf(hits.get(label)).map((run) => ({
+      start: run.start,
+      end: run.end,
+      text: text.slice(run.start, run.end),
+      context: snippet(text, run.start),
+      suggestion: {
+        action: 'delete',
+        alternatives: [],
+        why: group === 'space'
+          ? 'Replace with an ordinary space.'
+          : 'Delete these characters. They are invisible on the page, so removing them changes nothing a reader can see.',
+      },
+    }));
 
     findings.push({
       id: `hidden.${group}`,
       severity: group === 'tag' || group === 'zero-width' || group === 'bidi' ? 'high' : 'medium',
       title: `${count}× ${name}`,
       detail: describe(group, count),
-      context: snippet(text, positions.get(label)),
+      context: occurrences[0]?.context ?? null,
+      occurrences,
       count,
     });
   }
@@ -125,6 +140,20 @@ export function analyseHidden(text, meta = {}) {
       detail: `Contains ${h.script} characters shaped like Latin letters (${h.detail}). This is the standard way to `
         + 'defeat a text-matching checker while leaving the page looking normal.',
       count: h.count,
+      occurrences: h.positions.map((index) => ({
+        start: index,
+        end: index + h.word.length,
+        text: h.word,
+        context: snippet(text, index),
+        suggestion: {
+          action: 'replace',
+          // Retyping is the fix, and it is also the check: the substituted
+          // letters look identical, so the only reliable repair is to type the
+          // word again rather than to edit it.
+          alternatives: [[...h.word].map((c) => HOMOGLYPHS.get(c) ?? c).join('')],
+          why: 'Retype the word in plain Latin characters.',
+        },
+      })),
     });
   }
 
@@ -169,9 +198,26 @@ function describe(group, count) {
 function* codepoints(text) {
   let i = 0;
   for (const ch of text) {
-    yield { cp: ch.codePointAt(0), index: i };
+    yield { cp: ch.codePointAt(0), index: i, width: ch.length };
     i += ch.length;
   }
+}
+
+/**
+ * Collapse adjacent hits into single spans.
+ *
+ * A watermark is a run of thirty invisible characters in one place, not thirty
+ * separate problems. Reporting it as one span at one location is both what the
+ * reader needs and what makes the annotated view readable.
+ */
+function runsOf(positions) {
+  const runs = [];
+  for (const { index, width } of positions) {
+    const last = runs[runs.length - 1];
+    if (last && index <= last.end) last.end = index + width;
+    else runs.push({ start: index, end: index + width });
+  }
+  return runs;
 }
 
 /** The Unicode Tags block maps one-to-one onto ASCII; subtract the block base. */
@@ -237,11 +283,12 @@ function homoglyphWords(text) {
 
     const key = word.toLowerCase();
     const existing = out.get(key);
-    if (existing) { existing.count++; continue; }
+    if (existing) { existing.count++; existing.positions.push(m.index); continue; }
 
     out.set(key, {
       word,
       count: 1,
+      positions: [m.index],
       script: /[Ѐ-ӿ]/.test(word) ? 'Cyrillic' : 'Greek',
       detail: swaps.map((c) => `${c} for ${HOMOGLYPHS.get(c)}`).join(', '),
     });
@@ -260,7 +307,7 @@ function looksLikeInjection(s) {
  * displayed produces a snippet that looks like ordinary prose, which reads as
  * the tool contradicting itself.
  */
-const INVISIBLE = /[­᠎​-‏‪-‮⁠-⁤⁦-⁩﻿︀-️]|[\u{e0000}-\u{e007f}]|[\u{e0100}-\u{e01ef}]/gu;
+export const INVISIBLE = /[­᠎​-‏‪-‮⁠-⁤⁦-⁩﻿︀-️]|[\u{e0000}-\u{e007f}]|[\u{e0100}-\u{e01ef}]/gu;
 
 function snippet(text, index, span = 40) {
   if (index == null) return null;

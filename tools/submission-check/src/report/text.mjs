@@ -1,6 +1,7 @@
 import { SEVERITY_LABEL } from '../score.mjs';
 import { WORDLIST_UPDATED } from '../analyze/lexical.mjs';
 import { summaryParts } from './summary.mjs';
+import { displayText } from './annotate.mjs';
 
 /**
  * The terminal report.
@@ -96,6 +97,8 @@ function documentSection(doc, opts) {
 
   if (doc.styleNote) { lines.push(dim(`  ${doc.styleNote}`)); lines.push(''); }
 
+  lines.push(...annotationLines(doc, opts));
+
   if (!direct.length && !supporting.length && !inference.length) {
     lines.push(`  ${green('Nothing flagged.')}`);
     lines.push('');
@@ -113,6 +116,55 @@ function documentSection(doc, opts) {
       if (v == null || typeof v === 'object') continue;
       lines.push(dim(`    ${k.padEnd(24)} ${typeof v === 'number' ? Number(v.toFixed(3)) : v}`));
     }
+    lines.push('');
+  }
+
+  return lines;
+}
+
+/**
+ * Every flagged string, where it is, and what to put instead.
+ *
+ * Capped in the terminal because a long essay can carry sixty of these and a
+ * screen of them scrolls the findings off the top. The full set always reaches
+ * the HTML report, and the count of what was withheld is printed so the cap is
+ * never mistaken for the total.
+ */
+function annotationLines(doc, opts) {
+  const all = doc.annotations ?? [];
+  if (!all.length) return [];
+
+  const limit = opts.allAnnotations ? all.length : 15;
+  const shown = all.slice(0, limit);
+  const lines = [
+    `  ${bold('Where it is, and what to say instead')}`,
+    dim('  Plain-English alternatives for feedback. Most of what is flagged here is padding,'),
+    dim('  which is worth cutting whoever wrote it.'),
+    '',
+  ];
+
+  for (const [i, a] of shown.entries()) {
+    const where = a.where ? dim(` — ${a.where}`) : '';
+    lines.push(`    ${dim(`${String(i + 1).padStart(2)}.`)} ${yellow(`“${displayText(a.text)}”`)}${where}`);
+
+    if (a.suggestion?.action === 'delete-sentence') {
+      lines.push(`        ${green('Cut the whole sentence.')} ${dim(a.suggestion.why)}`);
+    } else if (a.noVisibleChange) {
+      lines.push(`        ${green('Delete them.')} ${dim('Nothing a reader can see changes.')}`);
+    } else if (a.after && a.before) {
+      const [was, now] = focusPair(a.before, a.after, 84);
+      lines.push(dim(`        was:  ${was}`));
+      lines.push(`        ${green('now:')}  ${now}`);
+      const alts = (a.suggestion.alternatives ?? []).slice(1);
+      if (alts.length) lines.push(dim(`        or:   ${alts.join(' · ')}`));
+    } else if (a.suggestion) {
+      lines.push(dim(`        ${a.suggestion.why}`));
+    }
+    lines.push('');
+  }
+
+  if (all.length > shown.length) {
+    lines.push(dim(`    …and ${all.length - shown.length} more. Use --html for the full marked-up document, or --all.`));
     lines.push('');
   }
 
@@ -173,6 +225,31 @@ function limitations() {
 
 function rule() {
   return dim('─'.repeat(96));
+}
+
+/**
+ * Trim a before/after pair to a window that contains the change.
+ *
+ * Truncating from the left hides the edit whenever it falls late in a long
+ * sentence, which leaves two identical-looking lines and no visible
+ * suggestion. Both strings are cut at the same offset so they stay aligned.
+ */
+function focusPair(before, after, width) {
+  const a = String(before).replace(/\s+/g, ' ').trim();
+  const b = String(after).replace(/\s+/g, ' ').trim();
+  if (a.length <= width && b.length <= width) return [a, b];
+
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+
+  const start = Math.max(0, i - Math.floor(width / 3));
+  const cut = (s) => `${start > 0 ? '…' : ''}${s.slice(start, start + width)}${start + width < s.length ? '…' : ''}`;
+  return [cut(a), cut(b)];
+}
+
+function truncate(s, n) {
+  const clean = String(s ?? '').replace(/\s+/g, ' ').trim();
+  return clean.length > n ? `${clean.slice(0, n - 1)}…` : clean;
 }
 
 function wrap(text, width) {

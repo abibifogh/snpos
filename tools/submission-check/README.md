@@ -77,6 +77,34 @@ absence of ordinary typing imperfections. Reported with reference ranges, quoted
 deliberately limited in how much they can move the overall picture. Skipped entirely below ~120
 words, and excluded from scoring below 400.
 
+### Where it is, and what to say instead
+
+Every flagged string is reported with its location — **paragraph and sentence** for a document,
+**page** as well for a PDF — and, where a mechanical fix exists, the sentence rewritten.
+
+```
+ 3. "In today's fast-paced world" — paragraph 2, sentence 1
+    was:  In today's fast-paced world, it is important to note that land tenure is a multifaceted issue.
+    now:  It is important to note that land tenure is a multifaceted issue.
+```
+
+The HTML report goes further: the whole document is reproduced with numbered paragraphs in the
+margin and every flagged string highlighted in place, each keyed to a numbered suggestion below.
+That is the view to put in front of a student — it shows them the sentence rather than a verdict.
+
+Suggestions are plain substitutions, not edits, and they are meant as feedback. Most of what gets
+flagged as an "AI tell" is really just padding, and padding is worth cutting whoever wrote it:
+*plays a crucial role in* → *shapes*, *delve into* → *examine*, *it is important to note that* →
+cut it and say the thing. Where a phrase cannot be fixed by substitution (*by understanding X, we
+can Y*) the tool explains the problem rather than offering a rewrite that would mangle the line.
+
+Rewrites agree with what they replace — *delving into* becomes *examining*, not *examines* — and
+the article before a swap is corrected, so *a crucial part* becomes *an important part*. Where two
+checks flag overlapping text, only the more specific one is reported.
+
+Terminal output caps at 15 per file; `--all` lists every one, and `--html` always contains the
+full set.
+
 ### Across a batch
 
 Upload the whole cohort at once and it also compares them to each other:

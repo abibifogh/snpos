@@ -32,12 +32,21 @@ export function extractPdf(buf) {
   const streams = collectStreams(buf, raw);
   const meta = readMetadata(raw, streams);
 
+  // Each content stream is normally one page, so text is assembled page by
+  // page and the offset each one starts at is recorded. That is what lets a
+  // finding say "page 3" later. Whitespace is normalised per page, before any
+  // offset is taken, because normalising the joined string afterwards would
+  // shift every offset already handed out.
+  const pageBreaks = [];
   let text = '';
   for (const s of streams) {
-    if (looksLikeContentStream(s)) text += textFromContentStream(s) + '\n';
+    if (!looksLikeContentStream(s)) continue;
+    const page = textFromContentStream(s).replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    if (!page) continue;
+    if (text) text += '\n\n';
+    pageBreaks.push(text.length);
+    text += page;
   }
-
-  text = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
 
   const legibility = legibleRatio(text);
   const pages = (raw.match(/\/Type\s*\/Page[^s]/g) || []).length || meta.pageCount || null;
@@ -45,6 +54,7 @@ export function extractPdf(buf) {
   return {
     kind: 'pdf',
     text: legibility >= 0.7 ? text : '',
+    pageBreaks,
     meta: {
       ...meta,
       pages,

@@ -18,6 +18,8 @@
  * ordinary academic English.
  */
 
+import { matchRewrite } from '../rewrite.mjs';
+
 /** Conversational residue. Near-conclusive: prose does not talk to its reader like this. */
 const RESIDUE = [
   { re: /\bas an? (?:AI|artificial intelligence|language model)\b/gi, note: 'assistant self-reference' },
@@ -67,20 +69,27 @@ const FAVOURED_WORDS = [
   'comprehensive', 'meticulous', 'meticulously', 'commendable', 'noteworthy',
 ];
 
-/** Whole phrases, which carry more signal than single words. */
+/**
+ * Whole phrases, which carry more signal than single words.
+ *
+ * Each pattern deliberately swallows the trailing words its rewrite needs to
+ * consume, the optional "that" and "in" and "of" below. A detection span that
+ * stops short of them leaves the suggested sentence with debris in it, a
+ * stranded "that this is", which is worse than offering no suggestion at all.
+ */
 const FAVOURED_PHRASES = [
-  { re: /\bit(?:'s| is) (?:important|worth|crucial|essential) to (?:note|remember|consider|understand)\b/gi },
-  { re: /\bplays? an? (?:crucial|vital|pivotal|significant|important) role\b/gi },
+  { re: /\bit(?:'s| is) (?:important|worth|crucial|essential) to (?:note|remember|consider|understand)(?: that)?\b/gi },
+  { re: /\bplays? an? (?:crucial|vital|pivotal|significant|important) role(?:\s+in)?\b/gi },
   { re: /\bin (?:today's|the modern) (?:fast[- ]paced|digital|ever[- ]changing|interconnected) world\b/gi },
   { re: /\bin the (?:ever[- ]evolving|rapidly changing) (?:landscape|world|field)\b/gi },
-  { re: /\bnavigat(?:e|ing) the (?:complexities|challenges|landscape)\b/gi },
+  { re: /\bnavigat(?:e|es|ing) the (?:complexities|challenges|landscape)(?:\s+of)?\b/gi },
   { re: /\ba testament to\b/gi },
   { re: /\bdelve into\b/gi },
   { re: /\bwhen it comes to\b/gi },
   { re: /\bnot only .{3,60}? but also\b/gi },
   { re: /\bstands? as a\b/gi },
   { re: /\bthe world of\b/gi },
-  { re: /\brich tapestry\b/gi },
+  { re: /\brich tapestry(?:\s+of)?\b/gi },
   { re: /\bin conclusion,/gi },
   { re: /\bby understanding .{3,60}?,? (?:we|one) can\b/gi },
   { re: /\bserves? as a (?:reminder|foundation|cornerstone|bridge)\b/gi },
@@ -90,6 +99,22 @@ const TRANSITIONS = /\b(?:moreover|furthermore|additionally|consequently|neverth
 
 const HEDGES = /\b(?:it (?:could|might|may) be (?:argued|said)|arguably|to some extent|in many ways|generally speaking|broadly speaking|it depends on|there is no one[- ]size[- ]fits[- ]all|striking a balance|a double[- ]edged sword)\b/gi;
 
+/** One flagged string: where it is, what it says, and what to say instead. */
+function occurrence(text, match) {
+  const rewrite = matchRewrite(match[0]);
+  return {
+    start: match.index,
+    end: match.index + match[0].length,
+    text: match[0],
+    context: context(text, match.index),
+    suggestion: rewrite && { action: rewrite.action, alternatives: rewrite.alternatives, why: rewrite.why },
+    // The narrower range the rewrite actually applies to, which is not always
+    // the whole of what was flagged.
+    rewriteStart: rewrite ? match.index + rewrite.start : null,
+    rewriteEnd: rewrite ? match.index + rewrite.end : null,
+  };
+}
+
 export function analyseLexical(text) {
   const findings = [];
   const words = (text.toLowerCase().match(/[\p{L}][\p{L}'’-]*/gu) || []);
@@ -98,6 +123,7 @@ export function analyseLexical(text) {
   for (const { re, note } of RESIDUE) {
     const hits = [...text.matchAll(re)];
     if (!hits.length) continue;
+    const occurrences = hits.map((h) => occurrence(text, h));
     findings.push({
       id: 'lex.residue',
       severity: 'critical',
@@ -105,13 +131,14 @@ export function analyseLexical(text) {
       detail: `${hits.length === 1 ? 'This phrase' : `${hits.length} phrases like this`} did not come from writing an `
         + 'essay; it came from an assistant replying to a request, and was left in. This is direct evidence rather '
         + 'than an indicator.',
-      quotes: hits.slice(0, 3).map((h) => context(text, h.index)),
+      occurrences,
+      quotes: occurrences.slice(0, 3).map((o) => o.context),
     });
   }
 
   const markdownHits = MARKDOWN_RESIDUE.flatMap(({ re, note }) => {
     const hits = [...text.matchAll(re)];
-    return hits.length ? [{ note, count: hits.length, sample: hits[0][0] }] : [];
+    return hits.length ? [{ note, count: hits.length, hits }] : [];
   });
   if (markdownHits.length >= 2 || markdownHits.some((h) => h.count >= 4)) {
     findings.push({
@@ -121,19 +148,30 @@ export function analyseLexical(text) {
       detail: 'Chat assistants reply in markdown. A word processor has no reason to emit these characters, and a '
         + 'student typing directly into one would have to add them deliberately. Their presence points to text pasted '
         + 'out of a chat window. Innocent explanation: the student drafted in a markdown editor such as Obsidian or Notion.',
-      quotes: markdownHits.slice(0, 3).map((h) => truncate(h.sample, 90)),
+      occurrences: markdownHits.flatMap((h) => h.hits.map((m) => ({
+        start: m.index,
+        end: m.index + m[0].length,
+        text: m[0],
+        context: context(text, m.index),
+        suggestion: {
+          action: 'reformat',
+          // The text without its markers, so the suggestion is the finished
+          // line rather than an instruction to go and edit one.
+          alternatives: [stripMarkdown(m[0])],
+          why: `Delete the ${h.note.replace(/^literal /, '')} and apply the word processor's own formatting instead.`,
+        },
+      }))),
     });
   }
 
-  const favouredHits = FAVOURED_WORDS.flatMap((w) => {
-    const re = new RegExp(`\\b${w}\\b`, 'gi');
-    return [...text.matchAll(re)].map((m) => ({ word: w, index: m.index }));
-  });
+  const favouredHits = FAVOURED_WORDS.flatMap((w) =>
+    [...text.matchAll(new RegExp(`\\b${w}\\b`, 'gi'))].map((m) => ({ word: w, match: m })));
   const favouredRate = per1000(favouredHits.length);
   if (favouredRate >= 4 && favouredHits.length >= 3) {
     const tally = new Map();
     for (const h of favouredHits) tally.set(h.word, (tally.get(h.word) ?? 0) + 1);
     const top = [...tally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const occurrences = favouredHits.map((h) => occurrence(text, h.match)).sort((a, b) => a.start - b.start);
     findings.push({
       id: 'lex.vocabulary',
       severity: favouredRate >= 8 ? 'medium' : 'low',
@@ -141,12 +179,14 @@ export function analyseLexical(text) {
       detail: `Most-used: ${top.map(([w, n]) => `${w} ×${n}`).join(', ')}. Typical academic prose runs under 2 per `
         + '1,000. This is a preference, not a fingerprint: every one of these is a legitimate word, and a student who '
         + 'reads a lot of AI-assisted writing will pick the habit up honestly.',
-      quotes: favouredHits.slice(0, 3).map((h) => context(text, h.index)),
+      occurrences,
+      quotes: occurrences.slice(0, 3).map((o) => o.context),
     });
   }
 
   const phraseHits = FAVOURED_PHRASES.flatMap(({ re }) => [...text.matchAll(re)]);
   if (phraseHits.length >= 3) {
+    const occurrences = phraseHits.map((h) => occurrence(text, h)).sort((a, b) => a.start - b.start);
     findings.push({
       id: 'lex.phrases',
       severity: phraseHits.length >= 6 ? 'medium' : 'low',
@@ -154,11 +194,13 @@ export function analyseLexical(text) {
       detail: 'Whole constructions rather than single words, which makes them somewhat stronger evidence than the '
         + 'vocabulary count. They are also exactly what essay-writing guides teach, so a student following a template '
         + 'produces them too.',
-      quotes: phraseHits.slice(0, 4).map((h) => context(text, h.index)),
+      occurrences,
+      quotes: occurrences.slice(0, 4).map((o) => o.context),
     });
   }
 
-  const transitionRate = per1000((text.match(TRANSITIONS) || []).length);
+  const transitionHits = [...text.matchAll(TRANSITIONS)];
+  const transitionRate = per1000(transitionHits.length);
   if (transitionRate >= 14) {
     findings.push({
       id: 'lex.transitions',
@@ -167,6 +209,8 @@ export function analyseLexical(text) {
       detail: 'Moreover, furthermore, consequently and their relatives appear at roughly double the usual rate for '
         + 'student essays. Generated prose signposts every join; so does writing produced to a marking rubric that '
         + 'rewards visible structure.',
+      // Only the ones with a plainer form to offer; "however" is usually fine.
+      occurrences: transitionHits.map((m) => occurrence(text, m)).filter((o) => o.suggestion),
     });
   }
 
@@ -253,6 +297,17 @@ function overlap(a, b) {
   let shared = 0;
   for (const w of A) if (B.has(w)) shared++;
   return shared / Math.min(A.size, B.size);
+}
+
+/** The line as it should read once the markdown syntax is gone. */
+function stripMarkdown(s) {
+  return s
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/^\s*[-*]\s+/, '')
+    .replace(/\*\*/g, '')
+    .replace(/^```.*$/, '')
+    .replace(/^---+$/, '')
+    .trim();
 }
 
 function context(text, index, span = 60) {
