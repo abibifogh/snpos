@@ -825,3 +825,43 @@ export async function lockPeriod(
     note: (opts.note ?? '').slice(0, 300),
   });
 }
+
+/**
+ * Remove an entry and its lines.
+ *
+ * The last resort, and offered because the owner asked for it. Reversing keeps
+ * both halves and is the right answer for anything a third party has seen;
+ * editing changes it in place and keeps the old version; this leaves nothing
+ * behind but the audit trail — which is exactly why the audit trail is written
+ * first, before a single line is taken away.
+ *
+ * A locked period is refused, and so is an entry that has been reversed:
+ * deleting one half of a pair leaves the other standing on its own, which is
+ * an entry that says the opposite of what happened.
+ */
+export async function deleteEntry(entry: JournalEntry, opts: { deletedBy: string }): Promise<void> {
+  if (entry.reversed_by || entry.reversal_of) {
+    throw new Error('That is one half of a reversal. Deleting one half leaves the other saying the opposite of what happened.');
+  }
+  const lockedThrough = await lockedThroughFor(entry.venue_id);
+  if (isLocked(entry.date, lockedThrough)) throw new Error(lockedMessage(entry.date, lockedThrough));
+
+  const lines = await listAll<JournalLine>('journal_lines', [Query.equal('entry_id', entry.$id)]);
+
+  await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
+    venue_id: entry.venue_id,
+    actor_id: opts.deletedBy,
+    action: 'journal_deleted',
+    entity_type: 'journal_entry',
+    entity_id: entry.$id,
+    before: JSON.stringify({
+      date: entry.date,
+      memo: entry.memo,
+      source: entry.source,
+      lines: lines.map((l) => ({ account_code: l.account_code, debit: l.debit, credit: l.credit })),
+    }).slice(0, 4000),
+  });
+
+  for (const l of lines) await db.deleteDocument(DB_ID, 'journal_lines', l.$id).catch(() => undefined);
+  await db.deleteDocument(DB_ID, 'journal_entries', entry.$id);
+}

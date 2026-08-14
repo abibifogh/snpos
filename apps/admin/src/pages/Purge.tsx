@@ -60,6 +60,34 @@ const GROUPS: Group[] = [
     collection: 'waste_log',
   },
   {
+    /**
+     * The books, which are not the same records as the things they describe.
+     *
+     * A sale is an order and a payment; it is ALSO a journal entry, written
+     * when the shift closed. Those are separate records and always were, which
+     * is what makes accounts survive a till being wiped — and it meant erasing
+     * a period's orders left every figure standing in the accounting report,
+     * with nothing on this page to say so. Somebody erasing March and then
+     * opening the profit and loss reasonably concluded the erase had failed.
+     *
+     * So the books are offered here too, on their own, and named for what
+     * losing them costs. Erasing the orders and keeping the books is a real
+     * choice — it is what an accountant would want — and so is erasing both.
+     * What is not a choice worth having is not being told which one happened.
+     */
+    key: 'ledger',
+    label: 'The books',
+    hint: 'Every journal entry in the period, and the lines under it. This is what the accounting reports read, '
+      + 'so leaving it out means the figures stay even after the orders behind them are gone.',
+    collection: 'journal_entries',
+    // Reconciliation ticks are deliberately left alone. They point at journal
+    // LINES, which are a level below what this deletes, and a tick against a
+    // line that no longer exists counts towards nothing: the reconciliation
+    // adds up the lines it can find, and it cannot find that one. Chasing them
+    // would mean a third level of deletes for rows that are already inert.
+    children: [{ collection: 'journal_lines', field: 'entry_id' }],
+  },
+  {
     key: 'stock_movements',
     label: 'Stock movements',
     hint: 'The history of what went in and out. Current stock levels are not recalculated by erasing these.',
@@ -270,6 +298,23 @@ export function PurgePage() {
         For clearing out test data before you go live, or removing a period you no longer need to keep. This deletes
         permanently; there is no undo and no copy kept. Run your reports first if there is anything you want off them.
       </p>
+
+      {/*
+        The one thing about this page that surprises people.
+
+        A sale is an order and a payment. It is ALSO a journal entry, written
+        when the shift closed, and those are separate records — which is what
+        makes a set of accounts survive a till being wiped, and which meant
+        erasing a period's orders left every figure standing in the accounting
+        report with nothing here to say so. Somebody erasing March and then
+        opening the profit and loss reasonably concluded the erase had failed.
+      */}
+      <Notice tone="info">
+        <strong>Orders and the books are separate records.</strong> A sale is an order and a payment, and it is also a
+        journal entry written when the shift closed. Erasing the orders does not erase the books, so the accounting
+        reports keep their figures — which is what an accountant would want, and is not what most people expect.
+        Tick <em>The books</em> as well if you want the accounting reports cleared too.
+      </Notice>
 
       {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
 

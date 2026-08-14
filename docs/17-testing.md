@@ -189,6 +189,12 @@ not just what to press.
 | P47 | Press a balance sheet line | Everything **from the beginning**, not just this month |
 | P48 | A posting with a receipt attached | View opens it from inside the list |
 | P49 | Change the dates, press the same line again | The list changes with them |
+| P50 | Erase a period's orders only, then open the profit and loss | Figures **still there**, and the page said so beforehand |
+| P51 | Erase the same period with **The books** ticked | Accounting figures go too |
+| P52 | Journal → Delete on an entry | Warned, then gone. Statements move with it |
+| P53 | The audit log after P52 | What it said is there, under journal_deleted |
+| P54 | Delete one half of a reversal | Refused. The other half would say the opposite |
+| P55 | Delete an entry inside a closed period | Refused |
 
 ### E. Permissions
 

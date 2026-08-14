@@ -3,7 +3,7 @@ import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Text
 import { listAll, humanError, saveDropping } from '../lib';
 import {
   formatMoney, parseMoney, toInput, Query,
-  ledgerLines, loadAccounts, postManualEntry, reverseEntry, editEntry, loadFixedAssets, postDepreciation,
+  ledgerLines, loadAccounts, postManualEntry, reverseEntry, editEntry, deleteEntry, loadFixedAssets, postDepreciation,
   profitAndLoss, balanceSheet, totalsByAccount, naturalBalance, entryProblem, within,
   bookValue, monthOf, reconcile, db, DB_ID, ID,
   matchStatement, readStatement, parseCsv, loadStatementLines, importStatementLines,
@@ -543,6 +543,26 @@ function Journal({
     }
   };
 
+  /**
+   * Remove an entry outright.
+   *
+   * Behind a confirmation because there is nothing to undo it with. Reversing
+   * keeps both halves and editing keeps the old version; this keeps only the
+   * audit log, which is written before anything is taken away.
+   */
+  const [killing, setKilling] = useState<JournalEntry | null>(null);
+  const kill = async () => {
+    if (!killing) return;
+    try {
+      await deleteEntry(killing, { deletedBy: userId });
+      setKilling(null);
+      await onChanged();
+      toast('Deleted. What it said is in the audit log.');
+    } catch (e) {
+      toast(humanError(e), 'err');
+    }
+  };
+
   const undo = async (entry: JournalEntry) => {
     try {
       await reverseEntry(entry, { postedBy: userId });
@@ -628,6 +648,7 @@ function Journal({
                             {!e.reversal_of && (
                               <Button size="sm" variant="ghost" onClick={() => void undo(e)}>Reverse</Button>
                             )}
+                            <Button size="sm" variant="ghost" onClick={() => setKilling(e)}>Delete</Button>
                           </div>
                         )}
                       </td>
@@ -639,6 +660,29 @@ function Journal({
           </div>
         )}
       </Card>
+
+      {killing && (
+        <Modal
+          title={`Delete ${killing.memo || killing.source}`}
+          onClose={() => setKilling(null)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setKilling(null)}>Keep it</Button>
+              <Button variant="danger" onClick={() => void kill()}>Delete for good</Button>
+            </>
+          }
+        >
+          <Notice>
+            This removes the entry and its lines. Every figure it was part of moves, on the statements, the trial
+            balance and any reconciliation that had ticked it. There is no undo — what it said goes to the audit
+            log and nowhere else.
+            <div style={{ marginTop: '0.6rem' }}>
+              Reversing instead leaves both halves standing and nets to nothing, which is the better answer for
+              anything an accountant or a bank has already seen.
+            </div>
+          </Notice>
+        </Modal>
+      )}
 
       {writing && (
         <Modal
