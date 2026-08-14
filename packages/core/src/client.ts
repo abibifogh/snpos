@@ -138,10 +138,10 @@ export async function saveDropping(
  * Turn an Appwrite failure into something a person can act on.
  *
  * The browser reports a blocked cross-origin request as an ordinary network
- * failure, it cannot see the response at all, so "could not reach the
- * server" and "this address is not registered in Appwrite" look identical from
- * here. Since the second is by far the most common cause during setup, the
- * message names it rather than leaving someone to check their wifi.
+ * failure — it cannot see the response at all — so "the server is down",
+ * "this device is offline" and "this address is not registered in Appwrite"
+ * arrive here as the same thing, and nothing can tell them apart from inside
+ * the page.
  */
 export function humanError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
@@ -171,11 +171,25 @@ export function humanError(e: unknown): string {
   if (/Rate limit/i.test(msg)) return 'Too many attempts. Wait a minute and try again.';
 
   if (/Network|fetch failed|Failed to fetch|Load failed|NetworkError/i.test(msg)) {
+    /**
+     * Three causes, and the browser cannot tell them apart.
+     *
+     * This used to name only the first, confidently, which is right on the day
+     * somebody sets the system up and wrong every day afterwards — an address
+     * that has been working for months has not quietly unregistered itself,
+     * and sending an owner to the platform list to find it already there
+     * teaches them the message is not worth reading.
+     *
+     * Ordered by which is actually likely, and the order depends on whether it
+     * has ever worked from here. Said in that order, briefly, so somebody can
+     * work down it.
+     */
     return (
-      `Could not reach Appwrite from ${window.location.hostname}. ` +
-      'The usual cause is that this address is not registered: in the Appwrite console open ' +
-      'Settings → Platforms and add a Web app with hostname ' +
-      `"${window.location.hostname}". Otherwise check your connection.`
+      `Could not reach Appwrite from ${window.location.hostname}. `
+      + 'If this address has never worked: it needs registering, in the Appwrite console under '
+      + `Settings → Platforms, as a Web app with hostname "${window.location.hostname}". `
+      + 'If it worked until now: check whether the project is paused or over its plan limits, '
+      + 'whether Appwrite itself is having trouble, and whether this device is online.'
     );
   }
 
