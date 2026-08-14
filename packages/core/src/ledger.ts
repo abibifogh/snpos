@@ -1,6 +1,7 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
 import type { Doc } from './types';
 import { entryProblem, within, chargeForMonth } from './ledger-math';
+import { uploadFile } from './files';
 import type { AccountRow, DepreciableAsset } from './ledger-math';
 
 export interface JournalEntry extends Doc {
@@ -14,6 +15,8 @@ export interface JournalEntry extends Doc {
   /** What undid this entry, and what this entry undid. See reverseEntry. */
   reversed_by?: string;
   reversal_of?: string;
+  /** The evidence, attached to the posting rather than to a drawer. */
+  receipt_file_id?: string;
 }
 
 export interface JournalLine extends Doc {
@@ -596,4 +599,145 @@ export async function editEntry(
     memo: next.memo,
     ...(next.date ? { date: next.date.toISOString() } : {}),
   });
+}
+
+/* --------------------------------------------------- evidence for a posting */
+
+/**
+ * Attach a receipt to a posting.
+ *
+ * A receipt in a drawer proves nothing a year later. One attached to an
+ * expense is at least findable, but only from the expense — and a posting made
+ * by hand, which is exactly the kind somebody will be asked to justify, had
+ * nowhere at all to put one.
+ *
+ * The upload happens first and the entry is only pointed at it once it is
+ * there, so a failed upload leaves an entry with no receipt rather than an
+ * entry pointing at a file that does not exist.
+ */
+export async function attachReceipt(
+  entryId: string,
+  file: File,
+  settings?: Parameters<typeof uploadFile>[2],
+): Promise<string> {
+  const { fileId } = await uploadFile(file, 'receipt', settings);
+  await db.updateDocument(DB_ID, 'journal_entries', entryId, { receipt_file_id: fileId });
+  return fileId;
+}
+
+/* ------------------------------------------------------- bank statements */
+
+/**
+ * One row from a bank's own export.
+ *
+ * Named for the bank rather than for the word "statement", because a
+ * consignor's statement already owns that name in these exports and a reader
+ * three files away cannot tell which is which.
+ */
+export interface BankStatementLine extends Doc {
+  venue_id?: string;
+  account_code: string;
+  statement_date?: string;
+  line_date: string;
+  description?: string;
+  amount: number;
+  matched_line_id?: string;
+}
+
+export const loadStatementLines = async (accountCode: string): Promise<BankStatementLine[]> =>
+  (await listAll<BankStatementLine>('statement_lines').catch(() => [] as BankStatementLine[]))
+    .filter((l) => l.account_code === accountCode)
+    .sort((a, b) => (a.line_date ?? '').localeCompare(b.line_date ?? ''));
+
+/**
+ * Save the rows read out of a bank's export.
+ *
+ * A line already imported is skipped rather than added again. Somebody
+ * uploading August twice, or a file that overlaps last month by a few days,
+ * is the ordinary case and not a mistake worth refusing — but importing the
+ * same transaction twice turns a reconciliation into a search for a
+ * discrepancy that was created by the import.
+ *
+ * Sameness is the date, the amount and the description together. Any two of
+ * those genuinely repeat; all three on one account is one transaction.
+ */
+export async function importStatementLines(
+  venueId: string,
+  accountCode: string,
+  statementDate: string,
+  lines: { date: string; description: string; amount: number }[],
+): Promise<{ added: number; alreadyThere: number }> {
+  const existing = await loadStatementLines(accountCode);
+  const seen = new Set(
+    existing.map((l) => `${(l.line_date ?? '').slice(0, 10)}|${l.amount}|${(l.description ?? '').trim()}`),
+  );
+
+  let added = 0;
+  let alreadyThere = 0;
+  for (const l of lines) {
+    const key = `${l.date.slice(0, 10)}|${l.amount}|${l.description.trim()}`;
+    if (seen.has(key)) { alreadyThere += 1; continue; }
+    seen.add(key);
+    await db.createDocument(DB_ID, 'statement_lines', ID.unique(), {
+      venue_id: venueId,
+      account_code: accountCode,
+      statement_date: new Date(`${statementDate}T12:00:00`).toISOString(),
+      line_date: new Date(`${l.date}T12:00:00`).toISOString(),
+      description: l.description.slice(0, 300),
+      amount: l.amount,
+      imported_at: new Date().toISOString(),
+    });
+    added += 1;
+  }
+  return { added, alreadyThere };
+}
+
+/**
+ * Post the entry a bank line turned out to be, and tie the two together.
+ *
+ * For the lines the books have nothing for, which is what a reconciliation is
+ * really looking for: a charge nobody recorded, interest, a transfer somebody
+ * made from a phone. Done here rather than by sending somebody to the journal
+ * and back, because the figure and the date are already on the screen and
+ * retyping them is where they get typed wrongly.
+ */
+export async function postFromStatement(
+  venueId: string,
+  bankLine: BankStatementLine,
+  opts: { accountCode: string; cashAccountCode: string; memo: string; postedBy: string },
+): Promise<string> {
+  const amount = Math.abs(bankLine.amount);
+  // Money in debits the bank account and credits wherever it came from; money
+  // out is the other way round. Getting this backwards is the single thing a
+  // person doing this by hand gets wrong, which is why they do not type it.
+  const intoAccount = bankLine.amount > 0;
+
+  const entry = await postEntry(
+    venueId,
+    {
+      date: new Date(bankLine.line_date),
+      source: 'adjustment',
+      sourceId: `statement:${bankLine.$id}`,
+      memo: opts.memo || bankLine.description || 'From the bank statement',
+      postedBy: opts.postedBy,
+    },
+    intoAccount
+      ? [
+          { account_code: opts.cashAccountCode, debit: amount, credit: 0 },
+          { account_code: opts.accountCode, debit: 0, credit: amount },
+        ]
+      : [
+          { account_code: opts.accountCode, debit: amount, credit: 0 },
+          { account_code: opts.cashAccountCode, debit: 0, credit: amount },
+        ],
+  );
+
+  // The line it became, so the same bank line cannot be posted twice.
+  const lines = await listAll<JournalLine>('journal_lines', [Query.equal('entry_id', entry.$id)]);
+  const cashLine = lines.find((l) => l.account_code === opts.cashAccountCode);
+  if (cashLine) {
+    await db.updateDocument(DB_ID, 'statement_lines', bankLine.$id, { matched_line_id: cashLine.$id })
+      .catch(() => undefined);
+  }
+  return entry.$id;
 }

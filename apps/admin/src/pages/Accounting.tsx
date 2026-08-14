@@ -6,9 +6,11 @@ import {
   ledgerLines, loadAccounts, postManualEntry, reverseEntry, editEntry, loadFixedAssets, postDepreciation,
   profitAndLoss, balanceSheet, totalsByAccount, naturalBalance, entryProblem, within,
   bookValue, monthOf, reconcile, db, DB_ID, ID,
+  matchStatement, readStatement, parseCsv, loadStatementLines, importStatementLines,
+  postFromStatement, attachReceipt, downloadUrl,
 } from '@snpos/core';
 import type {
-  AccountRow, JournalEntry, JournalLine, FixedAsset, LineRow, Doc,
+  AccountRow, JournalEntry, JournalLine, FixedAsset, LineRow, Doc, BankStatementLine, Settings,
 } from '@snpos/core';
 import { useSession } from '../session';
 import { AccountsManager } from '../components/AccountsManager';
@@ -206,6 +208,7 @@ export function AccountingPage() {
           decimals={decimals}
           venueId={venueId}
           userId={user?.$id ?? ''}
+          settings={settings}
           onChanged={load}
           toast={toast}
         />
@@ -233,6 +236,7 @@ export function AccountingPage() {
           decimals={decimals}
           venueId={venueId}
           userId={user?.$id ?? ''}
+          onChanged={load}
           toast={toast}
         />
       )}
@@ -340,7 +344,7 @@ function Statements({
 /* ---------------------------------------------------------------- journal */
 
 function Journal({
-  entries, lines, accounts, from, to, money, decimals, venueId, userId, onChanged, toast,
+  entries, lines, accounts, from, to, money, decimals, venueId, userId, settings, onChanged, toast,
 }: {
   entries: JournalEntry[];
   lines: (JournalLine & { date: string })[];
@@ -351,10 +355,33 @@ function Journal({
   decimals: number;
   venueId: string;
   userId: string;
+  settings: Settings | null;
   onChanged: () => Promise<void>;
   toast: (m: string, t?: 'ok' | 'err') => void;
 }) {
   const [writing, setWriting] = useState(false);
+  /**
+   * The evidence, attached to the posting itself.
+   *
+   * A receipt in a drawer proves nothing a year later, and one attached to an
+   * expense is only reachable from the expense — a posting made by hand, which
+   * is exactly the kind somebody will be asked to justify, had nowhere to put
+   * one at all.
+   */
+  const [attaching, setAttaching] = useState<string | null>(null);
+  const attach = async (entry: JournalEntry, file: File) => {
+    if (file.size > 10 * 1024 * 1024) { toast('That file is over 10MB. Take a smaller photo.', 'err'); return; }
+    setAttaching(entry.$id);
+    try {
+      await attachReceipt(entry.$id, file, settings);
+      await onChanged();
+      toast('Receipt attached');
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setAttaching(null);
+    }
+  };
   /**
    * The entry being changed, or null when this is a new one.
    *
@@ -477,7 +504,7 @@ function Journal({
           <div className="table-wrap">
             <table className="data">
               <thead>
-                <tr><th>Date</th><th>What for</th><th>Source</th><th className="num">Amount</th><th /></tr>
+                <tr><th>Date</th><th>What for</th><th>Source</th><th className="num">Amount</th><th>Receipt</th><th /></tr>
               </thead>
               <tbody>
                 {shown.map((e) => {
@@ -498,6 +525,32 @@ function Journal({
                       </td>
                       <td className="dim small">{e.source.replace('_', ' ')}</td>
                       <td className="num">{money(amount)}</td>
+                      <td>
+                        {e.receipt_file_id ? (
+                          <a
+                            href={downloadUrl(e.receipt_file_id, 'receipt', settings)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="small"
+                          >
+                            View
+                          </a>
+                        ) : (
+                          <label className="small" style={{ cursor: 'pointer', opacity: attaching === e.$id ? 0.5 : 1 }}>
+                            {attaching === e.$id ? 'Attaching…' : 'Attach'}
+                            <input
+                              type="file"
+                              accept="image/*,application/pdf"
+                              capture="environment"
+                              style={{ display: 'none' }}
+                              onChange={(ev) => {
+                                const f = ev.target.files?.[0];
+                                if (f) void attach(e, f);
+                              }}
+                            />
+                          </label>
+                        )}
+                      </td>
                       <td>
                         {e.reversed_by ? (
                           <span className="small dim">reversed</span>
@@ -904,7 +957,7 @@ interface RecRow extends Doc {
  * exercise.
  */
 function Reconcile({
-  accounts, lines, money, decimals, venueId, userId, toast,
+  accounts, lines, money, decimals, venueId, userId, onChanged, toast,
 }: {
   accounts: AccountRow[];
   lines: (JournalLine & { date: string })[];
@@ -912,6 +965,7 @@ function Reconcile({
   decimals: number;
   venueId: string;
   userId: string;
+  onChanged: () => Promise<void>;
   toast: (m: string, t?: 'ok' | 'err') => void;
 }) {
   // Only accounts money actually sits in. Reconciling "Food sales" against a
@@ -967,6 +1021,97 @@ function Reconcile({
         .reduce((s, l) => s + (l.debit ?? 0) - (l.credit ?? 0), 0),
     [lines, code, done],
   );
+
+  /* -------------------------------------------------- the bank's own rows */
+
+  const [bank, setBank] = useState<BankStatementLine[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [importProblems, setImportProblems] = useState<string[]>([]);
+  const [creating, setCreating] = useState<BankStatementLine | null>(null);
+
+  const loadBank = () => loadStatementLines(code).then(setBank).catch(() => setBank([]));
+  useEffect(() => { void loadBank(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [code, busy]);
+
+  /**
+   * What the bank says, paired with what the books say.
+   *
+   * Amounts have to agree exactly; the date may be a few days out, because a
+   * payment written on Friday reaches a bank on Monday. Everything the books
+   * have no bank line for stays on the list below to be ticked by hand, and
+   * everything the bank has that the books do not is the point of the whole
+   * exercise — a charge nobody recorded, interest, a transfer somebody made
+   * from their phone.
+   */
+  const unpaired = bank.filter((b) => !b.matched_line_id);
+  const paired = useMemo(
+    () => matchStatement(
+      unpaired.map((b) => ({
+        id: b.$id,
+        date: (b.line_date ?? '').slice(0, 10),
+        description: b.description ?? '',
+        amount: b.amount,
+      })),
+      rows.map((r) => ({ line_id: r.line_id, date: r.date, amount: r.amount })),
+    ),
+    [unpaired, rows],
+  );
+
+  const takeFile = async (file: File) => {
+    setImporting(true);
+    setImportProblems([]);
+    try {
+      const { lines: read, problems } = readStatement(parseCsv(await file.text()));
+      setImportProblems(problems);
+      if (read.length === 0) return;
+      const { added, alreadyThere } = await importStatementLines(venueId, code, statementDate, read);
+      await loadBank();
+      toast(
+        `${added} line${added === 1 ? '' : 's'} imported`
+        + (alreadyThere ? `, ${alreadyThere} already there and left alone` : ''),
+      );
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  /** Tick everything the matcher is confident about, in one go. */
+  const acceptMatches = () => {
+    setCleared((prev) => {
+      const next = new Set(prev);
+      for (const m of paired.matches) if (m.bookLineId) next.add(m.bookLineId);
+      return next;
+    });
+    toast(`${paired.matches.filter((m) => m.bookLineId).length} matched and ticked`);
+  };
+
+  const [newAccount, setNewAccount] = useState('');
+  const [newMemo, setNewMemo] = useState('');
+
+  /** Post what a bank line turned out to be, and tie the two together. */
+  const recordIt = async () => {
+    if (!creating || !newAccount) return;
+    setBusy(true);
+    try {
+      await postFromStatement(venueId, creating, {
+        accountCode: newAccount,
+        cashAccountCode: code,
+        memo: newMemo.trim(),
+        postedBy: userId,
+      });
+      setCreating(null);
+      setNewAccount('');
+      setNewMemo('');
+      await loadBank();
+      await onChanged();
+      toast('Posted, and matched to the statement line');
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const perStatement = parseMoney(balanceText, decimals) ?? 0;
   const summary = reconcile(rows, perStatement - broughtForward);
@@ -1062,6 +1207,137 @@ function Reconcile({
           </Button>
         </div>
       </Card>
+
+      {/*
+        The bank's own rows.
+
+        Kept rather than matched and discarded: the useful question afterwards
+        is not "did it reconcile" but "which line did not, and what did the
+        bank call it".
+      */}
+      <Card
+        title="What the bank says"
+        actions={
+          <label className="btn btn-sm" style={{ cursor: 'pointer' }}>
+            {importing ? 'Reading…' : 'Upload a statement'}
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              style={{ display: 'none' }}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) void takeFile(f); }}
+            />
+          </label>
+        }
+        pad
+      >
+        <p className="small dim" style={{ marginTop: 0 }}>
+          A CSV from the bank. The columns are read by name, so whatever yours calls them — Date, Narration,
+          Amount, or Money in and Money out — is fine as long as those names are in the first row. Uploading the
+          same file twice adds nothing twice.
+        </p>
+
+        {importProblems.length > 0 && (
+          <Notice>
+            {importProblems.slice(0, 6).map((p) => <div key={p}>{p}</div>)}
+            {importProblems.length > 6 && <div>…and {importProblems.length - 6} more.</div>}
+          </Notice>
+        )}
+
+        {unpaired.length === 0 ? (
+          <Empty title="Nothing from the bank yet">Upload a statement and its lines are matched against the postings.</Empty>
+        ) : (
+          <>
+            <div className="row" style={{ justifyContent: 'space-between', marginBottom: '0.6rem' }}>
+              <span className="small dim">
+                {paired.matches.filter((m) => m.bookLineId).length} of {unpaired.length} matched to a posting
+              </span>
+              <Button
+                size="sm"
+                disabled={!paired.matches.some((m) => m.bookLineId)}
+                onClick={acceptMatches}
+              >
+                Tick all the matches
+              </Button>
+            </div>
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr><th>Date</th><th>What the bank called it</th><th className="num">Amount</th><th>Matched</th><th /></tr>
+                </thead>
+                <tbody>
+                  {paired.matches.map((m) => (
+                    <tr key={m.bank.id}>
+                      <td className="dim small">{m.bank.date}</td>
+                      <td style={{ overflowWrap: 'anywhere' }}>{m.bank.description || '-'}</td>
+                      <td className="num">{money(m.bank.amount)}</td>
+                      <td className="small">
+                        {m.how === 'exact' && <span style={{ color: 'var(--ok)' }}>same day</span>}
+                        {/* Said as what it is, so a person can disagree with it. */}
+                        {m.how === 'near' && <span style={{ color: 'var(--warn)' }}>{m.daysApart}d apart</span>}
+                        {m.how === 'none' && <span className="dim">nothing in the books</span>}
+                      </td>
+                      <td>
+                        {m.how === 'none' && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              const row = bank.find((b) => b.$id === m.bank.id) ?? null;
+                              setCreating(row);
+                              setNewMemo(row?.description ?? '');
+                            }}
+                          >
+                            Record it
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </Card>
+
+      {creating && (
+        <Modal
+          title="Record this from the statement"
+          onClose={() => setCreating(null)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setCreating(null)}>Cancel</Button>
+              <Button variant="primary" loading={busy} disabled={!newAccount} onClick={() => void recordIt()}>
+                Post it
+              </Button>
+            </>
+          }
+        >
+          {/* The date and the amount are already known, so they are not typed:
+              retyping a figure that is on the screen is where it gets typed
+              wrongly. All that is missing is what it was for. */}
+          <p className="small dim" style={{ marginTop: 0 }}>
+            {(creating.line_date ?? '').slice(0, 10)} · <strong>{money(creating.amount)}</strong>
+            {creating.description ? ` · ${creating.description}` : ''}
+          </p>
+          <p className="small dim">
+            {creating.amount > 0
+              ? 'Money into the account. Where did it come from?'
+              : 'Money out of the account. What was it for?'}
+          </p>
+          <Field label="What this was">
+            <Select value={newAccount} onChange={(e) => setNewAccount(e.target.value)}>
+              <option value="">Choose an account</option>
+              {accounts
+                .filter((a) => a.code !== code)
+                .map((a) => <option key={a.code} value={a.code}>{a.code} · {a.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Note" hint="What it says on the statement, unless you can do better.">
+            <Input value={newMemo} onChange={(e) => setNewMemo(e.target.value)} />
+          </Field>
+        </Modal>
+      )}
 
       <Card title="Postings on this account" pad>
         {rows.length === 0 ? (

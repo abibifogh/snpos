@@ -5,7 +5,8 @@ import {
   depreciationSchedule, bookValue, chargeForMonth, monthOf, nextMonth, within,
 } from '../ledger-math.ts';
 import { reconcile } from '../ledger-math.ts';
-import type { AccountRow, LineRow, RecLine } from '../ledger-math.ts';
+import { matchStatement, readStatement } from '../ledger-math.ts';
+import type { AccountRow, LineRow, RecLine, BankLine } from '../ledger-math.ts';
 
 const CHART: AccountRow[] = [
   { code: '1000', name: 'Cash on hand', type: 'asset' },
@@ -227,4 +228,95 @@ test('nothing ticked and nothing on the statement still agrees', () => {
   const r = reconcile([], 0);
   assert.equal(r.agreed, true);
   assert.equal(r.outstanding, 0);
+});
+
+/* ------------------------------------------------ matching a bank statement */
+
+test('a statement line matches a posting of the same amount, near the same day', () => {
+  const bank: BankLine[] = [
+    { id: 'b1', date: '2026-08-03', description: 'TRF NICE OPS', amount: 50000 },
+    { id: 'b2', date: '2026-08-06', description: 'RENT', amount: -20000 },
+  ];
+  const book = [
+    { line_id: 'l1', date: '2026-08-03', amount: 50000 },
+    { line_id: 'l2', date: '2026-08-05', amount: -20000 },
+  ];
+  const { matches, unmatchedBook } = matchStatement(bank, book);
+
+  assert.equal(matches[0].bookLineId, 'l1');
+  assert.equal(matches[0].how, 'exact', 'same day');
+  assert.equal(matches[1].bookLineId, 'l2');
+  assert.equal(matches[1].how, 'near', 'written Friday, cleared Monday');
+  assert.equal(matches[1].daysApart, 1);
+  assert.equal(unmatchedBook.length, 0);
+});
+
+test('an amount that does not agree exactly is never matched', () => {
+  /**
+   * Matching by a similar amount produces pairs that look right and are not,
+   * and a reconciliation that quietly matched the wrong two things is worse
+   * than one that matched nothing — nobody goes back to check.
+   */
+  const { matches } = matchStatement(
+    [{ id: 'b1', date: '2026-08-03', description: 'x', amount: 50000 }],
+    [{ line_id: 'l1', date: '2026-08-03', amount: 49900 }],
+  );
+  assert.equal(matches[0].bookLineId, null);
+  assert.equal(matches[0].how, 'none');
+});
+
+test('nothing is matched twice, and the closest date wins', () => {
+  // A month of identical amounts is exactly where taking each bank line in
+  // turn pairs everything with the wrong day.
+  const bank: BankLine[] = [
+    { id: 'b1', date: '2026-08-20', description: 'weekly', amount: 10000 },
+    { id: 'b2', date: '2026-08-13', description: 'weekly', amount: 10000 },
+  ];
+  const book = [
+    { line_id: 'l-13', date: '2026-08-13', amount: 10000 },
+    { line_id: 'l-20', date: '2026-08-20', amount: 10000 },
+  ];
+  const { matches } = matchStatement(bank, book);
+  assert.equal(matches.find((m) => m.bank.id === 'b1')?.bookLineId, 'l-20');
+  assert.equal(matches.find((m) => m.bank.id === 'b2')?.bookLineId, 'l-13');
+});
+
+test('a posting too far from the statement date is left for a person', () => {
+  const { matches, unmatchedBook } = matchStatement(
+    [{ id: 'b1', date: '2026-08-30', description: 'x', amount: 10000 }],
+    [{ line_id: 'l1', date: '2026-08-01', amount: 10000 }],
+  );
+  assert.equal(matches[0].how, 'none');
+  assert.deepEqual(unmatchedBook, ['l1']);
+});
+
+test('a statement is read by its column names, whatever the bank calls them', () => {
+  const one = readStatement([
+    ['Date', 'Narration', 'Amount'],
+    ['14/08/2026', 'POS SETTLEMENT', '1,250.00'],
+    ['15/08/2026', 'BANK CHARGES', '(15.50)'],
+  ]);
+  assert.equal(one.problems.length, 0);
+  assert.equal(one.lines[0].date, '2026-08-14', 'day first, as Ghana writes it');
+  assert.equal(one.lines[0].amount, 125000);
+  assert.equal(one.lines[1].amount, -1550, 'brackets mean money out');
+
+  // The other shape: two columns instead of one signed one.
+  const two = readStatement([
+    ['Transaction Date', 'Details', 'Money In', 'Money Out'],
+    ['2026-08-14', 'Takings', '500.00', ''],
+    ['2026-08-16', 'Rent', '', '200.00'],
+  ]);
+  assert.equal(two.lines[0].amount, 50000);
+  assert.equal(two.lines[1].amount, -20000);
+});
+
+test('a statement missing the columns that matter says so rather than importing nonsense', () => {
+  // A file whose columns moved would otherwise import silently with the date
+  // in the amount.
+  const { lines, problems } = readStatement([['Something', 'Else'], ['a', 'b']]);
+  assert.equal(lines.length, 0);
+  assert.equal(problems.length, 2);
+  assert.match(problems.join(' '), /date/i);
+  assert.match(problems.join(' '), /amount/i);
 });

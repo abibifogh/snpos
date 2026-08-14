@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck (apps AND tests), tests, schema check, build. Before deploying.
 ```
 
-141 tests, no database, about half a second. They cover the sums that decide what
+147 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -159,6 +159,17 @@ not just what to press.
 | P22 | Reconcile → tick postings, enter the statement figure | Difference goes to nought, and it says Agreed |
 | P23 | Enter a figure that does not match | Says how much is unexplained, and does not call it rounding |
 | P24 | Agree it, then come back | The settled postings are off the list, counted as brought forward |
+| P25 | Upload a bank CSV with Date, Narration, Amount | Lines imported. Day-first dates read right |
+| P26 | Upload one with Money In and Money Out instead | Same result. Out comes in negative |
+| P27 | Upload a file with neither | **Nothing imported**, and it names the missing columns |
+| P28 | Upload the same file twice | Nothing added twice, and it says how many were already there |
+| P29 | A bank line matching a posting to the pesewa, same day | Shown as **same day** |
+| P30 | One matching two days later | Shown as **2d apart**, not silently accepted |
+| P31 | One a pesewa out | **Not matched.** Near enough is not matched |
+| P32 | Press Tick all the matches | Every matched posting ticks. Difference moves |
+| P33 | A bank charge the books never had, press Record it | Posts with the statement's date and figure. Cannot be posted twice |
+| P34 | Journal, an entry with no receipt, press Attach | Photo uploads. Turns into View |
+| P35 | Press View | Opens the receipt |
 
 ### E. Permissions
 

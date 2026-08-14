@@ -1443,6 +1443,38 @@ export const COLLECTIONS = [
     ],
   },
   {
+    /**
+     * What a bank says happened, as its own record.
+     *
+     * Kept rather than matched and thrown away, because the useful question
+     * afterwards is not "did it reconcile" but "which line did not, and what
+     * did the bank call it". A line the books have nothing for is the reason
+     * this exercise exists, and it needs somewhere to sit while somebody works
+     * out what it was.
+     */
+    id: 'statement_lines',
+    name: 'Statement lines',
+    perms: { read: MGMT, create: MGMT, update: MGMT, delete: MGMT },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['account_code', 's', 10, true],
+      ['statement_date', 'd', null, false],
+      ['line_date', 'd', null, true],
+      ['description', 's', 300, false],
+      // Signed: positive into the account, negative out of it. One column
+      // rather than two, because a bank that exports two is normalised on the
+      // way in and everything downstream then has one thing to reason about.
+      ['amount', 'i', null, true, 0],
+      // The posting this turned out to be, once somebody agreed it.
+      ['matched_line_id', 's', 64, false],
+      ['imported_at', 'd', null, false],
+    ],
+    indexes: [
+      ['account_date', 'key', ['account_code', 'line_date']],
+      ['matched', 'key', ['matched_line_id']],
+    ],
+  },
+  {
     id: 'journal_entries',
     name: 'Journal entries',
     /**
@@ -1469,6 +1501,11 @@ export const COLLECTIONS = [
       ['source_id', 's', 64, false],
       ['shift_id', 's', 64, false],
       ['memo', 's', 500, false],
+      // The evidence, attached to the posting itself. A receipt in a drawer
+      // proves nothing a year later, and one attached to an expense is only
+      // reachable from the expense — a posting made by hand, which is exactly
+      // the kind somebody will be asked to justify, had nowhere to put one.
+      ['receipt_file_id', 's', 64, false],
       ['posted_by', 's', 64, true],
       // Two halves of the same fact, kept on both entries so it can be read
       // from either end: the original names what undid it, the reversal names

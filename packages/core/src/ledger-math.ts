@@ -368,3 +368,186 @@ export function reconcile(lines: RecLine[], perStatement: number): RecSummary {
   const difference = perStatement - cleared;
   return { perBooks, cleared, outstanding, perStatement, difference, agreed: difference === 0 };
 }
+
+/* ----------------------------------------------- matching a bank statement */
+
+export interface BankLine {
+  id: string;
+  date: string;
+  description: string;
+  /** Positive into the account, negative out of it. */
+  amount: number;
+}
+
+export interface Match {
+  bank: BankLine;
+  /** The posting it was matched to, or null when nothing fits. */
+  bookLineId: string | null;
+  /** How the match was arrived at, so a person can judge it. */
+  how: 'exact' | 'near' | 'none';
+  /** Days between the bank's date and the posting's. */
+  daysApart: number;
+}
+
+/**
+ * How far apart two dates may be and still be the same transaction.
+ *
+ * A payment written on Friday reaches a bank on Monday, and a cheque takes
+ * longer. Five days catches nearly everything without matching this month's
+ * rent to last month's, and anything outside it is offered to a person rather
+ * than decided for them.
+ */
+export const MATCH_WINDOW_DAYS = 5;
+
+const daysBetween = (a: string, b: string): number => {
+  const x = Date.parse(`${a.slice(0, 10)}T00:00:00Z`);
+  const y = Date.parse(`${b.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return Number.POSITIVE_INFINITY;
+  return Math.abs(Math.round((x - y) / 86_400_000));
+};
+
+/**
+ * Pair up what the bank says with what the books say.
+ *
+ * The amount has to agree exactly. Everything else is a judgement, and this is
+ * deliberately not clever about any of it: matching by a similar amount, or by
+ * words in a description, produces pairs that look right and are not, and a
+ * reconciliation that quietly matched the wrong two things is worse than one
+ * that matched nothing, because nobody goes looking afterwards.
+ *
+ * Same day is called exact; within a few days is called near, because a
+ * payment written on Friday reaches the bank on Monday. Both are shown as what
+ * they are so a person can disagree.
+ *
+ * Nothing is matched twice. A book posting taken by one bank line is gone, and
+ * the closest date wins, so two identical amounts a month apart pair with their
+ * own dates rather than with whichever came first in the file.
+ */
+export function matchStatement(
+  bank: BankLine[],
+  book: { line_id: string; date: string; amount: number }[],
+  windowDays = MATCH_WINDOW_DAYS,
+): { matches: Match[]; unmatchedBook: string[] } {
+  const taken = new Set<string>();
+
+  // Closest first, across the whole file rather than line by line. Taking each
+  // bank line in turn lets an early one claim a posting that belonged to a
+  // later one, which is how a month of small identical amounts ends up
+  // matched entirely to the wrong days.
+  const candidates: { bankId: string; lineId: string; days: number }[] = [];
+  for (const b of bank) {
+    for (const l of book) {
+      if (l.amount !== b.amount) continue;
+      const days = daysBetween(b.date, l.date);
+      if (days <= windowDays) candidates.push({ bankId: b.id, lineId: l.line_id, days });
+    }
+  }
+  candidates.sort((x, y) => x.days - y.days);
+
+  const chosen = new Map<string, { lineId: string; days: number }>();
+  for (const c of candidates) {
+    if (chosen.has(c.bankId) || taken.has(c.lineId)) continue;
+    chosen.set(c.bankId, { lineId: c.lineId, days: c.days });
+    taken.add(c.lineId);
+  }
+
+  const matches: Match[] = bank.map((b) => {
+    const hit = chosen.get(b.id);
+    if (!hit) return { bank: b, bookLineId: null, how: 'none', daysApart: 0 };
+    return {
+      bank: b,
+      bookLineId: hit.lineId,
+      how: hit.days === 0 ? 'exact' : 'near',
+      daysApart: hit.days,
+    };
+  });
+
+  return { matches, unmatchedBook: book.filter((l) => !taken.has(l.line_id)).map((l) => l.line_id) };
+}
+
+/**
+ * Read a bank statement's rows into lines.
+ *
+ * Banks export whatever they like, so the columns are named rather than
+ * assumed by position: a file whose columns moved would otherwise import
+ * silently with the date in the amount. Money in and money out arrive either
+ * as one signed column or as two, and both are accepted, because arguing with
+ * somebody's bank about its export format is not a fight worth having.
+ */
+export function readStatement(rows: string[][]): { lines: BankLine[]; problems: string[] } {
+  const problems: string[] = [];
+  if (rows.length < 2) return { lines: [], problems: ['That file has no rows in it.'] };
+
+  const head = rows[0].map((h) => h.trim().toLowerCase().replace(/[^a-z]/g, ''));
+  const find = (...names: string[]) => head.findIndex((h) => names.some((n) => h === n || h.includes(n)));
+
+  const iDate = find('date', 'transactiondate', 'posteddate');
+  const iDesc = find('description', 'narration', 'details', 'particulars', 'reference');
+  const iAmount = find('amount', 'value');
+  const iIn = find('credit', 'moneyin', 'deposit', 'paidin');
+  const iOut = find('debit', 'moneyout', 'withdrawal', 'paidout');
+
+  if (iDate < 0) problems.push('No date column. One of the columns has to be called Date.');
+  if (iAmount < 0 && iIn < 0 && iOut < 0) {
+    problems.push('No amount column. Either one called Amount, or a pair called Credit and Debit.');
+  }
+  if (problems.length) return { lines: [], problems };
+
+  const lines: BankLine[] = [];
+  for (let r = 1; r < rows.length; r += 1) {
+    const row = rows[r];
+    if (!row || row.every((c) => !c?.trim())) continue;
+
+    const date = (row[iDate] ?? '').trim();
+    if (!date) { problems.push(`Row ${r + 1} has no date.`); continue; }
+
+    let amount: number | null = null;
+    if (iAmount >= 0) {
+      amount = readAmount(row[iAmount]);
+    } else {
+      const inn = iIn >= 0 ? readAmount(row[iIn]) ?? 0 : 0;
+      const out = iOut >= 0 ? readAmount(row[iOut]) ?? 0 : 0;
+      amount = inn - Math.abs(out);
+    }
+    if (amount === null || amount === 0) { problems.push(`Row ${r + 1} has no amount.`); continue; }
+
+    lines.push({
+      id: `row-${r}`,
+      date: normaliseDate(date),
+      description: (iDesc >= 0 ? row[iDesc] ?? '' : '').trim(),
+      amount,
+    });
+  }
+
+  return { lines, problems };
+}
+
+/** A money cell from a bank, in minor units. Handles 1,234.56 and (1,234.56). */
+function readAmount(cell?: string): number | null {
+  const raw = (cell ?? '').trim();
+  if (!raw) return null;
+  // Brackets are how a statement writes a negative, and a minus is how another
+  // one does. Both mean out.
+  const negative = /^\(.*\)$/.test(raw) || raw.startsWith('-');
+  const digits = raw.replace(/[()\-\s,]/g, '').replace(/[^\d.]/g, '');
+  if (!digits || !/^\d*\.?\d*$/.test(digits)) return null;
+  const n = Number(digits);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * 100) * (negative ? -1 : 1);
+}
+
+/** A bank's date, as YYYY-MM-DD. Day-first where it is ambiguous. */
+function normaliseDate(raw: string): string {
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  // 14/08/2026 and 14-08-2026. Day first, because that is what Ghana, and
+  // most of the world outside the United States, writes on a statement.
+  const dmy = /^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/.exec(raw.trim());
+  if (dmy) {
+    const [, d, m, y] = dmy;
+    const year = y.length === 2 ? `20${y}` : y;
+    return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString().slice(0, 10) : raw.slice(0, 10);
+}
