@@ -415,12 +415,27 @@ export function App() {
           <h1 style={{ margin: 0 }}>{venue.name || settings.restaurant_name}</h1>
         </div>
         <div className="sub">
-          {/* A walk-in used to be labelled "Collect at the counter" here, which
-              is an instruction rather than a place, given before anybody has
-              ordered anything. Where the order is going is on the order; this
-              line is for where the guest IS. */}
-          {inGroupMode ? 'Group ordering' : table ? `Table ${table.label}` : 'Takeaway'}
-          {venueOpen ? ' · Open now' : ' · Closed'}
+          {/*
+            Where the guest IS, not where the order is going.
+
+            A walk-in used to be labelled "Collect at the counter", which is an
+            instruction rather than a place, given before anybody has ordered
+            anything.
+
+            And nothing at all on a shared screen. "Takeaway" on a tablet fixed
+            to a counter tells the person standing at it something they can see
+            for themselves, and it is the first line on the page — the most
+            valuable line there is, spent saying where they are standing.
+            Whether the kitchen is open still matters, so that stays.
+          */}
+          {screenMode
+            ? (venueOpen ? 'Open now' : 'Closed')
+            : (
+              <>
+                {inGroupMode ? 'Group ordering' : table ? `Table ${table.label}` : 'Takeaway'}
+                {venueOpen ? ' · Open now' : ' · Closed'}
+              </>
+            )}
           {/* The way back to an order already placed. Only shown when there is
               one, and it is the only route back after a refresh, without it a
               guest who reloads has no way to reach their own order again. */}

@@ -379,6 +379,8 @@ L10 apply. The rest are for whenever it is turned back on. See
 | N6 | Try to install the admin app | Not offered. The back button is wanted there |
 | N9 | Walk-in menu header | **No "Collect at the counter".** Says Takeaway |
 | N13 | Admin → Tables, create the screen ordering link | An address ending `?s=` appears |
+| N13a | Open the screen link, read the header | **No "Takeaway".** Open now or Closed, and nothing else |
+| N13b | Open the walk-in link | Still says Takeaway, unchanged |
 | N14 | Open it and send an order | **Thank you for your order**, the number, and the wait |
 | N14a | Order on the screen leaving the email box empty | **No promise of an email.** Just the wait |
 | N14b | Order giving an email, with Receipts on | Says an email will come when it is ready. And it does |
