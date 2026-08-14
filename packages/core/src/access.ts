@@ -129,6 +129,9 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'accounting_assets', label: 'Fixed assets and depreciation', path: '/accounting', group: 'Money', parent: 'accounting' },
   { key: 'accounting_bank', label: 'Reconcile against a statement', path: '/accounting', group: 'Money', parent: 'accounting' },
   { key: 'accounting_chart', label: 'Chart of accounts', path: '/accounting', group: 'Money', parent: 'accounting' },
+  // Its own grant, and the most consequential of them: it decides what
+  // everybody else is allowed to change, including the person who closed it.
+  { key: 'accounting_locks', label: 'Close and reopen periods', path: '/accounting', group: 'Money', parent: 'accounting' },
   { key: 'venues', label: 'Venues', path: '/venues', group: 'Setup' },
   { key: 'tables', label: 'Tables & QR', path: '/tables', group: 'Setup' },
   { key: 'staff', label: 'Staff', path: '/staff', group: 'Setup' },

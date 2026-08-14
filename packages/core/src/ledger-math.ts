@@ -551,3 +551,25 @@ function normaliseDate(raw: string): string {
   const parsed = Date.parse(raw);
   return Number.isFinite(parsed) ? new Date(parsed).toISOString().slice(0, 10) : raw.slice(0, 10);
 }
+
+/* ------------------------------------------------------------ locked books */
+
+/**
+ * Is this date inside a period that has been closed?
+ *
+ * Everything on or BEFORE the lock date is shut. The whole of the last day is
+ * included, which is the point of locking to the end of a month: a lock
+ * through the 31st that let the 31st be posted to would leave the one day
+ * somebody is most likely to be adjusting still open.
+ */
+export function isLocked(date: string, lockedThrough?: string): boolean {
+  if (!lockedThrough) return false;
+  const d = (date ?? '').slice(0, 10);
+  const through = lockedThrough.slice(0, 10);
+  return d !== '' && d <= through;
+}
+
+/** What to say when a posting lands in a closed period. */
+export const lockedMessage = (date: string, lockedThrough: string): string =>
+  `The books are closed up to ${lockedThrough.slice(0, 10)}, and this is dated ${date.slice(0, 10)}. `
+  + 'Post it in an open period, or reopen the books first — which is recorded.';

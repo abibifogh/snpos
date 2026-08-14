@@ -171,5 +171,9 @@ test('the page without any part of it grants nothing', () => {
 test('an admin has every part of the books without being granted any', () => {
   const admin = { role: 'admin' } as StaffProfile;
   const settings = { role_access: '{}' } as unknown as Settings;
-  assert.equal(areasOf('accounting', admin, settings).length, 6);
+  // Counted from the sections themselves rather than written down here, so
+  // adding a seventh area does not fail a test about admins.
+  const areas = ADMIN_SECTIONS.filter((x) => x.parent === 'accounting');
+  assert.equal(areasOf('accounting', admin, settings).length, areas.length);
+  assert.ok(areas.length >= 6, 'and there are several of them');
 });

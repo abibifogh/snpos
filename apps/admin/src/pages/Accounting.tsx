@@ -8,9 +8,11 @@ import {
   bookValue, monthOf, reconcile, db, DB_ID, ID,
   matchStatement, readStatement, parseCsv, loadStatementLines, importStatementLines,
   postFromStatement, attachReceipt, downloadUrl, areasOf,
+  loadLocks, lockPeriod,
 } from '@snpos/core';
 import type {
   AccountRow, JournalEntry, JournalLine, FixedAsset, LineRow, Doc, BankStatementLine, Settings,
+  PeriodLock,
 } from '@snpos/core';
 import { useSession } from '../session';
 import { AccountsManager } from '../components/AccountsManager';
@@ -29,7 +31,7 @@ import { AccountsManager } from '../components/AccountsManager';
  * sitting, and each of those is the same figures read a different way; putting
  * them behind separate navigation makes it feel like separate work.
  */
-type Tab = 'statements' | 'journal' | 'trial' | 'assets' | 'bank' | 'chart';
+type Tab = 'statements' | 'journal' | 'trial' | 'assets' | 'bank' | 'chart' | 'locks';
 
 /** A month back from today, as YYYY-MM-DD, for the default window. */
 const monthStart = (d = new Date()) => `${d.toISOString().slice(0, 7)}-01`;
@@ -150,6 +152,7 @@ export function AccountingPage() {
           ['assets', 'Fixed assets'],
           ['bank', 'Reconcile'],
           ['chart', 'Chart of accounts'],
+          ['locks', 'Close a period'],
         ] as [Tab, string][]).filter(([key]) => can(key)).map(([key, label]) => (
           <Button key={key} size="sm" variant={tab === key ? 'primary' : 'default'} onClick={() => setTab(key)}>
             {label}
@@ -270,6 +273,10 @@ export function AccountingPage() {
       )}
 
       {tab === 'chart' && can('chart') && <AccountsManager />}
+
+      {tab === 'locks' && can('locks') && (
+        <Locks venueId={venueId} userId={user?.$id ?? ''} onChanged={load} toast={toast} />
+      )}
     </>
   );
 }
@@ -1420,6 +1427,128 @@ function Reconcile({
           </div>
         </Card>
       )}
+    </>
+  );
+}
+
+/* --------------------------------------------------------- closing a period */
+
+/**
+ * Drawing a line under a month, and being able to see where it has been.
+ *
+ * Once a period has been reported on — to an owner, an accountant, a tax
+ * authority — anything posted into it afterwards changes a figure somebody has
+ * already read and acted upon. Locking is what makes the difference between
+ * accounts that can be relied on and accounts that were true on the day they
+ * were printed.
+ */
+function Locks({
+  venueId, userId, onChanged, toast,
+}: {
+  venueId: string;
+  userId: string;
+  onChanged: () => Promise<void>;
+  toast: (m: string, t?: 'ok' | 'err') => void;
+}) {
+  const [locks, setLocks] = useState<PeriodLock[]>([]);
+  const [through, setThrough] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = () => loadLocks(venueId).then(setLocks).catch(() => setLocks([]));
+  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [venueId]);
+
+  const current = locks[0]?.locked_through?.slice(0, 10) ?? '';
+  // Moving the line backwards is reopening, and is worth saying so before it
+  // is done rather than afterwards.
+  const reopening = !!current && !!through && through < current;
+
+  const apply = async () => {
+    if (!through) return;
+    setBusy(true);
+    try {
+      await lockPeriod(venueId, through, { lockedBy: userId, note: note.trim() });
+      setNote('');
+      await load();
+      await onChanged();
+      toast(reopening ? `Reopened back to ${through}. It is on the record.` : `Books closed up to ${through}`);
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Card title="Close the books to a date" pad>
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Nothing can be posted, edited or reversed on or before the date the books are closed to — not by hand,
+          not by a shift closing, not by depreciation. It applies to everybody including you.
+        </p>
+
+        {current ? (
+          <Notice tone="ok">Closed up to <strong>{current}</strong>. Everything after that is open.</Notice>
+        ) : (
+          <Notice tone="warn">
+            Nothing is closed. Any date can still be posted to, including months that have already been reported on.
+          </Notice>
+        )}
+
+        <div className="grid-2">
+          <Field label="Close up to and including" hint="The last day of the month you have finished with.">
+            <Input type="date" value={through} onChange={(e) => setThrough(e.target.value)} />
+          </Field>
+          <Field label="Why" hint="Optional for closing. Worth saying when reopening.">
+            <Input value={note} onChange={(e) => setNote(e.target.value)} />
+          </Field>
+        </div>
+
+        {reopening && (
+          <Notice>
+            That is earlier than {current}, so it reopens {current} back to {through}. Anything posted into those
+            days afterwards will change figures that have already been reported. This is recorded, with your name
+            against it.
+          </Notice>
+        )}
+
+        <div className="row" style={{ justifyContent: 'flex-end' }}>
+          <Button variant={reopening ? 'danger' : 'primary'} loading={busy} disabled={!through} onClick={() => void apply()}>
+            {reopening ? 'Reopen the books' : 'Close the books'}
+          </Button>
+        </div>
+      </Card>
+
+      <Card title="Every time this line has moved" pad>
+        {/* Kept rather than overwritten. Somebody reopening January to change
+            one figure is exactly the event worth being able to see afterwards,
+            and a single field would simply forget it happened. */}
+        {locks.length === 0 ? (
+          <Empty title="Never closed">The books have been open since the beginning.</Empty>
+        ) : (
+          <div className="table-wrap">
+            <table className="data">
+              <thead><tr><th>When</th><th>Closed up to</th><th>Why</th></tr></thead>
+              <tbody>
+                {locks.map((l, i) => {
+                  const prev = locks[i + 1]?.locked_through?.slice(0, 10);
+                  const back = prev && l.locked_through.slice(0, 10) < prev;
+                  return (
+                    <tr key={l.$id}>
+                      <td className="dim small">{(l.locked_at ?? '').slice(0, 10)}</td>
+                      <td>
+                        {l.locked_through.slice(0, 10)}
+                        {back && <div className="small" style={{ color: 'var(--danger)' }}>reopened from {prev}</div>}
+                      </td>
+                      <td className="dim small">{l.note || '-'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </>
   );
 }

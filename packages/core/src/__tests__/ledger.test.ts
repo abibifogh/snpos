@@ -5,7 +5,7 @@ import {
   depreciationSchedule, bookValue, chargeForMonth, monthOf, nextMonth, within,
 } from '../ledger-math.ts';
 import { reconcile } from '../ledger-math.ts';
-import { matchStatement, readStatement } from '../ledger-math.ts';
+import { matchStatement, readStatement, isLocked } from '../ledger-math.ts';
 import type { AccountRow, LineRow, RecLine, BankLine } from '../ledger-math.ts';
 
 const CHART: AccountRow[] = [
@@ -319,4 +319,23 @@ test('a statement missing the columns that matter says so rather than importing 
   assert.equal(problems.length, 2);
   assert.match(problems.join(' '), /date/i);
   assert.match(problems.join(' '), /amount/i);
+});
+
+/* ------------------------------------------------------------ locked books */
+
+test('a closed period includes the whole of its last day', () => {
+  /**
+   * The point of locking to the end of a month. A lock through the 31st that
+   * let the 31st be posted to would leave open the one day somebody is most
+   * likely to be adjusting.
+   */
+  assert.equal(isLocked('2026-07-31T23:59:00.000Z', '2026-07-31'), true);
+  assert.equal(isLocked('2026-07-31T00:01:00.000Z', '2026-07-31'), true);
+  assert.equal(isLocked('2026-08-01T00:00:00.000Z', '2026-07-31'), false);
+  assert.equal(isLocked('2026-06-15', '2026-07-31'), true, 'anything earlier too');
+});
+
+test('nothing is locked when no line has been drawn', () => {
+  assert.equal(isLocked('2020-01-01', undefined), false);
+  assert.equal(isLocked('2020-01-01', ''), false);
 });

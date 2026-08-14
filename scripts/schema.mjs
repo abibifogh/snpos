@@ -1475,6 +1475,38 @@ export const COLLECTIONS = [
     ],
   },
   {
+    /**
+     * A line drawn under the books, and who drew it.
+     *
+     * Once a month has been reported on — to an owner, an accountant, a tax
+     * authority — anything posted into it afterwards changes a figure somebody
+     * has already read and acted upon. That is not a bookkeeping nuisance; it
+     * is the difference between accounts that can be relied on and accounts
+     * that were true on the day they were printed.
+     *
+     * A row per act rather than a field that gets overwritten, so unlocking
+     * leaves a trace. Somebody reopening January to change one number is
+     * exactly the event worth being able to see afterwards, and a field would
+     * simply forget it happened.
+     */
+    id: 'accounting_locks',
+    name: 'Locked periods',
+    // Nobody deletes a lock. Reopening a period is done by locking to an
+    // earlier date, which is itself recorded.
+    perms: { read: MGMT, create: ADMIN, update: [], delete: [] },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      // Everything on or before this day is closed. One date rather than a
+      // pair, because periods are locked in order: there is no such thing as
+      // an open January inside a closed February.
+      ['locked_through', 'd', null, true],
+      ['locked_by', 's', 64, true],
+      ['locked_at', 'd', null, true],
+      ['note', 's', 300, false],
+    ],
+    indexes: [['venue', 'key', ['venue_id', 'locked_at']]],
+  },
+  {
     id: 'journal_entries',
     name: 'Journal entries',
     /**

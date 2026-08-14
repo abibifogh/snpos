@@ -1,6 +1,6 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
 import type { Doc } from './types';
-import { entryProblem, within, chargeForMonth } from './ledger-math';
+import { entryProblem, within, chargeForMonth, isLocked, lockedMessage } from './ledger-math';
 import { uploadFile } from './files';
 import type { AccountRow, DepreciableAsset } from './ledger-math';
 
@@ -99,9 +99,22 @@ export async function postEntry(
   }
   if (lines.length === 0) throw new Error('An entry needs at least one line.');
 
+  /**
+   * Nothing lands in a period that has been closed.
+   *
+   * Checked here rather than in each caller, because here is the one place
+   * every posting in this system passes through: a shift close, a payout, an
+   * expense, depreciation, a statement line, an entry somebody typed. A rule
+   * enforced in six places is a rule with five ways round it, and the way
+   * round is always the one nobody remembered to guard.
+   */
+  const date = (opts.date ?? new Date()).toISOString();
+  const lockedThrough = await lockedThroughFor(venueId);
+  if (isLocked(date, lockedThrough)) throw new Error(lockedMessage(date, lockedThrough));
+
   const entry = (await db.createDocument(DB_ID, 'journal_entries', ID.unique(), {
     venue_id: venueId,
-    date: (opts.date ?? new Date()).toISOString(),
+    date,
     source: opts.source,
     source_id: opts.sourceId ?? '',
     shift_id: opts.shiftId ?? '',
@@ -554,6 +567,20 @@ export async function editEntry(
   const problem = entryProblem(next.lines);
   if (problem) throw new Error(problem);
 
+  /**
+   * Both dates, not one.
+   *
+   * Where it is now, because changing a figure inside a closed period is the
+   * thing locking exists to stop. And where it is going, because moving an
+   * open entry backwards into a closed period would otherwise be the way
+   * round the rule.
+   */
+  const lockedThrough = await lockedThroughFor(entry.venue_id);
+  const moving = next.date?.toISOString() ?? entry.date;
+  for (const d of [entry.date, moving]) {
+    if (isLocked(d, lockedThrough)) throw new Error(lockedMessage(d, lockedThrough));
+  }
+
   const before = await listAll<JournalLine>('journal_lines', [Query.equal('entry_id', entry.$id)]);
 
   // Written first, so the old version is safe before anything is taken away.
@@ -740,4 +767,61 @@ export async function postFromStatement(
       .catch(() => undefined);
   }
   return entry.$id;
+}
+
+/* --------------------------------------------------------- closing a period */
+
+export interface PeriodLock extends Doc {
+  venue_id?: string;
+  locked_through: string;
+  locked_by: string;
+  locked_at: string;
+  note?: string;
+}
+
+/**
+ * Every lock and unlock, newest first.
+ *
+ * A row per act rather than a field that gets overwritten, so reopening a
+ * period leaves a trace. Somebody opening January back up to change one figure
+ * is exactly the event worth being able to see afterwards, and a field would
+ * simply forget it happened.
+ */
+export const loadLocks = async (venueId: string): Promise<PeriodLock[]> =>
+  (await listAll<PeriodLock>('accounting_locks').catch(() => [] as PeriodLock[]))
+    .filter((l) => !l.venue_id || l.venue_id === venueId)
+    .sort((a, b) => (b.locked_at ?? '').localeCompare(a.locked_at ?? ''));
+
+/**
+ * The line currently drawn under the books.
+ *
+ * The most recent act wins, not the latest date. Reopening a period means
+ * saying "closed only up to the earlier day", and if the furthest date won
+ * instead, a period could never be reopened at all.
+ */
+export async function lockedThroughFor(venueId: string): Promise<string> {
+  const locks = await loadLocks(venueId);
+  return locks[0]?.locked_through?.slice(0, 10) ?? '';
+}
+
+/**
+ * Draw the line, or move it.
+ *
+ * Moving it backwards is reopening, and is recorded in exactly the same way as
+ * closing: same row, same author, same moment, and the note says why. Nothing
+ * is deleted, because the useful question a year later is not where the line
+ * is but where it has been.
+ */
+export async function lockPeriod(
+  venueId: string,
+  through: string,
+  opts: { lockedBy: string; note?: string },
+): Promise<void> {
+  await db.createDocument(DB_ID, 'accounting_locks', ID.unique(), {
+    venue_id: venueId,
+    locked_through: new Date(`${through.slice(0, 10)}T12:00:00`).toISOString(),
+    locked_by: opts.lockedBy,
+    locked_at: new Date().toISOString(),
+    note: (opts.note ?? '').slice(0, 300),
+  });
 }

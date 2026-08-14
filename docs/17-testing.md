@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck (apps AND tests), tests, schema check, build. Before deploying.
 ```
 
-151 tests, no database, about half a second. They cover the sums that decide what
+153 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -175,6 +175,15 @@ not just what to press.
 | P33 | A bank charge the books never had, press Record it | Posts with the statement's date and figure. Cannot be posted twice |
 | P34 | Journal, an entry with no receipt, press Attach | Photo uploads. Turns into View |
 | P35 | Press View | Opens the receipt |
+| P36 | Close a period → close up to last month end | Says closed up to that date |
+| P37 | Post a journal entry dated inside it | **Refused**, naming both dates |
+| P38 | Edit an entry that sits inside it | Refused |
+| P39 | Move an open entry back into it | Refused. That was the way round the rule |
+| P40 | Post depreciation for a closed month | Refused |
+| P41 | Close a shift while today is inside the lock | Refused, and it says why |
+| P42 | Reopen to an earlier date | Warned first, then done, **with your name on it** |
+| P43 | The history after P42 | Both acts listed, the reopening marked in red |
+| P44 | Give somebody the journal but not Close a period | They can post; they cannot move the line |
 
 ### E. Permissions
 
