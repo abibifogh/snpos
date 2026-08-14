@@ -9,7 +9,7 @@ import {
   verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
   itemsAvailableNow, dueMinutes, ticketLines, linesComplete, isOverdue, minutesOver, seatFor, amountOutstanding,
-  onQueueChange, startOfflineSync, flushQueue, loadWithFallback,
+  onQueueChange, startOfflineSync, flushQueue, loadWithFallback, addonNames, addonsUnreadable,
 } from '@snpos/core';
 import type {
   Order, OrderItem, Settings, Venue, StaffProfile, StaffSession, HelpRole, MenuItem, Doc, FeatureMap,
@@ -1168,12 +1168,38 @@ function Ticket({
           </li>
         )}
         {(items ?? []).map((i) => {
-          const addons: { name: string }[] = i.addons ? JSON.parse(i.addons) : [];
+          /*
+            What the customer actually asked for, spelled out.
+
+            One line per option rather than a comma-separated run, and in the
+            ticket's normal text rather than the dim grey they used to be in.
+            "No onions" is not a footnote about the dish, it is part of the
+            instruction, and a cook reading a screen from across a kitchen was
+            being shown it in the smallest, faintest type on the ticket.
+
+            The size, where there is one, leads — it decides the pan before
+            anything else does. Skipped when the line's name already carries
+            it, which is what the till writes.
+          */
+          const options = addonNames(i.addons);
+          const size = i.variant_label && !i.name_snapshot.includes(i.variant_label)
+            ? i.variant_label
+            : '';
           return (
             <li key={i.$id}>
               <span className="qty">{i.qty}×</span>
               {i.name_snapshot}
-              {addons.length > 0 && <div className="addons">{addons.map((a) => a.name).join(', ')}</div>}
+              {size && <div className="addons">{size}</div>}
+              {options.map((name, n) => (
+                <div key={n} className="addons">{name}</div>
+              ))}
+              {/* Something was chosen and could not be read. Saying so is the
+                  whole point: silence here looks exactly like a plain dish. */}
+              {addonsUnreadable(i.addons) && (
+                <div className="addons" style={{ color: 'var(--warn)' }}>
+                  Options were chosen but cannot be read here — ask before cooking.
+                </div>
+              )}
               {i.notes && <div className="note">“{i.notes}”</div>}
             </li>
           );

@@ -104,7 +104,23 @@ body { background: var(--bg); color: var(--text); }
 .ticket-items li { list-style: none; padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
 .ticket-items li:last-child { border-bottom: none; }
 .ticket-items .qty { font-weight: 700; margin-right: 0.4rem; }
-.ticket-items .addons { font-size: 0.83rem; color: var(--text-dim); padding-left: 1.3rem; }
+/*
+  What was chosen on the dish, read from across a kitchen.
+
+  This was 0.83rem in the dim grey used for things nobody needs to read, which
+  is the wrong end of the ticket for it: "no onions" and "extra chicken" are
+  the instruction, not a note about it. Full size, full contrast, and marked
+  with a rule down the side so a run of them reads as a list belonging to the
+  dish above rather than as more dishes.
+*/
+.ticket-items .addons {
+  font-size: 0.95rem;
+  color: var(--text);
+  padding-left: 0.6rem;
+  margin-left: 1.3rem;
+  border-left: 2px solid var(--accent, #f5a524);
+  margin-top: 0.15rem;
+}
 .ticket-items .note { font-size: 0.83rem; color: #f5a524; padding-left: 1.3rem; }
 
 .ticket-foot { display: flex; gap: 0.5rem; padding: 0.6rem 0.8rem; border-top: 1px solid var(--border); }

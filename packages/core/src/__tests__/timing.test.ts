@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   cookMinutes, estimateMinutes, queueMinutes, dueMinutes, shownEta,
   cancelWindowLeft, CANCEL_WINDOW_MS, MAX_ETA_MINUTES, ticketLines, LINES_GRACE_MS, isOverdue, minutesOver,
-  linesComplete,
+  linesComplete, addonNames, addonsUnreadable,
 } from '../orders-time.ts';
 import { byStaff, totalHandedOver } from '../handover-math.ts';
 
@@ -316,4 +316,47 @@ test('an order from before the wait was stored still has a rule', () => {
     15,
   );
   assert.equal(dueMinutes({ $createdAt: '2026-08-14T19:00:00.000Z' }, []), 20);
+});
+
+/* ------------------------------------------ what was chosen on a dish */
+
+test('the options on a line are read as words a cook can use', () => {
+  assert.deepEqual(
+    addonNames(JSON.stringify([{ name: 'No onions' }, { name: 'Extra chicken' }])),
+    ['No onions', 'Extra chicken'],
+  );
+  // Nothing chosen is the ordinary case and is not a fault.
+  assert.deepEqual(addonNames(''), []);
+  assert.deepEqual(addonNames(undefined), []);
+  assert.equal(addonsUnreadable(''), false);
+  assert.equal(addonsUnreadable(undefined), false);
+});
+
+test('a line whose options cannot be read says so instead of looking plain', () => {
+  /**
+   * Two failures avoided at once.
+   *
+   * Every screen used to call JSON.parse inline, inside a render. One row with
+   * a value that is not JSON did not blank that ticket, it blanked the whole
+   * kitchen screen — a cook watching every order vanish because one of them
+   * has a bad field is far worse than a missing option.
+   *
+   * And returning an empty list quietly is its own trap: silence and "no
+   * options" look identical on a ticket, and only one of them is safe to cook.
+   */
+  assert.deepEqual(addonNames('not json at all'), [], 'no throw');
+  assert.equal(addonsUnreadable('not json at all'), true, 'and the ticket is told');
+
+  // Valid JSON of the wrong shape is the same problem wearing a hat.
+  assert.deepEqual(addonNames('{"name":"Extra chicken"}'), [], 'an object is not a list');
+  assert.equal(addonsUnreadable('{"name":"Extra chicken"}'), true);
+  assert.deepEqual(addonNames('[{"noname":1}]'), []);
+});
+
+test('options stored as bare strings still read', () => {
+  // Older rows, and anything hand-written. Cheap to accept, and the
+  // alternative is a ticket that hides a cooking instruction it holds.
+  assert.deepEqual(addonNames('["No onions","Mild"]'), ['No onions', 'Mild']);
+  // A mixed list keeps what it can rather than throwing all of it away.
+  assert.deepEqual(addonNames('["Mild",{"name":"Extra chicken"},{}]'), ['Mild', 'Extra chicken']);
 });

@@ -11,6 +11,7 @@ import { cookMinutes, estimateMinutes, fireTimeFor, queueMinutes } from './order
 export {
   MAX_ETA_MINUTES, shownEta, cookMinutes, estimateMinutes, queueMinutes, dueMinutes, fireTimeFor,
   CANCEL_WINDOW_MS, cancelWindowLeft, LINES_GRACE_MS, ticketLines, linesComplete, isOverdue, minutesOver,
+  addonNames, addonsUnreadable,
 } from './orders-time';
 import { createOrQueue, isOffline } from './offline';
 import { computeTotals, lineUnitPrice, lineTotal } from './pricing';

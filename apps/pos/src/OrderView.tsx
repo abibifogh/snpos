@@ -5,7 +5,8 @@ import {
   parseMoney, toInput, isEnabled, featureConfig, visibleSections, recordPayment, asksForTip,
   variantPriceRange, shiftUsable, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, sharesFor, shouldWarnLateOrder,
 } from '@snpos/core';
-import type { CartLine, Order, OrderItem, Doc, MenuEntry, Settings } from '@snpos/core';
+import type { CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, Settings } from '@snpos/core';
+import { OptionSheet } from './OptionSheet';
 import { COUNTER_TABLE_ID } from './App';
 import type { PosContext, TableRow } from './App';
 
@@ -55,6 +56,8 @@ export function OrderView({
    * line is a line the customer has already been quoted.
    */
   const [pickingSize, setPickingSize] = useState<string | null>(null);
+  /** The dish whose choices are being asked for, and the size already picked. */
+  const [pickingOptions, setPickingOptions] = useState<{ menuItemId: string; variantId?: string } | null>(null);
 
   /**
    * Only this side's catalogue.
@@ -113,7 +116,15 @@ export function OrderView({
     })();
   }, [ctx.venue.$id, table.$id, isTakeaway, sections]);
 
-  const addItem = (menuItemId: string, variantId?: string) => {
+  /**
+   * `addons` undefined means the question has not been put yet; an array,
+   * empty included, means it has been answered.
+   *
+   * The distinction matters for a group where everything is optional. Staff
+   * who look at the choices and pick none have answered, and treating that
+   * empty answer as "not asked" would put the same sheet back up, for ever.
+   */
+  const addItem = (menuItemId: string, variantId?: string, addons?: CartAddon[]) => {
     const entry = ctx.menu.byId[menuItemId];
     if (!entry) return;
 
@@ -123,13 +134,37 @@ export function OrderView({
     if (sizes.length > 0 && !variantId) { setPickingSize(menuItemId); return; }
     const size = variantId ? sizes.find((v) => v.$id === variantId) ?? null : null;
 
+    /**
+     * And the options, which this till never asked for at all.
+     *
+     * A dish set up with choices — spice level, which side, no onions — got
+     * them on the customer's phone and not from a member of staff taking the
+     * same order at the counter. So the kitchen ticket for a walk-in was
+     * missing the one thing that says how to cook it, and it was missing
+     * because it had never been asked, not because it was not being shown.
+     *
+     * Asked after the size, which is the order a person asks in: which one,
+     * then how would you like it.
+     */
+    if (entry.groups.length > 0 && addons === undefined) {
+      setPickingSize(null);
+      setPickingOptions({ menuItemId, variantId: size?.$id });
+      return;
+    }
+    const picked = addons ?? [];
+
     setPickingSize(null);
+    setPickingOptions(null);
     setCart((c) => {
+      // Only lines with nothing chosen on them merge. Two of the same dish
+      // cooked differently are two instructions, and rolling them into "2×"
+      // would send one of them out wrong.
       const twin = c.find(
         (l) =>
           l.menu_item_id === menuItemId &&
           (l.variant_id ?? '') === (size?.$id ?? '') &&
           l.addons.length === 0 &&
+          picked.length === 0 &&
           !l.notes,
       );
       if (twin) return c.map((l) => (l === twin ? { ...l, qty: l.qty + 1 } : l));
@@ -141,7 +176,7 @@ export function OrderView({
           name: size ? `${entry.item.name} · ${size.label}` : entry.item.name,
           unit_price: size ? size.price : entry.price,
           qty: 1,
-          addons: [],
+          addons: picked,
           station: entry.station,
           station_key: entry.stationKey,
           prep_minutes: entry.item.prep_minutes,
@@ -339,6 +374,12 @@ export function OrderView({
                   <div className="bill-line" key={l.key}>
                     <span>
                       {l.qty}× {l.name}
+                      {/* Read back before it is sent. Somebody who mis-taps a
+                          spice level should see it here, not hear about it
+                          from the customer after the plate has gone out. */}
+                      {l.addons.length > 0 && (
+                        <div className="small dim">{l.addons.map((a) => a.name).join(', ')}</div>
+                      )}
                       <button
                         className="btn btn-ghost btn-sm"
                         onClick={() => setCart((c) => c.flatMap((x) => (x.key === l.key ? (x.qty > 1 ? [{ ...x, qty: x.qty - 1 }] : []) : [x])))}
@@ -430,6 +471,23 @@ export function OrderView({
               ))}
             </div>
           </Modal>
+        );
+      })()}
+
+      {pickingOptions && (() => {
+        const entry = ctx.menu.byId[pickingOptions.menuItemId];
+        if (!entry) return null;
+        return (
+          <OptionSheet
+            entry={entry}
+            settings={ctx.settings}
+            onCancel={() => setPickingOptions(null)}
+            onAdd={(addons) => {
+              const { menuItemId, variantId } = pickingOptions;
+              setPickingOptions(null);
+              addItem(menuItemId, variantId, addons);
+            }}
+          />
         );
       })()}
 

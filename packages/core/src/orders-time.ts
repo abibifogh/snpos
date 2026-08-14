@@ -315,3 +315,54 @@ export function linesComplete(
   if (!order.subtotal || order.subtotal <= 0) return true;
   return lines.reduce((sum, l) => sum + (l.line_total ?? 0), 0) >= order.subtotal;
 }
+
+/* ----------------------------------------------- what was chosen on a line */
+
+/**
+ * The options picked on one line, as words a cook can read.
+ *
+ * Stored as JSON on the line because a line can carry any number of them and
+ * a column per option is not a thing. Read here rather than in each screen,
+ * for two reasons.
+ *
+ * The first is that every screen was doing `JSON.parse` inline, unguarded,
+ * inside a render. One line with a value that is not JSON — an old row, a
+ * half-finished write, anything hand-edited — and the parse throws inside the
+ * render, which does not blank the ticket, it blanks the whole kitchen
+ * screen. A cook watching every ticket disappear because one of them has a
+ * malformed field is a much worse failure than a missing option.
+ *
+ * The second is that "no onions" and "extra chicken" are cooking instructions,
+ * not decoration, and where they are read from should be one place that every
+ * screen agrees on.
+ */
+export function addonNames(raw?: string): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((a) => {
+        if (typeof a === 'string') return a;
+        const name = (a as { name?: unknown })?.name;
+        return typeof name === 'string' ? name : '';
+      })
+      .filter((n) => n !== '');
+  } catch {
+    // A line whose options cannot be read is not a line to cook blind. The
+    // caller shows the marker below instead of quietly showing nothing.
+    return [];
+  }
+}
+
+/**
+ * Were there options that could not be read?
+ *
+ * Silence and "no options" look identical on a ticket, and only one of them is
+ * safe. Something was chosen; if it cannot be turned into words, the cook
+ * needs to be told to ask rather than left to assume the dish is plain.
+ */
+export function addonsUnreadable(raw?: string): boolean {
+  if (!raw) return false;
+  return addonNames(raw).length === 0;
+}

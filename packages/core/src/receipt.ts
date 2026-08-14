@@ -1,6 +1,7 @@
 import { db, DB_ID, Query, listAll } from './client';
 import { formatMoney } from './money';
 import { downloadUrl } from './files';
+import { addonNames } from './orders-time';
 import type { Settings, Venue, Doc } from './types';
 import type { Order, OrderItem } from './orders';
 
@@ -291,13 +292,9 @@ export async function receiptForOrder(opts: {
   const lines: ReceiptLine[] = items
     .filter((i) => i.status !== 'void')
     .map((i) => {
-      let detail = '';
-      try {
-        const addons = i.addons ? (JSON.parse(i.addons) as { name: string }[]) : [];
-        detail = addons.map((a) => a.name).join(', ');
-      } catch {
-        detail = '';
-      }
+      // One reader for what was chosen, shared with the kitchen ticket, so a
+      // receipt and a ticket can never disagree about what was ordered.
+      let detail = addonNames(i.addons).join(', ');
       if (i.notes) detail = detail ? `${detail} · ${i.notes}` : i.notes;
       return {
         name: i.name_snapshot,
