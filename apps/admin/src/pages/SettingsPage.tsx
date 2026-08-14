@@ -831,6 +831,11 @@ export function SettingsPage() {
           Which parts of this admin app each role can open. Admins always see everything; there is no switch for that
           on purpose, because a checkbox that can lock the owner out of their own settings eventually will.
         </p>
+        <p className="small dim">
+          Accounting is granted a part at a time. Somebody needs the Accounting row to get in at all, and then only
+          the parts ticked beneath it — a bookkeeper can be given the journal and the bank without being given the
+          chart of accounts, and a manager can be given the profit and loss without being given any of it.
+        </p>
         <div className="table-wrap">
           <table className="data">
             <thead>
@@ -844,9 +849,16 @@ export function SettingsPage() {
             <tbody>
               {ADMIN_SECTIONS.map((section) => (
                 <tr key={section.key}>
-                  <td>
+                  {/* A part of a page is indented under it, so a row reads as
+                      "inside accounting" rather than as another page in the
+                      Money group with a confusingly similar name. */}
+                  <td style={section.parent ? { paddingLeft: '2rem' } : undefined}>
                     {section.label}
-                    <div className="small dim">{section.group}</div>
+                    <div className="small dim">
+                      {section.parent
+                        ? `part of ${ADMIN_SECTIONS.find((x) => x.key === section.parent)?.label ?? section.parent}`
+                        : section.group}
+                    </div>
                   </td>
                   {GRANTABLE_ROLES.map((role) => (
                     <td key={role} style={{ textAlign: 'center' }}>

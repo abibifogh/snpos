@@ -16,6 +16,17 @@ export interface AdminSection {
   /** True for the pages that only ever make sense for an owner. */
   ownerOnly?: boolean;
   /**
+   * A part of another section rather than a page of its own.
+   *
+   * Accounting is one page with tabs, and the tabs are not equally
+   * consequential: reading a profit and loss is what a manager is for, and
+   * posting a journal entry to any account is not. So each tab is grantable in
+   * its own right, and none of them appears in the sidebar — they are reached
+   * through their parent, and a sidebar listing six accounting links would say
+   * this is six pages when it is one.
+   */
+  parent?: string;
+  /**
    * Which side of the business this section belongs to, if only one.
    *
    * Absent means it serves both; a shift is a shift whether the money came
@@ -100,10 +111,24 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'shifts', label: 'Shifts', path: '/shifts', group: 'Money' },
   { key: 'expenses', label: 'Expenses', path: '/expenses', group: 'Money' },
   { key: 'vouchers', label: 'Discount vouchers', path: '/vouchers', group: 'Money' },
-  // The books themselves. Owner-only by default rather than granted to a
-  // manager, because a page that can post any entry to any account is a page
-  // that can move a shortage somewhere nobody looks.
-  { key: 'accounting', label: 'Accounting', path: '/accounting', group: 'Money', ownerOnly: true },
+  /**
+   * The books, and the parts of them, each granted separately.
+   *
+   * The page itself is the way in and grants nothing by itself: somebody with
+   * it and no area sees the page and no tabs, which is deliberate — the areas
+   * are the permission, and the page is only where they live.
+   *
+   * Nothing here is on by default for anybody. It was owner-only outright,
+   * which was safe and meant a bookkeeper could not be given the books; the
+   * answer to that is to say which parts, not to hand over all of them.
+   */
+  { key: 'accounting', label: 'Accounting', path: '/accounting', group: 'Money' },
+  { key: 'accounting_statements', label: 'Profit & loss and balance sheet', path: '/accounting', group: 'Money', parent: 'accounting' },
+  { key: 'accounting_journal', label: 'Journal: read and post entries', path: '/accounting', group: 'Money', parent: 'accounting' },
+  { key: 'accounting_trial', label: 'Trial balance', path: '/accounting', group: 'Money', parent: 'accounting' },
+  { key: 'accounting_assets', label: 'Fixed assets and depreciation', path: '/accounting', group: 'Money', parent: 'accounting' },
+  { key: 'accounting_bank', label: 'Reconcile against a statement', path: '/accounting', group: 'Money', parent: 'accounting' },
+  { key: 'accounting_chart', label: 'Chart of accounts', path: '/accounting', group: 'Money', parent: 'accounting' },
   { key: 'venues', label: 'Venues', path: '/venues', group: 'Setup' },
   { key: 'tables', label: 'Tables & QR', path: '/tables', group: 'Setup' },
   { key: 'staff', label: 'Staff', path: '/staff', group: 'Setup' },
@@ -208,9 +233,25 @@ export function canOpen(section: string, profile: StaffProfile | null, settings:
   return (parseAccess(settings)[profile.role] ?? []).includes(section);
 }
 
-/** The sections this person may open, in the order they are listed above. */
+/**
+ * The sections this person may open, in the order they are listed above.
+ *
+ * Pages only. A tab is reached through the page it lives on, and a sidebar
+ * listing six accounting links would say this is six pages when it is one.
+ */
 export function sectionsFor(profile: StaffProfile | null, settings: Settings | null): AdminSection[] {
-  return ADMIN_SECTIONS.filter((s) => canOpen(s.key, profile, settings));
+  return ADMIN_SECTIONS.filter((s) => !s.parent && canOpen(s.key, profile, settings));
+}
+
+/** The areas of one page this person may open. Empty when they may open none. */
+export function areasOf(
+  parent: string,
+  profile: StaffProfile | null,
+  settings: Settings | null,
+): string[] {
+  return ADMIN_SECTIONS
+    .filter((s) => s.parent === parent && canOpen(s.key, profile, settings))
+    .map((s) => s.key);
 }
 
 /**

@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck (apps AND tests), tests, schema check, build. Before deploying.
 ```
 
-147 tests, no database, about half a second. They cover the sums that decide what
+151 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -149,7 +149,12 @@ not just what to press.
 | P12 | Post the same month again | **Nothing charged twice.** Says it was already done |
 | P13 | The balance sheet after P11 | Equipment less accumulated depreciation, and it still balances |
 | P14 | Mark it sold last month, post this month | Nothing charged. It stopped when it went |
-| P15 | Open Accounting as a manager | **Not in the menu, and refused by address** |
+| P15 | Give a manager Accounting and nothing under it | Page opens, **no tabs**, and it says why |
+| P15a | Add Profit & loss and Trial balance | Those two tabs, and no others |
+| P15b | Type the address with the journal tab as that manager | **Nothing shown.** The tab is the permission, not the button |
+| P15c | Give a bookkeeper the journal and the bank, not the chart | They can post and reconcile, **not rename accounts** |
+| P15d | Settings → who can open what | Accounting's parts **indented under it**, not loose in Money |
+| P15e | The sidebar for that bookkeeper | **One Accounting link**, not six |
 | P16 | Journal → Edit an entry, change a figure | Saved in place. **One entry, not two** |
 | P17 | Look at the audit log after P16 | The old figures are there, under journal_edited |
 | P18 | Edit an entry so it no longer balances | Refused, with the amount it is out by |

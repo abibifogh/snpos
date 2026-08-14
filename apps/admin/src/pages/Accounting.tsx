@@ -7,7 +7,7 @@ import {
   profitAndLoss, balanceSheet, totalsByAccount, naturalBalance, entryProblem, within,
   bookValue, monthOf, reconcile, db, DB_ID, ID,
   matchStatement, readStatement, parseCsv, loadStatementLines, importStatementLines,
-  postFromStatement, attachReceipt, downloadUrl,
+  postFromStatement, attachReceipt, downloadUrl, areasOf,
 } from '@snpos/core';
 import type {
   AccountRow, JournalEntry, JournalLine, FixedAsset, LineRow, Doc, BankStatementLine, Settings,
@@ -42,7 +42,26 @@ const BLANK: DraftLine = { account_code: '', debitText: '', creditText: '', memo
 export function AccountingPage() {
   const { settings, user, profile } = useSession();
   const toast = useToast();
+  /**
+   * Which parts of the books this person has been given.
+   *
+   * Granted one at a time, because they are not equally consequential: reading
+   * a profit and loss is what a manager is for, and posting a journal entry to
+   * any account is not. Somebody with the page and no areas sees the page and
+   * no tabs, which is the honest result of granting nothing rather than a
+   * silent promotion to everything.
+   */
+  const allowed = useMemo(() => areasOf('accounting', profile, settings), [profile, settings]);
+  const can = (area: Tab) => allowed.includes(`accounting_${area}`);
   const [tab, setTab] = useState<Tab>('statements');
+  useEffect(() => {
+    // Land on something they can see. Opening on a tab they were not given
+    // shows an empty page that reads as a fault rather than as a permission.
+    if (allowed.length > 0 && !can(tab)) {
+      setTab(allowed[0].replace('accounting_', '') as Tab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowed]);
   // The books belong to the venue, and every page here reads it the same way.
   const [venueId, setVenueId] = useState('');
   useEffect(() => {
@@ -131,12 +150,21 @@ export function AccountingPage() {
           ['assets', 'Fixed assets'],
           ['bank', 'Reconcile'],
           ['chart', 'Chart of accounts'],
-        ] as [Tab, string][]).map(([key, label]) => (
+        ] as [Tab, string][]).filter(([key]) => can(key)).map(([key, label]) => (
           <Button key={key} size="sm" variant={tab === key ? 'primary' : 'default'} onClick={() => setTab(key)}>
             {label}
           </Button>
         ))}
       </div>
+
+      {/* Granted the page and none of its parts. Said plainly rather than shown
+          as an empty screen somebody reads as broken. */}
+      {allowed.length === 0 && (
+        <Notice>
+          You can open this page, but no part of the books has been given to you yet. An admin sets that under
+          Settings, in who can open what.
+        </Notice>
+      )}
 
       {tab !== 'chart' && tab !== 'assets' && tab !== 'bank' && (
         <Card pad>
@@ -151,11 +179,11 @@ export function AccountingPage() {
         </Card>
       )}
 
-      {tab === 'statements' && (
+      {tab === 'statements' && can('statements') && (
         <Statements pl={pl} bs={bs} money={money} from={from} to={to} />
       )}
 
-      {tab === 'trial' && (
+      {tab === 'trial' && can('trial') && (
         <Card title="Trial balance" pad>
           {/* The one check that says whether any of the rest can be believed.
               Every entry is refused unless it balances, so this failing means
@@ -197,7 +225,7 @@ export function AccountingPage() {
         </Card>
       )}
 
-      {tab === 'journal' && (
+      {tab === 'journal' && can('journal') && (
         <Journal
           entries={entries}
           lines={lines}
@@ -214,7 +242,7 @@ export function AccountingPage() {
         />
       )}
 
-      {tab === 'assets' && (
+      {tab === 'assets' && can('assets') && (
         <Assets
           assets={assets}
           accounts={accounts}
@@ -228,7 +256,7 @@ export function AccountingPage() {
         />
       )}
 
-      {tab === 'bank' && (
+      {tab === 'bank' && can('bank') && (
         <Reconcile
           accounts={accounts}
           lines={lines}
@@ -241,7 +269,7 @@ export function AccountingPage() {
         />
       )}
 
-      {tab === 'chart' && <AccountsManager />}
+      {tab === 'chart' && can('chart') && <AccountsManager />}
     </>
   );
 }

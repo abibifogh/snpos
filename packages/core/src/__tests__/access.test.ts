@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   modulesOf, modulesForStaff, parseAccess, canOpen, inTrade, sectionsFor,
-  canEditCatalogue, selfOrderModule, ADMIN_SECTIONS, DEFAULT_ACCESS,
+  canEditCatalogue, selfOrderModule, ADMIN_SECTIONS, DEFAULT_ACCESS, areasOf,
 } from '../access.ts';
 import type { Settings, StaffProfile } from '../types.ts';
 
@@ -123,4 +123,53 @@ test('a customer scanning a code is shown one catalogue, and it is the restauran
   assert.equal(selfOrderModule(null), 'kitchen');
   assert.equal(selfOrderModule({} as never), 'kitchen');
   assert.equal(selfOrderModule({ business_type: 'craft_shop' } as never), 'craft');
+});
+
+test('the books are granted a part at a time', () => {
+  /**
+   * The tabs are not equally consequential. Reading a profit and loss is what
+   * a manager is for; posting a journal entry to any account is not, and it is
+   * how a shortage gets moved somewhere nobody looks.
+   */
+  const settings = {
+    role_access: JSON.stringify({
+      manager: ['accounting', 'accounting_statements', 'accounting_trial'],
+    }),
+  } as unknown as Settings;
+  const manager = { role: 'manager' } as StaffProfile;
+
+  assert.equal(canOpen('accounting', manager, settings), true, 'the way in');
+  assert.deepEqual(
+    areasOf('accounting', manager, settings),
+    ['accounting_statements', 'accounting_trial'],
+    'and only the parts given',
+  );
+  assert.equal(canOpen('accounting_journal', manager, settings), false);
+  assert.equal(canOpen('accounting_chart', manager, settings), false);
+});
+
+test('a part of a page is never a page in the sidebar', () => {
+  // Six accounting links would say this is six pages when it is one.
+  const settings = {
+    role_access: JSON.stringify({ manager: ['accounting', 'accounting_journal'] }),
+  } as unknown as Settings;
+  const nav = sectionsFor({ role: 'manager' } as StaffProfile, settings);
+
+  assert.ok(nav.some((s) => s.key === 'accounting'));
+  assert.ok(!nav.some((s) => s.key.startsWith('accounting_')), 'the tabs are reached through the page');
+});
+
+test('the page without any part of it grants nothing', () => {
+  // The areas are the permission; the page is only where they live.
+  const settings = { role_access: JSON.stringify({ manager: ['accounting'] }) } as unknown as Settings;
+  const manager = { role: 'manager' } as StaffProfile;
+
+  assert.equal(canOpen('accounting', manager, settings), true);
+  assert.deepEqual(areasOf('accounting', manager, settings), []);
+});
+
+test('an admin has every part of the books without being granted any', () => {
+  const admin = { role: 'admin' } as StaffProfile;
+  const settings = { role_access: '{}' } as unknown as Settings;
+  assert.equal(areasOf('accounting', admin, settings).length, 6);
 });
