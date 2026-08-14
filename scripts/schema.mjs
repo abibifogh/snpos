@@ -362,7 +362,10 @@ export const COLLECTIONS = [
       // {"manager":["orders","reports"],"cashier":[]}. Admins are not listed
       // and never restricted, a switch that can lock the owner out of their
       // own settings is a switch that eventually will.
-      ['role_access', 's', 2000, false],
+      // Four roles' lists of sections, plus which of them have been decided.
+      // Was 2000, which four well-populated roles could run past — and a value
+      // too long to store is a save that silently does not happen.
+      ['role_access', 's', 6000, false],
       // The hour, in the restaurant's own timezone, at which the once-a-day
       // report and the nightly backup go out. After close, not at midnight, 
       // a kitchen still serving at 00:30 would otherwise get yesterday's

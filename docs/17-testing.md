@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck (apps AND tests), tests, schema check, build. Before deploying.
 ```
 
-158 tests, no database, about half a second. They cover the sums that decide what
+159 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -214,6 +214,8 @@ not just what to press.
 | E4 | Manager after Settings was last saved | **Craft pages visible** |
 | E13 | Untick a manager's Orders, save, reload | **Stays unticked.** It does not come back |
 | E14 | Untick a page no other role has | Same. It was the case that silently failed |
+| E14a | Untick several, **press Save**, then reload the app | All still unticked. The save keeps what the ticking decided |
+| E14b | Grant a manager most of the app, then save | Saves. The whole thing fits in the field it is stored in |
 | E15 | Tick Settings for a manager | They can open it. The dash is gone; every row is a real choice |
 | E16 | Sign in as an admin after E15 | Still sees everything. Nothing here can lock the owner out |
 | E17 | Mark a manager kitchen-only, open Shifts | **No Craft shop tab, and no craft shifts in the list** |

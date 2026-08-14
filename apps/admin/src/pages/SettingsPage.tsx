@@ -4,7 +4,7 @@ import { contrastRatio } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   bpToPercent, percentToBp, toInput, parseMoney,
-  ADMIN_SECTIONS, GRANTABLE_ROLES, parseAccess, asksForTip, modulesOf, saveDropping,
+  ADMIN_SECTIONS, GRANTABLE_ROLES, DEFAULT_ACCESS, parseAccess, asksForTip, modulesOf, saveDropping,
 } from '@snpos/core';
 import type { Settings, Doc } from '@snpos/core';
 
@@ -200,10 +200,20 @@ export function SettingsPage() {
      * screen to explain why. The list is what tells the difference between "no
      * for this role" and "this page did not exist when the choices were made".
      */
+    /**
+     * Only the sections that have a default worth restoring.
+     *
+     * A section nobody starts with is never added back by anything, so listing
+     * it here says nothing and costs room — and this whole thing is one string
+     * with a length limit on it. Four roles' lists plus every section name in
+     * the app can run past that limit, and a save that is too long to store is
+     * a save that silently does not happen, which is the exact symptom this
+     * was meant to cure.
+     */
     set('role_access', JSON.stringify({
       ...access,
       [role]: next,
-      _known: ADMIN_SECTIONS.map((x) => x.key),
+      _known: [...new Set(Object.values(DEFAULT_ACCESS).flat())],
     }));
   };
 
@@ -239,7 +249,21 @@ export function SettingsPage() {
         order_number_reset_on: form.order_number_reset_on || undefined,
         email_from_name: form.email_from_name ?? '',
         email_from_address: form.email_from_address ?? '',
-        role_access: JSON.stringify(access),
+        /**
+         * The form's own string, not the parsed view of it.
+         *
+         * This wrote `JSON.stringify(access)`, and `access` is the MERGED
+         * reading — role to sections, with the marker saying which sections
+         * had been decided stripped out of it. So every save threw that
+         * marker away, and on the next read a section nobody had ticked
+         * looked undecided again and the role's default came straight back.
+         *
+         * That is the whole of why unticking a box did not stick: not the
+         * checkbox, not the parse, but the save quietly writing back a
+         * different shape from the one it was given.
+         */
+        role_access: form.role_access
+          ?? JSON.stringify({ ...access, _known: [...new Set(Object.values(DEFAULT_ACCESS).flat())] }),
         daily_report_hour: Number(form.daily_report_hour ?? 23),
         shift_float_policy: form.shift_float_policy ?? 'zero',
         shift_float_default: Number(form.shift_float_default ?? 0),

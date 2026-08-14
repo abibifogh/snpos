@@ -218,3 +218,18 @@ test('an admin has every part of the books without being granted any', () => {
   assert.equal(areasOf('accounting', admin, settings).length, areas.length);
   assert.ok(areas.length >= 6, 'and there are several of them');
 });
+
+test('the saved marker only needs to cover what has a default', () => {
+  /**
+   * Everything else is never added back by anything, so listing it says
+   * nothing and costs room — and this is all one string with a length limit
+   * on it. A value too long to store is a save that silently does not happen,
+   * which is the fault this whole mechanism exists to fix.
+   */
+  const known = [...new Set(Object.values(DEFAULT_ACCESS).flat())];
+  const saved = { _known: known, manager: [] as string[] };
+  const access = parseAccess({ role_access: JSON.stringify(saved) } as unknown as Settings);
+
+  assert.deepEqual(access.manager, [], 'everything unticked stays unticked');
+  assert.ok(JSON.stringify(saved).length < 2000, 'and it fits in the column it is stored in');
+});

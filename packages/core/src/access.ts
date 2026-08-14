@@ -216,8 +216,16 @@ export function parseAccess(settings: Settings | null): Record<string, string[]>
      * Written down explicitly now. The old shape is still read the old way, so
      * a config saved before this keeps working until the next save settles it.
      */
+    /**
+     * Only sections with a default carry one worth restoring, so only those
+     * are listed. Anything else is never added back by anything, and this is
+     * all one string with a length limit — a value too long to store is a save
+     * that silently does not happen, which is the very fault this fixes.
+     */
     const known = new Set(
-      Array.isArray(parsed._known) ? parsed._known : Object.values(parsed).flat().filter((k) => typeof k === 'string'),
+      Array.isArray(parsed._known)
+        ? parsed._known
+        : Object.values(parsed).flat().filter((k) => typeof k === 'string'),
     );
 
     const merged: Record<string, string[]> = {};
