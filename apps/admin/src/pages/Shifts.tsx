@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Card, Empty, Notice, Spinner, Badge, Modal, Button } from '@snpos/ui';
 import { listAll, humanError, Query } from '../lib';
-import { formatMoney, byStaff, destinationLabel } from '@snpos/core';
+import { formatMoney, byStaff, destinationLabel, fromTakings } from '@snpos/core';
 import type { Doc, CashHandover } from '@snpos/core';
 import { useSession } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
@@ -32,6 +32,7 @@ interface Expense extends Doc {
   category_key?: string;
   payee?: string;
   note?: string;
+  paid_from_method_id?: string;
   from_takings?: boolean;
 }
 
@@ -59,6 +60,21 @@ export function ShiftsPage() {
   const [rows, setRows] = useState<Shift[] | null>(null);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+
+  /**
+   * Where an expense was paid from, which is two questions and not one.
+   *
+   * What it went out of — cash, mobile money — and whose money that was: the
+   * takings this shift had rung up, or petty cash it never held. The second
+   * decides whether the drawer is counted short by it, which is the thing
+   * somebody is holding the expense up to work out, and it was only ever
+   * mentioned in passing when the answer was petty cash.
+   */
+  const paidFrom = (e: Expense): string => {
+    const method = methods.find((m) => m.$id === e.paid_from_method_id)?.name;
+    const purse = fromTakings(e) ? 'this shift' : 'petty cash';
+    return method ? `${method}, from ${purse}` : `From ${purse}`;
+  };
   /**
    * The expense being opened, and what was actually bought with it.
    *
@@ -297,9 +313,11 @@ export function ShiftsPage() {
                         <td>
                           {e.category_key || e.category}
                           {e.payee && <div className="small dim">{e.payee}</div>}
-                          {/* The one thing about an expense that changes what
-                              the drawer was counted against. */}
-                          {e.from_takings === false && <div className="small dim">from petty cash</div>}
+                          {/* Where it came out of, said on every row rather
+                              than only when the answer is unusual. Whether the
+                              drawer is short by this is the thing somebody is
+                              holding the expense up to work out. */}
+                          <div className="small dim">{paidFrom(e)}</div>
                         </td>
                         <td className="num">{settings ? formatMoney(e.amount, settings) : e.amount}</td>
                         <td style={{ width: '1%' }}>
@@ -328,7 +346,33 @@ export function ShiftsPage() {
           onClose={() => setOpenExpense(null)}
           footer={<Button onClick={() => setOpenExpense(null)}>Close</Button>}
         >
-          {openExpense.payee && <p className="small dim" style={{ marginTop: 0 }}>Paid to {openExpense.payee}</p>}
+          <div className="cash-split" style={{ marginTop: 0 }}>
+            <div className="cash-split-item">
+              <div className="label">Paid from</div>
+              <div className="figure" style={{ fontSize: '0.95rem' }}>
+                {methods.find((m) => m.$id === openExpense.paid_from_method_id)?.name ?? 'Not recorded'}
+              </div>
+            </div>
+            {/* The question the drawer count turns on, given its own block
+                rather than a line of small grey text. */}
+            <div className="cash-split-item">
+              <div className="label">Whose money</div>
+              <div className="figure" style={{ fontSize: '0.95rem' }}>
+                {fromTakings(openExpense) ? 'This shift\u2019s takings' : 'Petty cash'}
+              </div>
+              <div className="small dim">
+                {fromTakings(openExpense)
+                  ? 'Taken off what the drawer should hold'
+                  : 'Not taken off the drawer count'}
+              </div>
+            </div>
+            {openExpense.payee && (
+              <div className="cash-split-item">
+                <div className="label">Paid to</div>
+                <div className="figure" style={{ fontSize: '0.95rem' }}>{openExpense.payee}</div>
+              </div>
+            )}
+          </div>
           {openExpense.note && <p className="small">{openExpense.note}</p>}
 
           {expenseItems === null ? (

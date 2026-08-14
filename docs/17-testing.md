@@ -223,6 +223,10 @@ not just what to press.
 | E21 | Shifts → Details → Details on an expense | The things bought, with quantity, each and paid |
 | E22 | The same on a taxi with nothing itemised | Says so plainly rather than showing an empty table |
 | E23 | An expense with an overhead line on it | That line is marked as not stocked |
+| E24 | Any expense row in a shift's details | Says **what it was paid with and whose money**, every row |
+| E25 | Open that expense | Both given their own block, with what the drawer count does about it |
+| E26 | An expense saved before the method was recorded | Says **Not recorded** rather than guessing |
+| E27 | This shift → Money out on the till | Same two facts, same words |
 
 ### F. The kitchen still works
 

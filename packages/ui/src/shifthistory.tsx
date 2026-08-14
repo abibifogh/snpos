@@ -353,12 +353,15 @@ export function ShiftHistory({
                     {e.category_key || e.category}
                     {e.note && <div>{e.note}</div>}
                   </td>
-                  {/* Whether the drawer is short by this or not. The one thing
-                      about an expense that changes what somebody is counted
-                      against at the end of the night, so it is a column rather
-                      than something to be found by opening each row. */}
+                  {/* Where it came out of, which is two questions: what it was
+                      paid with, and whose money that was. The second decides
+                      whether the drawer is counted short by it, which is what
+                      somebody at the end of the night is working out — so both
+                      are a column rather than something found by opening each
+                      row one at a time. */}
                   <td className="dim small">
-                    {fromTakings(e) ? 'The shift' : 'Petty cash'}
+                    {methods.find((m) => m.$id === e.paid_from_method_id)?.name ?? 'Not recorded'}
+                    <div>{fromTakings(e) ? 'from this shift' : 'from petty cash'}</div>
                   </td>
                   <td className="num">{money(e.amount)}</td>
                   <td>
