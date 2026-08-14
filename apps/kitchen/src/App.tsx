@@ -1100,10 +1100,16 @@ function Ticket({
               the shift balances as though nothing happened. So the loud tag on
               a ready ticket is the one somebody can still act on.
             */}
-            {finished && order.payment_status === 'unpaid' && (
+            {finished && order.payment_status === 'unpaid' && order.total > 0 && (
               <span className="pill" style={{ background: '#4a1410', color: '#ff9b90' }}>
                 Unpaid{settings ? ` · ${formatMoney(order.total, settings)}` : ''}
               </span>
+            )}
+            {/* Nothing owed is not the same as owing and not having paid. A
+                comped ticket tagged Unpaid sends somebody chasing money that
+                was never going to arrive. */}
+            {order.total <= 0 && (
+              <span className="pill">No charge</span>
             )}
             {overdue && <span className="pill" style={{ background: '#3a1714', color: '#ff9b90' }}>Late</span>}
           </div>
@@ -1186,7 +1192,13 @@ function Ticket({
                   one number on this ticket that is now certainly wrong, and it
                   is the number a tired person would read out.
                 */}
-                {canSettle ? (
+                {/* A bill that comes to nothing — discounted in full, or a
+                    staff meal — has nothing to take. Offering to take a
+                    payment of nought is how a comped order ends up stuck on
+                    the pass with the only button on it refusing every answer. */}
+                {order.total <= 0 ? (
+                  <Button variant="primary" onClick={onCollect}>Collected · nothing to pay</Button>
+                ) : canSettle ? (
                   <Button variant="primary" onClick={onSettle}>
                     {order.payment_status === 'partial'
                       ? `Collect & take the rest${owed !== undefined && settings ? ` · ${formatMoney(owed, settings)}` : ''}`

@@ -795,9 +795,15 @@ function PaymentModal({
   const confirm = async () => {
     if (!ctx.shift) { setError('No shift is open.'); return; }
     if (!methodId) { setError('Choose how it was paid.'); return; }
-    // Less than the full amount is allowed and is not an error: a table
-    // splitting the bill pays it in pieces. What is not allowed is nothing.
-    if (paid <= 0) { setError('Enter how much is being paid.'); return; }
+    /**
+     * Less than the full amount is allowed and is not an error: a table
+     * splitting the bill pays it in pieces. What is not allowed is nothing —
+     * unless there is nothing to pay, which is a different thing entirely.
+     *
+     * A bill discounted in full comes to nought, and demanding a figure for it
+     * left a comped order with no way to be closed at all.
+     */
+    if (paid <= 0 && amountDue > 0) { setError('Enter how much is being paid.'); return; }
     // Cash that does not cover what is being recorded is a typo somewhere. The
     // drawer will not balance either way; better to catch it at the counter.
     if (short) {

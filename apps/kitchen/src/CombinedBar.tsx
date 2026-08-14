@@ -6,7 +6,7 @@ import {
 import type { BlockerRow, CountRow, StockRow, ShiftFlow } from '@snpos/ui';
 import { resolveCounts } from '@snpos/ui';
 import {
-  formatMoney, parseMoney, toInput, stockCheckRows,
+  db, DB_ID, formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift, loadOpenShift, loadOpenShifts, shiftBlockers, expectedTakings, closeShift, openingFloats,
   recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, shouldWarnLateOrder,
   HANDOVER_ENABLED,
@@ -500,7 +500,42 @@ export function SettleModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [venueId, order.$id]);
 
+  /**
+   * Nothing left to pay.
+   *
+   * A bill fully discounted, or one already settled, comes to nought — and the
+   * form asked for an amount anyway and refused every answer, because nought
+   * is not a payment. So a staff meal or a comped order could be cooked and
+   * could never leave the pass: the only button on the ticket demanded a
+   * figure that does not exist.
+   *
+   * Recording a payment of nothing is not the answer either; it would sit in
+   * the takings as a transaction that never happened and be counted at close.
+   * The food goes out and the bill is marked settled, which is what actually
+   * occurred.
+   */
+  const nothingOwed = owed <= 0;
+
+  const collectFree = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await db.updateDocument(DB_ID, 'orders', order.$id, {
+        status: 'SERVED',
+        served_at: new Date().toISOString(),
+        payment_status: 'paid',
+        marked_paid_by: who?.user_id || who?.$id || '',
+        marked_paid_at: new Date().toISOString(),
+      });
+      onDone(`${order.order_no} collected, nothing to pay`, { settled: true });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not mark that collected.');
+      setBusy(false);
+    }
+  };
+
   const settle = async () => {
+    if (nothingOwed) return collectFree();
     if (!methodId) { setError('Choose how they paid.'); return; }
     if (!shift) { setError('No shift is open. Open one first, or the money has nothing to be counted against.'); return; }
     if (paying <= 0) { setError('Enter how much they are paying.'); return; }
@@ -560,7 +595,11 @@ export function SettleModal({
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button variant="primary" onClick={settle} loading={busy}>
-            {leftAfter > 0 && payText.trim() !== '' ? 'Take part payment' : 'Mark collected and paid'}
+            {nothingOwed
+              ? 'Collect it'
+              : leftAfter > 0 && payText.trim() !== ''
+                ? 'Take part payment'
+                : 'Mark collected and paid'}
           </Button>
         </>
       }
@@ -576,13 +615,20 @@ export function SettleModal({
           shift, close this one first and it will be waiting there.
         </Notice>
       )}
-      <p style={{ marginTop: 0, fontSize: '1.3rem', fontWeight: 650 }}>{formatMoney(owed, settings)}</p>
-      <p className="small dim" style={{ marginTop: '-0.5rem' }}>
-        {owed < order.total
-          ? `Still to pay, of ${formatMoney(order.total, settings)}. The guest pays you as usual; this records which way.`
-          : 'The guest pays you as usual. This records which way they paid.'}
+      <p style={{ marginTop: 0, fontSize: '1.3rem', fontWeight: 650 }}>
+        {nothingOwed ? 'Nothing to pay' : formatMoney(owed, settings)}
       </p>
-      <Field label="How they paid">
+      <p className="small dim" style={{ marginTop: '-0.5rem' }}>
+        {nothingOwed
+          ? 'This bill comes to nothing — discounted in full, or already settled. Hand the food over; there is no money to record.'
+          : owed < order.total
+            ? `Still to pay, of ${formatMoney(order.total, settings)}. The guest pays you as usual; this records which way.`
+            : 'The guest pays you as usual. This records which way they paid.'}
+      </p>
+      {/* Nothing about how they paid is asked when there is nothing to pay.
+          Every one of these boxes would be a question with no answer, and a
+          form full of those is a form people learn to guess at. */}
+      <Field label="How they paid" hidden={nothingOwed}>
         <Select value={methodId} onChange={(e) => setMethodId(e.target.value)}>
           {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
         </Select>
@@ -592,6 +638,7 @@ export function SettleModal({
           the bill should not need one person to front the lot. */}
       <Field
         label={`Amount paid now (${settings.currency_symbol ?? ''})`}
+        hidden={nothingOwed}
         hint="Leave blank if they are paying all of it."
       >
         <Input
@@ -606,7 +653,7 @@ export function SettleModal({
           {formatMoney(leftAfter, settings)} will still be owed after this.
         </p>
       )}
-      {method?.requires_reference && (
+      {!nothingOwed && method?.requires_reference && (
         <Field
           label="Reference"
           hint="The number from the card machine or the mobile money message. Without it this payment cannot be matched to your statement."
@@ -614,7 +661,7 @@ export function SettleModal({
           <Input value={reference} onChange={(e) => setReference(e.target.value)} />
         </Field>
       )}
-      {asksForTip(settings, 'kitchen') && (
+      {!nothingOwed && asksForTip(settings, 'kitchen') && (
         <Field label={`Tip (${settings.currency_symbol ?? ''})`} hint="Optional. Kept separate from sales; it is not yours.">
           <Input value={tipText} inputMode="decimal" onChange={(e) => setTipText(e.target.value)} />
         </Field>

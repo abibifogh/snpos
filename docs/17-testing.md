@@ -243,6 +243,11 @@ Run these every time. The restaurant is the part that is already earning.
 | F17 | Press Collect & take the rest, pay the balance | Now it clears off the pass, once |
 | F18 | Take half, then look at the till's floor plan | Table still shows its bill, marked part paid |
 | F19 | Take half at the till, reopen that table | The order is there and the balance is what is left |
+| F20 | Discount an order 100%, cook it, look at the ticket | **No charge** tag. Button says Collected · nothing to pay |
+| F21 | Press it | Goes off the pass. **No payment recorded**, nothing added to takings |
+| F22 | Open the payment box on such an order | Says **Nothing to pay**. No method, no amount, no tip asked |
+| F23 | The same order at the till | Settles without asking for a figure |
+| F24 | Close the shift after F21 | Not blocked, and the takings are unchanged |
 | F3i | Sleep the kitchen tablet an hour, wake it, let a ticket go late | **It rings.** The sound comes back with the screen |
 | F3j | Wake it and look before any order is late | Either no banner, or a red bar offering to turn sound back on |
 | F3k | Press that bar | Bar goes. Test the late sound from settings and it plays |
