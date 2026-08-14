@@ -3,6 +3,7 @@ import type { Doc, Settings } from './types';
 import type { Order, OrderItem } from './orders';
 import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from './stock';
 import { postShift } from './ledger';
+import { isLivePayment } from './payments';
 import { featureConfig, isEnabled, type FeatureMap } from './features';
 import type { Module } from './access';
 import { shiftAge, shiftCode, mustWaitForNextShift, openShiftsFor, blockerFor, SHIFT_MAX_HOURS } from './shift-rules';
@@ -44,6 +45,8 @@ export interface ShiftPayment extends Doc {
   method_id: string;
   amount: number;
   tip: number;
+  /** 'voided' means recorded in error and taken back out. See isLivePayment. */
+  status?: string;
 }
 
 export const loadPaymentMethods = async (venueId: string): Promise<PaymentMethod[]> =>
@@ -389,7 +392,10 @@ export async function expectedTakings(shift: Shift, methods: PaymentMethod[]): P
   const takenByMethod: Record<string, number> = {};
   let salesTotal = 0;
   let tipsTotal = 0;
-  for (const p of payments) {
+  // A payment voided as never-received is not money the drawer should hold.
+  // Counting it here would make the shift read as OVER by that amount and send
+  // somebody looking for cash that was never there.
+  for (const p of payments.filter(isLivePayment)) {
     takenByMethod[p.method_id] = (takenByMethod[p.method_id] ?? 0) + p.amount + (p.tip ?? 0);
     salesTotal += p.amount;
     tipsTotal += p.tip ?? 0;

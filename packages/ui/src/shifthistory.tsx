@@ -3,7 +3,7 @@ import { Badge, Button, Empty, Field, FormError, Input, Modal, Spinner } from '.
 import {
   Query, formatMoney, listAll, displayOrderNo, requestReceipt,
   receiptForOrder, buildReceiptHtml, openPrintable, ordersForShift, fromTakings,
-  loadPaymentMethods,
+  loadPaymentMethods, isLivePayment,
 } from '@snpos/core';
 import type {
   Order, OrderItem, Settings, Shift, Doc, Venue, StaffProfile, PaidToKind, Module,
@@ -198,7 +198,7 @@ export function ShiftHistory({
    * are in the drawer to be counted, and shown apart so nobody mistakes them
    * for sales.
    */
-  const live = payments.filter((p) => p.status !== 'voided' && p.status !== 'refunded');
+  const live = payments.filter(isLivePayment);
   const byMethod = methods
     .map((m) => {
       const mine = live.filter((p) => p.method_id === m.$id);

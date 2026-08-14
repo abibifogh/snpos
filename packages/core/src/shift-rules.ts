@@ -310,3 +310,27 @@ export function blockerFor(order: {
   if (order.status !== 'SERVED') return 'uncollected';
   return null;
 }
+
+/* --------------------------------------------------- money already taken in */
+
+/**
+ * Does this payment still represent money the business holds?
+ *
+ * A payment row is never deleted. The shift it was taken in has to keep adding
+ * up: a cashier counts the drawer at the end of the night and the system says
+ * what it should hold, so removing a row silently changes the answer to a
+ * question that was already settled, and the person who counted has no way to
+ * see why they are suddenly short. One recorded in error is marked voided and
+ * stays where it is.
+ *
+ * Which means everything that adds money up has to agree to skip it, and that
+ * is why this is one predicate rather than the same filter written out at each
+ * site. The sites disagreeing is the failure that matters: a voided payment
+ * still counted in a drawer's expected takings makes the shift read as OVER by
+ * that amount, and somebody gets asked where the extra money went.
+ *
+ * A row with no status at all is a real payment. The field arrived after the
+ * rows did, and reading its absence as "voided" would erase a night's takings.
+ */
+export const isLivePayment = (p: { status?: string }): boolean =>
+  p.status !== 'voided' && p.status !== 'refunded';

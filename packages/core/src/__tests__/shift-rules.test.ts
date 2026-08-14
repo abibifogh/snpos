@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit, mustWaitForNextShift, shouldWarnLateOrder,
   SHIFT_MAX_HOURS, SHIFT_WARN_HOURS,
-  shiftAgeOf, openShiftsFor, blockerFor,
+  shiftAgeOf, openShiftsFor, blockerFor, isLivePayment,
 } from '../shift-rules.ts';
 
 const at = (iso: string) => new Date(iso);
@@ -273,4 +273,21 @@ test('a bill that comes to nothing does not hold a shift open', () => {
 test('a part paid bill still holds the shift', () => {
   // Part of the money is not the money.
   assert.equal(blockerFor({ status: 'SERVED', payment_status: 'partial', total: 5000 }), 'unpaid');
+});
+
+/* --------------------------------------------- a payment recorded in error */
+
+test('a voided payment is not money the business holds', () => {
+  /**
+   * One predicate, used everywhere money is added up, because the sites
+   * disagreeing is the failure that matters. A voided payment still counted in
+   * a drawer's expected takings makes the shift read as OVER by that amount,
+   * and somebody gets asked where the extra money went.
+   */
+  assert.equal(isLivePayment({ status: 'captured' }), true);
+  assert.equal(isLivePayment({ status: 'pending' }), true);
+  assert.equal(isLivePayment({ status: 'voided' }), false);
+  assert.equal(isLivePayment({ status: 'refunded' }), false);
+  // Rows written before the field meant anything are real payments.
+  assert.equal(isLivePayment({}), true);
 });

@@ -5,13 +5,14 @@ import {
   formatMoney, axisMoney, trialBalance, buildReportHtml, openPrintable, downloadUrl,
   toCsv, downloadCsv,
   parseCostAccounts, serialiseCostAccounts, startingCostChoice, hasCostChoice, splitCosts, costCodeFor,
+  isLivePayment,
 } from '@snpos/core';
 import type { Order, OrderItem, Doc, TrialBalanceRow } from '@snpos/core';
 import { useSession } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 import { Insights } from '../components/Insights';
 
-interface Payment extends Doc { order_id: string; method_id: string; method_kind_snapshot: string; amount: number; tip: number; shift_id: string }
+interface Payment extends Doc { order_id: string; method_id: string; method_kind_snapshot: string; amount: number; tip: number; shift_id: string; status?: string }
 interface PaymentMethod extends Doc { name: string }
 interface Expense extends Doc { amount: number; category: string; category_key?: string; module?: 'kitchen' | 'craft' }
 interface AccountRow extends Doc { code: string; name: string; type: string; active?: boolean }
@@ -97,7 +98,12 @@ export function ReportsPage() {
       // order knows. Matched through it rather than stamped twice, so the two
       // can never disagree about which books a payment lands in.
       const mine = new Set(paid.map((o) => o.$id));
-      return payments.filter((p) => inRange(p.$createdAt) && (side === 'all' || mine.has(p.order_id)));
+      // Voided payments are out: money recorded in error and taken back out was
+      // never taken, and leaving it in the method breakdown would report card
+      // takings the machine's own statement will not agree with.
+      return payments
+        .filter(isLivePayment)
+        .filter((p) => inRange(p.$createdAt) && (side === 'all' || mine.has(p.order_id)));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [payments, since, until, side, paid],

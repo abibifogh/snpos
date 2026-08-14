@@ -2,6 +2,10 @@ import { ID, Query, listAll } from './client';
 import { createOrQueue, updateOrQueue } from './offline';
 import type { Doc } from './types';
 import type { Order } from './orders';
+// Pure, so the same rule can be checked without a database in front of it.
+import { isLivePayment } from './shift-rules';
+
+export { isLivePayment };
 
 interface PaymentRow extends Doc {
   order_id: string;
@@ -22,7 +26,7 @@ export async function amountOutstanding(order: Pick<Order, '$id' | 'total'>): Pr
     () => [] as PaymentRow[],
   );
   const taken = paid
-    .filter((p) => p.status !== 'voided' && p.status !== 'refunded')
+    .filter(isLivePayment)
     .reduce((sum, p) => sum + (p.amount ?? 0), 0);
   return Math.max(0, order.total - taken);
 }
@@ -109,4 +113,49 @@ export async function recordPayment(input: RecordPaymentInput): Promise<number> 
   });
 
   return remaining;
+}
+
+/**
+ * Undoing a payment that should never have been recorded.
+ *
+ * The message on the order screen used to say "fix the payment separately",
+ * and there was no separately: nothing anywhere in the system could reverse a
+ * payment, so an order marked paid in error could be set back to unpaid while
+ * the money it never received stayed in the takings for ever. Being told to go
+ * and do something there is no way to do is worse than being told no.
+ *
+ * Marked, not deleted, and deliberately.
+ *
+ * The shift it was taken in was counted against these rows. A cashier counts
+ * the drawer at the end of the night and the system says what it should hold;
+ * deleting a payment silently changes the answer to a question that was
+ * already settled, and the person who counted has no way to see why they are
+ * suddenly short. A voided row keeps the history readable — it says money was
+ * recorded here and then taken back out, by somebody, for a reason.
+ *
+ * Two consequences the caller has to deal with, because neither is this
+ * function's to decide:
+ *
+ *  - the ORDER's payment status is recomputed here, since it follows directly
+ *    from what is left and nobody would want it to disagree;
+ *  - the SHIFT's stored totals do not move if it has already closed. Those are
+ *    a snapshot of a night that was signed off. `recomputeClosedShift` will
+ *    redo them when that is what somebody wants, and the screen offering this
+ *    says so rather than pretending the books quietly fixed themselves.
+ */
+export async function voidPayment(
+  payment: Pick<PaymentRow, '$id' | 'order_id'>,
+  order: Pick<Order, '$id' | 'total'>,
+): Promise<{ outstanding: number; paymentStatus: 'unpaid' | 'partial' | 'paid' }> {
+  await updateOrQueue('payments', payment.$id, { status: 'voided' });
+
+  // Read back rather than subtracting: a bill split four ways must not drift
+  // out of step with the rows that prove it.
+  const outstanding = await amountOutstanding(order);
+  const paymentStatus =
+    outstanding <= 0 ? 'paid' : outstanding >= order.total ? 'unpaid' : 'partial';
+
+  await updateOrQueue('orders', order.$id, { payment_status: paymentStatus });
+
+  return { outstanding, paymentStatus };
 }

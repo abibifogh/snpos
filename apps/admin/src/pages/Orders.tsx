@@ -4,6 +4,7 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, Query, toCsv, downloadCsv, buildReceiptHtml, openPrintable, receiptForOrder,
   settleOrderNumbers, recomputeOrderTotals, cancelOrder, removeOrder, recomputeClosedShift,
+  voidPayment, isLivePayment,
 } from '@snpos/core';
 import type { Order, OrderItem, StaffProfile, Doc, Venue } from '@snpos/core';
 import { useSession } from '../session';
@@ -11,10 +12,13 @@ import { useSession } from '../session';
 interface Payment extends Doc {
   order_id: string;
   method_id: string;
+  shift_id?: string;
   amount: number;
   tip: number;
   taken_by: string;
   change_given: number;
+  /** 'voided' means recorded in error and taken back out. */
+  status?: string;
 }
 interface PaymentMethod extends Doc { name: string }
 
@@ -58,6 +62,9 @@ export function OrdersPage() {
   const [venues, setVenues] = useState<Venue[]>([]);
   const [open, setOpen] = useState<Order | null>(null);
   const [editing, setEditing] = useState<Order | null>(null);
+  const [voiding, setVoiding] = useState<{ payment: Payment; order: Order } | null>(null);
+  const [voidReason, setVoidReason] = useState('');
+  const [voidBusy, setVoidBusy] = useState(false);
   const [newStatus, setNewStatus] = useState('');
   const [newPayment, setNewPayment] = useState('');
   const [reason, setReason] = useState('');
@@ -323,6 +330,69 @@ export function OrdersPage() {
     }
   };
 
+  /**
+   * Reversing a payment that was never actually received.
+   *
+   * Admin only. Putting an order's status back is a correction a manager makes
+   * at a pass; taking money out of a night's takings is not, because the
+   * drawer was counted against it and somebody signed for that count.
+   */
+  const canVoid = isAdmin;
+
+  const doVoid = async () => {
+    if (!voiding) return;
+    if (!voidReason.trim()) { setError('Say why. It goes on the record with your name.'); return; }
+    setVoidBusy(true);
+    setError(null);
+    try {
+      const { paymentStatus, outstanding } = await voidPayment(voiding.payment, voiding.order);
+
+      await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
+        venue_id: voiding.order.venue_id,
+        actor_id: profile?.user_id ?? profile?.$id ?? '',
+        actor_role: profile?.role ?? '',
+        action: 'payment_voided',
+        entity_type: 'payments',
+        entity_id: voiding.payment.$id,
+        before: JSON.stringify({
+          order_no: voiding.order.order_no,
+          amount: voiding.payment.amount,
+          tip: voiding.payment.tip,
+          method: methods.find((m) => m.$id === voiding.payment.method_id)?.name ?? voiding.payment.method_id,
+          taken_by: nameOf(voiding.payment.taken_by),
+          shift_id: voiding.payment.shift_id,
+        }),
+        after: JSON.stringify({ status: 'voided', order_payment_status: paymentStatus }),
+        reason: voidReason.trim(),
+      }).catch(() => undefined);
+
+      /*
+        The shift's own totals are a snapshot taken when it closed, so they do
+        not move on their own. Redone here when the shift is known, because
+        leaving them is how the shift summary keeps reporting a sale that no
+        longer exists — the same reason cancelling an order redoes them.
+
+        An OPEN shift needs nothing: its figures are worked out live from the
+        payment rows every time somebody looks.
+      */
+      if (voiding.payment.shift_id) {
+        await recomputeClosedShift(voiding.payment.shift_id).catch(() => undefined);
+      }
+
+      setVoiding(null);
+      await load();
+      toast(
+        outstanding > 0
+          ? `Voided. ${voiding.order.order_no} now owes ${money(outstanding)}.`
+          : 'Voided.',
+      );
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setVoidBusy(false);
+    }
+  };
+
   if (error && !orders && !editing) return <Notice>{error}</Notice>;
 
   return (
@@ -519,20 +589,109 @@ export function OrdersPage() {
           ) : (
             <div className="table-wrap">
               <table className="data">
-                <thead><tr><th>Method</th><th className="num">Amount</th><th className="num">Tip</th><th>Taken by</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>Method</th><th className="num">Amount</th><th className="num">Tip</th><th>Taken by</th><th />
+                  </tr>
+                </thead>
                 <tbody>
-                  {payments.filter((p) => p.order_id === open.$id).map((p) => (
-                    <tr key={p.$id}>
-                      <td>{methods.find((m) => m.$id === p.method_id)?.name ?? '-'}</td>
-                      <td className="num">{money(p.amount)}</td>
-                      <td className="num dim">{p.tip ? money(p.tip) : '-'}</td>
-                      <td className="dim small">{nameOf(p.taken_by)}</td>
-                    </tr>
-                  ))}
+                  {payments.filter((p) => p.order_id === open.$id).map((p) => {
+                    const voided = !isLivePayment(p);
+                    return (
+                      <tr key={p.$id} className={voided ? 'dim' : undefined}>
+                        <td>
+                          {methods.find((m) => m.$id === p.method_id)?.name ?? '-'}
+                          {voided && <Badge tone="warn"> voided</Badge>}
+                        </td>
+                        <td className="num" style={voided ? { textDecoration: 'line-through' } : undefined}>
+                          {money(p.amount)}
+                        </td>
+                        <td className="num dim">{p.tip ? money(p.tip) : '-'}</td>
+                        <td className="dim small">{nameOf(p.taken_by)}</td>
+                        <td className="num">
+                          {/*
+                            The "separately" the warning used to point at.
+
+                            It said to fix the payment separately and there was
+                            no separately: nothing in the system could reverse
+                            one, so an order could be set back to unpaid while
+                            the money it never received stayed in the takings.
+                          */}
+                          {canVoid && !voided && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => { setVoidReason(''); setVoiding({ payment: p, order: open }); }}
+                            >
+                              Void
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
+        </Modal>
+      )}
+
+      {voiding && (
+        <Modal
+          title="Take this payment back out?"
+          onClose={() => (voidBusy ? undefined : setVoiding(null))}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setVoiding(null)} disabled={voidBusy}>Cancel</Button>
+              <Button
+                variant="danger"
+                onClick={() => void doVoid()}
+                loading={voidBusy}
+                disabled={!voidReason.trim()}
+              >
+                Void the payment
+              </Button>
+            </>
+          }
+        >
+          {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
+          <p style={{ marginTop: 0 }}>
+            {money(voiding.payment.amount)}
+            {voiding.payment.tip ? ` and a ${money(voiding.payment.tip)} tip` : ''}
+            {' '}on {voiding.order.order_no}, recorded by {nameOf(voiding.payment.taken_by)} as{' '}
+            {methods.find((m) => m.$id === voiding.payment.method_id)?.name ?? 'a payment'}.
+          </p>
+          {/*
+            What actually happens, in the order somebody will notice it.
+
+            The row is not deleted, and saying so plainly matters: a cashier who
+            counted a drawer against these figures needs the history to still
+            show that money was recorded and then taken back out, rather than
+            finding themselves quietly short with nothing to point at.
+          */}
+          <Notice tone="warn">
+            <strong>For money that was never received.</strong> Not for a refund — a refund is money that came in and
+            went back out, and belongs on the books as both.
+          </Notice>
+          <ul className="small" style={{ marginBottom: 0 }}>
+            <li>The payment stays on record, marked voided, with your name and reason against it.</li>
+            <li>It stops counting towards the takings, so the drawer for that shift is expected to hold that much less.</li>
+            <li>{voiding.order.order_no} goes back to owing what this payment covered.</li>
+            <li className="dim">
+              Journal entries already posted for that shift are not changed. Correct those under Accounting if the
+              shift has been closed and posted.
+            </li>
+          </ul>
+          <Field label="Why" hint="Recorded against your name in the audit log.">
+            <Input
+              value={voidReason}
+              autoFocus
+              placeholder="Rung up on the wrong table, the customer never paid"
+              onChange={(e) => setVoidReason(e.target.value)}
+              disabled={voidBusy}
+            />
+          </Field>
         </Modal>
       )}
 
@@ -615,10 +774,23 @@ export function OrdersPage() {
               onChange={(e) => setReason(e.target.value)}
             />
           </Field>
+          {/*
+            The warning that used to be a dead end.
+
+            It said to fix the payment separately, and there was no separately:
+            nothing in the system could reverse a payment. So it named a step
+            nobody could take, and the honest outcome was an order set back to
+            unpaid with money it never received still sitting in the takings.
+            Now the step exists, and this says where it is.
+          */}
           {newPayment !== 'paid' && editing.payment_status === 'paid' && (
             <Notice tone="warn">
-              This order has payment records against it. Setting it back to unpaid does not delete them, the money is
-              still counted in the shift it was taken in. Fix the payment separately if it was never received.
+              This order has payment records against it. Changing the status here does not touch them, so the money
+              stays in the shift it was taken in.
+              {' '}
+              {canVoid
+                ? 'If it was never received, close this and use Void next to the payment in the order’s details — that is what takes it back out of the takings.'
+                : 'If it was never received, an admin needs to void the payment itself; that is what takes it back out of the takings.'}
             </Notice>
           )}
         </Modal>
