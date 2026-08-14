@@ -867,11 +867,27 @@ export const COLLECTIONS = [
   {
     id: 'payments',
     name: 'Payments',
-    // Taking money is front-line work; reversing it is not.
-    // delete is an admin's, for the Erase records page and nothing else. A
-    // payment is the record that money came in; a cashier who could remove one
-    // could remove a night's takings. Nobody else has it.
-    perms: { read: ALL_STAFF, create: ALL_STAFF, update: MGMT, delete: ADMIN },
+    /**
+     * Taking money is front-line work, and so is admitting you pressed the
+     * wrong button while doing it.
+     *
+     * Update was management-only, which left staff able to CREATE a payment of
+     * any amount by any method and unable to correct one. That asymmetry is
+     * what put a cook in the position of watching the cash drawer read over by
+     * the amount the card machine read short, all night, with no way to say
+     * so. The screens only ever offer the METHOD — never the amount, never the
+     * order — because which drawer the money went into is the thing that is
+     * routinely mistyped and harmlessly fixed.
+     *
+     * Appwrite has no field-level permission, so the narrowness lives in the
+     * screens and the honesty lives in the audit log: every correction is
+     * written there with a name against it.
+     *
+     * delete is an admin's, for the Erase records page and nothing else. A
+     * payment is the record that money came in; a cashier who could remove one
+     * could remove a night's takings. Voiding one is an admin's too.
+     */
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: ADMIN },
     attributes: [
       ['order_id', 's', 64, true],
       ['shift_id', 's', 64, true],

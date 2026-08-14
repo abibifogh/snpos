@@ -1,4 +1,4 @@
-import { ID, Query, listAll } from './client';
+import { db, DB_ID, ID, Query, listAll } from './client';
 import { createOrQueue, updateOrQueue } from './offline';
 import type { Doc } from './types';
 import type { Order } from './orders';
@@ -158,4 +158,65 @@ export async function voidPayment(
   await updateOrQueue('orders', order.$id, { payment_status: paymentStatus });
 
   return { outstanding, paymentStatus };
+}
+
+/**
+ * Correcting which drawer a payment went into.
+ *
+ * Not the amount, and not the order — only how the money arrived. This is the
+ * one thing about a payment that is routinely got wrong and that nobody could
+ * fix: somebody settles a bill on the pass, taps Cash because it is first in
+ * the list, and the customer actually paid by card. Nothing is missing and
+ * nothing is stolen, but at the end of the night the cash drawer is over by
+ * that amount and the card takings are short by it, and the person counting is
+ * left explaining a discrepancy they can see and cannot correct.
+ *
+ * `method_kind_snapshot` moves with the method. It is what the shift's cash
+ * figures read, so leaving it behind would fix the label and not the number,
+ * which is the worst of the three possible outcomes.
+ */
+export async function changePaymentMethod(
+  paymentId: string,
+  method: { $id: string; kind: string },
+): Promise<void> {
+  await updateOrQueue('payments', paymentId, {
+    method_id: method.$id,
+    method_kind_snapshot: method.kind,
+  });
+}
+
+/**
+ * The record that somebody moved money from one drawer to another.
+ *
+ * Written down because this is not a cosmetic edit: cash and card are two
+ * piles that two different people count and answer for, and moving an amount
+ * between them changes what each of them is expected to hold. A correction
+ * nobody can trace is indistinguishable from a till being quietly rebalanced
+ * to cover a shortage, and the point of allowing the correction at all is that
+ * the honest version should be the easy one.
+ *
+ * Never allowed to fail the correction it describes. A log entry that could
+ * block the fix would teach people to stop asking for the fix.
+ */
+export async function logPaymentMethodChange(p: {
+  venueId: string;
+  paymentId: string;
+  actorId: string;
+  actorRole: string;
+  from: string;
+  to: string;
+  amount: number;
+}): Promise<void> {
+  await db
+    .createDocument(DB_ID, 'audit_log', ID.unique(), {
+      venue_id: p.venueId,
+      actor_id: p.actorId,
+      actor_role: p.actorRole,
+      action: 'payment_method_changed',
+      entity_type: 'payments',
+      entity_id: p.paymentId,
+      before: JSON.stringify({ method: p.from, amount: p.amount }),
+      after: JSON.stringify({ method: p.to }),
+    })
+    .catch(() => undefined);
 }

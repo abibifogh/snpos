@@ -3,7 +3,7 @@ import { Badge, Button, Empty, Field, FormError, Input, Modal, Spinner } from '.
 import {
   Query, formatMoney, listAll, displayOrderNo, requestReceipt,
   receiptForOrder, buildReceiptHtml, openPrintable, ordersForShift, fromTakings,
-  loadPaymentMethods, isLivePayment,
+  loadPaymentMethods, isLivePayment, changePaymentMethod, logPaymentMethodChange,
 } from '@snpos/core';
 import type {
   Order, OrderItem, Settings, Shift, Doc, Venue, StaffProfile, PaidToKind, Module,
@@ -13,6 +13,7 @@ import type {
 /** A payment as this screen needs it: how much, in tips, and by what means. */
 interface PaymentRow extends Doc {
   shift_id?: string;
+  order_id?: string;
   method_id: string;
   amount: number;
   tip?: number;
@@ -149,6 +150,54 @@ export function ShiftHistory({
   };
 
   const money = (n: number) => formatMoney(n, settings);
+
+  const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? 'a method no longer listed';
+  const paymentsFor = (orderId: string) => payments.filter((p) => p.order_id === orderId);
+
+  /**
+   * A correction belongs to the shift that is still running.
+   *
+   * The same line the house drew for expenses: a cook fixes their own night
+   * while it is open, and once it is closed and counted the figures have been
+   * signed off, so changing them is an admin's from the Orders screen. Without
+   * this, a correction made a week later would silently move money between two
+   * drawers that were both counted and agreed long ago.
+   */
+  const shiftOpen = shift.status !== 'closed';
+
+  /** The payment whose method is being corrected. */
+  const [repaying, setRepaying] = useState<PaymentRow | null>(null);
+  const [repayBusy, setRepayBusy] = useState(false);
+
+  const moveTo = async (method: PaymentMethod) => {
+    if (!repaying) return;
+    setRepayBusy(true);
+    try {
+      const was = methodName(repaying.method_id);
+      await changePaymentMethod(repaying.$id, method);
+      // Written down, because this moves money between two drawers that people
+      // count and answer for. A correction nobody can trace is indistinguishable
+      // from a till being quietly rebalanced to hide a shortage.
+      await logPaymentMethodChange({
+        venueId: venue.$id,
+        paymentId: repaying.$id,
+        actorId: who?.user_id || who?.$id || '',
+        actorRole: who?.role ?? '',
+        from: was,
+        to: method.name,
+        amount: repaying.amount,
+      });
+      setPayments((prev) =>
+        prev.map((p) => (p.$id === repaying.$id ? { ...p, method_id: method.$id } : p)),
+      );
+      setRepaying(null);
+      onToast(`Moved to ${method.name}`);
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : 'Could not change that.', 'err');
+    } finally {
+      setRepayBusy(false);
+    }
+  };
 
   /** Read again after a correction, so the figures on this screen are the
       figures that were just saved rather than the ones that were wrong. */
@@ -324,6 +373,55 @@ export function ShiftHistory({
                             {(items[o.$id] ?? []).length === 0 && <li className="dim">No items recorded.</li>}
                           </ul>
                           {o.notes && <p className="small dim" style={{ margin: '0.4rem 0 0' }}>{o.notes}</p>}
+
+                          {/*
+                            Which drawer the money went into, and a way to
+                            correct it.
+
+                            Cash and card are two different piles at the end of
+                            the night, and the one thing about a payment that
+                            is routinely got wrong is which pile it was put in:
+                            somebody settles on the pass, taps whichever method
+                            is first in the list, and the customer actually
+                            paid the other way. Nothing is missing — the cash
+                            drawer simply reads over by that amount while the
+                            card takings read short by it, and the person
+                            counting can see the problem and could not fix it.
+                          */}
+                          {paymentsFor(o.$id).length > 0 && (
+                            <div className="small" style={{ marginTop: '0.5rem' }}>
+                              {paymentsFor(o.$id).map((p) => {
+                                const dead = !isLivePayment(p);
+                                return (
+                                  <div
+                                    key={p.$id}
+                                    className="row"
+                                    style={{ gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}
+                                  >
+                                    <span style={dead ? { textDecoration: 'line-through', opacity: 0.6 } : undefined}>
+                                      Paid {money(p.amount)}
+                                      {p.tip ? ` (+${money(p.tip)} tip)` : ''} by{' '}
+                                      <strong>{methodName(p.method_id)}</strong>
+                                    </span>
+                                    {dead && <Badge tone="warn">voided</Badge>}
+                                    {!dead && shiftOpen && methods.length > 1 && (
+                                      <Button size="sm" variant="ghost" onClick={() => setRepaying(p)}>
+                                        Wrong one?
+                                      </Button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                              {/* The rule the house already set for expenses: a
+                                  cook corrects their own shift while it is
+                                  open, and a closed night is an admin's. */}
+                              {!shiftOpen && (
+                                <p className="dim" style={{ margin: '0.3rem 0 0' }}>
+                                  This shift is closed, so an admin has to change how a payment was made.
+                                </p>
+                              )}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )}
@@ -393,6 +491,42 @@ export function ShiftHistory({
             onToast(m);
           }}
         />
+      )}
+
+      {repaying && (
+        <Modal
+          title="How was this actually paid?"
+          onClose={() => (repayBusy ? undefined : setRepaying(null))}
+          footer={<Button variant="ghost" onClick={() => setRepaying(null)} disabled={repayBusy}>Cancel</Button>}
+        >
+          <p style={{ marginTop: 0 }}>
+            {money(repaying.amount)}
+            {repaying.tip ? ` and a ${money(repaying.tip)} tip` : ''}, currently recorded as{' '}
+            <strong>{methodName(repaying.method_id)}</strong>.
+          </p>
+          {/*
+            One tap per method, no confirm step.
+
+            This is not a dangerous action: the amount does not move and the
+            order does not change, only which drawer is expected to hold it. A
+            confirmation dialog here would be a second tap on the way to fixing
+            something somebody has already noticed is wrong, and the thing that
+            actually protects the till is the note written against their name.
+          */}
+          <p className="small dim">
+            Only where the money went changes. The amount and the order stay exactly as they are, and the change is
+            recorded against your name.
+          </p>
+          <div className="row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
+            {methods
+              .filter((m) => m.$id !== repaying.method_id)
+              .map((m) => (
+                <Button key={m.$id} variant="primary" disabled={repayBusy} onClick={() => void moveTo(m)}>
+                  {m.name}
+                </Button>
+              ))}
+          </div>
+        </Modal>
       )}
 
       {sending && (

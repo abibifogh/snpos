@@ -4,7 +4,7 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, Query, toCsv, downloadCsv, buildReceiptHtml, openPrintable, receiptForOrder,
   settleOrderNumbers, recomputeOrderTotals, cancelOrder, removeOrder, recomputeClosedShift,
-  voidPayment, isLivePayment,
+  voidPayment, isLivePayment, changePaymentMethod, logPaymentMethodChange,
 } from '@snpos/core';
 import type { Order, OrderItem, StaffProfile, Doc, Venue } from '@snpos/core';
 import { useSession } from '../session';
@@ -20,7 +20,14 @@ interface Payment extends Doc {
   /** 'voided' means recorded in error and taken back out. */
   status?: string;
 }
-interface PaymentMethod extends Doc { name: string }
+/**
+ * `kind` is carried because it travels with a payment as
+ * `method_kind_snapshot`, and the receipt and the nightly summary both fall
+ * back to it when a method has since been renamed or removed. Correcting the
+ * method and leaving the kind behind would fix the label on the shift screen
+ * and leave a card payment printing as cash on the customer's receipt.
+ */
+interface PaymentMethod extends Doc { name: string; kind?: string }
 
 /**
  * Every order, over a range you choose.
@@ -65,6 +72,9 @@ export function OrdersPage() {
   const [voiding, setVoiding] = useState<{ payment: Payment; order: Order } | null>(null);
   const [voidReason, setVoidReason] = useState('');
   const [voidBusy, setVoidBusy] = useState(false);
+  /** A payment whose method is being corrected: cash rung up as card, or back. */
+  const [repaying, setRepaying] = useState<Payment | null>(null);
+  const [repayBusy, setRepayBusy] = useState(false);
   const [newStatus, setNewStatus] = useState('');
   const [newPayment, setNewPayment] = useState('');
   const [reason, setReason] = useState('');
@@ -393,6 +403,40 @@ export function OrdersPage() {
     }
   };
 
+  /**
+   * Moving a payment from one drawer to the other.
+   *
+   * The amount does not move and the order does not change; only which pile
+   * the money is expected to be in. A closed shift's stored expectations are
+   * redone afterwards, because that is the whole point — the figure somebody
+   * is trying to reconcile is the one on the shift.
+   */
+  const moveMethod = async (m: PaymentMethod) => {
+    if (!repaying) return;
+    setRepayBusy(true);
+    try {
+      const was = methods.find((x) => x.$id === repaying.method_id)?.name ?? repaying.method_id;
+      await changePaymentMethod(repaying.$id, { $id: m.$id, kind: m.kind ?? '' });
+      await logPaymentMethodChange({
+        venueId: open?.venue_id ?? venues[0]?.$id ?? '',
+        paymentId: repaying.$id,
+        actorId: profile?.user_id ?? profile?.$id ?? '',
+        actorRole: profile?.role ?? '',
+        from: was,
+        to: m.name,
+        amount: repaying.amount,
+      });
+      if (repaying.shift_id) await recomputeClosedShift(repaying.shift_id).catch(() => undefined);
+      setRepaying(null);
+      await load();
+      toast(`Moved to ${m.name}`);
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setRepayBusy(false);
+    }
+  };
+
   if (error && !orders && !editing) return <Notice>{error}</Notice>;
 
   return (
@@ -617,6 +661,18 @@ export function OrdersPage() {
                             one, so an order could be set back to unpaid while
                             the money it never received stayed in the takings.
                           */}
+                          {/*
+                            The kitchen can fix this while its shift is open;
+                            once the night is closed and counted it becomes an
+                            admin's, and the kitchen screen says so. It has to
+                            actually be here, or that sentence is another door
+                            that does not open.
+                          */}
+                          {canVoid && !voided && methods.length > 1 && (
+                            <Button size="sm" variant="ghost" onClick={() => setRepaying(p)}>
+                              Change method
+                            </Button>
+                          )}
                           {canVoid && !voided && (
                             <Button
                               size="sm"
@@ -634,6 +690,33 @@ export function OrdersPage() {
               </table>
             </div>
           )}
+        </Modal>
+      )}
+
+      {repaying && (
+        <Modal
+          title="How was this actually paid?"
+          onClose={() => (repayBusy ? undefined : setRepaying(null))}
+          footer={<Button variant="ghost" onClick={() => setRepaying(null)} disabled={repayBusy}>Cancel</Button>}
+        >
+          <p style={{ marginTop: 0 }}>
+            {money(repaying.amount)}
+            {repaying.tip ? ` and a ${money(repaying.tip)} tip` : ''}, currently recorded as{' '}
+            <strong>{methods.find((m) => m.$id === repaying.method_id)?.name ?? 'unknown'}</strong>.
+          </p>
+          <p className="small dim">
+            Only where the money went changes; the amount and the order stay as they are. The shift it belongs to is
+            worked out again, so the drawer it is counted against moves with it. Recorded against your name.
+          </p>
+          <div className="row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
+            {methods
+              .filter((m) => m.$id !== repaying.method_id)
+              .map((m) => (
+                <Button key={m.$id} variant="primary" disabled={repayBusy} onClick={() => void moveMethod(m)}>
+                  {m.name}
+                </Button>
+              ))}
+          </div>
         </Modal>
       )}
 
