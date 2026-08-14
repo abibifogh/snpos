@@ -100,6 +100,10 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'shifts', label: 'Shifts', path: '/shifts', group: 'Money' },
   { key: 'expenses', label: 'Expenses', path: '/expenses', group: 'Money' },
   { key: 'vouchers', label: 'Discount vouchers', path: '/vouchers', group: 'Money' },
+  // The books themselves. Owner-only by default rather than granted to a
+  // manager, because a page that can post any entry to any account is a page
+  // that can move a shortage somewhere nobody looks.
+  { key: 'accounting', label: 'Accounting', path: '/accounting', group: 'Money', ownerOnly: true },
   { key: 'venues', label: 'Venues', path: '/venues', group: 'Setup' },
   { key: 'tables', label: 'Tables & QR', path: '/tables', group: 'Setup' },
   { key: 'staff', label: 'Staff', path: '/staff', group: 'Setup' },

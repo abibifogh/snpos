@@ -1,5 +1,7 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
 import type { Doc } from './types';
+import { entryProblem, within, chargeForMonth } from './ledger-math';
+import type { AccountRow, DepreciableAsset } from './ledger-math';
 
 export interface JournalEntry extends Doc {
   venue_id: string;
@@ -9,7 +11,9 @@ export interface JournalEntry extends Doc {
   shift_id?: string;
   memo?: string;
   posted_by: string;
+  /** What undid this entry, and what this entry undid. See reverseEntry. */
   reversed_by?: string;
+  reversal_of?: string;
 }
 
 export interface JournalLine extends Doc {
@@ -33,6 +37,11 @@ export const ACCOUNTS = {
   discountsGiven: '4900',
   cogs: '5000',
   cashOverShort: '7000',
+  // What the business owns and uses rather than sells, and how much of it has
+  // been used up. Depreciation posts to these by number.
+  equipment: '1500',
+  accumDepreciation: '1510',
+  depreciation: '6060',
 } as const;
 
 /**
@@ -216,4 +225,209 @@ export async function trialBalance(venueId: string): Promise<{ rows: TrialBalanc
   const totalDebit = rows.reduce((s, r) => s + r.debit, 0);
   const totalCredit = rows.reduce((s, r) => s + r.credit, 0);
   return { rows, balanced: totalDebit === totalCredit };
+}
+
+/**
+ * The arithmetic lives next door, in a file that imports nothing.
+ *
+ * Re-exported so callers keep working. The split exists so the sums that
+ * decide what a business believes it earned and what it believes it owns can
+ * be checked without a database.
+ */
+export * from './ledger-math';
+
+/* ------------------------------------------------------- reading the books */
+
+/** Every posting inside a window, with its entry's date carried onto it. */
+export async function ledgerLines(
+  venueId: string,
+  range?: { from?: string; to?: string },
+): Promise<(JournalLine & { date: string })[]> {
+  const [entries, lines] = await Promise.all([
+    listAll<JournalEntry>('journal_entries', [Query.equal('venue_id', venueId)]),
+    listAll<JournalLine>('journal_lines', [Query.equal('venue_id', venueId)]),
+  ]);
+  // A line has no date of its own; its entry has. Joined here rather than
+  // stamped on both, because a line and its entry disagreeing about when
+  // something happened is a class of bug with no honest resolution.
+  const dateOf = new Map(entries.map((e) => [e.$id, e.date]));
+  const dated = lines
+    .map((l) => ({ ...l, date: dateOf.get(l.entry_id) ?? '' }))
+    .filter((l) => l.date !== '');
+  return range ? within(dated, range.from, range.to) : dated;
+}
+
+/** The chart, in the order a set of accounts is normally read. */
+export const loadAccounts = async (): Promise<AccountRow[]> =>
+  (await listAll<AccountRow & Doc>('accounts')).sort((a, b) => a.code.localeCompare(b.code));
+
+/* ------------------------------------------------------ writing to the books */
+
+/**
+ * An entry somebody typed themselves.
+ *
+ * Everything else in these books is posted by the system from something that
+ * happened — a shift closed, a bill was settled, a payout was made. This is
+ * the way in for everything that has no such event: rent, a bank charge, the
+ * owner putting money in, a correction an accountant asks for at year end.
+ *
+ * Checked before it is written, because `postEntry` refuses an unbalanced
+ * entry with a message meant for a developer, and the person typing this is
+ * not one. `entryProblem` says what is actually wrong with it.
+ */
+export async function postManualEntry(
+  venueId: string,
+  opts: { date: Date; memo: string; postedBy: string },
+  lines: PostingLine[],
+): Promise<string> {
+  const problem = entryProblem(lines);
+  if (problem) throw new Error(problem);
+
+  const entry = await postEntry(
+    venueId,
+    { date: opts.date, source: 'adjustment', memo: opts.memo, postedBy: opts.postedBy },
+    lines.filter((l) => l.debit !== 0 || l.credit !== 0),
+  );
+  return entry.$id;
+}
+
+/**
+ * Undo an entry by posting its opposite.
+ *
+ * Never by deleting it. Books that can be quietly edited are not books, and
+ * the question an auditor asks is not "what does it say now" but "what did it
+ * say, and who changed it". A reversal leaves both halves standing and the
+ * net effect is nought, which is the same answer arrived at honestly.
+ *
+ * Refused on an entry already reversed, because reversing a reversal twice is
+ * how somebody turns a mistake into the opposite mistake at double the size.
+ */
+export async function reverseEntry(
+  entry: JournalEntry,
+  opts: { postedBy: string; memo?: string },
+): Promise<string> {
+  if (entry.reversed_by) throw new Error('That entry has already been reversed.');
+
+  const lines = await listAll<JournalLine>('journal_lines', [Query.equal('entry_id', entry.$id)]);
+  if (lines.length === 0) throw new Error('That entry has no lines to reverse.');
+
+  const reversal = await postEntry(
+    entry.venue_id,
+    {
+      // Dated today, not on the original's date. A reversal is something that
+      // happened now; back-dating it into a period somebody has already
+      // reported on changes a figure that has been read and acted upon.
+      source: 'reversal',
+      sourceId: entry.$id,
+      memo: opts.memo?.trim() || `Reversal of ${entry.memo || entry.source}`,
+      postedBy: opts.postedBy,
+    },
+    // Every side swapped. Nothing is recalculated: whatever the original said,
+    // the opposite of it is what cancels it, including anything wrong with it.
+    lines.map((l) => ({
+      account_code: l.account_code,
+      debit: l.credit,
+      credit: l.debit,
+      memo: l.memo,
+    })),
+  );
+
+  await db.updateDocument(DB_ID, 'journal_entries', reversal.$id, { reversal_of: entry.$id }).catch(() => undefined);
+  // The original names what undid it, so the pair reads from either end. Best
+  // effort: the reversal is posted and correct either way, and an entry that
+  // does not know it was reversed is a display problem, not a wrong figure.
+  await db.updateDocument(DB_ID, 'journal_entries', entry.$id, { reversed_by: reversal.$id }).catch(() => undefined);
+
+  return reversal.$id;
+}
+
+/* ------------------------------------------------------------ depreciation */
+
+export interface FixedAsset extends Doc, DepreciableAsset {
+  venue_id?: string;
+  name: string;
+  category?: string;
+  asset_account_code?: string;
+  accum_account_code?: string;
+  expense_account_code?: string;
+  disposal_proceeds?: number;
+  note?: string;
+  active?: boolean;
+}
+
+export const loadFixedAssets = async (venueId: string): Promise<FixedAsset[]> =>
+  (await listAll<FixedAsset>('fixed_assets').catch(() => [] as FixedAsset[]))
+    .filter((a) => !a.venue_id || a.venue_id === venueId)
+    .sort((a, b) => (b.acquired_on ?? '').localeCompare(a.acquired_on ?? ''));
+
+/**
+ * Charge one month's depreciation across every asset that owes it.
+ *
+ * Run rather than scheduled, and deliberately. This system may have four
+ * background functions in total and all four are doing something that cannot
+ * wait; depreciation can, because nobody needs last month's charge before
+ * somebody looks at last month's figures. A button that says what it did beats
+ * a job nobody can see running.
+ *
+ * Posting the same month twice would double the charge, so a month already
+ * posted is skipped. That is checked against the entries themselves rather
+ * than a flag on the asset: the entries are the books, and a flag can be right
+ * about a posting that was later reversed.
+ */
+export async function postDepreciation(
+  venueId: string,
+  month: string,
+  opts: { postedBy: string },
+): Promise<{ posted: number; total: number; skipped: string[] }> {
+  const assets = await loadFixedAssets(venueId);
+  const already = await listAll<JournalEntry>('journal_entries', [
+    Query.equal('venue_id', venueId),
+    Query.equal('source', 'adjustment'),
+  ]).catch(() => [] as JournalEntry[]);
+
+  const done = new Set(
+    already.filter((e) => e.source_id?.startsWith(`depreciation:${month}:`)).map((e) => e.source_id as string),
+  );
+
+  const skipped: string[] = [];
+  let posted = 0;
+  let total = 0;
+
+  for (const asset of assets) {
+    if (asset.active === false) continue;
+    const amount = chargeForMonth(asset, month);
+    if (amount <= 0) continue;
+
+    const key = `depreciation:${month}:${asset.$id}`;
+    if (done.has(key)) { skipped.push(asset.name); continue; }
+
+    await postEntry(
+      venueId,
+      {
+        // The last day of the month it is a charge for, so it falls inside the
+        // period it belongs to however long afterwards somebody runs it.
+        date: endOfMonth(month),
+        source: 'adjustment',
+        sourceId: key,
+        memo: `Depreciation, ${asset.name}, ${month}`,
+        postedBy: opts.postedBy,
+      },
+      [
+        { account_code: asset.expense_account_code || ACCOUNTS.depreciation, debit: amount, credit: 0 },
+        { account_code: asset.accum_account_code || ACCOUNTS.accumDepreciation, debit: 0, credit: amount },
+      ],
+    );
+    posted += 1;
+    total += amount;
+  }
+
+  return { posted, total, skipped };
+}
+
+/** The last moment of a YYYY-MM, without touching a timezone by accident. */
+function endOfMonth(month: string): Date {
+  const [y, m] = month.split('-').map(Number);
+  // Day 0 of the next month is the last day of this one, which is also how
+  // February gets its length right without anybody writing it down.
+  return new Date(Date.UTC(y, m, 0, 23, 59, 59));
 }

@@ -1338,6 +1338,57 @@ export const COLLECTIONS = [
     indexes: [['code_unique', 'unique', ['code']]],
   },
   {
+    /**
+     * Things the business owns and uses rather than sells.
+     *
+     * A fridge, an oven, a van, the fit-out of a room. They are not an expense
+     * on the day they are bought — the money left, but the business still has
+     * the fridge — so the cost sits on the balance sheet and is charged to the
+     * profit and loss a month at a time over the years it is used. That is the
+     * whole of what depreciation is, and doing it is the difference between
+     * knowing what a month cost to run and being told the month you bought an
+     * oven was a disaster.
+     *
+     * The register is here rather than worked out from journal entries because
+     * an asset has facts of its own — what it cost, when it arrived, how long
+     * it is expected to last, whether it has been sold — and none of those
+     * survive being flattened into debits and credits.
+     */
+    id: 'fixed_assets',
+    name: 'Fixed assets',
+    perms: { read: MGMT, create: MGMT, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['name', 's', 160, true],
+      ['category', 's', 80, false],
+      ['acquired_on', 'd', null, true],
+      ['cost', 'i', null, true, 0],
+      // What it is expected to fetch at the end of its life. Usually nothing,
+      // and never depreciated past.
+      ['salvage_value', 'i', null, false, 0],
+      // Straight line spreads the cost evenly, which is what management
+      // accounts want. Reducing balance charges a share of what is left each
+      // year, more early and less later, which is how tax authorities
+      // generally want capital allowances worked out.
+      ['method', 'e', ['straight_line', 'reducing_balance'], true, 'straight_line'],
+      ['life_months', 'i', null, false, 48],
+      ['rate_bp', 'i', null, false, 2000],
+      // Which accounts this asset's own postings land on, so a restaurant that
+      // wants vehicles kept apart from kitchen equipment can have that without
+      // any of it being hard-coded.
+      ['asset_account_code', 's', 10, false, '1500'],
+      ['accum_account_code', 's', 10, false, '1510'],
+      ['expense_account_code', 's', 10, false, '6060'],
+      // Sold, scrapped or written off. Nothing is charged for the month it
+      // went or afterwards.
+      ['disposed_on', 'd', null, false],
+      ['disposal_proceeds', 'i', null, false, 0],
+      ['note', 's', 500, false],
+      ['active', 'b', null, false, true],
+    ],
+    indexes: [['venue', 'key', ['venue_id']], ['acquired', 'key', ['acquired_on']]],
+  },
+  {
     id: 'journal_entries',
     name: 'Journal entries',
     // Append-only on purpose: a wrong entry is corrected by posting a reversal,
@@ -1351,9 +1402,18 @@ export const COLLECTIONS = [
       ['shift_id', 's', 64, false],
       ['memo', 's', 500, false],
       ['posted_by', 's', 64, true],
+      // Two halves of the same fact, kept on both entries so it can be read
+      // from either end: the original names what undid it, the reversal names
+      // what it undid. An entry is never edited, so a correction is a second
+      // entry and the pair has to be recognisable as a pair.
       ['reversed_by', 's', 64, false],
+      ['reversal_of', 's', 64, false],
     ],
-    indexes: [['date', 'key', ['date']], ['shift', 'key', ['shift_id']]],
+    indexes: [
+      ['date', 'key', ['date']],
+      ['shift', 'key', ['shift_id']],
+      ['reversal', 'key', ['reversal_of']],
+    ],
   },
   {
     id: 'journal_lines',
@@ -2666,6 +2726,9 @@ export const FEATURES = [
  */
 export const SYSTEM_ACCOUNT_CODES = [
   '1000', '1010', '1020', '1200', '2100', '2200', '4000', '4900', '5000', '7000',
+  // Depreciation posts to these three by number, the same way a shift close
+  // posts to the ten above, so they cannot be deleted either.
+  '1500', '1510', '6060',
 ];
 
 export const SEED_ACCOUNTS = [
@@ -2673,6 +2736,13 @@ export const SEED_ACCOUNTS = [
   ['1010', 'Card clearing', 'asset'],
   ['1020', 'Mobile money clearing', 'asset'],
   ['1200', 'Inventory', 'asset'],
+  ['1500', 'Equipment and fittings', 'asset'],
+  // A contra-asset: it is an asset account that is normally held the other way
+  // round, so it shows as a negative on the balance sheet and reduces what the
+  // equipment above is carried at. Kept as its own account rather than
+  // subtracted from the cost, because "what it cost" and "how much of it has
+  // been used up" are both worth being able to read.
+  ['1510', 'Less: accumulated depreciation', 'asset'],
   ['2100', 'Tax payable', 'liability'],
   ['2200', 'Tips payable', 'liability'],
   ['2300', 'Accounts payable', 'liability'],
@@ -2687,6 +2757,7 @@ export const SEED_ACCOUNTS = [
   ['6030', 'Repairs & maintenance', 'expense'],
   ['6040', 'Staff advances', 'expense'],
   ['6050', 'Petty cash', 'expense'],
+  ['6060', 'Depreciation', 'expense'],
   ['6090', 'Other expenses', 'expense'],
   ['7000', 'Cash over / short', 'expense'],
 ];

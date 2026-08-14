@@ -12,7 +12,7 @@ npm test          # the logic suite
 npm run verify    # typecheck (apps AND tests), tests, schema check, build. Before deploying.
 ```
 
-127 tests, no database, about half a second. They cover the sums that decide what
+138 tests, no database, about half a second. They cover the sums that decide what
 somebody is paid and what a customer is charged.
 
 **Why these and not others.** A test that needs a live Appwrite project is a
@@ -34,6 +34,7 @@ and no caller had to change.
 | `timing.test.ts` | Quoted waits, the hour cap, when a ticket is late, the cancel window, cash handovers. |
 | `seating.test.ts` | That the ticket names the place the guest actually picked, in the guest's own words. |
 | `expenses.test.ts` | Whether a drawer is counted short for money it never held, and who spending is filed against. |
+| `ledger.test.ts` | Which way round every account is held, what the statements come to, what an entry must satisfy to be posted, and depreciation by both methods. |
 | `shift-rules.test.ts` | Shift codes per side, the 24 hour limit including a device with the wrong clock, which orders a shift may close over, and that an order once moved is payable on the shift that took it. |
 
 ### The parity suite is the important one
@@ -129,6 +130,26 @@ not just what to press.
 | D2 | Refresh the till mid-sale and finish it | No duplicate order, no duplicate credit |
 | D3 | Change a consignor's commission, then open an old statement | **Unchanged.** The old rate still applies to old sales |
 | D4 | Intake → sale → statement → payout | Balance returns to zero and can be read line by line |
+
+### P. The books
+
+| # | Do this | Must be true |
+|---|---|---|
+| P1 | Close a shift, then Accounting → Trial balance | The night's takings and costs are on it, and it balances |
+| P2 | Profit & loss for this month | Income less costs. **No assets on it** |
+| P3 | Balance sheet | Balances. Profit shows as **Profit kept in the business** |
+| P4 | Journal → New entry, one line only | Refused, and it says an entry needs two sides |
+| P5 | Two lines that do not agree | Refused **as you type**, with the amount it is out by |
+| P6 | A line with a debit AND a credit | Refused. A line is one or the other |
+| P7 | Post a balanced entry | On the journal, and on the trial balance |
+| P8 | Reverse it | **Both entries stay.** The net effect is nought |
+| P9 | Reverse the same entry again | Refused. Already reversed |
+| P10 | Add an oven at GH₵2,400 over 48 months | Worth GH₵2,400 until a month is charged |
+| P11 | Post depreciation for this month | GH₵50 charged. Worth GH₵2,350 |
+| P12 | Post the same month again | **Nothing charged twice.** Says it was already done |
+| P13 | The balance sheet after P11 | Equipment less accumulated depreciation, and it still balances |
+| P14 | Mark it sold last month, post this month | Nothing charged. It stopped when it went |
+| P15 | Open Accounting as a manager | **Not in the menu, and refused by address** |
 
 ### E. Permissions
 
