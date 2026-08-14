@@ -103,22 +103,41 @@ export function queueMinutes(
 }
 
 /**
- * How long a ticket already on the pass should have taken, in minutes.
+ * How long a ticket had, from the moment it was placed.
  *
  * One definition, read by the screen that shows the Late pill and by whatever
  * decides to make a noise. Two copies of this rule is two answers to "is this
  * late", and the one that goes wrong is always the one nobody is looking at.
  *
- * `prep_minutes` on the order is the answer whenever it is there. The fallbacks
- * are for orders placed before it was stored: each line's due time was stamped
- * as "now plus its prep", so the difference gives that prep back. Twenty
- * minutes if even that is missing, a guess that pings beats a blank that never
- * does.
+ * The wait the customer was QUOTED, which is the cooking time plus everything
+ * that was already on the pass in front of them. Not the cooking time alone.
+ *
+ * Those two used to be different numbers here, and the clock had already been
+ * moved to start when the order was placed — so a ticket was timed from the
+ * moment somebody pressed send and judged against the minutes its own food
+ * takes, with the twenty minutes it spent queueing behind four other orders
+ * counted against the kitchen and given to nobody. On a quiet pass they are
+ * the same figure and it looked right. On a busy one every ticket went red
+ * through no fault of the cook, which is precisely when a red ticket needed to
+ * mean something.
+ *
+ * Late now means the promise was broken: the customer was told about half an
+ * hour, and half an hour has gone. That is the only definition of late that a
+ * customer would recognise, and it is the one the kitchen is actually working
+ * to.
+ *
+ * `prep_minutes` is still the right answer for "how long is this dish", and
+ * the ticket says both — see the countdown, which shows the budget and names
+ * the cooking time inside it.
  */
 export function dueMinutes(
-  order: { prep_minutes?: number; $createdAt: string },
+  order: { eta_minutes?: number; prep_minutes?: number; $createdAt: string },
   lines: { due_at?: string; prep_minutes?: number }[] = [],
 ): number {
+  // What they were told, which the server re-checks against the real queue a
+  // moment after the order lands.
+  if (order.eta_minutes) return order.eta_minutes;
+  // Orders from before the wait was stored, and any the server never reached.
   if (order.prep_minutes) return order.prep_minutes;
 
   const fromLines = lines.reduce((sum, l) => sum + (l.prep_minutes ?? 0), 0);

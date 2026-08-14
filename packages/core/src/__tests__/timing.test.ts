@@ -282,3 +282,38 @@ test('a queue only ever grows the quote, never shrinks it', () => {
   // And never past the cap, however long the queue is.
   assert.equal(estimateMinutes(own, 500), MAX_ETA_MINUTES);
 });
+
+test('a ticket is judged against what the customer was told, queue included', () => {
+  /**
+   * The clock starts when the order is placed, so what it is measured against
+   * has to include the wait before a cook could touch it. Judged against the
+   * cooking time alone, an order that queued twenty minutes behind four others
+   * went red through no fault of the kitchen — and on a busy night every
+   * ticket did, which is exactly when a red ticket needed to mean something.
+   */
+  const placed = '2026-08-14T19:00:00.000Z';
+  const at = (mins: number) => Date.parse(placed) + mins * 60_000;
+  // Twenty minutes of cooking, quoted at thirty-four because of the queue.
+  const order = { status: 'ACCEPTED', $createdAt: placed, prep_minutes: 20, eta_minutes: 34 };
+
+  assert.equal(dueMinutes(order), 34, 'the promise, not the cooking alone');
+  assert.equal(isOverdue(order, dueMinutes(order), at(25)), false, 'still inside what they were told');
+  assert.equal(isOverdue(order, dueMinutes(order), at(35)), true, 'and late when the promise breaks');
+});
+
+test('an order with no queue is judged by its cooking, as before', () => {
+  // A quiet pass: the two figures are the same and nothing changes.
+  const order = { prep_minutes: 20, eta_minutes: 20, $createdAt: '2026-08-14T19:00:00.000Z' };
+  assert.equal(dueMinutes(order), 20);
+});
+
+test('an order from before the wait was stored still has a rule', () => {
+  // Nothing is left without an answer: the cooking time, then the lines, then
+  // a guess. A guess that pings beats a blank that never does.
+  assert.equal(dueMinutes({ prep_minutes: 25, $createdAt: '2026-08-14T19:00:00.000Z' }), 25);
+  assert.equal(
+    dueMinutes({ $createdAt: '2026-08-14T19:00:00.000Z' }, [{ prep_minutes: 10 }, { prep_minutes: 5 }]),
+    15,
+  );
+  assert.equal(dueMinutes({ $createdAt: '2026-08-14T19:00:00.000Z' }, []), 20);
+});

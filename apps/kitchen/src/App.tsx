@@ -1078,7 +1078,17 @@ function Ticket({
                 : leftMinutes === 0
                   ? 'due now'
                   : `${leftMinutes} min left`}
-              <span className="dim"> · {cookMinutes} min dish</span>
+              {/*
+                What the budget is made of, so the countdown does not look
+                arbitrary. The figure being counted down is what the customer
+                was quoted — cooking plus whatever was on the pass in front of
+                them — and the cooking time alone is the part the kitchen
+                controls. A cook reading "34 min left · 20 min of cooking"
+                can see where the other fourteen went.
+              */}
+              <span className="dim">
+                {' · '}{order.prep_minutes ?? cookMinutes} min of cooking
+              </span>
             </div>
           )}
           <div style={{ marginTop: '0.2rem' }}>
