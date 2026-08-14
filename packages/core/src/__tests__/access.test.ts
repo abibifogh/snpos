@@ -125,6 +125,47 @@ test('a customer scanning a code is shown one catalogue, and it is the restauran
   assert.equal(selfOrderModule({ business_type: 'craft_shop' } as never), 'craft');
 });
 
+test('unticking a box stays unticked', () => {
+  /**
+   * The bug this exists to stop. Whether a section had been decided was worked
+   * out from what was ticked ANYWHERE, so unticking the last box for a page
+   * made it look undecided again and the role's default came straight back.
+   * Unchecking a manager's access to orders — which no other role has — simply
+   * did not take, and nothing on screen said why.
+   */
+  const saved = {
+    _known: ADMIN_SECTIONS.map((s) => s.key),
+    manager: ['reports'],
+  };
+  const access = parseAccess({ role_access: JSON.stringify(saved) } as unknown as Settings);
+
+  assert.deepEqual(access.manager, ['reports'], 'what was saved, and nothing added back');
+  assert.equal(canOpen('orders', { role: 'manager' } as StaffProfile,
+    { role_access: JSON.stringify(saved) } as unknown as Settings), false);
+});
+
+test('a page added after the choices were made keeps its default', () => {
+  // Otherwise every new page arrives switched off for everybody and an owner
+  // has to go and find it.
+  const saved = { _known: ['reports'], manager: ['reports'] };
+  const access = parseAccess({ role_access: JSON.stringify(saved) } as unknown as Settings);
+
+  assert.ok(access.manager.includes('reports'));
+  assert.ok(access.manager.includes('orders'), 'never asked about, so the default stands');
+});
+
+test('the sensitive sections can be granted, and an admin keeps them regardless', () => {
+  // They are off unless somebody says otherwise, not never. An owner who wants
+  // a bookkeeper to keep the books should not be told no by a checkbox.
+  const settings = {
+    role_access: JSON.stringify({ _known: ADMIN_SECTIONS.map((s) => s.key), manager: ['settings'] }),
+  } as unknown as Settings;
+
+  assert.equal(canOpen('settings', { role: 'manager' } as StaffProfile, settings), true);
+  assert.equal(canOpen('erase', { role: 'manager' } as StaffProfile, settings), false, 'and only what was given');
+  assert.equal(canOpen('erase', { role: 'admin' } as StaffProfile, settings), true, 'the owner keeps everything');
+});
+
 test('the books are granted a part at a time', () => {
   /**
    * The tabs are not equally consequential. Reading a profit and loss is what

@@ -11,7 +11,7 @@ import type { Doc, Ingredient, PaidToKind } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
 import { AccountsManager } from '../components/AccountsManager';
 import { useSession } from '../session';
-import { SideFilter, onSide, type Side } from '../components/SideFilter';
+import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 
 interface Expense extends Doc {
   venue_id: string;
@@ -61,7 +61,7 @@ const RECEIPT_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf
 const MAX_RECEIPT_BYTES = 10 * 1024 * 1024;
 
 export function ExpensesPage() {
-  const { settings, user } = useSession();
+  const { settings, user, profile } = useSession();
   const toast = useToast();
   const decimals = settings?.currency_decimals ?? 2;
   const fileInput = useRef<HTMLInputElement>(null);
@@ -361,7 +361,7 @@ export function ExpensesPage() {
     <>
       <div className="spread">
         <h1>Expenses</h1>
-        {tab === 'expenses' && <SideFilter value={side} onChange={setSide} settings={settings} />}
+        {tab === 'expenses' && <SideFilter value={side} onChange={setSide} settings={settings} profile={profile} />}
         {tab === 'expenses' && (
           <Button variant="primary" onClick={() => void open()} disabled={methods.length === 0}>
             Record expense
@@ -420,7 +420,7 @@ export function ExpensesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.filter((r) => onSide(r, side)).map((r) => (
+                    {rows.filter((r) => onSide(r, narrowSide(side, profile, settings))).map((r) => (
                       <tr key={r.$id}>
                         <td className="dim small">{new Date(r.$createdAt).toLocaleDateString()}</td>
                         <td>{nameForKey(categories, r.category_key || r.category)}</td>

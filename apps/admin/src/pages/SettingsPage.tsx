@@ -191,7 +191,20 @@ export function SettingsPage() {
   const toggleAccess = (role: string, section: string) => {
     const current = access[role] ?? [];
     const next = current.includes(section) ? current.filter((s) => s !== section) : [...current, section];
-    set('role_access', JSON.stringify({ ...access, [role]: next }));
+    /**
+     * Every section on the screen is written down as decided.
+     *
+     * Without this, a section nobody has ticked reads as one nobody has been
+     * asked about, and a role's default for it comes straight back — so
+     * unticking the last box for a page did nothing at all, with nothing on
+     * screen to explain why. The list is what tells the difference between "no
+     * for this role" and "this page did not exist when the choices were made".
+     */
+    set('role_access', JSON.stringify({
+      ...access,
+      [role]: next,
+      _known: ADMIN_SECTIONS.map((x) => x.key),
+    }));
   };
 
   // A pale brand colour with white text is unreadable at a glance on a busy
@@ -829,7 +842,8 @@ export function SettingsPage() {
       <FoldCard title="Who can see what" summary="Which admin pages each role may open">
         <p className="small dim" style={{ marginTop: 0 }}>
           Which parts of this admin app each role can open. Admins always see everything; there is no switch for that
-          on purpose, because a checkbox that can lock the owner out of their own settings eventually will.
+          on purpose, and it is what makes the rest of this safe to hand out — no combination of these can lock you
+          out of your own business.
         </p>
         <p className="small dim">
           Accounting is granted a part at a time. Somebody needs the Accounting row to get in at all, and then only
@@ -862,16 +876,18 @@ export function SettingsPage() {
                   </td>
                   {GRANTABLE_ROLES.map((role) => (
                     <td key={role} style={{ textAlign: 'center' }}>
-                      {section.ownerOnly ? (
-                        <span className="small dim" title="Admins only">-</span>
-                      ) : (
-                        <input
-                          type="checkbox"
-                          checked={(access[role] ?? []).includes(section.key)}
-                          onChange={() => toggleAccess(role, section.key)}
-                          aria-label={`${role} can open ${section.label}`}
-                        />
-                      )}
+                      {/* Every row is a real choice now. These used to show a
+                          dash and could not be granted at all, which meant a
+                          bookkeeper could not be given the books and a manager
+                          could not be trusted with the settings of a business
+                          they run. An admin keeps all of it regardless, so
+                          nothing here can lock the owner out. */}
+                      <input
+                        type="checkbox"
+                        checked={(access[role] ?? []).includes(section.key)}
+                        onChange={() => toggleAccess(role, section.key)}
+                        aria-label={`${role} can open ${section.label}`}
+                      />
                     </td>
                   ))}
                 </tr>

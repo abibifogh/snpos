@@ -7,7 +7,7 @@ import {
 } from '@snpos/core';
 import type { Order, OrderItem, Doc, TrialBalanceRow } from '@snpos/core';
 import { useSession } from '../session';
-import { SideFilter, onSide, type Side } from '../components/SideFilter';
+import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 import { Insights } from '../components/Insights';
 
 interface Payment extends Doc { order_id: string; method_id: string; method_kind_snapshot: string; amount: number; tip: number; shift_id: string }
@@ -46,6 +46,8 @@ export function ReportsPage() {
   const [tb, setTb] = useState<{ rows: TrialBalanceRow[]; balanced: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [side, setSide] = useState<Side>('all');
+  // Their side of the business, not the whole of it. See narrowSide.
+  const mine = narrowSide(side, profile, settings);
 
   useEffect(() => {
     (async () => {
@@ -74,7 +76,7 @@ export function ReportsPage() {
   };
 
   const paid = useMemo(
-    () => (orders ?? []).filter((o) => o.payment_status === 'paid' && inRange(o.$createdAt) && onSide(o, side)),
+    () => (orders ?? []).filter((o) => o.payment_status === 'paid' && inRange(o.$createdAt) && onSide(o, mine)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [orders, since, until, side],
   );
@@ -94,7 +96,7 @@ export function ReportsPage() {
   const discounts = paid.reduce((s, o) => s + o.discount_total, 0);
   const tips = periodPayments.reduce((s, p) => s + (p.tip ?? 0), 0);
   const spend = expenses
-    .filter((e) => inRange(e.$createdAt) && onSide(e, side))
+    .filter((e) => inRange(e.$createdAt) && onSide(e, mine))
     .reduce((s, e) => s + e.amount, 0);
   const covers = paid.reduce((s, o) => s + (o.guest_count || 1), 0);
 
@@ -248,7 +250,7 @@ export function ReportsPage() {
               below can be read for one or for the whole business. Placed with
               the export buttons because what you are looking at is what you
               will download. */}
-          <SideFilter value={side} onChange={setSide} settings={settings} />
+          <SideFilter value={side} onChange={setSide} settings={settings} profile={profile} />
           <Button onClick={exportPdf} disabled={paid.length === 0}>Download PDF</Button>
           <Button onClick={exportCsv} disabled={paid.length === 0}>Spreadsheet</Button>
         </div>

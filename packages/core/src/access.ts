@@ -14,6 +14,17 @@ export interface AdminSection {
   path: string;
   group: string;
   /** True for the pages that only ever make sense for an owner. */
+  /**
+   * Off unless somebody says otherwise, rather than never.
+   *
+   * These are the sections nobody should hold by accident: the settings of the
+   * business, erasing its records, its books. They are not granted to anyone
+   * by default and they are not part of any role's starting set — but they can
+   * be granted, because an owner who wants a bookkeeper to keep the books, or
+   * a manager to change the opening hours, should not be told no by a
+   * checkbox. An admin always keeps every one of them regardless, so no
+   * combination of these can lock the owner out.
+   */
   ownerOnly?: boolean;
   /**
    * A part of another section rather than a page of its own.
@@ -185,14 +196,36 @@ export const DEFAULT_ACCESS: Record<string, string[]> = {
 export function parseAccess(settings: Settings | null): Record<string, string[]> {
   if (!settings?.role_access) return DEFAULT_ACCESS;
   try {
-    const parsed = JSON.parse(settings.role_access) as Record<string, string[]>;
-    const mentioned = new Set(Object.values(parsed).flat());
+    const parsed = JSON.parse(settings.role_access) as Record<string, string[]> & { _known?: string[] };
+
+    /**
+     * Which sections had been decided when this was saved.
+     *
+     * A section added to the app later has never been put in front of anybody,
+     * so a role keeps whatever default it was given for it — otherwise every
+     * new page would arrive switched off for everyone and an owner would have
+     * to go and find it.
+     *
+     * This used to be worked out from what was ticked ANYWHERE, and that was a
+     * bug with teeth: unticking the last box for a section made it look
+     * undecided again, so the default came straight back and the box appeared
+     * to do nothing. Unchecking a manager's access to orders, which no other
+     * role has, simply did not take — and there was nothing on screen to
+     * suggest why.
+     *
+     * Written down explicitly now. The old shape is still read the old way, so
+     * a config saved before this keeps working until the next save settles it.
+     */
+    const known = new Set(
+      Array.isArray(parsed._known) ? parsed._known : Object.values(parsed).flat().filter((k) => typeof k === 'string'),
+    );
 
     const merged: Record<string, string[]> = {};
     for (const role of Object.keys({ ...DEFAULT_ACCESS, ...parsed })) {
+      if (role === '_known') continue;
       const saved = parsed[role] ?? DEFAULT_ACCESS[role] ?? [];
-      const unasked = (DEFAULT_ACCESS[role] ?? []).filter((key) => !mentioned.has(key));
-      merged[role] = [...new Set([...saved, ...unasked])];
+      const undecided = (DEFAULT_ACCESS[role] ?? []).filter((key) => !known.has(key));
+      merged[role] = [...new Set([...saved, ...undecided])];
     }
     return merged;
   } catch {
@@ -223,16 +256,22 @@ export function inTrade(
 /**
  * Can this person open this section?
  *
- * An admin always can. That is deliberate and not configurable: the alternative
- * is a checkbox that removes the owner's own way back in. The trade check comes
- * first because it is not a permission at all.
+ * An admin always can. That is deliberate and not configurable, and it is what
+ * makes everything else here safe to hand out: no combination of checkboxes
+ * can remove the owner's own way back in.
+ *
+ * Which is why `ownerOnly` no longer refuses outright. It used to, and that
+ * meant settings, erasing records and the books could not be given to anybody
+ * however much the owner wanted to — a bookkeeper could not be given the
+ * books, and a manager could not be trusted with the settings of a business
+ * they run. It now means "off unless somebody says otherwise", and the saying
+ * is the owner's to do.
  */
 export function canOpen(section: string, profile: StaffProfile | null, settings: Settings | null): boolean {
   if (!profile) return false;
   const meta = ADMIN_SECTIONS.find((s) => s.key === section);
   if (meta && !inTrade(meta, settings, profile)) return false;
   if (profile.role === 'admin') return true;
-  if (meta?.ownerOnly) return false;
   return (parseAccess(settings)[profile.role] ?? []).includes(section);
 }
 

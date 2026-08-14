@@ -4,7 +4,7 @@ import { listAll, humanError } from '../lib';
 import { formatMoney, byStaff, destinationLabel } from '@snpos/core';
 import type { Doc, CashHandover } from '@snpos/core';
 import { useSession } from '../session';
-import { SideFilter, onSide, type Side } from '../components/SideFilter';
+import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 
 interface Shift extends Doc {
   venue_id: string;
@@ -37,7 +37,7 @@ const parseMap = (raw?: string): Record<string, number> => {
 };
 
 export function ShiftsPage() {
-  const { settings } = useSession();
+  const { settings, profile } = useSession();
   const [rows, setRows] = useState<Shift[] | null>(null);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -64,7 +64,9 @@ export function ShiftsPage() {
   const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? id;
   const tolerance = settings?.cash_variance_tolerance ?? 500;
 
-  const shown = (rows ?? []).filter((s) => onSide(s, side));
+  // Their side, not the whole business's. See narrowSide.
+  const mine = narrowSide(side, profile, settings);
+  const shown = (rows ?? []).filter((s) => onSide(s, mine));
 
   const totalVariance = (s: Shift) =>
     Object.values(parseMap(s.variance)).reduce((a, b) => a + b, 0);
@@ -75,7 +77,7 @@ export function ShiftsPage() {
     <>
       <div className="page-head">
         <h1>Shifts</h1>
-        <SideFilter value={side} onChange={setSide} settings={settings} />
+        <SideFilter value={side} onChange={setSide} settings={settings} profile={profile} />
       </div>
       <p className="dim small" style={{ marginTop: 0 }}>
         Shifts are opened and closed on the terminal, by whoever is on the till. This is the record of what happened, 

@@ -1,5 +1,5 @@
-import { modulesOf } from '@snpos/core';
-import type { Module, Settings } from '@snpos/core';
+import { modulesForStaff } from '@snpos/core';
+import type { Module, Settings, StaffProfile } from '@snpos/core';
 
 export type Side = Module | 'all';
 
@@ -14,13 +14,23 @@ export type Side = Module | 'all';
  * business did. The split is the second question, and it is one tap away.
  */
 export function SideFilter({
-  value, onChange, settings,
+  value, onChange, settings, profile,
 }: {
   value: Side;
   onChange: (s: Side) => void;
   settings: Settings | null;
+  /**
+   * Whose screen this is.
+   *
+   * The choice is what the BUSINESS runs narrowed by what this person works
+   * on, not the business alone. Somebody marked kitchen-only was still offered
+   * a Craft shop tab, and pressing it showed them the shop's shifts — which is
+   * not a filter doing nothing, it is a filter handing over the figures the
+   * marking was meant to keep back.
+   */
+  profile?: StaffProfile | null;
 }) {
-  const mods = modulesOf(settings);
+  const mods = modulesForStaff(profile ?? null, settings);
   if (!(mods.kitchen && mods.craft)) return null;
 
   const options: { v: Side; l: string }[] = [
@@ -48,3 +58,21 @@ export function SideFilter({
 /** Does this row belong to the side being shown? Absent means kitchen. */
 export const onSide = (row: { module?: string }, side: Side): boolean =>
   side === 'all' || (row.module ?? 'kitchen') === side;
+
+/**
+ * The side to actually filter by, once the person is taken into account.
+ *
+ * "Both" means both of THEIRS. Somebody who works one side has no second side
+ * to be shown, and leaving the filter on "all" quietly gave them the other
+ * one's rows — no tab pressed, nothing on screen to suggest it, just the
+ * figures they were marked as not working on.
+ *
+ * Returns their single side when they have one, and whatever was chosen when
+ * they have both.
+ */
+export function narrowSide(side: Side, profile: StaffProfile | null | undefined, settings: Settings | null): Side {
+  const mods = modulesForStaff(profile ?? null, settings);
+  if (mods.kitchen && mods.craft) return side;
+  if (mods.craft) return 'craft';
+  return 'kitchen';
+}
