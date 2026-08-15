@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@snpos/ui';
-import { quotedWait, formatWait } from '@snpos/core';
+import { customerWait, formatWait } from '@snpos/core';
 
 /**
  * How long the thank-you stays before the menu comes back.
@@ -34,6 +34,7 @@ export function ScreenThanks({
   orderNo,
   etaMinutes,
   fromOpening,
+  openingWaitMinutes,
   emailed,
   onDone,
 }: {
@@ -42,6 +43,8 @@ export function ScreenThanks({
   etaMinutes?: number;
   /** The wait runs from opening time, because the kitchen was shut. */
   fromOpening?: boolean;
+  /** How much of it was the doors, so the kitchen's share can be capped. */
+  openingWaitMinutes?: number;
   /**
    * Whether a notice will actually reach this customer.
    *
@@ -76,7 +79,12 @@ export function ScreenThanks({
   // Not capped when it starts at the doors: see quotedWait. Sixty minutes
   // is the point past which a QUEUE estimate stops being believable, and
   // "we open at one" is not a queue estimate.
-  const eta = quotedWait({ eta_minutes: etaMinutes, placed_while_closed: fromOpening });
+  const wait = customerWait({
+    eta_minutes: etaMinutes,
+    opening_wait_minutes: openingWaitMinutes,
+    placed_while_closed: fromOpening,
+  });
+  const eta = wait.minutes;
 
   return (
     <div className="centered screen-thanks">
@@ -98,7 +106,12 @@ export function ScreenThanks({
             said in words rather than left as a number to interpret. */}
         <p className="eta-big">
           {eta
-            ? <>It will be ready in about <strong>{formatWait(eta)}</strong>.</>
+            ? (
+              <>
+                It will be ready in about <strong>{formatWait(eta)}</strong>
+                {wait.orLater ? ', possibly longer' : ''}.
+              </>
+            )
             : <>The kitchen has it now.</>}
           {/* Why the number is what it is. Without this, somebody ordering
               before the doors open reads "about 1 hour 20 minutes" and

@@ -78,7 +78,7 @@ export function App() {
   const [screenMode, setScreenMode] = useState(false);
   /** The order just sent, while the thank-you is up. */
   const [thanks, setThanks] = useState<
-    { no: string; eta?: number; emailed: boolean; fromOpening?: boolean } | null
+    { no: string; eta?: number; emailed: boolean; fromOpening?: boolean; doors?: number } | null
   >(null);
   const queued = useOfflineQueue(onQueueChange, startOfflineSync);
 
@@ -346,6 +346,7 @@ export function App() {
         orderNo={thanks.no}
         etaMinutes={thanks.eta}
         fromOpening={thanks.fromOpening}
+        openingWaitMinutes={thanks.doors}
         emailed={thanks.emailed}
         onDone={() => {
           setThanks(null);
@@ -597,7 +598,7 @@ export function App() {
           venueOpen={venueOpen}
           menu={menu}
           onClose={() => setShowCart(false)}
-          onPlaced={(orderNo, orderId, _slot, etaMinutes, emailed, closedWhenPlaced) => {
+          onPlaced={(orderNo, orderId, _slot, etaMinutes, emailed, closedWhenPlaced, doorMinutes) => {
             setShowCart(false);
             /**
              * A shared screen keeps no history of who ordered what.
@@ -611,7 +612,10 @@ export function App() {
               setMine(myOrders());
             }
             if (screenMode) {
-              setThanks({ no: orderNo, eta: etaMinutes, emailed: !!emailed, fromOpening: closedWhenPlaced });
+              setThanks({
+                no: orderNo, eta: etaMinutes, emailed: !!emailed,
+                fromOpening: closedWhenPlaced, doors: doorMinutes,
+              });
               return;
             }
             showOrderInAddress(orderId);

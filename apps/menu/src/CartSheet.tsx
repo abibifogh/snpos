@@ -65,9 +65,13 @@ function buildSlots(venue: Venue, features: FeatureMap, from = new Date()): Date
  * annoying; a confirmation screen that never appears is a customer who orders
  * the same food twice.
  */
-async function settledOrder(order: Order): Promise<{ no: string; eta?: number }> {
+async function settledOrder(order: Order): Promise<{ no: string; eta?: number; doors?: number }> {
   let eta = order.eta_minutes;
-  if (!isProvisionalOrderNo(order.order_no)) return { no: order.order_no, eta };
+  // The door share travels with the wait: the two are read together to work
+  // out what the customer is shown, and settling one without the other would
+  // cap a figure against the wrong half of itself.
+  let doors = order.opening_wait_minutes;
+  if (!isProvisionalOrderNo(order.order_no)) return { no: order.order_no, eta, doors };
   for (let i = 0; i < 12; i++) {
     await new Promise((r) => setTimeout(r, 500));
     const fresh = (await db.getDocument(DB_ID, 'orders', order.$id).catch(() => null)) as unknown as Order | null;
@@ -75,10 +79,11 @@ async function settledOrder(order: Order): Promise<{ no: string; eta?: number }>
     // reprices the order and works the queue out again. Taking the browser's
     // figure would show a wait that ignored everything already on the pass.
     if (typeof fresh?.eta_minutes === 'number') eta = fresh.eta_minutes;
+    if (typeof fresh?.opening_wait_minutes === 'number') doors = fresh.opening_wait_minutes;
     const no = fresh?.order_no;
-    if (no && !isProvisionalOrderNo(no)) return { no, eta };
+    if (no && !isProvisionalOrderNo(no)) return { no, eta, doors };
   }
-  return { no: '', eta };
+  return { no: '', eta, doors };
 }
 
 export function CartSheet({
@@ -112,6 +117,8 @@ export function CartSheet({
     emailed?: boolean,
     /** The quote runs from opening time, not from now, so the screen can say so. */
     placedWhileClosed?: boolean,
+    /** How much of the quote was the doors, so the kitchen's share can be capped. */
+    openingWaitMinutes?: number,
   ) => void;
   onError: (message: string) => void;
 }) {
@@ -330,7 +337,10 @@ export function CartSheet({
       // `collectEmail` is the receipts feature: with it off nothing is ever
       // sent, so an address typed into a box that is not being shown cannot
       // be promised a message either.
-      onPlaced(settled.no, order.$id, slot || undefined, settled.eta, collectEmail && !!email.trim(), !venueOpen);
+      onPlaced(
+        settled.no, order.$id, slot || undefined, settled.eta,
+        collectEmail && !!email.trim(), !venueOpen, settled.doors,
+      );
       setCart(() => []);
     } catch (e) {
       // Through humanError, so the server's own vocabulary, roles, scopes,

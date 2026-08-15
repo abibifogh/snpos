@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Spinner } from '@snpos/ui';
 import {
   db, DB_ID, Query, listAll, formatMoney, subscribeCollection, isProvisionalOrderNo,
-  cancelWindowLeft, requestCancellation, humanError, quotedWait, formatWait,
+  cancelWindowLeft, requestCancellation, humanError, customerWait, formatWait,
 } from '@snpos/core';
 import type { Order, OrderItem, Settings, Venue } from '@snpos/core';
 import { rememberOrder } from './myOrders';
@@ -129,6 +129,7 @@ export function OrderStatus({
   }
 
   const stopped = order.status === 'REJECTED' || order.status === 'CANCELLED';
+  const wait = customerWait(order);
   const at = REACHED[order.status] ?? 0;
   const done = at >= 4;
 
@@ -192,9 +193,16 @@ export function OrderStatus({
               "send" is looking. A wait nobody has named is a wait that feels
               twice as long, and it is the question a guest otherwise gets up
               and asks a waiter. */}
-          {quotedWait(order) && !done && (
+          {wait.minutes && !done && (
             <div className="eta">
-              <strong>About {formatWait(quotedWait(order) as number)}</strong>
+              <strong>
+                About {formatWait(wait.minutes)}
+                {/* Said rather than hidden. Several orders deep before opening,
+                    the true wait runs past what we are willing to quote, and a
+                    precise time we already know we will miss costs more than
+                    one that admits its own edges. */}
+                {wait.orLater ? ', possibly longer' : ''}
+              </strong>
               <div className="small dim">
                 {/* Named, because it is the difference between a number that
                     looks wrong and one that makes sense. Ordering before the

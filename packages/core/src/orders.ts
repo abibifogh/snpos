@@ -12,7 +12,7 @@ import { parseWindows, minutesUntilOpen } from './availability';
 export {
   MAX_ETA_MINUTES, shownEta, cookMinutes, estimateMinutes, queueMinutes, dueMinutes, fireTimeFor,
   CANCEL_WINDOW_MS, cancelWindowLeft, LINES_GRACE_MS, ticketLines, linesComplete, isOverdue, minutesOver,
-  addonNames, addonsUnreadable, waitIncludingOpening, quotedWait, formatWait,
+  addonNames, addonsUnreadable, waitIncludingOpening, customerWait, quotedWait, formatWait,
 } from './orders-time';
 import { createOrQueue, isOffline } from './offline';
 import { computeTotals, lineUnitPrice, lineTotal } from './pricing';
@@ -75,6 +75,8 @@ export interface Order extends Doc {
   scheduled_for?: string;
   fire_at?: string;
   placed_while_closed?: boolean;
+  /** How much of eta_minutes was the building being shut. */
+  opening_wait_minutes?: number;
   quoted_wait_minutes?: number;
   /** What the customer was told: cooking time plus the queue ahead of them. */
   eta_minutes?: number;
@@ -351,6 +353,14 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
         throw e;
       });
 
+  /*
+    Read once, used twice. The queue and the door wait both feed the quote,
+    and asking for either of them twice inside one object literal is how the
+    two halves of a single figure end up measured a second apart.
+  */
+  const queueAhead = await queueAheadFor(venueId, input.module ?? 'kitchen');
+  const doorWait = minutesUntilOpen(parseWindows(input.openingHours));
+
   const payload: Record<string, unknown> = {
     venue_id: venueId,
     order_no: orderNo,
@@ -408,11 +418,15 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
       for seven, and is not waiting for anything.
     */
     eta_minutes: input.scheduledFor
-      ? estimateMinutes(lines, await queueAheadFor(venueId, input.module ?? 'kitchen'))
-      : waitIncludingOpening(
-        cookMinutes(lines) + (await queueAheadFor(venueId, input.module ?? 'kitchen')),
-        minutesUntilOpen(parseWindows(input.openingHours)),
-      ),
+      ? estimateMinutes(lines, queueAhead)
+      : doorWait > 0
+        ? waitIncludingOpening(cookMinutes(lines) + queueAhead, doorWait)
+        : estimateMinutes(lines, queueAhead),
+    // Which part of that was the building being shut. See the schema note:
+    // the kitchen counts down to the whole figure, the customer is shown the
+    // door wait plus a capped kitchen share, and the split has to be recorded
+    // rather than re-derived, because the doors get closer while it sits there.
+    opening_wait_minutes: doorWait,
     // Which side of the business rang this up, so the two sets of books can be
     // read apart afterwards.
     module: input.module ?? 'kitchen',

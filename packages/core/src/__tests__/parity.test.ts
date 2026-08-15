@@ -155,14 +155,48 @@ test('both sides agree on how long until the kitchen opens', () => {
       guard.minutesUntilOpen(guard.parseWindows(raw), at),
       `disagreed at ${h}:${m}`,
     );
-    assert.equal(
-      waitIncludingOpening(20, minutesUntilOpen(parseWindows(raw), at)),
-      guard.waitIncludingOpening(20, 0, guard.parseWindows(raw), at),
-      `total disagreed at ${h}:${m}`,
-    );
+    /*
+      Compared as the two sides actually decide it, not as two functions with
+      the same name. Core branches at the call site — estimateMinutes when the
+      doors are open, waitIncludingOpening when they are shut — and the guard
+      branches inside one function. Comparing only the like-named functions
+      would agree on twenty minutes and quietly disagree on five hundred,
+      which is the case where the cap is the whole question.
+    */
+    for (const cook of [20, 500]) {
+      const doors = minutesUntilOpen(parseWindows(raw), at);
+      const mine = doors > 0 ? waitIncludingOpening(cook, doors) : estimateMinutes([{ prep_minutes: cook }]);
+      const theirs = guard.waitIncludingOpening(cook, 0, guard.parseWindows(raw), at);
+      assert.equal(theirs.total, mine, `total disagreed at ${h}:${m} for ${cook} minutes of cooking`);
+      assert.equal(theirs.doors, doors, `the door share disagreed at ${h}:${m}`);
+    }
   }
 
   // No hours configured means open, on both sides, and never "closed for ever".
   assert.equal(minutesUntilOpen(parseWindows(undefined)), 0);
   assert.equal(guard.minutesUntilOpen(guard.parseWindows(undefined)), 0);
+});
+
+test('both sides refuse to charge door-waiting as stove time', () => {
+  /**
+   * The guard recomputes the queue from every live ticket. If its idea of what
+   * a ticket ahead costs the stove disagreed with the browser's, the wait a
+   * customer was quoted at the door would be rewritten a second later — and
+   * the disagreement compounds, because each pre-order behind inherits it.
+   */
+  const cases = [
+    { prep_minutes: 20, eta_minutes: 80, placed_while_closed: true },
+    { eta_minutes: 80, placed_while_closed: true },
+    { eta_minutes: 40 },
+    { prep_minutes: 25, eta_minutes: 100 },
+    {},
+  ];
+  for (const o of cases) {
+    const pending = [{ ...o, status: 'PENDING', $createdAt: new Date().toISOString() }];
+    assert.equal(
+      queueMinutes(pending, Date.now()),
+      guard.queueMinutes(pending, Date.now()),
+      `disagreed on ${JSON.stringify(o)}`,
+    );
+  }
 });

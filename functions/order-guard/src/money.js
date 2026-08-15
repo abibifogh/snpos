@@ -98,7 +98,7 @@ export function queueMinutes(pending, now = Date.now()) {
   let ahead = 0;
   for (const o of pending) {
     if (!cooking.includes(o.status)) continue;
-    const work = o.prep_minutes ?? o.eta_minutes ?? 15;
+    const work = cookTimeOf(o);
     const started = o.accepted_at ? Date.parse(o.accepted_at) : NaN;
     const elapsed = Number.isFinite(started) ? Math.max(0, (now - started) / 60000) : 0;
     ahead += Math.max(0, work - elapsed);
@@ -177,5 +177,26 @@ export function minutesUntilOpen(windows, at = new Date()) {
  * for the doors is added whole.
  */
 export function waitIncludingOpening(prepTotal, queueAhead, windows, at = new Date()) {
-  return minutesUntilOpen(windows, at) + quotedWait(prepTotal, queueAhead);
+  const doors = minutesUntilOpen(windows, at);
+  // Uncapped when the doors are shut: this is the KITCHEN's schedule, and a
+  // cook judged against a capped figure they were never going to beat is how
+  // a whole pass goes red through nobody's fault. The cap lives in front of
+  // the customer instead. Mirrors waitIncludingOpening in core.
+  const total = doors > 0
+    ? doors + Math.max(1, Math.round(prepTotal + queueAhead))
+    : quotedWait(prepTotal, queueAhead);
+  return { total, doors };
+}
+
+/**
+ * The stove time a ticket ahead will take. Mirrors cookTimeOf in core.
+ *
+ * Never the quoted wait on an order placed before opening: that figure
+ * contains the hour spent waiting for the doors, and charging it as stove time
+ * would add it to every order behind, and again to every order behind those.
+ */
+export function cookTimeOf(o) {
+  if (o.prep_minutes) return o.prep_minutes;
+  if (o.eta_minutes && !o.placed_while_closed) return o.eta_minutes;
+  return 15;
 }

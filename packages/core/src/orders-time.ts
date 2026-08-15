@@ -81,11 +81,31 @@ export function estimateMinutes(lines: { prep_minutes?: number }[], queueAhead =
  * sitting there. Orders sitting READY are excluded entirely; the cooking is
  * done and they are waiting on a person, not on a stove.
  */
+/**
+ * How long a ticket ahead will occupy the stove.
+ *
+ * `prep_minutes` is the answer. The quoted wait is a last resort for rows
+ * written before prep time was stored — and it is NOT usable at all on an
+ * order placed before opening, because that quote contains the hour spent
+ * waiting for the doors. Charging that hour as stove time would add it to
+ * every order behind, and then again to every order behind those: four
+ * pre-orders and the last one is quoted most of the afternoon.
+ *
+ * Fifteen minutes is the fallback of last resort either way. A guess that is
+ * roughly a dish beats a number that is certainly a building being shut.
+ */
+function cookTimeOf(o: { prep_minutes?: number; eta_minutes?: number; placed_while_closed?: boolean }): number {
+  if (o.prep_minutes) return o.prep_minutes;
+  if (o.eta_minutes && !o.placed_while_closed) return o.eta_minutes;
+  return 15;
+}
+
 export function queueMinutes(
   pending: {
     status: string;
     prep_minutes?: number;
     eta_minutes?: number;
+    placed_while_closed?: boolean;
     accepted_at?: string;
     $createdAt: string;
   }[],
@@ -94,7 +114,7 @@ export function queueMinutes(
   let ahead = 0;
   for (const o of pending) {
     if (!COOKING.includes(o.status)) continue;
-    const work = o.prep_minutes ?? o.eta_minutes ?? 15;
+    const work = cookTimeOf(o);
     const started = o.accepted_at ? Date.parse(o.accepted_at) : NaN;
     const elapsed = Number.isFinite(started) ? Math.max(0, (now - started) / 60_000) : 0;
     ahead += Math.max(0, work - elapsed);
@@ -386,38 +406,71 @@ export function addonsUnreadable(raw?: string): boolean {
  * their morning around it. Capping that at an hour would turn a precise
  * statement into a wrong one.
  *
- * So: the kitchen's own part stays capped, and the wait for the doors is added
- * on top whole.
+ * Uncapped, both halves, and that is the change: this is what the KITCHEN
+ * counts down to, and the kitchen's own schedule is not a promise to anybody.
+ * Four pre-orders deep, the true time is doors plus everyone ahead plus this
+ * order, and judging a cook against a capped figure they were never going to
+ * beat is how every ticket on a busy pass goes red through nobody's fault.
+ *
+ * The cap belongs on the way OUT, in front of the customer, where the reason
+ * for it lives — see customerWait. So the two now differ on purpose: the
+ * kitchen is given the real schedule, and the customer is given a
+ * conservative figure that says "or later" rather than a precise one that is
+ * wrong.
  *
  * Takes the closed stretch as a number rather than reading the calendar
  * itself. `minutesUntilOpen` lives with the opening hours, where that question
  * belongs, and keeping it there is what lets this file go on importing nothing.
  */
 export function waitIncludingOpening(kitchenMinutes: number, closedMinutes = 0): number {
-  return Math.max(0, Math.round(closedMinutes))
-    + Math.min(MAX_ETA_MINUTES, Math.max(1, Math.round(kitchenMinutes)));
+  return Math.max(0, Math.round(closedMinutes)) + Math.max(1, Math.round(kitchenMinutes));
 }
 
 /**
  * What to put in front of this order's customer.
  *
- * The cap is applied on the way out as well as on the way in, which is right
- * for an ordinary order and wrong for one placed before opening: that figure
- * legitimately runs past an hour, and clamping it here would quietly turn
- * eighty minutes back into sixty on the very screen the customer reads.
+ * Two figures now differ on purpose. `eta_minutes` is the kitchen's real
+ * schedule; this is what somebody is told, and the hour cap lives here.
  *
- * Null when there is no estimate at all, so a caller can leave the line out
- * rather than print a made-up number.
+ * The cap is applied to the KITCHEN's share only. Waiting for the doors is
+ * added whole, because "we open at one, yours about twenty past" is exact and
+ * checkable against the door — the cap exists for queue estimates, which past
+ * an hour stop being something anybody believes or plans around.
+ *
+ * `orLater` is the honest half of capping. Four pre-orders deep the true wait
+ * runs past the cap, and quoting a precise time we already know we will miss
+ * is worse than saying "about two hours, possibly longer". A number that is
+ * quietly wrong costs more than one that admits its own edges.
+ *
+ * `minutes` is null when there is no estimate at all, so a caller can leave
+ * the whole line out rather than print something made up.
  */
-export function quotedWait(order: {
+export function customerWait(order: {
   eta_minutes?: number;
+  opening_wait_minutes?: number;
   placed_while_closed?: boolean;
-}): number | null {
-  if (!order.eta_minutes || order.eta_minutes <= 0) return null;
-  return order.placed_while_closed
-    ? Math.round(order.eta_minutes)
-    : shownEta(order.eta_minutes);
+}): { minutes: number | null; orLater: boolean } {
+  if (!order.eta_minutes || order.eta_minutes <= 0) return { minutes: null, orLater: false };
+
+  const doors = Math.max(0, Math.round(order.opening_wait_minutes ?? 0));
+  if (doors <= 0) {
+    // The ordinary case, unchanged: one capped figure, no caveat.
+    return { minutes: shownEta(order.eta_minutes), orLater: false };
+  }
+
+  const kitchen = Math.max(1, order.eta_minutes - doors);
+  return {
+    minutes: doors + Math.min(MAX_ETA_MINUTES, kitchen),
+    orLater: kitchen > MAX_ETA_MINUTES,
+  };
 }
+
+/** The figure alone, for callers that only need a number. */
+export const quotedWait = (order: {
+  eta_minutes?: number;
+  opening_wait_minutes?: number;
+  placed_while_closed?: boolean;
+}): number | null => customerWait(order).minutes;
 
 /**
  * A wait, in words somebody reads once and acts on.

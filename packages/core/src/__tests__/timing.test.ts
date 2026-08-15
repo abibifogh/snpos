@@ -4,7 +4,7 @@ import {
   cookMinutes, estimateMinutes, queueMinutes, dueMinutes, shownEta,
   cancelWindowLeft, CANCEL_WINDOW_MS, MAX_ETA_MINUTES, ticketLines, LINES_GRACE_MS, isOverdue, minutesOver,
   linesComplete, addonNames, addonsUnreadable,
-  waitIncludingOpening, quotedWait, formatWait,
+  waitIncludingOpening, customerWait, quotedWait, formatWait,
 } from '../orders-time.ts';
 import { minutesUntilOpen, type Windows } from '../availability.ts';
 import { byStaff, totalHandedOver } from '../handover-math.ts';
@@ -373,7 +373,8 @@ const HOURS = {
 } as unknown as Windows;
 
 /** Local noon on a Wednesday. Built from parts so it is the venue's noon. */
-const noon = () => { const d = new Date(2026, 7, 12, 12, 0, 0, 0); return d; };
+const noon = () => new Date(2026, 7, 12, 12, 0, 0, 0);
+const noonAt = (h: number, m: number) => new Date(2026, 7, 12, h, m, 0, 0);
 
 test('a wait that starts before opening counts from the door', () => {
   /**
@@ -385,6 +386,7 @@ test('a wait that starts before opening counts from the door', () => {
   assert.equal(minutesUntilOpen(HOURS, noon()), 60);
   assert.equal(waitIncludingOpening(20, minutesUntilOpen(HOURS, noon())), 80);
   assert.equal(formatWait(80), '1 hour 20 minutes');
+  assert.equal(customerWait({ eta_minutes: 80, opening_wait_minutes: 60 }).minutes, 80);
 });
 
 test('the hour cap holds the queue back and lets the doors through', () => {
@@ -394,11 +396,21 @@ test('the hour cap holds the queue back and lets the doors through', () => {
    * or plans around. "We open at one, yours is ready about twenty past" is not
    * a guess — it is checkable against the door — so capping it would turn a
    * precise statement into a wrong one.
+   *
+   * And the cap is on the way OUT only. What the kitchen counts down to is the
+   * real schedule, because a cook judged against a figure they were never
+   * going to beat is how a whole pass goes red through nobody's fault.
    */
-  // Kitchen part alone is still clamped, however far behind the pass is.
-  assert.equal(waitIncludingOpening(500, minutesUntilOpen(null, noon())), MAX_ETA_MINUTES);
-  // And clamped inside the total, rather than the total being clamped.
-  assert.equal(waitIncludingOpening(500, minutesUntilOpen(HOURS, noon())), 60 + MAX_ETA_MINUTES);
+  const doors = minutesUntilOpen(HOURS, noon());
+
+  // The kitchen is told the truth: an hour of doors and 500 minutes of work.
+  assert.equal(waitIncludingOpening(500, doors), 560);
+
+  // The customer is told the doors whole and the kitchen's share capped, and
+  // is told it may run longer.
+  const shown = customerWait({ eta_minutes: 560, opening_wait_minutes: doors });
+  assert.equal(shown.minutes, 60 + MAX_ETA_MINUTES);
+  assert.equal(shown.orLater, true);
 });
 
 test('an open kitchen is unaffected, and a venue with no hours is always open', () => {
@@ -411,11 +423,16 @@ test('an open kitchen is unaffected, and a venue with no hours is always open', 
   assert.equal(waitIncludingOpening(20, minutesUntilOpen(null, noon())), 20);
 });
 
-test('what the customer is shown is capped only when the kitchen was open', () => {
-  // The ordinary order: the cap still applies on the way out.
-  assert.equal(quotedWait({ eta_minutes: 95 }), MAX_ETA_MINUTES);
-  // The one placed before opening keeps its real figure.
-  assert.equal(quotedWait({ eta_minutes: 80, placed_while_closed: true }), 80);
+test('what the customer is shown caps the kitchen and lets the doors through', () => {
+  // The ordinary order, ordered while open: unchanged, one capped figure.
+  assert.deepEqual(customerWait({ eta_minutes: 95 }), { minutes: MAX_ETA_MINUTES, orLater: false });
+
+  // Ordered before opening: 60 of doors and 20 of cooking, both shown whole.
+  assert.deepEqual(
+    customerWait({ eta_minutes: 80, opening_wait_minutes: 60 }),
+    { minutes: 80, orLater: false },
+  );
+
   // Nothing to say is said as nothing, not as a made-up number.
   assert.equal(quotedWait({}), null);
   assert.equal(quotedWait({ eta_minutes: 0, placed_while_closed: true }), null);
@@ -443,4 +460,51 @@ test('a ticket placed before opening is not late until its promise breaks', () =
   assert.equal(isOverdue(order, 80, at(20)), false, 'not late while the kitchen is still shut');
   assert.equal(isOverdue(order, 80, at(79)), false, 'not late a minute before it is due');
   assert.equal(isOverdue(order, 80, at(81)), true, 'late once the promise passes');
+});
+
+test('a second pre-order queues behind the first one COOKING, not its whole wait', () => {
+  /**
+   * The trap the owner spotted before it shipped.
+   *
+   * A is quoted an hour and twenty: sixty minutes of shut building and twenty
+   * of cooking. B, ordered five minutes later, is waiting for the same doors —
+   * not for a second set of them. Adding A's quote would charge B the hour
+   * twice, C three times, and by the fourth pre-order the wait is most of the
+   * afternoon for a kitchen that has not started.
+   *
+   * Only A's STOVE time belongs to B: 55 to the doors, 20 for A, 25 for B.
+   */
+  const A = {
+    status: 'PENDING', prep_minutes: 20, eta_minutes: 80,
+    placed_while_closed: true, $createdAt: noonAt(12, 0).toISOString(),
+  };
+  const fivePast = noonAt(12, 5);
+
+  assert.equal(queueMinutes([A], fivePast.getTime()), 20, 'A contributes its cooking, not its quote');
+  assert.equal(
+    waitIncludingOpening(25 + queueMinutes([A], fivePast.getTime()), minutesUntilOpen(HOURS, fivePast)),
+    100,
+    'B waits 1h40: ready 13:45',
+  );
+});
+
+test('an order with no cooking time recorded never lends its door wait to the queue', () => {
+  /**
+   * The same trap by the back door, and the one that would actually have
+   * shipped. The queue falls back to the quoted wait for rows written before
+   * cooking time was stored — harmless when a quote was only ever cooking plus
+   * queueing, and wrong the moment a quote can contain an hour of shut
+   * building. Fifteen minutes is a guess; eighty is a certainty about a
+   * building, charged to somebody's dinner.
+   */
+  const noPrep = {
+    status: 'PENDING', eta_minutes: 80, placed_while_closed: true,
+    $createdAt: noonAt(12, 0).toISOString(),
+  };
+  assert.equal(queueMinutes([noPrep], noonAt(12, 5).getTime()), 15);
+
+  // An order placed while OPEN still lends its quote, which is the old
+  // behaviour and is right: that figure contains no doors.
+  const openOrder = { status: 'PENDING', eta_minutes: 40, $createdAt: noonAt(12, 0).toISOString() };
+  assert.equal(queueMinutes([openOrder], noonAt(12, 0).getTime()), 40);
 });

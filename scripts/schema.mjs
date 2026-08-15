@@ -780,6 +780,24 @@ export const COLLECTIONS = [
        */
       ['eta_minutes', 'i', null, false],
       /**
+       * How much of `eta_minutes` was spent waiting for the doors.
+       *
+       * Zero, or absent, for anything ordered while the kitchen was open.
+       *
+       * Stored because the two audiences need different figures from the same
+       * order. `eta_minutes` is the kitchen's real schedule, uncapped, so a
+       * cook is judged against a time they could actually hit. What the
+       * customer is told caps the KITCHEN's share at an hour and adds the door
+       * wait whole — and working that split out needs to know which part was
+       * which. Re-deriving it later from the opening hours would give a
+       * slightly different answer every time it was asked, because the doors
+       * get closer while the order sits there.
+       *
+       * Optional, for the reason set out on menu_items: a field that arrives
+       * after the rows do can never be required.
+       */
+      ['opening_wait_minutes', 'i', null, false],
+      /**
        * What the KITCHEN is measured against: the cooking time alone, summed
        * from the prep time set on each dish.
        *

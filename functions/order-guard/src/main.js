@@ -1,7 +1,7 @@
 import { Client, Databases, Query } from 'node-appwrite';
 import {
   totalsFor, rateFor, flatFor, splitSale, queueMinutes, quotedWait,
-  parseWindows, waitIncludingOpening,
+  parseWindows, waitIncludingOpening, cookTimeOf,
 } from './money.js';
 
 /**
@@ -689,6 +689,7 @@ export default async ({ req, res, log, error }) => {
      * tonight's queue.
      */
     let eta = order.eta_minutes;
+    let openingWait = order.opening_wait_minutes ?? 0;
     if (order.status !== 'SCHEDULED' && !order.is_preorder && prepTotal > 0) {
       /*
         The kitchen may not be open yet.
@@ -718,13 +719,15 @@ export default async ({ req, res, log, error }) => {
         // their quote already contains the queue that was ahead of them, and
         // adding up quotes counts the same stove time again for every ticket
         // that has joined since. What is left to cook is what is left to cook.
-        const work = o.prep_minutes ?? o.eta_minutes ?? 15;
+        const work = cookTimeOf(o);
         // Nothing comes off a ticket no cook has picked up yet.
         const started = o.accepted_at ? Date.parse(o.accepted_at) : NaN;
         const elapsed = Number.isFinite(started) ? Math.max(0, (now - started) / 60000) : 0;
         ahead += Math.max(0, work - elapsed);
       }
-      eta = waitIncludingOpening(prepTotal, ahead, windows);
+      const quoted = waitIncludingOpening(prepTotal, ahead, windows);
+      eta = quoted.total;
+      openingWait = quoted.doors;
     }
 
     // The cooking time on its own, from the menu rather than from the phone.
@@ -739,6 +742,7 @@ export default async ({ req, res, log, error }) => {
       order.tax_total !== tax ||
       order.service_total !== service ||
       order.eta_minutes !== eta ||
+      (order.opening_wait_minutes ?? 0) !== openingWait ||
       order.prep_minutes !== cookTime
     ) {
       await db.updateDocument(DB_ID, 'orders', order.$id, {
@@ -748,6 +752,7 @@ export default async ({ req, res, log, error }) => {
         tax_total: tax,
         total,
         ...(typeof eta === 'number' ? { eta_minutes: eta } : {}),
+        opening_wait_minutes: openingWait,
         ...(typeof cookTime === 'number' ? { prep_minutes: cookTime } : {}),
       });
 
