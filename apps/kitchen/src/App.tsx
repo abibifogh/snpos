@@ -10,6 +10,7 @@ import {
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
   itemsAvailableNow, dueMinutes, ticketLines, linesComplete, isOverdue, minutesOver, seatFor, amountOutstanding,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, addonNames, addonsUnreadable,
+  formatWait,
 } from '@snpos/core';
 import type {
   Order, OrderItem, Settings, Venue, StaffProfile, StaffSession, HelpRole, MenuItem, Doc, FeatureMap,
@@ -1077,7 +1078,12 @@ function Ticket({
                 ? `${Math.abs(leftMinutes)} min over`
                 : leftMinutes === 0
                   ? 'due now'
-                  : `${leftMinutes} min left`}
+                  // Hours once it runs past one, which it now can: an order
+                  // placed before the kitchen opened is counted from opening,
+                  // so "83 min left" is a sum a cook should not have to do.
+                  : leftMinutes >= 60
+                    ? `${formatWait(leftMinutes)} left`
+                    : `${leftMinutes} min left`}
               {/*
                 What the budget is made of, so the countdown does not look
                 arbitrary. The figure being counted down is what the customer
@@ -1094,6 +1100,14 @@ function Ticket({
           <div style={{ marginTop: '0.2rem' }}>
             {order.channel === 'qr' && <span className="pill qr">QR</span>}
             {order.is_preorder && <span className="pill preorder">Pre-order</span>}
+            {/* Why this ticket has so long on it. Ordered before the doors
+                opened, so its countdown starts at opening rather than at the
+                moment somebody pressed send — without saying so, a cook reads
+                an hour and twenty on a twenty minute dish and distrusts the
+                clock on every other ticket too. */}
+            {order.placed_while_closed && !order.is_preorder && (
+              <span className="pill preorder">Before opening</span>
+            )}
             {/*
               Part paid, at the top, at every stage.
 

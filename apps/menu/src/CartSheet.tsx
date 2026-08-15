@@ -104,7 +104,15 @@ export function CartSheet({
    * queue a moment after it lands, and a shared screen shows this figure and
    * nothing else, so it has to be the settled one.
    */
-  onPlaced: (orderNo: string, orderId: string, scheduled?: string, eta?: number, emailed?: boolean) => void;
+  onPlaced: (
+    orderNo: string,
+    orderId: string,
+    scheduled?: string,
+    eta?: number,
+    emailed?: boolean,
+    /** The quote runs from opening time, not from now, so the screen can say so. */
+    placedWhileClosed?: boolean,
+  ) => void;
   onError: (message: string) => void;
 }) {
   const needReference = featureConfig(features, 'group_orders', 'require_reservation_number', true);
@@ -292,6 +300,10 @@ export function CartSheet({
         fulfilment: chosenSeat ? 'dine_in' : 'takeaway',
         scheduledFor: slot ? new Date(slot) : undefined,
         placedWhileClosed: !venueOpen,
+        // The same hours this sheet already read to decide whether to show
+        // "we are closed", so the notice and the quote cannot disagree in
+        // front of the same customer.
+        openingHours: venue.opening_hours,
       });
 
       if (codeState) {
@@ -318,7 +330,7 @@ export function CartSheet({
       // `collectEmail` is the receipts feature: with it off nothing is ever
       // sent, so an address typed into a box that is not being shown cannot
       // be promised a message either.
-      onPlaced(settled.no, order.$id, slot || undefined, settled.eta, collectEmail && !!email.trim());
+      onPlaced(settled.no, order.$id, slot || undefined, settled.eta, collectEmail && !!email.trim(), !venueOpen);
       setCart(() => []);
     } catch (e) {
       // Through humanError, so the server's own vocabulary, roles, scopes,

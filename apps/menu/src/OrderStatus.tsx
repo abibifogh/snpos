@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Spinner } from '@snpos/ui';
 import {
   db, DB_ID, Query, listAll, formatMoney, subscribeCollection, isProvisionalOrderNo,
-  cancelWindowLeft, requestCancellation, humanError, shownEta,
+  cancelWindowLeft, requestCancellation, humanError, quotedWait, formatWait,
 } from '@snpos/core';
 import type { Order, OrderItem, Settings, Venue } from '@snpos/core';
 import { rememberOrder } from './myOrders';
@@ -192,12 +192,18 @@ export function OrderStatus({
               "send" is looking. A wait nobody has named is a wait that feels
               twice as long, and it is the question a guest otherwise gets up
               and asks a waiter. */}
-          {shownEta(order.eta_minutes) && !done && (
+          {quotedWait(order) && !done && (
             <div className="eta">
-              <strong>About {shownEta(order.eta_minutes)} minutes</strong>
+              <strong>About {formatWait(quotedWait(order) as number)}</strong>
               <div className="small dim">
-                An estimate from what you ordered and how busy the kitchen is.
-                We will tell you the moment it is ready.
+                {/* Named, because it is the difference between a number that
+                    looks wrong and one that makes sense. Ordering before the
+                    kitchen opens means most of this wait is the doors, not
+                    the cooking, and a customer told "about an hour and
+                    twenty" with no reason assumes something is broken. */}
+                {order.placed_while_closed
+                  ? 'The kitchen was not open when you ordered, so this counts from when it opens. We will tell you the moment it is ready.'
+                  : 'An estimate from what you ordered and how busy the kitchen is. We will tell you the moment it is ready.'}
               </div>
             </div>
           )}

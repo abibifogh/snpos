@@ -1,5 +1,6 @@
 import { db, DB_ID, ID, Query, Permission, Role, account, listAll } from './client';
-import { cookMinutes, estimateMinutes, fireTimeFor, queueMinutes } from './orders-time';
+import { cookMinutes, estimateMinutes, fireTimeFor, queueMinutes, waitIncludingOpening } from './orders-time';
+import { parseWindows, minutesUntilOpen } from './availability';
 
 /**
  * The timing arithmetic lives next door, in a file that imports nothing.
@@ -11,7 +12,7 @@ import { cookMinutes, estimateMinutes, fireTimeFor, queueMinutes } from './order
 export {
   MAX_ETA_MINUTES, shownEta, cookMinutes, estimateMinutes, queueMinutes, dueMinutes, fireTimeFor,
   CANCEL_WINDOW_MS, cancelWindowLeft, LINES_GRACE_MS, ticketLines, linesComplete, isOverdue, minutesOver,
-  addonNames, addonsUnreadable,
+  addonNames, addonsUnreadable, waitIncludingOpening, quotedWait, formatWait,
 } from './orders-time';
 import { createOrQueue, isOffline } from './offline';
 import { computeTotals, lineUnitPrice, lineTotal } from './pricing';
@@ -300,6 +301,15 @@ export interface CreateOrderInput {
   /** Set for a pre-order; the kitchen sees nothing until fire_at. */
   scheduledFor?: Date;
   placedWhileClosed?: boolean;
+  /**
+   * The venue's trading hours, so a wait can start when the doors do.
+   *
+   * Passed in rather than looked up, because the screen taking the order has
+   * already read them to decide whether to show "we are closed" at all, and
+   * two readings of the same rule is two chances for the quote and the notice
+   * to disagree in front of the same customer.
+   */
+  openingHours?: string;
   quotedWaitMinutes?: number;
   /** Which side of the business is selling. Defaults to the kitchen. */
   module?: 'kitchen' | 'craft';
@@ -387,7 +397,22 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
      * was wrong by however long the kitchen was already behind, which is
      * exactly when a customer is deciding whether to wait.
      */
-    eta_minutes: estimateMinutes(lines, await queueAheadFor(venueId, input.module ?? 'kitchen')),
+    /*
+      Ordering at noon from a kitchen that opens at one is an eighty minute
+      wait, not a twenty minute one, and quoting the cooking time alone makes
+      a promise that breaks itself an hour before anybody starts cooking. See
+      waitIncludingOpening for why the closed stretch is added whole while the
+      kitchen's own part stays capped.
+
+      A scheduled pre-order is left alone: somebody collecting at seven asked
+      for seven, and is not waiting for anything.
+    */
+    eta_minutes: input.scheduledFor
+      ? estimateMinutes(lines, await queueAheadFor(venueId, input.module ?? 'kitchen'))
+      : waitIncludingOpening(
+        cookMinutes(lines) + (await queueAheadFor(venueId, input.module ?? 'kitchen')),
+        minutesUntilOpen(parseWindows(input.openingHours)),
+      ),
     // Which side of the business rang this up, so the two sets of books can be
     // read apart afterwards.
     module: input.module ?? 'kitchen',

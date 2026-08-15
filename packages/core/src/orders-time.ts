@@ -366,3 +366,71 @@ export function addonsUnreadable(raw?: string): boolean {
   if (!raw) return false;
   return addonNames(raw).length === 0;
 }
+
+/**
+ * The whole wait to quote when the kitchen may not be open yet.
+ *
+ * Someone ordering at noon from a kitchen that opens at one is not waiting
+ * twenty minutes, they are waiting eighty, and quoting them the cooking time
+ * alone is a promise that breaks itself an hour before anybody starts cooking.
+ * So the closed stretch is counted, and it is counted from the moment the
+ * kitchen opens rather than from the moment they pressed send.
+ *
+ * The two halves are capped differently, on purpose.
+ *
+ * The hour cap exists because "about ninety-five minutes" is a number nobody
+ * believes or plans around — it is a queue estimate, and a queue estimate that
+ * long is really an admission that the kitchen does not know. Waiting for
+ * opening time is not that. "We open at one, yours will be ready about twenty
+ * past" is exact, it is checkable against the door, and a customer can plan
+ * their morning around it. Capping that at an hour would turn a precise
+ * statement into a wrong one.
+ *
+ * So: the kitchen's own part stays capped, and the wait for the doors is added
+ * on top whole.
+ *
+ * Takes the closed stretch as a number rather than reading the calendar
+ * itself. `minutesUntilOpen` lives with the opening hours, where that question
+ * belongs, and keeping it there is what lets this file go on importing nothing.
+ */
+export function waitIncludingOpening(kitchenMinutes: number, closedMinutes = 0): number {
+  return Math.max(0, Math.round(closedMinutes))
+    + Math.min(MAX_ETA_MINUTES, Math.max(1, Math.round(kitchenMinutes)));
+}
+
+/**
+ * What to put in front of this order's customer.
+ *
+ * The cap is applied on the way out as well as on the way in, which is right
+ * for an ordinary order and wrong for one placed before opening: that figure
+ * legitimately runs past an hour, and clamping it here would quietly turn
+ * eighty minutes back into sixty on the very screen the customer reads.
+ *
+ * Null when there is no estimate at all, so a caller can leave the line out
+ * rather than print a made-up number.
+ */
+export function quotedWait(order: {
+  eta_minutes?: number;
+  placed_while_closed?: boolean;
+}): number | null {
+  if (!order.eta_minutes || order.eta_minutes <= 0) return null;
+  return order.placed_while_closed
+    ? Math.round(order.eta_minutes)
+    : shownEta(order.eta_minutes);
+}
+
+/**
+ * A wait, in words somebody reads once and acts on.
+ *
+ * "80 minutes" is arithmetic homework; "1 hour 20 minutes" is a time you can
+ * hold in your head against the clock on the wall. Only matters now that a
+ * wait can run past an hour at all, which before this it could not.
+ */
+export function formatWait(minutes: number): string {
+  const total = Math.max(0, Math.round(minutes));
+  if (total < 60) return `${total} minute${total === 1 ? '' : 's'}`;
+  const hours = Math.floor(total / 60);
+  const rest = total % 60;
+  const hourPart = `${hours} hour${hours === 1 ? '' : 's'}`;
+  return rest === 0 ? hourPart : `${hourPart} ${rest} minute${rest === 1 ? '' : 's'}`;
+}

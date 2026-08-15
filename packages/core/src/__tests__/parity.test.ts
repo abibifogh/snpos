@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { splitSale, rateFor, flatFor } from '../consignment-math.ts';
 import { computeTotals } from '../pricing.ts';
-import { estimateMinutes, queueMinutes } from '../orders-time.ts';
+import { estimateMinutes, queueMinutes, waitIncludingOpening } from '../orders-time.ts';
+import { minutesUntilOpen, parseWindows } from '../availability.ts';
 import * as guard from '../../../../functions/order-guard/src/money.js';
 import type { CartLine } from '../pricing.ts';
 
@@ -130,4 +131,38 @@ test('neither side ever quotes past the cap', () => {
   assert.equal(estimateMinutes([line(0, 1, 500)], 900), 60);
   assert.equal(guard.quotedWait(500, 900), 60);
   assert.equal(guard.MAX_ETA_MINUTES, 60);
+});
+
+test('both sides agree on how long until the kitchen opens', () => {
+  /**
+   * The guard recomputes the quoted wait a moment after an order lands. If its
+   * copy of this disagreed with the browser's, an order placed before opening
+   * would be quoted eighty minutes at the door and silently rewritten to
+   * twenty a second later — leaving the customer's screen, the kitchen ticket
+   * and the promise all saying different things about the same order.
+   */
+  const hours = {
+    mon: [['13:00', '22:00']], tue: [['13:00', '22:00']], wed: [['13:00', '22:00']],
+    thu: [['13:00', '22:00']], fri: [['13:00', '22:00']], sat: [['13:00', '22:00']],
+    sun: [['13:00', '22:00']],
+  };
+  const raw = JSON.stringify(hours);
+
+  for (const [h, m] of [[12, 0], [9, 30], [13, 1], [21, 59], [22, 0], [23, 45]]) {
+    const at = new Date(2026, 7, 12, h, m, 0, 0);
+    assert.equal(
+      minutesUntilOpen(parseWindows(raw), at),
+      guard.minutesUntilOpen(guard.parseWindows(raw), at),
+      `disagreed at ${h}:${m}`,
+    );
+    assert.equal(
+      waitIncludingOpening(20, minutesUntilOpen(parseWindows(raw), at)),
+      guard.waitIncludingOpening(20, 0, guard.parseWindows(raw), at),
+      `total disagreed at ${h}:${m}`,
+    );
+  }
+
+  // No hours configured means open, on both sides, and never "closed for ever".
+  assert.equal(minutesUntilOpen(parseWindows(undefined)), 0);
+  assert.equal(guard.minutesUntilOpen(guard.parseWindows(undefined)), 0);
 });

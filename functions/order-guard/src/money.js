@@ -110,3 +110,72 @@ export function queueMinutes(pending, now = Date.now()) {
 export function quotedWait(prepTotal, queueAhead) {
   return Math.min(MAX_ETA_MINUTES, Math.max(1, Math.round(prepTotal + queueAhead)));
 }
+
+/**
+ * Is the venue open at this moment? Mirrors isAvailable in core's availability.
+ *
+ * No rule means always open, which is the right default for a place that has
+ * not configured hours.
+ */
+const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const hhmm = (s) => {
+  const [h, m] = String(s).split(':').map(Number);
+  return h * 60 + (m || 0);
+};
+
+export function parseWindows(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && Object.keys(parsed).length ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isOpenAt(windows, at) {
+  if (!windows) return true;
+  const ranges = windows[DAYS[at.getDay()]];
+  if (!ranges || ranges.length === 0) return false;
+  const now = at.getHours() * 60 + at.getMinutes();
+  return ranges.some(([from, to]) => {
+    const start = hhmm(from);
+    const end = hhmm(to);
+    return end <= start ? now >= start || now < end : now >= start && now < end;
+  });
+}
+
+/**
+ * Minutes until the kitchen next opens. Mirrors minutesUntilOpen in core.
+ *
+ * The guard has to know this or it undoes it. It recomputes the quoted wait a
+ * moment after an order lands, from the real queue, and a recomputation that
+ * knows nothing about opening time would take an eighty minute quote given to
+ * somebody ordering before the doors opened and quietly put it back to twenty
+ * — leaving the customer's screen, the ticket and the promise all disagreeing.
+ */
+export function minutesUntilOpen(windows, at = new Date()) {
+  if (!windows || isOpenAt(windows, at)) return 0;
+  const cursor = new Date(at);
+  for (let d = 0; d <= 7; d++) {
+    const ranges = [...(windows[DAYS[cursor.getDay()]] ?? [])].sort();
+    for (const [start] of ranges) {
+      const candidate = new Date(cursor);
+      const [h, m] = String(start).split(':').map(Number);
+      candidate.setHours(h, m || 0, 0, 0);
+      if (candidate > at) return Math.max(0, Math.round((candidate - at) / 60000));
+    }
+    cursor.setDate(cursor.getDate() + 1);
+    cursor.setHours(0, 0, 0, 0);
+  }
+  return 0;
+}
+
+/**
+ * The whole wait, with the closed stretch on top. Mirrors
+ * waitIncludingOpening in core: the kitchen's own part stays capped, the wait
+ * for the doors is added whole.
+ */
+export function waitIncludingOpening(prepTotal, queueAhead, windows, at = new Date()) {
+  return minutesUntilOpen(windows, at) + quotedWait(prepTotal, queueAhead);
+}

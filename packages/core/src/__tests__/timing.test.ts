@@ -4,7 +4,9 @@ import {
   cookMinutes, estimateMinutes, queueMinutes, dueMinutes, shownEta,
   cancelWindowLeft, CANCEL_WINDOW_MS, MAX_ETA_MINUTES, ticketLines, LINES_GRACE_MS, isOverdue, minutesOver,
   linesComplete, addonNames, addonsUnreadable,
+  waitIncludingOpening, quotedWait, formatWait,
 } from '../orders-time.ts';
+import { minutesUntilOpen, type Windows } from '../availability.ts';
 import { byStaff, totalHandedOver } from '../handover-math.ts';
 
 test('cooking time adds the dishes rather than taking the longest', () => {
@@ -359,4 +361,86 @@ test('options stored as bare strings still read', () => {
   assert.deepEqual(addonNames('["No onions","Mild"]'), ['No onions', 'Mild']);
   // A mixed list keeps what it can rather than throwing all of it away.
   assert.deepEqual(addonNames('["Mild",{"name":"Extra chicken"},{}]'), ['Mild', 'Extra chicken']);
+});
+
+/* ----------------------------------------- ordering before the kitchen opens */
+
+/** Open 13:00–22:00 every day. */
+const HOURS = {
+  mon: [['13:00', '22:00']], tue: [['13:00', '22:00']], wed: [['13:00', '22:00']],
+  thu: [['13:00', '22:00']], fri: [['13:00', '22:00']], sat: [['13:00', '22:00']],
+  sun: [['13:00', '22:00']],
+} as unknown as Windows;
+
+/** Local noon on a Wednesday. Built from parts so it is the venue's noon. */
+const noon = () => { const d = new Date(2026, 7, 12, 12, 0, 0, 0); return d; };
+
+test('a wait that starts before opening counts from the door', () => {
+  /**
+   * The case in the owner's words: order at noon, twenty minutes of cooking, a
+   * kitchen that opens at one. The honest answer is an hour and twenty, not
+   * twenty — quoting the cooking time alone makes a promise that breaks itself
+   * a full hour before anybody starts cooking.
+   */
+  assert.equal(minutesUntilOpen(HOURS, noon()), 60);
+  assert.equal(waitIncludingOpening(20, minutesUntilOpen(HOURS, noon())), 80);
+  assert.equal(formatWait(80), '1 hour 20 minutes');
+});
+
+test('the hour cap holds the queue back and lets the doors through', () => {
+  /**
+   * Two different kinds of number sharing one field. Sixty minutes is the
+   * point past which a QUEUE estimate stops being something a person believes
+   * or plans around. "We open at one, yours is ready about twenty past" is not
+   * a guess — it is checkable against the door — so capping it would turn a
+   * precise statement into a wrong one.
+   */
+  // Kitchen part alone is still clamped, however far behind the pass is.
+  assert.equal(waitIncludingOpening(500, minutesUntilOpen(null, noon())), MAX_ETA_MINUTES);
+  // And clamped inside the total, rather than the total being clamped.
+  assert.equal(waitIncludingOpening(500, minutesUntilOpen(HOURS, noon())), 60 + MAX_ETA_MINUTES);
+});
+
+test('an open kitchen is unaffected, and a venue with no hours is always open', () => {
+  const evening = new Date(2026, 7, 12, 19, 0, 0, 0);
+  assert.equal(minutesUntilOpen(HOURS, evening), 0);
+  assert.equal(waitIncludingOpening(20, minutesUntilOpen(HOURS, evening)), 20);
+  // No rule at all must not read as "closed for ever" — it is the default for
+  // a place that has configured nothing, and it means open.
+  assert.equal(minutesUntilOpen(null, noon()), 0);
+  assert.equal(waitIncludingOpening(20, minutesUntilOpen(null, noon())), 20);
+});
+
+test('what the customer is shown is capped only when the kitchen was open', () => {
+  // The ordinary order: the cap still applies on the way out.
+  assert.equal(quotedWait({ eta_minutes: 95 }), MAX_ETA_MINUTES);
+  // The one placed before opening keeps its real figure.
+  assert.equal(quotedWait({ eta_minutes: 80, placed_while_closed: true }), 80);
+  // Nothing to say is said as nothing, not as a made-up number.
+  assert.equal(quotedWait({}), null);
+  assert.equal(quotedWait({ eta_minutes: 0, placed_while_closed: true }), null);
+});
+
+test('a wait is read once, not worked out', () => {
+  assert.equal(formatWait(1), '1 minute');
+  assert.equal(formatWait(45), '45 minutes');
+  assert.equal(formatWait(60), '1 hour');
+  assert.equal(formatWait(61), '1 hour 1 minute');
+  assert.equal(formatWait(125), '2 hours 5 minutes');
+});
+
+test('a ticket placed before opening is not late until its promise breaks', () => {
+  /**
+   * The ticket side of the same rule. dueMinutes reads the quoted wait, so an
+   * order placed at noon with eighty minutes on it goes late at 13:20 — not at
+   * 12:20, which is what timing it by the cooking alone would have done, an
+   * hour before the kitchen even opened.
+   */
+  const order = { eta_minutes: 80, status: 'ACCEPTED', $createdAt: noon().toISOString() };
+  assert.equal(dueMinutes(order), 80);
+
+  const at = (mins: number) => noon().getTime() + mins * 60_000;
+  assert.equal(isOverdue(order, 80, at(20)), false, 'not late while the kitchen is still shut');
+  assert.equal(isOverdue(order, 80, at(79)), false, 'not late a minute before it is due');
+  assert.equal(isOverdue(order, 80, at(81)), true, 'late once the promise passes');
 });

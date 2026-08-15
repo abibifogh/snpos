@@ -1,5 +1,8 @@
 import { Client, Databases, Query } from 'node-appwrite';
-import { totalsFor, rateFor, flatFor, splitSale, queueMinutes, quotedWait } from './money.js';
+import {
+  totalsFor, rateFor, flatFor, splitSale, queueMinutes, quotedWait,
+  parseWindows, waitIncludingOpening,
+} from './money.js';
 
 /**
  * Re-prices every new order against the database.
@@ -687,6 +690,17 @@ export default async ({ req, res, log, error }) => {
      */
     let eta = order.eta_minutes;
     if (order.status !== 'SCHEDULED' && !order.is_preorder && prepTotal > 0) {
+      /*
+        The kitchen may not be open yet.
+
+        Somebody ordering at noon from a kitchen that opens at one is waiting
+        for the doors before they are waiting for a cook, and this recomputation
+        used to know nothing about that — so it took the eighty minutes the
+        customer was quoted at the door and quietly put it back to twenty,
+        leaving their screen, the ticket and the promise all disagreeing.
+      */
+      const venue = await db.getDocument(DB_ID, 'venues', order.venue_id).catch(() => null);
+      const windows = parseWindows(venue?.opening_hours);
       const live = await db.listDocuments(DB_ID, 'orders', [
         Query.equal('venue_id', order.venue_id),
         Query.equal('status', ['PENDING', 'ACCEPTED', 'PREPARING']),
@@ -710,7 +724,7 @@ export default async ({ req, res, log, error }) => {
         const elapsed = Number.isFinite(started) ? Math.max(0, (now - started) / 60000) : 0;
         ahead += Math.max(0, work - elapsed);
       }
-      eta = Math.min(60, Math.max(1, Math.round(prepTotal + ahead)));
+      eta = waitIncludingOpening(prepTotal, ahead, windows);
     }
 
     // The cooking time on its own, from the menu rather than from the phone.

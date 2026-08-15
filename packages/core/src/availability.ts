@@ -63,3 +63,21 @@ export function nextAvailable(windows: Windows | null, from: Date = new Date(), 
 
 export const describeWindows = (w: Windows | null): string =>
   !w ? 'Always available' : DAYS.filter((d) => w[d]?.length).map((d) => d[0].toUpperCase() + d.slice(1)).join(', ') || 'Never';
+
+/**
+ * Minutes from now until this opens again. Zero when it already is open.
+ *
+ * Lives here rather than with the timing arithmetic because it is a question
+ * about a calendar, and because keeping it here lets `orders-time` go on
+ * importing nothing at all.
+ *
+ * No rule means always open, which is the right default for a place that has
+ * configured nothing, and the one answer that must never come back as "closed
+ * for ever".
+ */
+export function minutesUntilOpen(windows: Windows | null, at: Date = new Date()): number {
+  if (!windows || isAvailable(windows, at)) return 0;
+  const opens = nextAvailable(windows, at);
+  if (!opens) return 0;
+  return Math.max(0, Math.round((opens.getTime() - at.getTime()) / 60_000));
+}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@snpos/ui';
-import { shownEta } from '@snpos/core';
+import { quotedWait, formatWait } from '@snpos/core';
 
 /**
  * How long the thank-you stays before the menu comes back.
@@ -33,12 +33,15 @@ export const SCREEN_THANKS_MS = 20_000;
 export function ScreenThanks({
   orderNo,
   etaMinutes,
+  fromOpening,
   emailed,
   onDone,
 }: {
   orderNo: string;
   /** What the kitchen quoted, queue included. Absent when nothing was worked out. */
   etaMinutes?: number;
+  /** The wait runs from opening time, because the kitchen was shut. */
+  fromOpening?: boolean;
   /**
    * Whether a notice will actually reach this customer.
    *
@@ -70,7 +73,10 @@ export function ScreenThanks({
     return () => window.clearInterval(tick);
   }, [onDone]);
 
-  const eta = shownEta(etaMinutes);
+  // Not capped when it starts at the doors: see quotedWait. Sixty minutes
+  // is the point past which a QUEUE estimate stops being believable, and
+  // "we open at one" is not a queue estimate.
+  const eta = quotedWait({ eta_minutes: etaMinutes, placed_while_closed: fromOpening });
 
   return (
     <div className="centered screen-thanks">
@@ -92,8 +98,12 @@ export function ScreenThanks({
             said in words rather than left as a number to interpret. */}
         <p className="eta-big">
           {eta
-            ? <>It will be ready in about <strong>{eta} minutes</strong>.</>
+            ? <>It will be ready in about <strong>{formatWait(eta)}</strong>.</>
             : <>The kitchen has it now.</>}
+          {/* Why the number is what it is. Without this, somebody ordering
+              before the doors open reads "about 1 hour 20 minutes" and
+              assumes the screen is broken. */}
+          {eta && fromOpening ? ' That is counted from when the kitchen opens.' : ''}
           {/* Only where a message will genuinely arrive. Somebody told to
               expect an email stops watching the counter. */}
           {emailed && ' You will receive an email when it is ready.'}
