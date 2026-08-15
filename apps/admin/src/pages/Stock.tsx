@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { formatMoney, parseMoney, toInput, levelOf, saveDropping } from '@snpos/core';
-import type { Ingredient, Recipe, MenuItem, Doc } from '@snpos/core';
+import {
+  formatMoney, parseMoney, toInput, levelOf, saveDropping,
+  purchasesFor, priceHistory, priceMoveNote,
+} from '@snpos/core';
+import type { Ingredient, Recipe, MenuItem, Doc, Settings, PurchaseRow } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
 import { StockImport } from '../components/StockImport';
 import { useSession } from '../session';
@@ -45,6 +48,8 @@ export function StockPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  /** The ingredient whose purchase history is being read. */
+  const [historyFor, setHistoryFor] = useState<Ingredient | null>(null);
 
   const load = async () => {
     const [i, s, r, d] = await Promise.all([
@@ -295,6 +300,10 @@ export function StockPage() {
                           {run >= 3 && <div className="small dim">{run} shifts running</div>}
                         </td>
                         <td className="num">
+                          {/* Next to Edit, because "what has this been costing
+                              me" is a question somebody has while looking at
+                              the row, not one they go to another screen for. */}
+                          <Button size="sm" variant="ghost" onClick={() => setHistoryFor(i)}>Prices</Button>
                           <Button size="sm" variant="ghost" onClick={() => open(i)}>Edit</Button>
                           <Button size="sm" variant="ghost" onClick={() => archiveIngredient(i, !i.active)}>
                             {i.active ? 'Archive' : 'Use again'}
@@ -328,6 +337,14 @@ export function StockPage() {
           </div>
         )}
       </Card>
+      )}
+
+      {historyFor && settings && (
+        <PriceHistoryModal
+          ingredient={historyFor}
+          settings={settings}
+          onClose={() => setHistoryFor(null)}
+        />
       )}
 
       {importing && (
@@ -487,5 +504,140 @@ export function StockPage() {
         </Modal>
       )}
     </>
+  );
+}
+
+/**
+ * What one ingredient has cost, purchase by purchase.
+ *
+ * A margin is eaten quietly. Nobody announces that rice has gone up eleven
+ * percent since March — it arrives one delivery at a time, each unremarkable
+ * next to the last, and the first anybody knows is a bad month with no single
+ * cause to point at. Every purchase was already being recorded with what was
+ * paid for it; this is the reading of it.
+ *
+ * Newest first on screen, because "what did I pay last time" is the question
+ * somebody usually has, while the arithmetic underneath works oldest-first
+ * because that is the direction a price moves in.
+ */
+function PriceHistoryModal({
+  ingredient,
+  settings,
+  onClose,
+}: {
+  ingredient: Ingredient;
+  settings: Settings;
+  onClose: () => void;
+}) {
+  const [rows, setRows] = useState<PurchaseRow[] | null>(null);
+
+  useEffect(() => {
+    purchasesFor(ingredient.$id)
+      .then(setRows)
+      .catch(() => setRows([]));
+  }, [ingredient.$id]);
+
+  const history = useMemo(() => priceHistory(rows ?? []), [rows]);
+  const money = (n: number) => formatMoney(n, settings);
+  const note = priceMoveNote(history);
+
+  /**
+   * A bar per purchase, drawn against the dearest one.
+   *
+   * Not a line chart. Nine purchases at irregular intervals are not a time
+   * series, and drawing them as one implies the gaps are even and invites
+   * somebody to read a slope that is not there. Bars in the order they
+   * happened say the one true thing — this one cost more than that one —
+   * without claiming anything about the shape between them.
+   */
+  const peak = history.dearest ?? 0;
+
+  return (
+    <Modal title={`${ingredient.name} · what it has cost`} onClose={onClose} wide
+      footer={<Button onClick={onClose}>Close</Button>}>
+      {!rows ? (
+        <Spinner />
+      ) : history.points.length === 0 ? (
+        <Empty title="No purchases recorded yet">
+          Prices appear here once this is listed on an expense or received as a delivery. Recording what was paid
+          for each item on a market run is what fills this in.
+        </Empty>
+      ) : (
+        <>
+          <div className="grid-2" style={{ marginBottom: '0.9rem' }}>
+            <Card title="Last paid">
+              <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 650 }}>
+                {money(history.latest ?? 0)}
+              </p>
+              <span className="dim small">per {ingredient.unit}</span>
+            </Card>
+            <Card title="Average">
+              <p style={{ margin: 0, fontSize: '1.5rem', fontWeight: 650 }}>
+                {money(history.averageUnitCost ?? 0)}
+              </p>
+              {/* Weighted by quantity, and said so: five sacks at 100 and one
+                  at 200 is not an average of 150, and a recipe costed against
+                  the wrong one is wrong everywhere it is used. */}
+              <span className="dim small">per {ingredient.unit}, across everything bought</span>
+            </Card>
+          </div>
+
+          {note && (
+            <div style={{ marginBottom: '0.9rem' }}>
+              <Notice tone={(history.moveBp ?? 0) > 500 ? 'warn' : 'info'}>
+                <strong>{note}</strong>{' '}
+                Cheapest {money(history.cheapest ?? 0)}, dearest {money(history.dearest ?? 0)}.{' '}
+                {history.totalQty} {ingredient.unit} bought for {money(history.totalSpent)} in all.
+              </Notice>
+            </div>
+          )}
+
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th className="num">Quantity</th>
+                  <th className="num">Paid</th>
+                  <th className="num">Per {ingredient.unit}</th>
+                  <th>Against the one before</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...history.points].reverse().map((p, i) => (
+                  <tr key={`${p.at}-${i}`}>
+                    <td className="dim small">{new Date(p.at).toLocaleDateString()}</td>
+                    <td className="num">{p.qty} {ingredient.unit}</td>
+                    <td className="num">{money(p.total)}</td>
+                    <td className="num" style={{ fontWeight: 600 }}>{money(p.unitCost)}</td>
+                    <td>
+                      <div className="row" style={{ gap: '0.5rem', alignItems: 'center' }}>
+                        <span
+                          aria-hidden
+                          style={{
+                            display: 'inline-block', height: '9px', borderRadius: '3px',
+                            width: `${peak > 0 ? Math.max(3, (p.unitCost / peak) * 90) : 0}%`,
+                            background: p.changeBp === null
+                              ? 'var(--border)'
+                              : p.changeBp > 0 ? 'var(--warn)' : 'var(--ok, #3f8f5f)',
+                          }}
+                        />
+                        <span className="small dim" style={{ whiteSpace: 'nowrap' }}>
+                          {p.changeBp === null
+                            ? 'first one'
+                            : p.changeBp === 0
+                              ? 'same'
+                              : `${p.changeBp > 0 ? '+' : '−'}${(Math.abs(p.changeBp) / 100).toFixed(0)}%`}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </Modal>
   );
 }

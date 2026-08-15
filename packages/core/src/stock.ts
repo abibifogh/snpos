@@ -1,4 +1,5 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
+import type { PurchaseRow } from './price-history';
 import type { Doc } from './types';
 import type { OrderItem } from './orders';
 
@@ -454,4 +455,38 @@ export async function stockCheckRows(venueId: string): Promise<StockCheckRow[]> 
       group: i.category ? label.get(i.category) ?? i.category : '',
       guide: i.check_guide?.trim() || undefined,
     }));
+}
+
+/**
+ * Every purchase of one ingredient, newest first from the database's point of
+ * view and re-sorted by `priceHistory` into the order a price moves in.
+ *
+ * Read from stock movements rather than from expense lines, because those are
+ * not the only way stock arrives at a price: a delivery received directly, a
+ * correction, an opening balance. The question is "what has this cost me", and
+ * answering it from one of the two routes would quietly leave out the other.
+ */
+export async function purchasesFor(ingredientId: string, limit = 200): Promise<PurchaseRow[]> {
+  const rows = await listAll<{
+    $createdAt: string;
+    qty_delta: number;
+    unit_cost: number;
+    ref_type?: string;
+    ref_id?: string;
+    note?: string;
+  }>('stock_movements', [
+    Query.equal('ingredient_id', ingredientId),
+    Query.equal('type', 'purchase'),
+    Query.orderDesc('$createdAt'),
+    Query.limit(limit),
+  ]).catch(() => []);
+
+  return rows.map((r) => ({
+    at: r.$createdAt,
+    qty: r.qty_delta,
+    unitCost: r.unit_cost,
+    refType: r.ref_type,
+    refId: r.ref_id,
+    note: r.note,
+  }));
 }

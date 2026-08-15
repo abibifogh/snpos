@@ -50,10 +50,34 @@ interface Staff extends Doc { display_name: string; active: boolean }
 interface AccountRow extends Doc { code: string; name: string; type: string; active?: boolean }
 
 /** A line being entered, before it becomes an expense_item. */
+/**
+ * The price per unit, worked back from what was paid.
+ *
+ * Shared shape with the kitchen screen's form, and the same arithmetic, so the
+ * same market run entered from either device produces the same unit cost. A
+ * recipe costs a portion of rice; nobody types that figure because it is a
+ * division, and a division done under time pressure is a mistake waiting.
+ */
+export function unitCostOf(d: { qtyText: string; totalText: string }, decimals: number): number {
+  const qty = Number(d.qtyText);
+  const total = parseMoney(d.totalText, decimals) ?? 0;
+  return qty > 0 ? Math.round(total / qty) : 0;
+}
+
 interface DraftItem {
   ingredient_id: string;
   qtyText: string;
-  costText: string;
+  /**
+   * What was PAID for this line, not the price per unit.
+   *
+   * The same question the kitchen screen asks, and for the same reason: a
+   * market receipt says "five kilos of rice, a hundred and twenty", and asking
+   * for the price per kilo asks somebody to do a division in their head and
+   * type the answer — which is how a hundred and twenty cedis of rice gets
+   * recorded as six hundred. The unit price is shown as it is worked out, so
+   * the figure stock keeps is visible without anybody calculating it.
+   */
+  totalText: string;
 }
 
 /** Receipts may be photographed or scanned, so accept images and PDFs. */
@@ -202,22 +226,32 @@ export function ExpensesPage() {
   }, [impliedCategory]);
 
   /** What the itemised lines add up to, for comparing against the total paid. */
+  /** Lines with an item and a quantity: the ones that count towards the total. */
+  const lineCount = draftItems.filter((d) => d.ingredient_id && Number(d.qtyText) > 0).length;
+
   const draftTotal = draftItems.reduce((sum, d) => {
     const qty = Number(d.qtyText || 0);
-    const cost = parseMoney(d.costText, decimals) ?? 0;
+    const cost = unitCostOf(d, decimals);
     return sum + Math.round(qty * cost);
   }, 0);
 
   const save = async () => {
-    const amount = parseMoney(amountText, decimals);
-    if (amount === null || amount <= 0) { setError('Enter the amount spent, for example 45.00'); return; }
+    // Listed items decide the total; the box is only for spending with nothing
+    // to itemise, a taxi or a gas refill.
+    const amount = lineCount > 0 ? draftTotal : parseMoney(amountText, decimals);
+    if (amount === null || amount <= 0) {
+      setError(lineCount > 0
+        ? 'The items come to nothing. Enter what was paid for each.'
+        : 'Enter the amount spent, for example 45.00');
+      return;
+    }
     if (!editing?.paid_from_method_id) { setError('Choose how it was paid.'); return; }
     if (!editing.category_key) { setError('Choose a category.'); return; }
 
     const filled = draftItems.filter((d) => d.ingredient_id && Number(d.qtyText) > 0);
     for (const d of filled) {
-      if (parseMoney(d.costText, decimals) === null) {
-        setError('One of the stock lines does not have a valid unit cost.');
+      if (parseMoney(d.totalText, decimals) === null) {
+        setError('One of the stock lines does not say what was paid for it.');
         return;
       }
     }
@@ -291,7 +325,8 @@ export function ExpensesPage() {
         const ing = ingredients.find((i) => i.$id === d.ingredient_id);
         if (!ing) continue;
         const qty = Number(d.qtyText);
-        const unitCost = parseMoney(d.costText, decimals) ?? ing.base_unit_cost;
+        // Worked out from what was paid rather than typed. See unitCostOf.
+        const unitCost = unitCostOf(d, decimals) || ing.base_unit_cost;
         try {
           await db.createDocument(DB_ID, 'expense_items', ID.unique(), {
             expense_id: expenseId,
@@ -501,9 +536,26 @@ export function ExpensesPage() {
                 ))}
               </Select>
             </Field>
-            <Field label={`Amount (${settings?.currency_symbol ?? ''})`}>
+            {/*
+              Typed only when there is nothing to add up.
+
+              The same rule the kitchen screen follows. Once the lines are
+              listed the total is their sum, and offering a box beside them
+              invites two different answers to one question — the figure the
+              books use and the figure the items come to, differing by a typo
+              nobody notices until a month-end.
+            */}
+            <Field
+              label={`Amount (${settings?.currency_symbol ?? ''})`}
+              hidden={lineCount > 0}
+            >
               <Input value={amountText} inputMode="decimal" autoFocus onChange={(e) => setAmountText(e.target.value)} />
             </Field>
+            {lineCount > 0 && (
+              <Field label={`Amount (${settings?.currency_symbol ?? ''})`} hint="Added up from the items below.">
+                <Input value={toInput(draftTotal, decimals)} disabled />
+              </Field>
+            )}
             <Field label="Paid to" hint="Not every purchase has a supplier behind it.">
               <Select
                 value={editing.paid_to_kind ?? 'supplier'}
@@ -727,7 +779,7 @@ function StockLines({
               <tr>
                 <th>Ingredient</th>
                 <th style={{ width: '6.5rem' }}>Quantity</th>
-                <th style={{ width: '8rem' }}>Cost per unit ({symbol})</th>
+                <th style={{ width: '9rem' }}>Total paid ({symbol})</th>
                 <th style={{ width: '2.5rem' }} />
               </tr>
             </thead>
@@ -735,14 +787,14 @@ function StockLines({
               {draft.map((d, i) => (
                 <tr key={i}>
                   <td>
-                    <Select value={d.ingredient_id} onChange={(e) => {
-                      const ing = ingredients.find((x) => x.$id === e.target.value);
-                      setLine(i, {
-                        ingredient_id: e.target.value,
-                        // Prefill what you last paid; overwrite it if the price moved.
-                        costText: ing ? toInput(ing.base_unit_cost, decimals) : d.costText,
-                      });
-                    }}>
+                    {/* Nothing is prefilled from the last price. What was paid
+                        this time is the one thing the person has in front of
+                        them, and a box that arrives with last month's figure in
+                        it is a box that gets left alone. */}
+                    <Select
+                      value={d.ingredient_id}
+                      onChange={(e) => setLine(i, { ingredient_id: e.target.value })}
+                    >
                       <option value="">Choose</option>
                       {ingredients.map((x) => <option key={x.$id} value={x.$id}>{x.name}</option>)}
                     </Select>
@@ -760,7 +812,19 @@ function StockLines({
                     </div>
                   </td>
                   <td>
-                    <Input value={d.costText} inputMode="decimal" onChange={(e) => setLine(i, { costText: e.target.value })} />
+                    <Input
+                      value={d.totalText}
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      onChange={(e) => setLine(i, { totalText: e.target.value })}
+                    />
+                    {/* Shown as it is worked out, never typed. The figure stock
+                        keeps is a portion of rice, not a trip to the market. */}
+                    {unitCostOf(d, decimals) > 0 && (
+                      <div className="small dim" style={{ marginTop: '0.2rem' }}>
+                        {money(unitCostOf(d, decimals))} per {unitOf(d.ingredient_id) || 'unit'}
+                      </div>
+                    )}
                   </td>
                   <td className="num">
                     <Button size="sm" variant="ghost" type="button" onClick={() => setDraft((x) => x.filter((_, idx) => idx !== i))}>
@@ -779,7 +843,7 @@ function StockLines({
           size="sm"
           type="button"
           disabled={ingredients.length === 0}
-          onClick={() => setDraft((d) => [...d, { ingredient_id: '', qtyText: '', costText: '' }])}
+          onClick={() => setDraft((d) => [...d, { ingredient_id: '', qtyText: '', totalText: '' }])}
         >
           Add stock item
         </Button>

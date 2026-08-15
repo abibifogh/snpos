@@ -32,3 +32,4 @@ export * from './seating';
 export * from './expense-rules';
 export * from './cost-accounts';
 export * from './expense-draft';
+export * from './price-history';
