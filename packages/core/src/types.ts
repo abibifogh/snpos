@@ -173,6 +173,8 @@ export interface StaffProfile extends Doc {
   can_close_shift: boolean;
   can_void: boolean;
   can_discount_up_to_bp: number;
+  /** May change what a LINE costs at the till. Never the menu price itself. */
+  can_change_line_price?: boolean;
   can_mark_paid?: boolean;
   can_apply_discount_codes?: boolean;
   pin_hash?: string;

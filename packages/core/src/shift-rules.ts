@@ -334,3 +334,34 @@ export function blockerFor(order: {
  */
 export const isLivePayment = (p: { status?: string }): boolean =>
   p.status !== 'voided' && p.status !== 'refunded';
+
+/**
+ * Why new business cannot be rung up, in words, or null when it can.
+ *
+ * `shiftAgeMessage` answers a narrower question than it looks like it does: it
+ * describes a shift that has been open too long, and returns an empty string
+ * for a shift that is fine. Which is correct, and became a bug the moment a
+ * caller used it for "can I sell right now" — with NO shift open at all there
+ * is no age to describe, so the answer was an empty string, and the till put
+ * an empty red box in the corner of the screen. A warning with no words in it
+ * is worse than no warning: something visibly went wrong and the person is
+ * given nothing to act on.
+ *
+ * So the two states are separated here. A shift that is too old has a message
+ * about closing it; no shift at all has a message about opening one.
+ */
+export function sellBlockedReason(
+  shift: { opened_at?: string; closed_at?: string } | null | undefined,
+  module: Module = 'kitchen',
+  now: Date = new Date(),
+  maxHours: number = SHIFT_MAX_HOURS,
+): string | null {
+  if (!shift?.opened_at || shift.closed_at) {
+    return module === 'craft'
+      ? 'No till session is open, so this sale has nowhere to be recorded. Open one from the shift button, then ring it up.'
+      : 'No shift is open, so this order has nowhere to be recorded. Open one from the shift button first.';
+  }
+  const age = shiftAge(shift.opened_at, now, maxHours);
+  if (!age.over) return null;
+  return shiftAgeMessage(age, maxHours, module);
+}

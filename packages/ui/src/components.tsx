@@ -266,6 +266,11 @@ export function ToastHost({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const push = useCallback((message: string, tone: 'ok' | 'err' = 'ok') => {
+    // A toast with nothing in it is worse than no toast: a box appears, the
+    // person knows something happened, and they are given nothing to act on.
+    // Caught here as well as at the call site, because there is no message a
+    // caller could pass that makes an empty one worth showing.
+    if (!message?.trim()) return;
     const id = Date.now() + Math.random();
     setToasts((t) => [...t, { id, message, tone }]);
     // Errors linger: they usually need reading, successes usually do not.

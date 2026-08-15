@@ -75,3 +75,64 @@
    contains rather than which one is showing. */
 .pos-side { margin-right: 0.9rem; border: 1px solid var(--brand); border-radius: 999px; }
 .pos-side button.on { background: var(--brand); color: var(--brand-ink); }
+
+/*
+  Craft tiles carry a picture.
+
+  Bigger cells than the kitchen's, because the picture is the thing being read
+  and a thumbnail the size of a stamp tells nobody which bowl this is. The
+  image is fixed-height and cropped rather than letting each one set its own,
+  so a grid of portrait and landscape photographs still lines up — a ragged
+  grid is slower to scan than no pictures at all.
+*/
+.menu-grid.with-pics { grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); }
+.menu-card { position: relative; overflow: hidden; }
+.menu-card.has-pic { padding: 0; display: flex; flex-direction: column; }
+.menu-card .pic {
+  width: 100%; height: 118px; object-fit: cover; display: block;
+  background: var(--surface-2); border-bottom: 1px solid var(--border);
+}
+.menu-card.has-pic .n { padding: 0.5rem 0.6rem 0; }
+.menu-card.has-pic .p { padding: 0 0.6rem 0.55rem; margin-top: 0.15rem; }
+
+/* Said in a word rather than left to the dimming alone: a greyed tile reads as
+   "still loading" as often as it reads as "gone". */
+.menu-card .soldout {
+  position: absolute; top: 0.4rem; right: 0.4rem;
+  background: var(--danger, #7a2620); color: #fff;
+  font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.35rem; border-radius: 5px;
+}
+
+/*
+  A cart line: what it is, how many, what it costs.
+
+  Three columns rather than a name with controls buried inside it. The middle
+  one is the stepper, and it is deliberately the same size as a till key —
+  changing a quantity is the commonest thing anybody does to a bill and it was
+  a 20px ghost button tucked after the name.
+*/
+.cart-line { align-items: center; gap: 0.5rem; }
+.cart-line .what { flex: 1; min-width: 0; }
+.cart-line .name { font-weight: 550; }
+
+.qty-step { display: flex; align-items: center; gap: 0; flex: none; }
+.qty-step button {
+  width: 34px; height: 34px; font-size: 1.15rem; line-height: 1;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
+  cursor: pointer; display: grid; place-items: center; font-family: inherit;
+}
+.qty-step button:first-child { border-radius: 7px 0 0 7px; }
+.qty-step button:last-child { border-radius: 0 7px 7px 0; }
+.qty-step button:active { background: var(--border); }
+.qty-step .n {
+  min-width: 30px; text-align: center; font-weight: 650; font-variant-numeric: tabular-nums;
+  border-block: 1px solid var(--border); align-self: stretch; display: grid; place-items: center;
+}
+
+.cart-line .line-price { flex: none; font-variant-numeric: tabular-nums; min-width: 4.5rem; text-align: right; }
+/* Underlined rather than made to look like a button: it is a figure first and
+   a control second, and a row of buttons down the bill would read as actions. */
+.cart-line .line-price.editable {
+  background: none; border: none; font: inherit; color: var(--text);
+  text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; padding: 0.2rem 0;
+}

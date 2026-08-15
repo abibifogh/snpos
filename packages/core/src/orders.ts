@@ -495,6 +495,11 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
         // whatever the rate happens to be the day somebody asks.
         variant_id: line.variant_id ?? '',
         variant_label: line.variant_label ?? '',
+        // Only present when the price was changed at the till. Absent means
+        // the line sold at the menu price, which is what the guard assumes.
+        ...(line.list_price !== undefined
+          ? { list_price: line.list_price, price_changed_by: line.price_changed_by ?? '' }
+          : {}),
         consignor_id: line.consignor_id ?? '',
         commission_bp: line.commission_bp ?? undefined,
         commission_flat: line.commission_flat ?? undefined,

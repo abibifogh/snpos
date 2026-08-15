@@ -4,6 +4,7 @@ import {
   db, DB_ID, Query, listAll, createOrder, computeTotals, lineTotal, formatMoney,
   parseMoney, toInput, isEnabled, featureConfig, visibleSections, recordPayment, asksForTip,
   variantPriceRange, shiftUsable, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, sharesFor, shouldWarnLateOrder,
+  sellBlockedReason, previewUrl,
 } from '@snpos/core';
 import type { CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, Settings } from '@snpos/core';
 import { OptionSheet } from './OptionSheet';
@@ -56,6 +57,16 @@ export function OrderView({
    * line is a line the customer has already been quoted.
    */
   const [pickingSize, setPickingSize] = useState<string | null>(null);
+  /**
+   * A cart line whose price is being changed at the counter.
+   *
+   * Granted per person, off for everybody until an admin says otherwise. The
+   * craft counter is where this actually matters: a piece with a chip in it, a
+   * maker's price for a friend, a display item going for less than a new one.
+   * A plate of jollof does not have that problem, which is why this is a
+   * permission and not a button everybody gets.
+   */
+  const [repricing, setRepricing] = useState<CartLine | null>(null);
   /** The dish whose choices are being asked for, and the size already picked. */
   const [pickingOptions, setPickingOptions] = useState<{ menuItemId: string; variantId?: string } | null>(null);
 
@@ -192,6 +203,11 @@ export function OrderView({
     });
   };
 
+  // Never inferred from the role. An admin who does not want their weekend
+  // cashier discounting stock by hand should be able to say so, and a role is
+  // too blunt an instrument for that.
+  const canChangePrice = !!ctx.profile?.can_change_line_price;
+
   const newTotals = computeTotals({ lines: cart, settings: ctx.settings });
 
   // What is already owed, plus whatever is being added right now.
@@ -218,8 +234,17 @@ export function OrderView({
     if (cart.length === 0) return;
     // Starting NEW business on a shift that should have closed a day ago is
     // the thing being stopped. What is already on it can still be settled.
-    if (ctx.module === 'craft' && !usable) {
-      onToast(shiftAgeMessage(age, SHIFT_MAX_HOURS, ctx.module), 'err');
+    /*
+      Two different reasons, and they used to share one message.
+
+      shiftAgeMessage describes a shift that has been open too long, and with
+      NO shift open there is no age to describe — so it returned an empty
+      string and the till put an empty red box in the corner of the screen.
+      Something visibly went wrong and the person was handed nothing to act on.
+    */
+    const blocked = sellBlockedReason(ctx.shift, ctx.module);
+    if (blocked) {
+      onToast(blocked, 'err');
       return;
     }
     setSending(true);
@@ -325,24 +350,53 @@ export function OrderView({
               </button>
             ))}
           </div>
-          <div className="menu-grid">
-            {(sections.find((s) => s.category.$id === sectionId)?.entries ?? []).map((entry) => (
-              <button
-                key={entry.item.$id}
-                className="menu-card"
-                disabled={entry.soldOut}
-                onClick={() => addItem(entry.item.$id)}
-              >
-                <div className="n">{entry.item.name}</div>
-                <div className="p">
-                  {/* With sizes there is no single price, and printing the
-                      product's own would be printing a number nothing sells
-                      for. The range is the honest answer at a glance. */}
-                  {priceLabel(entry, ctx.settings)}
-                  {entry.groups.length > 0 && ' ·opts'}
-                </div>
-              </button>
-            ))}
+          <div className={ctx.module === 'craft' ? 'menu-grid with-pics' : 'menu-grid'}>
+            {(sections.find((s) => s.category.$id === sectionId)?.entries ?? []).map((entry) => {
+              /*
+                A shop sells things that look like something.
+
+                On the kitchen side a name is enough — nobody serving needs a
+                photograph of jollof to find it. A craft counter is the other
+                way round: the stock is one-off pieces with names like "Bowl,
+                medium" that three different makers all use, and the thing
+                actually on the shelf is the only reliable way to tell them
+                apart. So the picture leads here and the name follows it.
+
+                Only where there is one. A grid of grey placeholder squares is
+                worse than a grid of names, so an item with no photograph keeps
+                the plain tile rather than being given an empty frame.
+              */
+              const img = ctx.module === 'craft'
+                ? previewUrl(entry.item.image_id, 'menu', ctx.settings, 240, 240)
+                : null;
+              return (
+                <button
+                  key={entry.item.$id}
+                  className={img ? 'menu-card has-pic' : 'menu-card'}
+                  disabled={entry.soldOut}
+                  onClick={() => addItem(entry.item.$id)}
+                >
+                  {img && (
+                    <img
+                      className="pic"
+                      src={img}
+                      alt=""
+                      loading="lazy"
+                      style={{ objectPosition: `${(entry.item.image_focal_x ?? 0.5) * 100}% ${(entry.item.image_focal_y ?? 0.5) * 100}%` }}
+                    />
+                  )}
+                  <div className="n">{entry.item.name}</div>
+                  <div className="p">
+                    {/* With sizes there is no single price, and printing the
+                        product's own would be printing a number nothing sells
+                        for. The range is the honest answer at a glance. */}
+                    {priceLabel(entry, ctx.settings)}
+                    {entry.groups.length > 0 && ' ·opts'}
+                  </div>
+                  {entry.soldOut && <span className="soldout">Sold</span>}
+                </button>
+              );
+            })}
           </div>
           <p className="small dim" style={{ marginTop: '0.8rem' }}>
             Items with options are added with their defaults. Change them from the bill, or take the order on the
@@ -371,29 +425,100 @@ export function OrderView({
               <>
                 <div className="small dim" style={{ margin: '0.5rem 0 0.2rem' }}>Not yet sent</div>
                 {cart.map((l) => (
-                  <div className="bill-line" key={l.key}>
-                    <span>
-                      {l.qty}× {l.name}
+                  <div className="bill-line cart-line" key={l.key}>
+                    <div className="what">
+                      <div className="name">{l.name}</div>
                       {/* Read back before it is sent. Somebody who mis-taps a
                           spice level should see it here, not hear about it
                           from the customer after the plate has gone out. */}
                       {l.addons.length > 0 && (
                         <div className="small dim">{l.addons.map((a) => a.name).join(', ')}</div>
                       )}
+                      {/* What it should have cost, kept beside what it is
+                          costing. A price changed at the counter is a decision
+                          somebody made, and it should be legible on the bill
+                          rather than only in a report a month later. */}
+                      {l.list_price !== undefined && l.list_price !== l.unit_price && (
+                        <div className="small" style={{ color: 'var(--warn)' }}>
+                          was {formatMoney(l.list_price, ctx.settings)} each
+                        </div>
+                      )}
+                    </div>
+
+                    {/*
+                      A stepper, not a lone minus.
+
+                      There was one ghost "−" tucked after the name, and it was
+                      the only way to change a quantity: adding a second of
+                      something meant going back to the grid and finding the
+                      tile again. Two big targets side by side, with the count
+                      between them, is what somebody standing at a counter with
+                      a queue reaches for — and on a touch screen a 44px target
+                      is the difference between one tap and three.
+                    */}
+                    <div className="qty-step">
                       <button
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => setCart((c) => c.flatMap((x) => (x.key === l.key ? (x.qty > 1 ? [{ ...x, qty: x.qty - 1 }] : []) : [x])))}
+                        type="button"
+                        aria-label={l.qty > 1 ? `One fewer ${l.name}` : `Remove ${l.name}`}
+                        onClick={() => setCart((c) => c.flatMap((x) => (
+                          x.key === l.key ? (x.qty > 1 ? [{ ...x, qty: x.qty - 1 }] : []) : [x]
+                        )))}
                       >
                         −
                       </button>
-                    </span>
-                    <span>{formatMoney(lineTotal(l), ctx.settings)}</span>
+                      <span className="n">{l.qty}</span>
+                      <button
+                        type="button"
+                        aria-label={`One more ${l.name}`}
+                        onClick={() => setCart((c) => c.map((x) => (
+                          x.key === l.key ? { ...x, qty: x.qty + 1 } : x
+                        )))}
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    {canChangePrice ? (
+                      <button
+                        type="button"
+                        className="line-price editable"
+                        onClick={() => setRepricing(l)}
+                        title="Change the price of this line"
+                      >
+                        {formatMoney(lineTotal(l), ctx.settings)}
+                      </button>
+                    ) : (
+                      <span className="line-price">{formatMoney(lineTotal(l), ctx.settings)}</span>
+                    )}
                   </div>
                 ))}
                 <div className="bill-total grand">
                   <span>{ctx.module === 'craft' ? 'To pay' : 'New items'}</span>
                   <span>{formatMoney(newTotals.total, ctx.settings)}</span>
                 </div>
+                {/*
+                  Reachable while the bill is being built, not only after.
+
+                  The discount button sat under the ALREADY-SENT total, which
+                  on the craft counter is a state that barely exists: a shop
+                  sale is rung up and paid for in one movement, so the cart is
+                  the normal case and the button was effectively unreachable at
+                  the moment somebody wanted it — standing at the counter,
+                  agreeing a price, before taking the money.
+                */}
+                {isEnabled(ctx.features, 'discounts') && (ctx.profile?.can_discount_up_to_bp ?? 0) > 0 && (
+                  <Button style={{ width: '100%', marginTop: '0.5rem' }} onClick={() => setShowDiscount(true)}>
+                    {discount > 0
+                      ? `Discount applied · −${formatMoney(discount, ctx.settings)}`
+                      : 'Apply discount'}
+                  </Button>
+                )}
+                {discount > 0 && (
+                  <div className="bill-total">
+                    <span className="dim">{discountLabel || 'Discount'}</span>
+                    <span>−{formatMoney(discount, ctx.settings)}</span>
+                  </div>
+                )}
                 <Button variant="primary" onClick={send} loading={sending} style={{ width: '100%', marginTop: '0.7rem' }}>
                   {/* A shop has no kitchen to send anything to. The one thing
                       that happens next at a counter is being charged, so the
@@ -417,7 +542,10 @@ export function OrderView({
                   <span>Total due</span>
                   <span>{formatMoney(Math.max(0, billTotal - discount), ctx.settings)}</span>
                 </div>
-                {isEnabled(ctx.features, 'discounts') && (
+                {/* Hidden rather than shown-and-refusing when this person has
+                    no discount allowance: a button that always says no is a
+                    button somebody presses every shift and learns to distrust. */}
+                {isEnabled(ctx.features, 'discounts') && (ctx.profile?.can_discount_up_to_bp ?? 0) > 0 && (
                   <Button style={{ width: '100%', marginTop: '0.6rem' }} onClick={() => setShowDiscount(true)}>
                     Apply discount
                   </Button>
@@ -473,6 +601,30 @@ export function OrderView({
           </Modal>
         );
       })()}
+
+      {repricing && (
+        <RepriceModal
+          line={repricing}
+          settings={ctx.settings}
+          by={ctx.profile?.$id ?? ''}
+          onClose={() => setRepricing(null)}
+          onSet={(unitPrice) => {
+            setCart((c) => c.map((x) => (x.key === repricing.key
+              ? {
+                ...x,
+                unit_price: unitPrice,
+                // What it SHOULD have cost, kept once and never overwritten by
+                // a second edit — otherwise changing the price twice would
+                // record the first new price as the shelf price, and the
+                // decision stops being readable.
+                list_price: x.list_price ?? x.unit_price,
+                price_changed_by: ctx.profile?.$id ?? '',
+              }
+              : x)));
+            setRepricing(null);
+          }}
+        />
+      )}
 
       {pickingOptions && (() => {
         const entry = ctx.menu.byId[pickingOptions.menuItemId];
@@ -1004,6 +1156,83 @@ function PaymentModal({
       )}
 
       {error && <Notice>{error}</Notice>}
+    </Modal>
+  );
+}
+
+/**
+ * Changing what one line costs, at the counter.
+ *
+ * The LINE, never the menu. An admin sets what a thing is worth and it stays
+ * set; a till that could rewrite it would make one customer's haggle follow
+ * every customer for the rest of the week. So this touches the sale in front
+ * of somebody and nothing else, and the shelf price stays on screen the whole
+ * time as the thing being departed from.
+ *
+ * Per unit rather than per line, because that is the number being argued about
+ * at the counter — "call it forty each" — and because a line total divided by
+ * three is arithmetic somebody has to do under a customer's eyes.
+ */
+function RepriceModal({
+  line, settings, by, onClose, onSet,
+}: {
+  line: CartLine;
+  settings: Settings;
+  by: string;
+  onClose: () => void;
+  onSet: (unitPrice: number) => void;
+}) {
+  const shelf = line.list_price ?? line.unit_price;
+  const [text, setText] = useState(toInput(line.unit_price, settings.currency_decimals ?? 2));
+  const [error, setError] = useState<string | null>(null);
+
+  const apply = () => {
+    const value = parseMoney(text, settings.currency_decimals ?? 2);
+    if (value === null || value < 0) { setError('Enter a price, or 0 to give it away.'); return; }
+    onSet(value);
+  };
+
+  const off = shelf - (parseMoney(text, settings.currency_decimals ?? 2) ?? shelf);
+
+  return (
+    <Modal
+      title={line.name}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          {/* Always available, even at the shelf price. Somebody who opened
+              this by mistake should be able to leave without hunting for the
+              difference between Cancel and Save. */}
+          <Button variant="primary" onClick={apply}>Use this price</Button>
+        </>
+      }
+    >
+      {error && <div style={{ marginBottom: '0.8rem' }}><Notice>{error}</Notice></div>}
+      <p className="small dim" style={{ marginTop: 0 }}>
+        This changes what the customer pays for this sale only. The price on the item stays{' '}
+        {formatMoney(shelf, settings)} for everybody else.
+      </p>
+      <Field label="Price each" hint={line.qty > 1 ? `${line.qty} of them` : undefined}>
+        <Input
+          value={text}
+          autoFocus
+          inputMode="decimal"
+          onChange={(e) => { setText(e.target.value); setError(null); }}
+          onFocus={(e) => e.currentTarget.select()}
+        />
+      </Field>
+      {off !== 0 && (
+        <p className="small" style={{ color: off > 0 ? 'var(--warn)' : undefined, margin: 0 }}>
+          {off > 0
+            ? `${formatMoney(off, settings)} under the shelf price, each.`
+            : `${formatMoney(-off, settings)} over the shelf price, each.`}
+          {' '}Recorded against your name.
+        </p>
+      )}
+      {/* Not decoration: the whole reason this is a permission rather than a
+          button is that somebody has to be answerable for it afterwards. */}
+      <input type="hidden" value={by} readOnly />
     </Modal>
   );
 }

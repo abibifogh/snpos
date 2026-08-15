@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit, mustWaitForNextShift, shouldWarnLateOrder,
   SHIFT_MAX_HOURS, SHIFT_WARN_HOURS,
-  shiftAgeOf, openShiftsFor, blockerFor, isLivePayment,
+  shiftAgeOf, openShiftsFor, blockerFor, isLivePayment, sellBlockedReason,
 } from '../shift-rules.ts';
 
 const at = (iso: string) => new Date(iso);
@@ -290,4 +290,32 @@ test('a voided payment is not money the business holds', () => {
   assert.equal(isLivePayment({ status: 'refunded' }), false);
   // Rows written before the field meant anything are real payments.
   assert.equal(isLivePayment({}), true);
+});
+
+test('a till that will not sell says which of the two reasons it is', () => {
+  /**
+   * A warning with no words in it is worse than no warning: a box appears in
+   * the corner, the person knows something went wrong, and they are handed
+   * nothing to act on. That is exactly what happened — shiftAgeMessage
+   * describes a shift that has been open too long, and with NO shift there is
+   * no age to describe, so it returned an empty string and the till showed an
+   * empty red box.
+   */
+  assert.match(sellBlockedReason(null, 'craft') ?? '', /No till session is open/);
+  assert.match(sellBlockedReason(undefined, 'kitchen') ?? '', /No shift is open/);
+  assert.match(sellBlockedReason({ opened_at: '' }, 'craft') ?? '', /No till session is open/);
+  // A shift that has been closed is not one you can sell on either.
+  assert.match(
+    sellBlockedReason({ opened_at: '2026-08-12T08:00:00Z', closed_at: '2026-08-12T20:00:00Z' }, 'craft') ?? '',
+    /No till session is open/,
+  );
+
+  // Open and fresh: nothing is wrong, so nothing is said.
+  const now = new Date('2026-08-12T12:00:00Z');
+  assert.equal(sellBlockedReason({ opened_at: '2026-08-12T08:00:00Z' }, 'craft', now), null);
+
+  // Open too long: the old message, which was always the right one for this.
+  const stale = sellBlockedReason({ opened_at: '2026-08-10T08:00:00Z' }, 'craft', now);
+  assert.match(stale ?? '', /Nothing new can be sold on it/);
+  assert.notEqual(stale, '');
 });

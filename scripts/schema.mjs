@@ -870,6 +870,24 @@ export const COLLECTIONS = [
       // last year. The line has to carry its own terms.
       ['variant_id', 's', 64, false],
       ['variant_label', 's', 60, false],
+      /**
+       * What this line would have cost at the menu price.
+       *
+       * Set only when somebody with permission changed the price at the till.
+       * Two jobs, and the second is the important one.
+       *
+       * It is the record: a line sold under is a decision somebody made, and
+       * "sold for 40 instead of 55" is a sentence a report can produce a month
+       * later, which "sold for 40" is not.
+       *
+       * And it is the flag order-guard reads. The guard reprices every line
+       * from the menu a moment after an order lands, which is what stops a
+       * customer's phone sending its own prices — and would otherwise undo a
+       * legitimate override a second after the till applied it. A line with
+       * this set is left at what the till said.
+       */
+      ['list_price', 'i', null, false],
+      ['price_changed_by', 's', 64, false],
       ['consignor_id', 's', 64, false],
       ['commission_bp', 'i', null, false],
       // The flat per-piece commission agreed for this line, when that is what
@@ -1657,6 +1675,23 @@ export const COLLECTIONS = [
       ['can_discount_up_to_bp', 'i', null, true, 0],
       ['can_mark_paid', 'b', null, false, true],
       ['can_apply_discount_codes', 'b', null, false, true],
+      /**
+       * May change what a LINE costs, at the till, before it is sent.
+       *
+       * Not the menu price — that stays where an admin set it, and a till that
+       * could rewrite it would have one person's haggle follow every customer
+       * for the rest of the week. This is the craft counter's real problem: a
+       * piece with a chip in it, a maker's own price for a friend, a display
+       * item going for less than a new one. The price on the shelf is a
+       * starting point there in a way it never is for a plate of jollof.
+       *
+       * Off for everybody until an admin grants it, and every overridden line
+       * carries what it should have cost so the difference can be read back.
+       *
+       * Optional, for the reason set out on menu_items: a field that arrives
+       * after the rows do can never be required.
+       */
+      ['can_change_line_price', 'b', null, false, false],
       ['can_record_waste', 'b', null, false, true],
       ['hourly_rate', 'i', null, false], // feature 4: labour cost
       // Getting somebody their first sign-in.

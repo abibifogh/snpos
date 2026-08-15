@@ -155,6 +155,7 @@ export function StaffPage() {
         can_void: editing.can_void ?? false,
         can_discount_up_to_bp: Number(editing.can_discount_up_to_bp ?? 0),
         can_mark_paid: editing.can_mark_paid ?? true,
+        can_change_line_price: editing.can_change_line_price ?? false,
         can_record_waste: editing.can_record_waste ?? true,
         venue_ids: editing.venue_ids ?? [],
         ...(pin ? { pin_hash: await encodePin(pin), pin_set_at: new Date().toISOString() } : {}),
@@ -428,6 +429,13 @@ export function StaffPage() {
             />
           </Field>
           <Field><Toggle checked={editing.can_void ?? false} onChange={(v) => setEditing({ ...editing, can_void: v })} label="Void an order" /></Field>
+          <Field hint="For the shop counter: a chipped piece, a display item, a maker's price for a friend. It changes that sale only, never the price on the item, and every changed line records what it should have cost and who changed it.">
+            <Toggle
+              checked={editing.can_change_line_price ?? false}
+              onChange={(v) => setEditing({ ...editing, can_change_line_price: v })}
+              label="Change a price on the till"
+            />
+          </Field>
           <Field><Toggle checked={editing.can_record_waste ?? true} onChange={(v) => setEditing({ ...editing, can_record_waste: v })} label="Record waste" /></Field>
 
           <Field label="Discount they can give without a manager (%)" hint="0 means every discount needs approval.">

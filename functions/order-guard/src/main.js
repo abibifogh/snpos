@@ -617,6 +617,25 @@ export default async ({ req, res, log, error }) => {
       // one pan, and multiplying produces a number nobody believes.
       prepTotal += menuItem.prep_minutes ?? 15;
 
+      /*
+        A price somebody with permission changed at the till stands.
+
+        This repricing exists because a customer's phone sends its own
+        figures and must never be trusted. A member of staff standing at the
+        counter is not that: a chipped piece, a maker's price for a friend, a
+        display item going for less than a new one. Without this the guard
+        would quietly put the line back to the shelf price a second after the
+        sale, and the till would appear to forget what it had just been told.
+
+        `list_price` is only ever set by the till, which checks the permission
+        first, and it carries what the line SHOULD have cost, so the decision
+        stays readable afterwards.
+      */
+      if (typeof item.list_price === 'number') {
+        subtotal += item.line_total;
+        continue;
+      }
+
       const base = overrideFor.get(item.menu_item_id)?.price_override ?? menuItem.price;
 
       // Add-ons are priced from the database too, not from what was sent.

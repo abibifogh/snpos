@@ -37,6 +37,14 @@ export interface CartLine {
   // without the till having to look anything up at the moment of payment.
   variant_id?: string;
   variant_label?: string;
+  /**
+   * What this line would have cost at the menu price, when somebody with
+   * permission changed it at the till. See the schema note on `list_price`:
+   * it is both the record of a decision and the flag that stops order-guard
+   * repricing the line back a second after the sale.
+   */
+  list_price?: number;
+  price_changed_by?: string;
   consignor_id?: string;
   commission_bp?: number;
   commission_flat?: number;
