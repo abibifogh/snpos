@@ -5,6 +5,7 @@ import {
   PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions, receiveStock, uploadFile,
   expenseMethods, recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
   fromTakings, postExpense, accountForExpense,
+  expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
 } from '@snpos/core';
 import type {
   PaymentMethod, Settings, StaffProfile, PaidToKind, Supplier, ExpenseCategoryDoc, Ingredient,
@@ -52,13 +53,26 @@ const CANNOT_STORE_SOURCE =
  * which screen it was entered from.
  */
 export function ExpenseModal({
-  module, venueId, shiftId, settings, userId, expense, onClose, onDone,
+  module, venueId, shiftId, settings, userId, expense, askPaidFrom = true, onClose, onDone,
 }: {
   module: Module;
   venueId: string;
   shiftId: string;
   settings: Settings;
   userId: string;
+  /**
+   * Whether to ask which drawer the money came out of.
+   *
+   * Off on the kitchen screen. A cook pays for a market run out of the cash in
+   * front of them and out of nothing else, so the question has one answer, and
+   * a field with one answer in the middle of a form is a thing people stop
+   * reading — which is how the field below it stops being read too. The value
+   * is still recorded; it is simply not asked for.
+   *
+   * On at the till and in the admin form, where somebody genuinely may have
+   * paid a supplier by transfer.
+   */
+  askPaidFrom?: boolean;
   /**
    * An expense already recorded, being corrected.
    *
@@ -116,8 +130,81 @@ export function ExpenseModal({
   const [receipt, setReceipt] = useState<{ file: File; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Set when this form opened onto work somebody had already started. */
+  const [restored, setRestored] = useState(false);
 
   const decimals = settings.currency_decimals ?? 2;
+
+  /**
+   * Where a half-typed spend is kept while somebody deals with an order.
+   *
+   * Only for a NEW expense. A correction is opened from a row that already
+   * exists and already holds the answers, so there is nothing to recover and
+   * restoring over it would replace a real record's figures with a stale draft.
+   */
+  const draftKey = expenseDraftKey(venueId, shiftId, userId);
+  const store = typeof window === 'undefined' ? null : window.localStorage;
+
+  useEffect(() => {
+    if (editing) return;
+    const draft = readExpenseDraft(store, draftKey);
+    if (!draft) return;
+    if (draft.categoryKey) setCategoryKey(draft.categoryKey);
+    if (draft.methodId) setMethodId(draft.methodId);
+    if (draft.amountText !== undefined) setAmountText(draft.amountText);
+    if (draft.paidToKind) setPaidToKind(draft.paidToKind as PaidToKind);
+    if (draft.supplierId !== undefined) setSupplierId(draft.supplierId);
+    if (draft.staffId !== undefined) setStaffId(draft.staffId);
+    if (draft.payee !== undefined) setPayee(draft.payee);
+    if (draft.noteText !== undefined) setNoteText(draft.noteText);
+    if (draft.fromDrawer !== undefined) setFromDrawer(draft.fromDrawer);
+    if (draft.lines?.length) setLines(draft.lines);
+    setRestored(true);
+    // Opening is the only moment this runs. Re-reading on every keystroke would
+    // fight the person typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /**
+   * Written on every change rather than on the way out.
+   *
+   * A modal has more exits than it has buttons: the ✕, Escape, the tab being
+   * closed, the tablet going to sleep, the browser deciding to reload a page it
+   * has been sitting on all evening. Saving on close covers one of those.
+   */
+  useEffect(() => {
+    if (editing) return;
+    saveExpenseDraft(store, draftKey, {
+      categoryKey, methodId, amountText, paidToKind, supplierId, staffId,
+      payee, noteText, fromDrawer, lines,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryKey, methodId, amountText, paidToKind, supplierId, staffId, payee, noteText, fromDrawer, lines]);
+
+  /**
+   * Start again, deliberately.
+   *
+   * Cancel does NOT clear the draft, which is the whole point: the commonest
+   * way out of this form is somebody leaving to accept an order, and a Cancel
+   * that threw the work away would put them back where they started. So
+   * throwing it away is its own act, offered next to the message that says
+   * work was recovered.
+   */
+  const startAgain = () => {
+    clearExpenseDraft(store, draftKey);
+    setCategoryKey(categories[0]?.key ?? 'other');
+    setAmountText('');
+    setPaidToKind('open_market');
+    setSupplierId('');
+    setStaffId('');
+    setPayee('');
+    setNoteText('');
+    setFromDrawer(true);
+    setLines([{ ingredientId: '', qtyText: '', totalText: '' }]);
+    setReceipt(null);
+    setError(null);
+    setRestored(false);
+  };
 
   /**
    * Whether spending can be itemised into stock.
@@ -145,16 +232,25 @@ export function ExpenseModal({
       setCategories(opts.categories);
       setSuppliers(opts.suppliers);
       setStaff(opts.staff);
-      // Only chosen for a new expense. An edit already knows its own answers,
-      // and overwriting them here would silently refile somebody's correction
-      // under whatever happens to be first in the list.
-      if (!editing) setCategoryKey(opts.categories[0]?.key ?? 'other');
+      /*
+        Only chosen when there is nothing there already.
+
+        An edit knows its own answers, and so does a restored draft — this
+        loads after the form has opened, so setting a default outright would
+        wait a beat and then quietly refile somebody's recovered market run
+        under whatever happens to be first in the list. Functional, so it reads
+        the value as it is at that moment rather than as it was on mount.
+      */
+      if (!editing) setCategoryKey((cur) => cur || opts.categories[0]?.key || 'other');
       // Only what an expense is allowed to be paid out of ever reaches the
       // form, so the restriction cannot be got round by leaving the dropdown
       // where it was.
       const allowed = expenseMethods(m, settings);
       setMethods(allowed);
-      if (!editing) setMethodId(allowed.find((x) => x.kind === 'cash')?.$id ?? allowed[0]?.$id ?? '');
+      // Same reason as the category above: a restored draft already has one.
+      if (!editing) {
+        setMethodId((cur) => cur || allowed.find((x) => x.kind === 'cash')?.$id || allowed[0]?.$id || '');
+      }
       setIngredients(ing.filter((i) => i.active).sort((a, b) => a.name.localeCompare(b.name)));
     })().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -399,6 +495,9 @@ export function ExpenseModal({
         }
       }
 
+      // Saved for real, so the unfinished copy has nothing left to protect.
+      clearExpenseDraft(store, draftKey);
+
       onDone(
         lostSource
           ? CANNOT_STORE_SOURCE
@@ -429,6 +528,32 @@ export function ExpenseModal({
       }
     >
       <FormError message={error} />
+      {/*
+        Said, not silent.
+
+        Recovered work that appears without explanation reads as the form
+        having gone wrong — somebody opens it expecting blank boxes and finds
+        an amount and a payee already in them, and the safe assumption is that
+        it belongs to somebody else. Naming it, and putting the way out beside
+        it, is what makes the figures trustworthy enough to save.
+      */}
+      {restored && (
+        <div style={{ marginBottom: '0.8rem' }}>
+          <Notice tone="info">
+            Picked up where you left off.{' '}
+            <button
+              type="button"
+              onClick={startAgain}
+              style={{
+                background: 'none', border: 'none', padding: 0, font: 'inherit',
+                color: 'inherit', textDecoration: 'underline', cursor: 'pointer',
+              }}
+            >
+              Start again
+            </button>
+          </Notice>
+        </div>
+      )}
       <p className="small dim" style={{ marginTop: 0 }}>
         {editing
           ? 'Fix what was typed wrongly. What was added to stock stays as it is.'
@@ -562,7 +687,11 @@ export function ExpenseModal({
           of the drawer and nothing else, the default, a dropdown with a
           single line in it is a question that wastes a tap and implies there is
           something to decide. It says what happened instead. */}
-      {methods.length === 1 ? (
+      {/* Not asked on the kitchen screen: see askPaidFrom. The answer is still
+          recorded — it defaults to the cash drawer, which is where a cook's
+          market money comes from — it is just not put in front of somebody
+          who has no other answer to give. */}
+      {askPaidFrom && (methods.length === 1 ? (
         <Field label="Paid from" hint="Set by an admin under Settings.">
           <Input value={methods[0].name} disabled />
         </Field>
@@ -572,7 +701,7 @@ export function ExpenseModal({
             {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
           </Select>
         </Field>
-      )}
+      ))}
       {/*
         Whose money it was.
 

@@ -427,6 +427,9 @@ export function CombinedBar({
 
       {spending && shift && (
         <ExpenseModal
+          /* A cook pays out of the cash in front of them and out of nothing
+             else, so the question has one answer. See askPaidFrom. */
+          askPaidFrom={false}
           module={shift.module ?? 'kitchen'}
           venueId={venue.$id}
           shiftId={shift.$id}
