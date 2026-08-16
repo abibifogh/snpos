@@ -68,6 +68,9 @@ export interface CountLine {
   variantLabel?: string;
   consignorId?: string;
   consignorName?: string;
+  /** Which shelf it sits on, for grouping the walk. */
+  categoryId?: string;
+  categoryName?: string;
   /** What the system believes is there. */
   onHand: number;
   /** What was typed. Undefined means this line has not been counted. */
@@ -220,3 +223,128 @@ export function countWarnings(lines: CountLine[]): string[] {
 
   return warnings;
 }
+
+/* ------------------------------------------------- a count awaiting approval */
+
+/**
+ * How to group the shelf while counting it.
+ *
+ * Not decoration. A shop counts one maker's shelf at a time, or one category
+ * of thing at a time, because that is how the room is laid out — and a flat
+ * alphabetical list of four hundred pieces means walking back and forth across
+ * the shop for the letter B and again for the letter C. What gets skipped is
+ * whatever is furthest away, which is the same reason the kitchen's count
+ * sheet is grouped the way the shelves are.
+ */
+export type CountGrouping = 'none' | 'maker' | 'category';
+
+export interface GroupedLines<T> {
+  key: string;
+  label: string;
+  lines: T[];
+  /** How far through this group somebody is, so a long count shows progress. */
+  counted: number;
+  total: number;
+}
+
+/**
+ * Split the shelf into the groups somebody will actually walk.
+ *
+ * Anything without a maker or a category goes last under its own heading
+ * rather than silently at the top, where it reads as belonging to whatever is
+ * above it.
+ */
+export function groupLines<T extends { line: CountLine }>(
+  rows: T[],
+  by: CountGrouping,
+): GroupedLines<T>[] {
+  if (by === 'none') {
+    return [{
+      key: 'all',
+      label: '',
+      lines: rows,
+      counted: rows.filter((r) => wasCounted(r.line)).length,
+      total: rows.length,
+    }];
+  }
+
+  const buckets = new Map<string, T[]>();
+  for (const row of rows) {
+    const label = by === 'maker'
+      ? row.line.consignorName || 'The shop'
+      : row.line.categoryName || 'Uncategorised';
+    const at = buckets.get(label);
+    if (at) at.push(row);
+    else buckets.set(label, [row]);
+  }
+
+  const last = by === 'maker' ? 'The shop' : 'Uncategorised';
+  return [...buckets.entries()]
+    .map(([label, lines]) => ({
+      key: label,
+      label,
+      lines,
+      counted: lines.filter((r) => wasCounted(r.line)).length,
+      total: lines.length,
+    }))
+    // The catch-all group last, whatever it is called alphabetically.
+    .sort((a, b) => (a.label === last ? 1 : b.label === last ? -1 : a.label.localeCompare(b.label)));
+}
+
+/** What a saved count looks like when somebody comes to approve it. */
+export interface PendingCount {
+  $id: string;
+  counted_by: string;
+  counted_at: string;
+  note?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  line_count: number;
+  missing_pieces: number;
+  missing_value: number;
+  surplus_pieces: number;
+}
+
+export interface PendingCountLine {
+  $id: string;
+  count_id: string;
+  menu_item_id: string;
+  variant_id?: string;
+  name_snapshot: string;
+  variant_label?: string;
+  consignor_id?: string;
+  consignor_name?: string;
+  /** What the shelf said when it was counted. */
+  expected: number;
+  counted: number;
+  delta: number;
+  reason: CountReason;
+  unit_price: number;
+  applied?: boolean;
+}
+
+/**
+ * Has the ground moved under this count since it was taken?
+ *
+ * A count measures a discrepancy at a moment. Sales between then and the
+ * approval are real movements of their own, so the DELTA is what gets applied
+ * and the drift is not an error — eleven on the shelf, nine found, two sold
+ * while it waited, and applying minus two leaves seven, which is right.
+ *
+ * It is still worth showing. A line whose shelf has moved a long way since the
+ * count is a line somebody should look at rather than wave through, because at
+ * some point the honest answer is "this count is stale, do it again".
+ */
+export function driftedSince(line: PendingCountLine, onHandNow: number): number {
+  return onHandNow - line.expected;
+}
+
+/**
+ * Whether one person may sign off their own count.
+ *
+ * Allowed, and recorded. A shop with one admin who counts their own shelves
+ * would otherwise have a count nobody can ever approve, which is not a control
+ * — it is a locked door with the key inside. The protection worth having is
+ * that both names are on it and they can be the same name, visibly.
+ */
+export const isSelfApproval = (count: { counted_by: string }, reviewerId: string): boolean =>
+  !!reviewerId && count.counted_by === reviewerId;

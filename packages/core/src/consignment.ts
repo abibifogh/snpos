@@ -3,8 +3,8 @@ import { rateFor, flatFor, splitSale } from './consignment-math';
 import type { LedgerKind } from './consignment-math';
 import type { Doc, Settings, MenuItem } from './types';
 import type { Order, OrderItem } from './orders';
-import { differencesIn, MOVE_FOR_REASON } from './stocktake';
-import type { CountLine } from './stocktake';
+import { differencesIn, summariseCount, MOVE_FOR_REASON } from './stocktake';
+import type { CountLine, PendingCount, PendingCountLine } from './stocktake';
 import type { ImportMaker } from './maker-import';
 
 /**
@@ -632,14 +632,26 @@ export async function importStock(opts: {
  * and a count that only shows what it expects to find can never report it.
  */
 export async function shelfLines(): Promise<CountLine[]> {
-  const [items, variants, consignors] = await Promise.all([
+  const [items, variants, consignors, links, categories] = await Promise.all([
     listAll<MenuItem & { module?: string; consignor_id?: string; on_hand?: number; price: number }>('menu_items'),
     listAll<ProductVariant>('product_variants'),
     listAll<Consignor>('consignors').catch(() => [] as Consignor[]),
+    listAll<{ menu_item_id: string; category_id: string }>('menu_item_categories').catch(() => []),
+    listAll<{ $id: string; name: string }>('categories').catch(() => []),
   ]);
 
   const craft = items.filter((i) => (i.module ?? 'kitchen') === 'craft' && i.active !== false);
   const nameOf = new Map(consignors.map((c) => [c.$id, c.name]));
+  // The first category a piece is in. A product can sit in several; for
+  // deciding which shelf somebody walks to, the first is as good an answer as
+  // any and a piece appearing under two headings would be counted twice.
+  const categoryName = new Map(categories.map((c) => [c.$id, c.name]));
+  const categoryOf = new Map<string, { id: string; name: string }>();
+  for (const l of links) {
+    if (categoryOf.has(l.menu_item_id)) continue;
+    const name = categoryName.get(l.category_id);
+    if (name) categoryOf.set(l.menu_item_id, { id: l.category_id, name });
+  }
   const byItem = new Map<string, ProductVariant[]>();
   for (const v of variants) {
     if (!v.active) continue;
@@ -649,6 +661,7 @@ export async function shelfLines(): Promise<CountLine[]> {
   const lines: CountLine[] = [];
   for (const item of craft) {
     const sizes = byItem.get(item.$id) ?? [];
+    const cat = categoryOf.get(item.$id);
     if (sizes.length > 0) {
       // The variant is what sells when there is one; the product's own count
       // means nothing then, so counting it would invent a shelf that is not
@@ -661,6 +674,8 @@ export async function shelfLines(): Promise<CountLine[]> {
           variantLabel: v.label,
           consignorId: item.consignor_id || undefined,
           consignorName: item.consignor_id ? nameOf.get(item.consignor_id) : undefined,
+          categoryId: cat?.id,
+          categoryName: cat?.name,
           onHand: v.on_hand ?? 0,
           unitPrice: v.price,
         });
@@ -671,6 +686,8 @@ export async function shelfLines(): Promise<CountLine[]> {
         name: item.name,
         consignorId: item.consignor_id || undefined,
         consignorName: item.consignor_id ? nameOf.get(item.consignor_id) : undefined,
+        categoryId: cat?.id,
+        categoryName: cat?.name,
         onHand: item.on_hand ?? 0,
         unitPrice: item.price,
       });
@@ -685,62 +702,164 @@ export async function shelfLines(): Promise<CountLine[]> {
 }
 
 /**
- * Write what the count found.
+ * Submit a count for approval. Nothing on the shelf moves yet.
  *
- * One movement per difference, carrying the reason, and the shelf brought into
- * line with it. Lines that matched are not written at all: a zero movement for
- * every piece in the shop would bury the four that matter under four hundred
- * that do not.
+ * The shelf moves when an admin approves what was found, and the gap between
+ * those two moments is the point. An adjustment is the only write in the shop
+ * that can make stock disappear with no sale behind it, so the person holding
+ * the clipboard should not also be the person who signs it off.
  *
- * Each line is attempted on its own rather than as a batch. A count is
- * somebody's afternoon on a clipboard, and losing forty correct lines because
- * the forty-first hit a permission error would be losing the afternoon. What
- * would not save is counted and reported.
+ * Stored rather than applied-and-reversed. A pending count changes nothing —
+ * the till still sells what the shelf says — so an approval that never comes
+ * costs nothing, and a rejection is not an unpicking.
+ *
+ * The header is written last. A count row with no lines under it reads as a
+ * count that found nothing, which is the one wrong answer this could give; a
+ * few orphan lines with no header are invisible and harmless.
  */
-export async function saveCount(opts: {
+export async function submitCount(opts: {
   venueId: string;
   lines: CountLine[];
   userId: string;
   note?: string;
-}): Promise<{ written: number; failed: number }> {
+}): Promise<{ countId: string; lines: number }> {
   const differences = differencesIn(opts.lines);
-  let written = 0;
-  let failed = 0;
+  if (differences.length === 0) return { countId: '', lines: 0 };
+
+  const summary = summariseCount(opts.lines);
+  const countId = ID.unique();
 
   for (const d of differences) {
-    const variant = d.line.variantId
-      ? await db.getDocument(DB_ID, 'product_variants', d.line.variantId).catch(() => null)
-      : null;
-    const item = d.line.variantId
-      ? null
-      : await db.getDocument(DB_ID, 'menu_items', d.line.menuItemId).catch(() => null);
+    await db.createDocument(DB_ID, 'stock_count_lines', ID.unique(), {
+      count_id: countId,
+      menu_item_id: d.line.menuItemId,
+      variant_id: d.line.variantId ?? '',
+      name_snapshot: d.line.name,
+      variant_label: d.line.variantLabel ?? '',
+      consignor_id: d.line.consignorId ?? '',
+      consignor_name: d.line.consignorName ?? '',
+      expected: d.line.onHand,
+      counted: d.counted,
+      delta: d.delta,
+      reason: d.reason,
+      unit_price: d.line.unitPrice,
+      applied: false,
+    });
+  }
 
-    // Nothing to move it against. Counted rather than swallowed: a piece whose
-    // row has gone is worth somebody knowing about.
+  await db.createDocument(DB_ID, 'stock_counts', countId, {
+    venue_id: opts.venueId,
+    counted_by: opts.userId,
+    counted_at: new Date().toISOString(),
+    note: opts.note?.trim() ?? '',
+    status: 'pending',
+    line_count: differences.length,
+    missing_pieces: summary.missingPieces,
+    missing_value: summary.missingValue,
+    surplus_pieces: summary.surplusPieces,
+  });
+
+  return { countId, lines: differences.length };
+}
+
+export const pendingCounts = () =>
+  listAll<PendingCount & Doc>('stock_counts', [Query.equal('status', 'pending')]).then((rows) =>
+    rows.sort((a, b) => (b.counted_at ?? '').localeCompare(a.counted_at ?? '')),
+  );
+
+export const countLines = (countId: string) =>
+  listAll<PendingCountLine & Doc>('stock_count_lines', [Query.equal('count_id', countId)]);
+
+/**
+ * Apply an approved count to the shelf.
+ *
+ * The DELTA is applied, never the counted figure. A count measures a
+ * discrepancy at a moment; sales between the count and the approval are real
+ * movements of their own, and overwriting the shelf with an absolute number
+ * would erase them. Eleven on the shelf, nine found, two sold while it waited:
+ * applying minus two leaves seven, which is what is actually there.
+ *
+ * Each line is marked as it goes, so approving twice — a double tap, a retried
+ * request — cannot take the same pieces off the shelf again.
+ */
+export async function approveCount(opts: {
+  countId: string;
+  reviewerId: string;
+  note?: string;
+}): Promise<{ applied: number; failed: number }> {
+  const lines = await countLines(opts.countId);
+  let applied = 0;
+  let failed = 0;
+
+  for (const line of lines) {
+    if (line.applied) continue;
+
+    const variant = line.variant_id
+      ? await db.getDocument(DB_ID, 'product_variants', line.variant_id).catch(() => null)
+      : null;
+    const item = line.variant_id
+      ? null
+      : await db.getDocument(DB_ID, 'menu_items', line.menu_item_id).catch(() => null);
+
     if (!variant && !item) { failed += 1; continue; }
 
     try {
       await moveStock({
-        venueId: opts.venueId,
-        menuItemId: d.line.menuItemId,
+        venueId: '',
+        menuItemId: line.menu_item_id,
         variant: variant as ProductVariant | null,
         item: item as { $id: string; on_hand?: number } | null,
-        consignorId: d.line.consignorId,
-        type: MOVE_FOR_REASON[d.reason],
-        qtyDelta: d.delta,
-        unitPrice: d.line.unitPrice,
+        consignorId: line.consignor_id,
+        type: MOVE_FOR_REASON[line.reason],
+        qtyDelta: line.delta,
+        unitPrice: line.unit_price,
         refType: 'stocktake',
-        userId: opts.userId,
-        note: opts.note?.trim()
-          || `Counted ${d.counted}, shelf said ${d.line.onHand}`,
+        refId: opts.countId,
+        userId: opts.reviewerId,
+        note: `Counted ${line.counted}, shelf said ${line.expected}`,
       });
-      written += 1;
+      // Marked immediately after the movement rather than in a second pass, so
+      // a run that stops half way leaves every applied line marked applied.
+      await db.updateDocument(DB_ID, 'stock_count_lines', line.$id, { applied: true }).catch(() => undefined);
+      applied += 1;
     } catch {
       failed += 1;
     }
   }
 
-  return { written, failed };
+  // Left pending when anything failed, so it comes back to be finished rather
+  // than being filed as done with half of it not done.
+  if (failed === 0) {
+    await db.updateDocument(DB_ID, 'stock_counts', opts.countId, {
+      status: 'approved',
+      reviewed_by: opts.reviewerId,
+      reviewed_at: new Date().toISOString(),
+      review_note: opts.note?.trim() ?? '',
+    });
+  }
+
+  return { applied, failed };
+}
+
+/**
+ * Turn a count down.
+ *
+ * Kept rather than deleted, with the reason on it. "Why is the shelf still
+ * wrong" is a question somebody asks a week later, and "because that count was
+ * rejected on the 14th, by this person, for this reason" is the answer. A
+ * deleted count answers it with silence.
+ */
+export async function rejectCount(opts: {
+  countId: string;
+  reviewerId: string;
+  note?: string;
+}): Promise<void> {
+  await db.updateDocument(DB_ID, 'stock_counts', opts.countId, {
+    status: 'rejected',
+    reviewed_by: opts.reviewerId,
+    reviewed_at: new Date().toISOString(),
+    review_note: opts.note?.trim() ?? '',
+  });
 }
 
 /* ---------------------------------------------------------- makers in bulk */

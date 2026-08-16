@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   wasCounted, differencesIn, summariseCount, countWarnings, MOVE_FOR_REASON,
+  groupLines, driftedSince, isSelfApproval,
   type CountLine,
 } from '../stocktake.ts';
 
@@ -104,4 +105,76 @@ test('warnings warn and never refuse', () => {
 
   // A clean count says nothing at all.
   assert.deepEqual(countWarnings([line({ countedText: '5' })]), []);
+});
+
+/* ------------------------------------------------- walking it, and signing it */
+
+test('the shelf is grouped the way somebody walks it', () => {
+  /**
+   * A flat alphabetical list of four hundred pieces means crossing the shop for
+   * the letter B and crossing back for the letter C, and what gets skipped is
+   * whatever is furthest away. The same reason the kitchen's count sheet is
+   * grouped the way the shelves are.
+   */
+  const rows = [
+    { line: line({ consignorName: 'Akosua', categoryName: 'Baskets', countedText: '5' }) },
+    { line: line({ consignorName: 'Akosua', categoryName: 'Mats' }) },
+    { line: line({ consignorName: 'Kwame', categoryName: 'Baskets' }) },
+    { line: line({ categoryName: 'Baskets' }) },
+  ];
+
+  const byMaker = groupLines(rows, 'maker');
+  assert.deepEqual(byMaker.map((g) => g.label), ['Akosua', 'Kwame', 'The shop']);
+  // Progress per group, so a long count shows which shelves are done.
+  assert.equal(byMaker[0].counted, 1);
+  assert.equal(byMaker[0].total, 2);
+
+  const byCategory = groupLines(rows, 'category');
+  assert.deepEqual(byCategory.map((g) => g.label), ['Baskets', 'Mats']);
+
+  // One flat list is still one group, so the screen has one shape to render.
+  const flat = groupLines(rows, 'none');
+  assert.equal(flat.length, 1);
+  assert.equal(flat[0].total, 4);
+});
+
+test('the catch-all group goes last, not wherever the alphabet puts it', () => {
+  // "The shop" and "Uncategorised" read as belonging to whatever is above them
+  // if they land in the middle of the list.
+  const rows = [
+    { line: line({ consignorName: 'Zoe' }) },
+    { line: line({ consignorName: undefined }) },
+    { line: line({ consignorName: 'Akosua' }) },
+  ];
+  assert.deepEqual(groupLines(rows, 'maker').map((g) => g.label), ['Akosua', 'Zoe', 'The shop']);
+});
+
+test('a count is applied as a difference, so what sold since still counts', () => {
+  /**
+   * The rule that makes a count taken this morning safe to approve this
+   * evening. Eleven on the shelf, nine found, two sold while it waited:
+   * applying minus two leaves seven, which is what is actually there.
+   * Overwriting with the counted figure would put nine back and erase the
+   * sales.
+   */
+  const pending = {
+    $id: 'l1', count_id: 'c1', menu_item_id: 'p1', name_snapshot: 'Basket',
+    expected: 11, counted: 9, delta: -2, reason: 'lost' as const, unit_price: 12000,
+  };
+  assert.equal(driftedSince(pending, 9), -2, 'two sold since the count');
+  assert.equal(pending.delta, -2, 'and the difference applied is still the difference');
+  assert.equal(driftedSince(pending, 11), 0, 'nothing moved');
+});
+
+test('one person may sign off their own count, visibly', () => {
+  /**
+   * A shop with one admin who counts their own shelves would otherwise have a
+   * count nobody can ever approve, which is not a control — it is a locked door
+   * with the key inside. The protection worth having is that both names are on
+   * it and can be seen to be the same name.
+   */
+  assert.equal(isSelfApproval({ counted_by: 'ama' }, 'ama'), true);
+  assert.equal(isSelfApproval({ counted_by: 'ama' }, 'kofi'), false);
+  // Nobody signing is not self-approval; it is nobody signing.
+  assert.equal(isSelfApproval({ counted_by: 'ama' }, ''), false);
 });

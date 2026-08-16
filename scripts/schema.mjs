@@ -1369,6 +1369,80 @@ export const COLLECTIONS = [
     indexes: [['ingredient_created', 'key', ['ingredient_id', '$createdAt']], ['shift', 'key', ['shift_id']]],
   },
   {
+    /**
+     * A count of the shop's shelves, waiting to be applied.
+     *
+     * The shelf does not move when somebody counts it. It moves when an admin
+     * approves what they found, and the gap between those two moments is the
+     * whole point of this collection existing: an adjustment is the one write
+     * in the shop that can make stock disappear without a sale behind it, and
+     * the person holding the clipboard should not also be the person who signs
+     * it off.
+     *
+     * Which is why the count is stored rather than applied and reversed. A
+     * pending count changes nothing — the till still sells what the shelf says
+     * — so an approval that never comes costs nothing, and a rejection is not
+     * an unpicking.
+     */
+    id: 'stock_counts',
+    name: 'Stock counts',
+    // Anybody on the shop floor may submit one; only an admin may apply it.
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: ADMIN, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['counted_by', 's', 64, true],
+      ['counted_at', 'd', null, true],
+      ['note', 's', 300, false],
+      ['status', 'e', ['pending', 'approved', 'rejected'], true, 'pending'],
+      ['reviewed_by', 's', 64, false],
+      ['reviewed_at', 'd', null, false],
+      ['review_note', 's', 300, false],
+      // Totals as counted, so the list of pending counts reads without
+      // fetching every line of every one of them.
+      ['line_count', 'i', null, true, 0],
+      ['missing_pieces', 'i', null, true, 0],
+      ['missing_value', 'i', null, true, 0],
+      ['surplus_pieces', 'i', null, true, 0],
+    ],
+    indexes: [
+      ['status_counted', 'key', ['status', 'counted_at']],
+      ['venue_status', 'key', ['venue_id', 'status']],
+    ],
+  },
+  {
+    /**
+     * One difference a count found.
+     *
+     * `expected` is what the shelf said WHEN IT WAS COUNTED, and it is kept
+     * rather than re-read at approval so the approver can see whether the
+     * ground has moved underneath the count. `delta` is what gets applied —
+     * not the counted figure — because sales between the count and the
+     * approval are real movements of their own, and overwriting the shelf with
+     * an absolute number would erase them.
+     */
+    id: 'stock_count_lines',
+    name: 'Stock count lines',
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: ADMIN, delete: ADMIN },
+    attributes: [
+      ['count_id', 's', 64, true],
+      ['menu_item_id', 's', 64, true],
+      ['variant_id', 's', 64, false],
+      ['name_snapshot', 's', 160, true],
+      ['variant_label', 's', 60, false],
+      ['consignor_id', 's', 64, false],
+      ['consignor_name', 's', 160, false],
+      ['expected', 'i', null, true, 0],
+      ['counted', 'i', null, true, 0],
+      ['delta', 'i', null, true, 0],
+      ['reason', 'e', ['counted', 'damaged', 'lost', 'returned'], true, 'counted'],
+      ['unit_price', 'i', null, true, 0],
+      // Set when the movement has been written, so re-approving cannot apply
+      // the same difference twice.
+      ['applied', 'b', null, false, false],
+    ],
+    indexes: [['count', 'key', ['count_id']]],
+  },
+  {
     id: 'stock_flags',
     name: 'Stock variance flags',
     perms: { read: MGMT, create: ALL_STAFF, update: MGMT, delete: ADMIN },
