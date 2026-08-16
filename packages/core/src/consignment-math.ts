@@ -344,3 +344,37 @@ export const onHandFor = (
   variants.length
     ? variants.filter((v) => v.active).reduce((n, v) => n + (v.on_hand ?? 0), 0)
     : item.on_hand ?? 0;
+
+/**
+ * Every entry behind an "owed" figure, newest first, with a running balance.
+ *
+ * The question somebody has when they look at a number on a list is "where did
+ * that come from", and a statement for a date range is the wrong answer to it:
+ * a range can exclude the very entry that explains the figure, and then the
+ * two disagree with no way to tell which is wrong.
+ *
+ * So this takes no dates at all. It is every entry there has ever been, and
+ * the running balance on the newest row equals the figure on the list — by
+ * construction rather than by coincidence, because both are the same sum.
+ *
+ * Newest first, because the entry somebody is asking about is almost always
+ * the most recent one. The running balance is still worked out oldest-first,
+ * or every row would show the wrong total.
+ */
+export interface OwedLine {
+  entry: LedgerLike;
+  /** What was owed after this entry, reading from the beginning. */
+  runningBalance: number;
+}
+
+export function owedBreakdown(entries: LedgerLike[]): { lines: OwedLine[]; balance: number } {
+  const oldestFirst = [...entries].sort((a, b) => (a.entry_at ?? '').localeCompare(b.entry_at ?? ''));
+
+  let running = 0;
+  const withBalance = oldestFirst.map((entry) => {
+    running += entry.amount;
+    return { entry, runningBalance: running };
+  });
+
+  return { lines: withBalance.reverse(), balance: running };
+}

@@ -603,3 +603,18 @@ table.data tbody tr:hover { background: var(--surface-2); }
    for the tablet, where there is no cursor and a table of figures otherwise
    gives no sign that any of it can be pressed. */
 table.data tr[title] td:first-child { text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+
+/*
+  A figure that opens.
+
+  Underlined rather than made to look like a button: it is a number first and a
+  control second, and a column of buttons down a table reads as a column of
+  actions. The dotted underline is the only affordance it needs — somebody
+  who wants to know where a total came from tries clicking it.
+*/
+.link-figure {
+  background: none; border: none; padding: 0; font: inherit; color: inherit;
+  cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.link-figure:hover { text-decoration-style: solid; }

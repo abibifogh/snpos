@@ -8,9 +8,11 @@ import {
   formatMoney, parseMoney, toInput,
   loadConsignors, balancesByConsignor, ledgerFor, buildStatement, recordPayout, nextReference,
   buildStatementHtml, openPrintable, rateFor, flatFor, dueFor, onHandFor,
+  owedBreakdown, labelForKind,
 } from '@snpos/core';
 import type {
   Consignor, LedgerEntry, Statement, Settings, ConsignmentIntake, MenuItem, ProductVariant, UnsoldLine,
+  OwedLine,
 } from '@snpos/core';
 import { useSession } from '../session';
 import { MakerUpload } from '../components/MakerUpload';
@@ -44,6 +46,8 @@ export function ConsignorsPage() {
    */
   const [rateMode, setRateMode] = useState<'percent' | 'amount'>('percent');
   const [statementFor, setStatementFor] = useState<Consignor | null>(null);
+  /** The consignor whose owed figure is being taken apart. */
+  const [breakdownFor, setBreakdownFor] = useState<Consignor | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
@@ -213,9 +217,22 @@ export function ConsignorsPage() {
                           : `${(c.commission_bp / 100).toFixed(c.commission_bp % 100 ? 1 : 0)}%`}
                       </td>
                       {/* Nothing owed and money owed read differently at a
-                          glance, which is the only thing this column is for. */}
-                      <td className="num" style={balance > 0 ? { fontWeight: 650 } : { opacity: 0.55 }}>
-                        {money(balance)}
+                          glance, which is the only thing this column is for.
+                          And the figure opens: "where did that come from" is
+                          the question anybody looking at a number on a list
+                          has, and a statement for a date range is the wrong
+                          answer — a range can leave out the very entry that
+                          explains it. */}
+                      <td className="num">
+                        <button
+                          type="button"
+                          className="link-figure"
+                          onClick={() => setBreakdownFor(c)}
+                          style={balance > 0 ? { fontWeight: 650 } : { opacity: 0.55 }}
+                          title="What makes up this figure"
+                        >
+                          {money(balance)}
+                        </button>
                       </td>
                       <td className="dim small">
                         {c.payout_method ?? 'momo'}
@@ -365,6 +382,15 @@ export function ConsignorsPage() {
             await load();
             toast(message);
           }}
+        />
+      )}
+
+      {breakdownFor && settings && (
+        <OwedBreakdown
+          consignor={breakdownFor}
+          settings={settings}
+          onClose={() => setBreakdownFor(null)}
+          onStatement={() => { setStatementFor(breakdownFor); setBreakdownFor(null); }}
         />
       )}
 
@@ -761,6 +787,98 @@ function StatementModal({
               </div>
             </Card>
           )}
+        </>
+      )}
+    </Modal>
+  );
+}
+
+/**
+ * What makes up the figure on the list.
+ *
+ * Every entry there has ever been, newest first, with a running balance — and
+ * the balance on the top row equals the number that was clicked, by
+ * construction rather than by coincidence, because both are the same sum.
+ *
+ * Deliberately not a date range. The statement already does periods, and a
+ * range is the wrong answer to "where did that come from": it can exclude the
+ * very entry that explains the figure, and then the two screens disagree with
+ * nothing to say which is right.
+ */
+function OwedBreakdown({
+  consignor, settings, onClose, onStatement,
+}: {
+  consignor: Consignor;
+  settings: Settings;
+  onClose: () => void;
+  onStatement: () => void;
+}) {
+  const [entries, setEntries] = useState<LedgerEntry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const money = (n: number) => formatMoney(n, settings);
+
+  useEffect(() => {
+    ledgerFor(consignor.$id).then(setEntries).catch((e) => setError(humanError(e)));
+  }, [consignor.$id]);
+
+  const { lines, balance } = useMemo(() => owedBreakdown(entries ?? []), [entries]);
+
+  return (
+    <Modal
+      wide
+      title={`What ${consignor.name} is owed`}
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onStatement}>Open the statement</Button>
+          <Button variant="primary" onClick={onClose}>Close</Button>
+        </>
+      }
+    >
+      {error && <Notice>{error}</Notice>}
+      {!entries ? <Spinner /> : lines.length === 0 ? (
+        <Empty title="Nothing on their account yet">
+          Entries appear here as their work sells, and when they are paid.
+        </Empty>
+      ) : (
+        <>
+          <div className="spread" style={{ marginBottom: '0.7rem' }}>
+            <span className="dim small">{lines.length} entries, oldest {new Date(lines[lines.length - 1].entry.entry_at).toLocaleDateString()}</span>
+            <span style={{ fontSize: '1.3rem', fontWeight: 650 }}>{money(balance)}</span>
+          </div>
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>When</th><th>What</th><th>Detail</th>
+                  <th className="num">Amount</th><th className="num">Owed after</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map(({ entry, runningBalance }: OwedLine, i: number) => (
+                  <tr key={`${entry.entry_at}-${i}`}>
+                    <td className="dim small">{new Date(entry.entry_at).toLocaleDateString()}</td>
+                    <td>
+                      <Badge tone={entry.amount < 0 ? 'ok' : 'default'}>{labelForKind(entry.kind)}</Badge>
+                    </td>
+                    <td className="small dim">{entry.description || '—'}</td>
+                    {/* A payout reduces what is owed, and reads as a negative
+                        here. Signed rather than coloured alone: a column of
+                        figures where only the colour differs is one somebody
+                        misreads on a phone, in sunlight, in a hurry. */}
+                    <td className="num" style={entry.amount < 0 ? { color: 'var(--ok, #3f8f5f)' } : undefined}>
+                      {entry.amount < 0 ? `−${money(Math.abs(entry.amount))}` : money(entry.amount)}
+                    </td>
+                    <td className="num dim">{money(runningBalance)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="small dim" style={{ marginBottom: 0 }}>
+            Every entry there has ever been, so the running balance on the top row is the figure on the list.
+            The statement covers a period and can be printed for them.
+          </p>
         </>
       )}
     </Modal>

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { owedBreakdown } from '../consignment-math.ts';
 import { splitSale, rateFor, flatFor, dueFor, balanceOf, buildStatement, onHandFor } from '../consignment-math.ts';
 import { computeTotals } from '../pricing.ts';
 import { sharesFor } from '../money.ts';
@@ -229,4 +230,34 @@ test('a statement with nothing extra is the statement it always was', () => {
   assert.equal(st.broughtIn.value, 0);
   assert.equal(st.unsold.pieces, 0);
   assert.equal(st.closingBalance, 700);
+});
+
+test('the owed figure and its breakdown are the same sum', () => {
+  /**
+   * The whole reason this takes no date range. A statement for a period can
+   * exclude the very entry that explains the figure on the list, and then two
+   * screens disagree with nothing to say which is right. Here the running
+   * balance on the newest row IS the number that was clicked, by construction.
+   */
+  const entries = [
+    { entry_at: '2026-03-01', kind: 'sale' as const, amount: 7000, description: 'Basket' },
+    { entry_at: '2026-01-10', kind: 'sale' as const, amount: 5000, description: 'Mat' },
+    { entry_at: '2026-02-01', kind: 'payout' as const, amount: -5000, description: 'Paid by momo' },
+  ];
+  const { lines, balance } = owedBreakdown(entries);
+
+  assert.equal(balance, 7000);
+  // Newest first, because the entry somebody is asking about is nearly always
+  // the most recent one.
+  assert.deepEqual(lines.map((l) => l.entry.entry_at), ['2026-03-01', '2026-02-01', '2026-01-10']);
+  // The running balance is still worked out oldest-first, or every row would
+  // show the wrong total.
+  assert.deepEqual(lines.map((l) => l.runningBalance), [7000, 0, 5000]);
+  assert.equal(lines[0].runningBalance, balance, 'the top row is the figure on the list');
+});
+
+test('an account with nothing on it owes nothing, and says so as nothing', () => {
+  const { lines, balance } = owedBreakdown([]);
+  assert.deepEqual(lines, []);
+  assert.equal(balance, 0);
 });

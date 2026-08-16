@@ -16,9 +16,11 @@ import type { ImportMaker } from './maker-import';
  */
 export {
   rateFor, flatFor, splitSale, dueFor, balanceOf, buildStatement, labelForKind, onHandFor,
+  owedBreakdown,
 } from './consignment-math';
 export type {
   Split, Statement, StatementLine, LedgerKind, LedgerLike, IntakeLine, UnsoldLine, IntakeLike,
+  OwedLine,
 } from './consignment-math';
 
 /**
