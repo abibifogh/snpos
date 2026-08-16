@@ -195,6 +195,87 @@ async function depleteShelf({ db, DB_ID, order, lines, log }) {
 }
 
 /**
+ * Take a cocktail's ingredients off the shelf as it is poured.
+ *
+ * The kitchen does this at shift close, from what was sold, and that is right
+ * for a kitchen: nobody needs to know at eight o'clock how much rice is left,
+ * and a count at the end of the night is accurate enough to cost a menu from.
+ *
+ * A bar cannot wait. The whole reason a bar counts its bottles is to see one
+ * running out BEFORE a customer orders the drink it makes, and a gin level
+ * that only moves at midnight cannot tell anybody that. So a bar's recipes are
+ * poured off at the moment the drink is paid for.
+ *
+ * Idempotent by the sale line, the same way the shop's shelf is: a payment
+ * retried on a bad connection finds the movements already written and pours
+ * nothing twice.
+ *
+ * Only bar items. A dish with a recipe is still the kitchen's, and depleting
+ * it here as well as at shift close would take every ingredient off twice.
+ */
+async function pourFromBottles({ db, DB_ID, order, lines, log }) {
+  let poured = 0;
+
+  for (const line of lines) {
+    if (line.status === 'void') continue;
+
+    const already = await db.listDocuments(DB_ID, 'stock_movements', [
+      Query.equal('ref_type', 'order_item'), Query.equal('ref_id', line.$id), Query.limit(1),
+    ]).catch(() => ({ total: 0 }));
+    if (already.total > 0) continue;
+
+    const item = await db.getDocument(DB_ID, 'menu_items', line.menu_item_id).catch(() => null);
+    if (!item || item.module !== 'bar') continue;
+
+    const recipes = await db.listDocuments(DB_ID, 'recipes', [
+      Query.equal('menu_item_id', line.menu_item_id), Query.limit(50),
+    ]).catch(() => ({ documents: [] }));
+    if (recipes.documents.length === 0) continue;
+
+    for (const r of recipes.documents) {
+      const ingredient = await db.getDocument(DB_ID, 'ingredients', r.ingredient_id).catch(() => null);
+      if (!ingredient) continue;
+
+      const used = (r.qty || 0) * (line.qty || 1);
+      if (!used) continue;
+
+      await db.createDocument(DB_ID, 'stock_movements', 'unique()', {
+        // Required, and easy to miss from a function that has the order in
+        // hand and not the venue. Appwrite rejects the whole document without
+        // it, so the pour would silently never happen.
+        venue_id: order.venue_id,
+        ingredient_id: r.ingredient_id,
+        type: 'sale_depletion',
+        qty_delta: -used,
+        unit_cost: ingredient.base_unit_cost || 0,
+        ref_type: 'order_item',
+        ref_id: line.$id,
+        shift_id: order.shift_id || '',
+        note: `${line.name_snapshot}`,
+      }).catch(() => undefined);
+
+      /*
+        The shelf is allowed to go below nothing.
+
+        Clamping at zero would hide the one thing this is for. A bar pouring
+        from a bottle the system thinks is empty is either a bottle nobody
+        booked in or a recipe with the wrong measure on it, and a level stuck
+        politely at zero says neither. The count at the end of the shift is
+        what settles it.
+      */
+      await db.updateDocument(DB_ID, 'ingredients', r.ingredient_id, {
+        current_qty: (ingredient.current_qty || 0) - used,
+      }).catch(() => undefined);
+
+      poured++;
+    }
+  }
+
+  if (poured) log(`${poured} bar ingredient(s) poured for ${order.order_no}`);
+  return poured;
+}
+
+/**
  * Credit every consignor whose work was on a bill that has just been settled.
  *
  * On payment, not on the sale. An order that is cancelled, voided or walked out
@@ -233,6 +314,7 @@ async function creditConsignors({ db, DB_ID, payment, log }) {
   // exactly where a decrement gets lost, and a count that drifts is a count
   // nobody trusts a week later.
   await depleteShelf({ db, DB_ID, order, lines: items.documents, log });
+  await pourFromBottles({ db, DB_ID, order, lines: items.documents, log });
 
   const mine = items.documents.filter((i) => i.status !== 'void' && i.consignor_id);
   if (mine.length === 0) return { ok: true, credited: 0, note: 'nothing on consignment' };

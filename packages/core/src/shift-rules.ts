@@ -20,6 +20,7 @@ import type { Module } from './access';
 export const SHIFT_PREFIX: Record<Module, string> = {
   kitchen: 'BIST',
   craft: 'CRAF',
+  bar: 'BAR',
 };
 
 export const shiftPrefix = (module?: Module): string => SHIFT_PREFIX[module ?? 'kitchen'] ?? 'BIST';

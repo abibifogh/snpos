@@ -1,4 +1,4 @@
-import { modulesForStaff } from '@snpos/core';
+import { modulesForStaff, MODULE_LABELS } from '@snpos/core';
 import type { Module, Settings, StaffProfile } from '@snpos/core';
 
 export type Side = Module | 'all';
@@ -31,12 +31,14 @@ export function SideFilter({
   profile?: StaffProfile | null;
 }) {
   const mods = modulesForStaff(profile ?? null, settings);
-  if (!(mods.kitchen && mods.craft)) return null;
+  const theirs = (['kitchen', 'bar', 'craft'] as Module[]).filter((m) => mods[m]);
+  // One side is not a choice. A filter with a single option in it is a control
+  // that cannot change anything, sitting where somebody expects one that can.
+  if (theirs.length < 2) return null;
 
   const options: { v: Side; l: string }[] = [
-    { v: 'all', l: 'Both' },
-    { v: 'kitchen', l: 'Kitchen' },
-    { v: 'craft', l: 'Craft shop' },
+    { v: 'all', l: 'All' },
+    ...theirs.map((m) => ({ v: m as Side, l: MODULE_LABELS[m] })),
   ];
 
   return (
@@ -72,7 +74,7 @@ export const onSide = (row: { module?: string }, side: Side): boolean =>
  */
 export function narrowSide(side: Side, profile: StaffProfile | null | undefined, settings: Settings | null): Side {
   const mods = modulesForStaff(profile ?? null, settings);
-  if (mods.kitchen && mods.craft) return side;
-  if (mods.craft) return 'craft';
-  return 'kitchen';
+  const theirs = (['kitchen', 'bar', 'craft'] as Module[]).filter((m) => mods[m]);
+  if (theirs.length > 1) return side;
+  return (theirs[0] ?? 'kitchen') as Side;
 }

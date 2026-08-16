@@ -2,6 +2,7 @@ import { listAll } from './client';
 import { isAvailable, parseWindows } from './availability';
 import type { Category, MenuItem, Doc } from './types';
 import type { ProductVariant } from './consignment';
+import type { Module } from './access';
 
 export interface MenuItemCategory extends Doc {
   menu_item_id: string;
@@ -198,7 +199,7 @@ export const visibleSections = (menu: LoadedMenu): MenuSection[] =>
  * who has never seen the kitchen could take jollof off the menu by tapping the
  * wrong row.
  */
-export function itemsAvailableNow(menu: LoadedMenu, module?: 'kitchen' | 'craft'): MenuItem[] {
+export function itemsAvailableNow(menu: LoadedMenu, module?: Module): MenuItem[] {
   const seen = new Set<string>();
   const out: MenuItem[] = [];
   for (const section of menu.sections) {

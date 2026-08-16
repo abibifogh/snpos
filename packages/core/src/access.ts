@@ -48,13 +48,34 @@ export interface AdminSection {
   module?: Module;
 }
 
-/** The two trades this system knows how to run. */
-export type Module = 'kitchen' | 'craft';
+/** The three trades this system knows how to run. */
+export type Module = 'kitchen' | 'craft' | 'bar';
 
 export interface Modules {
   kitchen: boolean;
   craft: boolean;
+  bar: boolean;
 }
+
+/**
+ * A bar is its own trade, not a corner of the kitchen.
+ *
+ * It could have been a category of drinks on the restaurant's menu, and that
+ * is what most systems do. It is wrong for three reasons that all cost money.
+ * A bar's stock is bottles, counted at the start of a shift and again at the
+ * end, by the person who is answerable for them — a kitchen counts once, at
+ * close, and nobody signs for the rice. A cocktail is a recipe whose
+ * ingredients have to come off the shelf as it is poured, not when the night
+ * ends, because a bottle running out mid-service is the event the count exists
+ * to predict. And a bar's takings are counted against its own drawer by its
+ * own person; folded into the kitchen's, a short till has two possible owners
+ * and therefore none.
+ */
+export const MODULE_LABELS: Record<Module, string> = {
+  kitchen: 'Kitchen',
+  craft: 'Craft shop',
+  bar: 'Bar',
+};
 
 /**
  * What this business actually runs.
@@ -75,14 +96,22 @@ export interface Modules {
 export function modulesOf(settings: Settings | null): Modules {
   const kitchen = settings?.kitchen_enabled;
   const craft = settings?.craft_enabled;
+  const bar = settings?.bar_enabled;
 
   if (kitchen === undefined && craft === undefined) {
     const legacy = settings?.business_type ?? 'restaurant';
-    return { kitchen: legacy !== 'craft_shop', craft: legacy === 'craft_shop' };
+    // The bar switch is read even here: it arrived after the other two, so a
+    // business that has turned it on has answered the question directly, and
+    // guessing from `business_type` would switch it back off.
+    return {
+      kitchen: legacy !== 'craft_shop',
+      craft: legacy === 'craft_shop',
+      bar: bar === true,
+    };
   }
 
-  const on = { kitchen: kitchen !== false, craft: craft === true };
-  return on.kitchen || on.craft ? on : { kitchen: true, craft: false };
+  const on = { kitchen: kitchen !== false, craft: craft === true, bar: bar === true };
+  return on.kitchen || on.craft || on.bar ? on : { kitchen: true, craft: false, bar: false };
 }
 
 /**
@@ -97,8 +126,11 @@ export function modulesOf(settings: Settings | null): Modules {
  * That is the whole reason this reads the settings instead of saying 'kitchen'.
  */
 export const selfOrderModule = (settings: Settings | null): Module => {
-  const { kitchen } = modulesOf(settings);
-  return kitchen ? 'kitchen' : 'craft';
+  const { kitchen, bar } = modulesOf(settings);
+  if (kitchen) return 'kitchen';
+  // A bar without a kitchen still has a menu somebody can scan for; a shop is
+  // the last resort because baskets are bought at a counter, not ordered.
+  return bar ? 'bar' : 'craft';
 };
 
 export const ADMIN_SECTIONS: AdminSection[] = [
@@ -119,6 +151,10 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'consignors', label: 'Consignors', path: '/consignors', group: 'Craft shop', module: 'craft' },
   { key: 'intake', label: 'Goods received', path: '/intake', group: 'Craft shop', module: 'craft' },
   { key: 'stocktake', label: 'Count the shelf', path: '/stocktake', group: 'Craft shop', module: 'craft' },
+  { key: 'bar_categories', label: 'Categories', path: '/bar/categories', group: 'Bar', module: 'bar' },
+  { key: 'bar_items', label: 'Drinks & cocktails', path: '/bar/items', group: 'Bar', module: 'bar' },
+  { key: 'bar_stock', label: 'Bottles & mixers', path: '/bar/stock', group: 'Bar', module: 'bar' },
+  { key: 'bar_counts', label: 'Counts & variances', path: '/bar/counts', group: 'Bar', module: 'bar' },
   { key: 'payouts', label: 'Payouts', path: '/payouts', group: 'Craft shop', module: 'craft' },
   { key: 'shifts', label: 'Shifts', path: '/shifts', group: 'Money' },
   { key: 'expenses', label: 'Expenses', path: '/expenses', group: 'Money' },
@@ -333,8 +369,12 @@ export function modulesForStaff(profile: StaffProfile | null, settings: Settings
   const theirs = profile?.works_in ?? 'both';
   if (theirs === 'both') return running;
 
-  const narrowed = { kitchen: running.kitchen && theirs === 'kitchen', craft: running.craft && theirs === 'craft' };
-  return narrowed.kitchen || narrowed.craft ? narrowed : running;
+  const narrowed = {
+    kitchen: running.kitchen && theirs === 'kitchen',
+    craft: running.craft && theirs === 'craft',
+    bar: running.bar && theirs === 'bar',
+  };
+  return narrowed.kitchen || narrowed.craft || narrowed.bar ? narrowed : running;
 }
 
 /**

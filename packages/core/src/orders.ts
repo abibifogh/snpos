@@ -83,7 +83,7 @@ export interface Order extends Doc {
   /** What the kitchen is judged by: the cooking time alone. */
   prep_minutes?: number;
   /** Which side of the business sold this. Absent means kitchen. */
-  module?: 'kitchen' | 'craft';
+  module?: Module;
 }
 
 export interface OrderItem extends Doc {
@@ -314,7 +314,7 @@ export interface CreateOrderInput {
   openingHours?: string;
   quotedWaitMinutes?: number;
   /** Which side of the business is selling. Defaults to the kitchen. */
-  module?: 'kitchen' | 'craft';
+  module?: Module;
 }
 
 export interface CreatedOrder {

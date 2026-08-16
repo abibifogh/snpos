@@ -1,5 +1,8 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
 import type { PurchaseRow } from './price-history';
+import type { Module } from './access';
+import { variancesIn, wasCountedBar } from './bar-count';
+import type { BarCountLine } from './bar-count';
 import type { Doc } from './types';
 import type { OrderItem } from './orders';
 
@@ -14,6 +17,8 @@ export interface Ingredient extends Doc {
   critical: boolean;
   supplier_id?: string;
   category?: string;
+  /** Which side of the business keeps this on its shelves. Absent is kitchen. */
+  module?: Module;
   /** The rule a cook reads at the shift-end check, in the restaurant's words. */
   check_guide?: string;
   /** Which expense category a delivery of this counts as. */
@@ -101,6 +106,16 @@ export async function depleteForShift(
   for (const [ingredientId, qty] of Object.entries(usage)) {
     const ing = byId.get(ingredientId);
     if (!ing || qty <= 0) continue;
+    /*
+      A bar's bottles have already been poured.
+
+      The bar deducts as each drink is paid for rather than at close, because
+      the point of watching a gin level is to see it running out before
+      somebody orders the drink it makes. Depleting it again here would take
+      every measure off twice and report a bar that loses half its stock every
+      night. See pourFromBottles in order-guard.
+    */
+    if (ing.module === 'bar') continue;
 
     await db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
       venue_id: venueId,
@@ -417,7 +432,7 @@ export interface StockCheckRow {
  * both ask this question, and two copies of it is two chances for the list a
  * cook sees to depend on which device they picked up.
  */
-export async function stockCheckRows(venueId: string): Promise<StockCheckRow[]> {
+export async function stockCheckRows(venueId: string, module: Module = 'kitchen'): Promise<StockCheckRow[]> {
   const [ingredients, categories] = await Promise.all([
     loadIngredients(venueId),
     listAll<{ key: string; name: string; sort?: number; active?: boolean }>('ingredient_categories').catch(() => []),
@@ -433,7 +448,10 @@ export async function stockCheckRows(venueId: string): Promise<StockCheckRow[]> 
     // Everything active that is actually on a shelf. A list with a taxi in it
     // is a list people learn to tap through, which costs the count on the
     // things that do matter.
-    .filter((i) => i.active && i.counted_at_close !== false)
+    // This side's shelves only. A bar counting rice and a kitchen counting gin
+    // are both counting somebody else's larder, and a sheet with forty lines
+    // on it that are not yours is a sheet people tap through.
+    .filter((i) => i.active && i.counted_at_close !== false && (i.module ?? 'kitchen') === module)
     .sort(
       (a, b) =>
         rank(a.category) - rank(b.category) ||
@@ -489,4 +507,115 @@ export async function purchasesFor(ingredientId: string, limit = 200): Promise<P
     refId: r.ref_id,
     note: r.note,
   }));
+}
+
+/* ------------------------------------------- what a bar accepts and hands over */
+
+/**
+ * The bar's shelves, as a sheet to walk with.
+ *
+ * Everything the bar counts, with what the system believes is there, ready to
+ * be grouped by unit. Not filtered to what is expected to be in stock: "there
+ * should be none and there are two" is a real finding — a bottle put back, a
+ * delivery nobody booked in — and a sheet that only lists what it expects can
+ * never report it.
+ */
+export async function barCountSheet(venueId: string): Promise<BarCountLine[]> {
+  const ingredients = await loadIngredients(venueId);
+  return ingredients
+    .filter((i) => i.active && (i.module ?? 'kitchen') === 'bar')
+    .map((i) => ({
+      ingredientId: i.$id,
+      name: i.name,
+      unit: i.unit,
+      expected: i.current_qty,
+      unitCost: i.base_unit_cost,
+    }));
+}
+
+/**
+ * Write a bar's count, at whichever end of the shift it was taken.
+ *
+ * The opening count sets the shelf outright. Somebody has physically looked,
+ * and what they found is what is there — a running figure carried over from
+ * last night is a book entry, and the whole reason a bar counts on the way in
+ * is that the book and the shelf disagree more often than anybody admits.
+ *
+ * The closing count does the same and records the variance against what the
+ * pours said should be left, which is the figure the whole bar stock system
+ * exists to produce.
+ */
+export async function saveBarCount(opts: {
+  venueId: string;
+  shiftId: string;
+  phase: 'open' | 'close';
+  lines: BarCountLine[];
+  userId: string;
+}): Promise<{ written: number; shortValue: number }> {
+  const variances = variancesIn(opts.lines);
+  const shortValue = variances.filter((v) => v.delta < 0).reduce((s, v) => s + v.value, 0);
+  let written = 0;
+
+  for (const line of opts.lines) {
+    if (!wasCountedBar(line)) continue;
+    const counted = Number((line.countedText ?? '').trim());
+    const variance = Number((counted - line.expected).toFixed(4));
+
+    await db.createDocument(DB_ID, 'shift_stock_checks', ID.unique(), {
+      venue_id: opts.venueId,
+      shift_id: opts.shiftId,
+      ingredient_id: line.ingredientId,
+      phase: opts.phase,
+      opening_qty: line.expected,
+      theoretical_qty: line.expected,
+      counted_qty: counted,
+      status: counted <= 0 ? 'OUT' : 'OK',
+      status_source: 'manual_override',
+      variance_qty: variance,
+      variance_value: Math.round(Math.abs(variance) * line.unitCost),
+      checked_by: opts.userId,
+      note: line.note ?? '',
+    }).catch(() => undefined);
+
+    /*
+      A movement for the difference, not just a note about it.
+
+      Without one the shelf would jump and the history would not explain why.
+      A count correction is a real movement of stock — it is the one that says
+      "this is what is actually here" — and leaving it out is what makes a
+      stock history stop adding up.
+    */
+    if (variance !== 0) {
+      await db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
+        venue_id: opts.venueId,
+        ingredient_id: line.ingredientId,
+        type: 'count_correction',
+        qty_delta: variance,
+        unit_cost: line.unitCost,
+        ref_type: 'shift',
+        ref_id: opts.shiftId,
+        shift_id: opts.shiftId,
+        created_by: opts.userId,
+        note: opts.phase === 'open' ? 'Counted on opening' : 'Counted at close',
+      }).catch(() => undefined);
+    }
+
+    await db.updateDocument(DB_ID, 'ingredients', line.ingredientId, {
+      current_qty: counted,
+    }).catch(() => undefined);
+
+    written += 1;
+  }
+
+  return { written, shortValue };
+}
+
+/** Whether this shift has already been counted in on the way in. */
+export async function hasOpeningCount(shiftId: string): Promise<boolean> {
+  const rows = await listAll<Doc>('shift_stock_checks', [
+    Query.equal('shift_id', shiftId),
+    Query.equal('phase', 'open'),
+    Query.limit(1),
+  ]).catch(() => []);
+  return rows.length > 0;
 }

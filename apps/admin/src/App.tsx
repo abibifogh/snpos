@@ -29,6 +29,7 @@ import { VouchersPage } from './pages/Vouchers';
 import { ConsignorsPage } from './pages/Consignors';
 import { IntakePage } from './pages/Intake';
 import { StocktakePage } from './pages/Stocktake';
+import { BarCountsPage } from './pages/BarCounts';
 import { PayoutsPage } from './pages/Payouts';
 
 export function App() {
@@ -80,6 +81,14 @@ export function App() {
         <Route path="/consignors" element={guard('consignors', <ConsignorsPage />)} />
         <Route path="/intake" element={guard('intake', <IntakePage />)} />
         <Route path="/stocktake" element={guard('stocktake', <StocktakePage />)} />
+        {/* The bar reuses the kitchen's screens for its catalogue and its
+            shelves — a dish and a cocktail are both a menu item with a recipe,
+            and a bottle is an ingredient. What it does NOT share is the
+            counting, which is why that has a screen of its own. */}
+        <Route path="/bar/categories" element={guard('bar_categories', <CategoriesPage />)} />
+        <Route path="/bar/items" element={guard('bar_items', <MenuItemsPage />)} />
+        <Route path="/bar/stock" element={guard('bar_stock', <StockPage />)} />
+        <Route path="/bar/counts" element={guard('bar_counts', <BarCountsPage />)} />
         <Route path="/payouts" element={guard('payouts', <PayoutsPage />)} />
         <Route path="/venues" element={guard('venues', <VenuesPage />)} />
         <Route path="/tables" element={guard('tables', <TablesPage />)} />

@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react';
 import { Card, Empty, Notice, Spinner, Badge, Modal, Button } from '@snpos/ui';
 import { listAll, humanError, Query } from '../lib';
 import { formatMoney, byStaff, destinationLabel, fromTakings } from '@snpos/core';
-import type { Doc, CashHandover } from '@snpos/core';
+import type { Module, Doc, CashHandover } from '@snpos/core';
 import { useSession } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 
 interface Shift extends Doc {
   venue_id: string;
   code: string;
-  module?: 'kitchen' | 'craft';
+  module?: Module;
   status: 'open' | 'closing' | 'closed';
   opened_by: string;
   opened_at: string;

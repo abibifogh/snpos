@@ -1,5 +1,9 @@
 /** Shapes mirroring the collections created by scripts/schema.mjs. */
 
+// Type-only, and erased at compile time, so the pair importing each other's
+// types costs nothing at runtime and keeps `Module` defined once.
+import type { Module } from './access';
+
 export interface Doc {
   $id: string;
   $createdAt: string;
@@ -37,6 +41,8 @@ export interface Settings extends Doc {
   low_stock_default_bp: number;
   /** Account codes counted as Costs. Empty or absent means all of them. */
   cost_account_codes?: string;
+  /** Whether this business runs a bar alongside the kitchen and the shop. */
+  bar_enabled?: boolean;
   /** Which screens ask for a tip. `tips_enabled: false` overrides all of them. */
   tips_ask_on?: 'both' | 'till' | 'kitchen' | 'none';
   /** How the shift-end check asks: tap a level, or type what is there. */
@@ -114,7 +120,7 @@ export interface Category extends Doc {
   unavailable_display: 'grey' | 'hide';
   group_only?: boolean;
   /** Kitchen or craft. Decides which catalogue screen manages it. */
-  module?: 'kitchen' | 'craft';
+  module?: Module;
   station: Station;
   station_key?: string;
 }
@@ -142,7 +148,7 @@ export interface MenuItem extends Doc {
   sort: number;
   track_stock: boolean;
   /** Kitchen or craft. Set from the category it was created under. */
-  module?: 'kitchen' | 'craft';
+  module?: Module;
   // ------------------------------------------------------------- craft shop
   // Blank on every restaurant row, and nothing reads them there.
   consignor_id?: string;
@@ -184,7 +190,7 @@ export interface StaffProfile extends Doc {
   email?: string;
   venue_ids?: string[];
   /** Which side of the business they work on. Absent means both. */
-  works_in?: 'both' | 'kitchen' | 'craft';
+  works_in?: 'both' | Module;
   login_link_requested_at?: string;
   login_link_sent_at?: string;
 }

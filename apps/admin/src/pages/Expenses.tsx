@@ -7,7 +7,7 @@ import {
   isPostableExpenseAccount, expenseMethods, modulesOf, recomputeClosedShift,
   postExpense, accountForExpense,
 } from '@snpos/core';
-import type { Doc, Ingredient, PaidToKind } from '@snpos/core';
+import type { Module, Doc, Ingredient, PaidToKind } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
 import { AccountsManager } from '../components/AccountsManager';
 import { useSession } from '../session';
@@ -20,7 +20,7 @@ interface Expense extends Doc {
   category_key?: string;
   payee?: string;
   paid_to_kind?: 'supplier' | 'staff' | 'open_market' | 'other';
-  module?: 'kitchen' | 'craft';
+  module?: Module;
   supplier_id?: string;
   paid_to_staff_id?: string;
   amount: number;
@@ -568,7 +568,7 @@ export function ExpensesPage() {
               <Field label="Which side" hint="Whose books this comes out of.">
                 <Select
                   value={editing.module ?? 'kitchen'}
-                  onChange={(e) => setEditing({ ...editing, module: e.target.value as 'kitchen' | 'craft' })}
+                  onChange={(e) => setEditing({ ...editing, module: e.target.value as Module })}
                 >
                   <option value="kitchen">Kitchen</option>
                   <option value="craft">Craft shop</option>

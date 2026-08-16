@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { shiftPrefix } from '../shift-rules.ts';
 import {
   modulesOf, modulesForStaff, parseAccess, canOpen, inTrade, sectionsFor,
   canEditCatalogue, selfOrderModule, ADMIN_SECTIONS, DEFAULT_ACCESS, areasOf,
@@ -11,13 +12,13 @@ const staff = (over: Partial<StaffProfile> = {}) =>
   ({ $id: 's1', display_name: 'Person', role: 'manager', active: true, ...over }) as StaffProfile;
 
 test('a business with no switches set is read from what it used to say', () => {
-  assert.deepEqual(modulesOf(settings()), { kitchen: true, craft: false });
-  assert.deepEqual(modulesOf(settings({ business_type: 'craft_shop' })), { kitchen: false, craft: true });
+  assert.deepEqual(modulesOf(settings()), { kitchen: true, craft: false, bar: false });
+  assert.deepEqual(modulesOf(settings({ business_type: 'craft_shop' })), { kitchen: false, craft: true, bar: false });
 });
 
 test('the switches win once they exist, and both may be on', () => {
-  assert.deepEqual(modulesOf(settings({ kitchen_enabled: true, craft_enabled: true })), { kitchen: true, craft: true });
-  assert.deepEqual(modulesOf(settings({ kitchen_enabled: false, craft_enabled: true })), { kitchen: false, craft: true });
+  assert.deepEqual(modulesOf(settings({ kitchen_enabled: true, craft_enabled: true })), { kitchen: true, craft: true, bar: false });
+  assert.deepEqual(modulesOf(settings({ kitchen_enabled: false, craft_enabled: true })), { kitchen: false, craft: true, bar: false });
 });
 
 test('a business can never run neither side', () => {
@@ -27,14 +28,14 @@ test('a business can never run neither side', () => {
 
 test('a person narrows what the business runs but cannot invent a side', () => {
   const both = settings({ kitchen_enabled: true, craft_enabled: true });
-  assert.deepEqual(modulesForStaff(staff({ works_in: 'craft' }), both), { kitchen: false, craft: true });
-  assert.deepEqual(modulesForStaff(staff({ works_in: 'both' }), both), { kitchen: true, craft: true });
-  assert.deepEqual(modulesForStaff(staff({}), both), { kitchen: true, craft: true }, 'absent means both');
+  assert.deepEqual(modulesForStaff(staff({ works_in: 'craft' }), both), { kitchen: false, craft: true, bar: false });
+  assert.deepEqual(modulesForStaff(staff({ works_in: 'both' }), both), { kitchen: true, craft: true, bar: false });
+  assert.deepEqual(modulesForStaff(staff({}), both), { kitchen: true, craft: true, bar: false }, 'absent means both');
 
   const kitchenOnly = settings({ kitchen_enabled: true, craft_enabled: false });
   assert.deepEqual(
     modulesForStaff(staff({ works_in: 'craft' }), kitchenOnly),
-    { kitchen: true, craft: false },
+    { kitchen: true, craft: false, bar: false },
     'craft-only in a kitchen-only business works the kitchen, because there is nowhere else',
   );
 });
@@ -232,4 +233,45 @@ test('the saved marker only needs to cover what has a default', () => {
 
   assert.deepEqual(access.manager, [], 'everything unticked stays unticked');
   assert.ok(JSON.stringify(saved).length < 2000, 'and it fits in the column it is stored in');
+});
+
+test('a bar is its own side, and turning it on does not turn the others off', () => {
+  /**
+   * The bar switch arrived after the other two, so a business that had already
+   * answered "restaurant" has no bar setting to read — and guessing from
+   * `business_type` would switch off a bar somebody had deliberately turned on.
+   */
+  assert.deepEqual(
+    modulesOf({ business_type: 'restaurant', bar_enabled: true } as Settings),
+    { kitchen: true, craft: false, bar: true },
+  );
+  // Untouched settings stay exactly as they were.
+  assert.deepEqual(
+    modulesOf({ business_type: 'restaurant' } as Settings),
+    { kitchen: true, craft: false, bar: false },
+  );
+  // All three together is a business, not a mistake.
+  assert.deepEqual(
+    modulesOf({ kitchen_enabled: true, craft_enabled: true, bar_enabled: true } as Settings),
+    { kitchen: true, craft: true, bar: true },
+  );
+  // A bar on its own still leaves somewhere to work, rather than an app with
+  // no usable screens.
+  assert.deepEqual(
+    modulesOf({ kitchen_enabled: false, craft_enabled: false, bar_enabled: true } as Settings),
+    { kitchen: false, craft: false, bar: true },
+  );
+  assert.deepEqual(
+    modulesOf({ kitchen_enabled: false, craft_enabled: false, bar_enabled: false } as Settings),
+    { kitchen: true, craft: false, bar: false },
+    'switching everything off falls back rather than showing nothing',
+  );
+});
+
+test('a bar shift is told apart from the other two at a glance', () => {
+  // The code is what people read out to each other and write on an envelope of
+  // cash, so it says which counter it came from before anything else does.
+  assert.equal(shiftPrefix('bar'), 'BAR');
+  assert.equal(shiftPrefix('kitchen'), 'BIST');
+  assert.equal(shiftPrefix('craft'), 'CRAF');
 });

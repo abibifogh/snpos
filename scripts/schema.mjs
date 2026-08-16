@@ -334,6 +334,17 @@ export const COLLECTIONS = [
        * after the rows do can never be required.
        */
       ['cost_account_codes', 's', 2000, false],
+      /**
+       * Whether this business runs a bar.
+       *
+       * Its own switch rather than a category of drinks on the restaurant's
+       * menu, for the reasons set out on `Module` in access.ts: a bar counts
+       * bottles at both ends of a shift, pours cocktails whose ingredients
+       * have to leave the shelf as they are poured, and answers for its own
+       * drawer. Folded into the kitchen, a short till has two possible owners
+       * and therefore none.
+       */
+      ['bar_enabled', 'b', null, false, false],
       // How the shift-end stock check asks its question.
       //
       // 'levels', a cook taps OK, Low or Out. Fast, and honest about being a
@@ -429,7 +440,7 @@ export const COLLECTIONS = [
       // Which side of the business this belongs to. A kitchen category and a
       // craft category are managed on different screens by different people
       // and would otherwise pile into one list.
-      ['module', 'e', ['kitchen', 'craft'], false, 'kitchen'],
+      ['module', 'e', ['kitchen', 'craft', 'bar'], false, 'kitchen'],
     ],
     indexes: [['active_sort', 'key', ['active', 'sort']], ['module_sort', 'key', ['module', 'sort']]],
   },
@@ -473,7 +484,7 @@ export const COLLECTIONS = [
       // left. Blank on every restaurant row, and nothing reads them there.
       // Kitchen or craft. Set from the category it is created under, and kept
       // on the row so a list can be filtered without joining.
-      ['module', 'e', ['kitchen', 'craft'], false, 'kitchen'],
+      ['module', 'e', ['kitchen', 'craft', 'bar'], false, 'kitchen'],
       ['consignor_id', 's', 64, false],
       ['intake_id', 's', 64, false],
       // Overrides the consignor's rate for this piece. Used when one item is
@@ -769,7 +780,7 @@ export const COLLECTIONS = [
       ['quoted_wait_minutes', 'i', null, false], // set by busy mode (feature 11)
       // Which side of the business sold this, so the two sets of books can be
       // read apart. Taken from the till that rang it up.
-      ['module', 'e', ['kitchen', 'craft'], false, 'kitchen'],
+      ['module', 'e', ['kitchen', 'craft', 'bar'], false, 'kitchen'],
       /**
        * What the CUSTOMER was told to expect, end to end.
        *
@@ -992,7 +1003,7 @@ export const COLLECTIONS = [
        * Each side has its own open shift, and closing one never closes the
        * other. Rows written before this are kitchen, which is what they were.
        */
-      ['module', 'e', ['kitchen', 'craft'], false, 'kitchen'],
+      ['module', 'e', ['kitchen', 'craft', 'bar'], false, 'kitchen'],
     ],
     // One shift may be open per venue PER SIDE, the query that enforces it
     // filters on both, so this index carries both.
@@ -1031,7 +1042,7 @@ export const COLLECTIONS = [
       // Which side of the business paid for this. Carried on the row rather
       // than read from the shift, because an expense recorded outside a shift
       // still belongs to one side's books.
-      ['module', 'e', ['kitchen', 'craft'], false, 'kitchen'],
+      ['module', 'e', ['kitchen', 'craft', 'bar'], false, 'kitchen'],
       // The old fixed list. Kept because an enum cannot be widened in place
       // without dropping the column and the data with it; `category_key` is
       // what the app reads and writes now, and it points at a row the
@@ -1221,6 +1232,20 @@ export const COLLECTIONS = [
     attributes: [
       ['shift_id', 's', 64, true],
       ['ingredient_id', 's', 64, true],
+      /**
+       * Which end of the shift this count was taken at.
+       *
+       * A bar counts its bottles when it opens and again when it closes, and
+       * the two are not the same record: the opening count is what the person
+       * coming on is accepting responsibility for, and the closing one is what
+       * they are handing over. One row per shift per ingredient could only ever
+       * hold one of them, so a bar's variance would be measured against
+       * whatever the last shift happened to leave behind.
+       *
+       * Rows written before this existed are closing counts, which is what
+       * they were.
+       */
+      ['phase', 'e', ['open', 'close'], false, 'close'],
       ['opening_qty', 'f', null, true, 0],
       ['theoretical_qty', 'f', null, true, 0],
       ['counted_qty', 'f', null, false],
@@ -1231,7 +1256,7 @@ export const COLLECTIONS = [
       ['checked_by', 's', 64, false],
       ['note', 's', 300, false],
     ],
-    indexes: [['shift_ing', 'key', ['shift_id', 'ingredient_id']]],
+    indexes: [['shift_ing', 'key', ['shift_id', 'ingredient_id']], ['shift_phase', 'key', ['shift_id', 'phase']]],
   },
 
   // --------------------------------------------------------------- inventory
@@ -1241,8 +1266,26 @@ export const COLLECTIONS = [
     perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: ADMIN },
     attributes: [
       ['name', 's', 160, true],
-      ['unit', 'e', ['g', 'kg', 'ml', 'l', 'each', 'pack'], true],
+      /**
+       * What this is counted in.
+       *
+       * A bar counts in bottles and pours in measures, and neither is a
+       * kitchen unit — "0.7 l of gin" is a sentence nobody at a bar says while
+       * holding a bottle. The count sheet groups by this, so the person
+       * walking the shelves counts all the bottles, then all the crates,
+       * rather than switching units every third line.
+       */
+      ['unit', 'e', ['g', 'kg', 'ml', 'l', 'each', 'pack', 'bottle', 'case', 'shot', 'cl'], true],
       ['base_unit_cost', 'i', null, true, 0],
+      /**
+       * Which side of the business keeps this on its shelves.
+       *
+       * A bar counting rice and a kitchen counting gin are both counting
+       * somebody else's larder, and a count sheet with forty lines that are
+       * not yours on it is one people tap through. Rows written before the bar
+       * existed are the kitchen's, which is what they were.
+       */
+      ['module', 'e', ['kitchen', 'craft', 'bar'], false, 'kitchen'],
       ['current_qty', 'f', null, true, 0],
       ['par_level', 'f', null, true, 0],
       ['low_threshold', 'f', null, false],
@@ -1785,7 +1828,7 @@ export const COLLECTIONS = [
        * wrong in that direction only shows somebody a page they ignore, 
        * guessing wrong the other way hides the work they came in to do.
        */
-      ['works_in', 'e', ['both', 'kitchen', 'craft'], false, 'both'],
+      ['works_in', 'e', ['both', 'kitchen', 'craft', 'bar'], false, 'both'],
       ['login_link_requested_at', 'd', null, false],
       ['login_link_sent_at', 'd', null, false],
     ],

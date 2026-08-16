@@ -175,7 +175,7 @@ export function CombinedBar({
         out: takings.expensesTotal - takings.ownMoneyTotal,
         ownMoney: takings.ownMoneyTotal,
       });
-      const list = await stockCheckRows(venue.$id);
+      const list = await stockCheckRows(venue.$id, shift?.module ?? 'kitchen');
       setStockList(list);
       setLevels(Object.fromEntries(list.map((i) => [i.$id, 'OK' as const])));
       setStockCounts({});

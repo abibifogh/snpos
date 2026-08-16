@@ -35,3 +35,4 @@ export * from './expense-draft';
 export * from './price-history';
 export * from './stocktake';
 export * from './maker-import';
+export * from './bar-count';

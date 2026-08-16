@@ -158,7 +158,9 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
        * the kitchen's overnight report. The shop's own stock moves through
        * consignment intakes and sales, which count themselves.
        */
-      const list = ctx.module === 'craft' ? [] : await stockCheckRows(ctx.venue.$id);
+      // The shop has no larder to count; the kitchen and the bar each count
+      // their own, and never each other's.
+      const list = ctx.module === 'craft' ? [] : await stockCheckRows(ctx.venue.$id, ctx.module);
       setStockList(list);
       setLevels(Object.fromEntries(list.map((i) => [i.$id, 'OK' as const])));
       setStockCounts({});

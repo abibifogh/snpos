@@ -45,6 +45,7 @@ const FIELD_LABELS: Record<string, string> = {
   expense_paid_from: 'What money spent during a shift can come out of',
   kitchen_enabled: 'The kitchen side',
   craft_enabled: 'The craft shop side',
+  bar_enabled: 'The bar side',
   self_order_enabled: 'Customers ordering for themselves',
   default_commission_bp: 'Default commission',
   craft_order_prefix: 'Craft sale number prefix',
@@ -273,6 +274,7 @@ export function SettingsPage() {
         expense_paid_from: form.expense_paid_from ?? 'cash_only',
         kitchen_enabled: mods.kitchen,
         craft_enabled: mods.craft,
+        bar_enabled: mods.bar,
         self_order_enabled: form.self_order_enabled !== false,
         default_commission_bp: Number(form.default_commission_bp ?? 3000),
         craft_order_prefix: form.craft_order_prefix ?? 'S',
@@ -328,19 +330,30 @@ export function SettingsPage() {
 
         <h3 style={{ marginTop: '1.6rem' }}>What this business runs</h3>
         <p className="small dim" style={{ marginTop: 0 }}>
-          Switch on whichever sides you actually run. Both can run together under one till, one set of staff
-          and one set of books, a kitchen with a craft corner is one business, not two systems.
+          Switch on whichever sides you actually run. They can run together under one set of staff and one set
+          of books — a kitchen with a bar and a craft corner is one business, not three systems. Each keeps its
+          own shift and its own drawer, so a short till always has exactly one person to ask.
         </p>
 
         <Toggle
           checked={mods.kitchen}
-          onChange={(v) => set('kitchen_enabled', v || !mods.craft)}
+          onChange={(v) => set('kitchen_enabled', v || (!mods.craft && !mods.bar))}
           label="Kitchen, food and drink"
         />
         <Toggle
           checked={mods.craft}
-          onChange={(v) => set('craft_enabled', v || !mods.kitchen)}
+          onChange={(v) => set('craft_enabled', v || (!mods.kitchen && !mods.bar))}
           label="Craft shop, goods sold on consignment"
+        />
+        {/* Its own side rather than a category of drinks on the kitchen's
+            menu. A bar counts bottles at both ends of a shift, pours cocktails
+            whose ingredients leave the shelf as they are poured, and answers
+            for its own drawer — folded into the kitchen, a short till has two
+            possible owners and therefore none. */}
+        <Toggle
+          checked={mods.bar}
+          onChange={(v) => set('bar_enabled', v || (!mods.kitchen && !mods.craft))}
+          label="Bar, bottles and cocktails counted in and out"
         />
         {/* Refusing to turn the last one off rather than letting somebody
             discover an admin app with nothing in it. The toggle simply does

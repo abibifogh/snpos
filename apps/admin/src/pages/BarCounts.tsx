@@ -1,0 +1,325 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Badge, Button, Card, Empty, Field, Input, Notice, Select, Spinner, useToast } from '@snpos/ui';
+import { humanError } from '../lib';
+import {
+  barCountSheet, saveBarCount, hasOpeningCount, byUnit, summariseBarCount, readyToClose,
+  formatMoney, listAll, Query, loadOpenShifts,
+} from '@snpos/core';
+import type { BarCountLine, Shift, Doc } from '@snpos/core';
+import { useSession } from '../session';
+
+interface CheckRow extends Doc {
+  shift_id: string;
+  ingredient_id: string;
+  phase?: 'open' | 'close';
+  counted_qty?: number;
+  theoretical_qty: number;
+  variance_qty: number;
+  variance_value: number;
+}
+
+/**
+ * The bar's bottles, counted in and counted out.
+ *
+ * A kitchen counts once, at close, and nobody signs for the rice. A bar is the
+ * other thing: the person coming on accepts what is behind the bar and the
+ * person going off hands it over, and the difference between those two counts
+ * is what somebody is answerable for.
+ *
+ * Which is why the opening count is asked for rather than carried over. It
+ * usually IS what the last shift left, and the times it is not are exactly the
+ * times that matter — an overnight delivery, a bottle taken for a function, a
+ * count somebody rushed at midnight. Two minutes at the start is what stops an
+ * argument at the end.
+ */
+export function BarCountsPage() {
+  const { settings, profile, user } = useSession();
+  const toast = useToast();
+
+  const [shift, setShift] = useState<Shift | null>(null);
+  const [phase, setPhase] = useState<'open' | 'close'>('close');
+  const [lines, setLines] = useState<BarCountLine[] | null>(null);
+  const [openingDone, setOpeningDone] = useState(false);
+  const [history, setHistory] = useState<CheckRow[]>([]);
+  const [filter, setFilter] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isAdmin = profile?.role === 'admin';
+  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+
+  const load = async () => {
+    try {
+      const open = await loadOpenShifts('main', 'bar').catch(() => [] as Shift[]);
+      const current = open[0] ?? null;
+      setShift(current);
+      setLines(await barCountSheet('main'));
+      if (current) {
+        const done = await hasOpeningCount(current.$id);
+        setOpeningDone(done);
+        // Straight to the count that has not been done yet, rather than making
+        // somebody choose between two words at the start of a shift.
+        setPhase(done ? 'close' : 'open');
+        setHistory(await listAll<CheckRow>('shift_stock_checks', [Query.equal('shift_id', current.$id)]));
+      }
+    } catch (e) {
+      setError(humanError(e));
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const setLine = (id: string, patch: Partial<BarCountLine>) =>
+    setLines((rows) => (rows ?? []).map((r) => (r.ingredientId === id ? { ...r, ...patch } : r)));
+
+  const shown = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    return (lines ?? []).filter((l) => !q || l.name.toLowerCase().includes(q));
+  }, [lines, filter]);
+
+  const groups = useMemo(() => byUnit(shown), [shown]);
+  const summary = useMemo(() => summariseBarCount(lines ?? []), [lines]);
+  const check = useMemo(() => readyToClose(lines ?? []), [lines]);
+
+  const save = async () => {
+    if (!shift) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { written, shortValue } = await saveBarCount({
+        venueId: 'main',
+        shiftId: shift.$id,
+        phase,
+        lines: lines ?? [],
+        userId: user?.$id ?? '',
+      });
+      await load();
+      setLines((rows) => (rows ?? []).map((r) => ({ ...r, countedText: '', note: '' })));
+      toast(
+        phase === 'open'
+          ? `${written} line${written === 1 ? '' : 's'} counted in. The bar is yours.`
+          : shortValue > 0
+            ? `Counted out. ${money(shortValue)} short — an admin can see it under Variances.`
+            : 'Counted out, and it balances.',
+      );
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** What the closing count found, for the admin who has to look at it. */
+  const closingVariances = history
+    .filter((h) => h.phase === 'close' && h.variance_qty !== 0)
+    .sort((a, b) => b.variance_value - a.variance_value);
+
+  const nameOf = (id: string) => (lines ?? []).find((l) => l.ingredientId === id)?.name ?? 'an ingredient';
+
+  return (
+    <>
+      <div className="spread">
+        <h1>Bar counts</h1>
+        {shift && (
+          <Button variant="primary" onClick={() => void save()} loading={busy} disabled={summary.countedLines === 0}>
+            {phase === 'open' ? 'Count the bar in' : 'Count the bar out'}
+          </Button>
+        )}
+      </div>
+
+      {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
+
+      {!shift ? (
+        <Card>
+          <Empty title="No bar shift is open">
+            A count belongs to a shift — it is what one person accepted and what they handed over. Open the bar
+            from the till, then count it in.
+          </Empty>
+        </Card>
+      ) : (
+        <>
+          <Card title={`Shift ${shift.code}`}>
+            <div className="row row-wrap" style={{ gap: '1.4rem', alignItems: 'flex-end' }}>
+              <Field label="Which count">
+                <Select value={phase} onChange={(e) => setPhase(e.target.value as 'open' | 'close')}>
+                  <option value="open">Counting in, at the start</option>
+                  <option value="close">Counting out, at the end</option>
+                </Select>
+              </Field>
+              <div>
+                <div className="dim small">Counted so far</div>
+                <div style={{ fontSize: '1.3rem', fontWeight: 650 }}>
+                  {summary.countedLines} of {(lines ?? []).length}
+                </div>
+              </div>
+              {summary.shortValue > 0 && (
+                <div>
+                  <div className="dim small">Short</div>
+                  <div style={{ fontSize: '1.3rem', fontWeight: 650, color: 'var(--warn)' }}>
+                    {money(summary.shortValue)}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* The opening count is not a formality and the screen says so
+                once, where somebody starting a shift will read it. */}
+            {phase === 'open' && !openingDone && (
+              <Notice tone="info">
+                Count what is actually behind the bar before service starts. It is usually what last night left,
+                and the times it is not — an overnight delivery, a bottle taken for a function — are the times a
+                variance gets argued about at two in the morning.
+              </Notice>
+            )}
+            {phase === 'open' && openingDone && (
+              <Notice tone="warn">
+                This shift has already been counted in. Counting again replaces what is on the shelf; do it only
+                if the first count was wrong.
+              </Notice>
+            )}
+            {phase === 'close' && !openingDone && (
+              <Notice tone="warn">
+                This shift was never counted in, so the closing figures are measured against whatever the last
+                shift left rather than against what this one accepted.
+              </Notice>
+            )}
+            {phase === 'close' && !check.clear && (
+              /* Said before the button, not after it. This is what an admin is
+                 being asked to look at, and it is a great deal easier to
+                 explain now than tomorrow when everybody has gone home. */
+              <Notice tone={check.missing > 0 ? 'warn' : 'err'}>{check.reason}</Notice>
+            )}
+          </Card>
+
+          <Card>
+            <Field label="Search">
+              <Input value={filter} placeholder="Gin, tonic…" onChange={(e) => setFilter(e.target.value)} />
+            </Field>
+            <p className="small dim" style={{ margin: 0 }}>
+              Grouped the way the bar is walked: bottles on the shelf, then crates in the store, then what is
+              open and measured. Leave a line blank and nothing is recorded for it — blank is not nought.
+            </p>
+          </Card>
+
+          {!lines ? (
+            <Card><Spinner /></Card>
+          ) : groups.length === 0 ? (
+            <Card>
+              <Empty title="Nothing set up for the bar yet">
+                Add your bottles and mixers under Bar, Bottles &amp; mixers, and set each one&rsquo;s unit —
+                bottles, cases, or measures. They appear here grouped by it.
+              </Empty>
+            </Card>
+          ) : (
+            groups.map((group) => (
+              <Card
+                key={group.unit}
+                title={group.label}
+                pad={false}
+                actions={
+                  <Badge tone={group.counted === group.total ? 'ok' : 'default'}>
+                    {group.counted} of {group.total}
+                  </Badge>
+                }
+              >
+                <div className="table-wrap">
+                  <table className="data">
+                    <thead>
+                      <tr>
+                        <th>What</th>
+                        <th className="num">Should be</th>
+                        <th style={{ width: '7rem' }}>Actually</th>
+                        <th className="num">Difference</th>
+                        <th className="num">Worth</th>
+                        <th style={{ width: '12rem' }}>Note</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.lines.map((l) => {
+                        const typed = (l.countedText ?? '').trim();
+                        const counted = typed === '' ? null : Number(typed);
+                        const delta = counted === null || !Number.isFinite(counted)
+                          ? null
+                          : Math.round((counted - l.expected) * 1000) / 1000;
+                        return (
+                          <tr key={l.ingredientId}>
+                            <td style={{ fontWeight: 550 }}>{l.name}</td>
+                            <td className="num dim">{l.expected}</td>
+                            <td>
+                              <Input
+                                type="number"
+                                step="any"
+                                min="0"
+                                placeholder="—"
+                                value={l.countedText ?? ''}
+                                onChange={(e) => setLine(l.ingredientId, { countedText: e.target.value })}
+                              />
+                            </td>
+                            <td className="num">
+                              {delta === null || delta === 0
+                                ? <span className="dim">—</span>
+                                : <Badge tone={delta < 0 ? 'danger' : 'warn'}>{delta > 0 ? `+${delta}` : delta}</Badge>}
+                            </td>
+                            <td className="num dim">
+                              {delta === null || delta === 0 ? '' : money(Math.round(Math.abs(delta) * l.unitCost))}
+                            </td>
+                            <td>
+                              {/* Only where there is something to explain. A
+                                  note box on every line is four hundred boxes
+                                  nobody fills in. */}
+                              {delta !== null && delta !== 0 ? (
+                                <Input
+                                  value={l.note ?? ''}
+                                  placeholder="Breakage, a taste…"
+                                  onChange={(e) => setLine(l.ingredientId, { note: e.target.value })}
+                                />
+                              ) : (
+                                <span className="dim small">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            ))
+          )}
+        </>
+      )}
+
+      {closingVariances.length > 0 && (
+        <Card title="What the last count found">
+          {!isAdmin && (
+            <p className="small dim" style={{ marginTop: 0 }}>
+              An admin sees this too. Anything you can explain is much easier to explain now than tomorrow.
+            </p>
+          )}
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr><th>What</th><th className="num">Expected</th><th className="num">Counted</th><th className="num">Out by</th><th className="num">Worth</th></tr>
+              </thead>
+              <tbody>
+                {closingVariances.map((h) => (
+                  <tr key={h.$id}>
+                    <td>{nameOf(h.ingredient_id)}</td>
+                    <td className="num dim">{h.theoretical_qty}</td>
+                    <td className="num">{h.counted_qty ?? '—'}</td>
+                    <td className="num">
+                      <Badge tone={h.variance_qty < 0 ? 'danger' : 'warn'}>
+                        {h.variance_qty > 0 ? `+${h.variance_qty}` : h.variance_qty}
+                      </Badge>
+                    </td>
+                    <td className="num">{money(h.variance_value)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </>
+  );
+}

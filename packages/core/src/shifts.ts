@@ -618,6 +618,10 @@ export async function closeShift(opts: {
         venue_id: venueId,
         shift_id: shift.$id,
         ingredient_id: ingredientId,
+        // The count taken at the END. A bar also counts when it opens, and the
+        // two are separate records: one is what somebody accepted, the other
+        // is what they handed over. See the note on `phase` in the schema.
+        phase: 'close',
         opening_qty: ing.current_qty,
         theoretical_qty: theoretical,
         counted_qty: wasCounted ? countedQty : undefined,

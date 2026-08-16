@@ -180,6 +180,46 @@ async function createAttribute(colId, tuple) {
  * row that has left it empty, and taking a whole provisioning run down for it
  * would be worse than the drift.
  */
+/**
+ * Add any new choices to an enum that already exists.
+ *
+ * Attributes that already exist are otherwise left alone, which is right for
+ * size and type and was quietly wrong for enums. An enum is the one attribute
+ * whose valid VALUES are part of its definition, so a new choice added to the
+ * schema simply never reached the database — and every write using it came back
+ * as "Invalid document structure", naming a value that is plainly listed in the
+ * source. The scar is already in the schema: `shift_expenses.category` was
+ * abandoned and replaced by a free-text `category_key` for exactly this reason.
+ *
+ * Only ever widened, never narrowed. Removing a choice would fail on any row
+ * already holding it, and taking a provisioning run down over that would be
+ * worse than the drift — so a live enum with values the schema has dropped is
+ * left alone and said aloud rather than forced.
+ */
+async function widenEnumIfNeeded(colId, tuple, live) {
+  const [key, type, arg, , def] = tuple;
+  if (type !== 'e' && type !== 'e[]') return false;
+  if (!Array.isArray(arg) || !Array.isArray(live.elements)) return false;
+
+  const missing = arg.filter((v) => !live.elements.includes(v));
+  if (missing.length === 0) return false;
+
+  const extra = live.elements.filter((v) => !arg.includes(v));
+  const elements = [...live.elements, ...missing];
+
+  try {
+    await db.updateEnumAttribute(DB_ID, colId, key, elements, live.required, def ?? null);
+    log('  ~', `${colId}.${key} now also accepts ${missing.join(', ')}`);
+    if (extra.length) {
+      log('  i', `${colId}.${key} still accepts ${extra.join(', ')}, which the schema no longer lists`);
+    }
+    return true;
+  } catch (e) {
+    log('  !', `could not widen ${colId}.${key}: ${e.message}`);
+    return false;
+  }
+}
+
 async function relaxIfNowOptional(colId, tuple, live) {
   const [key, type, arg, required = false, def] = tuple;
   if (required || !live.required) return false;
@@ -315,6 +355,7 @@ async function main() {
     for (const attr of col.attributes) {
       const already = live[attr[0]];
       if (already) {
+        if (await widenEnumIfNeeded(col.id, attr, already)) created++;
         if (await relaxIfNowOptional(col.id, attr, already)) created++;
         continue;
       }

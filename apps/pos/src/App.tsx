@@ -8,7 +8,7 @@ import {
   account, db, DB_ID, Query, listAll, loadMenu, loadFeatures, humanError, isEnabled,
   articlesFor, featureConfig, HELP_AREAS,
   markUnavailable, markAvailable, isUnavailable, loadMenu as reloadMenu, itemsAvailableNow,
-  requireStaff, signOutCompletely, staffProfileFor, loadOpenShifts, modulesForStaff,
+  requireStaff, signOutCompletely, staffProfileFor, loadOpenShifts, modulesForStaff, MODULE_LABELS,
   onQueueChange, startOfflineSync, flushQueue,
 } from '@snpos/core';
 import type { Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc, Module } from '@snpos/core';
@@ -129,11 +129,12 @@ export function App() {
      * on this device; one tap, once, on the device that stays where it is.
      */
     const mine = modulesForStaff(profile, settings);
-    const canSwitch = mine.kitchen && mine.craft;
+    const theirs: Module[] = (['kitchen', 'bar', 'craft'] as Module[]).filter((m) => mine[m]);
+    const canSwitch = theirs.length > 1;
     const remembered = localStorage.getItem('snpos.till.module') as Module | null;
     const startingModule: Module = canSwitch
-      ? (remembered === 'craft' || remembered === 'kitchen' ? remembered : 'kitchen')
-      : mine.craft ? 'craft' : 'kitchen';
+      ? (remembered && theirs.includes(remembered) ? remembered : theirs[0])
+      : theirs[0] ?? 'kitchen';
 
     const open = await loadShift(venue.$id, startingModule);
 
@@ -276,18 +277,20 @@ export function App() {
             books. It sits left of the tabs because it changes what they mean. */}
         {ctx.canSwitch && (
           <div className="pos-tabs pos-side">
-            <button
-              className={ctx.module === 'kitchen' ? 'on' : ''}
-              onClick={() => ctx.setModule('kitchen')}
-            >
-              Kitchen
-            </button>
-            <button
-              className={ctx.module === 'craft' ? 'on' : ''}
-              onClick={() => ctx.setModule('craft')}
-            >
-              Craft shop
-            </button>
+            {/* Built from what this person may actually work rather than three
+                hard-coded buttons, so a bar-only cashier is never offered a
+                shop they cannot sell from. */}
+            {(['kitchen', 'bar', 'craft'] as Module[])
+              .filter((m) => modulesForStaff(ctx.profile, ctx.settings)[m])
+              .map((m) => (
+                <button
+                  key={m}
+                  className={ctx.module === m ? 'on' : ''}
+                  onClick={() => ctx.setModule(m)}
+                >
+                  {MODULE_LABELS[m]}
+                </button>
+              ))}
           </div>
         )}
         {ctx.module !== 'craft' && (
