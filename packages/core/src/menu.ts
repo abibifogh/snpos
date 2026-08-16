@@ -1,8 +1,9 @@
-import { listAll } from './client';
+import { db, DB_ID, ID, Query, listAll } from './client';
 import { isAvailable, parseWindows } from './availability';
 import type { Category, MenuItem, Doc } from './types';
 import type { ProductVariant } from './consignment';
 import type { Module } from './access';
+import type { ImportDrink } from './drink-import';
 
 export interface MenuItemCategory extends Doc {
   menu_item_id: string;
@@ -231,4 +232,104 @@ export function variantPriceRange(entry: {
   if (live.length === 0) return { from: entry.price, to: entry.price };
   const prices = live.map((v) => v.price);
   return { from: Math.min(...prices), to: Math.max(...prices) };
+}
+
+/* ------------------------------------------------------ a drinks list in bulk */
+
+/**
+ * Write a read-back drinks list, with the categories and recipes behind it.
+ *
+ * Categories first, because a drink needs one to point at, and a drink written
+ * against a category that does not exist yet is a drink nobody can find.
+ *
+ * Recipes are replaced rather than added to when a drink already exists. A
+ * file correcting a cocktail is somebody saying what is in it NOW, and merging
+ * the old lines in would leave the previous recipe pouring alongside the new
+ * one — a double measure of gin that nobody typed and nobody can see.
+ */
+export async function importDrinks(opts: {
+  drinks: ImportDrink[];
+  existing: { $id: string; name: string }[];
+  module?: Module;
+}): Promise<{ drinks: number; updated: number; categories: number; recipeLines: number }> {
+  const made = new Map<string, string>();
+  let categories = 0;
+
+  const byName = new Map(opts.existing.map((e) => [e.name.trim().toLowerCase(), e.$id]));
+  let drinks = 0;
+  let updated = 0;
+  let recipeLines = 0;
+
+  for (const d of opts.drinks) {
+    let categoryId = d.categoryId || made.get(d.categoryName.toLowerCase()) || '';
+    if (!categoryId) {
+      const created = await db.createDocument(DB_ID, 'categories', ID.unique(), {
+        name: d.categoryName,
+        sort: 0,
+        active: true,
+        station: 'bar',
+        // Required, and easy to miss when creating a row the forms usually
+        // create. Appwrite rejects the whole document without it, so every
+        // category — and therefore every drink — would have failed to save.
+        unavailable_display: 'grey',
+        module: opts.module ?? 'bar',
+      });
+      categoryId = created.$id;
+      made.set(d.categoryName.toLowerCase(), categoryId);
+      categories += 1;
+    }
+
+    const payload = {
+      category_id: categoryId,
+      name: d.name,
+      description: d.description,
+      price: d.price,
+      prep_minutes: d.prepMinutes,
+      // A drink is made at the bar, whatever else is on the ticket.
+      station: 'bar' as const,
+      active: true,
+      module: opts.module ?? 'bar',
+      ...(d.barcode ? { sku: d.barcode } : {}),
+    };
+
+    const existingId = byName.get(d.name.trim().toLowerCase());
+    let itemId: string;
+    if (existingId) {
+      await db.updateDocument(DB_ID, 'menu_items', existingId, payload);
+      itemId = existingId;
+      updated += 1;
+      // Out with the old recipe before the new one goes in. See above: merging
+      // would leave two measures pouring where somebody typed one.
+      const old = await listAll<Doc>('recipes', [Query.equal('menu_item_id', itemId)]).catch(() => []);
+      for (const r of old) await db.deleteDocument(DB_ID, 'recipes', r.$id).catch(() => undefined);
+    } else {
+      const created = await db.createDocument(DB_ID, 'menu_items', ID.unique(), payload);
+      itemId = created.$id;
+      drinks += 1;
+    }
+
+    // The join row the menu reads from. Without it the drink exists and
+    // appears nowhere, which looks exactly like the import having failed.
+    const links = await listAll<Doc>('menu_item_categories', [Query.equal('menu_item_id', itemId)]).catch(() => []);
+    if (!links.some((l) => (l as unknown as { category_id: string }).category_id === categoryId)) {
+      await db.createDocument(DB_ID, 'menu_item_categories', ID.unique(), {
+        menu_item_id: itemId,
+        category_id: categoryId,
+        sort: 0,
+        active: true,
+      }).catch(() => undefined);
+    }
+
+    for (const r of d.recipe) {
+      await db.createDocument(DB_ID, 'recipes', ID.unique(), {
+        menu_item_id: itemId,
+        ingredient_id: r.ingredientId,
+        qty_per_unit: r.qtyPerUnit,
+        wastage_bp: r.wastageBp,
+      }).catch(() => undefined);
+      recipeLines += 1;
+    }
+  }
+
+  return { drinks, updated, categories, recipeLines };
 }

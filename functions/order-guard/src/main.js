@@ -236,7 +236,16 @@ async function pourFromBottles({ db, DB_ID, order, lines, log }) {
       const ingredient = await db.getDocument(DB_ID, 'ingredients', r.ingredient_id).catch(() => null);
       if (!ingredient) continue;
 
-      const used = (r.qty || 0) * (line.qty || 1);
+      /*
+        The field is `qty_per_unit`, and wastage counts.
+
+        Both of these are the kitchen's arithmetic, mirrored rather than
+        reinvented: see theoreticalUsage. A bar spills and over-pours exactly
+        as a kitchen trims, and a recipe that ignored wastage would report a
+        shortage every single night for a reason nobody could act on.
+      */
+      const perUnit = (r.qty_per_unit || 0) * (1 + (r.wastage_bp || 0) / 10000);
+      const used = perUnit * (line.qty || 1);
       if (!used) continue;
 
       await db.createDocument(DB_ID, 'stock_movements', 'unique()', {

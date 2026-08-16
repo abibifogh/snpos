@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import { parseWindows, describeWindows, isAvailable } from '@snpos/core';
-import type { Category, Windows } from '@snpos/core';
+import type { Module, Category, Windows } from '@snpos/core';
 import { HoursEditor } from '../components/HoursEditor';
 import { ImageField } from '../components/ImageField';
 import { StationPicker, useStations, legacyStationFor } from '../components/StationPicker';
@@ -24,7 +24,7 @@ const blank = (sort: number): Partial<Category> => ({
  * Rows written before this existed have no module and are read as kitchen,
  * which is what they were.
  */
-export function CategoriesPage({ module = 'kitchen' }: { module?: 'kitchen' | 'craft' }) {
+export function CategoriesPage({ module = 'kitchen' }: { module?: Module }) {
   const { settings, profile } = useSession();
   const mayEdit = canEditCatalogue(profile);
   const toast = useToast();

@@ -5,13 +5,14 @@ import {
   formatMoney, parseMoney, toInput, previewUrl, Query, loadConsignors, loadVariants, canEditCatalogue,
   loadVariantTypes,
 } from '@snpos/core';
-import type { Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType } from '@snpos/core';
+import type { Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
 import { KeyedListManager } from '../components/KeyedList';
 import { ImageField } from '../components/ImageField';
 import { RecipeEditor, draftFrom, type DraftRecipe } from '../components/RecipeEditor';
 import { StationPicker, useStations, legacyStationFor } from '../components/StationPicker';
 import { StockUpload } from '../components/StockUpload';
+import { DrinkUpload } from '../components/DrinkUpload';
 import { useSession } from '../session';
 
 interface ItemCategory extends Doc { menu_item_id: string; category_id: string; sort: number; active: boolean }
@@ -26,7 +27,7 @@ interface ItemAddonGroup extends Doc { menu_item_id: string; group_id: string; s
  * fields matter: a dish has a prep time and a station, a consigned piece has a
  * maker and a commission, and neither wants the other's questions.
  */
-export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'craft' }) {
+export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   /**
    * What this side of the business calls the thing on the shelf.
    *
@@ -55,6 +56,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
   const [pickedAddons, setPickedAddons] = useState<string[]>([]);
   const [filter, setFilter] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [uploadingDrinks, setUploadingDrinks] = useState(false);
   const [editing, setEditing] = useState<Partial<MenuItem> | null>(null);
   const [priceText, setPriceText] = useState('');
   /**
@@ -92,7 +94,9 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
     setLinks(l);
     setAddonGroups(g.sort((a, b) => a.sort - b.sort));
     setItemAddons(ia);
-    setIngredients(ing.filter((x) => x.active).sort((a, b) => a.name.localeCompare(b.name)));
+    // This side's shelves only, so a drinks file cannot be told to pour rice
+    // and a dish cannot be given gin.
+    setIngredients(ing.filter((x) => x.active && mine(x)).sort((a, b) => a.name.localeCompare(b.name)));
     setRecipes(r);
     // Only the shop needs these, and only the shop pays for the round trip.
     if (module === 'craft') {
@@ -397,6 +401,13 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
               Upload a spreadsheet
             </Button>
           )}
+          {/* The bar's own, which the kitchen's dishes could not use: a drinks
+              file carries its recipe, and a recipe is exactly what a bar
+              cannot be asked to type sixty times. Categories are created from
+              the file too, because a bar setting itself up has neither yet. */}
+          {mayEdit && module === 'bar' && (
+            <Button onClick={() => setUploadingDrinks(true)}>Upload a drinks list</Button>
+          )}
           {mayEdit && (
             <Button variant="primary" onClick={() => open()} disabled={categories.length === 0}>
               Add {W.one}
@@ -502,6 +513,18 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: 'kitchen' | 'cr
           settings={settings}
           userId={user?.$id ?? ''}
           onClose={() => setUploading(false)}
+          onDone={async (m) => { await load(); toast(m); }}
+        />
+      )}
+
+      {uploadingDrinks && settings && (
+        <DrinkUpload
+          categories={categories}
+          ingredients={ingredients}
+          existing={items ?? []}
+          settings={settings}
+          module="bar"
+          onClose={() => setUploadingDrinks(false)}
           onDone={async (m) => { await load(); toast(m); }}
         />
       )}

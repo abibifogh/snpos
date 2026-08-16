@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Badge, Button, Field, Modal, Notice, Select } from '@snpos/ui';
 import { db, DB_ID, ID, humanError } from '../lib';
 import { parseMoney, toInput } from '@snpos/core';
-import type { Ingredient, Settings } from '@snpos/core';
+import type { Ingredient, Settings, Module } from '@snpos/core';
 import type { KeyedRow } from './KeyedList';
 
 /**
@@ -24,7 +24,14 @@ const COLUMNS = [
   'low_warning_at', 'category', 'supplier', 'expense_category', 'critical',
 ];
 
-const UNITS = ['g', 'kg', 'ml', 'l', 'each', 'pack'];
+/**
+ * Bar units are here too, and they are not decoration.
+ *
+ * "0.7 l of gin" is a sentence nobody at a bar says while holding a bottle,
+ * and a spreadsheet that refuses `bottle` sends somebody to convert forty
+ * lines into litres by hand — which is where the mistakes come from.
+ */
+const UNITS = ['g', 'kg', 'ml', 'l', 'each', 'pack', 'bottle', 'case', 'shot', 'cl'];
 
 interface ParsedRow {
   line: number;
@@ -68,6 +75,7 @@ export function StockImport({
   expenseCategories,
   settings,
   venueId,
+  module = 'kitchen',
   onClose,
   onDone,
 }: {
@@ -77,6 +85,8 @@ export function StockImport({
   expenseCategories: KeyedRow[] | null;
   settings: Settings | null;
   venueId: string;
+  /** Whose shelves these are. Taken from the page rather than the file. */
+  module?: Module;
   onClose: () => void;
   onDone: (message: string) => void;
 }) {
@@ -208,6 +218,10 @@ export function StockImport({
           name: r.name,
           unit: r.unit,
           base_unit_cost: r.cost,
+          // Which side's shelves these sit on, taken from the page doing the
+          // importing. A bar counting rice and a kitchen counting gin are both
+          // counting somebody else's larder.
+          module,
           current_qty: r.qty,
           par_level: r.par,
           critical: r.critical,

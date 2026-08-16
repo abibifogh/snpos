@@ -5,7 +5,7 @@ import {
   formatMoney, parseMoney, toInput, levelOf, saveDropping,
   purchasesFor, priceHistory, priceMoveNote,
 } from '@snpos/core';
-import type { Ingredient, Recipe, MenuItem, Doc, Settings, PurchaseRow } from '@snpos/core';
+import type { Module, Ingredient, Recipe, MenuItem, Doc, Settings, PurchaseRow } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
 import { StockImport } from '../components/StockImport';
 import { useSession } from '../session';
@@ -29,7 +29,16 @@ const guideExample = (unit?: string) => {
   return 'OK = 10 pcs or more · Low = under 10 pcs';
 };
 
-export function StockPage() {
+/**
+ * Ingredients, for whichever side keeps them.
+ *
+ * A bar's bottles and a kitchen's larder are the same kind of record — a thing
+ * on a shelf with a unit, a cost and a level — so they share this screen. What
+ * they do not share is each other's lists, which is what `module` is for: a
+ * bar counting rice and a kitchen counting gin are both counting somebody
+ * else's larder.
+ */
+export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   const { settings } = useSession();
   const toast = useToast();
   const decimals = settings?.currency_decimals ?? 2;
@@ -58,7 +67,11 @@ export function StockPage() {
       listAll<Recipe>('recipes'),
       listAll<MenuItem>('menu_items'),
     ]);
-    setIngredients(i.sort((a, b) => a.name.localeCompare(b.name)));
+    // Rows written before the bar existed have no side, and were the
+    // kitchen's, which is what they were.
+    setIngredients(
+      i.filter((x) => (x.module ?? 'kitchen') === module).sort((a, b) => a.name.localeCompare(b.name)),
+    );
     setSuppliers(s.sort((a, b) => a.name.localeCompare(b.name)));
     setRecipes(r);
     setDishes(d);
@@ -141,6 +154,10 @@ export function StockPage() {
         expense_category_key: editing.expense_category_key ?? '',
         check_guide: (editing.check_guide ?? '').trim(),
         counted_at_close: editing.counted_at_close !== false,
+        // Whose shelf, taken from the page rather than asked for. A bottle
+        // added from the bar's screen belongs to the bar; nobody should have
+        // to answer a question the screen already knows the answer to.
+        module: editing.module ?? module,
         active: editing.active ?? true,
       };
       Object.keys(payload).forEach((k) => (payload as Record<string, unknown>)[k] === undefined && delete (payload as Record<string, unknown>)[k]);
@@ -355,6 +372,7 @@ export function StockPage() {
           expenseCategories={expenseCategories}
           settings={settings}
           venueId="main"
+          module={module}
           onClose={() => setImporting(false)}
           onDone={async (m) => {
             setImporting(false);
