@@ -4,6 +4,7 @@ import type { Module } from './access';
 import { variancesIn, wasCountedBar } from './bar-count';
 import { levelFor, transferQty, transferMovements, purchaseLocation, saleLocation } from './locations';
 import type { StockLocation, LocationStock, TransferLine } from './locations';
+import type { LevelRow } from './level-import';
 import type { BarCountLine } from './bar-count';
 import type { Doc } from './types';
 import type { OrderItem } from './orders';
@@ -817,4 +818,69 @@ export async function transferSheet(venueId: string, module: Module, fromId: str
       available: levelFor(levels, i.$id, fromId),
     }))
     .sort((a, b) => b.available - a.available || a.name.localeCompare(b.name));
+}
+
+/**
+ * Apply opening levels read from a file.
+ *
+ * SET, never added. This is an opening balance, and somebody will run it
+ * twice — once to see what happens and once more after fixing a column. A
+ * version that added would silently double the shop, and the doubling would
+ * look exactly like a good import.
+ *
+ * A movement is written for the difference rather than only the level being
+ * changed, because a shelf that jumps with nothing explaining why is what
+ * makes a stock history stop adding up. Each row is attempted on its own: a
+ * file of forty is somebody's setup, and losing the lot over one bad row
+ * would mean doing it again.
+ */
+export async function applyLevelImport(opts: {
+  venueId: string;
+  rows: LevelRow[];
+  userId: string;
+  note?: string;
+}): Promise<{ set: number; failed: number }> {
+  let set = 0;
+  let failed = 0;
+
+  for (const row of opts.rows) {
+    for (const level of row.levels) {
+      try {
+        const existing = await listAll<LocationStock & Doc>('stock_levels', [
+          Query.equal('ingredient_id', row.ingredientId),
+          Query.equal('location_id', level.locationId),
+          Query.limit(1),
+        ]).catch(() => []);
+        const before = existing[0]?.qty ?? 0;
+        const delta = Number((level.qty - before).toFixed(4));
+
+        if (delta !== 0) {
+          const ing = await db.getDocument(DB_ID, 'ingredients', row.ingredientId).catch(() => null);
+          await db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
+            venue_id: opts.venueId,
+            ingredient_id: row.ingredientId,
+            type: 'count_correction',
+            qty_delta: delta,
+            unit_cost: (ing as unknown as Ingredient | null)?.base_unit_cost ?? 0,
+            location_id: level.locationId,
+            ref_type: 'opening_levels',
+            created_by: opts.userId,
+            note: opts.note?.trim() || `Opening level at ${level.locationName}`,
+          }).catch(() => undefined);
+        }
+
+        await adjustLevel({
+          ingredientId: row.ingredientId,
+          locationId: level.locationId,
+          delta: 0,
+          setTo: level.qty,
+        });
+        set += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+  }
+
+  return { set, failed };
 }

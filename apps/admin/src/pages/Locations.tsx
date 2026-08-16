@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, humanError } from '../lib';
 import {
-  loadLocations, loadLevels, transferSheet, transferStock,
+  loadLocations, loadLevels, loadIngredients, transferSheet, transferStock,
   openIn, purchaseLocation, saleLocation, transferProblem, overdrawn, transferQty,
   LOCATION_KINDS, MODULE_LABELS, modulesOf,
 } from '@snpos/core';
 import type { StockLocation, LocationStock, TransferLine, Module, Doc } from '@snpos/core';
 import { useSession } from '../session';
+import { LevelUpload } from '../components/LevelUpload';
 
 /**
  * Where stock sits, and moving it between places.
@@ -40,6 +41,8 @@ export function LocationsPage() {
   const [filter, setFilter] = useState('');
   const [note, setNote] = useState('');
   const [confirming, setConfirming] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [stock, setStock] = useState<{ $id: string; name: string; unit: string }[]>([]);
 
   const mods = modulesOf(settings);
   const isAdmin = profile?.role === 'admin' || profile?.role === 'manager';
@@ -49,6 +52,9 @@ export function LocationsPage() {
       const p = await loadLocations('main');
       setPlaces(p);
       setLevels(await loadLevels());
+      setStock((await loadIngredients('main')).filter((i) => i.active).map((i) => ({
+        $id: i.$id, name: i.name, unit: i.unit,
+      })));
     } catch (e) {
       setError(humanError(e));
     }
@@ -143,9 +149,16 @@ export function LocationsPage() {
     <>
       <div className="spread">
         <h1>Where stock sits</h1>
-        <Button variant="primary" onClick={() => setEditing({ name: '', kind: 'counter', module })}>
-          Add a place
-        </Button>
+        <div className="row" style={{ gap: '0.5rem' }}>
+          {/* Counting forty items twice on day one is the kind of task that
+              gets done badly or not at all. */}
+          {mine.length > 0 && (
+            <Button onClick={() => setUploading(true)}>Upload opening levels</Button>
+          )}
+          <Button variant="primary" onClick={() => setEditing({ name: '', kind: 'counter', module })}>
+            Add a place
+          </Button>
+        </div>
       </div>
 
       <p className="dim" style={{ maxWidth: '46rem' }}>
@@ -296,6 +309,16 @@ export function LocationsPage() {
             )}
           </Card>
         </>
+      )}
+
+      {uploading && (
+        <LevelUpload
+          ingredients={stock}
+          locations={mine}
+          userId={user?.$id ?? ''}
+          onClose={() => setUploading(false)}
+          onDone={async (m) => { await load(); if (fromId) setLines(await transferSheet('main', module, fromId)); toast(m); }}
+        />
       )}
 
       {confirming && (
