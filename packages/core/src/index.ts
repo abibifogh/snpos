@@ -37,3 +37,4 @@ export * from './stocktake';
 export * from './maker-import';
 export * from './bar-count';
 export * from './drink-import';
+export * from './locations';

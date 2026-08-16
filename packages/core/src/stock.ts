@@ -2,6 +2,8 @@ import { db, DB_ID, ID, Query, listAll } from './client';
 import type { PurchaseRow } from './price-history';
 import type { Module } from './access';
 import { variancesIn, wasCountedBar } from './bar-count';
+import { levelFor, transferQty, transferMovements, purchaseLocation, saleLocation } from './locations';
+import type { StockLocation, LocationStock, TransferLine } from './locations';
 import type { BarCountLine } from './bar-count';
 import type { Doc } from './types';
 import type { OrderItem } from './orders';
@@ -162,12 +164,29 @@ export async function receiveStock(opts: {
   const { venueId, ingredient, qty, unitCost, refType, refId, shiftId, createdBy, note } = opts;
   if (qty <= 0) return;
 
+  /*
+    A delivery is put down in the store, not behind the bar.
+
+    Where it lands is decided in one place — see locationForMovement — because
+    the day the till decides a sale comes off the store while the count checks
+    the counter is the day the two stop being reconcilable, with nothing on
+    screen to say which is wrong.
+
+    A business with one location has both answers the same, which is why none
+    of this changes anything for a kitchen that has never heard of a store room.
+  */
+  const where = purchaseLocation(
+    await loadLocations(venueId),
+    (ingredient as { module?: string }).module ?? 'kitchen',
+  );
+
   await db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
     venue_id: venueId,
     ingredient_id: ingredient.$id,
     type: 'purchase',
     qty_delta: qty,
     unit_cost: unitCost ?? ingredient.base_unit_cost,
+    location_id: where?.$id ?? '',
     ref_type: refType,
     ref_id: refId,
     shift_id: shiftId ?? '',
@@ -175,10 +194,23 @@ export async function receiveStock(opts: {
     note: note ?? '',
   });
 
-  await db.updateDocument(DB_ID, 'ingredients', ingredient.$id, {
-    current_qty: Number((ingredient.current_qty + qty).toFixed(4)),
-    ...(unitCost && unitCost > 0 ? { base_unit_cost: unitCost } : {}),
-  });
+  if (where) {
+    // The level moves and the total follows from it. See adjustLevel: the
+    // total is the sum of the places, never a second record of the same fact.
+    await adjustLevel({ ingredientId: ingredient.$id, locationId: where.$id, delta: qty });
+    if (unitCost && unitCost > 0) {
+      await db.updateDocument(DB_ID, 'ingredients', ingredient.$id, { base_unit_cost: unitCost })
+        .catch(() => undefined);
+    }
+  } else {
+    // No locations set up at all, which is every venue until somebody makes
+    // one. Exactly the old behaviour, so nothing has to be configured before
+    // a delivery can be recorded.
+    await db.updateDocument(DB_ID, 'ingredients', ingredient.$id, {
+      current_qty: Number((ingredient.current_qty + qty).toFixed(4)),
+      ...(unitCost && unitCost > 0 ? { base_unit_cost: unitCost } : {}),
+    });
+  }
 }
 
 /**
@@ -521,14 +553,27 @@ export async function purchasesFor(ingredientId: string, limit = 200): Promise<P
  * never report it.
  */
 export async function barCountSheet(venueId: string): Promise<BarCountLine[]> {
-  const ingredients = await loadIngredients(venueId);
+  const [ingredients, locations] = await Promise.all([loadIngredients(venueId), loadLocations(venueId)]);
+  /*
+    The BAR is counted, not the business.
+
+    A bar with nine tonics behind it and a store room holding thirty-three is
+    not "forty-two tonics" to the person counting — they are counting the nine,
+    and checking them against forty-two would report a shortage of thirty-three
+    every single night.
+  */
+  const counter = saleLocation(locations, 'bar');
+  const levels = counter ? await loadLevels([counter.$id]) : [];
+
   return ingredients
     .filter((i) => i.active && (i.module ?? 'kitchen') === 'bar')
     .map((i) => ({
       ingredientId: i.$id,
       name: i.name,
       unit: i.unit,
-      expected: i.current_qty,
+      // Without a location set up, the business total IS the bar's, which is
+      // what it was before any of this existed.
+      expected: counter ? levelFor(levels, i.$id, counter.$id) : i.current_qty,
       unitCost: i.base_unit_cost,
     }));
 }
@@ -552,6 +597,7 @@ export async function saveBarCount(opts: {
   lines: BarCountLine[];
   userId: string;
 }): Promise<{ written: number; shortValue: number }> {
+  const counter = saleLocation(await loadLocations(opts.venueId), 'bar');
   const variances = variancesIn(opts.lines);
   const shortValue = variances.filter((v) => v.delta < 0).reduce((s, v) => s + v.value, 0);
   let written = 0;
@@ -592,6 +638,7 @@ export async function saveBarCount(opts: {
         type: 'count_correction',
         qty_delta: variance,
         unit_cost: line.unitCost,
+        location_id: counter?.$id ?? '',
         ref_type: 'shift',
         ref_id: opts.shiftId,
         shift_id: opts.shiftId,
@@ -600,9 +647,21 @@ export async function saveBarCount(opts: {
       }).catch(() => undefined);
     }
 
-    await db.updateDocument(DB_ID, 'ingredients', line.ingredientId, {
-      current_qty: counted,
-    }).catch(() => undefined);
+    /*
+      A count sets the level where the person was standing.
+
+      Not the business total: they counted the bar, and writing what they found
+      over everything the business owns would erase the store room without
+      anybody visiting it. adjustLevel puts the total back together from the
+      places afterwards.
+    */
+    if (counter) {
+      await adjustLevel({ ingredientId: line.ingredientId, locationId: counter.$id, delta: 0, setTo: counted });
+    } else {
+      await db.updateDocument(DB_ID, 'ingredients', line.ingredientId, {
+        current_qty: counted,
+      }).catch(() => undefined);
+    }
 
     written += 1;
   }
@@ -618,4 +677,144 @@ export async function hasOpeningCount(shiftId: string): Promise<boolean> {
     Query.limit(1),
   ]).catch(() => []);
   return rows.length > 0;
+}
+
+/* -------------------------------------------------- where the stock actually is */
+
+export const loadLocations = (venueId: string) =>
+  listAll<StockLocation & Doc>('stock_locations', [Query.equal('venue_id', venueId)])
+    .catch(() => [] as (StockLocation & Doc)[]);
+
+export const loadLevels = (locationIds?: string[]) =>
+  listAll<LocationStock & Doc>('stock_levels', locationIds?.length ? [Query.equal('location_id', locationIds)] : [])
+    .catch(() => [] as (LocationStock & Doc)[]);
+
+/**
+ * Move one ingredient's level at one place, and keep the total in step.
+ *
+ * The total on the ingredient is the SUM of the places, so it is written here
+ * rather than anywhere else — the moment two pieces of code both maintain it,
+ * they disagree, and the disagreement is invisible because both figures look
+ * authoritative.
+ *
+ * A level row is created on first use rather than seeded for every ingredient
+ * at every location. Most things live in one place, and a row per ingredient
+ * per location would be mostly zeros nobody wrote.
+ */
+export async function adjustLevel(opts: {
+  ingredientId: string;
+  locationId: string;
+  delta: number;
+  /** Set the level outright instead of moving it, for a count. */
+  setTo?: number;
+}): Promise<number> {
+  const { ingredientId, locationId, delta } = opts;
+  const rows = await listAll<LocationStock & Doc>('stock_levels', [
+    Query.equal('ingredient_id', ingredientId),
+    Query.equal('location_id', locationId),
+    Query.limit(1),
+  ]).catch(() => []);
+
+  const current = rows[0]?.qty ?? 0;
+  const next = opts.setTo !== undefined ? opts.setTo : current + delta;
+
+  if (rows[0]) {
+    await db.updateDocument(DB_ID, 'stock_levels', rows[0].$id, { qty: next }).catch(() => undefined);
+  } else {
+    await db.createDocument(DB_ID, 'stock_levels', ID.unique(), {
+      ingredient_id: ingredientId, location_id: locationId, qty: next,
+    }).catch(() => undefined);
+  }
+
+  // And the total, from the places, never from itself.
+  const all = await listAll<LocationStock & Doc>('stock_levels', [
+    Query.equal('ingredient_id', ingredientId),
+  ]).catch(() => []);
+  const total = all.reduce((s, l) => s + (l.$id === rows[0]?.$id ? next : l.qty), rows[0] ? 0 : next);
+  await db.updateDocument(DB_ID, 'ingredients', ingredientId, {
+    current_qty: Number(total.toFixed(4)),
+  }).catch(() => undefined);
+
+  return next;
+}
+
+/**
+ * Carry stock from one place to another.
+ *
+ * A pair of movements written from one instruction, so neither can exist
+ * without the other naming where the stock went. The levels move too, and the
+ * business total does not: nothing has been bought, sold or lost — it has been
+ * carried across a room.
+ *
+ * Each line is attempted on its own. A transfer is somebody walking crates out
+ * of a store, and losing eleven correct lines because the twelfth hit an error
+ * would mean walking them back.
+ */
+export async function transferStock(opts: {
+  venueId: string;
+  fromId: string;
+  toId: string;
+  lines: TransferLine[];
+  userId: string;
+  note?: string;
+}): Promise<{ moved: number; failed: number }> {
+  let moved = 0;
+  let failed = 0;
+
+  for (const line of opts.lines) {
+    const qty = transferQty(line);
+    if (qty === null) continue;
+    try {
+      const ing = await db.getDocument(DB_ID, 'ingredients', line.ingredientId).catch(() => null);
+      const unitCost = (ing as unknown as Ingredient | null)?.base_unit_cost ?? 0;
+
+      for (const m of transferMovements({
+        fromId: opts.fromId, toId: opts.toId, ingredientId: line.ingredientId, qty, unitCost, note: opts.note,
+      })) {
+        await db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
+          venue_id: opts.venueId,
+          ingredient_id: line.ingredientId,
+          type: 'transfer',
+          qty_delta: m.qty_delta,
+          unit_cost: unitCost,
+          location_id: m.location_id,
+          to_location_id: m.to_location_id,
+          ref_type: 'transfer',
+          created_by: opts.userId,
+          note: opts.note?.trim() ?? '',
+        });
+      }
+
+      await adjustLevel({ ingredientId: line.ingredientId, locationId: opts.fromId, delta: -qty });
+      await adjustLevel({ ingredientId: line.ingredientId, locationId: opts.toId, delta: qty });
+      moved += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+
+  return { moved, failed };
+}
+
+/**
+ * The transfer sheet: everything this side stocks, with what the source holds.
+ *
+ * Ordered by what is actually at the from-end, most first, because somebody
+ * restocking a bar works down from the crates they can see rather than through
+ * an alphabet.
+ */
+export async function transferSheet(venueId: string, module: Module, fromId: string): Promise<TransferLine[]> {
+  const [ingredients, levels] = await Promise.all([
+    loadIngredients(venueId),
+    loadLevels([fromId]),
+  ]);
+  return ingredients
+    .filter((i) => i.active && (i.module ?? 'kitchen') === module)
+    .map((i) => ({
+      ingredientId: i.$id,
+      name: i.name,
+      unit: i.unit,
+      available: levelFor(levels, i.$id, fromId),
+    }))
+    .sort((a, b) => b.available - a.available || a.name.localeCompare(b.name));
 }

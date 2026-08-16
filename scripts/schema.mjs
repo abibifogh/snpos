@@ -1401,6 +1401,18 @@ export const COLLECTIONS = [
     attributes: [
       ['ingredient_id', 's', 64, true],
       ['type', 'e', ['purchase', 'sale_depletion', 'waste', 'adjustment', 'count_correction', 'transfer'], true],
+      /**
+       * Where it happened, and for a transfer, the other end.
+       *
+       * Optional, because every movement written before locations existed
+       * happened at the one place the business had. A transfer writes a pair
+       * of rows carrying both ids, so neither half can exist without naming
+       * where the stock went — an independent subtraction and addition can
+       * half-fail, and stock that exists in neither place is the hardest kind
+       * of discrepancy to find.
+       */
+      ['location_id', 's', 64, false],
+      ['to_location_id', 's', 64, false],
       ['qty_delta', 'f', null, true, 0],
       ['unit_cost', 'i', null, true, 0],
       ['ref_type', 's', 40, false],
@@ -1409,7 +1421,7 @@ export const COLLECTIONS = [
       ['created_by', 's', 64, false],
       ['note', 's', 300, false],
     ],
-    indexes: [['ingredient_created', 'key', ['ingredient_id', '$createdAt']], ['shift', 'key', ['shift_id']]],
+    indexes: [['ingredient_created', 'key', ['ingredient_id', '$createdAt']], ['shift', 'key', ['shift_id']], ['location', 'key', ['location_id']]],
   },
   {
     /**
@@ -1484,6 +1496,58 @@ export const COLLECTIONS = [
       ['applied', 'b', null, false, false],
     ],
     indexes: [['count', 'key', ['count_id']]],
+  },
+  {
+    /**
+     * A place stock physically sits: a store room, a bar, a shop floor.
+     *
+     * A bar buys a case of tonic into a store and carries bottles out as the
+     * night needs them, and one number cannot describe that. "Forty-two
+     * tonics" is true of the business and useless to the person behind the
+     * bar, who has nine and is about to run out — and useless to whoever does
+     * the ordering, who sees forty-two and buys nothing.
+     *
+     * A business that has never thought about this gets one location per side
+     * and everything behaves exactly as it did.
+     */
+    id: 'stock_locations',
+    name: 'Stock locations',
+    perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['name', 's', 120, true],
+      // store: deliveries land here, nothing is sold from it.
+      // counter: the bar or shop floor, what a sale comes off and what gets
+      // counted at the start and end of a shift.
+      ['kind', 'e', ['store', 'counter'], true, 'counter'],
+      ['module', 'e', ['kitchen', 'craft', 'bar'], false, 'kitchen'],
+      ['active', 'b', null, false, true],
+      ['sort', 'i', null, false, 0],
+    ],
+    indexes: [['venue_module', 'key', ['venue_id', 'module', 'active']]],
+  },
+  {
+    /**
+     * How much of one thing is in one place.
+     *
+     * The total on `ingredients.current_qty` is the SUM of these, not a
+     * separate record of the same fact. That ordering is deliberate: a total
+     * kept as its own number drifts away from the places it claims to add up,
+     * and the drift is invisible because both figures look authoritative.
+     */
+    id: 'stock_levels',
+    name: 'Stock levels',
+    // Written by a sale and by a pour, so front-line staff need to write it.
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: ADMIN },
+    attributes: [
+      ['ingredient_id', 's', 64, true],
+      ['location_id', 's', 64, true],
+      ['qty', 'f', null, true, 0],
+    ],
+    indexes: [
+      ['ing_loc', 'key', ['ingredient_id', 'location_id']],
+      ['location', 'key', ['location_id']],
+    ],
   },
   {
     id: 'stock_flags',

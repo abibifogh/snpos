@@ -216,6 +216,25 @@ async function depleteShelf({ db, DB_ID, order, lines, log }) {
 async function pourFromBottles({ db, DB_ID, order, lines, log }) {
   let poured = 0;
 
+  /*
+    A pour comes off the BAR, not off the business.
+
+    A bar with nine tonics behind it and thirty-three in the store has nine to
+    pour from. Taking the measure off the total would leave the bar's own level
+    untouched, so the count at the end of the night would find nine where the
+    system expected nine, every night, however much was actually sold — which
+    is a stock system that reports success and measures nothing.
+  */
+  const places = await db.listDocuments(DB_ID, 'stock_locations', [
+    Query.equal('venue_id', order.venue_id), Query.limit(50),
+  ]).catch(() => ({ documents: [] }));
+  const bar = places.documents
+    .filter((l) => l.active !== false && (l.module || 'kitchen') === 'bar')
+    .sort((a, b) => (a.sort || 0) - (b.sort || 0))
+    .find((l) => l.kind === 'counter')
+    || places.documents.find((l) => (l.module || 'kitchen') === 'bar')
+    || null;
+
   for (const line of lines) {
     if (line.status === 'void') continue;
 
@@ -257,24 +276,48 @@ async function pourFromBottles({ db, DB_ID, order, lines, log }) {
         type: 'sale_depletion',
         qty_delta: -used,
         unit_cost: ingredient.base_unit_cost || 0,
+        location_id: bar ? bar.$id : '',
         ref_type: 'order_item',
         ref_id: line.$id,
         shift_id: order.shift_id || '',
         note: `${line.name_snapshot}`,
       }).catch(() => undefined);
 
-      /*
-        The shelf is allowed to go below nothing.
+      if (bar) {
+        // The bar's own level, and the total put back together from the places
+        // afterwards. Mirrors adjustLevel in core.
+        const rows = await db.listDocuments(DB_ID, 'stock_levels', [
+          Query.equal('ingredient_id', r.ingredient_id), Query.equal('location_id', bar.$id), Query.limit(1),
+        ]).catch(() => ({ documents: [] }));
+        const at = rows.documents[0];
+        const next = (at ? at.qty : 0) - used;
+        if (at) {
+          await db.updateDocument(DB_ID, 'stock_levels', at.$id, { qty: next }).catch(() => undefined);
+        } else {
+          await db.createDocument(DB_ID, 'stock_levels', 'unique()', {
+            ingredient_id: r.ingredient_id, location_id: bar.$id, qty: next,
+          }).catch(() => undefined);
+        }
+        const all = await db.listDocuments(DB_ID, 'stock_levels', [
+          Query.equal('ingredient_id', r.ingredient_id), Query.limit(50),
+        ]).catch(() => ({ documents: [] }));
+        const total = all.documents.reduce((sum, l) => sum + (l.$id === at?.$id ? next : l.qty), at ? 0 : next);
+        await db.updateDocument(DB_ID, 'ingredients', r.ingredient_id, {
+          current_qty: Number(total.toFixed(4)),
+        }).catch(() => undefined);
+      } else {
+        /*
+          The shelf is allowed to go below nothing.
 
-        Clamping at zero would hide the one thing this is for. A bar pouring
-        from a bottle the system thinks is empty is either a bottle nobody
-        booked in or a recipe with the wrong measure on it, and a level stuck
-        politely at zero says neither. The count at the end of the shift is
-        what settles it.
-      */
-      await db.updateDocument(DB_ID, 'ingredients', r.ingredient_id, {
-        current_qty: (ingredient.current_qty || 0) - used,
-      }).catch(() => undefined);
+          Clamping at zero would hide the one thing this is for. A bar pouring
+          from a bottle the system thinks is empty is either a bottle nobody
+          booked in or a recipe with the wrong measure on it, and a level stuck
+          politely at zero says neither. The count settles it.
+        */
+        await db.updateDocument(DB_ID, 'ingredients', r.ingredient_id, {
+          current_qty: (ingredient.current_qty || 0) - used,
+        }).catch(() => undefined);
+      }
 
       poured++;
     }

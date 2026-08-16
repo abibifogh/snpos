@@ -155,6 +155,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'bar_items', label: 'Drinks & cocktails', path: '/bar/items', group: 'Bar', module: 'bar' },
   { key: 'bar_stock', label: 'Bottles & mixers', path: '/bar/stock', group: 'Bar', module: 'bar' },
   { key: 'bar_counts', label: 'Counts & variances', path: '/bar/counts', group: 'Bar', module: 'bar' },
+  { key: 'locations', label: 'Where stock sits', path: '/locations', group: 'Bar', module: 'bar' },
   { key: 'payouts', label: 'Payouts', path: '/payouts', group: 'Craft shop', module: 'craft' },
   { key: 'shifts', label: 'Shifts', path: '/shifts', group: 'Money' },
   { key: 'expenses', label: 'Expenses', path: '/expenses', group: 'Money' },
@@ -205,6 +206,7 @@ export const DEFAULT_ACCESS: Record<string, string[]> = {
     'menu_items', 'stock', 'waste', 'stations',
     // A shop manager runs the intake desk and needs to see who is owed what.
     'shop_categories', 'shop_items', 'consignors', 'intake', 'stocktake', 'payouts',
+    'bar_categories', 'bar_items', 'bar_stock', 'bar_counts', 'locations',
   ],
   cashier: ['dashboard', 'orders'],
   waiter: [],

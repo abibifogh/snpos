@@ -30,6 +30,7 @@ import { ConsignorsPage } from './pages/Consignors';
 import { IntakePage } from './pages/Intake';
 import { StocktakePage } from './pages/Stocktake';
 import { BarCountsPage } from './pages/BarCounts';
+import { LocationsPage } from './pages/Locations';
 import { PayoutsPage } from './pages/Payouts';
 
 export function App() {
@@ -89,6 +90,7 @@ export function App() {
         <Route path="/bar/items" element={guard('bar_items', <MenuItemsPage module="bar" />)} />
         <Route path="/bar/stock" element={guard('bar_stock', <StockPage module="bar" />)} />
         <Route path="/bar/counts" element={guard('bar_counts', <BarCountsPage />)} />
+        <Route path="/locations" element={guard('locations', <LocationsPage />)} />
         <Route path="/payouts" element={guard('payouts', <PayoutsPage />)} />
         <Route path="/venues" element={guard('venues', <VenuesPage />)} />
         <Route path="/tables" element={guard('tables', <TablesPage />)} />
