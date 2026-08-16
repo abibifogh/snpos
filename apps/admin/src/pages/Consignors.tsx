@@ -13,6 +13,7 @@ import type {
   Consignor, LedgerEntry, Statement, Settings, ConsignmentIntake, MenuItem, ProductVariant, UnsoldLine,
 } from '@snpos/core';
 import { useSession } from '../session';
+import { MakerUpload } from '../components/MakerUpload';
 
 /**
  * The people whose work the shop sells, and what it owes them.
@@ -25,6 +26,7 @@ import { useSession } from '../session';
 export function ConsignorsPage() {
   const toast = useToast();
   const { settings, user } = useSession();
+  const [uploading, setUploading] = useState(false);
   const decimals = settings?.currency_decimals ?? 2;
   const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
 
@@ -145,7 +147,13 @@ export function ConsignorsPage() {
     <div>
       <div className="page-head">
         <h1>Consignors</h1>
-        <Button variant="primary" onClick={() => open()}>Add a consignor</Button>
+        <div className="row" style={{ gap: '0.5rem' }}>
+          {/* A shop opening its doors already has thirty of these written down
+              somewhere, and the alternative is thirty forms and four commission
+              rates typed wrongly. */}
+          <Button onClick={() => setUploading(true)}>Upload a list</Button>
+          <Button variant="primary" onClick={() => open()}>Add a consignor</Button>
+        </div>
       </div>
 
       {error && <Notice tone="err">{error}</Notice>}
@@ -345,6 +353,19 @@ export function ConsignorsPage() {
             waiting to be paid.
           </p>
         </Modal>
+      )}
+
+      {uploading && settings && (
+        <MakerUpload
+          venueId="main"
+          existing={rows ?? []}
+          settings={settings}
+          onClose={() => setUploading(false)}
+          onDone={async (message) => {
+            await load();
+            toast(message);
+          }}
+        />
       )}
 
       {statementFor && settings && (

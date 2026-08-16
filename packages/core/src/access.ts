@@ -118,6 +118,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'shop_items', label: 'Products', path: '/shop/items', group: 'Craft shop', module: 'craft' },
   { key: 'consignors', label: 'Consignors', path: '/consignors', group: 'Craft shop', module: 'craft' },
   { key: 'intake', label: 'Goods received', path: '/intake', group: 'Craft shop', module: 'craft' },
+  { key: 'stocktake', label: 'Count the shelf', path: '/stocktake', group: 'Craft shop', module: 'craft' },
   { key: 'payouts', label: 'Payouts', path: '/payouts', group: 'Craft shop', module: 'craft' },
   { key: 'shifts', label: 'Shifts', path: '/shifts', group: 'Money' },
   { key: 'expenses', label: 'Expenses', path: '/expenses', group: 'Money' },
@@ -167,7 +168,7 @@ export const DEFAULT_ACCESS: Record<string, string[]> = {
     'dashboard', 'orders', 'reports', 'shifts', 'expenses', 'vouchers',
     'menu_items', 'stock', 'waste', 'stations',
     // A shop manager runs the intake desk and needs to see who is owed what.
-    'shop_categories', 'shop_items', 'consignors', 'intake', 'payouts',
+    'shop_categories', 'shop_items', 'consignors', 'intake', 'stocktake', 'payouts',
   ],
   cashier: ['dashboard', 'orders'],
   waiter: [],

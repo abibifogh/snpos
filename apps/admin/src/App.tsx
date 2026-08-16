@@ -28,6 +28,7 @@ import { PurgePage } from './pages/Purge';
 import { VouchersPage } from './pages/Vouchers';
 import { ConsignorsPage } from './pages/Consignors';
 import { IntakePage } from './pages/Intake';
+import { StocktakePage } from './pages/Stocktake';
 import { PayoutsPage } from './pages/Payouts';
 
 export function App() {
@@ -78,6 +79,7 @@ export function App() {
         <Route path="/vouchers" element={guard('vouchers', <VouchersPage />)} />
         <Route path="/consignors" element={guard('consignors', <ConsignorsPage />)} />
         <Route path="/intake" element={guard('intake', <IntakePage />)} />
+        <Route path="/stocktake" element={guard('stocktake', <StocktakePage />)} />
         <Route path="/payouts" element={guard('payouts', <PayoutsPage />)} />
         <Route path="/venues" element={guard('venues', <VenuesPage />)} />
         <Route path="/tables" element={guard('tables', <TablesPage />)} />

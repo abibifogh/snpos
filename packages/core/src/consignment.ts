@@ -1,8 +1,11 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
 import { rateFor, flatFor, splitSale } from './consignment-math';
 import type { LedgerKind } from './consignment-math';
-import type { Doc, Settings } from './types';
+import type { Doc, Settings, MenuItem } from './types';
 import type { Order, OrderItem } from './orders';
+import { differencesIn, MOVE_FOR_REASON } from './stocktake';
+import type { CountLine } from './stocktake';
+import type { ImportMaker } from './maker-import';
 
 /**
  * The arithmetic lives next door, in a file that imports nothing.
@@ -612,4 +615,202 @@ export async function importStock(opts: {
   }
 
   return outcome;
+}
+
+/* ------------------------------------------------------- counting the shelf */
+
+/**
+ * Every piece the shop has on its shelves, ready to be counted.
+ *
+ * A row per sellable thing rather than per product: a basket in three sizes is
+ * three lines, because three sizes are what somebody standing at the shelf is
+ * actually looking at and one line saying "11" tells them nothing about which
+ * eleven.
+ *
+ * Sold-out lines are included. "There should be none and there are two" is a
+ * real finding — a piece put back after a refund, a return nobody recorded —
+ * and a count that only shows what it expects to find can never report it.
+ */
+export async function shelfLines(): Promise<CountLine[]> {
+  const [items, variants, consignors] = await Promise.all([
+    listAll<MenuItem & { module?: string; consignor_id?: string; on_hand?: number; price: number }>('menu_items'),
+    listAll<ProductVariant>('product_variants'),
+    listAll<Consignor>('consignors').catch(() => [] as Consignor[]),
+  ]);
+
+  const craft = items.filter((i) => (i.module ?? 'kitchen') === 'craft' && i.active !== false);
+  const nameOf = new Map(consignors.map((c) => [c.$id, c.name]));
+  const byItem = new Map<string, ProductVariant[]>();
+  for (const v of variants) {
+    if (!v.active) continue;
+    (byItem.get(v.menu_item_id) ?? byItem.set(v.menu_item_id, []).get(v.menu_item_id)!).push(v);
+  }
+
+  const lines: CountLine[] = [];
+  for (const item of craft) {
+    const sizes = byItem.get(item.$id) ?? [];
+    if (sizes.length > 0) {
+      // The variant is what sells when there is one; the product's own count
+      // means nothing then, so counting it would invent a shelf that is not
+      // there.
+      for (const v of sizes.sort((a, b) => a.sort - b.sort || a.label.localeCompare(b.label))) {
+        lines.push({
+          menuItemId: item.$id,
+          variantId: v.$id,
+          name: item.name,
+          variantLabel: v.label,
+          consignorId: item.consignor_id || undefined,
+          consignorName: item.consignor_id ? nameOf.get(item.consignor_id) : undefined,
+          onHand: v.on_hand ?? 0,
+          unitPrice: v.price,
+        });
+      }
+    } else {
+      lines.push({
+        menuItemId: item.$id,
+        name: item.name,
+        consignorId: item.consignor_id || undefined,
+        consignorName: item.consignor_id ? nameOf.get(item.consignor_id) : undefined,
+        onHand: item.on_hand ?? 0,
+        unitPrice: item.price,
+      });
+    }
+  }
+
+  return lines.sort(
+    (a, b) => (a.consignorName ?? '~').localeCompare(b.consignorName ?? '~')
+      || a.name.localeCompare(b.name)
+      || (a.variantLabel ?? '').localeCompare(b.variantLabel ?? ''),
+  );
+}
+
+/**
+ * Write what the count found.
+ *
+ * One movement per difference, carrying the reason, and the shelf brought into
+ * line with it. Lines that matched are not written at all: a zero movement for
+ * every piece in the shop would bury the four that matter under four hundred
+ * that do not.
+ *
+ * Each line is attempted on its own rather than as a batch. A count is
+ * somebody's afternoon on a clipboard, and losing forty correct lines because
+ * the forty-first hit a permission error would be losing the afternoon. What
+ * would not save is counted and reported.
+ */
+export async function saveCount(opts: {
+  venueId: string;
+  lines: CountLine[];
+  userId: string;
+  note?: string;
+}): Promise<{ written: number; failed: number }> {
+  const differences = differencesIn(opts.lines);
+  let written = 0;
+  let failed = 0;
+
+  for (const d of differences) {
+    const variant = d.line.variantId
+      ? await db.getDocument(DB_ID, 'product_variants', d.line.variantId).catch(() => null)
+      : null;
+    const item = d.line.variantId
+      ? null
+      : await db.getDocument(DB_ID, 'menu_items', d.line.menuItemId).catch(() => null);
+
+    // Nothing to move it against. Counted rather than swallowed: a piece whose
+    // row has gone is worth somebody knowing about.
+    if (!variant && !item) { failed += 1; continue; }
+
+    try {
+      await moveStock({
+        venueId: opts.venueId,
+        menuItemId: d.line.menuItemId,
+        variant: variant as ProductVariant | null,
+        item: item as { $id: string; on_hand?: number } | null,
+        consignorId: d.line.consignorId,
+        type: MOVE_FOR_REASON[d.reason],
+        qtyDelta: d.delta,
+        unitPrice: d.line.unitPrice,
+        refType: 'stocktake',
+        userId: opts.userId,
+        note: opts.note?.trim()
+          || `Counted ${d.counted}, shelf said ${d.line.onHand}`,
+      });
+      written += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+
+  return { written, failed };
+}
+
+/* ---------------------------------------------------------- makers in bulk */
+
+/**
+ * Write a read-back list of makers.
+ *
+ * Rows whose code is already on file are updated rather than refused — see
+ * `readMakerImport`, which decides that and says so before anything is
+ * written. A blank commission leaves whatever the maker already had, so a file
+ * correcting phone numbers cannot silently reset everybody's terms to the
+ * house default.
+ */
+export async function importMakers(opts: {
+  venueId: string;
+  makers: ImportMaker[];
+  existing: { $id: string; code: string }[];
+  defaultCommissionBp: number;
+}): Promise<{ created: number; updated: number; failed: { code: string; why: string }[] }> {
+  const byCode = new Map(opts.existing.map((e) => [e.code.toUpperCase(), e.$id]));
+  let created = 0;
+  let updated = 0;
+  const failed: { code: string; why: string }[] = [];
+
+  for (const m of opts.makers) {
+    const payload: Record<string, unknown> = {
+      venue_id: opts.venueId,
+      code: m.code,
+      name: m.name,
+      phone: m.phone,
+      email: m.email,
+      address: m.address,
+      notes: m.notes,
+      payout_method: m.payoutMethod,
+      payout_details: m.payoutDetails,
+      active: true,
+    };
+
+    /*
+      Terms are only touched when the file says something about them.
+
+      A file put together to correct four phone numbers must not reset every
+      maker's rate to the house default on its way through. Absent means "leave
+      it as it is", which is the only reading that makes a partial file safe.
+    */
+    const existingId = byCode.get(m.code.toUpperCase());
+    if (m.commissionFlat > 0) {
+      payload.commission_flat = m.commissionFlat;
+      payload.commission_bp = 0;
+    } else if (m.commissionBp !== null) {
+      payload.commission_bp = m.commissionBp;
+      payload.commission_flat = 0;
+    } else if (!existingId) {
+      // A new maker has to start somewhere, and the house rate is the answer.
+      payload.commission_bp = opts.defaultCommissionBp;
+      payload.commission_flat = 0;
+    }
+
+    try {
+      if (existingId) {
+        await db.updateDocument(DB_ID, 'consignors', existingId, payload);
+        updated += 1;
+      } else {
+        await db.createDocument(DB_ID, 'consignors', ID.unique(), payload);
+        created += 1;
+      }
+    } catch (e) {
+      failed.push({ code: m.code, why: e instanceof Error ? e.message : 'could not be saved' });
+    }
+  }
+
+  return { created, updated, failed };
 }
