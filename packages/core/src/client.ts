@@ -87,10 +87,27 @@ export { ID, Query, Permission, Role };
  * Appwrite returns 25 documents by default. Silently truncating a menu at 25
  * items is the kind of bug that only shows up once a real menu is loaded.
  */
+/**
+ * Whether Appwrite has answered this browser at all, this session.
+ *
+ * Not statistics. A "could not reach" message has to guess between an address
+ * that was never registered and a service that has stopped answering, and it
+ * used to ask the person to work that out — which sends an owner whose app has
+ * been running for months to check a platform list where the entry is already
+ * there. By the time anything on a page can fail, a read has already succeeded,
+ * so the app knows the answer and should not be asking.
+ */
+let everReached = false;
+
+/** Called wherever a request comes back, so the error text can stop guessing. */
+export const noteReachable = () => { everReached = true; };
+export const hasReachedAppwrite = () => everReached;
+
 export async function listAll<T>(collectionId: string, queries: string[] = []): Promise<T[]> {
   const out: T[] = [];
   for (let offset = 0; ; offset += 100) {
     const page = await db.listDocuments(DB_ID, collectionId, [...queries, Query.limit(100), Query.offset(offset)]);
+    noteReachable();
     out.push(...(page.documents as unknown as T[]));
     if (page.documents.length < 100 || out.length >= page.total) return out;
   }
@@ -184,6 +201,18 @@ export function humanError(e: unknown): string {
      * has ever worked from here. Said in that order, briefly, so somebody can
      * work down it.
      */
+    // Appwrite has answered this browser already, so the address is registered
+    // and the question is what changed since. Saying so removes the one step
+    // that is certainly not the problem.
+    if (everReached) {
+      return (
+        `Could not reach Appwrite just then, though it answered earlier on this page — so ${window.location.hostname} `
+        + 'is set up correctly and something has changed since. Check this device is still online, then the '
+        + 'Appwrite console for a project that is paused or over its plan limits, then Appwrite\'s own status. '
+        + 'Nothing was saved, so it is safe to try again.'
+      );
+    }
+
     return (
       `Could not reach Appwrite from ${window.location.hostname}. `
       + 'If this address has never worked: it needs registering, in the Appwrite console under '
