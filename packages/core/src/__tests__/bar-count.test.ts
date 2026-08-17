@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   byUnit, wasCountedBar, variancesIn, summariseBarCount, readyToClose, unitLabel,
   BAR_VARIANCE_TOLERANCE, type BarCountLine,
+  shiftCounted, hasShiftCountChoice,
 } from '../bar-count.ts';
 
 const bottle = (over: Partial<BarCountLine> = {}): BarCountLine => ({
@@ -124,4 +125,34 @@ test('a bar that counts true, or nearly, just closes', () => {
   // Being OVER never blocks a close. Finding more than expected is a
   // bookkeeping question, not money walking out of the building.
   assert.equal(readyToClose([bottle({ countedText: '60' })]).clear, true);
+});
+
+/* ------------------------------- which bottles a shift actually counts */
+
+test('a bar that has marked nothing keeps counting everything', () => {
+  // The alternative — an opt-in starting empty — silently turns the shift
+  // count off for every bar that upgrades.
+  const rows: { name: string; count_each_shift?: boolean }[] = [{ name: 'Club' }, { name: 'Havana' }];
+  assert.equal(shiftCounted(rows).length, 2);
+  assert.equal(hasShiftCountChoice(rows), false);
+});
+
+test('once anything is marked, the shift count is only what was marked', () => {
+  const rows = [
+    { name: 'Club', count_each_shift: true },
+    { name: 'Guinness', count_each_shift: true },
+    { name: 'Havana Club Bottle' },
+    { name: 'Smirnoff Bottle', count_each_shift: false },
+  ];
+  assert.deepEqual(shiftCounted(rows).map((r) => r.name), ['Club', 'Guinness']);
+  assert.equal(hasShiftCountChoice(rows), true);
+});
+
+test('an explicit no is not the same as never having said', () => {
+  // Everything ticked off deliberately still means "count everything", because
+  // a bar with nothing on its shift list has not opted out of counting — it
+  // has just cleared the list.
+  const rows = [{ name: 'Club', count_each_shift: false }];
+  assert.equal(shiftCounted(rows).length, 1);
+  assert.equal(hasShiftCountChoice(rows), false);
 });

@@ -1309,6 +1309,19 @@ export const COLLECTIONS = [
        */
       ['pack_size', 'f', null, false, 0],
       ['pack_name', 's', 40, false],
+      /**
+       * Counted by the bartender at the start and end of every shift.
+       *
+       * The bottled drinks, in practice: things that leave whole and are quick
+       * to see. Spirits are measured far less often, because forty open
+       * bottles eyeballed at two in the morning produce numbers nobody
+       * believes.
+       *
+       * Not required, and false everywhere to begin with — see shiftCounted:
+       * a bar that has marked nothing keeps counting everything, so upgrading
+       * cannot silently switch the count off.
+       */
+      ['count_each_shift', 'b', null, false, false],
       // The sentence a cook reads at the end of a shift, in the restaurant's
       // own words: "OK = 10pcs or more . Low = under 10pcs".
       //

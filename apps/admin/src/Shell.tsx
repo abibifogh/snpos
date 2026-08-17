@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { Button, Logo, THEME_MODES, themeMode, setThemeMode } from '@snpos/ui';
@@ -26,6 +27,24 @@ export function Shell({ children }: { children: ReactNode }) {
   }
   groups.push({ group: 'You', links: [{ to: '/account', label: 'Your account' }, { to: '/help', label: 'Help' }] });
 
+  /**
+   * A phone has no room to fold, and folding there hid things for good.
+   *
+   * On a narrow screen the sidebar becomes a wrapping row of links and the
+   * group headings are hidden to keep it compact — which left every group but
+   * the current one closed, with the only control for opening them not on the
+   * screen. Half the app was unreachable from a phone.
+   */
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 820px)').matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 820px)');
+    const seen = () => setNarrow(mq.matches);
+    mq.addEventListener('change', seen);
+    return () => mq.removeEventListener('change', seen);
+  }, []);
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -53,7 +72,7 @@ export function Shell({ children }: { children: ReactNode }) {
               l.end ? path === l.to : path === l.to || path.startsWith(`${l.to}/`),
             );
             return (
-              <details key={section.group} className="nav-group" open={here}>
+              <details key={section.group} className="nav-group" open={here || narrow}>
                 <summary className="group">
                   <span className="fold-caret" aria-hidden="true" />
                   {section.group}

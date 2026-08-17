@@ -1,7 +1,7 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
 import type { PurchaseRow } from './price-history';
 import type { Module } from './access';
-import { variancesIn, wasCountedBar } from './bar-count';
+import { variancesIn, wasCountedBar, shiftCounted } from './bar-count';
 import { levelFor, transferQty, transferMovements, purchaseLocation, saleLocation } from './locations';
 import type { StockLocation, LocationStock, TransferLine } from './locations';
 import type { LevelRow } from './level-import';
@@ -43,6 +43,8 @@ export interface Ingredient extends Doc {
    */
   pack_size?: number;
   pack_name?: string;
+  /** Counted at the start and end of every shift. See shiftCounted. */
+  count_each_shift?: boolean;
   consecutive_low_count?: number;
   consecutive_low_since?: string;
   last_low_severity?: 'low' | 'out';
@@ -580,8 +582,9 @@ export async function barCountSheet(venueId: string, locationId?: string): Promi
   const counter = locations.find((l) => l.$id === locationId) ?? saleLocation(locations, 'bar');
   const levels = counter ? await loadLevels([counter.$id]) : [];
 
-  return ingredients
-    .filter((i) => i.active && (i.module ?? 'kitchen') === 'bar')
+  // Only what a bartender is asked for twice a day. See shiftCounted: with
+  // nothing marked this is still the whole bar, which is what it was.
+  return shiftCounted(ingredients.filter((i) => i.active && (i.module ?? 'kitchen') === 'bar'))
     .map((i) => ({
       ingredientId: i.$id,
       name: i.name,

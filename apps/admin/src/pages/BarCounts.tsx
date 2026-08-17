@@ -229,6 +229,8 @@ export function BarCountsPage() {
             <p className="small dim" style={{ margin: 0 }}>
               Grouped the way the bar is walked: bottles on the shelf, then crates in the store, then what is
               open and measured. Leave a line blank and nothing is recorded for it — blank is not nought.
+              {' '}This sheet is the items an admin marked as counted every shift, under Bottles &amp; mixers;
+              with none marked it asks for everything.
             </p>
           </Card>
 

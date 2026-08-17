@@ -38,6 +38,29 @@ export const UNIT_LABELS: Record<string, string> = {
 
 export const unitLabel = (unit?: string): string => UNIT_LABELS[unit ?? ''] ?? unit ?? 'Other';
 
+/**
+ * Which bottles a bartender counts at the start and end of a shift.
+ *
+ * Not everything. A bar counts its BOTTLED DRINKS twice a day — the beers and
+ * the sodas, the things that leave whole and are quick to see — and its
+ * spirits far less often, because a shelf of forty open bottles measured by
+ * eye at two in the morning produces numbers nobody believes.
+ *
+ * Marked per item by an admin, and the rule is deliberately "if nobody has
+ * marked anything, count everything". A bar that has not thought about this
+ * keeps exactly the behaviour it had; the moment one item is ticked, the shift
+ * count narrows to what was ticked. The alternative — an opt-in that starts
+ * empty — silently turns the count off for every bar that upgrades.
+ */
+export function shiftCounted<T extends { count_each_shift?: boolean }>(rows: T[]): T[] {
+  const chosen = rows.filter((r) => r.count_each_shift);
+  return chosen.length > 0 ? chosen : rows;
+}
+
+/** Has anybody actually chosen, or is this the "count everything" fallback? */
+export const hasShiftCountChoice = (rows: { count_each_shift?: boolean }[]): boolean =>
+  rows.some((r) => r.count_each_shift);
+
 export interface BarCountLine {
   ingredientId: string;
   name: string;

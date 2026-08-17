@@ -4,7 +4,7 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, levelOf, saveDropping,
   purchasesFor, priceHistory, priceMoveNote, packProblem, hasPack, packSize,
-  matches, sortStock, stockState, STOCK_SORTS, STOCK_STATES,
+  matches, sortStock, stockState, STOCK_SORTS, STOCK_STATES, hasShiftCountChoice,
 } from '@snpos/core';
 import type { StockSort, StockState, Module, Ingredient, Recipe, MenuItem, Doc, Settings, PurchaseRow } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
@@ -124,6 +124,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
 
   const lowDefaultBp = settings?.low_stock_default_bp ?? 3000;
+  const anyShiftCounted = hasShiftCountChoice(ingredients ?? []);
   const archivedCount = (ingredients ?? []).filter((i) => !i.active).length;
   /**
    * Narrowed, then ordered — by default, by what is closest to running out.
@@ -220,6 +221,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
         // both of these alone. See packs.ts.
         pack_size: Number(editing.pack_size ?? 0),
         pack_name: (editing.pack_name ?? '').trim(),
+        count_each_shift: editing.count_each_shift === true,
         // Whose shelf, taken from the page rather than asked for. A bottle
         // added from the bar's screen belongs to the bar; nobody should have
         // to answer a question the screen already knows the answer to.
@@ -396,6 +398,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
                           {/* A wrong pack size multiplies the shelf by itself
                               and is otherwise invisible until a count goes
                               badly, so it is shown where the list is read. */}
+                          {i.count_each_shift && <Badge tone="ok">Counted every shift</Badge>}
                           {hasPack(i) && (
                             <div className="small dim">
                               bought by the {(i.pack_name || 'pack').trim()} of {packSize(i)} {i.unit}
@@ -537,6 +540,25 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
                 onChange={(e) => setEditing({ ...editing, pack_size: Number(e.target.value) })}
               />
             </Field>
+            {module === 'bar' && (
+              <div style={{ gridColumn: '1 / -1' }}>
+                {/*
+                  The bottled drinks, in practice. Spirits are measured far
+                  less often: forty open bottles eyeballed at two in the
+                  morning produce numbers nobody believes.
+                */}
+                <Toggle
+                  checked={editing.count_each_shift === true}
+                  onChange={(v) => setEditing({ ...editing, count_each_shift: v })}
+                  label="Counted at the start and end of every shift"
+                />
+                <p className="small dim" style={{ margin: '0.3rem 0 0' }}>
+                  {anyShiftCounted
+                    ? 'Only the items ticked here appear on the bartender\u2019s opening and closing count.'
+                    : 'Nothing is ticked yet, so the shift count still asks for everything. Tick the bottled drinks and it narrows to those.'}
+                </p>
+              </div>
+            )}
             {packProblem(Number(editing.pack_size ?? 0), editing.unit ?? '', editing.pack_name ?? '') && (
               <div style={{ gridColumn: '1 / -1' }}>
                 <Notice tone="warn">
