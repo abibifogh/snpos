@@ -10,6 +10,7 @@ import type {
   CountLine, CountReason, CountGrouping, PendingCount, PendingCountLine, StaffProfile,
 } from '@snpos/core';
 import { listAll } from '@snpos/core';
+import { CountUpload } from '../components/CountUpload';
 import { useSession } from '../session';
 
 /** Where a half-finished count lives while somebody serves a customer. */
@@ -44,6 +45,13 @@ export function StocktakePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [uploading, setUploading] = useState(false);
+  /**
+   * The real maker and category records, which the shelf lines only carry the
+   * names of. An upload that creates a piece has to attach it to an id.
+   */
+  const [owners, setOwners] = useState<{ $id: string; name: string }[]>([]);
+  const [shelves, setShelves] = useState<{ $id: string; name: string }[]>([]);
   const [queue, setQueue] = useState<PendingCount[] | null>(null);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
 
@@ -68,6 +76,8 @@ export function StocktakePage() {
     void loadShelf();
     void loadQueue();
     listAll<StaffProfile>('staff_profiles').then(setStaff).catch(() => undefined);
+    listAll<{ $id: string; name: string }>('consignors').then(setOwners).catch(() => undefined);
+    listAll<{ $id: string; name: string }>('categories').then(setShelves).catch(() => undefined);
   }, []);
 
   /**
@@ -252,10 +262,18 @@ export function StocktakePage() {
             </div>
           )}
 
-          <p className="dim" style={{ maxWidth: '46rem' }}>
-            Walk the shop and type what is actually on the shelf. Leave a line blank and it is left exactly as it
-            is — blank is not nought. Nothing moves until an admin approves it.
-          </p>
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
+            <p className="dim" style={{ maxWidth: '46rem' }}>
+              Walk the shop and type what is actually on the shelf. Leave a line blank and it is left exactly as it
+              is — blank is not nought. Nothing moves until an admin approves it.
+            </p>
+            {/* For a shop that counts on paper and types it up afterwards. It
+                fills this sheet rather than writing to the shelf, so the
+                totals, the warnings and the approval all still happen. */}
+            <Button onClick={() => setUploading(true)} disabled={!lines?.length}>
+              Upload a count
+            </Button>
+          </div>
 
           {warnings.map((w) => (
             <div key={w} style={{ marginBottom: '0.6rem' }}><Notice tone="warn">{w}</Notice></div>
@@ -402,6 +420,25 @@ export function StocktakePage() {
             ))
           )}
         </>
+      )}
+
+      {uploading && lines && (
+        <CountUpload
+          lines={lines}
+          owners={owners}
+          categories={shelves}
+          settings={settings}
+          venueId="main"
+          onClose={() => setUploading(false)}
+          onApply={(filled, message) => {
+            setLines(filled);
+            setUploading(false);
+            // The new pieces have to reach the lists behind the filters too,
+            // or a maker created by the upload cannot be filtered to.
+            void listAll<{ $id: string; name: string }>('consignors').then(setOwners).catch(() => undefined);
+            toast(message);
+          }}
+        />
       )}
 
       {confirming && (

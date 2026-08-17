@@ -39,4 +39,6 @@ export * from './bar-count';
 export * from './drink-import';
 export * from './locations';
 export * from './level-import';
+export * from './count-import';
+export * from './xlsx';
 export * from './packs';

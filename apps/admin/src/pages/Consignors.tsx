@@ -8,7 +8,7 @@ import {
   formatMoney, parseMoney, toInput,
   loadConsignors, balancesByConsignor, ledgerFor, buildStatement, recordPayout, nextReference,
   buildStatementHtml, openPrintable, rateFor, flatFor, dueFor, onHandFor,
-  owedBreakdown, labelForKind,
+  owedBreakdown, labelForKind, makerCode,
 } from '@snpos/core';
 import type {
   Consignor, LedgerEntry, Statement, Settings, ConsignmentIntake, MenuItem, ProductVariant, UnsoldLine,
@@ -117,7 +117,7 @@ export function ConsignorsPage() {
         venue_id: editing.venue_id ?? 'main',
         // Short and human, because it goes on the label tied to every piece and
         // gets read out over a phone. Made from the name if nobody gives one.
-        code: (editing.code || suggestCode(editing.name)).toUpperCase().slice(0, 24),
+        code: (editing.code || makerCode(editing.name)).toUpperCase().slice(0, 24),
         name: editing.name.trim(),
         phone: editing.phone?.trim() ?? '',
         email: editing.email?.trim() ?? '',
@@ -273,7 +273,7 @@ export function ConsignorsPage() {
           >
             <Input
               value={editing.code ?? ''}
-              placeholder={editing.name ? suggestCode(editing.name) : 'AKO'}
+              placeholder={editing.name ? makerCode(editing.name) : 'AKO'}
               onChange={(e) => setEditing({ ...editing, code: e.target.value.toUpperCase() })}
             />
           </Field>
@@ -407,14 +407,6 @@ export function ConsignorsPage() {
       )}
     </div>
   );
-}
-
-/** Initials, roughly. Enough to be recognisable and short enough for a label. */
-function suggestCode(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return '';
-  if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
-  return words.slice(0, 3).map((w) => w[0]).join('').toUpperCase();
 }
 
 /**

@@ -378,3 +378,19 @@ export function owedBreakdown(entries: LedgerLike[]): { lines: OwedLine[]; balan
 
   return { lines: withBalance.reverse(), balance: running };
 }
+
+/**
+ * A short code for a maker, from their name.
+ *
+ * Initials, roughly. It goes on the label tied to every piece and gets read
+ * out over a phone, so it has to be recognisable and short. Lived in the
+ * consignors screen until an upload needed to create makers too — two copies
+ * would have meant the same maker getting two different codes depending on
+ * which screen created them.
+ */
+export function makerCode(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
+  return words.slice(0, 3).map((w) => w[0]).join('').toUpperCase();
+}
