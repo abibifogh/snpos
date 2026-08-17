@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Field, Input, Modal, Notice, Select, Badge, Spinner } from '@snpos/ui';
 import {
-  db, DB_ID, Query, listAll, createOrder, computeTotals, lineTotal, formatMoney,
+  db, DB_ID, ID, Query, listAll, createOrder, computeTotals, lineTotal, formatMoney,
   parseMoney, toInput, isEnabled, featureConfig, visibleSections, recordPayment, asksForTip,
   variantPriceRange, shiftUsable, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, sharesFor, shouldWarnLateOrder,
   sellBlockedReason, previewUrl,
+  findCode, codeProblem, discountAmount, needsManager, discountLabelFor,
 } from '@snpos/core';
-import type { CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, Settings } from '@snpos/core';
+import type { CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, Settings, DiscountRow } from '@snpos/core';
 import { OptionSheet } from './OptionSheet';
 import { COUNTER_TABLE_ID, BAR_COUNTER_TABLE_ID } from './App';
 import type { PosContext, TableRow } from './App';
@@ -67,6 +68,8 @@ export function OrderView({
   const [paying, setPaying] = useState(false);
   const [discount, setDiscount] = useState(0);
   const [discountLabel, setDiscountLabel] = useState('');
+  /** Which code it came from, so the sale can be counted against that offer. */
+  const [discountId, setDiscountId] = useState('');
   const [showDiscount, setShowDiscount] = useState(false);
   const [sectionId, setSectionId] = useState<string | null>(null);
   /**
@@ -287,12 +290,40 @@ export function OrderView({
         discount,
         fulfilment: isTakeaway ? 'takeaway' : 'dine_in',
       });
+      /*
+        The code's use, written down.
+
+        Without this a discount is a number on one bill and nothing else: the
+        offer's own counter never moves, so a code limited to fifty uses runs
+        for ever, and nobody can answer what a promotion actually cost. Written
+        after the order because it points at one, and never fatal — a sale that
+        went through must not be undone by its own bookkeeping.
+      */
+      if (discountId && discount > 0) {
+        await db.createDocument(DB_ID, 'discount_redemptions', ID.unique(), {
+          venue_id: ctx.venue.$id,
+          discount_id: discountId,
+          code_snapshot: discountLabel,
+          order_id: order.$id,
+          amount: discount,
+          stage: 'staff_post_accept',
+          applied_by: ctx.userId,
+          status: 'applied',
+        }).catch(() => undefined);
+        await db.getDocument(DB_ID, 'discounts', discountId)
+          .then((d) => db.updateDocument(DB_ID, 'discounts', discountId, {
+            used_count: ((d as unknown as { used_count?: number }).used_count ?? 0) + 1,
+          }))
+          .catch(() => undefined);
+      }
+
       setExisting((e) => [...e, order]);
       const rows = await listAll<OrderItem>('order_items', [Query.equal('order_id', order.$id)]);
       setExistingItems((m) => ({ ...m, [order.$id]: rows }));
       setCart([]);
       setDiscount(0);
       setDiscountLabel('');
+      setDiscountId('');
       if (!isTakeaway) await db.updateDocument(DB_ID, 'tables', table.$id, { status: 'ordered' }).catch(() => undefined);
       if (counterSale) {
         // Nothing is being sent anywhere. A counter sale is rung up and paid
@@ -593,11 +624,18 @@ export function OrderView({
         <DiscountModal
           ctx={ctx}
           subtotal={billTotal}
+          applied={discount}
           onClose={() => setShowDiscount(false)}
-          onApply={(amount, label) => {
+          onApply={(amount, label, id) => {
             setDiscount(amount);
             setDiscountLabel(label);
+            setDiscountId(id);
             setShowDiscount(false);
+          }}
+          onRemove={() => {
+            setDiscount(0);
+            setDiscountLabel('');
+            setDiscountId('');
           }}
         />
       )}
@@ -702,53 +740,92 @@ export function OrderView({
 
 /** Staff-applied discount, capped by what this member of staff may authorise. */
 function DiscountModal({
-  ctx, subtotal, onClose, onApply,
+  ctx, subtotal, applied, onClose, onApply, onRemove,
 }: {
   ctx: PosContext;
   subtotal: number;
+  /** What is already off this bill, so the box can offer to take it back. */
+  applied: number;
   onClose: () => void;
-  onApply: (amount: number, label: string) => void;
+  onApply: (amount: number, label: string, discountId: string) => void;
+  onRemove: () => void;
 }) {
-  const [percent, setPercent] = useState('10');
+  const [code, setCode] = useState('');
+  const [rows, setRows] = useState<DiscountRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const ceilingBp = ctx.profile?.can_discount_up_to_bp ?? 0;
-  const managerAboveBp = featureConfig(ctx.features, 'discounts', 'manager_pin_above_bp', 2000);
+
+  /*
+    The codes are read here rather than kept with the menu.
+
+    A code switched on mid-service should work on the next sale, not after
+    somebody reloads the till, and this box is opened rarely enough that one
+    read costs nothing.
+  */
+  useEffect(() => {
+    listAll<DiscountRow & Doc>('discounts', [Query.equal('active', true)])
+      .then(setRows)
+      .catch(() => setRows([]));
+  }, []);
 
   const apply = () => {
-    const bp = Math.round(Number(percent || 0) * 100);
-    if (!Number.isFinite(bp) || bp <= 0) { setError('Enter a percentage.'); return; }
-    if (bp > 10000) { setError('A discount cannot exceed 100%.'); return; }
-    if (bp > ceilingBp) {
-      setError(`You can authorise up to ${(ceilingBp / 100).toFixed(0)}%. A manager must approve more than that.`);
-      return;
-    }
-    if (bp > managerAboveBp) {
-      setError(`Anything above ${(managerAboveBp / 100).toFixed(0)}% needs a manager. Ask them to apply it.`);
-      return;
-    }
-    onApply(Math.round((subtotal * bp) / 10000), `${percent}% discount`);
+    setError(null);
+    const found = findCode(rows ?? [], code);
+    const ctxFor = { subtotal, at: new Date(), ceilingBp };
+
+    const wrong = codeProblem(found, ctxFor);
+    if (wrong || !found) { setError(wrong); return; }
+
+    const senior = needsManager(found, ctxFor);
+    if (senior) { setError(senior); return; }
+
+    const off = discountAmount(found, subtotal);
+    if (off <= 0) { setError('That code takes nothing off this basket.'); return; }
+    onApply(off, discountLabelFor(found), found.$id);
   };
 
   return (
     <Modal
-      title="Apply discount"
+      title="Apply a discount"
       onClose={onClose}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          {/* The way back. There was none: once a discount was on, the only
+              button reopened this box and the only way out was cancelling,
+              which changed nothing. A bill could not be put back to full
+              price without starting it again. */}
+          {applied > 0 && (
+            <Button onClick={() => { onRemove(); onClose(); }}>Take the discount off</Button>
+          )}
           <Button variant="primary" onClick={apply}>Apply</Button>
         </>
       }
     >
       <p className="small dim" style={{ marginTop: 0 }}>
-        Discounts can only be applied before the bill is marked paid. Afterwards, use a refund, which leaves its own
-        trail.
+        Discounts come from a code somebody set up beforehand, not from a figure typed at the till. They can only
+        be applied before the bill is paid; afterwards, use a refund, which leaves its own trail.
       </p>
-      <Field label="Percentage off" error={error}>
-        <Input value={percent} inputMode="decimal" onChange={(e) => setPercent(e.target.value)} />
+
+      <Field label="Discount code" error={error}>
+        <Input
+          value={code}
+          autoFocus
+          placeholder="OPEN10"
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          onKeyDown={(e) => { if (e.key === 'Enter') apply(); }}
+        />
       </Field>
+
+      {rows !== null && rows.filter((d) => d.code && d.staff_applicable).length === 0 && (
+        <Notice>
+          No discount codes are set up yet. An admin can add them in the admin app, under Discounts.
+        </Notice>
+      )}
+
       <p className="small dim">
-        Your limit is {(ceilingBp / 100).toFixed(0)}%. Every discount is recorded against your name.
+        Your limit is {(ceilingBp / 100).toFixed(0)}%. Every discount is recorded against your name and against
+        the code it came from.
       </p>
     </Modal>
   );
