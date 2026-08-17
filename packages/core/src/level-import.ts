@@ -35,7 +35,7 @@ export const LEVEL_COLUMNS: ImportColumn[] = [
 export const LEVEL_TEMPLATE_HEADINGS = ['name', 'unit', 'Store room', 'The bar'];
 
 export const LEVEL_TEMPLATE_ROWS: string[][] = [
-  ['Havana Club Bottle', 'shot', '120', '28'],
+  ['Havana Club Bottle', 'shot', '120', '15'],
   ['Tonic', 'bottle', '48', '13'],
   ['Lime', 'each', '0', '20'],
 ];

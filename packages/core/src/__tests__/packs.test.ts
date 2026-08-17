@@ -5,6 +5,15 @@ import {
   toCountingUnits, costPerCountingUnit, convertPurchase, describePurchase, packProblem,
 } from '../packs.ts';
 
+/*
+  28 rather than the house's real 15, on purpose.
+
+  The point of these numbers is a division that does NOT come out even:
+  GHS 300 over 28 shots is 10.7142..., which is what proves the money is
+  rounded once and the remainder handled. 300 over 15 is exactly 20, and
+  swapping it in would leave the rounding assertions passing while testing
+  nothing.
+*/
 const havana = { unit: 'shot', pack_size: 28, pack_name: 'bottle' };
 const rice = { unit: 'kg' };
 

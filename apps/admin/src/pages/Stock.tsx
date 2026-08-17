@@ -39,7 +39,10 @@ const packHint = (ing: { unit?: string; pack_name?: string; pack_size?: number }
   const size = Number(ing.pack_size ?? 0);
   const unit = ing.unit ?? 'unit';
   const name = (ing.pack_name ?? '').trim() || 'purchase';
-  if (!(size > 1)) return `Leave at 0 if you buy it by the ${unit}. A bar buying a bottle and pouring shots would put 28 here.`;
+  // The worked example is the house's own: a 750ml bottle poured as 5cl
+  // measures is fifteen. A number picked out of the air here is a number
+  // somebody copies.
+  if (!(size > 1)) return `Leave at 0 if you buy it by the ${unit}. A 750ml bottle poured as 5cl measures would be 15.`;
   return `Buying 1 ${name} adds ${size} ${unit} to stock, and a price of ${symbol}280 a ${name} `
     + `is stored as ${symbol}${(280 / size).toFixed(2)} a ${unit}.`;
 };
