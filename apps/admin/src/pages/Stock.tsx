@@ -3,7 +3,7 @@ import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Togg
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, levelOf, saveDropping,
-  purchasesFor, priceHistory, priceMoveNote,
+  purchasesFor, priceHistory, priceMoveNote, packProblem, hasPack, packSize,
 } from '@snpos/core';
 import type { Module, Ingredient, Recipe, MenuItem, Doc, Settings, PurchaseRow } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
@@ -12,7 +12,36 @@ import { useSession } from '../session';
 
 interface Supplier extends Doc { venue_id: string; name: string; contact?: string; phone?: string; email?: string; active: boolean }
 
-const UNITS = ['g', 'kg', 'ml', 'l', 'each', 'pack'];
+/**
+ * Every unit the database accepts, which is not the same as every unit a
+ * kitchen uses.
+ *
+ * This list used to stop at "pack", from before the bar existed. The database
+ * has taken bottles, cases, shots and centilitres since — so a spirit imported
+ * as shots could be stored but never chosen here, and opening the ingredient
+ * to change anything else showed an empty unit box that would write back a
+ * wrong one on save.
+ *
+ * Kept in the same order as the enum in scripts/schema.mjs, which is the one
+ * that decides what can actually be saved.
+ */
+const UNITS = ['g', 'kg', 'ml', 'l', 'each', 'pack', 'bottle', 'case', 'shot', 'cl'];
+
+/** The pack's name for a label, before anybody has given it one. */
+const plainPack = (name?: string) => {
+  const n = (name ?? '').trim();
+  return n ? n.charAt(0).toUpperCase() + n.slice(1) : 'One purchase';
+};
+
+/** Said with their own numbers in it, so the setting explains itself. */
+const packHint = (ing: { unit?: string; pack_name?: string; pack_size?: number }, symbol: string) => {
+  const size = Number(ing.pack_size ?? 0);
+  const unit = ing.unit ?? 'unit';
+  const name = (ing.pack_name ?? '').trim() || 'purchase';
+  if (!(size > 1)) return `Leave at 0 if you buy it by the ${unit}. A bar buying a bottle and pouring shots would put 28 here.`;
+  return `Buying 1 ${name} adds ${size} ${unit} to stock, and a price of ${symbol}280 a ${name} `
+    + `is stored as ${symbol}${(280 / size).toFixed(2)} a ${unit}.`;
+};
 
 /**
  * A worked example in the placeholder, chosen to suit the unit.
@@ -154,6 +183,11 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
         expense_category_key: editing.expense_category_key ?? '',
         check_guide: (editing.check_guide ?? '').trim(),
         counted_at_close: editing.counted_at_close !== false,
+        // How it arrives, when that differs from how it is counted. A bar buys
+        // a bottle and pours shots; a kitchen buys rice by the kilo and leaves
+        // both of these alone. See packs.ts.
+        pack_size: Number(editing.pack_size ?? 0),
+        pack_name: (editing.pack_name ?? '').trim(),
         // Whose shelf, taken from the page rather than asked for. A bottle
         // added from the bar's screen belongs to the bar; nobody should have
         // to answer a question the screen already knows the answer to.
@@ -305,6 +339,14 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
                           <div style={{ fontWeight: 550 }}>{i.name}</div>
                           {i.critical && <span className="badge badge-warn">Critical</span>}
                           {!i.active && <Badge tone="warn">Archived</Badge>}
+                          {/* A wrong pack size multiplies the shelf by itself
+                              and is otherwise invisible until a count goes
+                              badly, so it is shown where the list is read. */}
+                          {hasPack(i) && (
+                            <div className="small dim">
+                              bought by the {(i.pack_name || 'pack').trim()} of {packSize(i)} {i.unit}
+                            </div>
+                          )}
                         </td>
                         <td className="dim small">{nameForKey(categories, i.category) === ', ' ? '' : nameForKey(categories, i.category)}</td>
                         <td className="dim small">{supplierName(i.supplier_id)}</td>
@@ -409,6 +451,45 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
             <Field label="Currently in stock">
               <Input type="number" step="any" value={editing.current_qty ?? 0} onChange={(e) => setEditing({ ...editing, current_qty: Number(e.target.value) })} />
             </Field>
+            {/*
+              How it arrives, when that is not how it is counted.
+
+              The bar's case: a bottle of Havana Club is bought as a bottle and
+              poured as shots. Without this, recording "1 bottle" puts one shot
+              on the shelf and makes the price of a whole bottle the price of a
+              single shot — which values the shelf at twenty-eight times what
+              is really on it. Left at nought, nothing changes anywhere, which
+              is what every kitchen ingredient wants.
+            */}
+            <Field
+              label="Bought as"
+              hint={`What one purchase is called, if you do not buy it by the ${editing.unit ?? 'unit'}. Leave blank if you do.`}
+            >
+              <Input
+                value={editing.pack_name ?? ''}
+                placeholder="bottle, crate, case"
+                onChange={(e) => setEditing({ ...editing, pack_name: e.target.value })}
+              />
+            </Field>
+            <Field
+              label={`${plainPack(editing.pack_name)} holds how many ${editing.unit ?? 'unit'}?`}
+              hint={packHint(editing, settings?.currency_symbol ?? '')}
+            >
+              <Input
+                type="number"
+                step="any"
+                min="0"
+                value={editing.pack_size ?? 0}
+                onChange={(e) => setEditing({ ...editing, pack_size: Number(e.target.value) })}
+              />
+            </Field>
+            {packProblem(Number(editing.pack_size ?? 0), editing.unit ?? '', editing.pack_name ?? '') && (
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Notice tone="warn">
+                  {packProblem(Number(editing.pack_size ?? 0), editing.unit ?? '', editing.pack_name ?? '')}
+                </Notice>
+              </div>
+            )}
             <Field label="Par level" hint="The amount you like to keep on hand.">
               <Input type="number" step="any" value={editing.par_level ?? 0} onChange={(e) => setEditing({ ...editing, par_level: Number(e.target.value) })} />
             </Field>

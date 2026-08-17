@@ -34,6 +34,15 @@ export interface Ingredient extends Doc {
    * with nothing on a shelf to walk over and look at.
    */
   counted_at_close?: boolean;
+  /**
+   * How many counting units come in one pack, and what the pack is called.
+   *
+   * A bar buys bottles and pours shots. Absent or 0 or 1 means it is bought in
+   * whatever it is counted in, which is every kitchen ingredient there has
+   * ever been. See packs.ts.
+   */
+  pack_size?: number;
+  pack_name?: string;
   consecutive_low_count?: number;
   consecutive_low_since?: string;
   last_low_severity?: 'low' | 'out';

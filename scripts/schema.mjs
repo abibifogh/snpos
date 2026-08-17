@@ -1292,6 +1292,23 @@ export const COLLECTIONS = [
       ['critical', 'b', null, true, false],
       ['supplier_id', 's', 64, false],
       ['category', 's', 80, false],
+      /**
+       * How many counting units arrive in one pack, and what the pack is
+       * called.
+       *
+       * A bar buys a bottle of Havana Club and pours it as shots. Both are
+       * true, and neither is a sum anybody should be doing in their head after
+       * a shop run. Without this, "1 bottle" is recorded as one shot and the
+       * price paid for the bottle becomes the price of a shot — which values
+       * the shelf at twenty-eight times what is on it and poisons every dish
+       * costing downstream.
+       *
+       * Not required, and nought on everything that came before: a kitchen
+       * buying rice by the kilo has no pack and must never be asked for one.
+       * See packs.ts — a size of 0 or 1 means no pack at all.
+       */
+      ['pack_size', 'f', null, false, 0],
+      ['pack_name', 's', 40, false],
       // The sentence a cook reads at the end of a shift, in the restaurant's
       // own words: "OK = 10pcs or more . Low = under 10pcs".
       //

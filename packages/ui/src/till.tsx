@@ -3,6 +3,7 @@ import { Button, Field, FormError, Input, Modal, Notice, Select, Textarea } from
 import {
   db, DB_ID, ID, saveDropping, formatMoney, parseMoney, toInput, loadIngredients, loadPaymentMethods,
   PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions, receiveStock, uploadFile,
+  buyOptions, convertPurchase, describePurchase, hasPack,
   expenseMethods, recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
   fromTakings, postExpense, accountForExpense,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
@@ -32,7 +33,12 @@ import type {
  * type the answer — which is how a hundred and twenty cedis of rice gets
  * recorded as six hundred.
  */
-interface DraftLine { ingredientId: string; qtyText: string; totalText: string }
+/**
+ * `buyKey` says whether the quantity is packs or counting units — a bar buys a
+ * bottle and pours shots, so "1" can mean one bottle and twenty-eight on the
+ * shelf. Absent means the pack when the item has one. See packs.ts.
+ */
+interface DraftLine { ingredientId: string; qtyText: string; totalText: string; buyKey?: 'pack' | 'unit' }
 
 /**
  * Said when the spend saved but the answer to "where did the money come from"
@@ -280,6 +286,15 @@ export function ExpenseModal({
     return qty > 0 ? Math.round(total / qty) : 0;
   };
 
+  /**
+   * Which unit a line is being bought in. Defaults to the pack, because
+   * setting a pack size up is somebody saying "this is how it arrives".
+   */
+  const buyOptionFor = (ing: { unit: string; pack_size?: number; pack_name?: string }, key?: 'pack' | 'unit') => {
+    const opts = buyOptions(ing);
+    return opts.find((o) => o.key === key) ?? opts[0];
+  };
+
   /** The remainder, and only ever a positive one. */
   const extra = Math.max(0, parseMoney(extraText, decimals) ?? 0);
 
@@ -445,9 +460,23 @@ export function ExpenseModal({
       for (const l of filledLines) {
         const ing = ingredients.find((i) => i.$id === l.ingredientId);
         if (!ing) continue;
-        const qty = Number(l.qtyText);
+        /*
+          Typed in what they bought, stored in what it is counted in. The price
+          converts as well as the quantity, and the price is the half that
+          matters: a GHS 300 bottle recorded as GHS 300 a shot values the shelf
+          at twenty-eight times what is on it. No pack means a conversion of
+          one, which is every kitchen ingredient there has ever been.
+        */
+        const opt = buyOptionFor(ing, l.buyKey);
         // Worked out from what was paid, not typed. See unitCostOf.
-        const unitCost = unitCostOf(l);
+        const perBought = unitCostOf(l);
+        const converted = convertPurchase({
+          qty: Number(l.qtyText),
+          costPerBought: perBought,
+          per: opt.per,
+        });
+        const qty = converted.qty;
+        const unitCost = converted.unitCost;
         const lineTotal = parseMoney(l.totalText, decimals) ?? 0;
         /**
          * Overheads are spent the moment they are bought.
@@ -571,7 +600,9 @@ export function ExpenseModal({
       >
         <div className="stack" style={{ gap: '0.45rem' }}>
           {lines.map((l, i) => {
-            const unit = ingredients.find((x) => x.$id === l.ingredientId)?.unit ?? 'unit';
+            const picked = ingredients.find((x) => x.$id === l.ingredientId);
+            const unit = picked?.unit ?? 'unit';
+            const opt = buyOptionFor(picked ?? { unit }, l.buyKey);
             const per = unitCostOf(l);
             return (
               <div key={i}>
@@ -589,10 +620,24 @@ export function ExpenseModal({
                   <Input
                     value={l.qtyText}
                     inputMode="decimal"
-                    placeholder={`How many ${unit}`}
+                    placeholder={`How many ${opt.label}`}
                     style={{ flex: 1 }}
                     onChange={(e) => setLine(i, { qtyText: e.target.value })}
                   />
+                  {/* Only shown for something bought in packs. A picker with
+                      one option is a question with no information in it, and
+                      this form is used standing up under time pressure. */}
+                  {picked && hasPack(picked) && (
+                    <Select
+                      value={opt.key}
+                      style={{ flex: 1 }}
+                      onChange={(e) => setLine(i, { buyKey: e.target.value as 'pack' | 'unit' })}
+                    >
+                      {buyOptions(picked).map((o) => (
+                        <option key={o.key} value={o.key}>{o.label}</option>
+                      ))}
+                    </Select>
+                  )}
                   {/* What was handed over for this item. The market's own
                       figure, which is the one the person remembers. */}
                   <Input
@@ -614,9 +659,25 @@ export function ExpenseModal({
                     here rather than in a costing report next month. */}
                 {per > 0 && (
                   <div className="small dim" style={{ marginTop: '0.15rem' }}>
-                    {formatMoney(per, settings)} per {unit}
+                    {formatMoney(per, settings)} per {opt.label.replace(/s$/, '') || unit}
                   </div>
                 )}
+                {/* Two bottles becoming fifty-six shots is the one thing that
+                    can go badly wrong here, so it is said rather than done
+                    quietly. A sentence that reads wrong means the pack size is
+                    wrong, which is much cheaper to find now than at a count. */}
+                {picked && (() => {
+                  const said = describePurchase({
+                    qty: Number(l.qtyText) || 0,
+                    option: opt,
+                    ing: picked,
+                    money: (m) => formatMoney(m, settings),
+                    unitCost: per > 0 ? Math.round(per / opt.per) : undefined,
+                  });
+                  return said ? (
+                    <div className="small" style={{ marginTop: '0.15rem', fontWeight: 550 }}>{said}</div>
+                  ) : null;
+                })()}
               </div>
             );
           })}

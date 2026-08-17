@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Badge, Button, Field, Modal, Notice, Select } from '@snpos/ui';
 import { db, DB_ID, ID, humanError } from '../lib';
-import { parseMoney, toInput } from '@snpos/core';
+import { parseMoney, toInput, packProblem } from '@snpos/core';
 import type { Ingredient, Settings, Module } from '@snpos/core';
 import type { KeyedRow } from './KeyedList';
 
@@ -22,6 +22,10 @@ interface Supplier { $id: string; name: string }
 const COLUMNS = [
   'name', 'unit', 'cost_per_unit', 'in_stock', 'par_level',
   'low_warning_at', 'category', 'supplier', 'expense_category', 'critical',
+  // How it arrives, when that is not how it is counted: a bar buys a bottle
+  // and pours shots. Both optional — a kitchen buying rice by the kilo leaves
+  // them off entirely and nothing changes. See packs.ts.
+  'bought_as', 'units_per_purchase',
 ];
 
 /**
@@ -45,6 +49,8 @@ interface ParsedRow {
   supplierId: string;
   expenseKey: string;
   critical: boolean;
+  packName: string;
+  packSize: number;
   existingId?: string;
   problems: string[];
 }
@@ -181,6 +187,19 @@ export function StockImport({
 
       const lowRaw = at(cells, 'low_warning_at');
 
+      /*
+        A pack is refused rather than ignored when it does not make sense.
+
+        Getting this wrong is not a small error: a pack size of 28 on the wrong
+        row multiplies that shelf by twenty-eight and divides its cost by the
+        same, and nothing downstream looks obviously wrong until a count. So a
+        bad one keeps the row out of the import and says why.
+      */
+      const packName = at(cells, 'bought_as');
+      const packSize = num('units_per_purchase');
+      const packSays = packProblem(packSize, unit, packName);
+      if (packSays) problems.push(packSays);
+
       parsed.push({
         line: i + 1,
         name,
@@ -193,6 +212,8 @@ export function StockImport({
         supplierId: supplier?.$id ?? '',
         expenseKey: exp?.key ?? '',
         critical: /^(y|yes|true|1)$/i.test(at(cells, 'critical')),
+        packName,
+        packSize,
         existingId: existing.find((e) => e.name.toLowerCase() === name.toLowerCase())?.$id,
         problems,
       });
@@ -229,6 +250,8 @@ export function StockImport({
           category: r.category,
           expense_category_key: r.expenseKey,
           active: true,
+          pack_size: r.packSize,
+          pack_name: r.packName,
           ...(r.low !== undefined ? { low_threshold: r.low } : {}),
         };
         if (r.existingId) {

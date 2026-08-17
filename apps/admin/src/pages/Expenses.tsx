@@ -6,8 +6,9 @@ import {
   PAID_TO_KINDS, payeeLabel as sharedPayeeLabel, legacyExpenseCategory as legacyFor,
   isPostableExpenseAccount, expenseMethods, modulesOf, recomputeClosedShift,
   postExpense, accountForExpense,
+  buyOptions, convertPurchase, describePurchase, hasPack,
 } from '@snpos/core';
-import type { Module, Doc, Ingredient, PaidToKind } from '@snpos/core';
+import type { Module, Doc, Ingredient, PaidToKind, BuyOption } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
 import { AccountsManager } from '../components/AccountsManager';
 import { useSession } from '../session';
@@ -64,9 +65,30 @@ export function unitCostOf(d: { qtyText: string; totalText: string }, decimals: 
   return qty > 0 ? Math.round(total / qty) : 0;
 }
 
+/**
+ * Which unit a line is being bought in.
+ *
+ * Defaults to the pack when the item has one, because setting a pack size up
+ * is somebody saying "this is how it arrives". Falls back to the first option,
+ * which for everything without a pack is the only option.
+ */
+export function optionFor(ing: { unit: string; pack_size?: number; pack_name?: string }, key?: 'pack' | 'unit'): BuyOption {
+  const opts = buyOptions(ing);
+  return opts.find((o) => o.key === key) ?? opts[0];
+}
+
 interface DraftItem {
   ingredient_id: string;
   qtyText: string;
+  /**
+   * Whether the quantity above is packs or counting units.
+   *
+   * A bar buys a bottle of Havana Club and pours it as shots, so "1" means one
+   * bottle here and twenty-eight on the shelf. Absent means the pack, when the
+   * item has one — buying by the pack is the reason somebody set one up. Items
+   * with no pack only ever have the one answer. See packs.ts.
+   */
+  buyKey?: 'pack' | 'unit';
   /**
    * What was PAID for this line, not the price per unit.
    *
@@ -324,9 +346,26 @@ export function ExpensesPage() {
       for (const d of filled) {
         const ing = ingredients.find((i) => i.$id === d.ingredient_id);
         if (!ing) continue;
-        const qty = Number(d.qtyText);
+        /*
+          What was typed is in what they bought — bottles, crates — and what
+          stock keeps is in what it counts. Both the quantity and the price
+          convert, and the price is the half that matters: a GHS 300 bottle
+          recorded as GHS 300 a shot values the shelf at twenty-eight times
+          what is on it, and every dish costing downstream inherits it.
+
+          An item with no pack converts by one, which is every kitchen
+          ingredient there has ever been.
+        */
+        const option = optionFor(ing, d.buyKey);
         // Worked out from what was paid rather than typed. See unitCostOf.
-        const unitCost = unitCostOf(d, decimals) || ing.base_unit_cost;
+        const perBought = unitCostOf(d, decimals);
+        const line = convertPurchase({
+          qty: Number(d.qtyText),
+          costPerBought: perBought,
+          per: option.per,
+        });
+        const qty = line.qty;
+        const unitCost = perBought > 0 ? line.unitCost : ing.base_unit_cost;
         try {
           await db.createDocument(DB_ID, 'expense_items', ID.unique(), {
             expense_id: expenseId,
@@ -334,7 +373,10 @@ export function ExpensesPage() {
             name_snapshot: ing.name,
             qty,
             unit_cost: unitCost,
-            line_total: Math.round(qty * unitCost),
+            // What was handed over, not the rounded per-shot cost multiplied
+            // back up: those differ by a pesewa a shot, and the receipt is the
+            // truth.
+            line_total: line.lineTotal || Math.round(qty * unitCost),
             // An overhead is used up in the buying. See the note in the till
             // form: raising a quantity nobody counts creates a balance that
             // only ever goes up, and puts four hundred cedis of taxi rides on
@@ -754,7 +796,8 @@ function StockLines({
   const setLine = (i: number, patch: Partial<DraftItem>) =>
     setDraft((d) => d.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
 
-  const unitOf = (id: string) => ingredients.find((x) => x.$id === id)?.unit ?? '';
+  const ingOf = (id: string) => ingredients.find((x) => x.$id === id);
+  const unitOf = (id: string) => ingOf(id)?.unit ?? '';
 
   return (
     <Field
@@ -808,7 +851,21 @@ function StockLines({
                         value={d.qtyText}
                         onChange={(e) => setLine(i, { qtyText: e.target.value })}
                       />
-                      <span className="small dim">{unitOf(d.ingredient_id)}</span>
+                      {/* An item bought in packs gets a choice; everything else
+                          gets its unit as a label, because a picker with one
+                          option is a question with no information in it. */}
+                      {ingOf(d.ingredient_id) && hasPack(ingOf(d.ingredient_id)!) ? (
+                        <Select
+                          value={optionFor(ingOf(d.ingredient_id)!, d.buyKey).key}
+                          onChange={(e) => setLine(i, { buyKey: e.target.value as 'pack' | 'unit' })}
+                        >
+                          {buyOptions(ingOf(d.ingredient_id)!).map((o) => (
+                            <option key={o.key} value={o.key}>{o.label}</option>
+                          ))}
+                        </Select>
+                      ) : (
+                        <span className="small dim">{unitOf(d.ingredient_id)}</span>
+                      )}
                     </div>
                   </td>
                   <td>
@@ -822,9 +879,32 @@ function StockLines({
                         keeps is a portion of rice, not a trip to the market. */}
                     {unitCostOf(d, decimals) > 0 && (
                       <div className="small dim" style={{ marginTop: '0.2rem' }}>
-                        {money(unitCostOf(d, decimals))} per {unitOf(d.ingredient_id) || 'unit'}
+                        {money(unitCostOf(d, decimals))} per{' '}
+                        {optionFor(ingOf(d.ingredient_id) ?? { unit: '' }, d.buyKey).label.replace(/s$/, '')
+                          || unitOf(d.ingredient_id) || 'unit'}
                       </div>
                     )}
+                    {/* The whole risk of packs is buying two bottles and
+                        getting fifty-six of something unexpected, so the sum
+                        is said out loud rather than done quietly. A sentence
+                        that looks wrong here means the pack size is wrong,
+                        and that is far cheaper to find now. */}
+                    {(() => {
+                      const ing = ingOf(d.ingredient_id);
+                      if (!ing) return null;
+                      const opt = optionFor(ing, d.buyKey);
+                      const perBought = unitCostOf(d, decimals);
+                      const said = describePurchase({
+                        qty: Number(d.qtyText) || 0,
+                        option: opt,
+                        ing,
+                        money,
+                        unitCost: perBought > 0 ? Math.round(perBought / opt.per) : undefined,
+                      });
+                      return said ? (
+                        <div className="small" style={{ marginTop: '0.2rem', fontWeight: 550 }}>{said}</div>
+                      ) : null;
+                    })()}
                   </td>
                   <td className="num">
                     <Button size="sm" variant="ghost" type="button" onClick={() => setDraft((x) => x.filter((_, idx) => idx !== i))}>
