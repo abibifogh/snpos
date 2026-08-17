@@ -711,6 +711,9 @@ export async function closeShift(opts: {
       discounts: shiftOrders.reduce((a, o) => a + o.discount_total, 0),
       cogs,
       cashVariance: totalOff,
+      // Which books this shift's takings and costs belong in. A bar shift and
+      // a kitchen shift close the same way and mean different trades.
+      module: (shift.module ?? 'kitchen') as Module,
       // By id, so an expense already posted when it was recorded is not
       // posted again here. See postExpense.
       expenses: shiftExpenses.map((e) => ({

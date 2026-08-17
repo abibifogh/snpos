@@ -3,6 +3,8 @@ import type { Doc } from './types';
 import { entryProblem, within, chargeForMonth, isLocked, lockedMessage } from './ledger-math';
 import { uploadFile } from './files';
 import type { AccountRow, DepreciableAsset } from './ledger-math';
+import { MODULE_LABELS } from './access';
+import type { Module } from './access';
 
 export interface JournalEntry extends Doc {
   venue_id: string;
@@ -36,9 +38,25 @@ export const ACCOUNTS = {
   inventory: '1200',
   taxPayable: '2100',
   tipsPayable: '2200',
+  /**
+   * Sales and cost of sales, one pair per side of the business.
+   *
+   * A single "Food sales" line answers what the business took and nothing
+   * else. The question an owner running three trades actually asks is which of
+   * them is making money, and that cannot be recovered afterwards from one
+   * merged figure — a restaurant, a bar and a craft shop have completely
+   * different margins, and added together they describe none of them.
+   *
+   * A shift belongs to exactly one side, so the side is known at the moment
+   * the entry is written and nothing has to be apportioned later.
+   */
   foodSales: '4000',
+  barSales: '4010',
+  craftSales: '4020',
   discountsGiven: '4900',
   cogs: '5000',
+  barCogs: '5010',
+  craftCogs: '5020',
   cashOverShort: '7000',
   // What the business owns and uses rather than sells, and how much of it has
   // been used up. Depreciation posts to these by number.
@@ -59,6 +77,31 @@ export const ACCOUNTS = {
  * drift away from the set actually in use.
  */
 export const SYSTEM_ACCOUNT_CODES: readonly string[] = Object.values(ACCOUNTS);
+
+/**
+ * Which sales account a side of the business credits.
+ *
+ * Kept beside the codes rather than at the call site, because posting a shift
+ * and reading the reports back must not be able to answer it differently.
+ */
+export function salesAccount(module: Module): string {
+  if (module === 'bar') return ACCOUNTS.barSales;
+  if (module === 'craft') return ACCOUNTS.craftSales;
+  return ACCOUNTS.foodSales;
+}
+
+/** And which cost-of-sales account it debits. */
+export function cogsAccount(module: Module): string {
+  if (module === 'bar') return ACCOUNTS.barCogs;
+  if (module === 'craft') return ACCOUNTS.craftCogs;
+  return ACCOUNTS.cogs;
+}
+
+/** Every cost-of-sales account, for the reports' Costs total. */
+export const COGS_ACCOUNTS: readonly string[] = [ACCOUNTS.cogs, ACCOUNTS.barCogs, ACCOUNTS.craftCogs];
+
+/** Every sales account, for revenue totals. */
+export const SALES_ACCOUNTS: readonly string[] = [ACCOUNTS.foodSales, ACCOUNTS.barSales, ACCOUNTS.craftSales];
 export const isSystemAccount = (code: string) => SYSTEM_ACCOUNT_CODES.includes(code);
 
 /**
@@ -71,7 +114,7 @@ export const isSystemAccount = (code: string) => SYSTEM_ACCOUNT_CODES.includes(c
  * the drawer count, and an expense filed there would be double-counted.
  */
 export const isPostableExpenseAccount = (a: { code: string; type: string }) =>
-  a.type === 'expense' && a.code !== ACCOUNTS.cogs && a.code !== ACCOUNTS.cashOverShort;
+  a.type === 'expense' && !COGS_ACCOUNTS.includes(a.code) && a.code !== ACCOUNTS.cashOverShort;
 
 export interface PostingLine {
   account_code: string;
@@ -149,6 +192,8 @@ export interface ShiftPosting {
   discounts: number;
   cogs: number;
   cashVariance: number;
+  /** Which side of the business this shift belongs to. Absent is the kitchen. */
+  module?: Module;
   expenses: { amount: number; accountCode: string; expenseId?: string }[];
 }
 
@@ -173,7 +218,12 @@ export async function postShift(p: ShiftPosting): Promise<string[]> {
       // Discounts are recorded as a debit rather than netted off sales, so
       // "how much did we give away" stays an answerable question.
       { account_code: ACCOUNTS.discountsGiven, debit: p.discounts, credit: 0, memo: 'Discounts given' },
-      { account_code: ACCOUNTS.foodSales, debit: 0, credit: netRevenue + p.discounts, memo: 'Sales' },
+      {
+        account_code: salesAccount(p.module ?? 'kitchen'),
+        debit: 0,
+        credit: netRevenue + p.discounts,
+        memo: `${MODULE_LABELS[p.module ?? 'kitchen']} sales`,
+      },
       { account_code: ACCOUNTS.taxPayable, debit: 0, credit: p.tax, memo: 'Tax collected' },
       { account_code: ACCOUNTS.tipsPayable, debit: 0, credit: p.tips, memo: 'Tips owed to staff' },
     ].filter((l) => l.debit !== 0 || l.credit !== 0);
@@ -187,8 +237,11 @@ export async function postShift(p: ShiftPosting): Promise<string[]> {
 
   // --- cost of what was sold
   if (p.cogs > 0) {
-    const entry = await postEntry(p.venueId, { ...common, memo: 'Cost of goods sold' }, [
-      { account_code: ACCOUNTS.cogs, debit: p.cogs, credit: 0 },
+    const entry = await postEntry(p.venueId, {
+      ...common,
+      memo: `Cost of ${MODULE_LABELS[p.module ?? 'kitchen'].toLowerCase()} goods sold`,
+    }, [
+      { account_code: cogsAccount(p.module ?? 'kitchen'), debit: p.cogs, credit: 0 },
       { account_code: ACCOUNTS.inventory, debit: 0, credit: p.cogs },
     ]);
     posted.push(entry.$id);

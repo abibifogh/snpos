@@ -3174,6 +3174,10 @@ export const FEATURES = [
  */
 export const SYSTEM_ACCOUNT_CODES = [
   '1000', '1010', '1020', '1200', '2100', '2200', '4000', '4900', '5000', '7000',
+  // One sales and one cost-of-sales account per side of the business. A shift
+  // knows which side it belongs to, so the split happens as the entry is
+  // written rather than being guessed at afterwards from a merged figure.
+  '4010', '4020', '5010', '5020',
   // Depreciation posts to these three by number, the same way a shift close
   // posts to the ten above, so they cannot be deleted either.
   '1500', '1510', '6060',
@@ -3195,10 +3199,13 @@ export const SEED_ACCOUNTS = [
   ['2200', 'Tips payable', 'liability'],
   ['2300', 'Accounts payable', 'liability'],
   ['3000', 'Owner equity', 'equity'],
-  ['4000', 'Food sales', 'revenue'],
-  ['4010', 'Beverage sales', 'revenue'],
+  ['4000', 'Restaurant sales', 'revenue'],
+  ['4010', 'Bar sales', 'revenue'],
+  ['4020', 'Craft shop sales', 'revenue'],
   ['4900', 'Discounts given', 'revenue'],
-  ['5000', 'Cost of goods sold', 'expense'],
+  ['5000', 'Cost of food sold', 'expense'],
+  ['5010', 'Cost of drinks sold', 'expense'],
+  ['5020', 'Cost of craft goods sold', 'expense'],
   ['6000', 'Supplies', 'expense'],
   ['6010', 'Transport', 'expense'],
   ['6020', 'Utilities', 'expense'],
