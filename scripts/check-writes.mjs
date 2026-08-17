@@ -24,7 +24,15 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { COLLECTIONS, SYSTEM_ACCOUNT_CODES } from './schema.mjs';
 
-const ROOTS = ['apps', 'packages', 'functions'];
+/**
+ * `scripts` is here because seeding and importing write real rows too.
+ *
+ * A one-shot importer is exactly where a wrong field name survives: it is run
+ * once, by somebody who is not watching closely, against a live database — and
+ * Appwrite rejects the whole document for one unknown attribute, so the run
+ * reports failures with no clue which field caused them.
+ */
+const ROOTS = ['apps', 'packages', 'functions', 'scripts'];
 
 /** Appwrite fills these in itself; code may send them back on an update. */
 const SYSTEM_KEYS = new Set(['$id', '$createdAt', '$updatedAt', '$permissions', '$collectionId', '$databaseId']);

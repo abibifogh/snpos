@@ -1,0 +1,45 @@
+name,unit,cost_per_unit,in_stock,par_level,low_warning_at,category,supplier,expense_category,critical,bought_as,units_per_purchase
+ABC (bottled),bottle,6.04,216,0,,Beer,,,FALSE,,
+Akpeteshie Bottle,shot,0.00,322,0,,Bar stock,,,FALSE,bottle,0
+Alomo Gold bottle,shot,0.00,12,0,,Bar stock,,,FALSE,bottle,0
+Alvaro,bottle,11.00,0,0,,Soft,,,FALSE,,
+Amarula bottle,shot,0.00,0,0,,Bar stock,,,FALSE,bottle,0
+Basil leave,each,0.00,0,0,,Bar stock,,,FALSE,,
+Beefeater Gin Bottle,shot,0.00,0,0,,Bar stock,,,FALSE,bottle,0
+Black Rock Honey Whiskey Bottle,shot,0.00,112,0,,Bar stock,,,FALSE,bottle,0
+Brandy bottle,shot,1.48,160,0,,Bar stock,,,FALSE,bottle,0
+Brown sugar,g,0.00,0,0,,Bar stock,,,FALSE,,
+Castle Bridge Gin Bottle,shot,0.00,76,0,,Bar stock,,,FALSE,bottle,0
+Club (bottled),bottle,0.00,0,0,,Beer,,,FALSE,,
+Coffee Stock,g,0.20,0,0,,Bar stock,,,FALSE,,
+Cola,bottle,3.33,68,0,,Bar stock,,,FALSE,,
+Eagle 330ml,bottle,0.00,0,0,,Beer,,,FALSE,,
+Fanta,bottle,3.33,67,0,,Soft,,,FALSE,,
+Full cream milk,l,0.00,0,0,,Bar stock,,,FALSE,,
+GH flame Bottle,shot,0.00,0,0,,Bar stock,,,FALSE,bottle,0
+Guinness 330ml,bottle,10.00,0,0,,Beer,,,FALSE,,
+Gulder Large Bottle,bottle,12.08,120,0,,Beer,,,FALSE,,
+Havana Club Bottle,shot,9.33,4,0,,Bar stock,,,FALSE,bottle,0
+Herb Afrique Bottle,shot,0.00,125,0,,Bar stock,,,FALSE,bottle,0
+Honey,l,0.00,0,0,,Bar stock,,,FALSE,,
+Kalahari Bottle,shot,0.00,147,0,,Bar stock,,,FALSE,bottle,0
+Lemonade,each,0.00,32,0,,Bar stock,,,FALSE,,
+Lime,each,1.00,0,0,,Bar stock,,,FALSE,,
+Madingo Bottle,shot,0.00,115,0,,Bar stock,,,FALSE,bottle,0
+Malibu Bottle,shot,0.00,0,0,,Bar stock,,,FALSE,bottle,0
+Malt (bottled),bottle,7.71,152,0,,Soft,,,FALSE,,
+Mint leaves,each,0.00,0,0,,Bar stock,,,FALSE,,
+Orange,each,0.00,0,0,,Bar stock,,,FALSE,,
+Orijin (bottled),bottle,0.00,0,0,,Beer,,,FALSE,,
+Palm Rebel Bottle,shot,0.00,0,0,,Bar stock,,,FALSE,bottle,0
+Pineapple,each,0.00,0,0,,Bar stock,,,FALSE,,
+Plantain chips,each,30.00,0,0,,Snacks,,,FALSE,,
+Savanna,bottle,20.00,81,0,,Beer,,,FALSE,,
+Shandy,bottle,12.00,19,0,,Beer,,,FALSE,,
+Smirnoff Bottle,shot,7.00,40,0,,Bar stock,,,FALSE,bottle,0
+Smirnoff Ice,bottle,0.00,0,0,,Beer,,,FALSE,,
+Sobolo (sorrel),each,5.00,41,0,,Bar stock,,,FALSE,,
+Soda,bottle,4.83,84,0,,Bar stock,,,FALSE,,
+Sprite,bottle,3.33,17,0,,Bar stock,,,FALSE,,
+Star Large Bottle,bottle,11.67,60,0,,Beer,,,FALSE,,
+Tonic,bottle,0.00,133,0,,Bar stock,,,FALSE,,

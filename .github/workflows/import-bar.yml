@@ -1,0 +1,52 @@
+name: Import the bar
+
+# Puts the bar's bottles, drinks, recipes and opening levels into Appwrite from
+# the three files in data/bar.
+#
+# Run "Provision Appwrite" FIRST. This writes rows, and rows need the columns
+# to exist before they will be accepted.
+#
+# Two steps on purpose. The default run writes nothing and prints what it would
+# do; typing "import" writes it. An import that surprises somebody is one they
+# have to unpick by hand, and reading it first costs a minute.
+#
+# Safe to re-run either way: everything is matched by name and updated rather
+# than added again, and opening levels are set rather than added.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Leave blank for a dry run. Type "import" to write it for real.'
+        required: false
+        default: ''
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Read the files and say what would happen
+        if: ${{ inputs.confirm != 'import' }}
+        run: npm run import:bar
+        env:
+          APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT }}
+          APPWRITE_PROJECT_ID: ${{ vars.APPWRITE_PROJECT_ID }}
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+          DB_ID: ${{ vars.DB_ID || 'snpos' }}
+
+      - name: Write it
+        if: ${{ inputs.confirm == 'import' }}
+        run: npm run import:bar -- --write
+        env:
+          APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT }}
+          APPWRITE_PROJECT_ID: ${{ vars.APPWRITE_PROJECT_ID }}
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+          DB_ID: ${{ vars.DB_ID || 'snpos' }}
