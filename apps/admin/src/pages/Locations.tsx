@@ -42,6 +42,9 @@ export function LocationsPage() {
   const [note, setNote] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [uploading, setUploading] = useState(false);
+  /** The room whose contents are being read. */
+  const [looking, setLooking] = useState<(StockLocation & Doc) | null>(null);
+  const [lookFilter, setLookFilter] = useState('');
   const [stock, setStock] = useState<{ $id: string; name: string; unit: string }[]>([]);
 
   const mods = modulesOf(settings);
@@ -141,6 +144,24 @@ export function LocationsPage() {
   const heldAt = (locationId: string) =>
     levels.filter((l) => l.location_id === locationId).reduce((n, l) => n + (l.qty > 0 ? 1 : 0), 0);
 
+  /**
+   * What is actually in one room, rather than how many kinds of thing are.
+   *
+   * A count on its own answers nothing: "23 things held" is a number nobody
+   * can act on, and the question behind clicking it is always "which ones".
+   * Sorted by how much is there, most first, because a store room is read to
+   * find what it is holding rather than to look one item up.
+   */
+  const contentsOf = (locationId: string) =>
+    levels
+      .filter((l) => l.location_id === locationId && l.qty !== 0)
+      .map((l) => ({
+        ...l,
+        item: stock.find((s2) => s2.$id === l.ingredient_id),
+      }))
+      .filter((l) => l.item)
+      .sort((a, b) => b.qty - a.qty || (a.item?.name ?? '').localeCompare(b.item?.name ?? ''));
+
   if (!isAdmin) {
     return (<><h1>Where stock sits</h1><Notice>Only an admin or a manager can move stock between places.</Notice></>);
   }
@@ -202,7 +223,13 @@ export function LocationsPage() {
                       {saleLocation(mine, module)?.$id === l.$id && <Badge tone="warn"> sales come off here</Badge>}
                     </td>
                     <td className="dim small">{LOCATION_KINDS.find((k) => k.value === l.kind)?.label}</td>
-                    <td className="num">{heldAt(l.$id)}</td>
+                    <td className="num">
+                      {/* The number opens what is behind it. A figure nobody
+                          can click is a figure somebody has to trust. */}
+                      <Button size="sm" variant="ghost" onClick={() => setLooking(l)}>
+                        {heldAt(l.$id)}
+                      </Button>
+                    </td>
                     <td className="num">
                       <Button size="sm" variant="ghost" onClick={() => setEditing(l)}>Edit</Button>
                     </td>
@@ -416,6 +443,62 @@ export function LocationsPage() {
           </p>
         </Modal>
       )}
+
+      {looking && (() => {
+        const rows = contentsOf(looking.$id)
+          .filter((r) => !lookFilter.trim()
+            || (r.item?.name ?? '').toLowerCase().includes(lookFilter.trim().toLowerCase()));
+        const units = rows.reduce((n, r) => n + r.qty, 0);
+        return (
+          <Modal
+            wide
+            title={`What is in ${looking.name}`}
+            onClose={() => { setLooking(null); setLookFilter(''); }}
+            footer={<Button onClick={() => { setLooking(null); setLookFilter(''); }}>Close</Button>}
+          >
+            <div className="row row-wrap" style={{ gap: '1.4rem', marginBottom: '0.9rem' }}>
+              <div>
+                <div className="dim small">Different things</div>
+                <div style={{ fontSize: '1.3rem', fontWeight: 650 }}>{rows.length}</div>
+              </div>
+              <div>
+                <div className="dim small">Units in all</div>
+                <div style={{ fontSize: '1.3rem', fontWeight: 650 }}>{Number(units.toFixed(2))}</div>
+              </div>
+            </div>
+
+            <Input
+              placeholder="Search this room…"
+              value={lookFilter}
+              onChange={(e) => setLookFilter(e.target.value)}
+            />
+
+            {rows.length === 0 ? (
+              <div style={{ marginTop: '0.9rem' }}>
+                <Empty title={lookFilter ? 'Nothing here matches that' : 'Nothing is held here yet'}>
+                  Move stock in from another place, or set opening levels from a file.
+                </Empty>
+              </div>
+            ) : (
+              <div className="table-wrap" style={{ maxHeight: '46vh', overflowY: 'auto', marginTop: '0.9rem' }}>
+                <table className="data">
+                  <thead><tr><th>What</th><th className="num">How much</th></tr></thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr key={r.ingredient_id}>
+                        <td style={{ fontWeight: 550 }}>{r.item?.name}</td>
+                        <td className="num">
+                          {Number(r.qty.toFixed(3))} <span className="dim small">{r.item?.unit}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Modal>
+        );
+      })()}
     </>
   );
 }

@@ -562,17 +562,22 @@ export async function purchasesFor(ingredientId: string, limit = 200): Promise<P
  * delivery nobody booked in — and a sheet that only lists what it expects can
  * never report it.
  */
-export async function barCountSheet(venueId: string): Promise<BarCountLine[]> {
+export async function barCountSheet(venueId: string, locationId?: string): Promise<BarCountLine[]> {
   const [ingredients, locations] = await Promise.all([loadIngredients(venueId), loadLocations(venueId)]);
   /*
-    The BAR is counted, not the business.
+    ONE PLACE is counted, not the business.
 
     A bar with nine tonics behind it and a store room holding thirty-three is
     not "forty-two tonics" to the person counting — they are counting the nine,
     and checking them against forty-two would report a shortage of thirty-three
     every single night.
+
+    Which place is now asked for rather than assumed. The bar is counted every
+    shift and the store room every few weeks, and a store room that could only
+    be counted as part of the bar could not be counted at all: its stock would
+    show up as an enormous surplus against the counter's expected level.
   */
-  const counter = saleLocation(locations, 'bar');
+  const counter = locations.find((l) => l.$id === locationId) ?? saleLocation(locations, 'bar');
   const levels = counter ? await loadLevels([counter.$id]) : [];
 
   return ingredients
@@ -603,11 +608,14 @@ export async function barCountSheet(venueId: string): Promise<BarCountLine[]> {
 export async function saveBarCount(opts: {
   venueId: string;
   shiftId: string;
+  /** Which place was walked. Absent counts the bar itself. */
+  locationId?: string;
   phase: 'open' | 'close';
   lines: BarCountLine[];
   userId: string;
 }): Promise<{ written: number; shortValue: number }> {
-  const counter = saleLocation(await loadLocations(opts.venueId), 'bar');
+  const places = await loadLocations(opts.venueId);
+  const counter = places.find((l) => l.$id === opts.locationId) ?? saleLocation(places, 'bar');
   const variances = variancesIn(opts.lines);
   const shortValue = variances.filter((v) => v.delta < 0).reduce((s, v) => s + v.value, 0);
   let written = 0;

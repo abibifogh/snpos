@@ -3,9 +3,9 @@ import { Badge, Button, Card, Empty, Field, Input, Notice, Select, Spinner, useT
 import { humanError } from '../lib';
 import {
   barCountSheet, saveBarCount, hasOpeningCount, byUnit, summariseBarCount, readyToClose,
-  formatMoney, listAll, Query, loadOpenShifts,
+  formatMoney, listAll, Query, loadOpenShifts, loadLocations, saleLocation,
 } from '@snpos/core';
-import type { BarCountLine, Shift, Doc } from '@snpos/core';
+import type { BarCountLine, Shift, Doc, StockLocation } from '@snpos/core';
 import { useSession } from '../session';
 
 interface CheckRow extends Doc {
@@ -38,6 +38,16 @@ export function BarCountsPage() {
 
   const [shift, setShift] = useState<Shift | null>(null);
   const [phase, setPhase] = useState<'open' | 'close'>('close');
+  /**
+   * Which room is being walked.
+   *
+   * The bar is counted every shift and the store room every few weeks, and a
+   * store room that could only be counted as part of the bar could not be
+   * counted at all — its stock would read as an enormous surplus against what
+   * the counter expected.
+   */
+  const [places, setPlaces] = useState<StockLocation[]>([]);
+  const [placeId, setPlaceId] = useState('');
   const [lines, setLines] = useState<BarCountLine[] | null>(null);
   const [openingDone, setOpeningDone] = useState(false);
   const [history, setHistory] = useState<CheckRow[]>([]);
@@ -53,7 +63,12 @@ export function BarCountsPage() {
       const open = await loadOpenShifts('main', 'bar').catch(() => [] as Shift[]);
       const current = open[0] ?? null;
       setShift(current);
-      setLines(await barCountSheet('main'));
+      const where = await loadLocations('main').catch(() => [] as StockLocation[]);
+      const bar = where.filter((l) => (l.module ?? 'kitchen') === 'bar' && l.active !== false);
+      setPlaces(bar);
+      const here = placeId || saleLocation(bar, 'bar')?.$id || '';
+      if (!placeId) setPlaceId(here);
+      setLines(await barCountSheet('main', here || undefined));
       if (current) {
         const done = await hasOpeningCount(current.$id);
         setOpeningDone(done);
@@ -68,6 +83,9 @@ export function BarCountsPage() {
   };
 
   useEffect(() => { void load(); }, []);
+  // Changing room reloads the sheet: what is expected is that room's level,
+  // not the business total.
+  useEffect(() => { if (placeId) void load(); /* eslint-disable-next-line */ }, [placeId]);
 
   const setLine = (id: string, patch: Partial<BarCountLine>) =>
     setLines((rows) => (rows ?? []).map((r) => (r.ingredientId === id ? { ...r, ...patch } : r)));
@@ -89,6 +107,7 @@ export function BarCountsPage() {
       const { written, shortValue } = await saveBarCount({
         venueId: 'main',
         shiftId: shift.$id,
+        locationId: placeId || undefined,
         phase,
         lines: lines ?? [],
         userId: user?.$id ?? '',
@@ -195,6 +214,18 @@ export function BarCountsPage() {
             <Field label="Search">
               <Input value={filter} placeholder="Gin, tonic…" onChange={(e) => setFilter(e.target.value)} />
             </Field>
+            {/* Only worth asking when there is more than one room. A bar with
+                a single shelf should not be made to choose it. */}
+            {places.length > 1 && (
+              <Field
+                label="Which room"
+                hint="What is expected is that room's own level, so each is counted on its own."
+              >
+                <Select value={placeId} onChange={(e) => setPlaceId(e.target.value)}>
+                  {places.map((l) => <option key={l.$id} value={l.$id}>{l.name}</option>)}
+                </Select>
+              </Field>
+            )}
             <p className="small dim" style={{ margin: 0 }}>
               Grouped the way the bar is walked: bottles on the shelf, then crates in the store, then what is
               open and measured. Leave a line blank and nothing is recorded for it — blank is not nought.
