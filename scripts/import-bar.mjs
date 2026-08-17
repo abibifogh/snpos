@@ -216,6 +216,13 @@ if (write) {
       prep_minutes: d.prepMinutes,
       station: 'bar',
       active: true,
+      // Required by the database, and easy to miss because a drink has no
+      // picture to focus and no shelf to track. Appwrite rejects the whole
+      // document without them, so every drink failed to save.
+      image_focal_x: 0.5,
+      image_focal_y: 0.5,
+      sort: 0,
+      track_stock: false,
       module: MODULE,
       ...(d.barcode ? { sku: d.barcode } : {}),
     };

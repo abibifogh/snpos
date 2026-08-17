@@ -288,6 +288,13 @@ export async function importDrinks(opts: {
       // A drink is made at the bar, whatever else is on the ticket.
       station: 'bar' as const,
       active: true,
+      // Required by the database, and easy to miss because a drink has no
+      // picture to focus and no shelf to track. Appwrite rejects the whole
+      // document without them, so every drink failed to save.
+      image_focal_x: 0.5,
+      image_focal_y: 0.5,
+      sort: 0,
+      track_stock: false,
       module: opts.module ?? 'bar',
       ...(d.barcode ? { sku: d.barcode } : {}),
     };
