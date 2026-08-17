@@ -13,6 +13,8 @@ export interface Doc {
 export interface Settings extends Doc {
   restaurant_name: string;
   timezone: string;
+  /** Minutes of quiet before a till shows the clock. 0 or absent is off. */
+  idle_minutes?: number;
   currency_code: string;
   currency_symbol: string;
   currency_decimals: number;

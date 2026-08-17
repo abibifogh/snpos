@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Button, Spinner, Card, Field, Input, Notice, useToast, Logo, HelpModal, EightySixModal,
-  OfflineBar, useOfflineQueue,
+  OfflineBar, useOfflineQueue, IdleScreen,
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
@@ -283,6 +283,16 @@ export function App() {
 
   return (
     <div className="pos">
+      {/* Over everything, and only when the till has been left alone. Not
+          while a table is open: a bill on screen with a customer in front of
+          it is not an idle till, whatever the clock says. */}
+      <IdleScreen
+        settings={ctx.settings}
+        afterMinutes={ctx.settings.idle_minutes ?? 0}
+        hasOpenShift={!!ctx.shift}
+        module={ctx.module}
+        busy={!!openTable}
+      />
       <OfflineBar queued={queued} onRetry={() => void flushQueue()} />
       <div className="pos-top">
         <div className="row">

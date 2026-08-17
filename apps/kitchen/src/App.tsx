@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo, HelpModal, EightySixModal,
-  OfflineBar, useOfflineQueue,
+  OfflineBar, useOfflineQueue, IdleScreen,
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
@@ -49,6 +49,13 @@ export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [venue, setVenue] = useState<Venue | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
+  /**
+   * Bumped whenever an order lands, so the clock gets out of the way.
+   *
+   * The kitchen is where this matters most: a ticket appearing behind a
+   * screensaver is a ticket nobody cooks until somebody walks past.
+   */
+  const [wakeSignal, setWakeSignal] = useState(0);
   const [items, setItems] = useState<Record<string, OrderItem[]>>({});
   // Read by the reconcile timer without making it depend on `items`, that
   // dependency would tear down and rebuild the timer every time a ticket
@@ -257,6 +264,9 @@ export function App() {
         // well as in the initial load, because realtime bypasses that entirely.
         const mine = (order.module ?? 'kitchen') === 'kitchen';
         const live = mine && ['SCHEDULED', 'PENDING', 'ACCEPTED', 'PREPARING', 'READY'].includes(order.status);
+        // Anything of ours that is still live is worth waking for, a status
+        // change included: a ticket going READY is news to whoever is plating.
+        if (live) setWakeSignal((n) => n + 1);
         const without = prev.filter((o) => o.$id !== order.$id);
         return live ? [...without, order].sort((a, b) => a.$createdAt.localeCompare(b.$createdAt)) : without;
       });
@@ -593,6 +603,14 @@ export function App() {
 
   return (
     <div className="kds">
+      {/* An order wakes it — see wakeSignal. A pass that only woke on touch
+          would hide the one thing it exists to show. */}
+      <IdleScreen
+        settings={settings}
+        afterMinutes={settings?.idle_minutes ?? 0}
+        hasOpenShift
+        wakeSignal={wakeSignal}
+      />
       {/* An alarm nobody can hear is the one failure in a kitchen that must not
           be quiet about itself. Whole width, top of the screen, and it fixes
           itself when pressed, because the fix genuinely is one touch. */}

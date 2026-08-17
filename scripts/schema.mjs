@@ -809,6 +809,14 @@ export const COLLECTIONS = [
        */
       ['opening_wait_minutes', 'i', null, false],
       /**
+       * Minutes of quiet before a till puts a clock up. 0, and absent, is off.
+       *
+       * Not required, and off by default: a shop that has not asked for a
+       * screensaver should not find one, and a field arriving after the rows
+       * do can never be required.
+       */
+      ['idle_minutes', 'i', null, false, 0],
+      /**
        * What the KITCHEN is measured against: the cooking time alone, summed
        * from the prep time set on each dish.
        *

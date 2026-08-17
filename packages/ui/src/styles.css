@@ -618,3 +618,70 @@ table.data tr[title] td:first-child { text-decoration: underline; text-decoratio
   font-variant-numeric: tabular-nums;
 }
 .link-figure:hover { text-decoration-style: solid; }
+
+/* ---- the idle clock -------------------------------------------------------
+   Shown when a till has been left alone. The time top-left at a size you can
+   read across a room, the shop's mark top-right, and one card in the middle
+   that is the whole way back in.
+
+   Deliberately calm rather than dark. A shop counter is not a cinema, and a
+   black screen at four in the afternoon reads as "broken", not "resting". */
+.idle {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: clamp(1rem, 3vw, 2.5rem);
+  cursor: pointer;
+  user-select: none;
+  color: var(--text);
+  background:
+    linear-gradient(118deg, transparent 38%, rgba(255, 255, 255, .5) 38%, rgba(255, 255, 255, .5) 62%, transparent 62%),
+    linear-gradient(150deg, var(--bg) 0%, var(--surface) 55%, var(--bg) 100%);
+  animation: idle-in .35s ease both;
+}
+@keyframes idle-in { from { opacity: 0; } to { opacity: 1; } }
+
+.idle-top { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+.idle-clock {
+  font-size: clamp(2.6rem, 7vw, 4.6rem);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+}
+.idle-date { font-size: clamp(.8rem, 1.4vw, 1rem); line-height: 1.35; opacity: .75; }
+
+/* Top-right, out of the clock's way. Absolute so the middle card stays centred
+   on the screen rather than on whatever space is left over. */
+.idle-mark { position: absolute; top: clamp(1rem, 3vw, 2.5rem); right: clamp(1rem, 3vw, 2.5rem); }
+.idle-mark img { max-height: 76px; max-width: 190px; object-fit: contain; display: block; }
+
+.idle-card {
+  place-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .9rem;
+  padding: clamp(2rem, 4vw, 3.2rem) clamp(2.4rem, 6vw, 4.4rem);
+  background: var(--surface);
+  color: var(--text);
+  border: none;
+  border-radius: 18px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .06), 0 26px 60px -30px rgba(0, 0, 0, .45);
+  font: inherit;
+  font-size: clamp(1.1rem, 2vw, 1.5rem);
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform .15s ease;
+}
+.idle-card:hover, .idle-card:focus-visible { transform: translateY(-2px); }
+.idle-card:active { transform: translateY(0); }
+
+.idle-foot { text-align: center; opacity: .5; font-size: .9rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .idle { animation: none; }
+  .idle-card { transition: none; }
+}

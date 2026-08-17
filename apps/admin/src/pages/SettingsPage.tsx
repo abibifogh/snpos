@@ -52,6 +52,7 @@ const FIELD_LABELS: Record<string, string> = {
   order_number_prefix: 'Order number prefix',
   order_number_mode: 'Order numbering',
   order_number_padding: 'Order number length',
+  idle_minutes: 'Idle clock',
   order_number_next: 'Next order number',
   order_number_reset_on: 'Order numbering reset',
   email_from_name: 'Email from name',
@@ -246,6 +247,7 @@ export function SettingsPage() {
         order_number_prefix: form.order_number_prefix ?? '',
         order_number_mode: form.order_number_mode ?? 'continuous',
         order_number_padding: Number(form.order_number_padding ?? 4),
+        idle_minutes: Math.max(0, Math.floor(Number(form.idle_minutes ?? 0))),
         order_number_next: Number(form.order_number_next ?? 1),
         order_number_reset_on: form.order_number_reset_on || undefined,
         email_from_name: form.email_from_name ?? '',
@@ -429,6 +431,22 @@ export function SettingsPage() {
               <option value="before">Before, {form.currency_symbol}10.00</option>
               <option value="after">After, 10.00{form.currency_symbol}</option>
             </Select>
+          </Field>
+        </div>
+
+        <h3 style={{ marginTop: '1.6rem' }}>When a till is left alone</h3>
+        <div className="grid-2">
+          <Field
+            label="Show the clock after (minutes)"
+            hint="0 turns it off. A till left this long puts up a clock; a touch, or an order arriving, brings it back."
+          >
+            <Input
+              type="number"
+              step="1"
+              min="0"
+              value={form.idle_minutes ?? 0}
+              onChange={(e) => set('idle_minutes', Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+            />
           </Field>
         </div>
 
