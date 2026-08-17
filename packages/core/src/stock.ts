@@ -445,8 +445,18 @@ export async function flagVariances(
   return flagged;
 }
 
-export const loadIngredients = (venueId: string) =>
-  listAll<Ingredient>('ingredients', [Query.equal('venue_id', venueId)]);
+/**
+ * One side's larder, or the whole building when no side is named.
+ *
+ * Filtered here rather than in the query on purpose: every ingredient written
+ * before `module` existed has no value for it, so asking the database for
+ * module = kitchen would silently miss the entire original larder. Absent
+ * means kitchen, and that has to be decided in code.
+ */
+export const loadIngredients = async (venueId: string, module?: Module): Promise<Ingredient[]> => {
+  const rows = await listAll<Ingredient>('ingredients', [Query.equal('venue_id', venueId)]);
+  return module ? rows.filter((i) => (i.module ?? 'kitchen') === module) : rows;
+};
 
 export const loadRecipes = () => listAll<Recipe>('recipes');
 

@@ -591,7 +591,17 @@ export async function closeShift(opts: {
   let cogs = 0;
   let stockNote = '';
   if (isEnabled(features, 'waste_log') || soldItems.length || Object.keys(levels).length) {
-    const [ingredients, recipes] = await Promise.all([loadIngredients(venueId), loadRecipes()]);
+    /*
+      This side's larder only.
+
+      Closing the bistro used to load every ingredient in the building, which
+      put the bar's bottles through the same alert arithmetic: a bar item low
+      for one bar shift would read as low for six because the kitchen had
+      closed six times in between. The shift's own counters were being driven
+      by somebody else's trade, and the closing email then listed the lot.
+    */
+    const side = shift.module ?? 'kitchen';
+    const [ingredients, recipes] = await Promise.all([loadIngredients(venueId, side), loadRecipes()]);
     const usage = await depleteForShift(venueId, shift.$id, soldItems, recipes, ingredients, userId);
     for (const [ingredientId, qty] of Object.entries(usage)) {
       const ing = ingredients.find((i) => i.$id === ingredientId);
@@ -644,7 +654,7 @@ export async function closeShift(opts: {
       }
     }
 
-    const after = await loadIngredients(venueId);
+    const after = await loadIngredients(venueId, side);
     const threshold = featureConfig(features, 'shift_summary', 'persistent_stock_threshold', 3);
     const { fresh, persistent } = await updateStockAlerts(
       // Same list the closing check shows. Something nobody counts cannot be

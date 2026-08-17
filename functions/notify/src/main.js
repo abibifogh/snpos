@@ -62,6 +62,19 @@ const row = (label, value, bold = false) =>
 
 
 /**
+ * What each side of the business is called in an email.
+ *
+ * Written once because the ternaries that did this were each written when
+ * there were two sides, so the bar came out as "(bistro)" wherever one of them
+ * had not been revisited.
+ */
+const SIDE_NAME = {
+  kitchen: ' (bistro)',
+  bar: ' (bar)',
+  craft: ' (craft shop)',
+};
+
+/**
  * Who to tell about stock.
  *
  * The addresses typed into the feature's own box win. Otherwise it falls back
@@ -206,7 +219,7 @@ async function sweepStaleShifts({ db, DB_ID, settings, transport, from, shell, l
   const rows = stale
     .map(({ shift, hours }) =>
       `<li><strong>${shift.code}</strong>, open for ${Math.floor(hours)} hours` +
-      `${shift.module === 'craft' ? ' (craft shop)' : ' (bistro)'}</li>`)
+      `${SIDE_NAME[shift.module || 'kitchen'] || SIDE_NAME.kitchen}</li>`)
     .join('');
 
   await transport.sendMail({
@@ -807,7 +820,22 @@ export default async ({ req, res, log, error }) => {
       // routine restocking, the same item low for the fourth shift running is
       // a different problem wearing the same clothes.
       const severityOf = (i) => i.last_low_severity || (Number(i.current_qty) > 0 ? 'low' : 'out');
+      /*
+        This side's larder only.
+
+        The bistro's closing email listed the bar's bottles and the craft
+        shop's supplies, because the query asked for every ingredient in the
+        venue. An owner reading a bistro summary at midnight was being handed
+        three trades' shortages under one heading, and the one that mattered
+        was somewhere in the middle of it.
+
+        Filtered here rather than in the query: rows written before `module`
+        existed carry no value for it, so asking the database for
+        module = kitchen would miss the entire original larder.
+      */
+      const side = doc.module || 'kitchen';
       const low = ingredients.documents
+        .filter((i) => (i.module || 'kitchen') === side)
         .filter((i) => i.active && (i.consecutive_low_count || 0) > 0)
         // Worst first: persistent, then out, then low, then alphabetical. An
         // owner reading this on a phone at midnight reads the top three rows.
@@ -948,7 +976,10 @@ export default async ({ req, res, log, error }) => {
       try {
         await transport.sendMail({
           from, to: recipients.join(','),
-          subject: `${settings.restaurant_name}, shift ${doc.code} closed`,
+          // Which side, in the subject line. Three trades closing three
+          // shifts a day produced three near-identical subjects, and an owner
+          // had to open one to find out whose it was.
+          subject: `${settings.restaurant_name}, shift ${doc.code} closed${SIDE_NAME[side] || ''}`,
           html,
         });
         await db.updateDocument(DB_ID, 'summary_reports', report.$id, {
