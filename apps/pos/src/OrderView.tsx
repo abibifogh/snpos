@@ -8,7 +8,7 @@ import {
 } from '@snpos/core';
 import type { CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, Settings } from '@snpos/core';
 import { OptionSheet } from './OptionSheet';
-import { COUNTER_TABLE_ID } from './App';
+import { COUNTER_TABLE_ID, BAR_COUNTER_TABLE_ID } from './App';
 import type { PosContext, TableRow } from './App';
 
 /**
@@ -33,9 +33,30 @@ export function OrderView({
   onBack: () => void;
   onToast: (m: string, tone?: 'ok' | 'err') => void;
 }) {
-  // Neither is tied to a seat, and both create counter-channel orders. They are
-  // still different places: see COUNTER_TABLE_ID.
-  const isTakeaway = table.$id === 'takeaway' || table.$id === COUNTER_TABLE_ID;
+  // None of these is tied to a seat, and all create counter-channel orders.
+  // They are still different places: see COUNTER_TABLE_ID. Leaving the bar out
+  // of this made every drink poured at the bar look like a seated order, so it
+  // asked for a table that does not exist and held the bill open against it.
+  const isTakeaway = table.$id === 'takeaway'
+    || table.$id === COUNTER_TABLE_ID
+    || table.$id === BAR_COUNTER_TABLE_ID;
+
+  /**
+   * Rung up and paid for in one movement, with nowhere to send it.
+   *
+   * This is the shape of a sale, not the name of a module. A craft counter and
+   * a bar are the same thing here — somebody is standing in front of you and
+   * the next thing that happens is being charged — while a bar running a tab
+   * against a table is the restaurant's shape, settled later.
+   *
+   * These checks all used to read `module === 'craft'`, which is why switching
+   * the till to the bar produced the kitchen's screen: a bar is not a craft
+   * shop, so every one of them fell through to the dining room.
+   */
+  const counterSale = ctx.module === 'craft' || table.$id === BAR_COUNTER_TABLE_ID;
+
+  /** Where an order goes when it is not paid on the spot. */
+  const pass = ctx.module === 'bar' ? 'the bar' : 'the kitchen';
 
   const [cart, setCart] = useState<CartLine[]>([]);
   const [existing, setExisting] = useState<Order[]>([]);
@@ -101,10 +122,15 @@ export function OrderView({
        * never be seen or settled again from the till it was rung up on. The
        * money was owed and no screen in the shop would take it.
        *
+       * The bar is the same case, and for a sharper reason: a tab left open at
+       * the counter is the normal way a bar works, not an error. Without this
+       * the drink would be poured, the payment would fail, and the only screen
+       * that could take the money would have forgotten the order existed.
+       *
        * Restaurant takeaway keeps its old behaviour, where each order is
        * started fresh from the takeaway list.
        */
-      if (!isTakeaway || ctx.module === 'craft') {
+      if (!isTakeaway || ctx.module === 'craft' || ctx.module === 'bar') {
         const orders = await listAll<Order>('orders', [
           Query.equal('venue_id', ctx.venue.$id),
           Query.equal('table_id', table.$id),
@@ -268,14 +294,14 @@ export function OrderView({
       setDiscount(0);
       setDiscountLabel('');
       if (!isTakeaway) await db.updateDocument(DB_ID, 'tables', table.$id, { status: 'ordered' }).catch(() => undefined);
-      if (ctx.module === 'craft') {
-        // Nothing is being sent anywhere. A shop sale is rung up and paid for
-        // in one movement at the counter, so the till goes straight to taking
-        // the money rather than announcing a kitchen that does not exist.
+      if (counterSale) {
+        // Nothing is being sent anywhere. A counter sale is rung up and paid
+        // for in one movement, so the till goes straight to taking the money
+        // rather than announcing a kitchen that does not exist.
         onToast(`${order.order_no} rung up`);
         setPaying(true);
       } else {
-        onToast(`Order ${order.order_no} sent to the kitchen`);
+        onToast(`Order ${order.order_no} sent to ${pass}`);
       }
     } catch (e) {
       onToast(e instanceof Error ? e.message : 'Could not send the order.', 'err');
@@ -292,9 +318,12 @@ export function OrderView({
         {/* The craft till has nowhere to go back to: the counter is the whole
             screen, not one table among several. A back button that leads
             nowhere is a button somebody presses once and distrusts after. */}
-        {ctx.module !== 'craft' && <Button variant="ghost" onClick={onBack}>← Tables</Button>}
+        {!counterSale && <Button variant="ghost" onClick={onBack}>← Tables</Button>}
         <strong>
-          {ctx.module === 'craft' ? 'Counter sale' : isTakeaway ? 'Takeaway order' : `Table ${table.label}`}
+          {ctx.module === 'craft' ? 'Counter sale'
+            : counterSale ? 'Bar sale'
+            : isTakeaway ? 'Takeaway order'
+            : `Table ${table.label}`}
         </strong>
         <div className="row">
           {existing.length > 0 && (
@@ -333,9 +362,9 @@ export function OrderView({
               open is a sale that cannot be completed at all, so the message
               says the one useful thing: open a shift. */}
           <Notice tone="warn">
-            {ctx.module === 'craft'
+            {counterSale
               ? 'No shift is open, so nothing can be sold. Open one above to start taking money.'
-              : 'No shift is open, so payment cannot be recorded. Orders can still be sent to the kitchen.'}
+              : `No shift is open, so payment cannot be recorded. Orders can still be sent to ${pass}.`}
           </Notice>
         </div>
       )}
@@ -404,7 +433,7 @@ export function OrderView({
           </p>
         </div>
 
-        <Card title={ctx.module === 'craft' ? 'Sale' : 'Bill'} pad>
+        <Card title={counterSale ? 'Sale' : 'Bill'} pad>
           <div className="bill">
             {existing.map((o) => (
               <div key={o.$id} style={{ marginBottom: '0.7rem' }}>
@@ -493,7 +522,7 @@ export function OrderView({
                   </div>
                 ))}
                 <div className="bill-total grand">
-                  <span>{ctx.module === 'craft' ? 'To pay' : 'New items'}</span>
+                  <span>{counterSale ? 'To pay' : 'New items'}</span>
                   <span>{formatMoney(newTotals.total, ctx.settings)}</span>
                 </div>
                 {/*
@@ -523,9 +552,9 @@ export function OrderView({
                   {/* A shop has no kitchen to send anything to. The one thing
                       that happens next at a counter is being charged, so the
                       button says that and does it. */}
-                  {ctx.module === 'craft'
+                  {counterSale
                     ? `Take payment · ${formatMoney(newTotals.total, ctx.settings)}`
-                    : 'Send to kitchen'}
+                    : `Send to ${pass}`}
                 </Button>
               </>
             )}
@@ -661,11 +690,11 @@ export function OrderView({
             onToast('Payment recorded');
             // The shop till stays where it is, ready for the next customer.
             // Sending it "back" would land it on a screen that does not exist.
-            if (ctx.module === 'craft') { setCart([]); setExisting([]); setExistingItems({}); } else onBack();
+            if (counterSale) { setCart([]); setExisting([]); setExistingItems({}); } else onBack();
           },
           onError: (m: string) => onToast(m, 'err'),
         };
-        return ctx.module === 'craft' ? <CounterPaymentModal {...props} /> : <PaymentModal {...props} />;
+        return counterSale ? <CounterPaymentModal {...props} /> : <PaymentModal {...props} />;
       })()}
     </div>
   );

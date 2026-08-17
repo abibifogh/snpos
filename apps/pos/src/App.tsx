@@ -42,6 +42,17 @@ export interface TableRow extends Doc {
  */
 export const COUNTER_TABLE_ID = 'shop-counter';
 
+/**
+ * The bar's own counter, and NOT the shop's.
+ *
+ * The same trap the shop counter already fell into: two tills sharing one
+ * table id are the same place as far as every query is concerned, so a drink
+ * left unpaid at the bar would surface on the craft counter's bill. A bar and
+ * a shop counter are both "no seats", and that is the only thing they have in
+ * common.
+ */
+export const BAR_COUNTER_TABLE_ID = 'bar-counter';
+
 const COUNTER: TableRow = {
   $id: COUNTER_TABLE_ID,
   $createdAt: '',
@@ -53,6 +64,8 @@ const COUNTER: TableRow = {
   active: true,
   sort: 0,
 };
+
+const BAR_COUNTER: TableRow = { ...COUNTER, $id: BAR_COUNTER_TABLE_ID, label: 'The bar' };
 
 export interface PosContext {
   settings: Settings;
@@ -90,7 +103,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [openTable, setOpenTable] = useState<TableRow | null>(null);
   const queued = useOfflineQueue(onQueueChange, startOfflineSync);
-  const [tab, setTab] = useState<'tables' | 'takeaway' | 'kitchen'>('tables');
+  const [tab, setTab] = useState<'tables' | 'takeaway' | 'kitchen' | 'counter'>('tables');
   const [helpOpen, setHelpOpen] = useState(false);
   const [offOpen, setOffOpen] = useState(false);
   const [offBusy, setOffBusy] = useState<string | null>(null);
@@ -136,6 +149,9 @@ export function App() {
       ? (remembered && theirs.includes(remembered) ? remembered : theirs[0])
       : theirs[0] ?? 'kitchen';
 
+    // The bar opens standing at the bar; everything else opens on its tables.
+    if (startingModule === 'bar') setTab('counter');
+
     const open = await loadShift(venue.$id, startingModule);
 
     setCtx({
@@ -152,6 +168,11 @@ export function App() {
       setModule: (m) => {
         localStorage.setItem('snpos.till.module', m);
         setCtx((c) => (c ? { ...c, module: m } : c));
+        // Land on the tab that side opens on, rather than carrying the last
+        // one across. A bar switched to from the kitchen would otherwise open
+        // on Tables, and "Takeaway" is not a tab a bar has at all — leaving it
+        // selected showed a screen with nothing on it.
+        setTab(m === 'bar' ? 'counter' : 'tables');
         // The other side has its own open shift, so switching has to go and
         // find it. Showing the kitchen's shift on the craft till would put the
         // day's takings under the wrong roof.
@@ -293,7 +314,19 @@ export function App() {
               ))}
           </div>
         )}
-        {ctx.module !== 'craft' && (
+        {/* A bar is neither a dining room nor a shop counter.
+            Most drinks are ordered and paid for standing at the bar, so that
+            is the tab it opens on — but a bar with seating runs tabs against
+            a table all night, which a craft counter never does. So it gets
+            both, and not the kitchen pass: a drink is poured where it is
+            ordered, and there is no window to collect it from. */}
+        {ctx.module === 'bar' && (
+          <div className="pos-tabs">
+            <button className={tab === 'counter' ? 'on' : ''} onClick={() => setTab('counter')}>The bar</button>
+            <button className={tab === 'tables' ? 'on' : ''} onClick={() => setTab('tables')}>Tables</button>
+          </div>
+        )}
+        {ctx.module === 'kitchen' && (
           <div className="pos-tabs">
             <button className={tab === 'tables' ? 'on' : ''} onClick={() => setTab('tables')}>Tables</button>
             <button className={tab === 'takeaway' ? 'on' : ''} onClick={() => setTab('takeaway')}>Takeaway</button>
@@ -308,7 +341,11 @@ export function App() {
               size="sm"
               variant="ghost"
               onClick={() => setOffOpen(true)}
-              title={ctx.module === 'craft' ? 'Mark a product as sold out' : 'Mark a dish as run out'}
+              title={
+                ctx.module === 'craft' ? 'Mark a product as sold out'
+                  : ctx.module === 'bar' ? 'Mark a drink as run out'
+                  : 'Mark a dish as run out'
+              }
             >
               {ctx.module === 'craft' ? 'Sold out' : 'Run out'}
             </Button>
@@ -407,6 +444,15 @@ export function App() {
           <OrderView
             ctx={ctx}
             table={COUNTER}
+            onBack={() => undefined}
+            onToast={(m, t) => toast(m, t)}
+          />
+        ) : ctx.module === 'bar' && tab !== 'tables' ? (
+          /* Straight onto the bar itself: pour, take the money, next customer.
+             Its own counter rather than the shop's — see BAR_COUNTER_TABLE_ID. */
+          <OrderView
+            ctx={ctx}
+            table={BAR_COUNTER}
             onBack={() => undefined}
             onToast={(m, t) => toast(m, t)}
           />

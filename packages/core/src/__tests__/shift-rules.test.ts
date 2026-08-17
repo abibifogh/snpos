@@ -66,7 +66,7 @@ test('the message tells somebody what to do, not just what is wrong', () => {
 
   // Both sides say how long, and both say to close it. What differs is what
   // has actually stopped, and that is the part staff act on.
-  for (const side of ['kitchen', 'craft'] as const) {
+  for (const side of ['kitchen', 'craft', 'bar'] as const) {
     const text = shiftAgeMessage(over, SHIFT_MAX_HOURS, side);
     assert.match(text, /close/i, side);
     assert.match(text, /30 hours/, side);
@@ -80,9 +80,16 @@ test('the message tells somebody what to do, not just what is wrong', () => {
   // The counter has nothing to keep doing, so it stops at the beginning.
   assert.match(shiftAgeMessage(over, SHIFT_MAX_HOURS, 'craft'), /nothing new can be sold/i);
 
+  // A bar is the counter's shape, not the kitchen's. Nothing is cooked at a
+  // bar, so telling one its orders can still be cooked described a room that
+  // does not exist.
+  assert.match(shiftAgeMessage(over, SHIFT_MAX_HOURS, 'bar'), /nothing new can be sold/i);
+  assert.doesNotMatch(shiftAgeMessage(over, SHIFT_MAX_HOURS, 'bar'), /cooked/i);
+
   const warn = shiftAge(opened, new Date(Date.parse(opened) + 21 * HOURS));
   assert.match(shiftAgeMessage(warn), /24 hours/);
   assert.match(shiftAgeMessage(warn, SHIFT_MAX_HOURS, 'craft'), /24 hours/);
+  assert.match(shiftAgeMessage(warn, SHIFT_MAX_HOURS, 'bar'), /24 hours/);
 
   assert.equal(shiftAgeMessage(shiftAge(opened, new Date(Date.parse(opened) + HOURS))), '', 'nothing to say yet');
 });
@@ -318,4 +325,14 @@ test('a till that will not sell says which of the two reasons it is', () => {
   const stale = sellBlockedReason({ opened_at: '2026-08-10T08:00:00Z' }, 'craft', now);
   assert.match(stale ?? '', /Nothing new can be sold on it/);
   assert.notEqual(stale, '');
+});
+
+test('a bar with no shift open is told it cannot sell, not that it can keep cooking', () => {
+  // The bar used to fall through to the kitchen's wording everywhere, which is
+  // the same mistake that put the kitchen's whole till on screen when somebody
+  // switched the counter to the bar.
+  const none = sellBlockedReason(null, 'bar');
+  assert.match(none ?? '', /nowhere to be recorded/i);
+  assert.match(none ?? '', /ring it up/i);
+  assert.doesNotMatch(none ?? '', /order/i);
 });

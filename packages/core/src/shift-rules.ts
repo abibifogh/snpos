@@ -96,7 +96,15 @@ export function shiftAge(
  * A shop counter has nothing to keep doing. A sale is rung up and paid for in
  * one movement, so there is nothing to gain by starting one that cannot be
  * finished, and it stops at the beginning instead.
+ *
+ * A bar is the same shape as the counter, not the kitchen. Nothing is cooked
+ * and there is no pass to keep working while the money is sorted out later, so
+ * telling a bar its orders "can still be taken, cooked and paid for" described
+ * a room that does not exist.
  */
+/** Sold and paid for in one movement, with no pass to fall back on. */
+const overTheCounter = (module: Module) => module === 'craft' || module === 'bar';
+
 export function shiftAgeMessage(
   age: ShiftAge,
   maxHours: number = SHIFT_MAX_HOURS,
@@ -105,7 +113,7 @@ export function shiftAgeMessage(
   const open = `This shift has been open for ${Math.floor(age.hours)} hours.`;
 
   if (age.over) {
-    return module === 'craft'
+    return overTheCounter(module)
       ? `${open} Nothing new can be sold on it. Settle whatever is still open, count the drawer, close it, ` +
         'then open a fresh one.'
       : `${open} Orders can still be taken, cooked and paid for. Anything that came in after the day was ` +
@@ -113,7 +121,7 @@ export function shiftAgeMessage(
         'moves across.';
   }
   if (age.warning) {
-    return module === 'craft'
+    return overTheCounter(module)
       ? `${open} It stops accepting new sales at ${maxHours} hours, so close it before then.`
       : `${open} At ${maxHours} hours anything new starts belonging to the next shift, so close it before ` +
         'then.';
@@ -358,7 +366,7 @@ export function sellBlockedReason(
   maxHours: number = SHIFT_MAX_HOURS,
 ): string | null {
   if (!shift?.opened_at || shift.closed_at) {
-    return module === 'craft'
+    return overTheCounter(module)
       ? 'No till session is open, so this sale has nowhere to be recorded. Open one from the shift button, then ring it up.'
       : 'No shift is open, so this order has nowhere to be recorded. Open one from the shift button first.';
   }
