@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Select, Notice, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError, saveDropping } from '../lib';
 import {
   formatMoney, parseMoney, toInput, previewUrl, Query, loadConsignors, loadVariants, canEditCatalogue,
   loadVariantTypes,
+  matches, sortItems, ITEM_SORTS,
 } from '@snpos/core';
-import type { Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType } from '@snpos/core';
+import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
 import { KeyedListManager } from '../components/KeyedList';
 import { ImageField } from '../components/ImageField';
@@ -33,11 +34,15 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
    *
    * A shop assistant reading "Dishes & drinks" above a page of woven baskets
    * is being asked to translate on every visit, and the translation is not the
-   * screen's to ask for.
+   * screen's to ask for. The bar had the same complaint for the same reason:
+   * it was written when there were two sides, so a third fell through to the
+   * kitchen's words and offered to "Add dish" on a page of cocktails.
    */
   const W = module === 'craft'
     ? { title: 'Products', one: 'product', many: 'products', first: 'Add your first piece, with its price.' }
-    : { title: 'Dishes & drinks', one: 'dish', many: 'dishes', first: 'Add your first dish or drink, with its price.' };
+    : module === 'bar'
+      ? { title: 'Drinks & cocktails', one: 'drink', many: 'drinks', first: 'Add your first drink, with its price.' }
+      : { title: 'Dishes & drinks', one: 'dish', many: 'dishes', first: 'Add your first dish or drink, with its price.' };
   const { settings, profile, user } = useSession();
   const mayEdit = canEditCatalogue(profile);
   const toast = useToast();
@@ -55,6 +60,8 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   const [pickedCategories, setPickedCategories] = useState<string[]>([]);
   const [pickedAddons, setPickedAddons] = useState<string[]>([]);
   const [filter, setFilter] = useState('');
+  const [onlyCategory, setOnlyCategory] = useState('');
+  const [sortBy, setSortBy] = useState<ItemSort>('menu');
   const [uploading, setUploading] = useState(false);
   const [uploadingDrinks, setUploadingDrinks] = useState(false);
   const [editing, setEditing] = useState<Partial<MenuItem> | null>(null);
@@ -108,9 +115,26 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, [module]);
 
   const byCategory = useMemo(() => Object.fromEntries(categories.map((c) => [c.$id, c.name])), [categories]);
+  /**
+   * Narrowed, then ordered.
+   *
+   * Seventy-nine drinks in one fixed order with a name box over the top is
+   * fine at ten rows and useless at eighty: "what is the dearest thing on the
+   * board" and "show me the beers" both meant scrolling and reading.
+   */
   const visible = useMemo(
-    () => (items ?? []).filter((i) => !filter || i.name.toLowerCase().includes(filter.toLowerCase())),
-    [items, filter],
+    () => sortItems(
+      (items ?? [])
+        .filter((i) => matches(i.name, filter))
+        // A dish can sit in several categories, so the filter asks whether it
+        // is in this one at all rather than whether it is its primary.
+        .filter((i) => !onlyCategory
+          || i.category_id === onlyCategory
+          || links.some((l) => l.menu_item_id === i.$id && l.category_id === onlyCategory && l.active !== false))
+        .map((i) => ({ ...i, categoryName: byCategory[i.category_id] ?? '' })),
+      sortBy,
+    ),
+    [items, filter, onlyCategory, sortBy, links, byCategory],
   );
 
   /** Every category a dish belongs to: its primary, plus any extra links. */
@@ -422,7 +446,26 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       {error && !editing && <Notice>{error}</Notice>}
 
       {items && items.length > 0 && (
-        <Input placeholder="Search by name…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <div className="row row-wrap" style={{ gap: '0.5rem', alignItems: 'center' }}>
+          <Input
+            placeholder="Search by name…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            style={{ flex: '1 1 14rem' }}
+          />
+          <Select value={onlyCategory} onChange={(e) => setOnlyCategory(e.target.value)}>
+            <option value="">Every category</option>
+            {categories.map((c) => <option key={c.$id} value={c.$id}>{c.name}</option>)}
+          </Select>
+          <Select value={sortBy} onChange={(e) => setSortBy(e.target.value as ItemSort)}>
+            {ITEM_SORTS.map((s2) => <option key={s2.value} value={s2.value}>{s2.label}</option>)}
+          </Select>
+          {(filter || onlyCategory || sortBy !== 'menu') && (
+            <span className="small dim">
+              {visible.length} of {items.length}
+            </span>
+          )}
+        </div>
       )}
 
       <Card pad={false}>

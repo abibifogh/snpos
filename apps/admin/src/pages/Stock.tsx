@@ -4,8 +4,9 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, levelOf, saveDropping,
   purchasesFor, priceHistory, priceMoveNote, packProblem, hasPack, packSize,
+  matches, sortStock, stockState, STOCK_SORTS, STOCK_STATES,
 } from '@snpos/core';
-import type { Module, Ingredient, Recipe, MenuItem, Doc, Settings, PurchaseRow } from '@snpos/core';
+import type { StockSort, StockState, Module, Ingredient, Recipe, MenuItem, Doc, Settings, PurchaseRow } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
 import { StockImport } from '../components/StockImport';
 import { useSession } from '../session';
@@ -86,6 +87,21 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [q, setQ] = useState('');
+  const [state, setState] = useState<StockState>('any');
+  const [sortBy, setSortBy] = useState<StockSort>('level');
+
+  /**
+   * What this side calls the things on its shelves.
+   *
+   * "Add ingredient" over a page of gin is the same complaint the catalogue
+   * page had: a screen written when there were two sides, read by a third.
+   */
+  const W = module === 'bar'
+    ? { title: 'Bottles & mixers', add: 'Add a bottle or mixer' }
+    : module === 'craft'
+      ? { title: 'Supplies', add: 'Add a supply' }
+      : { title: 'Stock', add: 'Add ingredient' };
   /** The ingredient whose purchase history is being read. */
   const [historyFor, setHistoryFor] = useState<Ingredient | null>(null);
 
@@ -107,10 +123,26 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   };
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
 
-  const archivedCount = (ingredients ?? []).filter((i) => !i.active).length;
-  const shownIngredients = (ingredients ?? []).filter((i) => showArchived || i.active);
-
   const lowDefaultBp = settings?.low_stock_default_bp ?? 3000;
+  const archivedCount = (ingredients ?? []).filter((i) => !i.active).length;
+  /**
+   * Narrowed, then ordered — by default, by what is closest to running out.
+   *
+   * A stock list ordered by name makes somebody read all of it to find out
+   * whether anything needs buying, which is the only question the page is
+   * really for.
+   */
+  const shownIngredients = useMemo(
+    () => sortStock(
+      (ingredients ?? [])
+        .filter((i) => showArchived || i.active)
+        .filter((i) => matches(i.name, q))
+        .filter((i) => state === 'any' || stockState(i, lowDefaultBp) === state),
+      sortBy,
+    ),
+    [ingredients, showArchived, q, state, sortBy, lowDefaultBp],
+  );
+
   const alerts = useMemo(
     () => (ingredients ?? []).filter((i) => i.active && levelOf(i, lowDefaultBp) !== 'ok'),
     [ingredients, lowDefaultBp],
@@ -260,7 +292,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   return (
     <>
       <div className="spread">
-        <h1>Stock</h1>
+        <h1>{W.title}</h1>
         {tab !== 'categories' && (
           <div className="row">
             {tab === 'ingredients' && archivedCount > 0 && (
@@ -272,7 +304,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
               <Button onClick={() => setImporting(true)}>Import from a spreadsheet</Button>
             )}
             <Button variant="primary" onClick={() => (tab === 'ingredients' ? open() : setEditingSupplier({ name: '', active: true }))}>
-              {tab === 'ingredients' ? 'Add ingredient' : 'Add supplier'}
+              {tab === 'ingredients' ? W.add : 'Add supplier'}
             </Button>
           </div>
         )}
@@ -299,6 +331,28 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
             </>
           )}
         </Notice>
+      )}
+
+      {tab === 'ingredients' && (ingredients ?? []).length > 0 && (
+        <div className="row row-wrap" style={{ gap: '0.5rem', alignItems: 'center', marginBottom: '0.8rem' }}>
+          <Input
+            placeholder="Search by name…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            style={{ flex: '1 1 14rem' }}
+          />
+          <Select value={state} onChange={(e) => setState(e.target.value as StockState)}>
+            {STOCK_STATES.map((s2) => <option key={s2.value} value={s2.value}>{s2.label}</option>)}
+          </Select>
+          <Select value={sortBy} onChange={(e) => setSortBy(e.target.value as StockSort)}>
+            {STOCK_SORTS.map((s2) => <option key={s2.value} value={s2.value}>{s2.label}</option>)}
+          </Select>
+          {(q || state !== 'any') && (
+            <span className="small dim">
+              {shownIngredients.length} of {(ingredients ?? []).filter((i) => showArchived || i.active).length}
+            </span>
+          )}
+        </div>
       )}
 
       {tab === 'categories' ? (
