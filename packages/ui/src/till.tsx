@@ -233,7 +233,19 @@ export function ExpenseModal({
       const [opts, m, ing] = await Promise.all([
         loadPaidToOptions(),
         loadPaymentMethods(venueId),
-        stocks ? loadIngredients(venueId).catch(() => [] as Ingredient[]) : Promise.resolve([] as Ingredient[]),
+        /*
+          This side's larder only.
+
+          A bartender recording a crate of tonic was scrolling past the
+          kitchen's rice, tomatoes and gas to find it, and the list a cook sees
+          had the bar's forty bottles in it. Worse than slow: the wrong Soda is
+          one tap away from the right one, and a delivery booked against the
+          other side's shelf is a shortage on one and a surplus on the other,
+          discovered weeks later at a count.
+        */
+        stocks
+          ? loadIngredients(venueId, module).catch(() => [] as Ingredient[])
+          : Promise.resolve([] as Ingredient[]),
       ]);
       setCategories(opts.categories);
       setSuppliers(opts.suppliers);
@@ -260,7 +272,7 @@ export function ExpenseModal({
       setIngredients(ing.filter((i) => i.active).sort((a, b) => a.name.localeCompare(b.name)));
     })().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [venueId, settings.expense_paid_from, stocks]);
+  }, [venueId, settings.expense_paid_from, stocks, module]);
 
   const filledLines = stocks ? lines.filter((l) => l.ingredientId && Number(l.qtyText) > 0) : [];
 
