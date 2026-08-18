@@ -1,0 +1,72 @@
+name: Nightly backup
+
+# Takes a full copy of the database out of Appwrite and keeps it here.
+#
+# Runs at 02:30 Accra time, when nothing is trading. Also runnable by hand
+# from the Actions tab, which is what you want before anything irreversible:
+# a migration, a big import, or cancelling a hosting subscription.
+#
+# The copy is kept as a downloadable artifact on the run. That matters more
+# than it sounds: a backup stored inside the thing being backed up is not a
+# backup. If the Appwrite account lapses, is suspended, or is cancelled, this
+# copy is somewhere else entirely and still yours.
+on:
+  schedule:
+    # 02:30 UTC. Accra is UTC+0 all year, so this is 02:30 local.
+    - cron: '30 2 * * *'
+  workflow_dispatch:
+    inputs:
+      files:
+        description: 'Also download receipts and photos (slower, much larger)'
+        type: boolean
+        default: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Take the copy
+        env:
+          APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT }}
+          APPWRITE_PROJECT_ID: ${{ vars.APPWRITE_PROJECT_ID }}
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+          DB_ID: ${{ vars.DB_ID || 'snpos' }}
+        run: |
+          if [ "${{ inputs.files }}" = "true" ]; then
+            npm run export -- --out=backup --files
+          else
+            npm run export -- --out=backup
+          fi
+
+      - name: Say what came out
+        run: |
+          echo "### Backup taken" >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo '| Collection | Rows |' >> $GITHUB_STEP_SUMMARY
+          echo '|---|---:|' >> $GITHUB_STEP_SUMMARY
+          node -e "
+            const m = require('./backup/_manifest.json');
+            for (const c of m.collections.filter(c => c.rows > 0).sort((a,b) => b.rows - a.rows)) {
+              console.log('| ' + c.name + ' | ' + c.rows + ' |');
+            }
+            console.log('');
+            console.log('**' + m.collections.reduce((n,c) => n + c.rows, 0) + ' rows** taken at ' + m.exported_at);
+          " >> $GITHUB_STEP_SUMMARY
+
+      - name: Keep it
+        uses: actions/upload-artifact@v4
+        with:
+          name: snpos-backup-${{ github.run_id }}
+          path: backup/
+          # Long enough to cover a full accounting quarter, so a problem
+          # noticed at a month-end still has something to be checked against.
+          retention-days: 90
