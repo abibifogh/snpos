@@ -6,6 +6,7 @@ import {
   loadVariantTypes,
   matches, sortItems, ITEM_SORTS,
   marginOf, marginIsThin, bpAsPercent, MARGIN_WARN_BP_DEFAULT,
+  diffFields, describeChanges, fitForLog, PRODUCT_WATCH,
 } from '@snpos/core';
 import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
@@ -379,7 +380,26 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
        *
        * Whatever could not be stored is named rather than swallowed.
        */
+      // As it stood before this save. Read from what is already on screen
+      // rather than fetched again: the list was loaded from the same records,
+      // and a second read here would be a round trip to learn what we have.
+      const was = (items ?? []).find((i) => i.$id === editing.$id) as unknown as Record<string, unknown> | undefined;
+
       const { id: itemId, dropped } = await saveDropping('menu_items', editing.$id ?? null, payload);
+
+      /*
+        What changed, and who changed it.
+
+        Only the fields that moved, with the old value beside the new one: a
+        log that stores the whole row twice answers "did anything change" and
+        leaves the reader to find the one field that did. The questions people
+        actually bring are narrow — who put the price up, when did this stop
+        being sold — and those are answered by a list of differences.
+
+        Never fatal. A save that went through must not be undone by its own
+        bookkeeping, and a missing audit row is worth less than the sale.
+      */
+      void logProductChange(itemId, editing.$id ? (was ?? null) : null, payload);
 
       await syncLinks(itemId);
       setEditing(null);
@@ -408,11 +428,48 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   const setArchived = async (item: MenuItem, archived: boolean) => {
     try {
       await db.updateDocument(DB_ID, 'menu_items', item.$id, { active: !archived });
+      void logProductChange(
+        item.$id,
+        { active: item.active },
+        { active: !archived },
+        archived ? 'product.archived' : 'product.restored',
+      );
       setItems((rows) => (rows ?? []).map((r) => (r.$id === item.$id ? { ...r, active: !archived } : r)));
       toast(archived ? `${item.name} archived` : `${item.name} is back on the list`);
     } catch (e) {
       setError(humanError(e));
     }
+  };
+
+  /**
+   * The change, written down.
+   *
+   * Split out because three paths reach it — saving, archiving and deleting —
+   * and a log that only covers one of them is a log that answers "who removed
+   * this" with silence.
+   */
+  const logProductChange = async (
+    itemId: string,
+    before: Record<string, unknown> | null,
+    after: Record<string, unknown>,
+    action = 'product.updated',
+  ) => {
+    const changes = diffFields(before, after, PRODUCT_WATCH);
+    if (changes.length === 0) return;
+    await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
+      venue_id: 'main',
+      actor_id: user?.$id ?? '',
+      actor_role: profile?.role ?? '',
+      action,
+      entity_type: 'menu_item',
+      entity_id: itemId,
+      before: fitForLog(changes.map((c) => ({ [c.field]: c.from }))),
+      after: fitForLog(changes.map((c) => ({ [c.field]: c.to }))),
+      reason: describeChanges(changes, {
+        money: (v) => (settings ? formatMoney(v, settings) : String(v)),
+        nameFor: (f, v) => (f === 'category_id' ? byCategory[String(v)] : undefined),
+      }).slice(0, 500),
+    }).catch(() => undefined);
   };
 
   const remove = async (item: MenuItem) => {

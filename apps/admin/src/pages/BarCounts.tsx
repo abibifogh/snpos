@@ -4,6 +4,7 @@ import { humanError } from '../lib';
 import {
   barCountSheet, saveBarCount, hasOpeningCount, byUnit, summariseBarCount, readyToClose,
   formatMoney, listAll, Query, loadOpenShifts, loadLocations, saleLocation,
+  expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
 } from '@snpos/core';
 import type { BarCountLine, Shift, Doc, StockLocation } from '@snpos/core';
 import { useSession } from '../session';
@@ -47,6 +48,9 @@ export function BarCountsPage() {
    * the counter expected.
    */
   const [places, setPlaces] = useState<StockLocation[]>([]);
+  const [restored, setRestored] = useState(false);
+  const userId = user?.$id ?? '';
+  const store = typeof window === 'undefined' ? null : window.localStorage;
   const [placeId, setPlaceId] = useState('');
   const [lines, setLines] = useState<BarCountLine[] | null>(null);
   const [openingDone, setOpeningDone] = useState(false);
@@ -54,6 +58,23 @@ export function BarCountsPage() {
   const [filter, setFilter] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * A half-finished count survives the tab closing.
+   *
+   * Counting a store room is not one sitting: somebody gets through the
+   * spirits, serves a customer, comes back — and a browser that had thrown
+   * away the first twenty minutes makes this a screen people stop starting.
+   *
+   * Keyed by ROOM as well as by person: switching rooms mid-count must not
+   * carry the store's numbers onto the bar's sheet, which would be a count of
+   * the wrong shelf saved under the right name.
+   *
+   * Kept on the device rather than in the database. An unfinished count is not
+   * a record, and half of one sitting in the variances would be worse than
+   * none.
+   */
+  const draftKey = (uid: string, place: string) => expenseDraftKey('main', `barcount:${place}`, uid);
 
   const isAdmin = profile?.role === 'admin';
 
@@ -95,6 +116,43 @@ export function BarCountsPage() {
   };
 
   useEffect(() => { void load(); }, []);
+
+  // Put back whatever was typed, once the sheet for this room has loaded.
+  useEffect(() => {
+    if (!lines || restored || !userId || !placeId) return;
+    const draft = readExpenseDraft(store, draftKey(userId, placeId));
+    const saved = (draft as { lines?: { ingredientId: string; qtyText: string; totalText: string }[] })?.lines;
+    if (saved?.length) {
+      const byId = new Map(saved.map((l) => [l.ingredientId, l]));
+      setLines((rows) => (rows ?? []).map((r) => {
+        const hit = byId.get(r.ingredientId);
+        return hit ? { ...r, countedText: hit.qtyText, note: hit.totalText } : r;
+      }));
+    }
+    setRestored(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, userId, placeId]);
+
+  /**
+   * Written as it is typed, not on the way out.
+   *
+   * There are more ways off this page than there are buttons on it: a tab
+   * closing, a tablet sleeping, a browser reloading a page it has sat on all
+   * evening.
+   */
+  useEffect(() => {
+    if (!lines || !userId || !placeId || !restored) return;
+    saveExpenseDraft(store, draftKey(userId, placeId), {
+      lines: lines
+        .filter((l) => (l.countedText ?? '').trim() !== '' || (l.note ?? '').trim() !== '')
+        .map((l) => ({ ingredientId: l.ingredientId, qtyText: l.countedText ?? '', totalText: l.note ?? '' })),
+      noteText: '',
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, userId, placeId, restored]);
+
+  // A different room is a different sheet, so its own draft is loaded.
+  useEffect(() => { setRestored(false); }, [placeId]);
   // Changing room reloads the sheet: what is expected is that room's level,
   // not the business total.
   useEffect(() => { if (placeId) void load(); /* eslint-disable-next-line */ }, [placeId]);
@@ -130,6 +188,8 @@ export function BarCountsPage() {
       });
       await load();
       setLines((rows) => (rows ?? []).map((r) => ({ ...r, countedText: '', note: '' })));
+      // Saved for real, so the unfinished copy has nothing left to protect.
+      if (userId && placeId) clearExpenseDraft(store, draftKey(userId, placeId));
       toast(
         isStore
           // A stocktake reports what it found. It is nobody's handover, so

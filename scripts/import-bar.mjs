@@ -119,6 +119,33 @@ const ingRows = csv('ingredients.csv');
 const ingHead = ingRows[0].map(key);
 const col = (r, h) => (r[ingHead.indexOf(h)] ?? '').trim();
 
+/*
+  Groupings for the shelf, made rather than assumed.
+
+  The file names a category in words — Spirits, Mixers, Garnishes — and an
+  ingredient stores a KEY. Writing the words straight in left every bottle
+  pointing at a grouping that did not exist, so the shelf list showed nothing
+  under a heading and the kitchen's own groupings were the only ones on offer.
+*/
+const shelfKey = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 60);
+let shelfGroups = await all('ingredient_categories').catch(() => []);
+const wantedGroups = [...new Set(
+  ingRows.slice(1).map((r) => col(r, 'category')).filter(Boolean),
+)];
+let madeGroups = 0;
+for (const [i, name] of wantedGroups.entries()) {
+  const key = shelfKey(name);
+  if (shelfGroups.some((g) => g.key === key)) continue;
+  if (write) {
+    const made = await db.createDocument(DB_ID, 'ingredient_categories', ID.unique(), {
+      key, name, module: MODULE, sort: i + 1, active: true,
+    });
+    shelfGroups.push(made);
+  } else shelfGroups.push({ key, name });
+  madeGroups += 1;
+}
+if (madeGroups) note(`  ${madeGroups} shelf grouping${madeGroups === 1 ? '' : 's'} ${write ? 'made' : 'would be made'}`);
+
 let ingredients = await all('ingredients', [Query.equal('venue_id', VENUE)]);
 let added = 0, changed = 0;
 const refused = [];
@@ -146,7 +173,8 @@ for (let i = 1; i < ingRows.length; i++) {
     current_qty: Number(col(r, 'in_stock') || 0),
     par_level: Number(col(r, 'par_level') || 0),
     critical: /^(y|yes|true|1)$/i.test(col(r, 'critical')),
-    category: col(r, 'category'),
+    // The key, not the words. See shelfKey above.
+    category: col(r, 'category') ? shelfKey(col(r, 'category')) : '',
     pack_size: packSize,
     pack_name: packName,
     active: true,
