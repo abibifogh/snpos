@@ -173,6 +173,20 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
     module === 'bar' ? 'Bar stock' : module === 'craft' ? 'Craft stock' : 'Kitchen stock';
 
   const pointAtStock = async () => {
+    /*
+      The category has to exist first.
+
+      Pointing an item at a category the database does not have does not fail:
+      it falls back to Other expenses, so every delivery is written off exactly
+      as before while the screen says it was fixed. Worse than not doing it.
+    */
+    if (!(expenseCategories ?? []).some((c) => c.key === defaultStockCategory)) {
+      setError(
+        `"${stockCategoryName}" does not exist yet. Run Provision in GitHub Actions to add it, then do this — `
+        + 'without it, purchases would keep landing under Other expenses.',
+      );
+      return;
+    }
     if (!confirm(
       `Point ${needCategory.length} item${needCategory.length === 1 ? '' : 's'} at "${stockCategoryName}"?\n\n`
       + 'Buying them will then add to what the business owns and become a cost as they sell, rather than '
@@ -728,16 +742,35 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
             </Field>
             <Field
               label="Buying this counts as"
-              hint="Which expense category a delivery of this lands under, so recording one does not also ask somebody to classify it."
+              hint={`Where buying this lands in the books. Stock belongs on the balance sheet until it sells, which is what "${stockCategoryName}" does.`}
             >
               <Select
-                value={editing.expense_category_key ?? ''}
+                /*
+                  Shown as it will be saved, not blank.
+
+                  The default was only applied on the way out, so the box read
+                  "Ask each time" while the save wrote something else — which
+                  is the worst of both: nobody could see what it was set to,
+                  and nobody believed it was set at all.
+                */
+                value={editing.expense_category_key || defaultStockCategory}
                 onChange={(e) => setEditing({ ...editing, expense_category_key: e.target.value })}
               >
                 <option value="">Ask each time</option>
                 {(expenseCategories ?? []).filter((c) => c.active !== false).map((c) => (
                   <option key={c.key} value={c.key}>{c.name}</option>
                 ))}
+                {/* A category the database does not have yet still shows, so a
+                    set value is visible rather than silently reading as blank
+                    until somebody runs Provision. */}
+                {(editing.expense_category_key || defaultStockCategory)
+                  && !(expenseCategories ?? []).some(
+                    (c) => c.key === (editing.expense_category_key || defaultStockCategory),
+                  ) && (
+                  <option value={editing.expense_category_key || defaultStockCategory}>
+                    {stockCategoryName} (run Provision to add it)
+                  </option>
+                )}
               </Select>
             </Field>
             <Field
@@ -756,21 +789,30 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
             </Field>
           </div>
 
-          {/* Written in the units on the shelf, not the units in the database.
-              Par levels are kilograms and litres; shelves hold buckets, crates
-              and half a bottle. Whoever knows the kitchen writes the rule once,
-              and everybody closing a shift reads the same one. */}
-          <Field
-            label="Shift-check guide"
-            hint="Shown under this ingredient when staff close a shift, so “low” means the same thing to everybody. Leave blank to show the numbers above instead."
-          >
-            <Input
-              value={editing.check_guide ?? ''}
-              maxLength={160}
-              placeholder={guideExample(editing.unit)}
-              onChange={(e) => setEditing({ ...editing, check_guide: e.target.value })}
-            />
-          </Field>
+          {/*
+            Written in the units on the shelf, not the units in the database.
+            Par levels are kilograms and litres; shelves hold buckets, crates
+            and half a bottle. Whoever knows the kitchen writes the rule once,
+            and everybody closing a shift reads the same one.
+
+            Not the bar's question. A bar counts bottles and measures — the
+            number IS the answer, and "OK = half a bucket or more" is a
+            sentence about a larder. Asking it here only added a box nobody
+            fills in on a form that is already long.
+          */}
+          {module !== 'bar' && (
+            <Field
+              label="Shift-check guide"
+              hint="Shown under this ingredient when staff close a shift, so “low” means the same thing to everybody. Leave blank to show the numbers above instead."
+            >
+              <Input
+                value={editing.check_guide ?? ''}
+                maxLength={160}
+                placeholder={guideExample(editing.unit)}
+                onChange={(e) => setEditing({ ...editing, check_guide: e.target.value })}
+              />
+            </Field>
+          )}
 
           {/*
             Not everything bought sits on a shelf.
