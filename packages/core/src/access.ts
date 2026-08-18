@@ -359,6 +359,24 @@ export function canEditCatalogue(profile: StaffProfile | null): boolean {
 }
 
 /**
+ * May permanently remove something from the catalogue.
+ *
+ * A narrower question than being allowed to edit it, and separate on purpose.
+ * A manager fixing a price and a manager deleting a dish are not the same act:
+ * the first is undone by typing the old number back, the second takes the
+ * item, its recipe, its options and its place on every menu with it, and
+ * nothing on the screen afterwards says what used to be there.
+ *
+ * So it is off for everybody but an admin until an admin grants it by name.
+ * Archiving is the day-to-day answer — it clears the board and keeps all of
+ * it — and is left to anybody who may edit.
+ */
+export function canDeleteCatalogue(profile: StaffProfile | null): boolean {
+  if (profile?.role === 'admin') return true;
+  return canEditCatalogue(profile) && profile?.can_delete_items === true;
+}
+
+/**
  * Which sides of the business a person actually works on.
  *
  * The business's own switches come first: somebody marked as craft-only in a

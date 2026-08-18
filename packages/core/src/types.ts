@@ -185,6 +185,8 @@ export interface StaffProfile extends Doc {
   can_discount_up_to_bp: number;
   /** May change what a LINE costs at the till. Never the menu price itself. */
   can_change_line_price?: boolean;
+  /** May permanently delete catalogue rows. Admins always may. */
+  can_delete_items?: boolean;
   can_mark_paid?: boolean;
   can_apply_discount_codes?: boolean;
   pin_hash?: string;

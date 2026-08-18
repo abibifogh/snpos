@@ -90,6 +90,8 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  /** Typed as the price of a whole bottle, kept only to fill the per-shot box. */
+  const [packCostText, setPackCostText] = useState('');
   const [q, setQ] = useState('');
   const [state, setState] = useState<StockState>('any');
   const [sortBy, setSortBy] = useState<StockSort>('level');
@@ -194,6 +196,10 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
     };
     setEditing(base);
     setCostText(toInput(base.base_unit_cost ?? 0, decimals));
+    // Cleared per item: it is a way of typing the box above, not a stored
+    // figure, and carrying the last bottle's price into the next one would
+    // quietly rewrite a cost somebody never touched.
+    setPackCostText('');
     setError(null);
   };
 
@@ -505,9 +511,42 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
                 {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
               </Select>
             </Field>
-            <Field label={`Cost per ${editing.unit ?? 'unit'} (${settings?.currency_symbol ?? ''})`} hint="Used to value stock and work out what each dish costs you.">
+            <Field
+              label={`Cost per ${editing.unit ?? 'unit'} (${settings?.currency_symbol ?? ''})`}
+              hint="Used to value stock and work out what each drink or dish costs you."
+            >
               <Input value={costText} inputMode="decimal" onChange={(e) => setCostText(e.target.value)} />
             </Field>
+            {/*
+              Nobody knows the price of a shot.
+
+              A spirit is bought by the bottle and its invoice says so, and the
+              figure this form wants is per shot — so an admin was doing a
+              division in their head, and a division done in a hurry is how a
+              GHS 140 bottle becomes a GHS 140 shot and every cocktail poured
+              from it reads as a loss. Type either, and the other follows.
+
+              Only shown once a pack is set up, because without one the two
+              questions are the same question.
+            */}
+            {hasPack(editing as { unit: string; pack_size?: number; pack_name?: string }) && (
+              <Field
+                label={`Or the cost per ${(editing.pack_name || 'pack').trim()} (${settings?.currency_symbol ?? ''})`}
+                hint={`Divided by ${packSize(editing as { unit: string; pack_size?: number })} to give the figure above.`}
+              >
+                <Input
+                  value={packCostText}
+                  inputMode="decimal"
+                  placeholder="What the whole one costs"
+                  onChange={(e) => {
+                    setPackCostText(e.target.value);
+                    const whole = parseMoney(e.target.value, decimals);
+                    const per = packSize(editing as { unit: string; pack_size?: number });
+                    if (whole !== null && per > 0) setCostText(toInput(Math.round(whole / per), decimals));
+                  }}
+                />
+              </Field>
+            )}
             <Field label="Currently in stock">
               <Input type="number" step="any" value={editing.current_qty ?? 0} onChange={(e) => setEditing({ ...editing, current_qty: Number(e.target.value) })} />
             </Field>

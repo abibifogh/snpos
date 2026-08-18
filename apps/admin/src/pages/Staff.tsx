@@ -156,6 +156,7 @@ export function StaffPage() {
         can_discount_up_to_bp: Number(editing.can_discount_up_to_bp ?? 0),
         can_mark_paid: editing.can_mark_paid ?? true,
         can_change_line_price: editing.can_change_line_price ?? false,
+        can_delete_items: editing.can_delete_items ?? false,
         can_record_waste: editing.can_record_waste ?? true,
         venue_ids: editing.venue_ids ?? [],
         ...(pin ? { pin_hash: await encodePin(pin), pin_set_at: new Date().toISOString() } : {}),
@@ -437,6 +438,13 @@ export function StaffPage() {
             />
           </Field>
           <Field><Toggle checked={editing.can_record_waste ?? true} onChange={(v) => setEditing({ ...editing, can_record_waste: v })} label="Record waste" /></Field>
+          <Field hint="Off for everybody but an admin. Archiving already takes something off the board and keeps its recipe, its price and its history; deleting takes all three with it, and nothing afterwards says what used to be there.">
+            <Toggle
+              checked={editing.can_delete_items ?? false}
+              onChange={(v) => setEditing({ ...editing, can_delete_items: v })}
+              label="Permanently delete items, drinks and categories"
+            />
+          </Field>
 
           <Field label="Discount they can give without a manager (%)" hint="0 means every discount needs approval.">
             <Input

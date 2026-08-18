@@ -1919,6 +1919,20 @@ export const COLLECTIONS = [
        * after the rows do can never be required.
        */
       ['can_change_line_price', 'b', null, false, false],
+      /**
+       * May permanently delete something from the catalogue.
+       *
+       * Off for everybody, admins aside, and deliberately separate from being
+       * allowed to EDIT the catalogue. A manager fixing a price and a manager
+       * removing a dish are not the same act: one is reversible by typing the
+       * old number back, and the other takes the item, its recipe and its
+       * options with it. Archiving does the day-to-day job of getting
+       * something off the board, and leaves all of that intact.
+       *
+       * Optional, for the reason set out on menu_items: a field that arrives
+       * after the rows do can never be required.
+       */
+      ['can_delete_items', 'b', null, false, false],
       ['can_record_waste', 'b', null, false, true],
       ['hourly_rate', 'i', null, false], // feature 4: labour cost
       // Getting somebody their first sign-in.

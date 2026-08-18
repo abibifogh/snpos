@@ -7,7 +7,7 @@ import { HoursEditor } from '../components/HoursEditor';
 import { ImageField } from '../components/ImageField';
 import { StationPicker, useStations, legacyStationFor } from '../components/StationPicker';
 import { useSession } from '../session';
-import { canEditCatalogue } from '@snpos/core';
+import { canEditCatalogue, canDeleteCatalogue } from '@snpos/core';
 
 const blank = (sort: number): Partial<Category> => ({
   name: '', description: '', sort, active: true, unavailable_display: 'grey', station: 'hot',
@@ -27,6 +27,7 @@ const blank = (sort: number): Partial<Category> => ({
 export function CategoriesPage({ module = 'kitchen' }: { module?: Module }) {
   const { settings, profile } = useSession();
   const mayEdit = canEditCatalogue(profile);
+  const mayDelete = canDeleteCatalogue(profile);
   const toast = useToast();
   const stations = useStations();
   const [hours, setHours] = useState<Windows>({});
@@ -196,7 +197,9 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: Module }) {
                           {c.active ? 'Archive' : 'Use again'}
                         </Button>
                       )}
-                      <Button size="sm" variant="ghost" onClick={() => remove(c)}>Delete</Button>
+                      {mayDelete && (
+                        <Button size="sm" variant="ghost" onClick={() => remove(c)}>Delete</Button>
+                      )}
                     </td>
                   </tr>
                 ))}

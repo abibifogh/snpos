@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Select, Notice, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError, saveDropping } from '../lib';
 import {
-  formatMoney, parseMoney, toInput, previewUrl, Query, loadConsignors, loadVariants, canEditCatalogue,
+  formatMoney, parseMoney, toInput, previewUrl, Query, loadConsignors, loadVariants, canEditCatalogue, canDeleteCatalogue,
   loadVariantTypes,
   matches, sortItems, ITEM_SORTS,
   marginOf, marginIsThin, bpAsPercent, MARGIN_WARN_BP_DEFAULT,
@@ -46,6 +46,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       : { title: 'Dishes & drinks', one: 'dish', many: 'dishes', first: 'Add your first dish or drink, with its price.' };
   const { settings, profile, user } = useSession();
   const mayEdit = canEditCatalogue(profile);
+  const mayDelete = canDeleteCatalogue(profile);
   const toast = useToast();
   const stations = useStations();
   const [items, setItems] = useState<MenuItem[] | null>(null);
@@ -625,7 +626,13 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
                           >
                             {i.active ? 'Archive' : 'Restore'}
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => remove(i)}>Delete</Button>
+                          {/* Archiving is the day-to-day answer and anybody
+                              who may edit can do it. Deleting takes the
+                              recipe, the options and the place on every menu
+                              with it, so it waits for an admin's say-so. */}
+                          {mayDelete && (
+                            <Button size="sm" variant="ghost" onClick={() => remove(i)}>Delete</Button>
+                          )}
                         </>
                       )}
                     </td>

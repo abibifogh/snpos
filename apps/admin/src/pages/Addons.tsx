@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { formatMoney, parseMoney, toInput, Query, listAll as listAllCore } from '@snpos/core';
+import { formatMoney, parseMoney, toInput, Query, listAll as listAllCore, canDeleteCatalogue } from '@snpos/core';
 import type { Doc, Ingredient, Recipe } from '@snpos/core';
 import { useSession } from '../session';
 
@@ -38,7 +38,8 @@ interface DraftOption {
 }
 
 export function AddonsPage() {
-  const { settings } = useSession();
+  const { settings, profile } = useSession();
+  const mayDelete = canDeleteCatalogue(profile);
   const toast = useToast();
   const decimals = settings?.currency_decimals ?? 2;
 
@@ -222,7 +223,9 @@ export function AddonsPage() {
                   <Button size="sm" variant="ghost" onClick={() => open(g, true)} title="Copy this group and all its choices">
                     Duplicate
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => remove(g)}>Delete</Button>
+                  {mayDelete && (
+                    <Button size="sm" variant="ghost" onClick={() => remove(g)}>Delete</Button>
+                  )}
                 </div>
               }
             >
