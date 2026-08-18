@@ -66,7 +66,9 @@
       "$id": "notify",
       "name": "Notify: emails and reports",
       "runtime": "node-18.0",
-      "execute": [],
+      "execute": [
+        "any"
+      ],
       "events": [
         "databases.snpos.collections.orders.documents.*.update",
         "databases.snpos.collections.shifts.documents.*.update",
