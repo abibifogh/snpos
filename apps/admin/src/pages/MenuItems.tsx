@@ -625,8 +625,20 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
                       {(() => {
                         const n = recipes.filter((r) => r.menu_item_id === i.$id).length;
                         if (n > 0) return <span className="small dim">{n} ingredient{n > 1 ? 's' : ''}</span>;
-                        // Only worth flagging when the dish claims to track stock:
-                        // a bottled drink has no recipe and needs none.
+                        /*
+                          A drink with no recipe pours nothing.
+
+                          It still sells and still takes money, and the shelf
+                          never moves — so it counts perfectly every night
+                          while the gin apparently pours itself. That is worth
+                          saying on every drink, not only on the ones that
+                          claim to track stock, because a bar item's whole
+                          point is that it comes off a bottle.
+
+                          A dish is flagged only when it says it tracks stock:
+                          a plate of bread does not need a recipe to be right.
+                        */
+                        if (module === 'bar') return <Badge tone="warn">No recipe, pours nothing</Badge>;
                         return i.track_stock ? <Badge tone="warn">No recipe</Badge> : null;
                       })()}
                     </td>
@@ -824,11 +836,21 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
             />
           )}
 
-          {/* Recipes and option groups are the kitchen's. A woven basket is not
-              made from ingredients the shop counts, and "Choose your protein"
-              has no meaning on a shelf. Both were showing on the craft form and
-              both were noise there. */}
-          {module === 'kitchen' && (
+          {/*
+            Recipes and option groups belong to anything that is MADE.
+
+            A woven basket is not, which is why the craft form does without
+            them: it is not built from ingredients the shop counts, and "Choose
+            your protein" has no meaning on a shelf.
+
+            A cocktail very much is. This read `module === 'kitchen'`, written
+            when there were two sides, so the bar fell through to the excluded
+            one — and there was no way to say what goes into a Mojito from the
+            screen that exists to describe drinks. The recipes were only there
+            at all because the importer wrote them, and nothing on the drink
+            could show or change them.
+          */}
+          {module !== 'craft' && (
           <>
           <RecipeEditor
             ingredients={ingredients}
@@ -860,8 +882,8 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
             label="Option groups"
             hint={
               addonGroups.length === 0
-                ? 'None built yet. Create them under Menu → Options, for example “Choose your protein”.'
-                : `Choices the customer makes for this ${W.one}. Build and price them under Kitchen → Options.`
+                ? 'None built yet. Create them under Menu → Options, for example “Single or double”.'
+                : `Choices the customer makes for this ${W.one}. Build and price them under Menu → Options.`
             }
           >
             <div className="stack" style={{ gap: '0.35rem', marginTop: '0.2rem' }}>
