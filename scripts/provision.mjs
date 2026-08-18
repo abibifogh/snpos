@@ -518,7 +518,7 @@ async function main() {
   // Lists the restaurant will edit: seeded so the app works on day one, keyed
   // so that renaming one later does not orphan the records already filed
   // under it.
-  await waitForAttributes('expense_categories', ['key', 'name', 'account_code', 'sort', 'active']);
+  await waitForAttributes('expense_categories', ['key', 'name', 'module', 'account_code', 'sort', 'active']);
   const haveExpenseCats = (await allDocuments('expense_categories')).map((d) => d.key);
   for (const c of SEED_EXPENSE_CATEGORIES) {
     if (haveExpenseCats.includes(c.key)) continue;

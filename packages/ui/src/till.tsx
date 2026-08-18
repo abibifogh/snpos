@@ -3,7 +3,7 @@ import { Button, Field, FormError, Input, Modal, Notice, Select, Textarea } from
 import {
   db, DB_ID, ID, saveDropping, formatMoney, parseMoney, toInput, loadIngredients, loadPaymentMethods,
   PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions, receiveStock, uploadFile,
-  buyOptions, convertPurchase, describePurchase, hasPack,
+  buyOptions, convertPurchase, describePurchase, hasPack, categoriesForSide,
   expenseMethods, recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
   fromTakings, postExpense, accountForExpense,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
@@ -247,7 +247,9 @@ export function ExpenseModal({
           ? loadIngredients(venueId, module).catch(() => [] as Ingredient[])
           : Promise.resolve([] as Ingredient[]),
       ]);
-      setCategories(opts.categories);
+      // This side's spending only, plus the ones that belong to everybody.
+      // A bartender should not scroll past "Kitchen gas" to find tonic.
+      setCategories(categoriesForSide(opts.categories, module));
       setSuppliers(opts.suppliers);
       setStaff(opts.staff);
       /*

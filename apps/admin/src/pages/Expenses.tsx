@@ -6,7 +6,7 @@ import {
   PAID_TO_KINDS, payeeLabel as sharedPayeeLabel, legacyExpenseCategory as legacyFor,
   isPostableExpenseAccount, expenseMethods, modulesOf, recomputeClosedShift,
   postExpense, accountForExpense,
-  buyOptions, convertPurchase, describePurchase, hasPack,
+  buyOptions, convertPurchase, describePurchase, hasPack, categoriesForSide,
 } from '@snpos/core';
 import type { Module, Doc, Ingredient, PaidToKind, BuyOption } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
@@ -474,6 +474,7 @@ export function ExpensesPage() {
         <KeyedListManager
           collection="expense_categories"
           singular="category"
+          sharedValue="general"
           accounts={accounts.map((a) => ({ code: a.code, name: a.name }))}
           onChanged={reloadCategories}
           hint="Your own list. Each one posts to a line of the accounts, which is what decides where the money shows up in Reports. Nothing there that fits? Add it under the Accounts tab. Rename freely; expenses already filed under a category stay with it."
@@ -573,9 +574,22 @@ export function ExpensesPage() {
                 value={editing.category_key ?? ''}
                 onChange={(e) => setEditing({ ...editing, category_key: e.target.value })}
               >
-                {(categories ?? []).filter((c) => c.active !== false).map((c) => (
+                {/* This side's spending, plus what belongs to everybody. An
+                    expense being recorded against the bar has no business
+                    offering "Kitchen gas". */}
+                {categoriesForSide(categories ?? [], editing.module ?? 'kitchen').map((c) => (
                   <option key={c.key} value={c.key}>{c.name}</option>
                 ))}
+                {/* A category already chosen keeps showing even if it belongs
+                    to another side, so changing the side on an expense does not
+                    silently refile it. */}
+                {editing.category_key
+                  && !categoriesForSide(categories ?? [], editing.module ?? 'kitchen')
+                    .some((c) => c.key === editing.category_key) && (
+                  <option value={editing.category_key}>
+                    {nameForKey(categories, editing.category_key)} (another side)
+                  </option>
+                )}
               </Select>
             </Field>
             {/*

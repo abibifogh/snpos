@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
+import { CATEGORY_SIDES } from '@snpos/core';
 import type { Doc } from '@snpos/core';
 
 export interface KeyedRow extends Doc {
@@ -12,7 +13,7 @@ export interface KeyedRow extends Doc {
   account_code?: string;
   /** Only pack kinds use this: how many of the counting unit one holds. */
   units?: number;
-  /** Which side of the business owns this grouping. Absent is kitchen. */
+  /** Which side of the business owns this. Absent is kitchen, or general. */
   module?: string;
 }
 
@@ -54,6 +55,7 @@ export function KeyedListManager({
   accounts,
   unitsLabel,
   module,
+  sharedValue,
   onChanged,
 }: {
   collection: string;
@@ -76,6 +78,13 @@ export function KeyedListManager({
    * and they were turning up on the bar's bottles because the list was shared.
    */
   module?: string;
+  /**
+   * The value that means "shows on every side", and the default for a row
+   * that has none. Set for expense categories, where transport and repairs
+   * belong to nobody in particular; left off for groupings that are one
+   * trade's by nature.
+   */
+  sharedValue?: string;
   onChanged?: () => void;
 }) {
   const toast = useToast();
@@ -105,7 +114,7 @@ export function KeyedListManager({
       };
       if (accounts) payload.account_code = editing.account_code || '6090';
       if (unitsLabel) payload.units = Math.max(0, Number(editing.units ?? 0) || 0);
-      if (module) payload.module = editing.module ?? module;
+      if (module) payload.module = editing.module ?? (sharedValue ?? module);
 
       if (editing.$id) await db.updateDocument(DB_ID, collection, editing.$id, payload);
       else await db.createDocument(DB_ID, collection, ID.unique(), payload);
@@ -155,9 +164,19 @@ export function KeyedListManager({
   };
 
   const archivedCount = (rows ?? []).filter((r) => r.active === false).length;
-  // Absent reads as the kitchen's, which is what every grouping that existed
-  // before the other sides did actually was.
-  const mine = (rows ?? []).filter((r) => !module || (r.module ?? 'kitchen') === module);
+  /*
+    Absent means different things to different lists.
+
+    An ingredient grouping written before the other sides existed was the
+    kitchen's, because only the kitchen had a larder. An expense category
+    written then was used by all three, so narrowing it to the kitchen would
+    empty the other two lists overnight — hence sharedValue.
+  */
+  const mine = (rows ?? []).filter((r) => {
+    if (!module) return true;
+    const owner = r.module || sharedValue || 'kitchen';
+    return owner === module || (!!sharedValue && owner === sharedValue);
+  });
   const shown = mine.filter((r) => showArchived || r.active !== false);
 
   return (
@@ -192,6 +211,7 @@ export function KeyedListManager({
                   <th>Name</th>
                   {accounts && <th>Posts to</th>}
                   {unitsLabel && <th className="num">Holds</th>}
+                  {sharedValue && <th>Shown on</th>}
                   <th>Status</th>
                   <th />
                 </tr>
@@ -208,6 +228,11 @@ export function KeyedListManager({
                     {unitsLabel && (
                       <td className="num dim">
                         {r.units ? r.units : <span title="Asked for on each item">—</span>}
+                      </td>
+                    )}
+                    {sharedValue && (
+                      <td className="dim small">
+                        {CATEGORY_SIDES.find((sd) => sd.value === (r.module || sharedValue))?.label ?? r.module}
                       </td>
                     )}
                     <td>{r.active === false ? <Badge tone="warn">Archived</Badge> : <Badge tone="ok">Active</Badge>}</td>
@@ -241,6 +266,19 @@ export function KeyedListManager({
           <Field label="Name">
             <Input value={editing.name ?? ''} autoFocus onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
           </Field>
+          {sharedValue && (
+            <Field
+              label="Shown on"
+              hint="Where this appears when somebody records spending. Everywhere is right for anything that is not one trade's — transport, repairs, petty cash."
+            >
+              <Select
+                value={editing.module || sharedValue}
+                onChange={(e) => setEditing({ ...editing, module: e.target.value })}
+              >
+                {CATEGORY_SIDES.map((sd) => <option key={sd.value} value={sd.value}>{sd.label}</option>)}
+              </Select>
+            </Field>
+          )}
           {accounts && (
             <Field
               label="Posts to"

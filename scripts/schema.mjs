@@ -1190,12 +1190,24 @@ export const COLLECTIONS = [
      * `account_code` is what makes a category more than a label: it decides
      * which line of the accounts the money lands on when the shift is closed.
      */
+    /**
+     * Whose spending this is a kind of.
+     *
+     * A bar recording a crate of tonic should not scroll past "Kitchen gas"
+     * and "Craft packaging" to find it, and a category list that is three
+     * trades long is one people file under whatever is nearest.
+     *
+     * "general" shows everywhere, and is what an absent value means — because
+     * every category that existed before this was used by everybody, and
+     * quietly narrowing them to the kitchen would empty the other two lists.
+     */
     id: 'expense_categories',
     name: 'Expense categories',
     perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: ADMIN },
     attributes: [
       ['key', 's', 60, true],
       ['name', 's', 80, true],
+      ['module', 'e', ['kitchen', 'craft', 'bar', 'general'], false, 'general'],
       ['account_code', 's', 10, false, '6090'],
       ['sort', 'i', null, false, 0],
       ['active', 'b', null, false, true],
@@ -3301,9 +3313,9 @@ export const SEED_EXPENSE_CATEGORIES = [
     still has; it becomes a cost when the drink is poured, not when the bottle
     is carried in.
   */
-  { key: 'bar_stock', name: 'Bar stock', account_code: '1210', sort: 8 },
-  { key: 'craft_stock', name: 'Craft stock', account_code: '1220', sort: 9 },
-  { key: 'kitchen_stock', name: 'Kitchen stock', account_code: '1200', sort: 10 },
+  { key: 'bar_stock', name: 'Bar stock', account_code: '1210', module: 'bar', sort: 8 },
+  { key: 'craft_stock', name: 'Craft stock', account_code: '1220', module: 'craft', sort: 9 },
+  { key: 'kitchen_stock', name: 'Kitchen stock', account_code: '1200', module: 'kitchen', sort: 10 },
   { key: 'transport', name: 'Transport', account_code: '6010', sort: 2 },
   { key: 'utilities', name: 'Utilities', account_code: '6020', sort: 3 },
   { key: 'repairs', name: 'Repairs & maintenance', account_code: '6030', sort: 4 },

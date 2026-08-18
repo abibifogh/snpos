@@ -83,3 +83,38 @@ export function payeeLabel(
  * money out of the drawer and has been counted that way all along.
  */
 export const fromTakings = (e: { from_takings?: boolean }): boolean => e.from_takings !== false;
+
+/* ------------------------------------------------- whose categories are whose */
+
+/**
+ * The spending categories one side of the business should be offered.
+ *
+ * A bar recording a crate of tonic should not scroll past "Kitchen gas" and
+ * "Craft packaging" to find it. A list three trades long is one people file
+ * under whatever is nearest, and a month later nobody can say what the bar
+ * actually spent.
+ *
+ * "general" belongs to everybody — transport, repairs, petty cash are not any
+ * one trade's — and an ABSENT value reads as general on purpose: every
+ * category that existed before this was used by all three, and narrowing them
+ * to the kitchen would empty the other two lists overnight.
+ */
+export function categoriesForSide<T extends { module?: string; active?: boolean }>(
+  rows: T[],
+  module: string,
+  opts: { includeArchived?: boolean } = {},
+): T[] {
+  return rows.filter((r) => {
+    if (!opts.includeArchived && r.active === false) return false;
+    const owner = r.module || 'general';
+    return owner === 'general' || owner === module;
+  });
+}
+
+/** The sides a category can belong to, for the picker that sets it. */
+export const CATEGORY_SIDES: { value: string; label: string; help: string }[] = [
+  { value: 'general', label: 'Everywhere', help: 'Transport, repairs, petty cash — spending that is not any one trade\'s.' },
+  { value: 'kitchen', label: 'Bistro only', help: 'Shown when recording spending against the kitchen.' },
+  { value: 'bar', label: 'Bar only', help: 'Shown when recording spending against the bar.' },
+  { value: 'craft', label: 'Craft shop only', help: 'Shown when recording spending against the shop.' },
+];
