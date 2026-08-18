@@ -19,6 +19,8 @@ export interface AddonGroup extends Doc {
   max_select: number;
   required: boolean;
   sort: number;
+  /** Whose choices these are. Absent means the kitchen's. */
+  module?: string;
 }
 
 export interface AddonOption extends Doc {

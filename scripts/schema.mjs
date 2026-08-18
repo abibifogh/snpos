@@ -587,6 +587,18 @@ export const COLLECTIONS = [
       ['max_select', 'i', null, true, 1],
       ['required', 'b', null, true, false],
       ['sort', 'i', null, true, 0],
+      /*
+        Whose choices these are.
+
+        Without it every side saw every group, so "Rare, medium, well done"
+        was offered on a gin and tonic and "Single or double" on a steak. A
+        list that offers nonsense is one people stop reading, including the
+        lines on it that were right.
+
+        Absent means the kitchen's, which is what every group written before
+        this one existed was.
+      */
+      ['module', 'e', ['kitchen', 'craft', 'bar'], false, 'kitchen'],
     ],
   },
   {
@@ -2818,6 +2830,11 @@ export const COLLECTIONS = [
       ['singular', 's', 60, false],
       ['sort', 'i', null, true, 0],
       ['active', 'b', null, true, true],
+      // Whose sizes these are. A bar measures in singles and doubles, a shop
+      // in small, medium and large; one list holding both is a list where
+      // neither side can find its own. Absent means the shop's, which is what
+      // every type written before this one existed was.
+      ['module', 'e', ['kitchen', 'craft', 'bar'], false, 'craft'],
     ],
     indexes: [['key_unique', 'unique', ['key']], ['sort', 'key', ['sort']]],
   },
