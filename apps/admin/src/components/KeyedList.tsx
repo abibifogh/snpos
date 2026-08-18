@@ -94,14 +94,46 @@ export function KeyedListManager({
   const [busy, setBusy] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
+  /*
+    Absent means different things to different lists.
+
+    An ingredient grouping written before the other sides existed was the
+    kitchen's, because only the kitchen had a larder. An expense category
+    written then was used by all three, so narrowing it to the kitchen would
+    empty the other two lists overnight — hence sharedValue.
+  */
+  const mine = (rows ?? []).filter((r) => {
+    if (!module) return true;
+    const owner = r.module || sharedValue || 'kitchen';
+    return owner === module || (!!sharedValue && owner === sharedValue);
+  });
+
   const save = async () => {
     if (!editing?.name?.trim()) { setError(`Give the ${singular} a name.`); return; }
-    const key = editing.key || keyFrom(editing.name);
-    if (!key) { setError('That name has no letters or numbers in it, try another.'); return; }
-    if (!editing.$id && rows?.some((r) => r.key === key)) {
+    const base = editing.key || keyFrom(editing.name);
+    if (!base) { setError('That name has no letters or numbers in it, try another.'); return; }
+
+    /*
+      A name is only taken if it is taken ON THIS SIDE.
+
+      The bar could not add a variant type called "Size", because the craft
+      shop already had one — a row the bar's own list deliberately does not
+      show. So the refusal named something the person could not see, look at,
+      or rename, on a screen that was telling them it did not exist.
+
+      The key still has to be unique across every side, because the database
+      insists on it and one shared index cannot know about modules. So where
+      another side has already taken the plain key, this side's gets its own
+      prefix: the shop keeps `size` and the bar gets `bar_size`, and both are
+      called "Size" by the only thing that reads names, which is people.
+    */
+    const takenHere = !editing.$id && mine.some((r) => r.key === base);
+    if (takenHere) {
       setError(`There is already a ${singular} called "${editing.name.trim()}".`);
       return;
     }
+    const takenElsewhere = !editing.$id && (rows ?? []).some((r) => r.key === base);
+    const key = takenElsewhere && module ? `${module}_${base}` : base;
 
     setBusy(true);
     setError(null);
@@ -172,20 +204,9 @@ export function KeyedListManager({
     }
   };
 
-  const archivedCount = (rows ?? []).filter((r) => r.active === false).length;
-  /*
-    Absent means different things to different lists.
-
-    An ingredient grouping written before the other sides existed was the
-    kitchen's, because only the kitchen had a larder. An expense category
-    written then was used by all three, so narrowing it to the kitchen would
-    empty the other two lists overnight — hence sharedValue.
-  */
-  const mine = (rows ?? []).filter((r) => {
-    if (!module) return true;
-    const owner = r.module || sharedValue || 'kitchen';
-    return owner === module || (!!sharedValue && owner === sharedValue);
-  });
+  // This side's archived, not everyone's. Counting all of them offered the
+  // bar a "Show archived (7)" button that revealed the kitchen's, or nothing.
+  const archivedCount = mine.filter((r) => r.active === false).length;
   const shown = mine.filter((r) => showArchived || r.active !== false);
 
   return (
