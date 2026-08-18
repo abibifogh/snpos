@@ -617,20 +617,31 @@ export async function barCountSheet(venueId: string, locationId?: string): Promi
 }
 
 /**
- * Write a bar's count, at whichever end of the shift it was taken.
+ * Write a count of one room.
  *
- * The opening count sets the shelf outright. Somebody has physically looked,
- * and what they found is what is there — a running figure carried over from
- * last night is a book entry, and the whole reason a bar counts on the way in
- * is that the book and the shelf disagree more often than anybody admits.
+ * Two different events wear the same form, and the difference is the shift.
  *
- * The closing count does the same and records the variance against what the
- * pours said should be left, which is the figure the whole bar stock system
- * exists to produce.
+ * Counting THE BAR is a shift event. Somebody accepts the stock at the start
+ * and hands it over at the end, and the variance at close against what the
+ * pours said should be left is the figure the whole bar stock system exists
+ * to produce. It is filed against the shift because it is a fact about that
+ * shift and about the person who worked it.
+ *
+ * Counting a STORE ROOM is not. Nobody pours from a store room, no shift
+ * accepts it and no shift hands it over — it is walked every few weeks
+ * because somebody wants to know what is in there. Filing it against
+ * whichever shift happened to be open would attribute a month of drift to one
+ * bartender's evening, and requiring a shift at all would mean the room could
+ * only be counted while the bar was trading.
+ *
+ * So a count with no shift writes what a stocktake writes: the movement that
+ * explains the change, and the level it found. No shift check, because there
+ * is no shift to make a claim about.
  */
 export async function saveBarCount(opts: {
   venueId: string;
-  shiftId: string;
+  /** The shift this belongs to. Absent for a store room, which belongs to none. */
+  shiftId?: string;
   /** Which place was walked. Absent counts the bar itself. */
   locationId?: string;
   phase: 'open' | 'close';
@@ -648,7 +659,9 @@ export async function saveBarCount(opts: {
     const counted = Number((line.countedText ?? '').trim());
     const variance = Number((counted - line.expected).toFixed(4));
 
-    await db.createDocument(DB_ID, 'shift_stock_checks', ID.unique(), {
+    // Only where there is a shift to make the claim about. A store room's
+    // count is not a statement about anybody's evening.
+    if (opts.shiftId) await db.createDocument(DB_ID, 'shift_stock_checks', ID.unique(), {
       venue_id: opts.venueId,
       shift_id: opts.shiftId,
       ingredient_id: line.ingredientId,
@@ -680,11 +693,16 @@ export async function saveBarCount(opts: {
         qty_delta: variance,
         unit_cost: line.unitCost,
         location_id: counter?.$id ?? '',
-        ref_type: 'shift',
-        ref_id: opts.shiftId,
-        shift_id: opts.shiftId,
+        // A stocktake refers to the room it counted; a shift count refers to
+        // the shift. Stamping a store room's correction with a shift id is
+        // what would put a month of drift on one bartender's evening.
+        ref_type: opts.shiftId ? 'shift' : 'stocktake',
+        ref_id: opts.shiftId || (counter?.$id ?? ''),
+        shift_id: opts.shiftId ?? '',
         created_by: opts.userId,
-        note: opts.phase === 'open' ? 'Counted on opening' : 'Counted at close',
+        note: opts.shiftId
+          ? (opts.phase === 'open' ? 'Counted on opening' : 'Counted at close')
+          : `Stocktake in ${counter?.name ?? 'the store'}`,
       }).catch(() => undefined);
     }
 

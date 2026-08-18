@@ -56,6 +56,18 @@ export function BarCountsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const isAdmin = profile?.role === 'admin';
+
+  /**
+   * Which room, and therefore which kind of count.
+   *
+   * A store room belongs to no shift: nobody pours from it, no shift accepts
+   * it and no shift hands it over. It is walked every few weeks because
+   * somebody wants to know what is in there, and it must be countable whether
+   * or not the bar happens to be trading.
+   */
+  const room = places.find((p2) => p2.$id === placeId) ?? null;
+  const isStore = room?.kind === 'store';
+  const canCount = isStore || !!shift;
   const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
 
   const load = async () => {
@@ -100,13 +112,17 @@ export function BarCountsPage() {
   const check = useMemo(() => readyToClose(lines ?? []), [lines]);
 
   const save = async () => {
-    if (!shift) return;
+    // A store room needs no shift; the bar does.
+    if (!isStore && !shift) return;
     setBusy(true);
     setError(null);
     try {
       const { written, shortValue } = await saveBarCount({
         venueId: 'main',
-        shiftId: shift.$id,
+        // Left off for a store room, on purpose: stamping it with whichever
+        // shift happened to be open would put a month of drift on one
+        // bartender's evening.
+        shiftId: isStore ? undefined : shift?.$id,
         locationId: placeId || undefined,
         phase,
         lines: lines ?? [],
@@ -115,11 +131,16 @@ export function BarCountsPage() {
       await load();
       setLines((rows) => (rows ?? []).map((r) => ({ ...r, countedText: '', note: '' })));
       toast(
-        phase === 'open'
-          ? `${written} line${written === 1 ? '' : 's'} counted in. The bar is yours.`
-          : shortValue > 0
-            ? `Counted out. ${money(shortValue)} short — an admin can see it under Variances.`
-            : 'Counted out, and it balances.',
+        isStore
+          // A stocktake reports what it found. It is nobody's handover, so
+          // "short" would be the wrong word and the wrong accusation.
+          ? `${written} line${written === 1 ? '' : 's'} counted in ${room?.name ?? 'the store'}. `
+            + 'The shelves now say what you found.'
+          : phase === 'open'
+            ? `${written} line${written === 1 ? '' : 's'} counted in. The bar is yours.`
+            : shortValue > 0
+              ? `Counted out. ${money(shortValue)} short — an admin can see it under Variances.`
+              : 'Counted out, and it balances.',
       );
     } catch (e) {
       setError(humanError(e));
@@ -139,32 +160,44 @@ export function BarCountsPage() {
     <>
       <div className="spread">
         <h1>Bar counts</h1>
-        {shift && (
+        {canCount && (
           <Button variant="primary" onClick={() => void save()} loading={busy} disabled={summary.countedLines === 0}>
-            {phase === 'open' ? 'Count the bar in' : 'Count the bar out'}
+            {isStore
+              ? `Save the count of ${room?.name ?? 'the store'}`
+              : phase === 'open' ? 'Count the bar in' : 'Count the bar out'}
           </Button>
         )}
       </div>
 
       {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
 
-      {!shift ? (
-        <Card>
+      {!canCount ? (
+        <Card title="Which room">
+          {places.length > 1 && (
+            <Field label="Which room" hint="A store room can be counted at any time. The bar is counted against a shift.">
+              <Select value={placeId} onChange={(e) => setPlaceId(e.target.value)}>
+                {places.map((l) => <option key={l.$id} value={l.$id}>{l.name}</option>)}
+              </Select>
+            </Field>
+          )}
           <Empty title="No bar shift is open">
-            A count belongs to a shift — it is what one person accepted and what they handed over. Open the bar
-            from the till, then count it in.
+            Counting the bar is part of a shift — it is what one person accepted and what they handed over. Open
+            the bar from the till, then count it in. A store room does not need a shift; pick one above.
           </Empty>
         </Card>
       ) : (
         <>
-          <Card title={`Shift ${shift.code}`}>
+          <Card title={isStore ? `Stocktake in ${room?.name}` : `Shift ${shift?.code}`}>
             <div className="row row-wrap" style={{ gap: '1.4rem', alignItems: 'flex-end' }}>
-              <Field label="Which count">
-                <Select value={phase} onChange={(e) => setPhase(e.target.value as 'open' | 'close')}>
-                  <option value="open">Counting in, at the start</option>
-                  <option value="close">Counting out, at the end</option>
-                </Select>
-              </Field>
+              {/* A store room has no start and no end to be at. */}
+              {!isStore && (
+                <Field label="Which count">
+                  <Select value={phase} onChange={(e) => setPhase(e.target.value as 'open' | 'close')}>
+                    <option value="open">Counting in, at the start</option>
+                    <option value="close">Counting out, at the end</option>
+                  </Select>
+                </Field>
+              )}
               <div>
                 <div className="dim small">Counted so far</div>
                 <div style={{ fontSize: '1.3rem', fontWeight: 650 }}>
