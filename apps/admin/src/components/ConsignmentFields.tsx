@@ -226,45 +226,94 @@ export function ConsignmentFields({
             </p>
           )}
 
+          {/*
+            Nothing to pick in the Kind box yet.
+
+            Said here rather than left as an empty dropdown, which reads as a
+            fault in the form. The variant still saves — it falls back to a
+            plain size — so this is a nudge, not a wall.
+          */}
+          {variantTypes.length === 0 && (
+            <p className="small" style={{ margin: '0 0 0.5rem', color: 'var(--warn)' }}>
+              No variant types set up yet, so the Kind box will be empty. Add them on the Variant types tab
+              {consigned ? '' : ' — “Single and double”, “Glass and carafe”, “Bottle and crate”'}.
+            </p>
+          )}
+
+          {/*
+            Every box says what it is, on every row.
+
+            These were five bare inputs in a line, told apart only by
+            placeholder text — which disappears the moment anything is typed,
+            so a half-filled row became five boxes with no way to tell which
+            was the price and which the barcode. A header row above them would
+            align on a wide screen and come apart the moment it wrapped, which
+            on a phone is immediately.
+          */}
           {variants.map((v, i) => (
             <div key={v.$id ?? `new-${i}`} className="variant-row">
-              <Input
-                placeholder="Large"
-                value={v.label}
-                onChange={(e) => setVariant(i, { label: e.target.value })}
-              />
-              <Select
-                value={v.kindKey}
-                onChange={(e) => setVariant(i, { kindKey: e.target.value })}
-              >
-                {variantTypes.map((t) => (
-                  <option key={t.key} value={t.key}>{t.singular || t.name}</option>
-                ))}
-              </Select>
-              <Input
-                placeholder={symbol}
-                inputMode="decimal"
-                value={v.priceText}
-                onChange={(e) => setVariant(i, { priceText: e.target.value })}
-              />
-              <Input
-                type="number"
-                min="0"
-                placeholder="Qty"
-                value={v.onHandText}
-                onChange={(e) => setVariant(i, { onHandText: e.target.value })}
-              />
-              <Input
-                placeholder="Barcode"
-                value={v.barcode}
-                onChange={(e) => setVariant(i, { barcode: e.target.value })}
-              />
-              {/* Retired rather than deleted where it has already sold things,
-                  but the distinction belongs to the row, not to this button, 
-                  see the save path in MenuItems. */}
-              <Button onClick={() => removeVariant(i)} aria-label={`Remove ${v.label || 'this size'}`}>×</Button>
+              <label className="variant-cell wide">
+                <span>What it is called</span>
+                <Input
+                  placeholder={consigned ? 'Large' : 'Double'}
+                  value={v.label}
+                  onChange={(e) => setVariant(i, { label: e.target.value })}
+                />
+              </label>
+              <label className="variant-cell">
+                <span>Kind</span>
+                <Select
+                  value={v.kindKey}
+                  onChange={(e) => setVariant(i, { kindKey: e.target.value })}
+                >
+                  {variantTypes.map((t) => (
+                    <option key={t.key} value={t.key}>{t.singular || t.name}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="variant-cell">
+                <span>Price ({symbol.trim()})</span>
+                <Input
+                  placeholder={symbol}
+                  inputMode="decimal"
+                  value={v.priceText}
+                  onChange={(e) => setVariant(i, { priceText: e.target.value })}
+                />
+              </label>
+              {/*
+                Only the shop counts pieces. A bar's stock leaves through the
+                recipe — the measure comes out of the bottle — so a count here
+                would be a number nothing reads and nothing keeps true.
+              */}
+              {consigned && (
+                <label className="variant-cell">
+                  <span>On the shelf</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={v.onHandText}
+                    onChange={(e) => setVariant(i, { onHandText: e.target.value })}
+                  />
+                </label>
+              )}
+              <label className="variant-cell wide">
+                <span>Barcode <span className="dim">(optional)</span></span>
+                <Input
+                  placeholder="Scanned at the till"
+                  value={v.barcode}
+                  onChange={(e) => setVariant(i, { barcode: e.target.value })}
+                />
+              </label>
+              <div className="variant-cell shrink">
+                <span aria-hidden="true">&nbsp;</span>
+                {/* Retired rather than deleted where it has already sold
+                    things, but the distinction belongs to the row, not to
+                    this button, see the save path in MenuItems. */}
+                <Button onClick={() => removeVariant(i)} aria-label={`Remove ${v.label || 'this variant'}`}>×</Button>
+              </div>
               {parseMoney(v.priceText, decimals) === null && v.priceText.trim() !== '' && (
-                <Badge tone="warn">Price?</Badge>
+                <Badge tone="warn">That price is not a number</Badge>
               )}
             </div>
           ))}
