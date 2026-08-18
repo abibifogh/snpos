@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   normaliseName, findDuplicates, removalKind, describeGroup, hasImage,
+  planMerge,
 } from '../duplicates.ts';
 
 const craft = (over: Record<string, unknown>) => ({
@@ -127,4 +128,85 @@ test('the groups needing a person come first', () => {
   // just because Z comes after A.
   const groups = findDuplicates(rows, { module: 'craft', hasHistory: (id) => id === 'z1' });
   assert.deepEqual(groups.map((g) => g.label), ['Zeta', 'Alpha']);
+});
+
+/* --------------------------------------------------------------- merging */
+
+test('the shelf counts are added together', () => {
+  // Four here and one there is five things on the shelf. If the surviving row
+  // does not account for all five, the next count comes up short.
+  const plan = planMerge([
+    craft({ $id: 'old', on_hand: 1, $createdAt: '2026-08-13T15:23:00Z' }),
+    craft({ $id: 'new', on_hand: 4, $createdAt: '2026-08-17T15:46:00Z' }),
+  ])!;
+  assert.equal(plan.patch.on_hand, 5);
+});
+
+test('a piece with sizes does not have its count added twice', () => {
+  // With variants the count lives on each one. The variants move across
+  // intact, so adding the parent totals as well counts everything twice.
+  const plan = planMerge([
+    craft({ $id: 'old', on_hand: 1 }),
+    craft({ $id: 'new', on_hand: 4 }),
+  ], { hasVariants: true })!;
+  assert.equal('on_hand' in plan.patch, false);
+});
+
+test('the maker is rescued from the copy being removed', () => {
+  // The real hazard in this shop: one import attached makers and the other did
+  // not. A craft shop that loses the maker link cannot pay anybody.
+  const plan = planMerge([
+    craft({ $id: 'old', image_id: 'i', $createdAt: '2026-08-13T00:00:00Z' }),
+    craft({ $id: 'new', consignor_id: 'ama', $createdAt: '2026-08-17T00:00:00Z' }),
+  ])!;
+  assert.equal(plan.keep.$id, 'old');
+  assert.equal(plan.patch.consignor_id, 'ama');
+});
+
+test('a copy never overwrites an answer the keeper already has', () => {
+  const plan = planMerge([
+    craft({ $id: 'keep', image_id: 'i', consignor_id: 'ama' }),
+    craft({ $id: 'other', consignor_id: 'kofi' }),
+  ])!;
+  assert.equal(plan.keep.$id, 'keep');
+  assert.equal('consignor_id' in plan.patch, false);
+});
+
+test('a blank string does not count as an answer', () => {
+  const plan = planMerge([
+    craft({ $id: 'keep', image_id: 'i', consignor_id: '  ' }),
+    craft({ $id: 'other', consignor_id: 'kofi' }),
+  ])!;
+  assert.equal(plan.patch.consignor_id, 'kofi');
+});
+
+test('the busiest row is kept, so the fewest records have to move', () => {
+  // Every reference on the losing row has to be re-pointed by hand, and every
+  // move is a chance to get something wrong.
+  const plan = planMerge([
+    craft({ $id: 'quiet', $createdAt: '2026-08-13T00:00:00Z' }),
+    craft({ $id: 'busy', $createdAt: '2026-08-17T00:00:00Z' }),
+  ], { references: (id) => (id === 'busy' ? 40 : 2) })!;
+  assert.equal(plan.keep.$id, 'busy');
+});
+
+test('a picture outranks being busy', () => {
+  // It is the row staff recognise on the screen.
+  const plan = planMerge([
+    craft({ $id: 'pretty', image_id: 'i' }),
+    craft({ $id: 'busy' }),
+  ], { references: (id) => (id === 'busy' ? 99 : 0) })!;
+  assert.equal(plan.keep.$id, 'pretty');
+});
+
+test('age breaks a tie', () => {
+  const plan = planMerge([
+    craft({ $id: 'newer', $createdAt: '2026-08-17T00:00:00Z' }),
+    craft({ $id: 'older', $createdAt: '2026-08-13T00:00:00Z' }),
+  ])!;
+  assert.equal(plan.keep.$id, 'older');
+});
+
+test('one row alone is not a merge', () => {
+  assert.equal(planMerge([craft({ $id: 'a' })]), null);
 });

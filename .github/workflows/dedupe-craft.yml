@@ -19,6 +19,10 @@ on:
         description: 'Treat same-name pieces from DIFFERENT makers as duplicates (usually no)'
         type: boolean
         default: false
+      merge:
+        description: 'Merge copies together (adds shelf counts, moves sales onto the surviving row)'
+        type: boolean
+        default: true
 
 jobs:
   dedupe:
@@ -62,6 +66,7 @@ jobs:
         run: |
           FLAGS=""
           if [ "${{ inputs.across_owners }}" = "true" ]; then FLAGS="$FLAGS --across-owners"; fi
+          if [ "${{ inputs.merge }}" = "true" ]; then FLAGS="$FLAGS --merge"; fi
           if [ "${{ inputs.confirm }}" = "remove" ]; then FLAGS="$FLAGS --apply"; fi
 
           npm run dedupe:craft -- $FLAGS 2>&1 | tee report.txt
