@@ -7,7 +7,7 @@ import {
   formatMoney, parseMoney, Query,
   loadConsignors, nextReference, moveStock, buildDeliverySlipHtml, openPrintable,
   rateFor, flatFor, dueFor,
-  planUnwind, describeUnwind, stockDelta, changed,
+  planUnwind, describeUnwind, stockDelta, changed, listByIds,
 } from '@snpos/core';
 import type { Consignor, ConsignmentIntake, MenuItem, Category, ProductMove, Settings } from '@snpos/core';
 import { useSession } from '../session';
@@ -479,8 +479,15 @@ function IntakeContents({
       count of zero means "none left" and says nothing about why: a piece
       withdrawn and a piece sold both read zero, and only one of them may be
       deleted.
+
+      Asked for by this delivery's pieces rather than by reading every line
+      ever sold. A shop with a year of trading behind it would otherwise pay
+      for all of it to open one delivery.
     */
-    listAll<{ menu_item_id?: string }>('order_items')
+    listAll<MenuItem>('menu_items', [Query.equal('intake_id', intake.$id)])
+      .then((pieces) => listByIds<{ menu_item_id?: string }>(
+        'order_items', 'menu_item_id', pieces.map((p) => p.$id),
+      ))
       .then((lines) => setSold(new Set(lines.map((l) => l.menu_item_id).filter(Boolean) as string[])))
       .catch(() => setSold(new Set()));
   }, [intake.$id]);

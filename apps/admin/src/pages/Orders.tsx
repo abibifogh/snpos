@@ -9,6 +9,7 @@ import {
   settleOrderNumbers, recomputeOrderTotals, cancelOrder, removeOrder, recomputeClosedShift,
   voidPayment, isLivePayment, changePaymentMethod, logPaymentMethodChange,
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, flatten, MODULE_LABELS,
+  listByIds,
 } from '@snpos/core';
 import type {
   Order, OrderItem, StaffProfile, Doc, Venue, Module, GroupChoice, SortChoice,
@@ -223,16 +224,24 @@ export function OrdersPage() {
 
   const load = async () => {
     setOrders(null);
-    const [o, p, m, s, v] = await Promise.all([
+    const [o, m, s, v] = await Promise.all([
       listAll<Order>('orders', [
         Query.greaterThanEqual('$createdAt', dayStart(from)),
         Query.lessThanEqual('$createdAt', dayEnd(to)),
       ]),
-      listAll<Payment>('payments'),
       listAll<PaymentMethod>('payment_methods'),
       listAll<StaffProfile>('staff_profiles'),
       listAll<Venue>('venues'),
     ]);
+    /*
+      Only the payments on the orders being shown.
+
+      The orders were already narrowed to the chosen dates and the payments
+      were not, so displaying one week meant reading every payment ever taken
+      — and a payment carries no date of its own to narrow by, so it has to be
+      asked for by the orders it belongs to.
+    */
+    const p = await listByIds<Payment>('payments', 'order_id', o.map((x) => x.$id));
     setOrders(o.sort((a, b) => b.$createdAt.localeCompare(a.$createdAt)));
     setPayments(p);
     setMethods(m);

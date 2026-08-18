@@ -2,12 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, Badge, Spinner, Notice } from '@snpos/ui';
 import { listAll } from '../lib';
+import { anyExists, Query } from '@snpos/core';
 import { useSession } from '../session';
-import type { Category, MenuItem, Venue, Doc } from '@snpos/core';
-
-interface Receipt extends Doc { status: string }
-interface Notice_ extends Doc { status: string }
-interface OrderRow extends Doc { payment_status: string; status: string }
+import type { Category, MenuItem, Venue } from '@snpos/core';
 
 export function Dashboard() {
   const { settings } = useSession();
@@ -38,16 +35,23 @@ export function Dashboard() {
    * means the function never ran at all, as distinct from running and failing
    * to send, which shows up in Reports with a reason.
    */
+  /*
+    One row each, not three whole tables.
+
+    This asks a yes-or-no question — has anything the background jobs write
+    ever appeared — and it was answering it by reading every order, every
+    receipt and every notice ever written, on every visit to the dashboard.
+    The answer was `.length > 0`.
+  */
   useEffect(() => {
     (async () => {
-      const [orders, receipts, notices] = await Promise.all([
-        listAll<OrderRow>('orders'),
-        listAll<Receipt>('receipts').catch(() => [] as Receipt[]),
-        listAll<Notice_>('order_notices').catch(() => [] as Notice_[]),
+      const settled = await anyExists('orders', [Query.equal('payment_status', 'paid')]);
+      if (!settled.any) { setJobsAlive(null); return; }
+      const [receipts, notices] = await Promise.all([
+        anyExists('receipts').catch(() => ({ any: false, total: 0 })),
+        anyExists('order_notices').catch(() => ({ any: false, total: 0 })),
       ]);
-      const settled = orders.filter((o) => o.payment_status === 'paid');
-      if (settled.length === 0) { setJobsAlive(null); return; }
-      setJobsAlive(receipts.length > 0 || notices.length > 0);
+      setJobsAlive(receipts.any || notices.any);
     })().catch(() => setJobsAlive(null));
   }, []);
 
