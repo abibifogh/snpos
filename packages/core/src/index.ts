@@ -31,6 +31,7 @@ export * from './reportdoc';
 export * from './seating';
 export * from './expense-rules';
 export * from './duplicates';
+export * from './recipe-card';
 export * from './cost-accounts';
 export * from './expense-draft';
 export * from './price-history';
