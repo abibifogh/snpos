@@ -97,12 +97,15 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   const toast = useToast();
   const decimals = settings?.currency_decimals ?? 2;
 
-  const [tab, setTab] = useState<'ingredients' | 'suppliers' | 'categories'>('ingredients');
+  const [tab, setTab] = useState<'ingredients' | 'suppliers' | 'categories' | 'packs'>('ingredients');
+  const { rows: packKinds, reload: reloadPacks } = useKeyedList('pack_kinds');
   const [ingredients, setIngredients] = useState<Ingredient[] | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [dishes, setDishes] = useState<MenuItem[]>([]);
-  const { rows: categories } = useKeyedList('ingredient_categories');
+  const { rows: allCategories } = useKeyedList('ingredient_categories');
+  /** This side's groupings only. A bar does not walk a larder of sauces. */
+  const categories = (allCategories ?? []).filter((c) => (c.module ?? 'kitchen') === module);
   const { rows: expenseCategories } = useKeyedList('expense_categories');
   const [editing, setEditing] = useState<Partial<Ingredient> | null>(null);
   const [editingSupplier, setEditingSupplier] = useState<Partial<Supplier> | null>(null);
@@ -153,6 +156,43 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   /** The stock category for this side, so a delivery is not spending. */
   const defaultStockCategory =
     module === 'bar' ? 'bar_stock' : module === 'craft' ? 'craft_stock' : 'kitchen_stock';
+
+  /**
+   * Items whose purchases are not being treated as stock.
+   *
+   * Anything on a shelf should land on the balance sheet when bought and
+   * become a cost when sold. One pointing at an expense category, or at
+   * nothing, is written off on arrival instead.
+   */
+  const needCategory = (ingredients ?? []).filter(
+    (i) => i.active && i.counted_at_close !== false && i.expense_category_key !== defaultStockCategory,
+  );
+
+  const [pointing, setPointing] = useState(false);
+  const stockCategoryName =
+    module === 'bar' ? 'Bar stock' : module === 'craft' ? 'Craft stock' : 'Kitchen stock';
+
+  const pointAtStock = async () => {
+    if (!confirm(
+      `Point ${needCategory.length} item${needCategory.length === 1 ? '' : 's'} at "${stockCategoryName}"?\n\n`
+      + 'Buying them will then add to what the business owns and become a cost as they sell, rather than '
+      + 'being written off on the day they arrive. Past entries are not changed.',
+    )) return;
+    setPointing(true);
+    try {
+      for (const i of needCategory) {
+        await db.updateDocument(DB_ID, 'ingredients', i.$id, { expense_category_key: defaultStockCategory })
+          .catch(() => undefined);
+      }
+      await load();
+      toast(`${needCategory.length} pointed at ${stockCategoryName}`);
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setPointing(false);
+    }
+  };
+
   const archivedCount = (ingredients ?? []).filter((i) => !i.active).length;
   /**
    * Narrowed, then ordered — by default, by what is closest to running out.
@@ -346,6 +386,20 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
             {tab === 'ingredients' && (
               <Button onClick={() => setImporting(true)}>Import from a spreadsheet</Button>
             )}
+            {/*
+              Only shown while there is something to fix, and it says how many.
+
+              Items set up before stock had a home in the books point nowhere,
+              so buying them is written off the day it arrives — the side shows
+              a bad week whenever it restocks and a good one whenever it does
+              not. New items default correctly; these are the ones that came
+              first.
+            */}
+            {tab === 'ingredients' && needCategory.length > 0 && (
+              <Button onClick={() => void pointAtStock()} loading={pointing}>
+                Point {needCategory.length} at {stockCategoryName}
+              </Button>
+            )}
             <Button variant="primary" onClick={() => (tab === 'ingredients' ? open() : setEditingSupplier({ name: '', active: true }))}>
               {tab === 'ingredients' ? W.add : 'Add supplier'}
             </Button>
@@ -357,6 +411,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
         <Button size="sm" variant={tab === 'ingredients' ? 'primary' : 'default'} onClick={() => setTab('ingredients')}>Ingredients</Button>
         <Button size="sm" variant={tab === 'suppliers' ? 'primary' : 'default'} onClick={() => setTab('suppliers')}>Suppliers</Button>
         <Button size="sm" variant={tab === 'categories' ? 'primary' : 'default'} onClick={() => setTab('categories')}>Categories</Button>
+        <Button size="sm" variant={tab === 'packs' ? 'primary' : 'default'} onClick={() => setTab('packs')}>Packs</Button>
       </div>
 
       {error && !editing && !editingSupplier && <Notice>{error}</Notice>}
@@ -398,8 +453,17 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
         </div>
       )}
 
-      {tab === 'categories' ? (
+      {tab === 'packs' ? (
         <KeyedListManager
+          collection="pack_kinds"
+          singular="pack"
+          unitsLabel="How many it usually holds"
+          hint="How things arrive: a bottle, a crate, a case. Crates are the reason the number lives on the item as well — some hold twelve and some twenty-four, so what is set here only saves typing the usual answer."
+          onChanged={() => void reloadPacks()}
+        />
+      ) : tab === 'categories' ? (
+        <KeyedListManager
+          module={module}
           collection="ingredient_categories"
           singular="category"
           hint="Your own groupings, Produce, Dry goods, Drinks, whatever suits how you shop. Used to sort the ingredient list; nothing breaks if you leave them alone."
@@ -594,13 +658,37 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
             */}
             <Field
               label="Bought as"
-              hint={`What one purchase is called, if you do not buy it by the ${editing.unit ?? 'unit'}. Leave blank if you do.`}
+              hint={`What one purchase is called, if you do not buy it by the ${editing.unit ?? 'unit'}. Manage the list under the Packs tab.`}
             >
-              <Input
+              <Select
                 value={editing.pack_name ?? ''}
-                placeholder="bottle, crate, case"
-                onChange={(e) => setEditing({ ...editing, pack_name: e.target.value })}
-              />
+                onChange={(e) => {
+                  const name = e.target.value;
+                  const kind = (packKinds ?? []).find((k) => k.name === name);
+                  setEditing({
+                    ...editing,
+                    pack_name: name,
+                    // A suggested size fills the box; anything already typed
+                    // wins, because a crate of 24 is still a crate and the
+                    // number in front of somebody is the one that counts.
+                    pack_size: name === '' ? 0
+                      : (editing.pack_size || (kind?.units ?? 0)),
+                  });
+                }}
+              >
+                <option value="">Bought by the {editing.unit ?? 'unit'}</option>
+                {(packKinds ?? []).filter((k) => k.active !== false).map((k) => (
+                  <option key={k.$id} value={k.name}>{k.name}</option>
+                ))}
+                {/* Whatever was typed before this became a list keeps working.
+                    Dropping it would silently unset the pack on the next save
+                    of an unrelated field, and every purchase after that would
+                    book one shot instead of a bottle. */}
+                {editing.pack_name
+                  && !(packKinds ?? []).some((k) => k.name === editing.pack_name) && (
+                  <option value={editing.pack_name}>{editing.pack_name} (set previously)</option>
+                )}
+              </Select>
             </Field>
             <Field
               label={`${plainPack(editing.pack_name)} holds how many ${editing.unit ?? 'unit'}?`}
@@ -707,16 +795,16 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
           <Field
             label="How often is this counted?"
             hint={module === 'bar'
-              ? 'Bottled drinks leave whole and are quick to see, so they are counted every shift. Spirits are measured at a stocktake instead — forty open bottles judged by eye at two in the morning produce numbers nobody believes.'
-              : 'Turn this to never for things with nothing on a shelf: transport, delivery fees, repairs. They can still be entered on an expense.'}
+              ? 'Bottled drinks leave whole and are quick to see, so they are counted in and out every shift. "At stocktake" means exactly that and nothing else — spirits stay off the twice-daily sheet, because forty open bottles judged by eye at two in the morning produce numbers nobody believes.'
+              : 'Choose Never for things with nothing on a shelf: transport, delivery fees, repairs. They can still be entered on an expense.'}
           >
             <Select
               value={countCadence(editing)}
               onChange={(e) => setEditing({ ...editing, ...cadenceFields(e.target.value as Cadence) })}
             >
-              {module === 'bar' && <option value="shift">Every shift, counted in and out</option>}
-              <option value="close">At a stocktake, or the shift-end check</option>
-              <option value="never">Never, there is nothing on a shelf</option>
+              {module === 'bar' && <option value="shift">Every shift, in and out</option>}
+              <option value="close">At stocktake</option>
+              <option value="never">Never</option>
             </Select>
           </Field>
 

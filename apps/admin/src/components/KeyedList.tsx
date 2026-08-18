@@ -10,6 +10,10 @@ export interface KeyedRow extends Doc {
   active?: boolean;
   /** Only expense categories use this; ignored elsewhere. */
   account_code?: string;
+  /** Only pack kinds use this: how many of the counting unit one holds. */
+  units?: number;
+  /** Which side of the business owns this grouping. Absent is kitchen. */
+  module?: string;
 }
 
 /** Turn a typed name into a key that is safe to store on every record. */
@@ -48,6 +52,8 @@ export function KeyedListManager({
   singular,
   hint,
   accounts,
+  unitsLabel,
+  module,
   onChanged,
 }: {
   collection: string;
@@ -55,6 +61,21 @@ export function KeyedListManager({
   hint?: string;
   /** Offer an account to post to. Expense categories only. */
   accounts?: { code: string; name: string }[];
+  /**
+   * Ask how many one holds. Pack kinds only.
+   *
+   * A suggestion rather than a rule, which is why it is offered here and still
+   * editable on the item: crates come in twelves and twenty-fours, and the
+   * number that counts is the one on the thing being bought.
+   */
+  unitsLabel?: string;
+  /**
+   * Show only this side's entries, and stamp new ones with it.
+   *
+   * Sauces, proteins and vegetables are a kitchen's way of walking its larder,
+   * and they were turning up on the bar's bottles because the list was shared.
+   */
+  module?: string;
   onChanged?: () => void;
 }) {
   const toast = useToast();
@@ -83,6 +104,8 @@ export function KeyedListManager({
         active: editing.active ?? true,
       };
       if (accounts) payload.account_code = editing.account_code || '6090';
+      if (unitsLabel) payload.units = Math.max(0, Number(editing.units ?? 0) || 0);
+      if (module) payload.module = editing.module ?? module;
 
       if (editing.$id) await db.updateDocument(DB_ID, collection, editing.$id, payload);
       else await db.createDocument(DB_ID, collection, ID.unique(), payload);
@@ -132,7 +155,10 @@ export function KeyedListManager({
   };
 
   const archivedCount = (rows ?? []).filter((r) => r.active === false).length;
-  const shown = (rows ?? []).filter((r) => showArchived || r.active !== false);
+  // Absent reads as the kitchen's, which is what every grouping that existed
+  // before the other sides did actually was.
+  const mine = (rows ?? []).filter((r) => !module || (r.module ?? 'kitchen') === module);
+  const shown = mine.filter((r) => showArchived || r.active !== false);
 
   return (
     <>
@@ -165,6 +191,7 @@ export function KeyedListManager({
                 <tr>
                   <th>Name</th>
                   {accounts && <th>Posts to</th>}
+                  {unitsLabel && <th className="num">Holds</th>}
                   <th>Status</th>
                   <th />
                 </tr>
@@ -176,6 +203,11 @@ export function KeyedListManager({
                     {accounts && (
                       <td className="dim small">
                         {accounts.find((a) => a.code === r.account_code)?.name ?? r.account_code ?? '-'}
+                      </td>
+                    )}
+                    {unitsLabel && (
+                      <td className="num dim">
+                        {r.units ? r.units : <span title="Asked for on each item">—</span>}
                       </td>
                     )}
                     <td>{r.active === false ? <Badge tone="warn">Archived</Badge> : <Badge tone="ok">Active</Badge>}</td>
@@ -227,6 +259,20 @@ export function KeyedListManager({
                   <option value={editing.account_code}>{editing.account_code} (set previously)</option>
                 )}
               </Select>
+            </Field>
+          )}
+          {unitsLabel && (
+            <Field
+              label={unitsLabel}
+              hint="A suggestion only, filled in when this is chosen. The number that counts stays on the item — crates come in twelves and twenty-fours, and the one in front of you is the one that matters. Leave it at 0 to be asked every time."
+            >
+              <Input
+                type="number"
+                step="any"
+                min="0"
+                value={editing.units ?? 0}
+                onChange={(e) => setEditing({ ...editing, units: Math.max(0, Number(e.target.value) || 0) })}
+              />
             </Field>
           )}
           <div className="grid-2">

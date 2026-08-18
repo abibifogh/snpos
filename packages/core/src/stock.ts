@@ -498,7 +498,17 @@ export async function stockCheckRows(venueId: string, module: Module = 'kitchen'
   // silently at the top where it reads as belonging to nothing.
   const rank = (key?: string) => (key && order.has(key) ? (order.get(key) as number) : 9999);
 
-  return ingredients
+  /*
+    A shift's check asks for what is counted every shift.
+
+    "At stocktake" has to mean at stocktake ONLY, or it is not a third answer
+    at all — a spirit marked that way would still be on the sheet twice a day,
+    which is the thing somebody chose it to avoid.
+
+    shiftCounted keeps the old behaviour for anyone who has marked nothing:
+    with no choice made, the check asks for everything, exactly as it did.
+  */
+  return shiftCounted(ingredients)
     // Everything active that is actually on a shelf. A list with a taxi in it
     // is a list people learn to tap through, which costs the count on the
     // things that do matter.

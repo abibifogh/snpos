@@ -1228,12 +1228,45 @@ export const COLLECTIONS = [
   },
   {
     /** Ingredient groupings, Produce, Dry goods, Drinks, the restaurant's own. */
+    /**
+     * What a thing is bought in: a bottle, a crate, a case.
+     *
+     * A list the house owns rather than a box everybody types into, because a
+     * typed box gives you "crate", "Crate" and "crates" on three items and no
+     * way to see they are the same thing.
+     *
+     * `units` is a SUGGESTION, not a rule. Crates are the reason: some hold
+     * twelve and some hold twenty-four, so the number that counts stays on the
+     * item. This only saves typing it when the answer is usually the same.
+     */
+    id: 'pack_kinds',
+    name: 'Pack kinds',
+    perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['key', 's', 60, true],
+      ['name', 's', 80, true],
+      ['units', 'f', null, false, 0],
+      ['sort', 'i', null, false, 0],
+      ['active', 'b', null, false, true],
+    ],
+    indexes: [['key_unique', 'unique', ['key']]],
+  },
+  {
     id: 'ingredient_categories',
     name: 'Ingredient categories',
     perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: ADMIN },
     attributes: [
       ['key', 's', 60, true],
       ['name', 's', 80, true],
+      /**
+       * Whose groupings these are.
+       *
+       * Sauces, proteins and vegetables are a kitchen's way of walking its
+       * larder, and they were appearing on the bar's bottles because the list
+       * was shared. Absent is the kitchen, which is what every grouping that
+       * existed before the bar did actually was.
+       */
+      ['module', 'e', ['kitchen', 'craft', 'bar'], false, 'kitchen'],
       ['sort', 'i', null, false, 0],
       ['active', 'b', null, false, true],
     ],
@@ -3287,6 +3320,23 @@ export const SEED_EXPENSE_CATEGORIES = [
  * when the list is wrong. The answer to that is to let them add the word they
  * actually want, which is the whole point of this being a list they own.
  */
+/**
+ * The ways a bar and a kitchen buy things, to start from.
+ *
+ * Crates appear twice on purpose: twelve and twenty-four are both normal, they
+ * are not the same pack, and giving each its own entry means nobody has to
+ * remember which supplier sends which. A house that buys only one kind can
+ * archive the other.
+ */
+export const SEED_PACK_KINDS = [
+  { key: 'bottle', name: 'Bottle', units: 0, sort: 1 },
+  { key: 'crate_12', name: 'Crate of 12', units: 12, sort: 2 },
+  { key: 'crate_24', name: 'Crate of 24', units: 24, sort: 3 },
+  { key: 'case', name: 'Case', units: 0, sort: 4 },
+  { key: 'pack', name: 'Pack', units: 0, sort: 5 },
+  { key: 'sack', name: 'Sack', units: 0, sort: 6 },
+];
+
 export const SEED_VARIANT_TYPES = [
   { key: 'size', name: 'Sizes', singular: 'size', sort: 0 },
   { key: 'colour', name: 'Colours', singular: 'colour', sort: 1 },
