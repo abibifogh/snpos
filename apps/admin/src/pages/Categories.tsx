@@ -165,7 +165,7 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: Module }) {
             <table className="data">
               <thead>
                 <tr>
-                  <th style={{ width: '3.5rem' }}>Order</th>
+                  <th className="num" style={{ width: '3.5rem' }}>Order</th>
                   <th>Name</th>
                   <th>Station</th>
                   <th>Available</th>

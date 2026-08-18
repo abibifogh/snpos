@@ -211,6 +211,19 @@ table.data tr:last-child td { border-bottom: none; }
 table.data tbody tr:hover { background: var(--surface-2); }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 
+/*
+  A number's heading sits over its numbers.
+
+  `table.data th` sets text-align: left and outweighs `.num` — one class and
+  two elements against one class — so every heading marked as numeric was
+  quietly overruled and sat hard left while its figures sat hard right. The
+  markup was right all along; the cascade was not.
+
+  Names stay left and numbers stay right, which is the only arrangement where
+  a column of figures can be read down and compared.
+*/
+table.data th.num { text-align: right; }
+
 /* ---- misc ------------------------------------------------------------- */
 .badge {
   display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px;
