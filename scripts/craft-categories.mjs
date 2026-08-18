@@ -83,7 +83,55 @@ const craft = items.filter((r) => r.module === 'craft');
 const byId = new Map(categories.map((c) => [c.$id, c]));
 const craftCats = categories.filter((c) => c.module === 'craft' && c.active !== false);
 
-console.log(`  ${craft.length} craft products, ${craftCats.length} live craft categories\n`);
+console.log(`  ${craft.length} craft products, ${craftCats.length} live craft categories`);
+console.log(`  The shelves: ${craftCats.map((c) => c.name).join(', ')}\n`);
+
+/*
+  Words that mean a shelf, beyond the shelf's own name.
+
+  A category called "Body care" will never match "Jojoba oil" on its own
+  words, and a shopkeeper reading a list of seventy-five pieces filed under
+  nothing does not want to type seventy-five answers. So the obvious ones are
+  guessed and every guess is shown before anything is written.
+
+  Keyed on words that appear in CATEGORY names, so this adapts to whatever the
+  shop calls its shelves rather than assuming a fixed set.
+*/
+const SYNONYMS = {
+  jewel: ['bracelet', 'necklace', 'earring', 'bangle', 'ring', 'anklet', 'pendant'],
+  bead: ['bracelet', 'necklace', 'earring', 'bangle', 'rattle'],
+  bag: ['bag', 'purse', 'backpack', 'back pack', 'pack', 'holder', 'case', 'pouch'],
+  cloth: ['shirt', 'jersey', 'shorts', 'trousers', 'dress', 'batik', 'apron', 't-shirt', 'tshirt', 'hat', 'cloth'],
+  wear: ['shirt', 'jersey', 'shorts', 'trousers', 'dress', 'batik', 'apron', 't-shirt', 'hat', 'slippers', 'shoe', 'flipflop', 'sandal'],
+  cloth_alt: ['kente', 'ankara'],
+  shoe: ['shoe', 'slipper', 'flipflop', 'sandal', 'birkenstock', 'nike', 'canvas'],
+  wood: ['wooden', 'carve', 'carving', 'stool', 'table', 'plate', 'mask', 'drum', 'globe', 'monkey', 'doll'],
+  carv: ['carve', 'carving', 'wooden', 'mask', 'stool', 'figure'],
+  art: ['art', 'print', 'painting', 'thread'],
+  soap: ['soap'],
+  oil: ['oil', 'butter', 'balm', 'shea'],
+  body: ['soap', 'oil', 'butter', 'balm', 'shea', 'lip', 'repellent', 'refresher'],
+  beauty: ['soap', 'oil', 'butter', 'balm', 'shea', 'lip'],
+  home: ['basket', 'towel', 'plate', 'table', 'stool', 'refresher', 'magnet'],
+  food: ['coffee', 'tea', 'spice', 'honey'],
+  music: ['drum', 'rattle', 'asalato', 'xylophone'],
+  toy: ['rattle', 'oware', 'doll', 'game'],
+  access: ['keyholder', 'fan', 'comb', 'opener', 'pillow', 'strap', 'band'],
+};
+
+/** A best guess at which live shelf a piece belongs on, or null. */
+const guessFor = (name) => {
+  const n = name.toLowerCase();
+  const hits = craftCats.filter((c) => {
+    const cat = c.name.toLowerCase();
+    // The category's own words first: "Bags" matching "Ohemaa Bag".
+    if (cat.split(/[^a-z]+/).some((w) => w.length > 3 && n.includes(w.replace(/s$/, '')))) return true;
+    return Object.entries(SYNONYMS).some(
+      ([key, words]) => cat.includes(key) && words.some((w) => n.includes(w)),
+    );
+  });
+  return hits.length === 1 ? hits[0] : null;
+};
 
 /** Why this product shows under nothing, or null when it is fine. */
 const faultOf = (item) => {
@@ -116,10 +164,16 @@ const candidatesFor = (itemId) => [...new Set(
 )];
 
 const fixable = [];
+const guessed = [];
 const needsAPerson = [];
 for (const row of broken) {
   const options = candidatesFor(row.item.$id);
-  if (options.length === 1) fixable.push({ ...row, to: options[0] });
+  if (options.length === 1) { fixable.push({ ...row, to: options[0] }); continue; }
+  // Nothing certain to recover from, so the name is all there is. Kept apart
+  // from the certain ones in the report, because a guess somebody has not
+  // read is not better than a blank.
+  const guess = guessFor(row.item.name);
+  if (guess) guessed.push({ ...row, to: guess.$id });
   else needsAPerson.push({ ...row, options });
 }
 
@@ -130,6 +184,12 @@ if (fixable.length) {
     console.log(`      ${f.why}`);
     console.log(`      → ${byId.get(f.to)?.name}`);
   }
+  console.log('');
+}
+
+if (guessed.length) {
+  console.log(`These ${guessed.length} are a guess from the name — read them before saying yes:\n`);
+  for (const g of guessed) console.log(`  ${g.item.name}  →  ${byId.get(g.to)?.name}`);
   console.log('');
 }
 
@@ -147,13 +207,13 @@ if (needsAPerson.length) {
 }
 
 if (!apply) {
-  console.log('▸ Nothing was changed. Re-run with --apply to put back the ones above.');
+  console.log('▸ Nothing was changed. Re-run with --apply to file the ones above.');
   process.exit(0);
 }
 
 let done = 0;
 const failures = [];
-for (const f of fixable) {
+for (const f of [...fixable, ...guessed]) {
   try {
     await retry(
       () => db.updateDocument(DB_ID, 'menu_items', f.item.$id, { category_id: f.to }),
@@ -165,7 +225,7 @@ for (const f of fixable) {
   }
 }
 
-console.log(`▸ ${done} put back, ${needsAPerson.length} left for you.`);
+console.log(`▸ ${done} filed, ${needsAPerson.length} left for you.`);
 if (failures.length) {
   console.error(`\n✗ ${failures.length} could not be filed:`);
   for (const f of failures) console.error(`    ${f.name}: ${f.error}`);
