@@ -3,7 +3,7 @@ import { Button, Field, FormError, Input, Modal, Notice, Select, Textarea } from
 import {
   db, DB_ID, ID, saveDropping, formatMoney, parseMoney, toInput, loadIngredients, loadPaymentMethods,
   PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions, receiveStock, uploadFile,
-  buyOptions, convertPurchase, describePurchase, hasPack, categoriesForSide,
+  buyOptions, convertPurchase, describePurchase, hasPack, categoriesForSide, canSeePrivateExpenses,
   expenseMethods, recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
   fromTakings, postExpense, accountForExpense,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
@@ -247,9 +247,20 @@ export function ExpenseModal({
           ? loadIngredients(venueId, module).catch(() => [] as Ingredient[])
           : Promise.resolve([] as Ingredient[]),
       ]);
-      // This side's spending only, plus the ones that belong to everybody.
-      // A bartender should not scroll past "Kitchen gas" to find tonic.
-      setCategories(categoriesForSide(opts.categories, module));
+      /*
+        This side's spending only, plus the ones that belong to everybody.
+        A bartender should not scroll past "Kitchen gas" to find tonic.
+
+        And nothing marked admin only, unless this is an admin or somebody an
+        admin has let in. Rent and the owner's drawings are real spending that
+        has to be recorded; they are not something the floor should read off a
+        dropdown while a customer waits.
+      */
+      const me = opts.staff.find((s) => s.user_id === userId);
+      const mine = categoriesForSide(opts.categories, module, {
+        canSeePrivate: canSeePrivateExpenses(me),
+      });
+      setCategories(mine);
       setSuppliers(opts.suppliers);
       setStaff(opts.staff);
       /*
@@ -261,7 +272,7 @@ export function ExpenseModal({
         under whatever happens to be first in the list. Functional, so it reads
         the value as it is at that moment rather than as it was on mount.
       */
-      if (!editing) setCategoryKey((cur) => cur || opts.categories[0]?.key || 'other');
+      if (!editing) setCategoryKey((cur) => cur || mine[0]?.key || 'other');
       // Only what an expense is allowed to be paid out of ever reaches the
       // form, so the restriction cannot be got round by leaving the dropdown
       // where it was.

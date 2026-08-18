@@ -114,7 +114,16 @@ export function KeyedListManager({
       };
       if (accounts) payload.account_code = editing.account_code || '6090';
       if (unitsLabel) payload.units = Math.max(0, Number(editing.units ?? 0) || 0);
-      if (module) payload.module = editing.module ?? (sharedValue ?? module);
+      /*
+        Send it whenever the form ASKS for it.
+
+        This read `if (module)`, and expense categories pass only sharedValue
+        — they are not scoped to one side, they are the thing being scoped.
+        So the "Shown on" picker was drawn, answered, and then left out of the
+        payload: the save succeeded, said Saved, and changed nothing. A
+        control that takes an answer and discards it is worse than no control.
+      */
+      if (module || sharedValue) payload.module = editing.module ?? (sharedValue ?? module);
 
       if (editing.$id) await db.updateDocument(DB_ID, collection, editing.$id, payload);
       else await db.createDocument(DB_ID, collection, ID.unique(), payload);

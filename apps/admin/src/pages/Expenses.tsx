@@ -6,7 +6,7 @@ import {
   PAID_TO_KINDS, payeeLabel as sharedPayeeLabel, legacyExpenseCategory as legacyFor,
   isPostableExpenseAccount, expenseMethods, modulesOf, recomputeClosedShift,
   postExpense, accountForExpense,
-  buyOptions, convertPurchase, describePurchase, hasPack, categoriesForSide,
+  buyOptions, convertPurchase, describePurchase, hasPack, categoriesForSide, canSeePrivateExpenses,
 } from '@snpos/core';
 import type { Module, Doc, Ingredient, PaidToKind, BuyOption } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
@@ -123,6 +123,16 @@ export function ExpensesPage() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const { rows: categories, reload: reloadCategories } = useKeyedList('expense_categories');
+  /**
+   * The categories this person may file against, for the side being recorded.
+   *
+   * Admin only ones are here for admins and for anybody an admin has granted
+   * them under Staff; a manager who does not do the books never sees the rent.
+   */
+  const myCategories = (mod?: Module) =>
+    categoriesForSide(categories ?? [], mod ?? 'kitchen', {
+      canSeePrivate: canSeePrivateExpenses(profile),
+    });
 
   const [editing, setEditing] = useState<Partial<Expense> | null>(null);
   const [amountText, setAmountText] = useState('');
@@ -576,16 +586,16 @@ export function ExpensesPage() {
               >
                 {/* This side's spending, plus what belongs to everybody. An
                     expense being recorded against the bar has no business
-                    offering "Kitchen gas". */}
-                {categoriesForSide(categories ?? [], editing.module ?? 'kitchen').map((c) => (
+                    offering "Kitchen gas". Anything marked admin only is here
+                    for admins and for whoever an admin has granted it. */}
+                {myCategories(editing.module).map((c) => (
                   <option key={c.key} value={c.key}>{c.name}</option>
                 ))}
                 {/* A category already chosen keeps showing even if it belongs
                     to another side, so changing the side on an expense does not
                     silently refile it. */}
                 {editing.category_key
-                  && !categoriesForSide(categories ?? [], editing.module ?? 'kitchen')
-                    .some((c) => c.key === editing.category_key) && (
+                  && !myCategories(editing.module).some((c) => c.key === editing.category_key) && (
                   <option value={editing.category_key}>
                     {nameForKey(categories, editing.category_key)} (another side)
                   </option>

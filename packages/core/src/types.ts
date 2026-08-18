@@ -187,6 +187,8 @@ export interface StaffProfile extends Doc {
   can_change_line_price?: boolean;
   /** May permanently delete catalogue rows. Admins always may. */
   can_delete_items?: boolean;
+  /** May see the spending categories marked admin only. Admins always may. */
+  can_see_private_expenses?: boolean;
   can_mark_paid?: boolean;
   can_apply_discount_codes?: boolean;
   pin_hash?: string;

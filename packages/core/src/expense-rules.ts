@@ -102,19 +102,49 @@ export const fromTakings = (e: { from_takings?: boolean }): boolean => e.from_ta
 export function categoriesForSide<T extends { module?: string; active?: boolean }>(
   rows: T[],
   module: string,
-  opts: { includeArchived?: boolean } = {},
+  opts: { includeArchived?: boolean; canSeePrivate?: boolean } = {},
 ): T[] {
   return rows.filter((r) => {
     if (!opts.includeArchived && r.active === false) return false;
     const owner = r.module || 'general';
+    // Rent, drawings, a legal bill: recorded like any other spending, and not
+    // on a dropdown the floor reads. Sides aside, so it shows up wherever an
+    // admin happens to be working rather than only on one trade's screen.
+    if (owner === ADMIN_ONLY_SIDE) return !!opts.canSeePrivate;
     return owner === 'general' || owner === module;
   });
 }
 
-/** The sides a category can belong to, for the picker that sets it. */
+/** The "Shown on" value that means: admins, and whoever an admin has let in. */
+export const ADMIN_ONLY_SIDE = 'admin_only';
+
+/**
+ * The sides a category can belong to, for the picker that sets it.
+ *
+ * "Admin only" sits in the same list because it is the same question asked
+ * once — where does this show up — and answering it twice on one form is how
+ * you get a category that is bar-only AND admin-only and nobody can say which
+ * rule won. The cost is that the two cannot be combined; if that is ever
+ * wanted it needs a separate toggle, not a fifth entry here.
+ */
 export const CATEGORY_SIDES: { value: string; label: string; help: string }[] = [
   { value: 'general', label: 'Everywhere', help: 'Transport, repairs, petty cash — spending that is not any one trade\'s.' },
   { value: 'kitchen', label: 'Bistro only', help: 'Shown when recording spending against the kitchen.' },
   { value: 'bar', label: 'Bar only', help: 'Shown when recording spending against the bar.' },
   { value: 'craft', label: 'Craft shop only', help: 'Shown when recording spending against the shop.' },
+  { value: ADMIN_ONLY_SIDE, label: 'Admin only', help: 'Rent, drawings, legal fees. Hidden from the tills. Admins see it, and anybody an admin has granted it under Staff.' },
 ];
+
+/**
+ * May this person see the admin-only categories?
+ *
+ * Admins always. Everybody else only if an admin has said so on their staff
+ * record — which is the whole point of the grant: a manager who does the
+ * books should not have to be made an admin to file the rent.
+ */
+export function canSeePrivateExpenses(
+  profile?: { role?: string; can_see_private_expenses?: boolean } | null,
+): boolean {
+  if (!profile) return false;
+  return profile.role === 'admin' || profile.can_see_private_expenses === true;
+}

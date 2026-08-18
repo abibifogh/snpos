@@ -157,6 +157,7 @@ export function StaffPage() {
         can_mark_paid: editing.can_mark_paid ?? true,
         can_change_line_price: editing.can_change_line_price ?? false,
         can_delete_items: editing.can_delete_items ?? false,
+        can_see_private_expenses: editing.can_see_private_expenses ?? false,
         can_record_waste: editing.can_record_waste ?? true,
         venue_ids: editing.venue_ids ?? [],
         ...(pin ? { pin_hash: await encodePin(pin), pin_set_at: new Date().toISOString() } : {}),
@@ -443,6 +444,14 @@ export function StaffPage() {
               checked={editing.can_delete_items ?? false}
               onChange={(v) => setEditing({ ...editing, can_delete_items: v })}
               label="Permanently delete items, drinks and categories"
+            />
+          </Field>
+          <Field hint="Rent, the owner's drawings, legal fees — the categories marked Admin only under Expenses. Admins see them always. Turn this on for somebody who does the books without being an admin; leave it off and those categories never appear on their screen.">
+            <Toggle
+              checked={editing.role === 'admin' || (editing.can_see_private_expenses ?? false)}
+              disabled={editing.role === 'admin'}
+              onChange={(v) => setEditing({ ...editing, can_see_private_expenses: v })}
+              label="See the admin-only spending categories"
             />
           </Field>
 

@@ -1207,7 +1207,12 @@ export const COLLECTIONS = [
     attributes: [
       ['key', 's', 60, true],
       ['name', 's', 80, true],
-      ['module', 'e', ['kitchen', 'craft', 'bar', 'general'], false, 'general'],
+      // 'admin_only' is the odd one out: it answers "who may see this",
+      // not "which trade is it". It shares the column because it is one
+      // question on the form — a category is either one side's, everybody's,
+      // or the office's — and a category cannot be both bar-only and
+      // admin-only. If that combination is ever wanted it needs its own flag.
+      ['module', 'e', ['kitchen', 'craft', 'bar', 'general', 'admin_only'], false, 'general'],
       ['account_code', 's', 10, false, '6090'],
       ['sort', 'i', null, false, 0],
       ['active', 'b', null, false, true],
@@ -1978,6 +1983,19 @@ export const COLLECTIONS = [
        * after the rows do can never be required.
        */
       ['can_delete_items', 'b', null, false, false],
+      /**
+       * May see the spending categories marked admin only.
+       *
+       * Rent, the owner's drawings, a legal bill — real spending that has to
+       * be recorded and that the floor has no business reading off a
+       * dropdown. Admins see them always; this is how an admin lets a
+       * particular manager see them too, without making them an admin.
+       *
+       * Optional, and off by default: a field that arrives after the rows do
+       * can never be required, and the safe answer for everybody already on
+       * the staff list is no.
+       */
+      ['can_see_private_expenses', 'b', null, false, false],
       ['can_record_waste', 'b', null, false, true],
       ['hourly_rate', 'i', null, false], // feature 4: labour cost
       // Getting somebody their first sign-in.
