@@ -35,7 +35,18 @@ export const ACCOUNTS = {
   cash: '1000',
   cardClearing: '1010',
   momoClearing: '1020',
+  /**
+   * Stock owned but not yet sold, one account per trade.
+   *
+   * Buying stock is not spending: the money turns into something the business
+   * still has, which is why it sits on the balance sheet until the thing is
+   * sold. One shared account answered "what stock do we own" and nothing else
+   * — and a bar's stock and a kitchen's larder move at completely different
+   * speeds, so a single figure hid whichever of them was drifting.
+   */
   inventory: '1200',
+  barInventory: '1210',
+  craftInventory: '1220',
   taxPayable: '2100',
   tipsPayable: '2200',
   /**
@@ -97,6 +108,24 @@ export function cogsAccount(module: Module): string {
   return ACCOUNTS.cogs;
 }
 
+/**
+ * Where a side's unsold stock sits.
+ *
+ * The pair to cogsAccount: buying debits this, selling credits it and debits
+ * the cost of sales. Getting the two out of step is how inventory grows for
+ * ever on one trade while another shows a cost of goods nobody bought.
+ */
+export function inventoryAccount(module: Module): string {
+  if (module === 'bar') return ACCOUNTS.barInventory;
+  if (module === 'craft') return ACCOUNTS.craftInventory;
+  return ACCOUNTS.inventory;
+}
+
+/** Every stock account, for a balance sheet that lists them together. */
+export const INVENTORY_ACCOUNTS: readonly string[] = [
+  ACCOUNTS.inventory, ACCOUNTS.barInventory, ACCOUNTS.craftInventory,
+];
+
 /** Every cost-of-sales account, for the reports' Costs total. */
 export const COGS_ACCOUNTS: readonly string[] = [ACCOUNTS.cogs, ACCOUNTS.barCogs, ACCOUNTS.craftCogs];
 
@@ -113,8 +142,22 @@ export const isSystemAccount = (code: string) => SYSTEM_ACCOUNT_CODES.includes(c
  * too: both are posted automatically at shift close from the stock count and
  * the drawer count, and an expense filed there would be double-counted.
  */
-export const isPostableExpenseAccount = (a: { code: string; type: string }) =>
-  a.type === 'expense' && !COGS_ACCOUNTS.includes(a.code) && a.code !== ACCOUNTS.cashOverShort;
+export const isPostableExpenseAccount = (a: { code: string; type: string }) => {
+  // Cost of sales and cash over/short are filled in automatically at close, so
+  // an expense filed there would be counted twice.
+  if (COGS_ACCOUNTS.includes(a.code) || a.code === ACCOUNTS.cashOverShort) return false;
+  /*
+    Stock is the exception to "expenses go to expense accounts".
+
+    Buying a case of tonic is not spending: the money turns into something the
+    business still has, and it becomes a cost when the drink is poured. So the
+    inventory accounts are offered here even though they sit on the balance
+    sheet — without them there is no way to point a "Bar stock" category at
+    the right place, and every delivery would be written off on the day it
+    arrived.
+  */
+  return a.type === 'expense' || INVENTORY_ACCOUNTS.includes(a.code);
+};
 
 export interface PostingLine {
   account_code: string;
@@ -242,7 +285,9 @@ export async function postShift(p: ShiftPosting): Promise<string[]> {
       memo: `Cost of ${MODULE_LABELS[p.module ?? 'kitchen'].toLowerCase()} goods sold`,
     }, [
       { account_code: cogsAccount(p.module ?? 'kitchen'), debit: p.cogs, credit: 0 },
-      { account_code: ACCOUNTS.inventory, debit: 0, credit: p.cogs },
+      // Off this side's own shelf. Crediting the shared account would write a
+      // bar's pours off against the kitchen's larder.
+      { account_code: inventoryAccount(p.module ?? 'kitchen'), debit: 0, credit: p.cogs },
     ]);
     posted.push(entry.$id);
   }

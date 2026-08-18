@@ -3208,6 +3208,9 @@ export const SYSTEM_ACCOUNT_CODES = [
   // knows which side it belongs to, so the split happens as the entry is
   // written rather than being guessed at afterwards from a merged figure.
   '4010', '4020', '5010', '5020',
+  // And one stock account per trade, so what a side owns and what it has sold
+  // move together instead of one shared figure hiding whichever is drifting.
+  '1210', '1220',
   // Depreciation posts to these three by number, the same way a shift close
   // posts to the ten above, so they cannot be deleted either.
   '1500', '1510', '6060',
@@ -3217,7 +3220,9 @@ export const SEED_ACCOUNTS = [
   ['1000', 'Cash on hand', 'asset'],
   ['1010', 'Card clearing', 'asset'],
   ['1020', 'Mobile money clearing', 'asset'],
-  ['1200', 'Inventory', 'asset'],
+  ['1200', 'Inventory - kitchen', 'asset'],
+  ['1210', 'Inventory - bar', 'asset'],
+  ['1220', 'Inventory - craft shop', 'asset'],
   ['1500', 'Equipment and fittings', 'asset'],
   // A contra-asset: it is an asset account that is normally held the other way
   // round, so it shows as a negative on the balance sheet and reduces what the
@@ -3257,6 +3262,15 @@ export const SEED_ACCOUNTS = [
  */
 export const SEED_EXPENSE_CATEGORIES = [
   { key: 'supplies', name: 'Supplies', account_code: '6000', sort: 1 },
+  /*
+    Buying stock is not spending, so these point at the balance sheet rather
+    than at an expense account. The money turns into something the business
+    still has; it becomes a cost when the drink is poured, not when the bottle
+    is carried in.
+  */
+  { key: 'bar_stock', name: 'Bar stock', account_code: '1210', sort: 8 },
+  { key: 'craft_stock', name: 'Craft stock', account_code: '1220', sort: 9 },
+  { key: 'kitchen_stock', name: 'Kitchen stock', account_code: '1200', sort: 10 },
   { key: 'transport', name: 'Transport', account_code: '6010', sort: 2 },
   { key: 'utilities', name: 'Utilities', account_code: '6020', sort: 3 },
   { key: 'repairs', name: 'Repairs & maintenance', account_code: '6030', sort: 4 },

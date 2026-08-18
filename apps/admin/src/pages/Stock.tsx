@@ -4,7 +4,7 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, levelOf, saveDropping,
   purchasesFor, priceHistory, priceMoveNote, packProblem, hasPack, packSize,
-  matches, sortStock, stockState, STOCK_SORTS, STOCK_STATES, hasShiftCountChoice,
+  matches, sortStock, stockState, STOCK_SORTS, STOCK_STATES,
 } from '@snpos/core';
 import type { StockSort, StockState, Module, Ingredient, Recipe, MenuItem, Doc, Settings, PurchaseRow } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
@@ -27,6 +27,27 @@ interface Supplier extends Doc { venue_id: string; name: string; contact?: strin
  * that decides what can actually be saved.
  */
 const UNITS = ['g', 'kg', 'ml', 'l', 'each', 'pack', 'bottle', 'case', 'shot', 'cl'];
+
+/**
+ * How often somebody walks past this and writes a number down.
+ *
+ * Two booleans underneath — one saying whether it is on the shift-end check at
+ * all, one saying whether the bar counts it twice a day — but one question on
+ * screen, because they are the same question asked at two frequencies and two
+ * toggles left nobody sure which won.
+ */
+type Cadence = 'shift' | 'close' | 'never';
+
+const countCadence = (i: { counted_at_close?: boolean; count_each_shift?: boolean }): Cadence => {
+  if (i.counted_at_close === false) return 'never';
+  return i.count_each_shift ? 'shift' : 'close';
+};
+
+const cadenceFields = (c: Cadence) => ({
+  counted_at_close: c !== 'never',
+  // Never means there is no shelf, so it cannot also be counted every shift.
+  count_each_shift: c === 'shift',
+});
 
 /** The pack's name for a label, before anybody has given it one. */
 const plainPack = (name?: string) => {
@@ -129,7 +150,9 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
 
   const lowDefaultBp = settings?.low_stock_default_bp ?? 3000;
-  const anyShiftCounted = hasShiftCountChoice(ingredients ?? []);
+  /** The stock category for this side, so a delivery is not spending. */
+  const defaultStockCategory =
+    module === 'bar' ? 'bar_stock' : module === 'craft' ? 'craft_stock' : 'kitchen_stock';
   const archivedCount = (ingredients ?? []).filter((i) => !i.active).length;
   /**
    * Narrowed, then ordered — by default, by what is closest to running out.
@@ -222,7 +245,16 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
         critical: editing.critical ?? false,
         supplier_id: editing.supplier_id ?? '',
         category: editing.category ?? '',
-        expense_category_key: editing.expense_category_key ?? '',
+        /*
+          Where buying this lands in the books.
+
+          Defaulted per side rather than left blank: a bar ingredient with no
+          category falls to "other" and is written off the day it is carried
+          in, so the bar shows a bad week every time it restocks and a good
+          one every week it does not. Stock belongs on the balance sheet until
+          it is poured.
+        */
+        expense_category_key: editing.expense_category_key || defaultStockCategory,
         check_guide: (editing.check_guide ?? '').trim(),
         counted_at_close: editing.counted_at_close !== false,
         // How it arrives, when that differs from how it is counted. A bar buys
@@ -582,25 +614,6 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
                 onChange={(e) => setEditing({ ...editing, pack_size: Number(e.target.value) })}
               />
             </Field>
-            {module === 'bar' && (
-              <div style={{ gridColumn: '1 / -1' }}>
-                {/*
-                  The bottled drinks, in practice. Spirits are measured far
-                  less often: forty open bottles eyeballed at two in the
-                  morning produce numbers nobody believes.
-                */}
-                <Toggle
-                  checked={editing.count_each_shift === true}
-                  onChange={(v) => setEditing({ ...editing, count_each_shift: v })}
-                  label="Counted at the start and end of every shift"
-                />
-                <p className="small dim" style={{ margin: '0.3rem 0 0' }}>
-                  {anyShiftCounted
-                    ? 'Only the items ticked here appear on the bartender\u2019s opening and closing count.'
-                    : 'Nothing is ticked yet, so the shift count still asks for everything. Tick the bottled drinks and it narrows to those.'}
-                </p>
-              </div>
-            )}
             {packProblem(Number(editing.pack_size ?? 0), editing.unit ?? '', editing.pack_name ?? '') && (
               <div style={{ gridColumn: '1 / -1' }}>
                 <Notice tone="warn">
@@ -682,12 +695,29 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
             learn to tap through, which costs the count on the things that do
             matter.
           */}
-          <Field hint="Turn this off for things with nothing on a shelf: transport, delivery fees, repairs. They can still be entered on an expense.">
-            <Toggle
-              checked={editing.counted_at_close !== false}
-              onChange={(v) => setEditing({ ...editing, counted_at_close: v })}
-              label="Counted at the end of a shift"
-            />
+          {/*
+            One question, not two overlapping ones.
+
+            A bar item had "counted at the end of a shift" and "counted at the
+            start and end of every shift" sitting next to each other, which is
+            two ways of asking how often somebody walks past it — and no way
+            to tell from the labels which one won. How often IS the question,
+            so it is asked once and the two flags follow from the answer.
+          */}
+          <Field
+            label="How often is this counted?"
+            hint={module === 'bar'
+              ? 'Bottled drinks leave whole and are quick to see, so they are counted every shift. Spirits are measured at a stocktake instead — forty open bottles judged by eye at two in the morning produce numbers nobody believes.'
+              : 'Turn this to never for things with nothing on a shelf: transport, delivery fees, repairs. They can still be entered on an expense.'}
+          >
+            <Select
+              value={countCadence(editing)}
+              onChange={(e) => setEditing({ ...editing, ...cadenceFields(e.target.value as Cadence) })}
+            >
+              {module === 'bar' && <option value="shift">Every shift, counted in and out</option>}
+              <option value="close">At a stocktake, or the shift-end check</option>
+              <option value="never">Never, there is nothing on a shelf</option>
+            </Select>
           </Field>
 
           <Field hint="Critical items are called out first when they run low, ahead of everything else.">
