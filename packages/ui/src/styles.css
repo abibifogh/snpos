@@ -793,3 +793,92 @@ table.data tr[title] td:first-child { text-decoration: underline; text-decoratio
      beside them where the controls would each drop to their own line. */
   .filter-bar-end { margin-left: 0; width: 100%; justify-content: space-between; }
 }
+
+/* ------------------------------------------------ grouping and sorting */
+
+.picker { position: relative; display: inline-block; }
+.picker-button {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  font: inherit; font-size: 0.85rem; border-radius: 7px;
+  padding: 0.32rem 0.6rem; cursor: pointer; white-space: nowrap;
+}
+.picker-button:hover { border-color: var(--brand); }
+.picker-button.on { border-color: var(--brand); color: var(--brand); font-weight: 600; }
+.picker-button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.picker-caret { font-size: 0.7em; opacity: 0.7; }
+.picker-count {
+  background: var(--brand); color: var(--brand-ink); border-radius: 999px;
+  font-size: 0.72rem; font-weight: 700; padding: 0.02rem 0.32rem; line-height: 1.5;
+}
+
+/* Sits behind the menu and catches a click anywhere else on the page. */
+.picker-scrim {
+  position: fixed; inset: 0; z-index: 40;
+  border: 0; background: transparent; padding: 0; cursor: default;
+}
+.picker-menu {
+  position: absolute; z-index: 41; top: calc(100% + 0.3rem); left: 0;
+  min-width: 13rem; max-height: 60vh; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 9px; box-shadow: 0 8px 26px rgb(0 0 0 / 0.16);
+  padding: 0.25rem;
+}
+.picker-item {
+  display: flex; align-items: center; gap: 0.5rem; width: 100%;
+  border: 0; background: none; font: inherit; font-size: 0.87rem; color: var(--text);
+  padding: 0.4rem 0.45rem; cursor: pointer; border-radius: 6px; text-align: left;
+}
+.picker-item:hover { background: var(--bg); }
+.picker-item.on { font-weight: 600; }
+.picker-item:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.picker-tick { width: 0.9rem; color: var(--brand); flex-shrink: 0; }
+.picker-label { flex: 1; }
+.picker-dir { color: var(--text-dim); }
+/* The place in the order. The whole point of stacking is the sequence, so it
+   is on the row rather than left to be inferred from the list order. */
+.picker-order {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 999px;
+  font-size: 0.7rem; font-weight: 700; color: var(--text-dim);
+  min-width: 1.15rem; text-align: center; padding: 0 0.2rem;
+}
+
+/* What is applied, in order. The menus say what is available; these say what
+   is ON, which is otherwise readable only by opening two menus. */
+.facets { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-bottom: 0.8rem; }
+.facet {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  border: 1px solid var(--brand); border-radius: 7px; overflow: hidden;
+  font-size: 0.82rem; padding-right: 0.15rem;
+}
+.facet-kind {
+  background: var(--brand); color: var(--brand-ink);
+  padding: 0.22rem 0.45rem; font-weight: 600; font-size: 0.75rem;
+}
+.facet > span:not(.facet-kind) { padding: 0.22rem 0; }
+.facet button {
+  border: 0; background: none; font: inherit; font-size: 1rem; line-height: 1;
+  color: var(--text-dim); cursor: pointer; padding: 0 0.3rem;
+}
+.facet button:hover { color: var(--text); }
+
+/* A group's own row in the table. Indented by depth so nesting is readable
+   without drawing boxes inside boxes. */
+tr.group-row > td {
+  background: var(--bg); font-weight: 600; cursor: pointer;
+  border-top: 1px solid var(--border);
+}
+tr.group-row:hover > td { background: var(--surface); }
+tr.group-row .group-caret { display: inline-block; width: 1rem; opacity: 0.6; }
+tr.group-row .group-kind { color: var(--text-dim); font-weight: 400; font-size: 0.8rem; }
+tr.group-row .group-count {
+  color: var(--text-dim); font-weight: 400; font-size: 0.82rem; margin-left: 0.4rem;
+}
+
+/* A sorted column says so, and says where it sits in the order. */
+table.data th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+table.data th.sortable:hover { color: var(--brand); }
+table.data th .sort-mark { font-size: 0.75rem; margin-left: 0.25rem; color: var(--brand); }
+table.data th .sort-order {
+  font-size: 0.62rem; vertical-align: super; color: var(--text-dim); margin-left: 0.1rem;
+}

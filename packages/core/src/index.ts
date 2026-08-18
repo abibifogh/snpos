@@ -33,6 +33,7 @@ export * from './expense-rules';
 export * from './duplicates';
 export * from './recipe-card';
 export * from './sale-reversal';
+export * from './grouping';
 export * from './cost-accounts';
 export * from './expense-draft';
 export * from './price-history';

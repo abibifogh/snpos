@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import type { ReactNode } from 'react';
 
 /**
@@ -158,5 +159,205 @@ export function FilterBar({
         )}
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------- grouping and sorting
+
+   Odoo's shape, and for its reason: the questions people actually have are
+   two or three deep. "What did we take" is answered by a total; "what did we
+   take, by day, by who was on" is the question somebody has when a figure
+   looks wrong, and it needs the groupings to stack in a chosen order. */
+
+/** A menu of things to tick, staying open so several can be chosen at once. */
+export function PickerMenu({
+  label, children, count, open, onOpen,
+}: {
+  label: string;
+  children: ReactNode;
+  /** Shown as a badge, so a closed menu still says how many are on. */
+  count?: number;
+  open: boolean;
+  onOpen: (open: boolean) => void;
+}) {
+  return (
+    <div className="picker">
+      <button
+        type="button"
+        className={count ? 'picker-button on' : 'picker-button'}
+        aria-expanded={open}
+        onClick={() => onOpen(!open)}
+      >
+        {label}
+        {count ? <span className="picker-count">{count}</span> : null}
+        <span aria-hidden="true" className="picker-caret">▾</span>
+      </button>
+      {open && (
+        <>
+          {/*
+            A click anywhere else closes it. Without this the only way out is
+            to press the button again, which nobody does — they click the page
+            and then wonder why the menu is following them down it.
+          */}
+          <button type="button" className="picker-scrim" aria-label="Close" onClick={() => onOpen(false)} />
+          <div className="picker-menu" role="menu">{children}</div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** One line in a picker menu: a tick, a name, and where it sits in the order. */
+export function PickerItem({
+  label, on, position, dir, onClick,
+}: {
+  label: string;
+  on: boolean;
+  /** 1-based place in the chosen order, shown so the sequence is visible. */
+  position?: number;
+  dir?: 'asc' | 'desc' | null;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" role="menuitem" className={on ? 'picker-item on' : 'picker-item'} onClick={onClick}>
+      <span className="picker-tick" aria-hidden="true">{on ? '✓' : ''}</span>
+      <span className="picker-label">{label}</span>
+      {dir && <span className="picker-dir" aria-hidden="true">{dir === 'asc' ? '↑' : '↓'}</span>}
+      {position ? <span className="picker-order">{position}</span> : null}
+    </button>
+  );
+}
+
+/**
+ * What is currently applied, in order, each removable.
+ *
+ * The menus say what is available; these say what is ON. Without them the
+ * only way to know how a list is grouped is to open two menus and read the
+ * ticks, and the order — which is the whole point of stacking them — is not
+ * visible anywhere at all.
+ */
+export function FacetChips({
+  facets, onRemove, onClear,
+}: {
+  facets: { kind: string; label: string; detail?: string }[];
+  onRemove: (index: number) => void;
+  onClear?: () => void;
+}) {
+  if (facets.length === 0) return null;
+  return (
+    <div className="facets">
+      {facets.map((f, i) => (
+        <span className="facet" key={`${f.kind}-${f.label}-${i}`}>
+          <span className="facet-kind">{f.kind}</span>
+          <span>{f.label}{f.detail ? ` ${f.detail}` : ''}</span>
+          <button type="button" aria-label={`Remove ${f.label}`} onClick={() => onRemove(i)}>×</button>
+        </span>
+      ))}
+      {onClear && facets.length > 1 && (
+        <button type="button" className="filter-clear" onClick={onClear}>Clear all</button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A grouped table body: group rows with the real rows nested underneath.
+ *
+ * Rendered as rows in the SAME table rather than as nested tables or cards,
+ * because the columns have to keep lining up. A group of orders whose amounts
+ * sit under a different column from the ungrouped ones is a table you cannot
+ * read down, which is the only reason to have a table.
+ *
+ * Every group starts open. A screen that groups by day and then hides every
+ * day has answered a question nobody asked and added a click per answer; the
+ * folding is there for the one deep list where it helps, not as a default
+ * state to be dug out of.
+ */
+export function GroupedRows<T>({
+  nodes, rows, columns, renderRow, summary, closed, onToggle, rowKey,
+}: {
+  /** The tree, or null when nothing is grouped. */
+  nodes: GroupNodeLike<T>[] | null;
+  /** The flat rows, used when nothing is grouped. */
+  rows: T[];
+  /** How many columns the table has, so a group row can span them. */
+  columns: number;
+  renderRow: (row: T) => ReactNode;
+  /** Something to show on the group's own row: a total, usually. */
+  summary?: (rows: T[]) => ReactNode;
+  closed: Set<string>;
+  onToggle: (path: string) => void;
+  rowKey: (row: T) => string;
+}): ReactNode {
+  if (!nodes) return <>{rows.map((r) => <Fragment key={rowKey(r)}>{renderRow(r)}</Fragment>)}</>;
+
+  return (
+    <>
+      {nodes.map((node) => {
+        const shut = closed.has(node.path);
+        return (
+          <Fragment key={node.path}>
+            <tr className="group-row" onClick={() => onToggle(node.path)}>
+              <td colSpan={Math.max(1, columns - 1)} style={{ paddingLeft: `${0.6 + node.depth * 1.1}rem` }}>
+                <span className="group-caret" aria-hidden="true">{shut ? '▸' : '▾'}</span>
+                <span className="group-kind">{node.label}: </span>
+                {node.value}
+                <span className="group-count">
+                  {node.rows.length} {node.rows.length === 1 ? 'row' : 'rows'}
+                </span>
+              </td>
+              <td className="num">{summary?.(node.rows)}</td>
+            </tr>
+            {!shut && (
+              <GroupedRows
+                nodes={node.children}
+                rows={node.rows}
+                columns={columns}
+                renderRow={renderRow}
+                summary={summary}
+                closed={closed}
+                onToggle={onToggle}
+                rowKey={rowKey}
+              />
+            )}
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+/** Mirrors GroupNode in core, kept structural so this package imports nothing. */
+export interface GroupNodeLike<T> {
+  key: string;
+  label: string;
+  value: string;
+  rows: T[];
+  children: GroupNodeLike<T>[] | null;
+  depth: number;
+  path: string;
+}
+
+/** A column header that sorts, showing its direction and its place in the order. */
+export function SortableTh({
+  label, dir, position, onClick, className,
+}: {
+  label: string;
+  dir: 'asc' | 'desc' | null;
+  /** 1-based, 0 when this column is not part of the sort. */
+  position: number;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <th
+      className={className ? `${className} sortable` : 'sortable'}
+      onClick={onClick}
+      aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'}
+    >
+      {label}
+      {dir && <span className="sort-mark" aria-hidden="true">{dir === 'asc' ? '↑' : '↓'}</span>}
+      {position > 1 && <span className="sort-order" aria-hidden="true">{position}</span>}
+    </th>
   );
 }

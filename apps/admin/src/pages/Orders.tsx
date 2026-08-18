@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, useToast,
-  FilterBar, FilterField, Segmented,
+  FilterBar, FilterField, Segmented, PickerMenu, PickerItem, FacetChips, GroupedRows, SortableTh,
 } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, Query, toCsv, downloadCsv, buildReceiptHtml, openPrintable, receiptForOrder,
   settleOrderNumbers, recomputeOrderTotals, cancelOrder, removeOrder, recomputeClosedShift,
   voidPayment, isLivePayment, changePaymentMethod, logPaymentMethodChange,
+  groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, flatten, MODULE_LABELS,
 } from '@snpos/core';
-import type { Order, OrderItem, StaffProfile, Doc, Venue } from '@snpos/core';
+import type {
+  Order, OrderItem, StaffProfile, Doc, Venue, Module, GroupChoice, SortChoice,
+} from '@snpos/core';
 import { useSession } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 
@@ -65,6 +68,18 @@ export function OrdersPage() {
   const [staffId, setStaffId] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [side, setSide] = useState<Side>('all');
+  /*
+    Grouping and sorting, both stacked in the order they were chosen.
+
+    "What did we take" is a total. "What did we take, by day, by who was on"
+    is the question somebody has when a figure looks wrong, and it needs the
+    groupings to nest in a chosen sequence — day inside staff and staff inside
+    day are different answers, and both get asked.
+  */
+  const [groups, setGroups] = useState<GroupChoice[]>([]);
+  const [sorts, setSorts] = useState<SortChoice[]>([]);
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(new Set());
+  const [menu, setMenu] = useState<'group' | 'sort' | null>(null);
 
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [items, setItems] = useState<Record<string, OrderItem[]>>({});
@@ -249,7 +264,10 @@ export function OrdersPage() {
    * column so nothing is actually lost.
    */
   const exportCsv = async () => {
-    const rows = visible.map((o) => {
+    // In the order the screen shows them: the grouping and the sort decided
+    // it, and a spreadsheet that disagreed with the page would disagree about
+    // what "the first twenty" means.
+    const rows = flatten(tree, ordered).map((o) => {
       const lines = items[o.$id];
       const paid = payments.filter((p) => p.order_id === o.$id);
       return [
@@ -355,6 +373,53 @@ export function OrdersPage() {
     for (const days of [0, 6, 29]) if (from === daysAgoStr(days)) return String(days);
     return 'custom';
   }, [from, to]);
+
+
+  /**
+   * What each grouping shows for a row.
+   *
+   * Almost nothing groups by its raw value: an order groups by DAY, not by the
+   * instant it was placed, or every order is its own group of one.
+   */
+  const SORTABLE = [
+    { key: 'when', label: 'When' },
+    { key: 'order_no', label: 'Order number' },
+    { key: 'status', label: 'Status' },
+    { key: 'payment_status', label: 'Paid' },
+    { key: 'who', label: 'Member of staff' },
+    { key: 'total', label: 'Total' },
+  ];
+
+  const GROUPABLE: GroupChoice[] = [
+    { key: 'day', label: 'Day' },
+    { key: 'side', label: 'Side of the business' },
+    { key: 'status', label: 'Status' },
+    { key: 'payment_status', label: 'Paid' },
+    { key: 'who', label: 'Member of staff' },
+    { key: 'fulfilment', label: 'Where' },
+  ];
+
+  const groupValue = (o: Order, key: string): string => {
+    if (key === 'day') return new Date(o.$createdAt).toLocaleDateString(undefined, { dateStyle: 'full' });
+    if (key === 'side') return MODULE_LABELS[(o.module ?? 'kitchen') as Module] ?? String(o.module);
+    if (key === 'who') return touchedBy(o).map(nameOf).join(', ');
+    if (key === 'fulfilment') return o.fulfilment ?? '';
+    return String((o as unknown as Record<string, unknown>)[key] ?? '');
+  };
+
+  const compareOrders = (a: Order, b: Order, key: string): number => {
+    if (key === 'total') return a.total - b.total;
+    if (key === 'when') return a.$createdAt.localeCompare(b.$createdAt);
+    if (key === 'who') return groupValue(a, 'who').localeCompare(groupValue(b, 'who'));
+    if (key === 'where') return (a.fulfilment ?? '').localeCompare(b.fulfilment ?? '');
+    return String((a as unknown as Record<string, unknown>)[key] ?? '')
+      .localeCompare(String((b as unknown as Record<string, unknown>)[key] ?? ''));
+  };
+
+  // Sorted first, then grouped: the groups are built from rows that are
+  // already in order, so the order holds inside every group.
+  const ordered = useMemo(() => sortRows(visible, sorts, compareOrders), [visible, sorts]);
+  const tree = useMemo(() => groupRows(ordered, groups, groupValue), [ordered, groups]);
 
   const totals = useMemo(() => {
     const paid = visible.filter((o) => o.payment_status === 'paid');
@@ -592,7 +657,49 @@ export function OrdersPage() {
             ))}
           </Select>
         </FilterField>
+
+        {/* Ticking one that is already on moves it to the end of the order
+            rather than removing it — the chip has an × for removing, and
+            clicking a chosen grouping is nearly always an attempt to reorder. */}
+        <PickerMenu label="Group by" count={groups.length} open={menu === 'group'} onOpen={(o) => setMenu(o ? 'group' : null)}>
+          {GROUPABLE.map((g) => (
+            <PickerItem
+              key={g.key}
+              label={g.label}
+              on={groups.some((c) => c.key === g.key)}
+              position={groups.findIndex((c) => c.key === g.key) + 1}
+              onClick={() => setGroups(toggleGroup(groups, g))}
+            />
+          ))}
+        </PickerMenu>
+
+        <PickerMenu label="Sort" count={sorts.length} open={menu === 'sort'} onOpen={(o) => setMenu(o ? 'sort' : null)}>
+          {SORTABLE.map((s2) => (
+            <PickerItem
+              key={s2.key}
+              label={s2.label}
+              on={!!sortDir(sorts, s2.key)}
+              dir={sortDir(sorts, s2.key)}
+              position={sortPosition(sorts, s2.key)}
+              onClick={() => setSorts(cycleSort(sorts, s2.key, s2.label))}
+            />
+          ))}
+        </PickerMenu>
       </FilterBar>
+
+      {/* What is applied, in order. Without this the sequence — the whole
+          point of stacking them — is not visible anywhere on the page. */}
+      <FacetChips
+        facets={[
+          ...groups.map((g) => ({ kind: 'Group', label: g.label })),
+          ...sorts.map((s2) => ({ kind: 'Sort', label: s2.label, detail: s2.dir === 'asc' ? '↑' : '↓' })),
+        ]}
+        onRemove={(i) => {
+          if (i < groups.length) setGroups(groups.filter((_, n) => n !== i));
+          else setSorts(sorts.filter((_, n) => n !== i - groups.length));
+        }}
+        onClear={() => { setGroups([]); setSorts([]); }}
+      />
 
       {orders && (
         <div className="grid-2">
@@ -613,12 +720,37 @@ export function OrdersPage() {
             <table className="data">
               <thead>
                 <tr>
-                  <th>When</th><th>Order</th><th>Where</th><th>Status</th><th>Paid</th>
-                  <th>Who</th><th className="num">Total</th><th />
+                  {([
+                    ['when', 'When', ''], ['order_no', 'Order', ''], ['where', 'Where', ''],
+                    ['status', 'Status', ''], ['payment_status', 'Paid', ''], ['who', 'Who', ''],
+                    ['total', 'Total', 'num'],
+                  ] as [string, string, string][]).map(([key, label, cls]) => (
+                    <SortableTh
+                      key={key}
+                      label={label}
+                      className={cls || undefined}
+                      dir={sortDir(sorts, key)}
+                      position={sortPosition(sorts, key)}
+                      onClick={() => setSorts(cycleSort(sorts, key, label))}
+                    />
+                  ))}
+                  <th />
                 </tr>
               </thead>
               <tbody>
-                {visible.map((o) => (
+                <GroupedRows
+                  nodes={tree}
+                  rows={ordered}
+                  columns={8}
+                  closed={closedGroups}
+                  onToggle={(path) => setClosedGroups((c) => {
+                    const next = new Set(c);
+                    if (next.has(path)) next.delete(path); else next.add(path);
+                    return next;
+                  })}
+                  rowKey={(o) => o.$id}
+                  summary={(rs) => money(rs.reduce((n, o) => n + o.total, 0))}
+                  renderRow={(o) => (
                   <tr key={o.$id}>
                     <td className="dim small">{new Date(o.$createdAt).toLocaleString()}</td>
                     <td style={{ fontWeight: 550 }}>{o.order_no}</td>
@@ -638,7 +770,8 @@ export function OrdersPage() {
                       <Button size="sm" variant="ghost" onClick={() => startEdit(o)}>Change</Button>
                     </td>
                   </tr>
-                ))}
+                  )}
+                />
               </tbody>
             </table>
           </div>
