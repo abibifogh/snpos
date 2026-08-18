@@ -1,0 +1,63 @@
+name: Craft categories
+
+# Finds craft products that show under nothing, and puts back the ones it can
+# work out with certainty.
+#
+# Shows you the list first and changes nothing. Type "fix" to go ahead.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Leave BLANK to preview. Type "fix" to put them back.'
+        required: false
+        default: ''
+
+jobs:
+  categories:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Back up first
+        if: ${{ inputs.confirm == 'fix' }}
+        env:
+          APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT }}
+          APPWRITE_PROJECT_ID: ${{ vars.APPWRITE_PROJECT_ID }}
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+          DB_ID: ${{ vars.DB_ID || 'snpos' }}
+        run: npm run export -- --out=backup-before-categories
+
+      - name: Keep the backup
+        if: ${{ inputs.confirm == 'fix' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: before-categories-${{ github.run_id }}
+          path: backup-before-categories/
+          retention-days: 90
+
+      - name: Look at the categories
+        env:
+          APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT }}
+          APPWRITE_PROJECT_ID: ${{ vars.APPWRITE_PROJECT_ID }}
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+          DB_ID: ${{ vars.DB_ID || 'snpos' }}
+        run: |
+          FLAGS=""
+          if [ "${{ inputs.confirm }}" = "fix" ]; then FLAGS="--apply"; fi
+          npm run craft:categories -- $FLAGS 2>&1 | tee report.txt
+          {
+            if [ "${{ inputs.confirm }}" = "fix" ]; then echo "### Categories put back"; else
+              echo "### Preview only — nothing was changed"
+              echo ''
+              echo 'Run again and type `fix` in the confirmation box to go ahead.'
+            fi
+            echo ''
+            echo '```'
+            cat report.txt
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
