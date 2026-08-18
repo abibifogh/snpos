@@ -122,6 +122,18 @@ console.log(`  ${attached.size} products have sales, stock moves or counts again
 
 const hasHistory = (id) => attached.has(id);
 
+/** One row, with everything that bears on whether it is the real one. */
+const describeRow = (r) => {
+  const marks = [
+    hasImage(r) ? 'picture' : 'no picture',
+    (r.on_hand ?? 0) > 0 ? `${r.on_hand} on the shelf` : 'none on the shelf',
+    hasHistory(r.$id) ? 'HAS sales/stock history' : 'never sold or counted',
+    r.consignor_id ? `owner ${r.consignor_id.slice(0, 8)}` : 'no owner',
+    (r.$createdAt ?? '').slice(0, 16).replace('T', ' '),
+  ];
+  return `${r.$id}  ${marks.join(', ')}`;
+};
+
 /* ------------------------------------------------------------- what to change */
 
 const groups = findDuplicates(craft, { module: 'craft', acrossOwners, hasHistory });
@@ -153,8 +165,28 @@ if (decided.length) {
 
 if (skipped.length) {
   console.log(`These ${skipped.length} need you to look at them — nothing will be touched:\n`);
-  for (const g of skipped) console.log(`  ${describeGroup(g, hasHistory)}`);
+  for (const g of skipped) {
+    console.log(`  ${describeGroup(g, hasHistory)}`);
+    // Shown in full, not just named. "Two copies, no picture" says nothing
+    // about which is the real one; the dates and what is attached do, and
+    // without them there is nothing here for a person to decide ON.
+    for (const r of g.rows) console.log(`      ${describeRow(r)}`);
+  }
   console.log('');
+
+  /*
+    A second import, rather than people entering things twice.
+
+    Worth saying out loud, because it changes the answer. Scattered duplicates
+    want a rule about pictures; a whole catalogue loaded twice wants the second
+    batch removed, and those are different jobs with different risks. If the
+    copies cluster into two runs minutes apart, that is what happened.
+  */
+  const days = new Set(groups.flatMap((g) => g.rows.map((r) => (r.$createdAt ?? '').slice(0, 16))));
+  if (days.size <= 6 && days.size >= 2) {
+    console.log(`  Every copy was created in one of ${days.size} moments: ${[...days].sort().join(', ')}.`);
+    console.log('  That is a catalogue loaded more than once, not people entering things twice.\n');
+  }
 }
 
 if (!apply) {
