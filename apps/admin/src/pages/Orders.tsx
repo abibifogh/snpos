@@ -107,6 +107,54 @@ export function OrdersPage() {
     if (how === 'cancel' && !killReason.trim()) return;
     setKillBusy(true);
     try {
+      /*
+        Ask the server to unwind the sale BEFORE the order goes.
+
+        Two things hang off an order that this page cannot reach. The pieces
+        came off the shelf, and the maker was credited — and the consignor
+        ledger has no write permission for anybody at all, deliberately,
+        because it is what a maker is paid from. So a browser cannot put
+        either right however carefully it tries.
+
+        Without this, cancelling a sale left the shop one bowl short on the
+        count and the maker still owed for it, with the order gone and nothing
+        left to explain either. The request goes first because it needs the
+        order and its lines to still be there to read.
+
+        Erase for a delete, refund for a cancel: a deleted order should leave
+        no trace anywhere including the statement, a cancelled one stays on
+        the record marked void.
+      */
+      const request = await db.createDocument(DB_ID, 'order_reversals', ID.unique(), {
+        venue_id: order.venue_id,
+        order_id: order.$id,
+        mode: how === 'delete' ? 'erase' : 'refund',
+        requested_at: new Date().toISOString(),
+        requested_by: user?.$id ?? '',
+        reason: killReason.trim().slice(0, 300),
+        status: 'requested',
+      }).catch(() => null);
+
+      /*
+        Wait for it, because the order has to still be here for the server to
+        read its lines. Delete first and the movements can never be found,
+        which leaves the shelf short and the maker still owed — the exact
+        failure this whole path exists to stop.
+
+        Ten seconds, then carry on regardless: an admin who has decided to
+        cancel an order should not be stuck on a screen because a function is
+        slow. What was put back is on the reversal row either way.
+      */
+      let unwound = '';
+      if (request) {
+        for (let i = 0; i < 20; i += 1) {
+          await new Promise((r) => { setTimeout(r, 500); });
+          const row = await db.getDocument(DB_ID, 'order_reversals', request.$id).catch(() => null) as
+            { status?: string; note?: string } | null;
+          if (row?.status === 'done' || row?.status === 'failed') { unwound = row.note ?? ''; break; }
+        }
+      }
+
       if (how === 'cancel') {
         await cancelOrder(order, { reason: killReason.trim(), userId: user?.$id ?? '' });
       } else {
@@ -126,7 +174,10 @@ export function OrdersPage() {
       setKillReason('');
       setOpen(null);
       await load();
-      toast(how === 'cancel' ? `${order.order_no} cancelled` : `${order.order_no} deleted`);
+      // What went back matters more than the fact it was cancelled, so it is
+      // said rather than left on a row nobody opens.
+      const did = how === 'cancel' ? `${order.order_no} cancelled` : `${order.order_no} deleted`;
+      toast(unwound ? `${did}. ${unwound}` : did);
     } catch (e) {
       toast(humanError(e), 'err');
     } finally {

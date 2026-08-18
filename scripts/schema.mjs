@@ -1185,6 +1185,46 @@ export const COLLECTIONS = [
   },
   {
     /**
+     * Taking a sale back out, after it has been paid for.
+     *
+     * A request rather than an action, for the same reason cancellations are:
+     * the consignor ledger has NO create, update or delete permission for
+     * anybody at all. That is deliberate — it is what a maker is paid from,
+     * and a balance somebody can type into is not evidence. So an admin says
+     * what should happen here, and the server, which holds the API key, is the
+     * only thing that touches the ledger.
+     *
+     * `mode` is the difference between two jobs that get asked for in the same
+     * words. A TEST sale should leave no trace anywhere, including on the
+     * maker's statement. A MISTAKE is a real sale coming back: the money goes
+     * out, the piece goes back on the shelf, and the order stays on the record
+     * marked void, because somebody was genuinely served and it genuinely came
+     * back.
+     *
+     * The row stays either way. "Why is this piece back in stock and where did
+     * the money go" is a question somebody asks weeks later, and the answer
+     * should not be a gap.
+     */
+    id: 'order_reversals',
+    name: 'Order reversals',
+    perms: { read: MGMT, create: ADMIN, update: [], delete: [] },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['order_id', 's', 64, true],
+      ['mode', 'e', ['erase', 'refund'], true, 'refund'],
+      ['requested_at', 'd', null, false],
+      ['requested_by', 's', 64, false],
+      ['reason', 's', 300, false],
+      ['status', 'e', ['requested', 'done', 'failed'], false, 'requested'],
+      // What the server actually managed to do, in words. A reversal that
+      // could not remove a paid-out consignment entry has to say so somewhere,
+      // and the person who asked for it is not watching a log.
+      ['note', 's', 1000, false],
+    ],
+    indexes: [['order', 'key', ['order_id']], ['status_requested', 'key', ['status', 'requested_at']]],
+  },
+  {
+    /**
      * Expense categories, defined by the restaurant.
      *
      * `account_code` is what makes a category more than a label: it decides

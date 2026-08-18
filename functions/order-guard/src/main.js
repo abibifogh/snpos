@@ -473,6 +473,214 @@ const CANCEL_WINDOW_MS = 2 * 60 * 1000;
  * The row is always updated, never deleted. Somebody asking tomorrow why the
  * food they thought they had called off still arrived deserves an answer.
  */
+/**
+ * Take a paid sale back out again.
+ *
+ * Runs here, not in the browser, because `consignor_ledger` has no create,
+ * update or delete permission for anybody at all. That is deliberate: it is
+ * what a maker is paid from, and a balance somebody can type into is not
+ * evidence. An admin asks, and the thing holding the API key acts.
+ *
+ * Stock goes back by INVERTING THE MOVEMENTS THAT HAPPENED, not by working out
+ * afresh what the sale should have used. A recipe edited since the sale, a
+ * pack size corrected, a variant renamed — any of those make a recomputed
+ * reversal put back a different amount from what was taken, and the error is
+ * silent and permanent. The movement rows are the record of what actually
+ * left the shelf, so they are what gets undone.
+ *
+ * Two modes, because two different things are asked for in the same words:
+ *
+ *   erase   a test. Nothing should be left anywhere, so the movement rows go
+ *           too and the shelf simply reads as it did before.
+ *   refund  a real sale coming back. The stock returns as its own movement, so
+ *           the history reads as a sale and a return rather than as a sale
+ *           that quietly unhappened.
+ *
+ * The order itself, its lines and its payments are left to the admin page,
+ * which already removes them with the audit entry and the shift recomputation
+ * that belong with that. Doing it in two places is how the two drift apart.
+ *
+ * The consignment credit is REMOVED in both modes rather than reversed. A
+ * statement carrying "Sale 49" and "Refund -49" for a piece that never left
+ * the shop is one a maker has to read twice and the shop has to explain. The
+ * exception is a line already paid out: the payout points at it, so deleting
+ * would leave real money sitting against nothing. Those get an opposite entry
+ * and the note says so.
+ */
+async function reverseSale({ db, DB_ID, doc, log }) {
+  const settle = (status, note) =>
+    db.updateDocument(DB_ID, 'order_reversals', doc.$id, {
+      status,
+      note: (note || '').slice(0, 1000),
+    }).catch(() => undefined);
+
+  const erase = doc.mode === 'erase';
+  const order = await db.getDocument(DB_ID, 'orders', doc.order_id).catch(() => null);
+  if (!order) return settle('failed', 'That order no longer exists.').then(() => ({ ok: false }));
+
+  const items = await db.listDocuments(DB_ID, 'order_items', [
+    Query.equal('order_id', order.$id), Query.limit(100),
+  ]).catch(() => ({ documents: [] }));
+  const lineIds = items.documents.map((l) => l.$id);
+  const said = [];
+
+  /* ------------------------------------------------- the pieces, back on the shelf */
+
+  let putBack = 0;
+  for (const lineId of lineIds) {
+    const moves = await db.listDocuments(DB_ID, 'product_moves', [
+      Query.equal('ref_type', 'order_item'), Query.equal('ref_id', lineId), Query.limit(50),
+    ]).catch(() => ({ documents: [] }));
+
+    for (const m of moves.documents) {
+      const back = -(m.qty_delta || 0);
+      if (!back) continue;
+
+      if (m.variant_id) {
+        const v = await db.getDocument(DB_ID, 'product_variants', m.variant_id).catch(() => null);
+        if (v) {
+          await db.updateDocument(DB_ID, 'product_variants', v.$id, {
+            on_hand: (v.on_hand || 0) + back,
+          }).catch(() => undefined);
+        }
+      } else if (m.menu_item_id) {
+        const it = await db.getDocument(DB_ID, 'menu_items', m.menu_item_id).catch(() => null);
+        if (it) {
+          await db.updateDocument(DB_ID, 'menu_items', it.$id, {
+            on_hand: (it.on_hand || 0) + back,
+          }).catch(() => undefined);
+        }
+      }
+
+      if (erase) {
+        await db.deleteDocument(DB_ID, 'product_moves', m.$id).catch(() => undefined);
+      } else {
+        // The opposite move, so the history reads as a sale and a return
+        // rather than as a sale that quietly unhappened.
+        await db.createDocument(DB_ID, 'product_moves', 'unique()', {
+          venue_id: m.venue_id,
+          menu_item_id: m.menu_item_id,
+          variant_id: m.variant_id || '',
+          consignor_id: m.consignor_id || '',
+          type: 'refund',
+          qty_delta: back,
+          unit_price: m.unit_price || 0,
+          ref_type: 'order_item',
+          ref_id: '',
+          shift_id: order.shift_id || '',
+          note: `Reversed: ${doc.reason || 'no reason given'}`,
+        }).catch(() => undefined);
+      }
+      putBack += back;
+    }
+  }
+  if (putBack) said.push(`${putBack} piece(s) back on the shelf.`);
+
+  /* ------------------------------------------------------ the bar, back in the bottle */
+
+  let pouredBack = 0;
+  for (const lineId of lineIds) {
+    const moves = await db.listDocuments(DB_ID, 'stock_movements', [
+      Query.equal('ref_type', 'order_item'), Query.equal('ref_id', lineId), Query.limit(50),
+    ]).catch(() => ({ documents: [] }));
+
+    for (const m of moves.documents) {
+      const back = -(m.qty_delta || 0);
+      if (!back) continue;
+
+      // Back to the same place it came off. Putting it on the total, or on
+      // the store, would leave the bar's own level short and the next count
+      // wrong in a way nobody could trace.
+      if (m.location_id) {
+        const rows = await db.listDocuments(DB_ID, 'stock_levels', [
+          Query.equal('ingredient_id', m.ingredient_id),
+          Query.equal('location_id', m.location_id),
+          Query.limit(1),
+        ]).catch(() => ({ documents: [] }));
+        const at = rows.documents[0];
+        if (at) {
+          await db.updateDocument(DB_ID, 'stock_levels', at.$id, { qty: (at.qty || 0) + back }).catch(() => undefined);
+        }
+      }
+
+      if (erase) {
+        await db.deleteDocument(DB_ID, 'stock_movements', m.$id).catch(() => undefined);
+      } else {
+        await db.createDocument(DB_ID, 'stock_movements', 'unique()', {
+          venue_id: m.venue_id,
+          ingredient_id: m.ingredient_id,
+          type: 'adjustment',
+          qty_delta: back,
+          unit_cost: m.unit_cost || 0,
+          location_id: m.location_id || '',
+          ref_type: 'order_item',
+          ref_id: '',
+          shift_id: order.shift_id || '',
+          note: `Reversed: ${doc.reason || 'no reason given'}`,
+        }).catch(() => undefined);
+      }
+      pouredBack += 1;
+    }
+  }
+  if (pouredBack) said.push(`${pouredBack} pour(s) put back.`);
+
+  /* -------------------------------------------------------- the maker's statement */
+
+  const entries = await db.listDocuments(DB_ID, 'consignor_ledger', [
+    Query.equal('order_id', order.$id), Query.limit(100),
+  ]).catch(() => ({ documents: [] }));
+
+  let removed = 0;
+  let offset = 0;
+  for (const e of entries.documents) {
+    if ((e.payout_id || '').trim()) {
+      // Already paid for. Deleting would leave the payout covering a sale that
+      // does not exist, and the statement would stop adding up.
+      await db.createDocument(DB_ID, 'consignor_ledger', 'unique()', {
+        venue_id: e.venue_id,
+        consignor_id: e.consignor_id,
+        entry_at: new Date().toISOString(),
+        kind: 'refund',
+        amount: -(e.amount || 0),
+        description: `Reversed: ${e.description || ''}`.slice(0, 200),
+        order_id: '',
+        menu_item_id: e.menu_item_id || '',
+        variant_label: e.variant_label || '',
+        qty: e.qty || 0,
+        gross: -(e.gross || 0),
+        commission: -(e.commission || 0),
+        created_by: doc.requested_by || '',
+      }).catch(() => undefined);
+      offset += 1;
+    } else {
+      await db.deleteDocument(DB_ID, 'consignor_ledger', e.$id).catch(() => undefined);
+      removed += 1;
+    }
+  }
+  if (removed) said.push(`${removed} consignment entr${removed === 1 ? 'y' : 'ies'} removed from the statement.`);
+  if (offset) {
+    said.push(`${offset} could not be removed because the maker has already been paid for `
+      + `${offset === 1 ? 'it' : 'them'}; an opposite entry was written instead.`);
+  }
+
+  /*
+    The order, its lines and its payments are deliberately NOT touched here.
+
+    The admin page already cancels or deletes them, with the audit entry and
+    the shift recomputation that go with it, and doing it twice from two
+    places is how the two drift. This does only the part a browser cannot:
+    stock levels, which need reading the movements back, and the consignor
+    ledger, which nobody is permitted to write to at all.
+
+    The page waits for this to finish before removing the order, because the
+    lines have to still exist for the movements to be found.
+  */
+  const note = said.join(' ') || 'Nothing needed putting back.';
+  log(`Reversed ${order.order_no || order.$id} (${doc.mode}): ${note}`);
+  await settle('done', note);
+  return { ok: true, mode: doc.mode, note };
+}
+
 async function cancelForCustomer({ db, DB_ID, doc, log }) {
   const settle = (status, refused_reason) =>
     db.updateDocument(DB_ID, 'order_cancellations', doc.$id, {
@@ -582,6 +790,22 @@ export default async ({ req, res, log, error }) => {
   // The guest asked; the server decides. The window is short on purpose: a
   // couple of minutes covers the ordinary "wrong thing, sent too fast" and
   // stops short of food that has been started.
+  // An admin asking for a paid sale to be taken back out. Only the server may
+  // touch the consignor ledger, so the request comes in as a row and the work
+  // happens here.
+  if (events.some((e) => e.includes('collections.order_reversals'))) {
+    if (doc.status && doc.status !== 'requested') return res.json({ skipped: 'already handled' });
+    try {
+      return res.json(await reverseSale({ db, DB_ID, doc, log }));
+    } catch (e) {
+      error(`Reversal failed for ${doc.$id}: ${e.message}`);
+      await db.updateDocument(DB_ID, 'order_reversals', doc.$id, {
+        status: 'failed', note: e.message.slice(0, 1000),
+      }).catch(() => undefined);
+      return res.json({ ok: false, error: e.message }, 500);
+    }
+  }
+
   if (events.some((e) => e.includes('collections.order_cancellations'))) {
     try {
       return res.json(await cancelForCustomer({ db, DB_ID, doc, log }));
