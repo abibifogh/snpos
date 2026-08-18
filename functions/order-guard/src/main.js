@@ -161,9 +161,21 @@ async function depleteShelf({ db, DB_ID, order, lines, log }) {
       : null;
     const item = await db.getDocument(DB_ID, 'menu_items', line.menu_item_id).catch(() => null);
 
-    // A restaurant tracks ingredients, not pieces, and its dishes have no shelf
-    // to come off. Only the shop's catalogue is counted this way.
-    if (!variant && (item?.module ?? 'kitchen') !== 'craft') continue;
+    /*
+      Only the shop's catalogue is counted this way.
+
+      A restaurant tracks ingredients, not pieces, and its dishes have no shelf
+      to come off. Neither does a bar: a drink's stock leaves through its
+      recipe, in pourFromBottles below, which takes the measure out of the
+      bottle it came from.
+
+      This used to read "unless it has a variant", which was true only while
+      the shop was the sole side with sizes. Now that a spirit sells as a
+      single and a double, that spelling would take the double off a variant
+      count AND pour it out of the bottle — the same drink leaving twice, and
+      a bar short by however many doubles it sold.
+    */
+    if ((item?.module ?? 'kitchen') !== 'craft') continue;
 
     await db.createDocument(DB_ID, 'product_moves', 'unique()', {
       venue_id: order.venue_id,

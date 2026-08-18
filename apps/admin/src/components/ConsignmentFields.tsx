@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Badge, Button, Field, Input, Select, Textarea, Toggle } from '@snpos/ui';
 import { parseMoney, toInput } from '@snpos/core';
-import type { Consignor, MenuItem, ProductVariant, VariantType } from '@snpos/core';
+import type { Consignor, MenuItem, ProductVariant, VariantType, Module } from '@snpos/core';
 
 /** A size row being edited, before it is written. */
 export interface DraftVariant {
@@ -42,8 +42,19 @@ export const blankVariant = (kindKey = 'size'): DraftVariant => ({
 export function ConsignmentFields({
   editing, setEditing, consignors, variants, setVariants,
   removedVariantIds, setRemovedVariantIds, symbol, decimals,
-  onHandText, setOnHandText, variantTypes,
+  onHandText, setOnHandText, variantTypes, module,
 }: {
+  /**
+   * Which side is being edited.
+   *
+   * Sizes belong to the shop AND the bar — a spirit as a single and a double
+   * is the same shape as a basket in three sizes. Everything else here is the
+   * shop's alone: whose work it is, what commission it carries, whether there
+   * is only ever one of them, the card that sits beside it. A bar has no
+   * makers and no one-off bottles, and asking a bartender about either is
+   * asking a question with no answer.
+   */
+  module: Module;
   editing: Partial<MenuItem>;
   setEditing: (v: Partial<MenuItem>) => void;
   /** Held as text so backspacing the last digit does not refill itself. */
@@ -90,8 +101,12 @@ export function ConsignmentFields({
       return rows.filter((_, i) => i !== index);
     });
 
+  const consigned = module === 'craft';
+
   return (
     <>
+      {consigned && (
+      <>
       <div className="grid-2">
         <Field
           label="Whose work is this?"
@@ -194,11 +209,15 @@ export function ConsignmentFields({
           onChange={(e) => setEditing({ ...editing, maker_note: e.target.value })}
         />
       </Field>
+      </>
+      )}
 
       {/* -------------------------------------------------------- sizes ---- */}
       <Field
         label="Variants"
-        hint={`A basket in small, medium and large is one product and three prices. Add a row for each; leave it empty if the piece has only one price. The kinds offered here (${variantTypes.map((t) => t.name.toLowerCase()).join(', ')}) are yours to change under Craft shop, Products, Variant types.`}
+        hint={consigned
+          ? `A basket in small, medium and large is one product and three prices. Add a row for each; leave it empty if the piece has only one price. The kinds offered here (${variantTypes.map((t) => t.name.toLowerCase()).join(', ')}) are yours to change under Craft shop, Products, Variant types.`
+          : `A spirit as a single and a double is one drink and two prices. Add a row for each; leave it empty if the drink has only one price. The kinds offered here (${variantTypes.map((t) => t.name.toLowerCase()).join(', ')}) are yours to change on the Variant types tab.`}
       >
         <div>
           {variants.length === 0 && (

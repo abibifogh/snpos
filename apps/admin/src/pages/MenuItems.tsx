@@ -854,6 +854,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
 
           {hasSizes && (
             <ConsignmentFields
+              module={module}
               editing={editing}
               setEditing={setEditing}
               onHandText={onHandText}
