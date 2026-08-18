@@ -817,6 +817,14 @@ export const COLLECTIONS = [
        */
       ['idle_minutes', 'i', null, false, 0],
       /**
+       * The margin below which a drink or dish is flagged, in basis points.
+       *
+       * 3000 is 30%. Not required, and absent reads as the default rather than
+       * as "flag nothing": a house that has not set a line still wants the
+       * obviously thin ones coloured.
+       */
+      ['margin_warn_bp', 'i', null, false, 3000],
+      /**
        * What the KITCHEN is measured against: the cooking time alone, summed
        * from the prep time set on each dish.
        *

@@ -299,7 +299,7 @@ export function LocationsPage() {
                     <tr>
                       <th>What</th>
                       <th className="num">In {from?.name ?? 'the source'}</th>
-                      <th style={{ width: '8rem' }}>Move how much</th>
+                      <th style={{ width: '7rem' }}>Move</th>
                       <th className="num">Leaves behind</th>
                     </tr>
                   </thead>

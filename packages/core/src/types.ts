@@ -15,6 +15,8 @@ export interface Settings extends Doc {
   timezone: string;
   /** Minutes of quiet before a till shows the clock. 0 or absent is off. */
   idle_minutes?: number;
+  /** Margin below which an item is flagged, in basis points. Absent is 30%. */
+  margin_warn_bp?: number;
   currency_code: string;
   currency_symbol: string;
   currency_decimals: number;

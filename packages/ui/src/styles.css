@@ -181,6 +181,32 @@ table.data th {
   border-bottom: 1px solid var(--border); white-space: nowrap;
 }
 table.data td { padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+/*
+  A box in a cell lines up with the heading above it.
+
+  A heading's text starts 0.9rem in from the cell edge. An input placed in a
+  cell keeps the same cell padding and then adds its own border and 0.7rem of
+  padding, so the text inside it started about a space and a half further
+  right than the column it belonged to. Every table with a box in it was
+  slightly out, which reads as sloppiness long before anybody works out why.
+
+  So a cell holding a control gives up its own horizontal padding, and the
+  control's padding does the same job — putting the text back at 0.9rem. The
+  vertical padding shrinks too, because the control already brings its own
+  height and the row would otherwise grow every time.
+*/
+table.data td:has(.input),
+table.data td:has(.select),
+table.data td:has(.textarea) {
+  padding: 0.3rem 0.15rem;
+}
+/* The first and last columns keep their outer edge, so the table still has a
+   margin rather than a control touching its frame. */
+table.data td:first-child:has(.input),
+table.data td:first-child:has(.select) { padding-left: 0.75rem; }
+table.data td:last-child:has(.input),
+table.data td:last-child:has(.select) { padding-right: 0.75rem; }
+
 table.data tr:last-child td { border-bottom: none; }
 table.data tbody tr:hover { background: var(--surface-2); }
 .num { text-align: right; font-variant-numeric: tabular-nums; }

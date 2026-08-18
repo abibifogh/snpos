@@ -5,6 +5,7 @@ import {
   formatMoney, parseMoney, toInput, previewUrl, Query, loadConsignors, loadVariants, canEditCatalogue,
   loadVariantTypes,
   matches, sortItems, ITEM_SORTS,
+  marginOf, marginIsThin, bpAsPercent, MARGIN_WARN_BP_DEFAULT,
 } from '@snpos/core';
 import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
@@ -61,6 +62,35 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   const [pickedAddons, setPickedAddons] = useState<string[]>([]);
   const [filter, setFilter] = useState('');
   const [onlyCategory, setOnlyCategory] = useState('');
+  /**
+   * Archived items are out of the way, not gone.
+   *
+   * A seasonal cocktail comes back next year with its recipe, its price and
+   * its history. Deleting it to get it off the board throws all three away,
+   * and the only alternative on offer was deleting it.
+   */
+  const [showArchived, setShowArchived] = useState(false);
+  const archivedCount = (items ?? []).filter((i) => !i.active).length;
+
+  /** Costings are an owner's business, not a cook's. */
+  const isAdmin = profile?.role === 'admin';
+  const warnBp = settings?.margin_warn_bp ?? MARGIN_WARN_BP_DEFAULT;
+
+  /**
+   * What this item costs and keeps, at today's ingredient prices.
+   *
+   * Worked out from the recipes already loaded for this page rather than
+   * asking again per row: a bar with eighty drinks would otherwise make eighty
+   * queries to draw one table.
+   */
+  const marginFor = (item: MenuItem) =>
+    marginOf(
+      item.price,
+      recipes
+        .filter((r) => r.menu_item_id === item.$id)
+        .map((r) => ({ ingredientId: r.ingredient_id, qtyPerUnit: r.qty_per_unit, wastageBp: r.wastage_bp })),
+      ingredients,
+    );
   const [sortBy, setSortBy] = useState<ItemSort>('menu');
   const [uploading, setUploading] = useState(false);
   const [uploadingDrinks, setUploadingDrinks] = useState(false);
@@ -125,6 +155,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   const visible = useMemo(
     () => sortItems(
       (items ?? [])
+        .filter((i) => showArchived || i.active)
         .filter((i) => matches(i.name, filter))
         // A dish can sit in several categories, so the filter asks whether it
         // is in this one at all rather than whether it is its primary.
@@ -134,7 +165,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
         .map((i) => ({ ...i, categoryName: byCategory[i.category_id] ?? '' })),
       sortBy,
     ),
-    [items, filter, onlyCategory, sortBy, links, byCategory],
+    [items, filter, onlyCategory, sortBy, links, byCategory, showArchived],
   );
 
   /** Every category a dish belongs to: its primary, plus any extra links. */
@@ -366,6 +397,23 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     }
   };
 
+  /**
+   * Off the board, keeping everything about it.
+   *
+   * The status column already showed Active or Hidden; what was missing was
+   * any way to change it without opening the item, and any way to stop the
+   * archived ones filling the list once there were a few.
+   */
+  const setArchived = async (item: MenuItem, archived: boolean) => {
+    try {
+      await db.updateDocument(DB_ID, 'menu_items', item.$id, { active: !archived });
+      setItems((rows) => (rows ?? []).map((r) => (r.$id === item.$id ? { ...r, active: !archived } : r)));
+      toast(archived ? `${item.name} archived` : `${item.name} is back on the list`);
+    } catch (e) {
+      setError(humanError(e));
+    }
+  };
+
   const remove = async (item: MenuItem) => {
     if (!confirm(`Delete "${item.name}"? Past orders keep their own copy of the name and price, so your records stay intact.`)) return;
     try {
@@ -460,6 +508,11 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
           <Select value={sortBy} onChange={(e) => setSortBy(e.target.value as ItemSort)}>
             {ITEM_SORTS.map((s2) => <option key={s2.value} value={s2.value}>{s2.label}</option>)}
           </Select>
+          {archivedCount > 0 && (
+            <Button onClick={() => setShowArchived((v) => !v)}>
+              {showArchived ? 'Hide archived' : `Show archived (${archivedCount})`}
+            </Button>
+          )}
           {(filter || onlyCategory || sortBy !== 'menu') && (
             <span className="small dim">
               {visible.length} of {items.length}
@@ -484,6 +537,11 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
                   <th>Name</th>
                   <th>Categories</th>
                   <th className="num">Price</th>
+                  {/* An owner's columns. A cook does not price the menu, and a
+                      costing on a screen used at the pass is a number that
+                      gets read out to the wrong person. */}
+                  {isAdmin && <th className="num">Costs</th>}
+                  {isAdmin && <th className="num">Margin</th>}
                   <th className="num">Prep</th>
                   <th>Status</th>
                   <th />
@@ -524,6 +582,28 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
                       )}
                     </td>
                     <td className="num">{settings ? formatMoney(i.price, settings) : i.price}</td>
+                    {isAdmin && (() => {
+                      const m = marginFor(i);
+                      return (
+                        <>
+                          <td className="num dim">
+                            {m.unknown ? '—' : (settings ? formatMoney(m.cost, settings) : m.cost)}
+                          </td>
+                          <td className="num">
+                            {m.unknown ? (
+                              // Not a thin margin: an unanswered question.
+                              // Colouring it would train people past the colour
+                              // on the ones that are real.
+                              <span className="dim" title="No recipe, so there is nothing to cost">—</span>
+                            ) : (
+                              <Badge tone={marginIsThin(m, warnBp) ? 'danger' : 'ok'}>
+                                {bpAsPercent(m.bp)}
+                              </Badge>
+                            )}
+                          </td>
+                        </>
+                      );
+                    })()}
                     <td className="num dim">{i.prep_minutes}m</td>
                     <td>{i.active ? <Badge tone="ok">Active</Badge> : <Badge>Hidden</Badge>}</td>
                     <td className="num">
@@ -534,6 +614,16 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
                         <>
                           <Button size="sm" variant="ghost" onClick={() => open(i, true)} title={`Copy this ${W.one}, options and all`}>
                             Duplicate
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => void setArchived(i, i.active)}
+                            title={i.active
+                              ? 'Take it off the board, keeping its recipe, price and history'
+                              : 'Put it back on the board'}
+                          >
+                            {i.active ? 'Archive' : 'Restore'}
                           </Button>
                           <Button size="sm" variant="ghost" onClick={() => remove(i)}>Delete</Button>
                         </>

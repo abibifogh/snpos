@@ -53,6 +53,7 @@ const FIELD_LABELS: Record<string, string> = {
   order_number_mode: 'Order numbering',
   order_number_padding: 'Order number length',
   idle_minutes: 'Idle clock',
+  margin_warn_bp: 'Thin-margin line',
   order_number_next: 'Next order number',
   order_number_reset_on: 'Order numbering reset',
   email_from_name: 'Email from name',
@@ -248,6 +249,7 @@ export function SettingsPage() {
         order_number_mode: form.order_number_mode ?? 'continuous',
         order_number_padding: Number(form.order_number_padding ?? 4),
         idle_minutes: Math.max(0, Math.floor(Number(form.idle_minutes ?? 0))),
+        margin_warn_bp: Math.max(0, Math.min(10000, Math.round(Number(form.margin_warn_bp ?? 3000)))),
         order_number_next: Number(form.order_number_next ?? 1),
         order_number_reset_on: form.order_number_reset_on || undefined,
         email_from_name: form.email_from_name ?? '',
@@ -446,6 +448,23 @@ export function SettingsPage() {
               min="0"
               value={form.idle_minutes ?? 0}
               onChange={(e) => set('idle_minutes', Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+            />
+          </Field>
+        </div>
+
+        <h3 style={{ marginTop: '1.6rem' }}>Margins</h3>
+        <div className="grid-2">
+          <Field
+            label="Flag a margin below (%)"
+            hint="Shown on the drinks and dishes lists, to admins only. An item with no recipe is never flagged — that is an unanswered question, not a thin margin."
+          >
+            <Input
+              type="number"
+              step="1"
+              min="0"
+              max="100"
+              value={((form.margin_warn_bp ?? 3000) / 100).toFixed(0)}
+              onChange={(e) => set('margin_warn_bp', Math.max(0, Math.min(10000, Math.round(Number(e.target.value) * 100) || 0)))}
             />
           </Field>
         </div>

@@ -592,9 +592,19 @@ export async function barCountSheet(venueId: string, locationId?: string): Promi
   const counter = locations.find((l) => l.$id === locationId) ?? saleLocation(locations, 'bar');
   const levels = counter ? await loadLevels([counter.$id]) : [];
 
-  // Only what a bartender is asked for twice a day. See shiftCounted: with
-  // nothing marked this is still the whole bar, which is what it was.
-  return shiftCounted(ingredients.filter((i) => i.active && (i.module ?? 'kitchen') === 'bar'))
+  /*
+    The shift's narrowing applies to the BAR, not to a store room.
+
+    What a bartender is asked for twice a day is the bottled drinks. A store
+    room is counted every few weeks and the whole point is the spirits — so
+    narrowing it to the shift list would leave the one thing being counted off
+    the sheet entirely, and the count would come back saying the store holds
+    nothing but beer.
+  */
+  const onShelf = ingredients.filter((i) => i.active && (i.module ?? 'kitchen') === 'bar');
+  const rows = counter?.kind === 'store' ? onShelf : shiftCounted(onShelf);
+
+  return rows
     .map((i) => ({
       ingredientId: i.$id,
       name: i.name,
