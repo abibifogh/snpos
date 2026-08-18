@@ -1,9 +1,12 @@
 # The reporting API
 
-> **Switched off.** The `notify` function's execute permission is empty, so
-> Appwrite refuses every call from outside, whatever it carries. Nothing about
-> the code has been removed: turning it back on is one line in `appwrite.json`
-> and a deploy. See "Turning it back on" at the end.
+> **Switched on.** `notify` now has `"execute": ["any"]`, because the group-hub
+> sign-in hand-off (doc 19) lands on the same function and the person following
+> that link has no account here yet by definition. `any` means Appwrite will
+> *run* the function for anybody; it does not mean this API serves anybody.
+> Without `REPORTS_API_KEY` set, every reporting request is still refused, and
+> an HTTP request that is neither `/reports` nor `/sso` is now answered 404
+> before a database is read.
 
 A read-only door onto the records, so another system can pull the data and do
 its own analysis.

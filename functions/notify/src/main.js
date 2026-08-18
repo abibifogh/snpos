@@ -1,9 +1,10 @@
-import { Client, Databases, Query } from 'node-appwrite';
+import { Client, Databases, Query, Users } from 'node-appwrite';
 import nodemailer from 'nodemailer';
 import { receiptPdf } from './receipt-pdf.js';
 import { dailyDigest, nightlyBackup } from './daily.js';
 import { ensureLogin, revokeLogin } from './staff.js';
 import { handleReports } from './reports.js';
+import { handleSso } from './sso.js';
 
 /**
  * Everything that sends an email.
@@ -332,6 +333,22 @@ export default async ({ req, res, log, error }) => {
   const DB_ID = process.env.DB_ID || 'snpos';
 
   const events = (req.headers['x-appwrite-event'] || '').split(',').filter(Boolean);
+
+  /**
+   * Somebody arriving from the group hub already signed in.
+   *
+   * First, alongside the reporting API and for the same reason: a request from
+   * the outside world must not be able to fall through into anything that
+   * sends email or reads the whole database. Returns null when the request is
+   * not for it, and has already answered when it is.
+   *
+   * It lives in this function rather than one of its own because the plan
+   * allows four functions and this project has four — the same arithmetic that
+   * put the hourly sweep and the reporting API here.
+   */
+  const handedOver = await handleSso({ req, res, users: new Users(client), log, error });
+  if (handedOver) return handedOver;
+
   /**
    * The reporting API, before anything else happens.
    *
@@ -354,6 +371,25 @@ export default async ({ req, res, log, error }) => {
    * unrecognised request does nothing at all.
    */
   const trigger = String(req.headers['x-appwrite-trigger'] || '').toLowerCase();
+
+  /**
+   * An HTTP request that got past both doors is knocking on neither.
+   *
+   * Everything below this line is an event or the timer. The sweep already
+   * refused an HTTP call with no body; a call *with* a body used to fall
+   * straight through to the event handling, which was only safe while nothing
+   * outside could invoke this function at all.
+   *
+   * Accepting a hand-off from the group hub means it can be — the person
+   * following that link has no account here yet by definition, so the function
+   * has to answer to `any`. So the case is now closed rather than assumed: two
+   * paths are for the outside world, both have already answered, and anything
+   * else arriving over HTTP gets a 404 before a database is read or an email
+   * is composed.
+   */
+  if (trigger === 'http') {
+    return res.json({ ok: false, error: 'Nothing to do.' }, 404);
+  }
 
   const doc = req.bodyJson ?? (req.body ? JSON.parse(req.body) : null);
 

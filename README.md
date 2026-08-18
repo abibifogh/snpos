@@ -25,6 +25,9 @@ an accounting/analytics layer.
 | [14, Discounts](docs/14-discounts.md) | Discounts, codes, and marking a bill paid |
 | [15, Manual console setup](docs/15-manual-console-setup.md) | Every collection, field and index, for building by hand |
 | [16, Automated deployment](docs/16-automated-deployment.md) | **Deploy from GitHub, no local commands** |
+| [17, Testing](docs/17-testing.md) | What is covered, and how to run it |
+| [18, Reporting API](docs/18-reports-api.md) | The read-only door another system pulls data through |
+| [19, Group sign-in](docs/19-group-sign-in.md) | Arriving already signed in from the Insight hub |
 
 ## Confirmed decisions
 

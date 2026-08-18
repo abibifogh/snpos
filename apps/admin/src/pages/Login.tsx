@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Card, Field, Input, Notice, Logo } from '@snpos/ui';
 import { useSession } from '../session';
 import { account, humanError } from '../lib';
@@ -14,8 +14,8 @@ import { signOutCompletely } from '@snpos/core';
 export const passwordSetupUrl = () =>
   `${window.location.origin}${import.meta.env.BASE_URL}#/set-password`;
 
-/** The userId and secret carried by a link from an email. */
-function credentialsFromUrl(): { userId: string; secret: string; kind: 'token' | 'recovery' } | null {
+/** The userId and secret carried by a link from an email, or from the group hub. */
+function credentialsFromUrl(): { userId: string; secret: string; kind: 'token' | 'recovery' | 'sso' } | null {
   // Both the hash and the ordinary query string are checked. Appwrite appends
   // its parameters to whatever URL it was given, and which side of the "#"
   // they end up on depends on how the link was built.
@@ -26,10 +26,15 @@ function credentialsFromUrl(): { userId: string; secret: string; kind: 'token' |
   const userId = inHash.get('userId') || inQuery.get('userId') || '';
   const secret = inHash.get('secret') || inQuery.get('secret') || '';
   if (!userId || !secret) return null;
-  // Two kinds of link arrive with the same two values, and they are redeemed by
-  // different calls. The one this system sends signs you in; the one Appwrite
-  // sends resets a password.
-  return { userId, secret, kind: window.location.hash.startsWith('#/token') ? 'token' : 'recovery' };
+  // Three kinds of link arrive with the same two values, redeemed by different
+  // calls and meaning different things. `#/token` is a staff invitation: it
+  // signs you in so you can choose a password. `#/sso` is the group hub handing
+  // somebody over who signed in there a moment ago — they already have a
+  // password and asking for another one is a step that exists for no reason.
+  // Anything else is Appwrite's own password reset.
+  const hash = window.location.hash;
+  const kind = hash.startsWith('#/token') ? 'token' : hash.startsWith('#/sso') ? 'sso' : 'recovery';
+  return { userId, secret, kind };
 }
 
 export function Login() {
@@ -40,10 +45,49 @@ export function Login() {
   const [done, setDone] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // A link from an email arrives with two values in it, and redeeming them is
-  // the only thing this screen should be doing at that moment.
+  // A link from an email — or from the group hub — arrives with two values in
+  // it, and redeeming them is the only thing this screen should be doing at
+  // that moment.
   const [link] = useState(credentialsFromUrl);
   const [mode, setMode] = useState<'signin' | 'forgot'>('signin');
+
+  /**
+   * A hand-off from the group hub, redeemed on arrival.
+   *
+   * They signed in at the hub a moment ago and the hub has already checked that
+   * they may come here. There is nothing left to ask them, so nothing is asked:
+   * the one-shot secret becomes a session and the app opens.
+   *
+   * Any session already on the device is dropped first. On a shared till that
+   * is very likely the previous person, or a guest session from the customer
+   * menu, and adding to it rather than replacing it is how somebody ends up
+   * signed in as someone else.
+   *
+   * The address is replaced rather than pushed, so the secret does not sit in
+   * the back button on a screen the whole floor uses.
+   */
+  useEffect(() => {
+    if (link?.kind !== 'sso') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await signOutCompletely();
+        await account.createSession(link.userId, link.secret);
+        if (cancelled) return;
+        window.location.replace(`${window.location.pathname}#/`);
+        window.location.reload();
+      } catch (err) {
+        if (cancelled) return;
+        const msg = humanError(err);
+        setError(
+          /expired|invalid token|not found|user_invalid_token/i.test(msg)
+            ? 'That hand-off has already been used or has expired. Go back to Insight and click through again.'
+            : msg,
+        );
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [link]);
 
   const name = settings?.restaurant_name ?? 'NiceOps POS';
 
@@ -137,6 +181,25 @@ export function Login() {
       </div>
     </div>
   );
+
+  // -------------------------------------------------- arriving from the hub
+  if (link?.kind === 'sso') {
+    return shell(
+      error ? (
+        <>
+          <Notice>{error}</Notice>
+          <Button
+            style={{ width: '100%' }}
+            onClick={() => { window.location.replace(`${window.location.pathname}#/`); window.location.reload(); }}
+          >
+            Sign in here instead
+          </Button>
+        </>
+      ) : (
+        <p className="small dim" style={{ margin: 0 }}>Signing you in…</p>
+      ),
+    );
+  }
 
   // ---------------------------------------------------- setting a password
   if (link) {
