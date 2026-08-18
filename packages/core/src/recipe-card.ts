@@ -15,9 +15,12 @@
 
 export interface RecipeRow {
   menu_item_id?: string;
+  /** The size this applies to, where it applies to one. See variant-recipes. */
+  variant_id?: string;
   addon_option_id?: string;
   ingredient_id: string;
   qty_per_unit?: number;
+  wastage_bp?: number;
 }
 
 export interface NamedIngredient {

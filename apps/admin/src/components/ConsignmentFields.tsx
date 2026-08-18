@@ -13,6 +13,15 @@ export interface DraftVariant {
   barcode: string;
   onHandText: string;
   active: boolean;
+  /**
+   * Whether this size is its own thing on the shelf.
+   *
+   * A small Club and a large Club are two objects, counted separately at the
+   * bar and in the store. A double gin is not: it pours twice from the same
+   * bottle, and giving it a shelf of its own would put a second, wrong number
+   * beside the one that is true.
+   */
+  ownStock: boolean;
 }
 
 export const draftVariantsFrom = (rows: ProductVariant[], decimals: number): DraftVariant[] =>
@@ -25,10 +34,13 @@ export const draftVariantsFrom = (rows: ProductVariant[], decimals: number): Dra
     barcode: v.barcode ?? '',
     onHandText: String(v.on_hand ?? 0),
     active: v.active,
+    // Filled in by the form once the recipes are known: a size already bound
+    // to its own ingredient is one that has it.
+    ownStock: false,
   }));
 
-export const blankVariant = (kindKey = 'size'): DraftVariant => ({
-  label: '', kindKey, priceText: '', sku: '', barcode: '', onHandText: '1', active: true,
+export const blankVariant = (kindKey = 'size', ownStock = false): DraftVariant => ({
+  label: '', kindKey, priceText: '', sku: '', barcode: '', onHandText: '1', active: true, ownStock,
 });
 
 /**
@@ -305,6 +317,25 @@ export function ConsignmentFields({
                   onChange={(e) => setVariant(i, { barcode: e.target.value })}
                 />
               </label>
+              {/*
+                Its own shelf, or the drink's.
+
+                On for a bottled drink, where a small and a large are two
+                objects bought and counted separately. Off for a cocktail's
+                sizes: a double gin pours twice from the same bottle, and a
+                "Gin · Double" stock item would be a second number beside the
+                one that is actually true.
+              */}
+              {!consigned && (
+                <label className="variant-cell">
+                  <span>Counted separately</span>
+                  <Toggle
+                    checked={v.ownStock}
+                    onChange={(on) => setVariant(i, { ownStock: on })}
+                    label={v.ownStock ? 'Own stock' : "Drink's stock"}
+                  />
+                </label>
+              )}
               <div className="variant-cell shrink">
                 <span aria-hidden="true">&nbsp;</span>
                 {/* Retired rather than deleted where it has already sold
@@ -318,7 +349,12 @@ export function ConsignmentFields({
             </div>
           ))}
 
-          <Button onClick={() => setVariants((rows) => [...rows, blankVariant(variantTypes[0]?.key ?? 'size')])}>
+          {/* A new bar size is its own stock by default: that is what a
+              bottled drink is, and it is the case this was asked for. A
+              cocktail's sizes get the toggle turned off. */}
+          <Button onClick={() => setVariants((rows) => [
+            ...rows, blankVariant(variantTypes[0]?.key ?? 'size', !consigned),
+          ])}>
             Add a variant
           </Button>
           {removedVariantIds.length > 0 && (

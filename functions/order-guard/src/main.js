@@ -263,7 +263,24 @@ async function pourFromBottles({ db, DB_ID, order, lines, log }) {
     ]).catch(() => ({ documents: [] }));
     if (recipes.documents.length === 0) continue;
 
-    for (const r of recipes.documents) {
+    /*
+      What was actually sold, not what the drink is called.
+
+      A size may carry its own stock — a small Club and a large Club are two
+      objects on two shelves — and where it does, its rows win outright rather
+      than adding to the drink's. Taking both would pour the small as well and
+      leave the bar one short every time somebody bought a large.
+
+      A size with nothing of its own falls back to the drink's, so putting
+      sizes on an existing cocktail does not silently stop it depleting.
+      Mirrors recipeFor in core; the parity suite fails the build if they
+      drift apart.
+    */
+    const mine = recipes.documents.filter((r) => !r.addon_option_id);
+    const own = line.variant_id ? mine.filter((r) => r.variant_id === line.variant_id) : [];
+    const applies = own.length > 0 ? own : mine.filter((r) => !r.variant_id);
+
+    for (const r of applies) {
       const ingredient = await db.getDocument(DB_ID, 'ingredients', r.ingredient_id).catch(() => null);
       if (!ingredient) continue;
 

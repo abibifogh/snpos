@@ -1487,6 +1487,23 @@ export const COLLECTIONS = [
     perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: MGMT },
     attributes: [
       ['menu_item_id', 's', 64, false],
+      /*
+        The size this applies to, where it applies to one.
+        
+        A cocktail's recipe belongs to the drink: a mojito is a mojito however
+        it is rung up. A bottled drink's sizes are not like that — a small Club
+        and a large Club are two objects, bought, stacked and counted
+        separately, and running out of one says nothing about the other.
+
+        Without this both sizes poured the same measure of the same thing, so
+        selling a large took a small off the shelf and the count drifted by the
+        difference every time. Nothing reported it: as far as the books were
+        concerned, one drink had left.
+
+        Absent means the whole drink, which is what every recipe written before
+        this meant.
+      */
+      ['variant_id', 's', 64, false],
       ['addon_option_id', 's', 64, false],
       ['ingredient_id', 's', 64, true],
       ['qty_per_unit', 'f', null, true, 0],

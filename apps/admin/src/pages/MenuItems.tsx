@@ -7,6 +7,7 @@ import {
   matches, sortItems, ITEM_SORTS,
   marginOf, marginIsThin, bpAsPercent, MARGIN_WARN_BP_DEFAULT,
   diffFields, describeChanges, fitForLog, PRODUCT_WATCH,
+  hasOwnRecipe, ingredientNameFor, OWN_STOCK_QTY,
 } from '@snpos/core';
 import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
@@ -252,7 +253,13 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     if (hasSizes && item?.$id) {
       void loadVariants(item.$id)
         .then((rows) => {
-          const drafts = draftVariantsFrom(rows, decimals);
+          const drafts = draftVariantsFrom(rows, decimals).map((d) => ({
+            // A size already bound to its own ingredient keeps the toggle on,
+            // so opening a drink and saving it again does not make a second
+            // stock item for a shelf that already exists.
+            ...d,
+            ownStock: !!d.$id && hasOwnRecipe(recipes, item.$id, d.$id),
+          }));
           setVariants(copy ? drafts.map((d) => ({ ...d, $id: undefined })) : drafts);
         })
         .catch(() => undefined);
@@ -335,8 +342,56 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
         sort: variants.indexOf(v),
         active: v.active,
       };
-      if (v.$id) await db.updateDocument(DB_ID, 'product_variants', v.$id, body);
-      else await db.createDocument(DB_ID, 'product_variants', ID.unique(), body);
+      const variantId = v.$id
+        ? (await db.updateDocument(DB_ID, 'product_variants', v.$id, body)).$id
+        : (await db.createDocument(DB_ID, 'product_variants', ID.unique(), body)).$id;
+
+      /*
+        A size that is its own thing on the shelf gets its own stock item.
+
+        A small Club and a large Club are two objects: bought separately,
+        stacked separately, counted separately at the bar and in the store, and
+        running out of one says nothing about the other. Giving each its own
+        ingredient is what makes it countable in both places at all, since
+        counting works on ingredients and their locations.
+
+        Not for every size, which is why it is a toggle rather than automatic.
+        A double gin pours twice from the same bottle; inventing a "Gin ·
+        Double" stock item would put a second, wrong number beside the one
+        that is actually true.
+
+        Created once. Afterwards the recipe binds the size to its stock item
+        and this leaves both alone, so renaming a drink does not orphan the
+        shelf it was counted on.
+      */
+      if (module === 'bar' && v.ownStock && !hasOwnRecipe(recipes, itemId, variantId)) {
+        const name = ingredientNameFor(editing?.name?.trim() ?? '', v.label.trim());
+        const ing = await db.createDocument(DB_ID, 'ingredients', ID.unique(), {
+          venue_id: 'main',
+          name,
+          unit: v.kindKey === 'crate' ? 'case' : 'bottle',
+          base_unit_cost: 0,
+          module: 'bar',
+          current_qty: 0,
+          par_level: 0,
+          low_threshold: 0,
+          critical: false,
+          // Bottled stock is what a bar counts in and out of every shift; that
+          // is the whole reason for giving it a shelf of its own.
+          count_each_shift: true,
+          active: true,
+        }).catch(() => null);
+        if (ing) {
+          await db.createDocument(DB_ID, 'recipes', ID.unique(), {
+            menu_item_id: itemId,
+            variant_id: variantId,
+            addon_option_id: '',
+            ingredient_id: ing.$id,
+            qty_per_unit: OWN_STOCK_QTY,
+            wastage_bp: 0,
+          }).catch(() => undefined);
+        }
+      }
     }
   };
 
