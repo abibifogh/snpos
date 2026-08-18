@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, useToast } from '@snpos/ui';
+import {
+  Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, useToast,
+  FilterBar, FilterField, Segmented,
+} from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, Query, toCsv, downloadCsv, buildReceiptHtml, openPrintable, receiptForOrder,
@@ -8,6 +11,7 @@ import {
 } from '@snpos/core';
 import type { Order, OrderItem, StaffProfile, Doc, Venue } from '@snpos/core';
 import { useSession } from '../session';
+import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 
 interface Payment extends Doc {
   order_id: string;
@@ -60,6 +64,7 @@ export function OrdersPage() {
   const [to, setTo] = useState(todayStr());
   const [staffId, setStaffId] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [side, setSide] = useState<Side>('all');
 
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [items, setItems] = useState<Record<string, OrderItem[]>>({});
@@ -317,16 +322,39 @@ export function OrdersPage() {
     return person?.display_name ?? 'Unknown';
   };
 
+  /*
+    Whose orders these are.
+
+    Narrowed by the person as well as the choice: somebody marked as working
+    one side has no second side to be shown, and leaving it on "All" handed
+    them the other trade's takings with no tab pressed and nothing on screen
+    to suggest it.
+  */
+  const shownSide = narrowSide(side, profile, settings);
+
   const visible = useMemo(
     () =>
       (orders ?? []).filter((o) => {
+        if (!onSide(o, shownSide)) return false;
         if (statusFilter && o.status !== statusFilter) return false;
         if (staffId && !touchedBy(o).includes(staffId)) return false;
         return true;
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [orders, statusFilter, staffId, payments],
+    [orders, statusFilter, staffId, payments, shownSide],
   );
+
+  // Only what narrows the list counts. The dates are how much was loaded, not
+  // a filter over it, so "Clear" leaving them alone is the honest behaviour —
+  // clearing them would silently re-read the database.
+  const filtered = !!statusFilter || !!staffId || shownSide !== 'all';
+
+  /** Which quick range the dates currently amount to, if any. */
+  const rangeChoice = useMemo(() => {
+    if (to !== todayStr()) return 'custom';
+    for (const days of [0, 6, 29]) if (from === daysAgoStr(days)) return String(days);
+    return 'custom';
+  }, [from, to]);
 
   const totals = useMemo(() => {
     const paid = visible.filter((o) => o.payment_status === 'paid');
@@ -502,41 +530,69 @@ export function OrdersPage() {
         </div>
       </div>
 
-      <Card title="Which orders">
-        <div className="grid-2">
-          <Field label="From">
+      {/*
+        How much to load, then how much of it to show.
+
+        Two different questions that were in one card together, which is why
+        it read as a form. The dates go to the database; everything below is a
+        view over what came back. Separating them is also what lets "Clear
+        filters" mean something safe — it never silently re-reads.
+      */}
+      <div className="filter-bar">
+        <div className="filter-bar-controls">
+          <FilterField label="From">
             <Input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
-          </Field>
-          <Field label="To">
+          </FilterField>
+          <FilterField label="To">
             <Input type="date" value={to} min={from} max={todayStr()} onChange={(e) => setTo(e.target.value)} />
-          </Field>
-          <Field label="Member of staff" hint="Anyone who accepted, served or took payment for it.">
-            <Select value={staffId} onChange={(e) => setStaffId(e.target.value)}>
-              <option value="">Everyone</option>
-              {staff.map((s) => (
-                <option key={s.$id} value={s.user_id || s.$id}>{s.display_name}</option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Status">
-            <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              <option value="">Any</option>
-              {STATUSES.map((s) => <option key={s} value={s}>{s.toLowerCase()}</option>)}
-            </Select>
-          </Field>
+          </FilterField>
+          {/*
+            The chosen range, shown as chosen.
+
+            Worked out from the dates rather than remembered separately, so
+            typing a date by hand moves the switch to "Custom" instead of
+            leaving "7 days" lit beside a range that is nothing of the kind.
+          */}
+          <Segmented<string>
+            ariaLabel="How far back"
+            value={rangeChoice}
+            onChange={(v) => {
+              if (v === 'custom') return;
+              setFrom(daysAgoStr(Number(v)));
+              setTo(todayStr());
+            }}
+            options={[
+              { value: '0', label: 'Today' },
+              { value: '6', label: '7 days' },
+              { value: '29', label: '30 days' },
+              ...(rangeChoice === 'custom' ? [{ value: 'custom', label: 'Custom' }] : []),
+            ]}
+          />
         </div>
-        <div className="row row-wrap" style={{ marginTop: '0.4rem' }}>
-          {[['Today', 0], ['Last 7 days', 6], ['Last 30 days', 29]].map(([label, days]) => (
-            <Button
-              key={label as string}
-              size="sm"
-              onClick={() => { setFrom(daysAgoStr(days as number)); setTo(todayStr()); }}
-            >
-              {label as string}
-            </Button>
-          ))}
-        </div>
-      </Card>
+      </div>
+
+      <FilterBar
+        shown={visible.length}
+        total={orders?.length ?? 0}
+        noun="orders"
+        onClear={filtered ? () => { setStatusFilter(''); setStaffId(''); setSide('all'); } : undefined}
+      >
+        <SideFilter value={side} onChange={setSide} settings={settings} profile={profile} />
+        <FilterField label="Status">
+          <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="">Any status</option>
+            {STATUSES.map((s) => <option key={s} value={s}>{s.toLowerCase()}</option>)}
+          </Select>
+        </FilterField>
+        <FilterField label="Staff">
+          <Select value={staffId} onChange={(e) => setStaffId(e.target.value)}>
+            <option value="">Everyone</option>
+            {staff.map((s) => (
+              <option key={s.$id} value={s.user_id || s.$id}>{s.display_name}</option>
+            ))}
+          </Select>
+        </FilterField>
+      </FilterBar>
 
       {orders && (
         <div className="grid-2">

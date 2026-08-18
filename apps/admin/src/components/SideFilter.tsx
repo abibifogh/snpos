@@ -1,4 +1,5 @@
 import { modulesForStaff, MODULE_LABELS } from '@snpos/core';
+import { Segmented } from '@snpos/ui';
 import type { Module, Settings, StaffProfile } from '@snpos/core';
 
 export type Side = Module | 'all';
@@ -36,24 +37,16 @@ export function SideFilter({
   // that cannot change anything, sitting where somebody expects one that can.
   if (theirs.length < 2) return null;
 
-  const options: { v: Side; l: string }[] = [
-    { v: 'all', l: 'All' },
-    ...theirs.map((m) => ({ v: m as Side, l: MODULE_LABELS[m] })),
-  ];
-
   return (
-    <div className="side-filter" role="group" aria-label="Which side of the business">
-      {options.map((o) => (
-        <button
-          key={o.v}
-          type="button"
-          className={value === o.v ? 'on' : ''}
-          onClick={() => onChange(o.v)}
-        >
-          {o.l}
-        </button>
-      ))}
-    </div>
+    <Segmented<Side>
+      value={value}
+      onChange={onChange}
+      ariaLabel="Which side of the business"
+      options={[
+        { value: 'all', label: 'All' },
+        ...theirs.map((m) => ({ value: m as Side, label: MODULE_LABELS[m] })),
+      ]}
+    />
   );
 }
 

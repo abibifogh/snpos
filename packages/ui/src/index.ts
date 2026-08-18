@@ -15,4 +15,5 @@ export * from './ErrorBoundary';
 export * from './OfflineBar';
 export * from './useOfflineQueue';
 export * from './trend';
+export * from './filters';
 export * from './idlescreen';

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast, ViewTabs} from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, levelOf, saveDropping,
@@ -421,12 +421,16 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
         )}
       </div>
 
-      <div className="pos-tabs" style={{ display: 'flex', gap: '0.4rem' }}>
-        <Button size="sm" variant={tab === 'ingredients' ? 'primary' : 'default'} onClick={() => setTab('ingredients')}>Ingredients</Button>
-        <Button size="sm" variant={tab === 'suppliers' ? 'primary' : 'default'} onClick={() => setTab('suppliers')}>Suppliers</Button>
-        <Button size="sm" variant={tab === 'categories' ? 'primary' : 'default'} onClick={() => setTab('categories')}>Categories</Button>
-        <Button size="sm" variant={tab === 'packs' ? 'primary' : 'default'} onClick={() => setTab('packs')}>Packs</Button>
-      </div>
+      <ViewTabs
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: 'ingredients', label: 'Ingredients' },
+          { value: 'suppliers', label: 'Suppliers' },
+          { value: 'categories', label: 'Categories' },
+          { value: 'packs', label: 'Packs' },
+        ]}
+      />
 
       {error && !editing && !editingSupplier && <Notice>{error}</Notice>}
 

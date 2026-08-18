@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Badge, useToast } from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Badge, useToast, ViewTabs} from '@snpos/ui';
 import { humanError } from '../lib';
 import {
   shelfLines, submitCount, pendingCounts, countLines, approveCount, rejectCount,
@@ -216,14 +216,14 @@ export function StocktakePage() {
         )}
       </div>
 
-      <div className="pos-tabs" style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.8rem' }}>
-        <Button size="sm" variant={tab === 'count' ? 'primary' : 'default'} onClick={() => setTab('count')}>
-          Count
-        </Button>
-        <Button size="sm" variant={tab === 'approve' ? 'primary' : 'default'} onClick={() => setTab('approve')}>
-          Approvals{queue?.length ? ` (${queue.length})` : ''}
-        </Button>
-      </div>
+      <ViewTabs
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: 'count', label: 'Count' },
+          { value: 'approve', label: `Approvals${queue?.length ? ` (${queue.length})` : ''}` },
+        ]}
+      />
 
       {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
 
