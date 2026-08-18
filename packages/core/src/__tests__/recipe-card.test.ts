@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatMeasure, pourList, hasRecipe } from '../recipe-card.ts';
+import {
+  formatMeasure, pourList, hasRecipe, isMadeToOrder, showsRecipe,
+} from '../recipe-card.ts';
 
 const ingredients = [
   { $id: 'rum', name: 'Havana Club 3', unit: 'cl' },
@@ -104,4 +106,39 @@ test('the button only appears when there is something to show', () => {
 test('a drink whose only rows are add-ons has no recipe of its own', () => {
   const recipes = [{ menu_item_id: 'x', addon_option_id: 'shot', ingredient_id: 'rum', qty_per_unit: 5 }];
   assert.equal(hasRecipe('x', recipes), false);
+});
+
+/* ------------------------------------------- which drinks are worth a look */
+
+test('cocktails and spirits are made, beers are handed over', () => {
+  // Nearly everything behind a bar has a recipe, because that is how stock
+  // comes off: a bottled beer's is one bottle of itself. A question mark on
+  // every tile is one nobody reads.
+  assert.equal(isMadeToOrder('Cocktails'), true);
+  assert.equal(isMadeToOrder('Spirits'), true);
+  assert.equal(isMadeToOrder('Beers'), false);
+  assert.equal(isMadeToOrder('Soft drinks'), false);
+  assert.equal(isMadeToOrder('Bottles & mixers'), false);
+});
+
+test('the shop’s own spelling still works', () => {
+  assert.equal(isMadeToOrder('cocktail'), true);
+  assert.equal(isMadeToOrder('House Cocktails'), true);
+  assert.equal(isMadeToOrder('SPIRITS & LIQUEURS'), true);
+  assert.equal(isMadeToOrder('Mixed drinks'), true);
+});
+
+test('no category at all is not made to order', () => {
+  assert.equal(isMadeToOrder(undefined), false);
+  assert.equal(isMadeToOrder(''), false);
+});
+
+test('both things have to be true for the button to appear', () => {
+  const recipes = [{ menu_item_id: 'mojito', ingredient_id: 'rum', qty_per_unit: 5 }];
+  // A cocktail with a recipe: yes.
+  assert.equal(showsRecipe('mojito', recipes, 'Cocktails'), true);
+  // A beer with a recipe, which is how its stock comes off: no.
+  assert.equal(showsRecipe('mojito', recipes, 'Beers'), false);
+  // A cocktail nobody has written a recipe for yet: no, there is nothing to show.
+  assert.equal(showsRecipe('daiquiri', recipes, 'Cocktails'), false);
 });

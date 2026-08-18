@@ -6,7 +6,7 @@ import {
   variantPriceRange, shiftUsable, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, sharesFor, shouldWarnLateOrder,
   sellBlockedReason, previewUrl,
   findCode, codeProblem, discountAmount, needsManager, discountLabelFor,
-  loadRecipes, loadIngredients, pourList, hasRecipe,
+  loadRecipes, loadIngredients, pourList, showsRecipe,
 } from '@snpos/core';
 import type {
   CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, Settings, DiscountRow,
@@ -128,6 +128,9 @@ export function OrderView({
       ),
     [ctx.menu, ctx.module],
   );
+
+  /** The section on screen, needed for its name as well as its entries. */
+  const shownSection = sections.find((s) => s.category.$id === sectionId) ?? null;
 
   /*
     The bar's recipes, once per shift.
@@ -452,7 +455,7 @@ export function OrderView({
             ))}
           </div>
           <div className={ctx.module === 'craft' ? 'menu-grid with-pics' : 'menu-grid'}>
-            {(sections.find((s) => s.category.$id === sectionId)?.entries ?? []).map((entry) => {
+            {(shownSection?.entries ?? []).map((entry) => {
               /*
                 A shop sells things that look like something.
 
@@ -484,7 +487,8 @@ export function OrderView({
                 two hundred times a night. It must not become a two-step
                 choice because of a feature used occasionally.
               */
-              const peekable = ctx.module === 'bar' && hasRecipe(entry.item.$id, recipes ?? []);
+              const peekable = ctx.module === 'bar'
+                && showsRecipe(entry.item.$id, recipes ?? [], shownSection?.category.name);
               const card = (
                 <button
                   key={peekable ? undefined : entry.item.$id}

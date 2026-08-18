@@ -92,6 +92,40 @@ export function pourList(
     });
 }
 
-/** Does this drink have anything to show? Decides whether the button appears. */
+/** Does this drink have anything to show? */
 export const hasRecipe = (itemId: string, recipes: RecipeRow[]): boolean =>
   recipes.some((r) => r.menu_item_id === itemId && !r.addon_option_id);
+
+/**
+ * Is this a drink somebody MAKES, rather than one they hand over?
+ *
+ * Nearly everything behind a bar has a recipe, because that is how stock comes
+ * off: a bottled beer's "recipe" is one bottle of itself. So "has a recipe"
+ * put a question mark on every tile, including the beers, where the answer was
+ * always going to be the name of the thing you are already holding. A hint
+ * that appears everywhere is one nobody reads.
+ *
+ * Cocktails and spirits are the two that need it: a cocktail because it is
+ * built, a spirit because it is measured and the measure is the thing people
+ * get wrong.
+ *
+ * Matched on the category's NAME, because the categories are the shop's own
+ * and there is no field saying which of them are made to order. It follows
+ * whatever the bar calls its shelves, and it follows a rename — which is the
+ * right trade for not making somebody set a flag on sixty rows, but it does
+ * mean a house that calls them "Mixed drinks" gets nothing until this list
+ * learns the word.
+ */
+const MADE_TO_ORDER = ['cocktail', 'spirit', 'shot', 'mixed drink'];
+
+export const isMadeToOrder = (categoryName?: string): boolean => {
+  const name = (categoryName ?? '').toLowerCase();
+  return MADE_TO_ORDER.some((word) => name.includes(word));
+};
+
+/** Should the tile offer a look at the recipe? Both things have to be true. */
+export const showsRecipe = (
+  itemId: string,
+  recipes: RecipeRow[],
+  categoryName?: string,
+): boolean => isMadeToOrder(categoryName) && hasRecipe(itemId, recipes);
