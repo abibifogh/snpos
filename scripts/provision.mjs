@@ -208,7 +208,18 @@ async function widenEnumIfNeeded(colId, tuple, live) {
   const elements = [...live.elements, ...missing];
 
   try {
-    await db.updateEnumAttribute(DB_ID, colId, key, elements, live.required, def ?? null);
+    /*
+      A required attribute may not carry a default, and Appwrite refuses the
+      whole call rather than ignoring the extra argument — "Cannot set default
+      value for required attribute". So two enums that genuinely needed
+      widening, both `shift_float_policy`, were quietly left un-widened every
+      run: the option existed in the code, was offered on the form, and the
+      database would not accept it.
+
+      The schema's default is right for CREATING the column. Widening one that
+      already exists must go by what is live.
+    */
+    await db.updateEnumAttribute(DB_ID, colId, key, elements, live.required, live.required ? null : def ?? null);
     log('  ~', `${colId}.${key} now also accepts ${missing.join(', ')}`);
     if (extra.length) {
       log('  i', `${colId}.${key} still accepts ${extra.join(', ')}, which the schema no longer lists`);

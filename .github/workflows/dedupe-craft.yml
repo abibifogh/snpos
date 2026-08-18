@@ -1,0 +1,86 @@
+name: Tidy craft duplicates
+
+# Finds craft products that were entered twice and clears up the copies,
+# keeping the one with the picture.
+#
+# Shows you the list first and changes nothing. You run it once to read the
+# report, then again with the confirmation typed in to go ahead. That is
+# deliberate: thirteen other tables point at a product, so a wrong removal
+# here does not fail loudly — it surfaces weeks later as a maker's statement
+# that will not add up.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Leave BLANK to preview. Type "remove" to actually do it.'
+        required: false
+        default: ''
+      across_owners:
+        description: 'Treat same-name pieces from DIFFERENT makers as duplicates (usually no)'
+        type: boolean
+        default: false
+      merge:
+        description: 'Merge copies together (adds shelf counts, moves sales onto the surviving row)'
+        type: boolean
+        default: true
+
+jobs:
+  dedupe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Before anything is removed, take the copy. Not after, and not
+      # "recently" — a backup from this morning does not help with a mistake
+      # made this afternoon.
+      - name: Back up first
+        if: ${{ inputs.confirm == 'remove' }}
+        env:
+          APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT }}
+          APPWRITE_PROJECT_ID: ${{ vars.APPWRITE_PROJECT_ID }}
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+          DB_ID: ${{ vars.DB_ID || 'snpos' }}
+        run: npm run export -- --out=backup-before-dedupe
+
+      - name: Keep the backup
+        if: ${{ inputs.confirm == 'remove' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: before-dedupe-${{ github.run_id }}
+          path: backup-before-dedupe/
+          retention-days: 90
+
+      - name: Look at the duplicates
+        env:
+          APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT }}
+          APPWRITE_PROJECT_ID: ${{ vars.APPWRITE_PROJECT_ID }}
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+          DB_ID: ${{ vars.DB_ID || 'snpos' }}
+        run: |
+          FLAGS=""
+          if [ "${{ inputs.across_owners }}" = "true" ]; then FLAGS="$FLAGS --across-owners"; fi
+          if [ "${{ inputs.merge }}" = "true" ]; then FLAGS="$FLAGS --merge"; fi
+          if [ "${{ inputs.confirm }}" = "remove" ]; then FLAGS="$FLAGS --apply"; fi
+
+          npm run dedupe:craft -- $FLAGS 2>&1 | tee report.txt
+
+          {
+            if [ "${{ inputs.confirm }}" = "remove" ]; then
+              echo "### Duplicates cleared up"
+            else
+              echo "### Preview only — nothing was changed"
+              echo ''
+              echo 'Run this again and type `remove` in the confirmation box to go ahead.'
+            fi
+            echo ''
+            echo '```'
+            cat report.txt
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
