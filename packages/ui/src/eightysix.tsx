@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { offCountLine, tradeWords } from '@snpos/core';
 import { Badge, Button, Field, Input, Modal, Notice, Textarea } from './components';
 
 /**
@@ -28,8 +29,18 @@ export function EightySixModal({
   onRestore,
   onClose,
   busyId,
+  module,
 }: {
   items: EightySixItem[];
+  /**
+   * Which trade this till is serving.
+   *
+   * A shop counter was told "2 dishes are off the menu" and that "the kitchen
+   * screen will not show them", about a luggage strap. Somebody reading that
+   * reasonably concludes the system has acted on the wrong record, and stops
+   * trusting the next message too.
+   */
+  module?: string;
   requireReason: boolean;
   onMarkOff: (item: EightySixItem, reason: string) => void;
   onRestore: (item: EightySixItem) => void;
@@ -57,15 +68,14 @@ export function EightySixModal({
 
   return (
     <Modal
-      title="What have we run out of?"
+      title={module === 'craft' ? 'What has sold out?' : 'What have we run out of?'}
       onClose={onClose}
       footer={<Button onClick={onClose}>Done</Button>}
     >
       {offCount > 0 && (
         <div style={{ marginBottom: '0.8rem' }}>
           <Notice tone="warn">
-            {offCount} {offCount === 1 ? 'dish is' : 'dishes are'} off the menu. Customers cannot order them and the
-            kitchen screen will not show them.
+            {offCountLine(offCount, module)} {tradeWords(module).consequence}
           </Notice>
         </div>
       )}
@@ -83,7 +93,7 @@ export function EightySixModal({
       <Field>
         <Input
           value={filter}
-          placeholder="Search the menu…"
+          placeholder={module === 'craft' ? 'Search the shop…' : 'Search the menu…'}
           onChange={(e) => setFilter(e.target.value)}
         />
       </Field>

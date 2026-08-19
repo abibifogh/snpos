@@ -373,6 +373,9 @@ export function App() {
 
       {offOpen && (
         <EightySixModal
+          // Its words as well as its catalogue: a shop counter should not be
+          // told that the kitchen screen will stop showing a luggage strap.
+          module={ctx.module}
           // This side's catalogue only. The shop counter listing every dish in
           // the restaurant meant a cashier could take jollof off the menu from
           // a screen that has never sold food.

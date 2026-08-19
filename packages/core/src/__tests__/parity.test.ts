@@ -5,6 +5,8 @@ import { computeTotals } from '../pricing.ts';
 import { estimateMinutes, queueMinutes, waitIncludingOpening } from '../orders-time.ts';
 import { minutesUntilOpen, parseWindows } from '../availability.ts';
 import * as guard from '../../../../functions/order-guard/src/money.js';
+import * as words from '../../../../functions/notify/src/words.js';
+import { tradeWords, offSubject, offCountLine } from '../words.ts';
 import type { CartLine } from '../pricing.ts';
 
 /**
@@ -198,5 +200,25 @@ test('both sides refuse to charge door-waiting as stove time', () => {
       guard.queueMinutes(pending, Date.now()),
       `disagreed on ${JSON.stringify(o)}`,
     );
+  }
+});
+
+/* ------------------------------------------------------------------- wording */
+
+test('the words for each trade agree, everywhere', () => {
+  // A shop counter was emailed "Off the menu: Luggage strap" and told the
+  // kitchen screen would stop showing it. Two copies of the wording exist
+  // because a function cannot import the bundle; this is what stops one of
+  // them being fixed and the other not.
+  for (const module of ['kitchen', 'bar', 'craft', undefined, 'nonsense']) {
+    assert.deepEqual(
+      tradeWords(module),
+      words.tradeWords(module),
+      `core and notify disagree on the words for ${module}`,
+    );
+    assert.equal(offSubject('Luggage strap', module), words.offSubject('Luggage strap', module));
+    for (const n of [0, 1, 2, 17]) {
+      assert.equal(offCountLine(n, module), words.offCountLine(n, module));
+    }
   }
 });

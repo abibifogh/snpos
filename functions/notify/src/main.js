@@ -1,6 +1,7 @@
 import { Client, Databases, Query, Users } from 'node-appwrite';
 import nodemailer from 'nodemailer';
 import { receiptPdf } from './receipt-pdf.js';
+import { tradeWords, offSubject } from './words.js';
 import { dailyDigest, nightlyBackup } from './daily.js';
 import { ensureLogin, revokeLogin } from './staff.js';
 import { handleReports } from './reports.js';
@@ -473,27 +474,40 @@ export default async ({ req, res, log, error }) => {
       if (configured === null) return res.json({ sent: false, why: 'feature off' });
       const to = await alertRecipients({ db, DB_ID, configured });
       if (!transport || to.length === 0) {
-        error(`${doc.name_snapshot} is off the menu but ${!transport ? 'SMTP is not configured' : 'no recipients are set'}.`);
+        error(`${doc.name_snapshot} is unavailable but ${!transport ? 'SMTP is not configured' : 'no recipients are set'}.`);
         return res.json({ sent: false, why: 'nowhere to send it' });
       }
       const when = new Date(doc.marked_off_at || Date.now()).toLocaleString('en-GB', {
         timeZone: settings.timezone || 'UTC', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short',
       });
+      /*
+        Whose catalogue this came from, so the email talks about the right
+        trade.
+
+        A shop counter was emailed "Off the menu: Luggage strap" and told the
+        kitchen screen would stop showing it. Somebody reading that reasonably
+        concludes the system has acted on the wrong record, and stops trusting
+        the next message too.
+
+        One extra read, and only when an alert is actually being sent.
+      */
+      const soldItem = await db.getDocument(DB_ID, 'menu_items', doc.menu_item_id).catch(() => null);
+      const w = tradeWords(soldItem?.module);
       await transport.sendMail({
         from,
         to: to.join(','),
-        subject: `Off the menu: ${doc.name_snapshot}`,
+        subject: offSubject(doc.name_snapshot, soldItem?.module),
         html: shell(
-          'A dish has run out',
-          `<p style="margin:0 0 14px;font-size:17px"><strong>${doc.name_snapshot}</strong> has been taken off the menu.</p>
+          w.ranOut,
+          `<p style="margin:0 0 14px;font-size:17px"><strong>${doc.name_snapshot}</strong> has been taken ${w.off}.</p>
            <table style="width:100%;border-collapse:collapse;font-size:14px">
              ${row('Taken off by', doc.marked_off_name || 'a member of staff')}
              ${row('At', when)}
              ${doc.reason ? row('Reason', doc.reason) : ''}
            </table>
            <p style="margin:18px 0 0;color:#5d6b7a;font-size:13px">
-             Customers can no longer order it and it will not appear on the kitchen screen. It stays off until
-             somebody puts it back.
+             ${w.consequence.replace('them', 'it').replace('they will', 'it will')} It stays off until somebody
+             puts it back.
            </p>`,
           brand,
         ),
