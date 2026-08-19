@@ -57,8 +57,19 @@ export function ScreenThanks({
   onDone: () => void;
 }) {
   const [left, setLeft] = useState(Math.round(SCREEN_THANKS_MS / 1000));
+  /*
+    Somebody still reading gets to keep it.
+
+    An order number is the one thing on this screen a customer has to carry
+    away, and having it taken mid-sentence — while they are showing it to the
+    person they came with, or repeating it to themselves — is how somebody
+    ends up back at the counter asking. Once held it stays held: they have
+    said what they want, and starting the clock again would be asking twice.
+  */
+  const [held, setHeld] = useState(false);
 
   useEffect(() => {
+    if (held) return undefined;
     /**
      * One clock, counting real time.
      *
@@ -74,7 +85,7 @@ export function ScreenThanks({
       if (remaining === 0) onDone();
     }, 250);
     return () => window.clearInterval(tick);
-  }, [onDone]);
+  }, [onDone, held]);
 
   // Not capped when it starts at the doors: see quotedWait. Sixty minutes
   // is the point past which a QUEUE estimate stops being believable, and
@@ -87,7 +98,7 @@ export function ScreenThanks({
   const eta = wait.minutes;
 
   return (
-    <div className="centered screen-thanks">
+    <div className="centered screen-thanks" onPointerDown={() => setHeld(true)}>
       <div>
         <div className="tick" aria-hidden>✓</div>
         {/* The whole sentence, not the half of it. "Thank you" alone reads as
@@ -125,8 +136,14 @@ export function ScreenThanks({
         {/* Counted down out loud. A screen that changes on its own without
             warning reads as a fault; one that says when it will change reads
             as working. */}
+        {/* Counted down out loud. A screen that changes on its own without
+            warning reads as a fault; one that says when it will change reads
+            as working — and one that says how to stop it lets somebody who is
+            still reading their number keep it on screen. */}
         <p className="dim small" style={{ marginTop: '1.4rem' }}>
-          The menu comes back in {left} second{left === 1 ? '' : 's'}.
+          {held
+            ? 'Touch “Order something else” when you are ready.'
+            : `Returning to the menu in ${left} second${left === 1 ? '' : 's'}. Touch the screen to stay.`}
         </p>
 
         <Button

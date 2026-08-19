@@ -15,6 +15,8 @@ import { DishSheet } from './DishSheet';
 import { CartSheet } from './CartSheet';
 import { OrderStatus } from './OrderStatus';
 import { ScreenThanks } from './ScreenThanks';
+import { ScreenAttract } from './ScreenAttract';
+import { useWakeLock } from './useWakeLock';
 import { myOrders, rememberOrder, orderIdFromHash, showOrderInAddress } from './myOrders';
 import type { MyOrder } from './myOrders';
 
@@ -76,6 +78,29 @@ export function App() {
    * not given.
    */
   const [screenMode, setScreenMode] = useState(false);
+  /*
+    A screen at rest.
+
+    The display spends almost all day showing nobody anything, and a menu left
+    sitting there reads as somebody else's half-finished order — there is
+    nothing on it saying it is for you, or that it is for ordering at all. So
+    between customers it shows the invitation instead, and the menu opens on a
+    touch.
+
+    Starts true, so a screen switched on in the morning is already inviting
+    rather than waiting to be reset by a member of staff.
+  */
+  const [attract, setAttract] = useState(true);
+
+  /*
+    A counter screen stays awake; a phone is left alone.
+
+    A tablet that dims and sleeps is a screen nobody walks up to — worse than
+    useless, because it reads as broken or switched off and people go and queue
+    instead. Holding a CUSTOMER's phone awake would flatten a battery they need
+    for the rest of their evening to solve a problem they do not have.
+  */
+  useWakeLock(screenMode);
   /** The order just sent, while the thank-you is up. */
   const [thanks, setThanks] = useState<
     { no: string; eta?: number; emailed: boolean; fromOpening?: boolean; doors?: number } | null
@@ -340,6 +365,26 @@ export function App() {
    * tablet that the next customer will pick up within the minute. On this
    * screen the thank-you IS the confirmation, and it clears itself.
    */
+  /*
+    Between customers, the invitation rather than the menu.
+
+    Only on a screen, and only when there is nothing in the basket: somebody
+    who has started choosing and paused to read a label must not have their
+    order swept away, which is exactly what a timed reset would do.
+
+    Ahead of the thank-you check below, because a thank-you sets attract on its
+    way out and both being true for one render would flash the menu between
+    them.
+  */
+  if (screenMode && attract && !thanks && cart.length === 0) {
+    return (
+      <ScreenAttract
+        venueName={boot.venue?.name ?? boot.settings.restaurant_name}
+        onStart={() => setAttract(false)}
+      />
+    );
+  }
+
   if (screenMode && thanks) {
     return (
       <ScreenThanks
@@ -352,6 +397,9 @@ export function App() {
           setThanks(null);
           setCart([]);
           showOrderInAddress(null);
+          // Not to the menu: to the invitation. A menu sitting on a counter is
+          // what the next customer walks past.
+          setAttract(true);
         }}
       />
     );

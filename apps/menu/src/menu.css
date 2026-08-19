@@ -265,3 +265,69 @@
   border: 1px solid var(--border);
 }
 .screen-thanks .eta-big strong { font-size: 1.7rem; }
+
+/* ---------------------------------------------- the idle counter screen
+
+   What the room actually sees, almost all day. Everything here is sized to be
+   read from across it by somebody who was not looking. */
+.attract {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  border: 0;
+  background: var(--bg);
+  /* A screen nobody has touched should not be showing a text cursor or a
+     half-selected word from the last customer's tap. */
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.attract-inner { display: grid; justify-items: center; gap: 0.4rem; max-width: 44rem; }
+.attract-venue {
+  font-size: clamp(1rem, 2.5vw, 1.4rem);
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.attract-headline {
+  margin: 0.4rem 0 0;
+  line-height: 1.05;
+  font-size: clamp(2.2rem, 8vw, 5rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+/* The half that is the instruction, rather than the label. */
+.attract-headline strong { font-weight: 900; color: var(--brand); display: block; }
+
+.attract-arrow { color: var(--brand); margin: 0.6rem 0 0.2rem; animation: attract-breathe 2.6s ease-in-out infinite; }
+
+/*
+  Breathing, not blinking.
+
+  A blink is an alarm: the eye learns to dismiss it inside a minute, and this
+  runs all day. A slow swell reads as something alive and waiting, and keeps
+  pulling people across the room long after a blink has become wallpaper.
+*/
+@keyframes attract-breathe {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 0.75; }
+  50% { transform: translateY(0.7rem) scale(1.06); opacity: 1; }
+}
+
+.attract-cta {
+  margin-top: 0.4rem;
+  padding: 1.1rem 2.6rem;
+  font-size: clamp(1.05rem, 2.6vw, 1.5rem);
+  font-weight: 700;
+  border-radius: 999px;
+}
+.attract-hint { margin: 1.2rem 0 0; color: var(--text-dim); font-size: 0.95rem; }
+
+/* Somebody who has asked for less movement gets a still arrow. The screen
+   still says what it is; it simply stops swelling. */
+@media (prefers-reduced-motion: reduce) {
+  .attract-arrow { animation: none; opacity: 1; }
+}
