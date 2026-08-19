@@ -55,4 +55,3 @@ export * from './idle';
 export * from './margins';
 export * from './changes';
 export * from './words';
-export * from './screen';
