@@ -50,6 +50,36 @@ contribution margin, using recipe cost as the margin input:
 This is the single most valuable report a restaurant POS produces, and you
 already have every input for it.
 
+**Built.** *Reports → Which dishes earn their place.* The arithmetic is in
+`packages/core/src/menu-engineering.ts`, pure and tested without a database
+(`__tests__/menu-engineering.test.ts`), because somebody is going to take a
+dish off the menu because of it. Four decisions in it are worth knowing:
+
+*The benchmark is the average **plate**, not the average dish.* Total
+contribution over total plates. An unweighted mean of the per-dish figures lets
+one rarely-ordered luxury item put the line above almost everything on the
+menu, and half the kitchen then reads as failing against a benchmark nothing
+reaches.
+
+*A dish with no recipe is never classified, and never costed at zero.* Free
+would make it the most profitable thing you sell, park it in the top-right
+corner, and drag the benchmark up so properly costed dishes read as failures —
+the report would be wrong in the direction that flatters. Uncosted dishes are
+listed separately, with what share of the takings they represent, because that
+share is the honest limit on everything else on the panel.
+
+*What was actually taken is used, not the list price.* The till lets a manager
+change a line price, and "sold for 40 instead of 55" is precisely what this is
+for. Reading `price` would hide it behind an average that looks fine.
+
+*The action list is ranked by what the fix is worth, not by how bad the margin
+looks.* A dish twenty points below the line selling twice a week is a smaller
+prize than one five points below it selling sixty times, and a report sorted by
+percentage puts them the wrong way round.
+
+Below four costed dishes or twenty plates it says so and classifies nothing,
+rather than drawing a grid out of noise.
+
 **Purchase history per item**, for each ingredient: every purchase with date,
 supplier, quantity, unit cost, and a unit-cost trend line so price creep is
 visible. Purchase frequency ranking answers "which ingredient do we buy most

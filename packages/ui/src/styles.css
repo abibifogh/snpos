@@ -724,3 +724,78 @@ table.data tr[title] td:first-child { text-decoration: underline; text-decoratio
   .idle { animation: none; }
   .idle-card { transition: none; }
 }
+
+/* ---------------------------------------------------- the menu grid ------ */
+
+/* Four quadrant colours, chosen the same way the trend chart's two were:
+   checked with a validator rather than by eye, in both themes, against the
+   card behind them.
+
+   Light  aqua/yellow/blue/orange — every pair separable under protanopia and
+          deuteranopia (worst adjacent ΔE 9.1), lightness inside the light
+          band, chroma above the floor.
+   Dark   the same four hues re-stepped DOWNWARDS, not brightened. The dark
+          band sits lower (L 0.48–0.67), so the light yellow and orange fall
+          outside it and had to be darkened rather than flipped.
+
+   Colour is never the only carrier here: each quadrant is named in its own
+   corner of the chart, every dish is listed in a labelled table below, and
+   the hovered dish is written out in words. Contrast against the card is
+   under 3:1 for the aqua and the yellow in light mode, which is exactly why
+   those labels are required rather than optional. */
+.menugrid {
+  --q-star:   #1baf7a;
+  --q-plough: #eda100;
+  --q-puzzle: #2a78d6;
+  --q-dog:    #eb6834;
+  --grid: var(--border);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .menugrid {
+    --q-star:   #1baf7a;
+    --q-plough: #bf8400;
+    --q-puzzle: #2a78d6;
+    --q-dog:    #cc5227;
+  }
+}
+:root[data-theme="dark"] .menugrid {
+  --q-star:   #1baf7a;
+  --q-plough: #bf8400;
+  --q-puzzle: #2a78d6;
+  --q-dog:    #cc5227;
+}
+
+.menugrid svg { display: block; }
+
+.menugrid-read {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.9rem;
+  min-height: 2.4rem; padding: 0.5rem 0.2rem 0;
+  border-top: 1px solid var(--border); margin-top: 0.4rem;
+  font-size: 0.85rem; color: var(--text);
+}
+.menugrid-read .dim { color: var(--text-dim); }
+
+.q-tag {
+  font-size: 0.75rem; font-weight: 600; padding: 0.1rem 0.45rem;
+  border-radius: 999px; border: 1px solid currentColor;
+}
+.q-tag.q-star   { color: var(--q-star,   #1baf7a); }
+.q-tag.q-plough { color: var(--q-plough, #eda100); }
+.q-tag.q-puzzle { color: var(--q-puzzle, #2a78d6); }
+.q-tag.q-dog    { color: var(--q-dog,    #eb6834); }
+
+/* The table carries the same colours, so a row and a dot are the same claim.
+   It is also the accessible reading of the chart — every dish, named, with
+   its quadrant written out. */
+.menu-table .q-tag { white-space: nowrap; }
+
+/* A stat's footnote: the comparison that makes the number mean something. */
+.stat .note { font-size: 0.78rem; color: var(--text-dim); margin-top: 0.25rem; }
+
+/* A figure that is the wrong side of zero. Never colour alone — every use of
+   this sits beside a minus sign and a written verdict. */
+td.num.bad { color: var(--danger); }
+
+/* What to do, in the order worth doing it. */
+.act-list { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.6rem; font-size: 0.9rem; line-height: 1.5; }
+.act-list .dim { color: var(--text-dim); }
