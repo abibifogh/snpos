@@ -6,8 +6,12 @@ import {
   variantPriceRange, shiftUsable, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, sharesFor, shouldWarnLateOrder,
   sellBlockedReason, previewUrl,
   findCode, codeProblem, discountAmount, needsManager, discountLabelFor,
+  loadRecipes, loadIngredients, pourList, showsRecipe,
 } from '@snpos/core';
-import type { CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, Settings, DiscountRow } from '@snpos/core';
+import type {
+  CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, Settings, DiscountRow,
+  Recipe, Ingredient, MenuItem,
+} from '@snpos/core';
 import { OptionSheet } from './OptionSheet';
 import { COUNTER_TABLE_ID, BAR_COUNTER_TABLE_ID } from './App';
 import type { PosContext, TableRow } from './App';
@@ -81,6 +85,21 @@ export function OrderView({
    * line is a line the customer has already been quoted.
    */
   const [pickingSize, setPickingSize] = useState<string | null>(null);
+  /*
+    The bar's recipes, and the drink currently being looked at.
+
+    Loaded once when the bar till opens, not on every peek: two reads at the
+    start of a shift, then instant every time afterwards. Read allowance is not
+    an abstract concern on this project — it took the whole system down one
+    morning — and a bartender checking six drinks in a rush should not cost six
+    round trips.
+
+    Only for the bar. A kitchen till pays nothing for a feature it does not
+    show.
+  */
+  const [recipes, setRecipes] = useState<Recipe[] | null>(null);
+  const [barIngredients, setBarIngredients] = useState<Ingredient[]>([]);
+  const [peeking, setPeeking] = useState<MenuItem | null>(null);
   /**
    * A cart line whose price is being changed at the counter.
    *
@@ -109,6 +128,31 @@ export function OrderView({
       ),
     [ctx.menu, ctx.module],
   );
+
+  /** The section on screen, needed for its name as well as its entries. */
+  const shownSection = sections.find((s) => s.category.$id === sectionId) ?? null;
+
+  /*
+    The bar's recipes, once per shift.
+
+    Deliberately not part of the load below: a failure here must not stop a
+    till from taking money. Not knowing how a drink is made is an
+    inconvenience; not being able to sell it is the business stopping. So it
+    fails to an empty list, the question marks simply do not appear, and
+    nothing else notices.
+  */
+  useEffect(() => {
+    if (ctx.module !== 'bar' || recipes) return;
+    (async () => {
+      const [r, ing] = await Promise.all([
+        loadRecipes().catch(() => [] as Recipe[]),
+        loadIngredients(ctx.venue.$id).catch(() => [] as Ingredient[]),
+      ]);
+      setRecipes(r);
+      // This side's shelves only, so a drink cannot name the kitchen's rice.
+      setBarIngredients(ing.filter((i) => (i.module ?? 'kitchen') === 'bar'));
+    })();
+  }, [ctx.module, ctx.venue.$id, recipes]);
 
   useEffect(() => {
     (async () => {
@@ -411,7 +455,7 @@ export function OrderView({
             ))}
           </div>
           <div className={ctx.module === 'craft' ? 'menu-grid with-pics' : 'menu-grid'}>
-            {(sections.find((s) => s.category.$id === sectionId)?.entries ?? []).map((entry) => {
+            {(shownSection?.entries ?? []).map((entry) => {
               /*
                 A shop sells things that look like something.
 
@@ -429,9 +473,25 @@ export function OrderView({
               const img = ctx.module === 'craft'
                 ? previewUrl(entry.item.image_id, 'menu', ctx.settings, 240, 240)
                 : null;
-              return (
+              /*
+                A bartender should be able to check how a drink is made.
+
+                The recipe already exists — it is what depletes stock when a
+                cocktail sells. It has just never been visible to the person
+                actually making the drink, who works from memory or a card
+                taped inside a cupboard. A new bartender, or a regular one on
+                something that sells twice a month, is guessing.
+
+                A corner button rather than a tap on the tile itself: the tile
+                adds the drink to the bill, and that is the thing being done
+                two hundred times a night. It must not become a two-step
+                choice because of a feature used occasionally.
+              */
+              const peekable = ctx.module === 'bar'
+                && showsRecipe(entry.item.$id, recipes ?? [], shownSection?.category.name);
+              const card = (
                 <button
-                  key={entry.item.$id}
+                  key={peekable ? undefined : entry.item.$id}
                   className={img ? 'menu-card has-pic' : 'menu-card'}
                   disabled={entry.soldOut}
                   onClick={() => addItem(entry.item.$id)}
@@ -455,6 +515,24 @@ export function OrderView({
                   </div>
                   {entry.soldOut && <span className="soldout">Sold</span>}
                 </button>
+              );
+
+              if (!peekable) return card;
+              return (
+                <div className="menu-card-wrap" key={entry.item.$id}>
+                  {card}
+                  <button
+                    className="recipe-peek"
+                    // Sold out still shows the recipe. Knowing what went into
+                    // a drink you cannot pour is how you tell a customer what
+                    // else is like it.
+                    onClick={() => setPeeking(entry.item)}
+                    title={`How ${entry.item.name} is made`}
+                    aria-label={`How ${entry.item.name} is made`}
+                  >
+                    ?
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -639,6 +717,43 @@ export function OrderView({
           }}
         />
       )}
+
+      {peeking && (() => {
+        const lines = pourList(peeking.$id, recipes ?? [], barIngredients);
+        return (
+          <Modal title={`How ${peeking.name} is made`} onClose={() => setPeeking(null)}>
+            {/* The method, where somebody wrote one. A recipe is a list of
+                measures; "muddle the mint first" is the part that is not in
+                the quantities and the part a new bartender needs most. */}
+            {peeking.description?.trim() && (
+              <p className="small" style={{ marginTop: 0, whiteSpace: 'pre-wrap' }}>{peeking.description}</p>
+            )}
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>What</th>
+                  <th className="num">How much</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((l, i) => (
+                  // Nothing here is unique — a drink can take two dashes of
+                  // the same bitters — so the position is the only honest key.
+                  // eslint-disable-next-line react/no-array-index-key
+                  <tr key={`${l.name}-${i}`}>
+                    <td>{l.name}</td>
+                    <td className="num" style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{l.measure}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="small dim" style={{ marginBottom: 0 }}>
+              What the books expect this drink to use. Pouring differently is what shows up as a gap at the
+              next count.
+            </p>
+          </Modal>
+        );
+      })()}
 
       {pickingSize && (() => {
         const entry = ctx.menu.byId[pickingSize];

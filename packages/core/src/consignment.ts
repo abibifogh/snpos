@@ -316,6 +316,8 @@ export interface VariantType extends Doc {
   singular?: string;
   sort: number;
   active: boolean;
+  /** Whose sizes these are. Absent means the shop's. */
+  module?: string;
 }
 
 /**

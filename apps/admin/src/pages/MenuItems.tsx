@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Select, Notice, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Select, Notice, Spinner, Textarea, Toggle, Badge, useToast, ViewTabs} from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError, saveDropping } from '../lib';
 import {
   formatMoney, parseMoney, toInput, previewUrl, Query, loadConsignors, loadVariants, canEditCatalogue, canDeleteCatalogue,
@@ -7,6 +7,7 @@ import {
   matches, sortItems, ITEM_SORTS,
   marginOf, marginIsThin, bpAsPercent, MARGIN_WARN_BP_DEFAULT,
   diffFields, describeChanges, fitForLog, PRODUCT_WATCH,
+  hasOwnRecipe, ingredientNameFor, OWN_STOCK_QTY,
 } from '@snpos/core';
 import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
@@ -19,7 +20,7 @@ import { DrinkUpload } from '../components/DrinkUpload';
 import { useSession } from '../session';
 
 interface ItemCategory extends Doc { menu_item_id: string; category_id: string; sort: number; active: boolean }
-interface AddonGroup extends Doc { name: string; required: boolean; sort: number }
+interface AddonGroup extends Doc { name: string; required: boolean; sort: number; module?: string }
 interface ItemAddonGroup extends Doc { menu_item_id: string; group_id: string; sort: number }
 
 /**
@@ -108,6 +109,15 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   const [onHandText, setOnHandText] = useState('0');
   const [consignors, setConsignors] = useState<Consignor[]>([]);
   const [variantTypes, setVariantTypes] = useState<VariantType[]>([]);
+  /**
+   * Whether this side sells the same thing in more than one size.
+   *
+   * The shop does — a basket in three sizes is three prices — and so does the
+   * bar, which was the omission: a spirit as a single and a double, a wine by
+   * the glass and the carafe. A kitchen does not; a dish that comes in two
+   * sizes is two dishes, or an option group.
+   */
+  const hasSizes = module === 'craft' || module === 'bar';
   const [tab, setTab] = useState<'items' | 'types'>('items');
   const [variants, setVariants] = useState<DraftVariant[]>([]);
   const [removedVariantIds, setRemovedVariantIds] = useState<string[]>([]);
@@ -131,17 +141,34 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     setItems(i.filter(mine).sort((a, b) => a.sort - b.sort));
     setCategories(c.filter(mine).sort((a, b) => a.sort - b.sort));
     setLinks(l);
-    setAddonGroups(g.sort((a, b) => a.sort - b.sort));
+    /*
+      This side's choices only.
+
+      Every group used to show on every side, so a gin and tonic was offered
+      "Rare, medium, well done" and a steak "Single or double". A list that
+      offers nonsense is one people stop reading, including the lines on it
+      that were right.
+    */
+    setAddonGroups(g.filter(mine).sort((a, b) => a.sort - b.sort));
     setItemAddons(ia);
     // This side's shelves only, so a drinks file cannot be told to pour rice
     // and a dish cannot be given gin.
     setIngredients(ing.filter((x) => x.active && mine(x)).sort((a, b) => a.name.localeCompare(b.name)));
     setRecipes(r);
-    // Only the shop needs these, and only the shop pays for the round trip.
+    /*
+      Sizes are the bar's problem as much as the shop's.
+
+      A spirit sells as a single and a double, a beer by the bottle and the
+      crate, a wine by the glass and the carafe — the same shape as a basket
+      in three sizes, and each with its own price. Only consignors are the
+      shop's alone.
+    */
+    if (module === 'craft' || module === 'bar') {
+      const types = await loadVariantTypes().catch(() => []);
+      setVariantTypes(types.filter((t) => (t.module ?? 'craft') === module));
+    }
     if (module === 'craft') {
-      const [people, types] = await Promise.all([loadConsignors().catch(() => []), loadVariantTypes()]);
-      setConsignors(people);
-      setVariantTypes(types);
+      setConsignors(await loadConsignors().catch(() => []));
     }
   };
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, [module]);
@@ -223,10 +250,16 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     // their ids, so saving writes new rows instead of moving the original's.
     setRemovedVariantIds([]);
     setVariants([]);
-    if (module === 'craft' && item?.$id) {
+    if (hasSizes && item?.$id) {
       void loadVariants(item.$id)
         .then((rows) => {
-          const drafts = draftVariantsFrom(rows, decimals);
+          const drafts = draftVariantsFrom(rows, decimals).map((d) => ({
+            // A size already bound to its own ingredient keeps the toggle on,
+            // so opening a drink and saving it again does not make a second
+            // stock item for a shelf that already exists.
+            ...d,
+            ownStock: !!d.$id && hasOwnRecipe(recipes, item.$id, d.$id),
+          }));
           setVariants(copy ? drafts.map((d) => ({ ...d, $id: undefined })) : drafts);
         })
         .catch(() => undefined);
@@ -309,8 +342,56 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
         sort: variants.indexOf(v),
         active: v.active,
       };
-      if (v.$id) await db.updateDocument(DB_ID, 'product_variants', v.$id, body);
-      else await db.createDocument(DB_ID, 'product_variants', ID.unique(), body);
+      const variantId = v.$id
+        ? (await db.updateDocument(DB_ID, 'product_variants', v.$id, body)).$id
+        : (await db.createDocument(DB_ID, 'product_variants', ID.unique(), body)).$id;
+
+      /*
+        A size that is its own thing on the shelf gets its own stock item.
+
+        A small Club and a large Club are two objects: bought separately,
+        stacked separately, counted separately at the bar and in the store, and
+        running out of one says nothing about the other. Giving each its own
+        ingredient is what makes it countable in both places at all, since
+        counting works on ingredients and their locations.
+
+        Not for every size, which is why it is a toggle rather than automatic.
+        A double gin pours twice from the same bottle; inventing a "Gin ·
+        Double" stock item would put a second, wrong number beside the one
+        that is actually true.
+
+        Created once. Afterwards the recipe binds the size to its stock item
+        and this leaves both alone, so renaming a drink does not orphan the
+        shelf it was counted on.
+      */
+      if (module === 'bar' && v.ownStock && !hasOwnRecipe(recipes, itemId, variantId)) {
+        const name = ingredientNameFor(editing?.name?.trim() ?? '', v.label.trim());
+        const ing = await db.createDocument(DB_ID, 'ingredients', ID.unique(), {
+          venue_id: 'main',
+          name,
+          unit: v.kindKey === 'crate' ? 'case' : 'bottle',
+          base_unit_cost: 0,
+          module: 'bar',
+          current_qty: 0,
+          par_level: 0,
+          low_threshold: 0,
+          critical: false,
+          // Bottled stock is what a bar counts in and out of every shift; that
+          // is the whole reason for giving it a shelf of its own.
+          count_each_shift: true,
+          active: true,
+        }).catch(() => null);
+        if (ing) {
+          await db.createDocument(DB_ID, 'recipes', ID.unique(), {
+            menu_item_id: itemId,
+            variant_id: variantId,
+            addon_option_id: '',
+            ingredient_id: ing.$id,
+            qty_per_unit: OWN_STOCK_QTY,
+            wastage_bp: 0,
+          }).catch(() => undefined);
+        }
+      }
     }
   };
 
@@ -496,23 +577,30 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       {/* The kinds of variation this shop sells by are the shop's own list, so
           they are edited where the products that use them are, rather than
           buried in a settings page nobody opens twice. */}
-      {module === 'craft' && (
-        <div className="row" style={{ gap: '0.4rem', marginBottom: '0.8rem' }}>
-          <Button size="sm" variant={tab === 'items' ? 'primary' : 'default'} onClick={() => setTab('items')}>
-            Products
-          </Button>
-          <Button size="sm" variant={tab === 'types' ? 'primary' : 'default'} onClick={() => setTab('types')}>
-            Variant types
-          </Button>
-        </div>
+      {hasSizes && (
+        <ViewTabs
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: 'items', label: W.many.charAt(0).toUpperCase() + W.many.slice(1) },
+            { value: 'types', label: 'Variant types' },
+          ]}
+        />
       )}
 
-      {module === 'craft' && tab === 'types' ? (
+      {hasSizes && tab === 'types' ? (
         <KeyedListManager
           collection="variant_types"
           singular="variant type"
-          hint="The kinds of variation your products come in. A pottery studio sells by glaze, a weaver by width. Rename freely: products already using one stay with it."
-          onChanged={() => void loadVariantTypes().then(setVariantTypes)}
+          // Each side's own list. A bar measures in singles and doubles and a
+          // shop in small, medium and large; one list holding both is a list
+          // where neither side can find its own.
+          module={module}
+          hint={module === 'bar'
+            ? 'The ways a drink comes: single and double, glass and carafe, bottle and crate. Each one carries its own price on the drink itself. Rename freely; drinks already using one stay with it.'
+            : 'The kinds of variation your products come in. A pottery studio sells by glaze, a weaver by width. Rename freely: products already using one stay with it.'}
+          onChanged={() => void loadVariantTypes()
+            .then((t) => setVariantTypes(t.filter((x) => (x.module ?? 'craft') === module)))}
         />
       ) : (
       <>
@@ -792,7 +880,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
           <div className="grid-2">
             <Field
               label={`Price (${settings?.currency_symbol ?? ''})`}
-              hint={module === 'craft' && variants.length > 0 ? 'Ignored, each size below carries its own price.' : undefined}
+              hint={hasSizes && variants.length > 0 ? 'Ignored, each size below carries its own price.' : undefined}
             >
               <Input value={priceText} inputMode="decimal" onChange={(e) => setPriceText(e.target.value)} />
             </Field>
@@ -819,8 +907,9 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
             </Field>
           )}
 
-          {module === 'craft' && (
+          {hasSizes && (
             <ConsignmentFields
+              module={module}
               editing={editing}
               setEditing={setEditing}
               onHandText={onHandText}

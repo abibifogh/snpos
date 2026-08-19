@@ -6,6 +6,7 @@ import {
   toCsv, downloadCsv,
   parseCostAccounts, serialiseCostAccounts, startingCostChoice, hasCostChoice, splitCosts, costCodeFor,
   isLivePayment,
+  listCreatedBetween, listByIds, dayStartIso, dayEndIso, windowProblem,
 } from '@snpos/core';
 import type { Order, OrderItem, Doc, TrialBalanceRow } from '@snpos/core';
 import { useSession } from '../session';
@@ -59,25 +60,48 @@ export function ReportsPage() {
   // Their side of the business, not the whole of it. See narrowSide.
   const mine = narrowSide(side, profile, settings);
 
+  /*
+    Only the window being reported on.
+
+    This page used to read every order ever taken, every line on every one of
+    them, every payment, expense and receipt, and then filter to the chosen
+    dates in the browser. That is a year of history read to show a week of it,
+    read again each time somebody opens the page, growing by every sale for
+    ever — and it is what emptied the database's read allowance one morning
+    and stopped the tills.
+
+    The window is the same one `inRange` applied afterwards, sent to the
+    database instead, so the figures are unchanged. It re-reads when the dates
+    change, which is the point: it is now cheap enough to.
+
+    Lines are fetched by their orders' ids rather than by date, because a line
+    has no date of its own — and it is exactly equivalent, since the only use
+    of them is against orders already in the window.
+  */
   useEffect(() => {
+    const bad = windowProblem(from, to);
+    if (bad) { setError(bad); return; }
+    setError(null);
     (async () => {
-      const [o, i, p, m, e, a, r, ec] = await Promise.all([
-        listAll<Order>('orders'),
-        listAll<OrderItem>('order_items'),
-        listAll<Payment>('payments'),
+      const fromIso = dayStartIso(from);
+      const toIso = dayEndIso(to);
+      const [o, p, m, e, a, r, ec] = await Promise.all([
+        listCreatedBetween<Order>('orders', fromIso, toIso),
+        listCreatedBetween<Payment>('payments', fromIso, toIso),
         listAll<PaymentMethod>('payment_methods'),
-        listAll<Expense>('shift_expenses'),
+        listCreatedBetween<Expense>('shift_expenses', fromIso, toIso),
         listAll<AccountRow>('accounts'),
-        listAll<Receipt>('receipts'),
+        listCreatedBetween<Receipt>('receipts', fromIso, toIso),
         // An expense names a category; the category names the account. Costs
         // are chosen by account, so the middle step has to be here too.
         listAll<ExpenseCategoryRow>('expense_categories').catch(() => [] as ExpenseCategoryRow[]),
       ]);
+      const i = await listByIds<OrderItem>('order_items', 'order_id', o.map((x) => x.$id));
       setOrders(o); setItems(i); setPayments(p); setMethods(m); setExpenses(e); setAccounts(a);
       setReceipts(r); setExpenseCategories(ec);
       setTb(await trialBalance('main').catch(() => null));
     })().catch((err) => setError(humanError(err)));
-  }, []);
+  }, [from, to]);
 
   // Both ends, both days included. A report that silently stops at midnight
   // yesterday is one somebody quotes a wrong figure from.

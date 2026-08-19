@@ -7,6 +7,7 @@ import {
   formatMoney, parseMoney, Query,
   loadConsignors, nextReference, moveStock, buildDeliverySlipHtml, openPrintable,
   rateFor, flatFor, dueFor,
+  planUnwind, describeUnwind, stockDelta, changed, listByIds,
 } from '@snpos/core';
 import type { Consignor, ConsignmentIntake, MenuItem, Category, ProductMove, Settings } from '@snpos/core';
 import { useSession } from '../session';
@@ -26,7 +27,7 @@ import { useSession } from '../session';
  */
 export function IntakePage() {
   const toast = useToast();
-  const { settings, user } = useSession();
+  const { settings, user, profile } = useSession();
   const decimals = settings?.currency_decimals ?? 2;
   const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
 
@@ -195,7 +196,15 @@ export function IntakePage() {
       )}
 
       {viewing && (
-        <IntakeContents intake={viewing} money={money} onClose={() => setViewing(null)} />
+        <IntakeContents
+          intake={viewing}
+          money={money}
+          isAdmin={profile?.role === 'admin'}
+          userId={user?.$id ?? ''}
+          decimals={decimals}
+          onClose={() => setViewing(null)}
+          onChanged={async (message) => { setViewing(null); await load(); toast(message); }}
+        />
       )}
     </div>
   );
@@ -439,19 +448,128 @@ function ReceiveModal({
 
 /** What actually came in on one delivery, and what has become of it. */
 function IntakeContents({
-  intake, money, onClose,
+  intake, money, isAdmin, userId, decimals, onClose, onChanged,
 }: {
   intake: ConsignmentIntake;
   money: (n: number) => string;
+  isAdmin: boolean;
+  userId: string;
+  decimals: number;
   onClose: () => void;
+  onChanged: (message: string) => Promise<void>;
 }) {
   const [items, setItems] = useState<MenuItem[] | null>(null);
+  /** Which pieces have sold, so the undo knows what it must not delete. */
+  const [sold, setSold] = useState<Set<string>>(new Set());
+  const [editing, setEditing] = useState<MenuItem | null>(null);
+  const [qtyText, setQtyText] = useState('');
+  const [priceText, setPriceText] = useState('');
+  const [undoing, setUndoing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     listAll<MenuItem>('menu_items', [Query.equal('intake_id', intake.$id)])
       .then((r) => setItems(r.sort((a, b) => a.name.localeCompare(b.name))))
       .catch(() => setItems([]));
+    /*
+      What has been sold from this delivery.
+
+      Read from the order lines rather than from the shelf count, because a
+      count of zero means "none left" and says nothing about why: a piece
+      withdrawn and a piece sold both read zero, and only one of them may be
+      deleted.
+
+      Asked for by this delivery's pieces rather than by reading every line
+      ever sold. A shop with a year of trading behind it would otherwise pay
+      for all of it to open one delivery.
+    */
+    listAll<MenuItem>('menu_items', [Query.equal('intake_id', intake.$id)])
+      .then((pieces) => listByIds<{ menu_item_id?: string }>(
+        'order_items', 'menu_item_id', pieces.map((p) => p.$id),
+      ))
+      .then((lines) => setSold(new Set(lines.map((l) => l.menu_item_id).filter(Boolean) as string[])))
+      .catch(() => setSold(new Set()));
   }, [intake.$id]);
+
+  const plan = useMemo(
+    () => planUnwind(items ?? [], (id) => sold.has(id)),
+    [items, sold],
+  );
+
+  /**
+   * Correcting one piece: what was received, and what it is worth.
+   *
+   * The quantity moves the shelf by the DIFFERENCE and writes a movement for
+   * it, rather than setting the count. A count somebody typed over tells you
+   * what it is now and never what happened, and "why is this three when the
+   * note says five" is exactly the question a stocktake asks.
+   */
+  const savePiece = async () => {
+    if (!editing) return;
+    const price = parseMoney(priceText, decimals);
+    if (price === null) { setError('That price is not a number.'); return; }
+    const now = Math.max(0, Number(qtyText || 0));
+    const was = editing.on_hand ?? 0;
+
+    setBusy(true);
+    setError(null);
+    try {
+      await db.updateDocument(DB_ID, 'menu_items', editing.$id, { price, on_hand: now });
+      if (changed(was, now)) {
+        await moveStock({
+          venueId: 'main',
+          menuItemId: editing.$id,
+          consignorId: intake.consignor_id,
+          type: 'adjustment',
+          qtyDelta: stockDelta(was, now),
+          unitPrice: price,
+          refType: 'intake',
+          refId: intake.$id,
+          userId,
+          note: `Delivery ${intake.reference} corrected`,
+          item: null,
+        }).catch(() => undefined);
+      }
+      await onChanged(`${editing.name} updated`);
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Undoing the whole delivery.
+   *
+   * A goods-received note is not one record: it made the delivery, a product
+   * for every piece, the stock those put on the shelf, and the movement saying
+   * where the stock came from. Deleting the note alone leaves the pieces on
+   * the floor and the count still counting them.
+   */
+  const undo = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      for (const p of plan.remove) {
+        for (const m of await listAll<{ $id: string }>('product_moves', [Query.equal('menu_item_id', p.$id)])) {
+          await db.deleteDocument(DB_ID, 'product_moves', m.$id).catch(() => undefined);
+        }
+        await db.deleteDocument(DB_ID, 'menu_items', p.$id).catch(() => undefined);
+      }
+      for (const p of plan.keep) {
+        // Sold from, so the row has to stay: a sale and the maker's commission
+        // both point at it. Off the floor and off the count is the whole of
+        // what undoing can honestly do here.
+        await db.updateDocument(DB_ID, 'menu_items', p.$id, { active: false, on_hand: 0 }).catch(() => undefined);
+      }
+      await db.deleteDocument(DB_ID, 'consignment_intakes', intake.$id);
+      await onChanged(`${intake.reference} undone. ${describeUnwind(plan)}`);
+    } catch (e) {
+      setError(humanError(e));
+      setBusy(false);
+    }
+  };
 
   return (
     <Modal wide title={`${intake.reference} · what came in`} onClose={onClose} footer={<Button onClick={onClose}>Close</Button>}>
@@ -465,7 +583,10 @@ function IntakeContents({
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th>Piece</th><th className="num">Price</th><th className="num">Left</th><th>State</th></tr>
+              <tr>
+                <th>Piece</th><th className="num">Price</th><th className="num">Left</th><th>State</th>
+                {isAdmin && <th />}
+              </tr>
             </thead>
             <tbody>
               {items.map((i) => (
@@ -478,6 +599,22 @@ function IntakeContents({
                       : (i.on_hand ?? 0) <= 0 ? <Badge tone="ok">All sold</Badge>
                         : <Badge tone="warn">On the floor</Badge>}
                   </td>
+                  {isAdmin && (
+                    <td className="num">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setEditing(i);
+                          setQtyText(String(i.on_hand ?? 0));
+                          setPriceText(((i.price ?? 0) / 100).toFixed(decimals));
+                          setError(null);
+                        }}
+                      >
+                        Correct
+                      </Button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -485,6 +622,56 @@ function IntakeContents({
         </div>
       )}
       {intake.notes && <p className="small dim">{intake.notes}</p>}
+      {error && <Notice>{error}</Notice>}
+
+      {/*
+        Undoing a delivery that should not have been booked in.
+
+        An admin's only. The pieces, their stock and the movements behind it
+        all go with the note — anything already sold stays, because a sale and
+        the maker's commission both point at it, and is taken off the floor
+        instead.
+      */}
+      {isAdmin && items && items.length > 0 && (
+        <>
+          <h3 style={{ margin: '1.4rem 0 0.3rem' }}>Put this right</h3>
+          <p className="small dim" style={{ marginTop: 0 }}>
+            For a delivery booked in wrongly: the wrong maker, a duplicate, pieces that never arrived.
+            {' '}{describeUnwind(plan)}
+          </p>
+          {undoing ? (
+            <div className="row" style={{ gap: '0.5rem' }}>
+              <Button variant="danger" loading={busy} onClick={() => void undo()}>
+                Yes, undo {intake.reference}
+              </Button>
+              <Button variant="ghost" disabled={busy} onClick={() => setUndoing(false)}>Keep it</Button>
+            </div>
+          ) : (
+            <Button variant="danger" size="sm" onClick={() => setUndoing(true)}>Undo this delivery</Button>
+          )}
+        </>
+      )}
+
+      {editing && (
+        <Modal
+          title={`Correct ${editing.name}`}
+          onClose={() => setEditing(null)}
+          footer={(
+            <>
+              <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+              <Button variant="primary" loading={busy} onClick={() => void savePiece()}>Save</Button>
+            </>
+          )}
+        >
+          {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
+          <Field label="How many arrived" hint="The shelf moves by the difference, and the change is written down as its own movement.">
+            <Input type="number" min="0" value={qtyText} onChange={(e) => setQtyText(e.target.value)} />
+          </Field>
+          <Field label="Price">
+            <Input value={priceText} onChange={(e) => setPriceText(e.target.value)} />
+          </Field>
+        </Modal>
+      )}
     </Modal>
   );
 }

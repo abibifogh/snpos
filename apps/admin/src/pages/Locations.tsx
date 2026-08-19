@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, useToast } from '@snpos/ui';
+import { Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, useToast, Segmented} from '@snpos/ui';
 import { db, DB_ID, ID, humanError } from '../lib';
 import {
   loadLocations, loadLevels, loadIngredients, transferSheet, transferStock,
@@ -191,14 +191,17 @@ export function LocationsPage() {
       {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
 
       {([ 'kitchen', 'bar', 'craft' ] as Module[]).filter((m) => mods[m]).length > 1 && (
-        <div className="pos-tabs" style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.8rem' }}>
-          {(['kitchen', 'bar', 'craft'] as Module[]).filter((m) => mods[m]).map((m) => (
-            <Button key={m} size="sm" variant={module === m ? 'primary' : 'default'} onClick={() => {
-              setModule(m); setFromId(''); setToId('');
-            }}>
-              {MODULE_LABELS[m]}
-            </Button>
-          ))}
+        // Which trade's storerooms, which narrows a list rather than changing
+        // the screen — so it is the filter shape, not the tab shape.
+        <div style={{ marginBottom: '0.8rem' }}>
+          <Segmented<Module>
+            ariaLabel="Which side of the business"
+            value={module}
+            onChange={(m) => { setModule(m); setFromId(''); setToId(''); }}
+            options={(['kitchen', 'bar', 'craft'] as Module[])
+              .filter((m) => mods[m])
+              .map((m) => ({ value: m, label: MODULE_LABELS[m] }))}
+          />
         </div>
       )}
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Badge, Button, Field, Input, Select, Textarea, Toggle } from '@snpos/ui';
 import { parseMoney, toInput } from '@snpos/core';
-import type { Consignor, MenuItem, ProductVariant, VariantType } from '@snpos/core';
+import type { Consignor, MenuItem, ProductVariant, VariantType, Module } from '@snpos/core';
 
 /** A size row being edited, before it is written. */
 export interface DraftVariant {
@@ -13,6 +13,15 @@ export interface DraftVariant {
   barcode: string;
   onHandText: string;
   active: boolean;
+  /**
+   * Whether this size is its own thing on the shelf.
+   *
+   * A small Club and a large Club are two objects, counted separately at the
+   * bar and in the store. A double gin is not: it pours twice from the same
+   * bottle, and giving it a shelf of its own would put a second, wrong number
+   * beside the one that is true.
+   */
+  ownStock: boolean;
 }
 
 export const draftVariantsFrom = (rows: ProductVariant[], decimals: number): DraftVariant[] =>
@@ -25,10 +34,13 @@ export const draftVariantsFrom = (rows: ProductVariant[], decimals: number): Dra
     barcode: v.barcode ?? '',
     onHandText: String(v.on_hand ?? 0),
     active: v.active,
+    // Filled in by the form once the recipes are known: a size already bound
+    // to its own ingredient is one that has it.
+    ownStock: false,
   }));
 
-export const blankVariant = (kindKey = 'size'): DraftVariant => ({
-  label: '', kindKey, priceText: '', sku: '', barcode: '', onHandText: '1', active: true,
+export const blankVariant = (kindKey = 'size', ownStock = false): DraftVariant => ({
+  label: '', kindKey, priceText: '', sku: '', barcode: '', onHandText: '1', active: true, ownStock,
 });
 
 /**
@@ -42,8 +54,19 @@ export const blankVariant = (kindKey = 'size'): DraftVariant => ({
 export function ConsignmentFields({
   editing, setEditing, consignors, variants, setVariants,
   removedVariantIds, setRemovedVariantIds, symbol, decimals,
-  onHandText, setOnHandText, variantTypes,
+  onHandText, setOnHandText, variantTypes, module,
 }: {
+  /**
+   * Which side is being edited.
+   *
+   * Sizes belong to the shop AND the bar — a spirit as a single and a double
+   * is the same shape as a basket in three sizes. Everything else here is the
+   * shop's alone: whose work it is, what commission it carries, whether there
+   * is only ever one of them, the card that sits beside it. A bar has no
+   * makers and no one-off bottles, and asking a bartender about either is
+   * asking a question with no answer.
+   */
+  module: Module;
   editing: Partial<MenuItem>;
   setEditing: (v: Partial<MenuItem>) => void;
   /** Held as text so backspacing the last digit does not refill itself. */
@@ -90,8 +113,12 @@ export function ConsignmentFields({
       return rows.filter((_, i) => i !== index);
     });
 
+  const consigned = module === 'craft';
+
   return (
     <>
+      {consigned && (
+      <>
       <div className="grid-2">
         <Field
           label="Whose work is this?"
@@ -194,11 +221,15 @@ export function ConsignmentFields({
           onChange={(e) => setEditing({ ...editing, maker_note: e.target.value })}
         />
       </Field>
+      </>
+      )}
 
       {/* -------------------------------------------------------- sizes ---- */}
       <Field
         label="Variants"
-        hint={`A basket in small, medium and large is one product and three prices. Add a row for each; leave it empty if the piece has only one price. The kinds offered here (${variantTypes.map((t) => t.name.toLowerCase()).join(', ')}) are yours to change under Craft shop, Products, Variant types.`}
+        hint={consigned
+          ? `A basket in small, medium and large is one product and three prices. Add a row for each; leave it empty if the piece has only one price. The kinds offered here (${variantTypes.map((t) => t.name.toLowerCase()).join(', ')}) are yours to change under Craft shop, Products, Variant types.`
+          : `A spirit as a single and a double is one drink and two prices. Add a row for each; leave it empty if the drink has only one price. The kinds offered here (${variantTypes.map((t) => t.name.toLowerCase()).join(', ')}) are yours to change on the Variant types tab.`}
       >
         <div>
           {variants.length === 0 && (
@@ -207,50 +238,123 @@ export function ConsignmentFields({
             </p>
           )}
 
+          {/*
+            Nothing to pick in the Kind box yet.
+
+            Said here rather than left as an empty dropdown, which reads as a
+            fault in the form. The variant still saves — it falls back to a
+            plain size — so this is a nudge, not a wall.
+          */}
+          {variantTypes.length === 0 && (
+            <p className="small" style={{ margin: '0 0 0.5rem', color: 'var(--warn)' }}>
+              No variant types set up yet, so the Kind box will be empty. Add them on the Variant types tab
+              {consigned ? '' : ' — “Single and double”, “Glass and carafe”, “Bottle and crate”'}.
+            </p>
+          )}
+
+          {/*
+            Every box says what it is, on every row.
+
+            These were five bare inputs in a line, told apart only by
+            placeholder text — which disappears the moment anything is typed,
+            so a half-filled row became five boxes with no way to tell which
+            was the price and which the barcode. A header row above them would
+            align on a wide screen and come apart the moment it wrapped, which
+            on a phone is immediately.
+          */}
           {variants.map((v, i) => (
             <div key={v.$id ?? `new-${i}`} className="variant-row">
-              <Input
-                placeholder="Large"
-                value={v.label}
-                onChange={(e) => setVariant(i, { label: e.target.value })}
-              />
-              <Select
-                value={v.kindKey}
-                onChange={(e) => setVariant(i, { kindKey: e.target.value })}
-              >
-                {variantTypes.map((t) => (
-                  <option key={t.key} value={t.key}>{t.singular || t.name}</option>
-                ))}
-              </Select>
-              <Input
-                placeholder={symbol}
-                inputMode="decimal"
-                value={v.priceText}
-                onChange={(e) => setVariant(i, { priceText: e.target.value })}
-              />
-              <Input
-                type="number"
-                min="0"
-                placeholder="Qty"
-                value={v.onHandText}
-                onChange={(e) => setVariant(i, { onHandText: e.target.value })}
-              />
-              <Input
-                placeholder="Barcode"
-                value={v.barcode}
-                onChange={(e) => setVariant(i, { barcode: e.target.value })}
-              />
-              {/* Retired rather than deleted where it has already sold things,
-                  but the distinction belongs to the row, not to this button, 
-                  see the save path in MenuItems. */}
-              <Button onClick={() => removeVariant(i)} aria-label={`Remove ${v.label || 'this size'}`}>×</Button>
+              <label className="variant-cell wide">
+                <span>What it is called</span>
+                <Input
+                  placeholder={consigned ? 'Large' : 'Double'}
+                  value={v.label}
+                  onChange={(e) => setVariant(i, { label: e.target.value })}
+                />
+              </label>
+              <label className="variant-cell">
+                <span>Kind</span>
+                <Select
+                  value={v.kindKey}
+                  onChange={(e) => setVariant(i, { kindKey: e.target.value })}
+                >
+                  {variantTypes.map((t) => (
+                    <option key={t.key} value={t.key}>{t.singular || t.name}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="variant-cell">
+                <span>Price ({symbol.trim()})</span>
+                <Input
+                  placeholder={symbol}
+                  inputMode="decimal"
+                  value={v.priceText}
+                  onChange={(e) => setVariant(i, { priceText: e.target.value })}
+                />
+              </label>
+              {/*
+                Only the shop counts pieces. A bar's stock leaves through the
+                recipe — the measure comes out of the bottle — so a count here
+                would be a number nothing reads and nothing keeps true.
+              */}
+              {consigned && (
+                <label className="variant-cell">
+                  <span>On the shelf</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={v.onHandText}
+                    onChange={(e) => setVariant(i, { onHandText: e.target.value })}
+                  />
+                </label>
+              )}
+              <label className="variant-cell wide">
+                <span>Barcode <span className="dim">(optional)</span></span>
+                <Input
+                  placeholder="Scanned at the till"
+                  value={v.barcode}
+                  onChange={(e) => setVariant(i, { barcode: e.target.value })}
+                />
+              </label>
+              {/*
+                Its own shelf, or the drink's.
+
+                On for a bottled drink, where a small and a large are two
+                objects bought and counted separately. Off for a cocktail's
+                sizes: a double gin pours twice from the same bottle, and a
+                "Gin · Double" stock item would be a second number beside the
+                one that is actually true.
+              */}
+              {!consigned && (
+                <label className="variant-cell">
+                  <span>Counted separately</span>
+                  <Toggle
+                    checked={v.ownStock}
+                    onChange={(on) => setVariant(i, { ownStock: on })}
+                    label={v.ownStock ? 'Own stock' : "Drink's stock"}
+                  />
+                </label>
+              )}
+              <div className="variant-cell shrink">
+                <span aria-hidden="true">&nbsp;</span>
+                {/* Retired rather than deleted where it has already sold
+                    things, but the distinction belongs to the row, not to
+                    this button, see the save path in MenuItems. */}
+                <Button onClick={() => removeVariant(i)} aria-label={`Remove ${v.label || 'this variant'}`}>×</Button>
+              </div>
               {parseMoney(v.priceText, decimals) === null && v.priceText.trim() !== '' && (
-                <Badge tone="warn">Price?</Badge>
+                <Badge tone="warn">That price is not a number</Badge>
               )}
             </div>
           ))}
 
-          <Button onClick={() => setVariants((rows) => [...rows, blankVariant(variantTypes[0]?.key ?? 'size')])}>
+          {/* A new bar size is its own stock by default: that is what a
+              bottled drink is, and it is the case this was asked for. A
+              cocktail's sizes get the toggle turned off. */}
+          <Button onClick={() => setVariants((rows) => [
+            ...rows, blankVariant(variantTypes[0]?.key ?? 'size', !consigned),
+          ])}>
             Add a variant
           </Button>
           {removedVariantIds.length > 0 && (

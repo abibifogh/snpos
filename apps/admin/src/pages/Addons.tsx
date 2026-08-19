@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
+import {
+  Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Toggle, Badge, useToast, Segmented,
+} from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { formatMoney, parseMoney, toInput, Query, listAll as listAllCore, canDeleteCatalogue } from '@snpos/core';
-import type { Doc, Ingredient, Recipe } from '@snpos/core';
+import {
+  formatMoney, parseMoney, toInput, Query, listAll as listAllCore, canDeleteCatalogue,
+  modulesOf, MODULE_LABELS,
+} from '@snpos/core';
+import type { Doc, Ingredient, Recipe, Module } from '@snpos/core';
 import { useSession } from '../session';
 
 interface AddonGroup extends Doc {
@@ -12,6 +17,8 @@ interface AddonGroup extends Doc {
   max_select: number;
   required: boolean;
   sort: number;
+  /** Whose choices these are. Absent means the kitchen's. */
+  module?: string;
 }
 
 interface AddonOption extends Doc {
@@ -39,6 +46,14 @@ interface DraftOption {
 
 export function AddonsPage() {
   const { settings, profile } = useSession();
+  /*
+    Which side's choices are being built.
+
+    A page that only ever showed one list, on a business running three trades,
+    is a page where two of them cannot add anything at all.
+  */
+  const [side, setSide] = useState<Module>('kitchen');
+  const mods = modulesOf(settings);
   const mayDelete = canDeleteCatalogue(profile);
   const toast = useToast();
   const decimals = settings?.currency_decimals ?? 2;
@@ -55,6 +70,8 @@ export function AddonsPage() {
 
   const load = async () => {
     const g = await listAll<AddonGroup>('addon_groups');
+    // Rows written before sides existed have none, and were the kitchen's.
+    const onThisSide = (x: { module?: string }) => (x.module ?? 'kitchen') === side;
     const o = await listAll<AddonOption>('addon_options');
     // An extra portion of chicken is real chicken: choices come off the shelf
     // exactly as the dish does, and the stock engine already understood that
@@ -65,12 +82,12 @@ export function AddonsPage() {
     ]);
     setIngredients(ing.filter((x) => x.active).sort((a, b) => a.name.localeCompare(b.name)));
     setRecipes(rec.filter((r) => r.addon_option_id));
-    setGroups(g.sort((a, b) => a.sort - b.sort));
+    setGroups(g.filter(onThisSide).sort((a, b) => a.sort - b.sort));
     const grouped: Record<string, AddonOption[]> = {};
     for (const opt of o.sort((a, b) => a.sort - b.sort)) (grouped[opt.group_id] ??= []).push(opt);
     setOptions(grouped);
   };
-  useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
+  useEffect(() => { load().catch((e) => setError(humanError(e))); }, [side]);
 
   /**
    * Open the editor. `copy` starts a brand new group from an existing one, 
@@ -125,6 +142,9 @@ export function AddonsPage() {
         max_select: Number(editing.max_select ?? 1),
         required: editing.required ?? false,
         sort: Number(editing.sort ?? 0),
+        // Stamped with the side being worked on, so a bar's "Single or double"
+        // never turns up on a steak.
+        module: side,
       };
       const groupId = editing.$id
         ? ((await db.updateDocument(DB_ID, 'addon_groups', editing.$id, payload)).$id)
@@ -201,9 +221,21 @@ export function AddonsPage() {
       </div>
 
       <p className="dim small" style={{ marginTop: 0 }}>
-        Choices a customer makes when ordering a dish, protein, spice level, size, extras. Build a group once and
-        attach it to as many dishes as you like. A choice can add nothing to the price: set it to 0.
+        Choices a customer makes when ordering, protein, spice level, extras. Build a group once and attach it to as
+        many {side === 'bar' ? 'drinks' : 'dishes'} as you like. A choice can add nothing to the price: set it to 0.
+        {side === 'bar' && ' For a drink that comes in sizes with their own prices, use Variant types on the Drinks page instead.'}
       </p>
+
+      {/* Each side's own choices. "Rare, medium, well done" has no business on
+          a gin and tonic, and it was being offered on one. */}
+      <Segmented<Module>
+        ariaLabel="Which side of the business"
+        value={side}
+        onChange={setSide}
+        options={(['kitchen', 'bar', 'craft'] as Module[])
+          .filter((m) => mods[m])
+          .map((m) => ({ value: m, label: MODULE_LABELS[m] }))}
+      />
 
       {error && !editing && <Notice>{error}</Notice>}
 

@@ -1,0 +1,68 @@
+name: Clear a maker's statement entries
+
+# For a credit sitting on somebody's statement with no order left behind it.
+# The ordinary way to take a sale back is to cancel or delete the order, which
+# unwinds everything with it; this is the way out when that is not possible.
+on:
+  workflow_dispatch:
+    inputs:
+      who:
+        description: "Whose statement (part of the maker's name, e.g. Ato)"
+        required: true
+      orphans_only:
+        description: 'Only entries with no order behind them'
+        type: boolean
+        default: false
+      confirm:
+        description: 'Leave BLANK to preview. Type "remove" to go ahead.'
+        required: false
+        default: ''
+
+jobs:
+  clear:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Back up first
+        if: ${{ inputs.confirm == 'remove' }}
+        env:
+          APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT }}
+          APPWRITE_PROJECT_ID: ${{ vars.APPWRITE_PROJECT_ID }}
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+          DB_ID: ${{ vars.DB_ID || 'snpos' }}
+        run: npm run export -- --out=backup-before-clear
+
+      - name: Keep the backup
+        if: ${{ inputs.confirm == 'remove' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: before-clear-${{ github.run_id }}
+          path: backup-before-clear/
+          retention-days: 90
+
+      - name: Look at the statement
+        env:
+          APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT }}
+          APPWRITE_PROJECT_ID: ${{ vars.APPWRITE_PROJECT_ID }}
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+          DB_ID: ${{ vars.DB_ID || 'snpos' }}
+        run: |
+          FLAGS="--who=${{ inputs.who }}"
+          if [ "${{ inputs.orphans_only }}" = "true" ]; then FLAGS="$FLAGS --orphans"; fi
+          if [ "${{ inputs.confirm }}" = "remove" ]; then FLAGS="$FLAGS --apply"; fi
+          npm run consignor:clear -- $FLAGS 2>&1 | tee report.txt
+          {
+            if [ "${{ inputs.confirm }}" = "remove" ]; then echo "### Entries removed"; else
+              echo "### Preview only — nothing was changed"
+            fi
+            echo ''
+            echo '```'
+            cat report.txt
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY

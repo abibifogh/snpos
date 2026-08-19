@@ -587,6 +587,18 @@ export const COLLECTIONS = [
       ['max_select', 'i', null, true, 1],
       ['required', 'b', null, true, false],
       ['sort', 'i', null, true, 0],
+      /*
+        Whose choices these are.
+
+        Without it every side saw every group, so "Rare, medium, well done"
+        was offered on a gin and tonic and "Single or double" on a steak. A
+        list that offers nonsense is one people stop reading, including the
+        lines on it that were right.
+
+        Absent means the kitchen's, which is what every group written before
+        this one existed was.
+      */
+      ['module', 'e', ['kitchen', 'craft', 'bar'], false, 'kitchen'],
     ],
   },
   {
@@ -1185,6 +1197,46 @@ export const COLLECTIONS = [
   },
   {
     /**
+     * Taking a sale back out, after it has been paid for.
+     *
+     * A request rather than an action, for the same reason cancellations are:
+     * the consignor ledger has NO create, update or delete permission for
+     * anybody at all. That is deliberate — it is what a maker is paid from,
+     * and a balance somebody can type into is not evidence. So an admin says
+     * what should happen here, and the server, which holds the API key, is the
+     * only thing that touches the ledger.
+     *
+     * `mode` is the difference between two jobs that get asked for in the same
+     * words. A TEST sale should leave no trace anywhere, including on the
+     * maker's statement. A MISTAKE is a real sale coming back: the money goes
+     * out, the piece goes back on the shelf, and the order stays on the record
+     * marked void, because somebody was genuinely served and it genuinely came
+     * back.
+     *
+     * The row stays either way. "Why is this piece back in stock and where did
+     * the money go" is a question somebody asks weeks later, and the answer
+     * should not be a gap.
+     */
+    id: 'order_reversals',
+    name: 'Order reversals',
+    perms: { read: MGMT, create: ADMIN, update: [], delete: [] },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['order_id', 's', 64, true],
+      ['mode', 'e', ['erase', 'refund'], true, 'refund'],
+      ['requested_at', 'd', null, false],
+      ['requested_by', 's', 64, false],
+      ['reason', 's', 300, false],
+      ['status', 'e', ['requested', 'done', 'failed'], false, 'requested'],
+      // What the server actually managed to do, in words. A reversal that
+      // could not remove a paid-out consignment entry has to say so somewhere,
+      // and the person who asked for it is not watching a log.
+      ['note', 's', 1000, false],
+    ],
+    indexes: [['order', 'key', ['order_id']], ['status_requested', 'key', ['status', 'requested_at']]],
+  },
+  {
+    /**
      * Expense categories, defined by the restaurant.
      *
      * `account_code` is what makes a category more than a label: it decides
@@ -1435,6 +1487,23 @@ export const COLLECTIONS = [
     perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: MGMT },
     attributes: [
       ['menu_item_id', 's', 64, false],
+      /*
+        The size this applies to, where it applies to one.
+        
+        A cocktail's recipe belongs to the drink: a mojito is a mojito however
+        it is rung up. A bottled drink's sizes are not like that — a small Club
+        and a large Club are two objects, bought, stacked and counted
+        separately, and running out of one says nothing about the other.
+
+        Without this both sizes poured the same measure of the same thing, so
+        selling a large took a small off the shelf and the count drifted by the
+        difference every time. Nothing reported it: as far as the books were
+        concerned, one drink had left.
+
+        Absent means the whole drink, which is what every recipe written before
+        this meant.
+      */
+      ['variant_id', 's', 64, false],
       ['addon_option_id', 's', 64, false],
       ['ingredient_id', 's', 64, true],
       ['qty_per_unit', 'f', null, true, 0],
@@ -2778,6 +2847,11 @@ export const COLLECTIONS = [
       ['singular', 's', 60, false],
       ['sort', 'i', null, true, 0],
       ['active', 'b', null, true, true],
+      // Whose sizes these are. A bar measures in singles and doubles, a shop
+      // in small, medium and large; one list holding both is a list where
+      // neither side can find its own. Absent means the shop's, which is what
+      // every type written before this one existed was.
+      ['module', 'e', ['kitchen', 'craft', 'bar'], false, 'craft'],
     ],
     indexes: [['key_unique', 'unique', ['key']], ['sort', 'key', ['sort']]],
   },

@@ -69,16 +69,29 @@
    many, barcode, and a stack of labelled fields per size would turn three
    sizes into a page of scrolling. Wraps rather than overflows on a narrow
    screen: an admin doing intake on a tablet is a real situation. */
+/* One variant, with every box saying what it is.
+   Labels on each field rather than a header row above them: a header aligns
+   on a wide screen and comes apart the moment the row wraps, which on a phone
+   is immediately. */
 .variant-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  align-items: center;
-  margin-bottom: 0.45rem;
+  gap: 0.4rem 0.5rem;
+  align-items: flex-end;
+  margin-bottom: 0.7rem;
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid var(--border);
 }
-.variant-row input { min-width: 0; flex: 1 1 6rem; }
-.variant-row select { flex: 0 0 7rem; }
-.variant-row button { flex: none; }
+.variant-row:last-of-type { border-bottom: 0; }
+
+.variant-cell { display: flex; flex-direction: column; gap: 0.2rem; flex: 1 1 7rem; min-width: 0; }
+.variant-cell > span {
+  font-size: 0.75rem; color: var(--text-dim); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.variant-cell.wide { flex: 2 1 9rem; }
+.variant-cell.shrink { flex: 0 0 auto; }
+.variant-row input, .variant-row select { min-width: 0; width: 100%; }
 
 /* ---- folding sidebar groups -------------------------------------------- */
 /* The heading is the control. Made to look no different from the heading it
@@ -101,14 +114,3 @@
   .nav-group > summary .fold-caret { transition: none; }
 }
 
-/* Which side of the business a list is showing. A segmented control rather
-   than a dropdown: three options that get switched between constantly should
-   cost one tap, not two. */
-.side-filter { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
-.side-filter button {
-  border: 0; background: none; font: inherit; font-size: 0.85rem; color: var(--text-dim);
-  padding: 0.35rem 0.85rem; cursor: pointer;
-}
-.side-filter button + button { border-left: 1px solid var(--border); }
-.side-filter button.on { background: var(--brand); color: var(--brand-ink); font-weight: 600; }
-.side-filter button:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }

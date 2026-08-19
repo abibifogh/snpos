@@ -1,4 +1,5 @@
 import { Client, Account, Databases, Storage, Teams, ID, Query, Permission, Role } from 'appwrite';
+import { chunk, QUERY_VALUES_MAX } from './reading';
 import { scopedQueries, scopedPayload, scopedPermissions } from './org';
 
 /**
@@ -111,6 +112,78 @@ export async function listAll<T>(collectionId: string, queries: string[] = []): 
     out.push(...(page.documents as unknown as T[]));
     if (page.documents.length < 100 || out.length >= page.total) return out;
   }
+}
+
+/**
+ * Is there at least one row like this?
+ *
+ * One row, not all of them. Several screens were answering a yes-or-no
+ * question by fetching an entire table and looking at its length — the
+ * dashboard read every order, every receipt and every notice ever written
+ * purely to decide whether to show a warning that the background jobs had
+ * never run.
+ *
+ * Returns the total as well, because "is there any" and "how many" are the
+ * same query and the caller usually wants one of them.
+ */
+export async function anyExists(
+  collectionId: string,
+  queries: string[] = [],
+): Promise<{ any: boolean; total: number }> {
+  const page = await db.listDocuments(DB_ID, collectionId, [...queries, Query.limit(1)]);
+  noteReachable();
+  return { any: page.total > 0, total: page.total };
+}
+
+/**
+ * Rows created inside a window, narrowed by the database rather than here.
+ *
+ * The screens that needed this were reading an entire table and filtering it
+ * in the browser afterwards, which reads a year of history to show a week of
+ * it — and reads it again every time the page is opened.
+ *
+ * `$createdAt` on purpose: it is what those screens were already filtering on,
+ * so the window means exactly what it meant before. Anything that should be
+ * grouped by a different date (a journal entry carries the date the money
+ * moved, not the day the row was written) must say so itself.
+ */
+export async function listCreatedBetween<T>(
+  collectionId: string,
+  fromIso: string,
+  toIso: string,
+  extra: string[] = [],
+): Promise<T[]> {
+  return listAll<T>(collectionId, [
+    ...extra,
+    Query.greaterThanEqual('$createdAt', fromIso),
+    Query.lessThanEqual('$createdAt', toIso),
+  ]);
+}
+
+/**
+ * The children of rows already found: an order's lines, an order's payments.
+ *
+ * Asked for by their parents' ids rather than by fetching the whole table and
+ * matching afterwards. Chunked, because one query cannot carry four hundred
+ * ids and Appwrite rejects an over-long one outright — so a busy month would
+ * fail while a quiet one worked, which gets reported as "broken sometimes".
+ *
+ * No ids means no queries. Sending an empty list matches everything on some
+ * databases and nothing on others, and neither is what was asked for.
+ */
+export async function listByIds<T>(
+  collectionId: string,
+  field: string,
+  ids: string[],
+  extra: string[] = [],
+): Promise<T[]> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return [];
+  const batches = chunk(unique, QUERY_VALUES_MAX);
+  const pages = await Promise.all(
+    batches.map((batch) => listAll<T>(collectionId, [...extra, Query.equal(field, batch)])),
+  );
+  return pages.flat();
 }
 
 /**

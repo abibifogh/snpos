@@ -12,6 +12,8 @@
     "doctor": "node scripts/doctor.mjs",
     "export": "node scripts/export.mjs",
     "dedupe:craft": "node --experimental-strip-types scripts/dedupe-craft.mjs",
+    "craft:categories": "node scripts/craft-categories.mjs",
+    "consignor:clear": "node scripts/clear-consignor-entry.mjs",
     "dev": "npm run dev -w @snpos/admin",
     "dev:admin": "npm run dev -w @snpos/admin",
     "build:admin": "npm run build -w @snpos/admin",

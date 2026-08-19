@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast } from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast, ViewTabs} from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, uploadFile, downloadUrl, deleteFile, receiveStock, Query,
@@ -466,17 +466,15 @@ export function ExpensesPage() {
         )}
       </div>
 
-      <div className="row" style={{ gap: '0.4rem' }}>
-        <Button size="sm" variant={tab === 'expenses' ? 'primary' : 'default'} onClick={() => setTab('expenses')}>
-          Expenses
-        </Button>
-        <Button size="sm" variant={tab === 'categories' ? 'primary' : 'default'} onClick={() => setTab('categories')}>
-          Categories
-        </Button>
-        <Button size="sm" variant={tab === 'accounts' ? 'primary' : 'default'} onClick={() => setTab('accounts')}>
-          Accounts
-        </Button>
-      </div>
+      <ViewTabs
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: 'expenses', label: 'Expenses' },
+          { value: 'categories', label: 'Categories' },
+          { value: 'accounts', label: 'Accounts' },
+        ]}
+      />
 
       {tab === 'accounts' ? (
         <AccountsManager />

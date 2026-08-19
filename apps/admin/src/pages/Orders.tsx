@@ -1,13 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, useToast } from '@snpos/ui';
+import {
+  Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, useToast,
+  FilterBar, FilterField, Segmented, PickerMenu, PickerItem, FacetChips, GroupedRows, SortableTh,
+} from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, Query, toCsv, downloadCsv, buildReceiptHtml, openPrintable, receiptForOrder,
   settleOrderNumbers, recomputeOrderTotals, cancelOrder, removeOrder, recomputeClosedShift,
   voidPayment, isLivePayment, changePaymentMethod, logPaymentMethodChange,
+  groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, flatten, MODULE_LABELS,
+  listByIds,
 } from '@snpos/core';
-import type { Order, OrderItem, StaffProfile, Doc, Venue } from '@snpos/core';
+import type {
+  Order, OrderItem, StaffProfile, Doc, Venue, Module, GroupChoice, SortChoice,
+} from '@snpos/core';
 import { useSession } from '../session';
+import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 
 interface Payment extends Doc {
   order_id: string;
@@ -60,6 +68,19 @@ export function OrdersPage() {
   const [to, setTo] = useState(todayStr());
   const [staffId, setStaffId] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [side, setSide] = useState<Side>('all');
+  /*
+    Grouping and sorting, both stacked in the order they were chosen.
+
+    "What did we take" is a total. "What did we take, by day, by who was on"
+    is the question somebody has when a figure looks wrong, and it needs the
+    groupings to nest in a chosen sequence — day inside staff and staff inside
+    day are different answers, and both get asked.
+  */
+  const [groups, setGroups] = useState<GroupChoice[]>([]);
+  const [sorts, setSorts] = useState<SortChoice[]>([]);
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(new Set());
+  const [menu, setMenu] = useState<'group' | 'sort' | null>(null);
 
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [items, setItems] = useState<Record<string, OrderItem[]>>({});
@@ -107,6 +128,54 @@ export function OrdersPage() {
     if (how === 'cancel' && !killReason.trim()) return;
     setKillBusy(true);
     try {
+      /*
+        Ask the server to unwind the sale BEFORE the order goes.
+
+        Two things hang off an order that this page cannot reach. The pieces
+        came off the shelf, and the maker was credited — and the consignor
+        ledger has no write permission for anybody at all, deliberately,
+        because it is what a maker is paid from. So a browser cannot put
+        either right however carefully it tries.
+
+        Without this, cancelling a sale left the shop one bowl short on the
+        count and the maker still owed for it, with the order gone and nothing
+        left to explain either. The request goes first because it needs the
+        order and its lines to still be there to read.
+
+        Erase for a delete, refund for a cancel: a deleted order should leave
+        no trace anywhere including the statement, a cancelled one stays on
+        the record marked void.
+      */
+      const request = await db.createDocument(DB_ID, 'order_reversals', ID.unique(), {
+        venue_id: order.venue_id,
+        order_id: order.$id,
+        mode: how === 'delete' ? 'erase' : 'refund',
+        requested_at: new Date().toISOString(),
+        requested_by: user?.$id ?? '',
+        reason: killReason.trim().slice(0, 300),
+        status: 'requested',
+      }).catch(() => null);
+
+      /*
+        Wait for it, because the order has to still be here for the server to
+        read its lines. Delete first and the movements can never be found,
+        which leaves the shelf short and the maker still owed — the exact
+        failure this whole path exists to stop.
+
+        Ten seconds, then carry on regardless: an admin who has decided to
+        cancel an order should not be stuck on a screen because a function is
+        slow. What was put back is on the reversal row either way.
+      */
+      let unwound = '';
+      if (request) {
+        for (let i = 0; i < 20; i += 1) {
+          await new Promise((r) => { setTimeout(r, 500); });
+          const row = await db.getDocument(DB_ID, 'order_reversals', request.$id).catch(() => null) as
+            { status?: string; note?: string } | null;
+          if (row?.status === 'done' || row?.status === 'failed') { unwound = row.note ?? ''; break; }
+        }
+      }
+
       if (how === 'cancel') {
         await cancelOrder(order, { reason: killReason.trim(), userId: user?.$id ?? '' });
       } else {
@@ -126,7 +195,10 @@ export function OrdersPage() {
       setKillReason('');
       setOpen(null);
       await load();
-      toast(how === 'cancel' ? `${order.order_no} cancelled` : `${order.order_no} deleted`);
+      // What went back matters more than the fact it was cancelled, so it is
+      // said rather than left on a row nobody opens.
+      const did = how === 'cancel' ? `${order.order_no} cancelled` : `${order.order_no} deleted`;
+      toast(unwound ? `${did}. ${unwound}` : did);
     } catch (e) {
       toast(humanError(e), 'err');
     } finally {
@@ -152,16 +224,24 @@ export function OrdersPage() {
 
   const load = async () => {
     setOrders(null);
-    const [o, p, m, s, v] = await Promise.all([
+    const [o, m, s, v] = await Promise.all([
       listAll<Order>('orders', [
         Query.greaterThanEqual('$createdAt', dayStart(from)),
         Query.lessThanEqual('$createdAt', dayEnd(to)),
       ]),
-      listAll<Payment>('payments'),
       listAll<PaymentMethod>('payment_methods'),
       listAll<StaffProfile>('staff_profiles'),
       listAll<Venue>('venues'),
     ]);
+    /*
+      Only the payments on the orders being shown.
+
+      The orders were already narrowed to the chosen dates and the payments
+      were not, so displaying one week meant reading every payment ever taken
+      — and a payment carries no date of its own to narrow by, so it has to be
+      asked for by the orders it belongs to.
+    */
+    const p = await listByIds<Payment>('payments', 'order_id', o.map((x) => x.$id));
     setOrders(o.sort((a, b) => b.$createdAt.localeCompare(a.$createdAt)));
     setPayments(p);
     setMethods(m);
@@ -193,7 +273,10 @@ export function OrdersPage() {
    * column so nothing is actually lost.
    */
   const exportCsv = async () => {
-    const rows = visible.map((o) => {
+    // In the order the screen shows them: the grouping and the sort decided
+    // it, and a spreadsheet that disagreed with the page would disagree about
+    // what "the first twenty" means.
+    const rows = flatten(tree, ordered).map((o) => {
       const lines = items[o.$id];
       const paid = payments.filter((p) => p.order_id === o.$id);
       return [
@@ -266,16 +349,86 @@ export function OrdersPage() {
     return person?.display_name ?? 'Unknown';
   };
 
+  /*
+    Whose orders these are.
+
+    Narrowed by the person as well as the choice: somebody marked as working
+    one side has no second side to be shown, and leaving it on "All" handed
+    them the other trade's takings with no tab pressed and nothing on screen
+    to suggest it.
+  */
+  const shownSide = narrowSide(side, profile, settings);
+
   const visible = useMemo(
     () =>
       (orders ?? []).filter((o) => {
+        if (!onSide(o, shownSide)) return false;
         if (statusFilter && o.status !== statusFilter) return false;
         if (staffId && !touchedBy(o).includes(staffId)) return false;
         return true;
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [orders, statusFilter, staffId, payments],
+    [orders, statusFilter, staffId, payments, shownSide],
   );
+
+  // Only what narrows the list counts. The dates are how much was loaded, not
+  // a filter over it, so "Clear" leaving them alone is the honest behaviour —
+  // clearing them would silently re-read the database.
+  const filtered = !!statusFilter || !!staffId || shownSide !== 'all';
+
+  /** Which quick range the dates currently amount to, if any. */
+  const rangeChoice = useMemo(() => {
+    if (to !== todayStr()) return 'custom';
+    for (const days of [0, 6, 29]) if (from === daysAgoStr(days)) return String(days);
+    return 'custom';
+  }, [from, to]);
+
+
+  /**
+   * What each grouping shows for a row.
+   *
+   * Almost nothing groups by its raw value: an order groups by DAY, not by the
+   * instant it was placed, or every order is its own group of one.
+   */
+  const SORTABLE = [
+    { key: 'when', label: 'When' },
+    { key: 'order_no', label: 'Order number' },
+    { key: 'status', label: 'Status' },
+    { key: 'payment_status', label: 'Paid' },
+    { key: 'who', label: 'Member of staff' },
+    { key: 'total', label: 'Total' },
+  ];
+
+  const GROUPABLE: GroupChoice[] = [
+    { key: 'day', label: 'Day' },
+    { key: 'side', label: 'Side of the business' },
+    { key: 'status', label: 'Status' },
+    { key: 'payment_status', label: 'Paid' },
+    { key: 'who', label: 'Member of staff' },
+    { key: 'fulfilment', label: 'Where' },
+  ];
+
+  const groupValue = (o: Order, key: string): string => {
+    if (key === 'day') return new Date(o.$createdAt).toLocaleDateString(undefined, { dateStyle: 'full' });
+    if (key === 'side') return MODULE_LABELS[(o.module ?? 'kitchen') as Module] ?? String(o.module);
+    if (key === 'who') return touchedBy(o).map(nameOf).join(', ');
+    if (key === 'fulfilment') return o.fulfilment ?? '';
+    return String((o as unknown as Record<string, unknown>)[key] ?? '');
+  };
+
+  const compareOrders = (a: Order, b: Order, key: string): number => {
+    if (key === 'total') return a.total - b.total;
+    if (key === 'when') return a.$createdAt.localeCompare(b.$createdAt);
+    if (key === 'who') return groupValue(a, 'who').localeCompare(groupValue(b, 'who'));
+    if (key === 'where') return (a.fulfilment ?? '').localeCompare(b.fulfilment ?? '');
+    return String((a as unknown as Record<string, unknown>)[key] ?? '')
+      .localeCompare(String((b as unknown as Record<string, unknown>)[key] ?? ''));
+  };
+
+  // Sorted first, then grouped: the groups are built from rows that are
+  // already in order, so the order holds inside every group.
+  const ordered = useMemo(() => sortRows(visible, sorts, compareOrders), [visible, sorts]);
+  const tree = useMemo(() => groupRows(ordered, groups, groupValue), [ordered, groups]);
 
   const totals = useMemo(() => {
     const paid = visible.filter((o) => o.payment_status === 'paid');
@@ -451,41 +604,111 @@ export function OrdersPage() {
         </div>
       </div>
 
-      <Card title="Which orders">
-        <div className="grid-2">
-          <Field label="From">
+      {/*
+        How much to load, then how much of it to show.
+
+        Two different questions that were in one card together, which is why
+        it read as a form. The dates go to the database; everything below is a
+        view over what came back. Separating them is also what lets "Clear
+        filters" mean something safe — it never silently re-reads.
+      */}
+      <div className="filter-bar">
+        <div className="filter-bar-controls">
+          <FilterField label="From">
             <Input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
-          </Field>
-          <Field label="To">
+          </FilterField>
+          <FilterField label="To">
             <Input type="date" value={to} min={from} max={todayStr()} onChange={(e) => setTo(e.target.value)} />
-          </Field>
-          <Field label="Member of staff" hint="Anyone who accepted, served or took payment for it.">
-            <Select value={staffId} onChange={(e) => setStaffId(e.target.value)}>
-              <option value="">Everyone</option>
-              {staff.map((s) => (
-                <option key={s.$id} value={s.user_id || s.$id}>{s.display_name}</option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Status">
-            <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              <option value="">Any</option>
-              {STATUSES.map((s) => <option key={s} value={s}>{s.toLowerCase()}</option>)}
-            </Select>
-          </Field>
+          </FilterField>
+          {/*
+            The chosen range, shown as chosen.
+
+            Worked out from the dates rather than remembered separately, so
+            typing a date by hand moves the switch to "Custom" instead of
+            leaving "7 days" lit beside a range that is nothing of the kind.
+          */}
+          <Segmented<string>
+            ariaLabel="How far back"
+            value={rangeChoice}
+            onChange={(v) => {
+              if (v === 'custom') return;
+              setFrom(daysAgoStr(Number(v)));
+              setTo(todayStr());
+            }}
+            options={[
+              { value: '0', label: 'Today' },
+              { value: '6', label: '7 days' },
+              { value: '29', label: '30 days' },
+              ...(rangeChoice === 'custom' ? [{ value: 'custom', label: 'Custom' }] : []),
+            ]}
+          />
         </div>
-        <div className="row row-wrap" style={{ marginTop: '0.4rem' }}>
-          {[['Today', 0], ['Last 7 days', 6], ['Last 30 days', 29]].map(([label, days]) => (
-            <Button
-              key={label as string}
-              size="sm"
-              onClick={() => { setFrom(daysAgoStr(days as number)); setTo(todayStr()); }}
-            >
-              {label as string}
-            </Button>
+      </div>
+
+      <FilterBar
+        shown={visible.length}
+        total={orders?.length ?? 0}
+        noun="orders"
+        onClear={filtered ? () => { setStatusFilter(''); setStaffId(''); setSide('all'); } : undefined}
+      >
+        <SideFilter value={side} onChange={setSide} settings={settings} profile={profile} />
+        <FilterField label="Status">
+          <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="">Any status</option>
+            {STATUSES.map((s) => <option key={s} value={s}>{s.toLowerCase()}</option>)}
+          </Select>
+        </FilterField>
+        <FilterField label="Staff">
+          <Select value={staffId} onChange={(e) => setStaffId(e.target.value)}>
+            <option value="">Everyone</option>
+            {staff.map((s) => (
+              <option key={s.$id} value={s.user_id || s.$id}>{s.display_name}</option>
+            ))}
+          </Select>
+        </FilterField>
+
+        {/* Ticking one that is already on moves it to the end of the order
+            rather than removing it — the chip has an × for removing, and
+            clicking a chosen grouping is nearly always an attempt to reorder. */}
+        <PickerMenu label="Group by" count={groups.length} open={menu === 'group'} onOpen={(o) => setMenu(o ? 'group' : null)}>
+          {GROUPABLE.map((g) => (
+            <PickerItem
+              key={g.key}
+              label={g.label}
+              on={groups.some((c) => c.key === g.key)}
+              position={groups.findIndex((c) => c.key === g.key) + 1}
+              onClick={() => setGroups(toggleGroup(groups, g))}
+            />
           ))}
-        </div>
-      </Card>
+        </PickerMenu>
+
+        <PickerMenu label="Sort" count={sorts.length} open={menu === 'sort'} onOpen={(o) => setMenu(o ? 'sort' : null)}>
+          {SORTABLE.map((s2) => (
+            <PickerItem
+              key={s2.key}
+              label={s2.label}
+              on={!!sortDir(sorts, s2.key)}
+              dir={sortDir(sorts, s2.key)}
+              position={sortPosition(sorts, s2.key)}
+              onClick={() => setSorts(cycleSort(sorts, s2.key, s2.label))}
+            />
+          ))}
+        </PickerMenu>
+      </FilterBar>
+
+      {/* What is applied, in order. Without this the sequence — the whole
+          point of stacking them — is not visible anywhere on the page. */}
+      <FacetChips
+        facets={[
+          ...groups.map((g) => ({ kind: 'Group', label: g.label })),
+          ...sorts.map((s2) => ({ kind: 'Sort', label: s2.label, detail: s2.dir === 'asc' ? '↑' : '↓' })),
+        ]}
+        onRemove={(i) => {
+          if (i < groups.length) setGroups(groups.filter((_, n) => n !== i));
+          else setSorts(sorts.filter((_, n) => n !== i - groups.length));
+        }}
+        onClear={() => { setGroups([]); setSorts([]); }}
+      />
 
       {orders && (
         <div className="grid-2">
@@ -506,12 +729,37 @@ export function OrdersPage() {
             <table className="data">
               <thead>
                 <tr>
-                  <th>When</th><th>Order</th><th>Where</th><th>Status</th><th>Paid</th>
-                  <th>Who</th><th className="num">Total</th><th />
+                  {([
+                    ['when', 'When', ''], ['order_no', 'Order', ''], ['where', 'Where', ''],
+                    ['status', 'Status', ''], ['payment_status', 'Paid', ''], ['who', 'Who', ''],
+                    ['total', 'Total', 'num'],
+                  ] as [string, string, string][]).map(([key, label, cls]) => (
+                    <SortableTh
+                      key={key}
+                      label={label}
+                      className={cls || undefined}
+                      dir={sortDir(sorts, key)}
+                      position={sortPosition(sorts, key)}
+                      onClick={() => setSorts(cycleSort(sorts, key, label))}
+                    />
+                  ))}
+                  <th />
                 </tr>
               </thead>
               <tbody>
-                {visible.map((o) => (
+                <GroupedRows
+                  nodes={tree}
+                  rows={ordered}
+                  columns={8}
+                  closed={closedGroups}
+                  onToggle={(path) => setClosedGroups((c) => {
+                    const next = new Set(c);
+                    if (next.has(path)) next.delete(path); else next.add(path);
+                    return next;
+                  })}
+                  rowKey={(o) => o.$id}
+                  summary={(rs) => money(rs.reduce((n, o) => n + o.total, 0))}
+                  renderRow={(o) => (
                   <tr key={o.$id}>
                     <td className="dim small">{new Date(o.$createdAt).toLocaleString()}</td>
                     <td style={{ fontWeight: 550 }}>{o.order_no}</td>
@@ -531,7 +779,8 @@ export function OrdersPage() {
                       <Button size="sm" variant="ghost" onClick={() => startEdit(o)}>Change</Button>
                     </td>
                   </tr>
-                ))}
+                  )}
+                />
               </tbody>
             </table>
           </div>
