@@ -6,7 +6,7 @@ import {
   formatMoney, isAvailable, parseWindows, nextAvailable, describeWindows, loadFeatures, isEnabled,
   articlesFor, HELP_AREAS,
   featureConfig, previewUrl, humanError,
-  onQueueChange, startOfflineSync, flushQueue, loadWithFallback,
+  onQueueChange, startOfflineSync, flushQueue, loadWithFallback, isScreenMode,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc,
@@ -363,6 +363,9 @@ export function App() {
         orderId={viewing}
         settings={boot.settings}
         venue={boot.venue}
+        /* A counter display takes itself back to the menu for the next
+           customer; a phone belongs to one person and never does. */
+        screen={isScreenMode(window.location.search)}
         onBack={() => {
           showOrderInAddress(null);
           setViewing(null);

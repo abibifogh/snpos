@@ -3,6 +3,7 @@ import { Button, Spinner } from '@snpos/ui';
 import {
   db, DB_ID, Query, listAll, formatMoney, subscribeCollection, isProvisionalOrderNo,
   cancelWindowLeft, requestCancellation, humanError, customerWait, formatWait,
+  secondsLeft as screenSecondsLeft, returningLine,
 } from '@snpos/core';
 import type { Order, OrderItem, Settings, Venue } from '@snpos/core';
 import { rememberOrder } from './myOrders';
@@ -50,11 +51,23 @@ export function OrderStatus({
   settings,
   venue,
   onBack,
+  screen = false,
 }: {
   orderId: string;
   settings: Settings;
   venue: Venue | null;
   onBack: () => void;
+  /**
+   * A screen that stays put and serves one customer after another.
+   *
+   * It takes itself back to the menu; a phone never does. A phone belongs to
+   * one customer, who wants to watch their own food being cooked. A counter
+   * screen belongs to whoever is standing in front of it, and the person
+   * after finds the last customer's order still on it with no way back —
+   * because the way back is a button that only appears when an order has gone
+   * missing.
+   */
+  screen?: boolean;
 }) {
   const [order, setOrder] = useState<Order | null>(null);
   const [items, setItems] = useState<OrderItem[]>([]);
@@ -74,6 +87,18 @@ export function OrderStatus({
     const t = window.setInterval(() => setTick(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, []);
+
+  /*
+    On a shared screen, back to the menu on its own.
+
+    Timed from when this order appeared rather than ticked down, so a display
+    whose timer was throttled while the tab was in the background does not sit
+    on "3 seconds" for a minute and a half.
+  */
+  const [returnFrom, setReturnFrom] = useState<number | null>(() => (screen ? Date.now() : null));
+  useEffect(() => { setReturnFrom(screen ? Date.now() : null); }, [orderId, screen]);
+  const left = returnFrom === null ? null : screenSecondsLeft(returnFrom, tick);
+  useEffect(() => { if (left === 0) onBack(); }, [left]);
 
   useEffect(() => {
     let alive = true;
@@ -167,7 +192,24 @@ export function OrderStatus({
   };
 
   return (
-    <div className="status-page">
+    <div
+      className="status-page"
+      /*
+        Any touch keeps the order on screen.
+
+        Somebody reading their number, or showing it to the person they came
+        with, should not have it taken away mid-sentence. Once cancelled it
+        stays cancelled: they have said what they want, and asking again every
+        twenty seconds is worse than not asking. The next order starts its own
+        countdown.
+      */
+      onPointerDown={returnFrom === null ? undefined : () => setReturnFrom(null)}
+    >
+      {left !== null && (
+        <div className="banner banner-info" style={{ marginBottom: '0.8rem' }}>
+          {returningLine(left)}
+        </div>
+      )}
       <header className="menu-header">
         <h1 style={{ margin: 0 }}>
           {isProvisionalOrderNo(order.order_no) ? 'Your order' : `Order ${order.order_no}`}
