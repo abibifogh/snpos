@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit, mustWaitForNextShift, shouldWarnLateOrder,
   SHIFT_MAX_HOURS, SHIFT_WARN_HOURS,
-  shiftAgeOf, openShiftsFor, blockerFor, isLivePayment, sellBlockedReason, carryOverFloats,
+  shiftAgeOf, openShiftsFor, blockerFor, isLivePayment, sellBlockedReason, carryOverFloats, lastForSide,
 } from '../shift-rules.ts';
 
 const at = (iso: string) => new Date(iso);
@@ -364,4 +364,46 @@ test('a method with nothing counted against it starts at nothing, not undefined'
   // because nothing on screen looks like an error.
   const floats = carryOverFloats({}, [{ $id: 'm-cash', kind: 'cash' }]);
   assert.equal(floats['m-cash'], 0);
+});
+
+test('a float carries over from this side\'s own last shift, not the building\'s', () => {
+  /**
+   * The bug this was written for. A kitchen, a bar and a craft shop each have
+   * their own drawer. "The last closed shift" asked at eight in the morning
+   * answers with whichever trade finished latest, which on most nights is the
+   * bar — so the kitchen opened claiming an opening balance that was
+   * physically in a different drawer in a different room.
+   *
+   * It then came up short by exactly that amount at close, and somebody was
+   * asked where the money went.
+   */
+  const shifts = [
+    { $id: 'bar', module: 'bar', status: 'closed', $createdAt: '2026-08-19T23:40:00.000Z' },
+    { $id: 'kit', module: 'kitchen', status: 'closed', $createdAt: '2026-08-19T21:00:00.000Z' },
+    { $id: 'old', module: 'kitchen', status: 'closed', $createdAt: '2026-08-18T21:00:00.000Z' },
+  ];
+  assert.equal(lastForSide(shifts, 'kitchen')?.$id, 'kit');
+  assert.equal(lastForSide(shifts, 'bar')?.$id, 'bar');
+  assert.equal(lastForSide(shifts, 'craft'), undefined, 'no craft shift to carry from');
+});
+
+test('a shift with no side on it is the kitchen, so old history still carries', () => {
+  /**
+   * Shifts opened before the module column existed carry none at all. Reading
+   * them as anything but the kitchen — or filtering them out in the query —
+   * would tell a business with a year of history that it had no previous
+   * shift, and hand it a float of nothing every morning.
+   */
+  const shifts = [{ $id: 'legacy', status: 'closed', $createdAt: '2026-01-04T21:00:00.000Z' }];
+  assert.equal(lastForSide(shifts, 'kitchen')?.$id, 'legacy');
+  assert.equal(lastForSide(shifts, 'bar'), undefined);
+});
+
+test('a shift still open is never carried over from', () => {
+  // Its drawer has not been counted, so there is no figure to carry.
+  const shifts = [
+    { $id: 'open', module: 'kitchen', status: 'open', $createdAt: '2026-08-20T09:00:00.000Z' },
+    { $id: 'done', module: 'kitchen', status: 'closed', $createdAt: '2026-08-19T21:00:00.000Z' },
+  ];
+  assert.equal(lastForSide(shifts, 'kitchen')?.$id, 'done');
 });

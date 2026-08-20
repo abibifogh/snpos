@@ -398,3 +398,32 @@ export function carryOverFloats<T extends { $id: string; kind?: string }>(
     methods.map((m) => [m.$id, m.kind === 'cash' ? counted[m.$id] ?? 0 : 0]),
   );
 }
+
+/**
+ * The most recent closed shift belonging to one side of the business.
+ *
+ * A kitchen, a bar and a craft shop each have their own drawer and each close
+ * their own shift. "The last closed shift" is therefore the wrong question:
+ * asked at eight in the morning it answers with whichever trade finished
+ * latest, which on most nights is the bar.
+ *
+ * Carrying that over hands the kitchen an opening balance that physically is
+ * not in its drawer, so it comes up short by exactly that amount at close and
+ * somebody is asked where the money went. It moves around, too — whichever
+ * side opens first inherits it — which is what makes it so hard to recognise
+ * from the figures alone.
+ *
+ * Matched in memory and with kitchen as the fallback, because shifts opened
+ * before the module column existed carry none at all. A database filter would
+ * step over every one of them, and a business with any history would be told
+ * it had no previous shift.
+ */
+export function lastForSide<T extends { module?: string; status?: string; $createdAt?: string }>(
+  shifts: T[],
+  module: string,
+): T | undefined {
+  return [...shifts]
+    .filter((s) => (s.status ?? 'closed') === 'closed')
+    .sort((a, b) => (b.$createdAt ?? '').localeCompare(a.$createdAt ?? ''))
+    .find((s) => (s.module ?? 'kitchen') === module);
+}

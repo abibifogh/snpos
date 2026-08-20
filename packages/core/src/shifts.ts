@@ -5,9 +5,11 @@ import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from
 import { postShift, reverseEntry, shiftCloseEntries, lockedThroughFor, isLocked } from './ledger';
 import { isLivePayment } from './payments';
 import { featureConfig, isEnabled, type FeatureMap } from './features';
+import { MODULE_LABELS } from './access';
 import type { Module } from './access';
 import {
   shiftAge, shiftCode, mustWaitForNextShift, openShiftsFor, blockerFor, SHIFT_MAX_HOURS, carryOverFloats,
+  lastForSide,
 } from './shift-rules';
 import { lockedProblem, sealProblem, isSealed } from './shift-lock';
 import type { LockableShift } from './shift-lock';
@@ -71,19 +73,45 @@ export async function openingFloats(
   venueId: string,
   settings: Settings,
   methods: PaymentMethod[],
+  /**
+   * Which side is opening. Absent is the kitchen, as everywhere else.
+   *
+   * Not optional in spirit. Carrying a float over without it took whatever
+   * shift closed last, whichever trade it belonged to — see below.
+   */
+  module: Module = 'kitchen',
 ): Promise<{ floats: Record<string, number>; source: string; note: string }> {
   const policy = settings.shift_float_policy ?? 'zero';
 
   if (policy === 'carry_over') {
-    // What the last shift actually counted, not what it expected, the drawer
-    // holds what it holds.
+    /*
+      THIS SIDE'S LAST SHIFT, not the building's.
+
+      A kitchen, a bar and a craft shop each have their own drawer and each
+      close their own shift. Taking simply "the last closed shift" meant a
+      kitchen opening in the morning carried over whatever the BAR counted at
+      midnight — money that is in a different drawer, in a different room,
+      belonging to a different night's takings.
+
+      The effect is not a rounding error. It hands one side an opening balance
+      that physically is not there, so the drawer is short by exactly that
+      amount at close and somebody is asked where it went. And it does it to
+      whichever side happens to open first, so it moves around.
+
+      Filtered in memory rather than in the query. Shifts opened before the
+      module column existed carry none at all, and a database filter would step
+      straight over every one of them — leaving a business with any history at
+      all carrying over nothing and being told there was no previous shift.
+    */
     const previous = await db.listDocuments(DB_ID, 'shifts', [
       Query.equal('venue_id', venueId),
       Query.equal('status', 'closed'),
       Query.orderDesc('$createdAt'),
-      Query.limit(1),
+      // A handful, so the newest one belonging to THIS side can be picked out.
+      // One was only ever enough when there was one drawer.
+      Query.limit(20),
     ]);
-    const last = previous.documents[0] as unknown as (Shift & { counted?: string }) | undefined;
+    const last = lastForSide(previous.documents as unknown as (Shift & { counted?: string })[], module);
     if (last?.counted) {
       try {
         const counted = JSON.parse(last.counted) as Record<string, number>;
@@ -91,8 +119,10 @@ export async function openingFloats(
           // Cash only. See carryOverFloats for why a card is not a float.
           floats: carryOverFloats(counted, methods),
           source: 'carry_over',
-          note: `Cash carried over from ${last.code}. Count it to be sure. Card and mobile money start at nothing —`
-            + ' nothing is left in a terminal overnight.',
+          // The shift it came from is named. A float carried from the wrong
+          // drawer is invisible as a number and obvious as a shift code.
+          note: `Cash carried over from ${last.code}, this side's last shift. Count it to be sure. `
+            + 'Card and mobile money start at nothing — nothing is left in a terminal overnight.',
         };
       } catch {
         // A malformed count is not worth failing an open over.
@@ -101,7 +131,7 @@ export async function openingFloats(
     return {
       floats: Object.fromEntries(methods.map((m) => [m.$id, 0])),
       source: 'carry_over',
-      note: 'No previous shift to carry over from, starting at nothing.',
+      note: `No previous ${MODULE_LABELS[module].toLowerCase()} shift to carry over from, starting at nothing.`,
     };
   }
 

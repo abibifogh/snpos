@@ -133,7 +133,9 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
     // Filled in from whatever the restaurant said its float policy is, rather
     // than always starting at zero and quietly turning yesterday's float into
     // today's takings.
-    const opening = await openingFloats(ctx.venue.$id, ctx.settings, m);
+    // The side this till is on, so a carried-over float comes from this
+    // side's own last shift and not from whichever drawer closed last.
+    const opening = await openingFloats(ctx.venue.$id, ctx.settings, m, ctx.module);
     setFloatSource(opening.source);
     setFloatNote(opening.note);
     setFloats(

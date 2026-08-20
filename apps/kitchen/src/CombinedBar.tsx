@@ -98,7 +98,9 @@ export function CombinedBar({
     setMethods(m);
     // Filled in from the restaurant's float policy rather than always starting
     // at zero, which turns yesterday's float into today's takings.
-    const opening = await openingFloats(venue.$id, settings, m);
+    // The kitchen screen opens the kitchen's shift, and carries over the
+    // kitchen's own last float rather than whichever drawer closed last.
+    const opening = await openingFloats(venue.$id, settings, m, 'kitchen');
     setFloatSource(opening.source);
     setFloatNote(opening.note);
     setFloats(
