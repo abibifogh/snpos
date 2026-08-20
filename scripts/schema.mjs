@@ -1217,6 +1217,47 @@ export const COLLECTIONS = [
      * the money go" is a question somebody asks weeks later, and the answer
      * should not be a gap.
      */
+    /**
+     * The same product, from a different supplier.
+     *
+     * A request rather than an action, for the reason order_reversals is one:
+     * the consignor ledger has no create, update or delete permission for
+     * anybody at all, deliberately, because it is what a maker is paid from.
+     * An admin says what should happen; the thing holding the API key does it.
+     *
+     * `mode` is the whole question. Moving a supplier is not one decision but
+     * four, differing in whether the stock on the shelf changes hands and
+     * whether anything already recorded does — and picking the wrong one
+     * leaves a maker paid for somebody else's work, or unpaid for their own.
+     *
+     * The row stays afterwards. "Why did Ama's statement drop by four hundred
+     * cedis in August" is a question somebody asks in November, and the answer
+     * should not be a gap.
+     */
+    id: 'consignor_reassignments',
+    name: 'Supplier reassignments',
+    perms: { read: MGMT, create: ADMIN, update: [], delete: [] },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['menu_item_id', 's', 64, true],
+      ['from_consignor_id', 's', 64, false],
+      ['to_consignor_id', 's', 64, true],
+      ['mode', 'e', ['future_and_stock', 'split', 'all_time', 'period'], true, 'future_and_stock'],
+      // Only read for the 'period' mode; both ends included.
+      ['from_at', 'd', null, false],
+      ['to_at', 'd', null, false],
+      ['requested_at', 'd', null, false],
+      ['requested_by', 's', 64, false],
+      ['reason', 's', 300, false],
+      ['status', 'e', ['requested', 'done', 'failed'], false, 'requested'],
+      // What actually moved, in words. A reassignment that could not shift a
+      // paid-out entry has to say so somewhere, and the admin who asked for it
+      // is not reading a log.
+      ['note', 's', 1000, false],
+    ],
+    indexes: [['item', 'key', ['menu_item_id']], ['status_requested', 'key', ['status', 'requested_at']]],
+  },
+  {
     id: 'order_reversals',
     name: 'Order reversals',
     perms: { read: MGMT, create: ADMIN, update: [], delete: [] },

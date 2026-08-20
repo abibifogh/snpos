@@ -12,6 +12,7 @@
         "databases.snpos.collections.discount_redemptions.documents.*.create",
         "databases.snpos.collections.order_cancellations.documents.*.create",
       "databases.snpos.collections.order_reversals.documents.*.create",
+        "databases.snpos.collections.consignor_reassignments.documents.*.create",
         "databases.snpos.collections.payments.documents.*.create",
         "databases.snpos.collections.consignor_payouts.documents.*.create"
       ],
