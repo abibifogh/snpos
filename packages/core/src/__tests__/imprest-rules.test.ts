@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   boxBalance, spentSince, topUpNeeded, overBy, healthOf, countBox, countProblem,
-  needsExplaining, spendProblem, withoutReceipt, IMPREST_LOW_BP, IMPREST_TOLERANCE,
+  needsExplaining, boxOverdrawn, withoutReceipt, IMPREST_LOW_BP, IMPREST_TOLERANCE,
   holdsBox, canFundBoxes, canUseBox, boxesFor,
   type ImprestMovement,
 } from '../imprest-rules.ts';
@@ -92,21 +92,18 @@ test('small change is not worth stopping anybody over', () => {
   assert.equal(needsExplaining(-1_001), true);
 });
 
-test('a box cannot pay out what it does not hold, unless somebody insists', () => {
-  const over = { amount: 30_000, balance: 21_000, categoryKey: 'transport' };
-  assert.match(spendProblem(over) ?? '', /more than the box holds/);
-  /*
-    Allowed on purpose when it is asked for. Somebody may genuinely have made
-    up the difference out of their own pocket and be owed it back, and a system
-    that cannot record what really happened gets worked around rather than
-    corrected.
-  */
-  assert.equal(spendProblem({ ...over, allowOverdraw: true }), null);
-});
-
-test('a spend with no category is refused, because it would land nowhere', () => {
-  assert.match(spendProblem({ amount: 500, balance: 9_000 }) ?? '', /right account/);
-  assert.match(spendProblem({ amount: 0, balance: 9_000, categoryKey: 'x' }) ?? '', /what was spent/);
+test('a box spending more than it holds is warned about, not refused', () => {
+  /**
+   * A change of mind, and worth stating. Refusing was the right instinct and
+   * the wrong behaviour: a box legitimately goes under when somebody makes up
+   * the difference out of their own pocket and is owed it back, and a system
+   * that cannot record what really happened gets worked around rather than
+   * corrected. An overdrawn box shows on its own screen and fails its next
+   * count, so allowing it hides nothing — blocking it hid the truth.
+   */
+  assert.equal(boxOverdrawn(30_000, 21_000), true);
+  assert.equal(boxOverdrawn(21_000, 21_000), false, 'spending the last of it is not overdrawing');
+  assert.equal(boxOverdrawn(1, 0), true);
 });
 
 test('spending since a moment counts only spending', () => {

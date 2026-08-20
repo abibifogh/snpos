@@ -1,6 +1,6 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
 import type { Doc } from './types';
-import { ACCOUNTS, postEntry, postExpense, accountForExpense } from './ledger';
+import { ACCOUNTS, postEntry } from './ledger';
 import { boxBalance, countBox } from './imprest-rules';
 import type { ImprestMovement, ImprestKind } from './imprest-rules';
 
@@ -241,91 +241,46 @@ export async function returnFromFloat(opts: {
 }
 
 /**
- * Spend from the box.
+ * Record that money left a box.
  *
- * Three things happen and all three are the point of this feature: the expense
- * is recorded where every other expense is recorded, so it appears in the
- * spending reports alongside them; it is posted to the books against the RIGHT
- * account, crediting the box rather than the till; and the box's own balance
- * moves so the next count has something true to measure against.
+ * The movement only — the expense row, its posting, its receipt and anything
+ * it put on a shelf are the expense form's job, and that form is the same one
+ * a spend from a drawer goes through. This is the single line that says the
+ * tin is lighter, kept here rather than written inline wherever a spend
+ * happens, so there is one place that decides what a spend out of a box looks
+ * like.
  *
- * The expense row is written first and carries the box's id. That row is the
- * thing somebody will look for afterwards — "what did we spend that on" — and
- * it must exist even if the posting behind it fails.
+ * There used to be a whole second implementation beside it — a headless
+ * `spendFromFloat` that wrote its own expense, posted its own entry and moved
+ * the box. Two ways to spend from a tin is two ways for them to drift, and the
+ * shelf is the one thing that cannot survive two opinions about how a purchase
+ * reaches it.
  */
-export async function spendFromFloat(opts: {
+export async function recordBoxSpend(opts: {
   venueId: string;
-  box: ImprestFloatDoc;
+  boxId: string;
   amount: number;
-  categoryKey: string;
   userId: string;
-  payee?: string;
+  /** The expense this came from, so the receipt can be found from either end. */
+  expenseId: string;
+  /** The journal entry it posted, when one was made. */
+  entryId?: string;
   note?: string;
-  receiptFileId?: string;
-  module?: string;
-  shiftId?: string;
-}): Promise<{ expenseId: string; movement: ImprestMovementDoc }> {
-  if (opts.amount <= 0) throw new Error('Enter what was spent.');
-
-  const expense = await db.createDocument(DB_ID, 'shift_expenses', ID.unique(), {
+}): Promise<ImprestMovementDoc> {
+  return (await db.createDocument(DB_ID, 'imprest_movements', ID.unique(), {
     venue_id: opts.venueId,
-    shift_id: opts.shiftId ?? '',
-    module: opts.module ?? 'kitchen',
-    // The old fixed column, still required. `category_key` is what everything
-    // reads; this keeps the row valid for a database provisioned before it.
-    category: 'petty_cash',
-    category_key: opts.categoryKey,
-    payee: (opts.payee ?? '').slice(0, 160),
-    paid_to_kind: 'other',
-    amount: opts.amount,
-    // No payment method took this: it came out of a tin. The column is
-    // required, so the box's own id stands in and `imprest_float_id` is what
-    // anything reading it actually looks at.
-    paid_from_method_id: opts.box.$id,
-    imprest_float_id: opts.box.$id,
-    /*
-      Not out of the shift's takings.
-
-      This is the field that decides whether a drawer is counted short. Money
-      from a petty cash box never sat in the till, so deducting it would make
-      the drawer look short by an amount it never held — the exact accusation
-      that stops people recording expenses at all.
-    */
-    from_takings: false,
-    note: (opts.note ?? '').slice(0, 500),
-    receipt_file_id: opts.receiptFileId ?? '',
-    created_by: opts.userId,
-    approval_status: 'not_required',
-  });
-
-  const accountCode = await accountForExpense({ category_key: opts.categoryKey });
-
-  // Posted through the same postExpense everything else uses, keyed by the
-  // expense's own id so it cannot land twice — but credited against the box
-  // instead of the till, which is the whole difference.
-  const entryId = await postExpense(opts.venueId, {
-    expenseId: expense.$id,
-    amount: opts.amount,
-    accountCode,
-    postedBy: opts.userId,
-    fromAccount: accountFor(opts.box),
-    memo: `Paid from ${opts.box.name}`,
-  });
-
-  const movement = (await db.createDocument(DB_ID, 'imprest_movements', ID.unique(), {
-    venue_id: opts.venueId,
-    float_id: opts.box.$id,
-    amount: -opts.amount,
+    float_id: opts.boxId,
+    // Negative: out of the box. See boxBalance — the balance is the sum of
+    // these and is never stored anywhere.
+    amount: -Math.abs(opts.amount),
     kind: 'spend',
     ref_type: 'expense',
-    ref_id: expense.$id,
-    entry_id: entryId ?? '',
-    note: (opts.note || opts.payee || '').slice(0, 500),
+    ref_id: opts.expenseId,
+    entry_id: opts.entryId ?? '',
+    note: (opts.note ?? '').slice(0, 500),
     created_by: opts.userId,
     occurred_at: new Date().toISOString(),
   })) as unknown as ImprestMovementDoc;
-
-  return { expenseId: expense.$id, movement };
 }
 
 /**

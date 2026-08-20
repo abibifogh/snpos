@@ -1,21 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, useToast,
+  ExpenseModal,
 } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, saveDropping,
   loadFloats, loadMovements, loadCounts, balancesFor, accountFor,
-  topUpFloat, returnFromFloat, spendFromFloat, reconcileFloat,
-  boxBalance, countBox, healthOf, topUpNeeded, overBy, countProblem, spendProblem, withoutReceipt,
+  topUpFloat, returnFromFloat, reconcileFloat,
+  boxBalance, countBox, healthOf, topUpNeeded, overBy, countProblem, withoutReceipt,
   boxesFor, canFundBoxes, holdsBox, NO_BOX_HELD,
-  needsExplaining, IMPREST_KIND_LABELS, loadPaidToOptions, categoriesForSide,
-  canSeePrivateExpenses, loadAccounts, ACCOUNTS,
+  needsExplaining, IMPREST_KIND_LABELS, loadPaidToOptions, loadAccounts, ACCOUNTS,
   uploadFile, downloadUrl, listByIds, saveDropping as saveRow,
 } from '@snpos/core';
 import type {
-  ImprestFloatDoc, ImprestMovementDoc, ImprestCountDoc, ExpenseCategoryDoc, StaffProfile,
-  AccountRow, ImprestHealth,
+  ImprestFloatDoc, ImprestMovementDoc, ImprestCountDoc, StaffProfile,
+  AccountRow, ImprestHealth, Module, Settings,
 } from '@snpos/core';
 import { useSession } from '../session';
 
@@ -47,7 +47,6 @@ export function ImprestPage() {
   const { settings, profile, user } = useSession();
   const toast = useToast();
   const userId = user?.$id ?? '';
-  const isAdmin = profile?.role === 'admin';
   /**
    * Whether this person may fund a box, or only use one.
    *
@@ -61,7 +60,6 @@ export function ImprestPage() {
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
-  const [categories, setCategories] = useState<ExpenseCategoryDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   /** The box being looked at, with its history. */
@@ -70,7 +68,9 @@ export function ImprestPage() {
   const [counts, setCounts] = useState<ImprestCountDoc[]>([]);
 
   const [editing, setEditing] = useState<Partial<ImprestFloatDoc> | null>(null);
-  const [doing, setDoing] = useState<'top_up' | 'return' | 'spend' | 'count' | null>(null);
+  const [doing, setDoing] = useState<'top_up' | 'return' | 'count' | null>(null);
+  /** Recording a spend, on the till's own form. See ExpenseModal. */
+  const [spending, setSpending] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Whatever the open action is asking for. One set of boxes rather than four,
@@ -78,18 +78,7 @@ export function ImprestPage() {
   const [amountText, setAmountText] = useState('');
   const [noteText, setNoteText] = useState('');
   const [fromAccount, setFromAccount] = useState<string>(ACCOUNTS.cash);
-  const [categoryKey, setCategoryKey] = useState('');
-  const [payee, setPayee] = useState('');
   const [alsoTopUp, setAlsoTopUp] = useState(true);
-  /**
-   * The paper that says the money really went where it says.
-   *
-   * A petty cash box without receipts is an honour system with extra steps:
-   * the count tells you the money is gone and nothing tells you what for. It
-   * is also the one thing an accountant will ask for and the one thing nobody
-   * can reconstruct afterwards.
-   */
-  const [receipt, setReceipt] = useState<{ file: File; name: string } | null>(null);
   /** Receipts already attached, by the expense they belong to. */
   const [receipts, setReceipts] = useState<Record<string, string>>({});
   const [attaching, setAttaching] = useState<string | null>(null);
@@ -121,12 +110,11 @@ export function ImprestPage() {
 
   useEffect(() => {
     void (async () => {
-      const [{ staff: people, categories: cats }, chart] = await Promise.all([
-        loadPaidToOptions().catch(() => ({ staff: [] as StaffProfile[], categories: [] as ExpenseCategoryDoc[], suppliers: [] })),
+      const [{ staff: people }, chart] = await Promise.all([
+        loadPaidToOptions().catch(() => ({ staff: [] as StaffProfile[], categories: [], suppliers: [] })),
         loadAccounts().catch(() => [] as AccountRow[]),
       ]);
       setStaff(people);
-      setCategories(cats);
       setAccounts(chart);
     })();
   }, []);
@@ -201,30 +189,12 @@ export function ImprestPage() {
 
   /* -------------------------------------------------------------- the actions */
 
-  /**
-   * The spending categories this box's side is offered.
-   *
-   * Declared above the handler that reads it. `startDoing` only runs from a
-   * click so the ordering is harmless today, but a const read before its
-   * declaration is a trap this codebase has already sprung once, and the fix
-   * is to not write it rather than to remember why it is safe.
-   */
-  const mine = useMemo(
-    () => categoriesForSide(categories, openBox?.module || 'kitchen', {
-      canSeePrivate: canSeePrivateExpenses(profile),
-    }),
-    [categories, openBox, profile],
-  );
-
   const startDoing = (what: typeof doing) => {
     setDoing(what);
     setError(null);
     setNoteText('');
-    setPayee('');
-    setReceipt(null);
     setAlsoTopUp(true);
     setFromAccount(ACCOUNTS.cash);
-    setCategoryKey(mine[0]?.key ?? '');
     // The top-up box starts at what it would take to fill it, because that is
     // the answer nine times in ten and retyping it is where it gets typed
     // wrongly. Everything else starts empty: a pre-filled amount on a count is
@@ -246,17 +216,6 @@ export function ImprestPage() {
       return;
     }
 
-    if (doing === 'spend') {
-      const problem = spendProblem({
-        amount: amount ?? 0,
-        balance: liveBalance,
-        categoryKey,
-        // An admin may record the truth over the arithmetic. See spendProblem.
-        allowOverdraw: isAdmin,
-      });
-      if (problem) { setError(problem); return; }
-    }
-
     setBusy(true);
     setError(null);
     try {
@@ -270,34 +229,6 @@ export function ImprestPage() {
           venueId: 'main', box: openBox, amount: amount ?? 0, userId, toAccount: fromAccount, note: noteText.trim(),
         });
         toast(`${money(amount ?? 0)} back out of ${openBox.name}`);
-      } else if (doing === 'spend') {
-        /*
-          The receipt goes up first, and a failed upload does not stop the
-          spend. Money that left the box left it; a missing photo is a
-          nuisance, a missing spend is a box that will not balance and nobody
-          able to say why.
-        */
-        let receiptFileId = '';
-        if (receipt) {
-          receiptFileId = (await uploadFile(receipt.file, 'receipt', settings).catch(() => null))?.fileId ?? '';
-        }
-        await spendFromFloat({
-          venueId: 'main',
-          box: openBox,
-          amount: amount ?? 0,
-          categoryKey,
-          userId,
-          payee: payee.trim(),
-          note: noteText.trim(),
-          receiptFileId,
-          module: openBox.module || 'kitchen',
-        });
-        toast(
-          receipt && !receiptFileId
-            ? `${money(amount ?? 0)} spent from ${openBox.name}, but the receipt would not upload. Attach it from the list.`
-            : `${money(amount ?? 0)} spent from ${openBox.name}`,
-          receipt && !receiptFileId ? 'err' : 'ok',
-        );
       } else if (doing === 'count') {
         const result = await reconcileFloat({
           venueId: 'main',
@@ -482,7 +413,14 @@ export function ImprestPage() {
 
           <div className="row" style={{ gap: '0.4rem', flexWrap: 'wrap', margin: '0.8rem 0' }}>
             <Button variant="primary" onClick={() => startDoing('count')}>Count and reconcile</Button>
-            <Button onClick={() => startDoing('spend')}>Record a spend</Button>
+            {/* The till's own spend form, opened against this box.
+
+                It already knows how to turn a market run into a list of
+                ingredients and put them on the shelf — a second form beside it
+                would eventually disagree about how a purchase reaches stock,
+                and the shelf is the one thing that cannot survive two
+                opinions. */}
+            <Button onClick={() => setSpending(true)}>Record a spend</Button>
             {/* Putting money in and taking it out are somebody else's job. See
                 canFundBoxes: a custodian who could record their own top-ups
                 could cover a shortage on paper. */}
@@ -594,9 +532,8 @@ export function ImprestPage() {
         <Modal
           title={
             doing === 'count' ? `Count ${openBox.name}`
-              : doing === 'spend' ? `Spend from ${openBox.name}`
-                : doing === 'top_up' ? `Top up ${openBox.name}`
-                  : `Take money out of ${openBox.name}`
+              : doing === 'top_up' ? `Top up ${openBox.name}`
+                : `Take money out of ${openBox.name}`
           }
           onClose={() => setDoing(null)}
           footer={
@@ -620,16 +557,14 @@ export function ImprestPage() {
 
           <Field
             label={
-              counting ? `What is actually in the box (${settings?.currency_symbol ?? ''})`
-                : doing === 'spend' ? `How much was spent (${settings?.currency_symbol ?? ''})`
-                  : `How much (${settings?.currency_symbol ?? ''})`
+              counting
+                ? `What is actually in the box (${settings?.currency_symbol ?? ''})`
+                : `How much (${settings?.currency_symbol ?? ''})`
             }
             hint={
               doing === 'top_up'
                 ? `${money(topUpNeeded(openBox.fixed_amount, liveBalance))} would bring it back to its level.`
-                : doing === 'spend'
-                  ? `${money(liveBalance)} in the box.`
-                  : undefined
+                : undefined
             }
           >
             <Input value={amountText} inputMode="decimal" onChange={(e) => setAmountText(e.target.value)} />
@@ -657,54 +592,6 @@ export function ImprestPage() {
                 </div>
               )}
             </Notice>
-          )}
-
-          {doing === 'spend' && (
-            <>
-              <Field label="What was it for" hint="Decides which account it lands in.">
-                <Select value={categoryKey} onChange={(e) => setCategoryKey(e.target.value)}>
-                  <option value="">Choose</option>
-                  {mine.map((c) => <option key={c.$id} value={c.key}>{c.name}</option>)}
-                </Select>
-              </Field>
-              <Field label="Paid to" hint="A driver, a stall, whoever took the money.">
-                <Input value={payee} onChange={(e) => setPayee(e.target.value)} />
-              </Field>
-              {/*
-                Attached here, at the moment it is recorded.
-
-                A box without receipts is an honour system with extra steps —
-                the count says the money is gone and nothing says what for. It
-                can still be added afterwards from the list below, because a
-                paper receipt genuinely does come back from the market in
-                somebody's pocket, but the moment of recording is when it
-                actually happens.
-              */}
-              <Field label="Receipt" hint="Optional, and worth it. A photo of the paper, or a PDF.">
-                {receipt ? (
-                  <div className="row" style={{ justifyContent: 'space-between' }}>
-                    <span className="small">{receipt.name}</span>
-                    <Button size="sm" variant="ghost" onClick={() => setReceipt(null)}>Remove</Button>
-                  </div>
-                ) : (
-                  <input
-                    type="file"
-                    accept="image/*,application/pdf"
-                    capture="environment"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      if (file.size > 10 * 1024 * 1024) {
-                        setError('That file is over 10MB. Take a smaller photo.');
-                        return;
-                      }
-                      setError(null);
-                      setReceipt({ file, name: file.name });
-                    }}
-                  />
-                )}
-              </Field>
-            </>
           )}
 
           {(doing === 'top_up' || doing === 'return') && (
@@ -740,6 +627,34 @@ export function ImprestPage() {
             <Textarea rows={2} value={noteText} onChange={(e) => setNoteText(e.target.value)} />
           </Field>
         </Modal>
+      )}
+
+      {/*
+        The till's own spend form, opened against this box.
+
+        Which means a market run out of the tin is itemised into ingredients
+        and lands on the shelf exactly as one paid from a drawer does — the
+        same code, so the two cannot disagree about how a purchase reaches
+        stock. The box is fixed by the screen, so the form never asks whose
+        money it was.
+      */}
+      {spending && openBox && (
+        <ExpenseModal
+          module={(openBox.module || 'kitchen') as Module}
+          venueId="main"
+          shiftId=""
+          settings={settings as Settings}
+          userId={userId}
+          askPaidFrom={false}
+          fromFloatId={openBox.$id}
+          onClose={() => setSpending(false)}
+          onDone={(m) => {
+            setSpending(false);
+            toast(m);
+            void load();
+            void openDetail(openBox);
+          }}
+        />
       )}
 
       {/* ------------------------------------------------------- adding a box */}

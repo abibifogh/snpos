@@ -7,7 +7,7 @@ import {
   expenseMethods, recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
   fromTakings, postExpense, accountForExpense,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
-  loadFloats, balancesFor, accountFor,
+  loadFloats, balancesFor, accountFor, recordBoxSpend, boxOverdrawn,
 } from '@snpos/core';
 import type {
   PaymentMethod, Settings, StaffProfile, PaidToKind, Supplier, ExpenseCategoryDoc, Ingredient,
@@ -60,7 +60,7 @@ const CANNOT_STORE_SOURCE =
  * which screen it was entered from.
  */
 export function ExpenseModal({
-  module, venueId, shiftId, settings, userId, expense, askPaidFrom = true, onClose, onDone,
+  module, venueId, shiftId, settings, userId, expense, askPaidFrom = true, fromFloatId, onClose, onDone,
 }: {
   module: Module;
   venueId: string;
@@ -80,6 +80,21 @@ export function ExpenseModal({
    * paid a supplier by transfer.
    */
   askPaidFrom?: boolean;
+  /**
+   * Force this spend to come out of one petty cash box, and stop asking.
+   *
+   * Set when the form is opened from the box itself, where "whose money was
+   * this" has already been answered by which screen somebody is standing on.
+   * Asking again would be a question with one possible answer and a way to
+   * give the wrong one — a spend recorded against the box you were looking at
+   * but filed against the drawer.
+   *
+   * This is what lets a petty cash spend be itemised into ingredients: the
+   * form that already knows how to turn a market run into stock is the same
+   * form, rather than a second one written beside it that would eventually
+   * disagree about how a purchase reaches the shelf.
+   */
+  fromFloatId?: string;
   /**
    * An expense already recorded, being corrected.
    *
@@ -321,7 +336,16 @@ export function ExpenseModal({
    * the money came from the drawer would credit a tin that never paid for
    * anything, and the drawer would still be counted short.
    */
-  const chosenBox = fromDrawer ? null : boxes.find((b) => b.$id === boxId) ?? boxes[0] ?? null;
+  /*
+    Opened from a box, so the box is settled before the form is drawn.
+
+    `fromFloatId` wins over whatever the drawer question says, because on that
+    screen the question was never asked — leaving it to the default would file
+    a spend somebody made from the tin against the till.
+  */
+  const chosenBox = fromFloatId
+    ? boxes.find((b) => b.$id === fromFloatId) ?? null
+    : fromDrawer ? null : boxes.find((b) => b.$id === boxId) ?? boxes[0] ?? null;
   /** What is being spent, as the form currently stands, for the warning below. */
   const boxSpend = parseMoney(amountText, settings.currency_decimals ?? 2) ?? 0;
 
@@ -456,7 +480,7 @@ export function ExpenseModal({
             ? `Includes ${formatMoney(extra, settings)} not itemised.`
             : '',
         ].filter(Boolean).join(' · ').slice(0, 500), // the column's own limit
-        from_takings: fromDrawer,
+        from_takings: chosenBox ? false : fromDrawer,
         /*
           The tin it came out of, so the money leaves the right place.
 
@@ -538,17 +562,14 @@ export function ExpenseModal({
             which is exactly the hole this feature exists to close.
           */
           if (chosenBox) {
-            await saveDropping('imprest_movements', null, {
-              venue_id: venueId,
-              float_id: chosenBox.$id,
-              amount: -amount,
-              kind: 'spend',
-              ref_type: 'expense',
-              ref_id: expenseId,
-              entry_id: entryId ?? '',
-              note: (noteText.trim() || payee || '').slice(0, 500),
-              created_by: userId,
-              occurred_at: new Date().toISOString(),
+            await recordBoxSpend({
+              venueId,
+              boxId: chosenBox.$id,
+              amount,
+              userId,
+              expenseId,
+              entryId: entryId ?? undefined,
+              note: noteText.trim() || payee,
             });
           }
         })
@@ -879,6 +900,7 @@ export function ExpenseModal({
         exactly as before; it only stops it being taken off the count.
       */}
       <Field
+        hidden={!!fromFloatId}
         label="Where did the money come from"
         hint={fromDrawer
           ? 'Taken off what your drawer should hold at the end of the shift.'
@@ -904,7 +926,7 @@ export function ExpenseModal({
         there actually needs, because a box cannot pay out what it does not
         hold.
       */}
-      {!fromDrawer && !editing && boxes.length > 0 && (
+      {!fromFloatId && !fromDrawer && !editing && boxes.length > 0 && (
         <Field
           label={boxes.length > 1 ? 'Which petty cash box' : 'The petty cash box'}
           hint={
@@ -926,13 +948,25 @@ export function ExpenseModal({
           )}
         </Field>
       )}
-      {!fromDrawer && boxes.length === 0 && (
+      {!fromFloatId && !fromDrawer && boxes.length === 0 && (
         <Notice tone="info">
           No petty cash box has been set up, so this is recorded as money the business spent and nothing else.
           An admin can add one under Money, Petty cash, and then spending from it is counted and reconciled.
         </Notice>
       )}
-      {!fromDrawer && chosenBox && boxSpend > (boxBalances[chosenBox.$id] ?? 0) && (
+      {/* Which tin, and what is in it, when the screen decided rather than the
+          person. Said plainly rather than left implicit: a form that spends
+          money without naming where it came from is one somebody has to trust
+          rather than read. */}
+      {fromFloatId && chosenBox && (
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Coming out of <strong>{chosenBox.name}</strong>, which holds{' '}
+          {formatMoney(boxBalances[chosenBox.$id] ?? 0, settings)}. Not off anybody&rsquo;s drawer.
+        </p>
+      )}
+      {/* Judged on the box rather than on the drawer question, which is not
+          asked at all when the box was chosen for us. */}
+      {chosenBox && boxOverdrawn(boxSpend, boxBalances[chosenBox.$id] ?? 0) && (
         <Notice tone="warn">
           That is more than {chosenBox.name} holds ({formatMoney(boxBalances[chosenBox.$id] ?? 0, settings)}).
           It will be recorded anyway and the box will show as overdrawn until somebody tops it up or corrects it.

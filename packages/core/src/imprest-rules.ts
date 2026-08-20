@@ -179,30 +179,23 @@ export function needsExplaining(variance: number, tolerance = IMPREST_TOLERANCE)
   return Math.abs(variance) > tolerance;
 }
 
-/** Why this spend cannot be recorded, or nothing. */
-export function spendProblem(opts: {
-  amount: number;
-  balance: number;
-  categoryKey?: string;
-  /** Allowed by an admin who would rather record the truth than balance. */
-  allowOverdraw?: boolean;
-}): string | null {
-  if (!opts.amount || opts.amount <= 0) return 'Enter what was spent.';
-  if (!opts.categoryKey) return 'Say what it was for, so it lands in the right account.';
-  if (opts.amount > opts.balance && !opts.allowOverdraw) {
-    /*
-      Refused by default, and only by default.
-
-      A box cannot pay out money it does not hold, so this is nearly always a
-      spend recorded against the wrong box or a top-up nobody entered. But it
-      IS possible for somebody to have made up the difference from their own
-      pocket and be owed it back, and a system that cannot record what really
-      happened gets worked around rather than corrected.
-    */
-    return 'That is more than the box holds. Record the top-up first, or tick the box below if it really was paid out anyway.';
-  }
-  return null;
-}
+/**
+ * A box spending more than it holds.
+ *
+ * Warned about, not refused, and that is a change of mind worth recording.
+ * The refusal that used to live here was the right instinct and the wrong
+ * behaviour: a box CAN legitimately go under, because somebody makes up the
+ * difference out of their own pocket and is owed it back, and a system that
+ * cannot record what really happened gets worked around rather than corrected.
+ *
+ * An overdrawn box is visible on its own screen and fails its next count, so
+ * nothing is hidden by allowing it. Blocking it hid the truth instead.
+ *
+ * Named for the box: `overdrawn` belongs to stock locations already, and two
+ * exports with one name in a package everything imports from is a collision
+ * waiting for whichever file compiles second.
+ */
+export const boxOverdrawn = (amount: number, balance: number): boolean => amount > balance;
 
 /* --------------------------------------------- who may do what with a box */
 
@@ -222,7 +215,7 @@ export interface HeldBox {
  * Matched on the staff profile's own id, which is what the custodian picker
  * writes. Not on a name: two people share one often enough, and a box is a
  * responsibility with somebody's name on it — attaching it to the wrong person
- * is attaching a shortage to them too.
+ * attaches a shortage to them too.
  */
 export const holdsBox = (who: BoxHolder | null, box: HeldBox): boolean =>
   !!who?.$id && !!box.custodian_id && box.custodian_id === who.$id;
@@ -230,12 +223,12 @@ export const holdsBox = (who: BoxHolder | null, box: HeldBox): boolean =>
 /**
  * Who may put money into a box, take it out, or set one up.
  *
- * Deliberately NOT the person who holds it, and this is the one real control in
- * the whole feature. Recording a top-up credits the till's cash and debits the
- * box, so a custodian who could invent one could top their own box back up on
- * paper and a shortage would never appear at the count. Separating "holds the
- * money" from "decides how much money it holds" is the entire reason an imprest
- * system is trusted at all.
+ * Deliberately NOT the person who holds it, and this is the one real control
+ * in the whole feature. Recording a top-up credits the till's cash and debits
+ * the box, so a custodian who could invent one could top their own box back up
+ * on paper and a shortage would never appear at the count. Separating "holds
+ * the money" from "decides how much money it holds" is the entire reason an
+ * imprest system is trusted at all.
  *
  * An owner can hand it to somebody by name — see `can_fund_petty_cash` — which
  * is how a manager who genuinely does the handing over gets to record it.
@@ -262,7 +255,7 @@ export const canUseBox = (who: BoxHolder | null, box: HeldBox): boolean =>
  * person responsible for one is a screen where the wrong one gets counted.
  *
  * Anybody who may fund boxes sees all of them, because setting one up and
- * moving money between them cannot be done from a list that hides most of them.
+ * moving money between them cannot be done from a list that hides most.
  */
 export function boxesFor<T extends HeldBox>(who: BoxHolder | null, boxes: T[]): T[] {
   if (canFundBoxes(who)) return boxes;
