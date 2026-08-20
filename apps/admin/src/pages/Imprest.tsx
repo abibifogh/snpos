@@ -7,9 +7,10 @@ import {
   formatMoney, parseMoney, toInput, saveDropping,
   loadFloats, loadMovements, loadCounts, balancesFor, accountFor,
   topUpFloat, returnFromFloat, spendFromFloat, reconcileFloat,
-  boxBalance, countBox, healthOf, topUpNeeded, overBy, countProblem, spendProblem,
+  boxBalance, countBox, healthOf, topUpNeeded, overBy, countProblem, spendProblem, withoutReceipt,
   needsExplaining, IMPREST_KIND_LABELS, loadPaidToOptions, categoriesForSide,
   canSeePrivateExpenses, loadAccounts, ACCOUNTS,
+  uploadFile, downloadUrl, listByIds, saveDropping as saveRow,
 } from '@snpos/core';
 import type {
   ImprestFloatDoc, ImprestMovementDoc, ImprestCountDoc, ExpenseCategoryDoc, StaffProfile,
@@ -71,6 +72,18 @@ export function ImprestPage() {
   const [categoryKey, setCategoryKey] = useState('');
   const [payee, setPayee] = useState('');
   const [alsoTopUp, setAlsoTopUp] = useState(true);
+  /**
+   * The paper that says the money really went where it says.
+   *
+   * A petty cash box without receipts is an honour system with extra steps:
+   * the count tells you the money is gone and nothing tells you what for. It
+   * is also the one thing an accountant will ask for and the one thing nobody
+   * can reconstruct afterwards.
+   */
+  const [receipt, setReceipt] = useState<{ file: File; name: string } | null>(null);
+  /** Receipts already attached, by the expense they belong to. */
+  const [receipts, setReceipts] = useState<Record<string, string>>({});
+  const [attaching, setAttaching] = useState<string | null>(null);
 
   const decimals = settings?.currency_decimals ?? 2;
   const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
@@ -110,6 +123,20 @@ export function ImprestPage() {
     ]);
     setMovements(m);
     setCounts(c);
+
+    /*
+      The receipts, joined rather than copied.
+
+      A movement points at the expense it came from, and the expense carries
+      the file. Storing the file id on both would be one read fewer and one
+      more place for the two to disagree about which receipt belongs to which
+      spend — and a receipt attached to the wrong expense is worse than none.
+    */
+    const expenseIds = m.filter((x) => x.ref_type === 'expense' && x.ref_id).map((x) => x.ref_id as string);
+    const rows = await listByIds<{ $id: string; receipt_file_id?: string }>(
+      'shift_expenses', '$id', expenseIds,
+    ).catch(() => []);
+    setReceipts(Object.fromEntries(rows.filter((r) => r.receipt_file_id).map((r) => [r.$id, r.receipt_file_id as string])));
   };
 
   const liveBalance = useMemo(
@@ -176,6 +203,7 @@ export function ImprestPage() {
     setError(null);
     setNoteText('');
     setPayee('');
+    setReceipt(null);
     setAlsoTopUp(true);
     setFromAccount(ACCOUNTS.cash);
     setCategoryKey(mine[0]?.key ?? '');
@@ -225,6 +253,16 @@ export function ImprestPage() {
         });
         toast(`${money(amount ?? 0)} back out of ${openBox.name}`);
       } else if (doing === 'spend') {
+        /*
+          The receipt goes up first, and a failed upload does not stop the
+          spend. Money that left the box left it; a missing photo is a
+          nuisance, a missing spend is a box that will not balance and nobody
+          able to say why.
+        */
+        let receiptFileId = '';
+        if (receipt) {
+          receiptFileId = (await uploadFile(receipt.file, 'receipt', settings).catch(() => null))?.fileId ?? '';
+        }
         await spendFromFloat({
           venueId: 'main',
           box: openBox,
@@ -233,9 +271,15 @@ export function ImprestPage() {
           userId,
           payee: payee.trim(),
           note: noteText.trim(),
+          receiptFileId,
           module: openBox.module || 'kitchen',
         });
-        toast(`${money(amount ?? 0)} spent from ${openBox.name}`);
+        toast(
+          receipt && !receiptFileId
+            ? `${money(amount ?? 0)} spent from ${openBox.name}, but the receipt would not upload. Attach it from the list.`
+            : `${money(amount ?? 0)} spent from ${openBox.name}`,
+          receipt && !receiptFileId ? 'err' : 'ok',
+        );
       } else if (doing === 'count') {
         const result = await reconcileFloat({
           venueId: 'main',
@@ -414,6 +458,18 @@ export function ImprestPage() {
 
           {error && doing === null && <Notice>{error}</Notice>}
 
+          {/* Said where somebody counting the box will read it. A box that
+              balances with no receipts behind it has proved nothing except
+              that somebody can subtract. */}
+          {movements && withoutReceipt(movements, receipts).length > 0 && (
+            <Notice tone="warn">
+              {withoutReceipt(movements, receipts).length}{' '}
+              {withoutReceipt(movements, receipts).length === 1 ? 'spend has' : 'spends have'} no receipt against
+              {withoutReceipt(movements, receipts).length === 1 ? ' it' : ' them'}. Attach them from the list
+              below — the count tells you the money is gone, and only the receipt says what for.
+            </Notice>
+          )}
+
           <h3>Everything that has moved</h3>
           {!movements ? (
             <Spinner />
@@ -426,7 +482,8 @@ export function ImprestPage() {
               <table className="data">
                 <thead>
                   <tr>
-                    <th>When</th><th>What</th><th>Note</th><th className="num">In</th><th className="num">Out</th>
+                    <th>When</th><th>What</th><th>Note</th>
+                    <th className="num">In</th><th className="num">Out</th><th>Receipt</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -439,6 +496,55 @@ export function ImprestPage() {
                       <td className="small dim">{m.note || '—'}</td>
                       <td className="num">{m.amount > 0 ? money(m.amount) : ''}</td>
                       <td className="num">{m.amount < 0 ? money(-m.amount) : ''}</td>
+                      <td className="small">
+                        {/* Only a spend has one to show. A top-up is a
+                            transfer between two places the business already
+                            owns; there is no third party to have issued a
+                            receipt for it. */}
+                        {m.kind !== 'spend' || !m.ref_id ? (
+                          <span className="dim">—</span>
+                        ) : receipts[m.ref_id] ? (
+                          <a
+                            href={downloadUrl(receipts[m.ref_id], 'receipt', settings)}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            View
+                          </a>
+                        ) : (
+                          <label className="small" style={{ cursor: 'pointer', textDecoration: 'underline' }}>
+                            {attaching === m.ref_id ? 'Attaching…' : 'Attach'}
+                            <input
+                              type="file"
+                              accept="image/*,application/pdf"
+                              capture="environment"
+                              style={{ display: 'none' }}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                const expenseId = m.ref_id;
+                                if (!file || !expenseId) return;
+                                if (file.size > 10 * 1024 * 1024) {
+                                  toast('That file is over 10MB. Take a smaller photo.', 'err');
+                                  return;
+                                }
+                                void (async () => {
+                                  setAttaching(expenseId);
+                                  try {
+                                    const up = await uploadFile(file, 'receipt', settings);
+                                    await saveRow('shift_expenses', expenseId, { receipt_file_id: up.fileId });
+                                    setReceipts((r) => ({ ...r, [expenseId]: up.fileId }));
+                                    toast('Receipt attached');
+                                  } catch (err) {
+                                    toast(humanError(err), 'err');
+                                  } finally {
+                                    setAttaching(null);
+                                  }
+                                })();
+                              }}
+                            />
+                          </label>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -529,6 +635,40 @@ export function ImprestPage() {
               </Field>
               <Field label="Paid to" hint="A driver, a stall, whoever took the money.">
                 <Input value={payee} onChange={(e) => setPayee(e.target.value)} />
+              </Field>
+              {/*
+                Attached here, at the moment it is recorded.
+
+                A box without receipts is an honour system with extra steps —
+                the count says the money is gone and nothing says what for. It
+                can still be added afterwards from the list below, because a
+                paper receipt genuinely does come back from the market in
+                somebody's pocket, but the moment of recording is when it
+                actually happens.
+              */}
+              <Field label="Receipt" hint="Optional, and worth it. A photo of the paper, or a PDF.">
+                {receipt ? (
+                  <div className="row" style={{ justifyContent: 'space-between' }}>
+                    <span className="small">{receipt.name}</span>
+                    <Button size="sm" variant="ghost" onClick={() => setReceipt(null)}>Remove</Button>
+                  </div>
+                ) : (
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    capture="environment"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 10 * 1024 * 1024) {
+                        setError('That file is over 10MB. Take a smaller photo.');
+                        return;
+                      }
+                      setError(null);
+                      setReceipt({ file, name: file.name });
+                    }}
+                  />
+                )}
               </Field>
             </>
           )}

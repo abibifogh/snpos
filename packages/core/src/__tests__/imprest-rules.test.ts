@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   boxBalance, spentSince, topUpNeeded, overBy, healthOf, countBox, countProblem,
-  needsExplaining, spendProblem, IMPREST_LOW_BP, IMPREST_TOLERANCE,
+  needsExplaining, spendProblem, withoutReceipt, IMPREST_LOW_BP, IMPREST_TOLERANCE,
   type ImprestMovement,
 } from '../imprest-rules.ts';
 
@@ -119,4 +119,28 @@ test('spending since a moment counts only spending', () => {
   ];
   assert.equal(spentSince(rows), 3_000);
   assert.equal(spentSince(rows, '2026-08-15T00:00:00Z'), 2_000);
+});
+
+test('a top-up is not a spend missing its receipt', () => {
+  /**
+   * Only a spend has a third party who could have issued one. A top-up is a
+   * transfer between two places the business already owns, and counting those
+   * as undocumented would report every funded box as half missing — a warning
+   * that is always on is one nobody reads.
+   */
+  const rows = [
+    { kind: 'top_up' as const, ref_type: 'top_up', ref_id: '' },
+    { kind: 'adjust' as const, ref_type: 'count', ref_id: '' },
+    { kind: 'spend' as const, ref_type: 'expense', ref_id: 'e1' },
+    { kind: 'spend' as const, ref_type: 'expense', ref_id: 'e2' },
+  ];
+  const missing = withoutReceipt(rows, { e1: 'file-1' });
+  assert.deepEqual(missing.map((m) => m.ref_id), ['e2']);
+});
+
+test('a spend pointing at nothing counts as missing, not as filed', () => {
+  // A movement with no expense behind it cannot have a receipt, and reading
+  // that as "documented" is how a gap becomes invisible.
+  const rows = [{ kind: 'spend' as const, ref_type: 'expense', ref_id: '' }];
+  assert.equal(withoutReceipt(rows, {}).length, 1);
 });

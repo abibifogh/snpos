@@ -204,6 +204,27 @@ export function spendProblem(opts: {
   return null;
 }
 
+/**
+ * Spends out of the box with nothing to show for them.
+ *
+ * The question somebody asks when reconciling, and the reason a box is run on
+ * receipts at all: the count says the money is gone, and only the paper says
+ * what for. A box that balances perfectly with no receipts behind it has
+ * proved nothing except that somebody can subtract.
+ *
+ * Only spends. A top-up is a transfer between two places the business already
+ * owns — there is no third party to have issued a receipt for it, and counting
+ * those as missing would report every funded box as half undocumented.
+ */
+export function withoutReceipt<T extends { kind: ImprestKind; ref_type?: string; ref_id?: string }>(
+  movements: T[],
+  receiptFor: Record<string, string>,
+): T[] {
+  return movements.filter(
+    (m) => m.kind === 'spend' && (!m.ref_id || m.ref_type !== 'expense' || !receiptFor[m.ref_id]),
+  );
+}
+
 /** The movement in one sentence, for a list and for the audit log alike. */
 export function describeMovement(m: ImprestMovement & { note?: string }): string {
   const label = IMPREST_KIND_LABELS[m.kind] ?? 'Moved';
