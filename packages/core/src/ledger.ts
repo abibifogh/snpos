@@ -237,6 +237,16 @@ export interface ShiftPosting {
   cashVariance: number;
   /** Which side of the business this shift belongs to. Absent is the kitchen. */
   module?: Module;
+  /**
+   * When these entries belong, rather than when they are being written.
+   *
+   * Absent at a close, where the two are the same moment. Given when a shift's
+   * postings are being put right afterwards — see repostShiftAccounts — so a
+   * correction to Tuesday lands on Tuesday. Without it a repost would move a
+   * night's takings into the day somebody happened to notice the mistake, and
+   * a month that had already been reported would change.
+   */
+  date?: Date;
   expenses: { amount: number; accountCode: string; expenseId?: string }[];
 }
 
@@ -248,7 +258,9 @@ export interface ShiftPosting {
  */
 export async function postShift(p: ShiftPosting): Promise<string[]> {
   const posted: string[] = [];
-  const common = { shiftId: p.shiftId, postedBy: p.postedBy, source: 'shift_close', sourceId: p.shiftId };
+  const common = {
+    shiftId: p.shiftId, postedBy: p.postedBy, source: 'shift_close', sourceId: p.shiftId, date: p.date,
+  };
 
   // --- sales: what came in, what it was made of, and what is owed onward
   const gross = p.takings.cash + p.takings.card + p.takings.mobile_money + p.takings.other;
@@ -329,6 +341,23 @@ export async function postShift(p: ShiftPosting): Promise<string[]> {
   }
 
   return posted;
+}
+
+/**
+ * What a shift close put on the books, and has not since been undone.
+ *
+ * Reversals and reversed entries are both left out. An entry already cancelled
+ * has no effect to correct, and cancelling one twice would post the opposite
+ * mistake at double the size — the same trap reverseEntry refuses at its own
+ * door, guarded here as well because this is where a caller decides what to
+ * hand it.
+ */
+export async function shiftCloseEntries(venueId: string, shiftId: string): Promise<JournalEntry[]> {
+  const entries = await listAll<JournalEntry>('journal_entries', [
+    Query.equal('venue_id', venueId),
+    Query.equal('source_id', shiftId),
+  ]).catch(() => [] as JournalEntry[]);
+  return entries.filter((e) => e.source === 'shift_close' && !e.reversed_by && !e.reversal_of);
 }
 
 export interface TrialBalanceRow {
@@ -434,7 +463,21 @@ export async function postManualEntry(
  */
 export async function reverseEntry(
   entry: JournalEntry,
-  opts: { postedBy: string; memo?: string },
+  opts: {
+    postedBy: string;
+    memo?: string;
+    /**
+     * When the reversal belongs. Today unless given, which is the right answer
+     * for undoing something that genuinely happened.
+     *
+     * The exception is a figure that was never true — a shift's own posting
+     * being rebuilt from corrected records. There, leaving the reversal in
+     * this month while the replacement lands in the month it belongs to would
+     * move money between periods that never moved, and a month already
+     * reported on would change by the whole amount.
+     */
+    date?: Date;
+  },
 ): Promise<string> {
   if (entry.reversed_by) throw new Error('That entry has already been reversed.');
 
@@ -444,9 +487,11 @@ export async function reverseEntry(
   const reversal = await postEntry(
     entry.venue_id,
     {
-      // Dated today, not on the original's date. A reversal is something that
-      // happened now; back-dating it into a period somebody has already
-      // reported on changes a figure that has been read and acted upon.
+      // Dated today unless the caller says otherwise. A reversal is normally
+      // something that happened now; back-dating it into a period somebody
+      // has already reported on changes a figure that has been read and acted
+      // upon. See the note on `date` for the one case that is not true.
+      date: opts.date,
       source: 'reversal',
       sourceId: entry.$id,
       memo: opts.memo?.trim() || `Reversal of ${entry.memo || entry.source}`,

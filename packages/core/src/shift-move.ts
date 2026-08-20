@@ -135,9 +135,19 @@ export function moveEffects(opts: {
       + 'in the drawer that night does not change — only what it should have held, and the over-or-short with '
       + 'it. A shift that balanced may not any more.',
     );
+    /*
+      Said as a statement of what WILL happen, not a warning about what will
+      not. The accounts used to be left behind here, which meant a shift that
+      lost a sale went on crediting revenue it never made and went on carrying
+      a cash shortage with somebody's name against it. They are now reposted —
+      see repostShiftAccounts — and the one case that still cannot be is a
+      period the books have been closed off through.
+    */
     warnings.push(
-      `Anything already posted to the accounts for ${names} is not changed. If the books for that period have `
-      + 'been closed off, correct them under Accounting as well.',
+      `The accounting entries for ${names} are posted again from the corrected figures, on their own dates, `
+      + 'with the old ones reversed so both halves stay readable. The cost of goods sold is left where it is. '
+      + 'If the books for that period have been closed off, nothing there can be touched and you will be told '
+      + 'so.',
     );
   }
 

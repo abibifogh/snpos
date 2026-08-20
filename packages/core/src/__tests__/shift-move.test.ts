@@ -108,7 +108,11 @@ test('a closed shift at either end is warned about, and named', () => {
   assert.equal(effects.warnings.length, 2);
   assert.match(effects.warnings[0], /BIST-07 and BIST-08/);
   assert.match(effects.warnings[0], /physically in the drawer that night does not change/);
-  assert.match(effects.warnings[1], /posted to the accounts/);
+  // The books follow the sale now, so this says what WILL happen rather than
+  // warning about what will not. See repostShiftAccounts.
+  assert.match(effects.warnings[1], /posted again from the corrected figures/);
+  assert.match(effects.warnings[1], /old ones reversed/);
+  assert.match(effects.warnings[1], /closed off/);
 });
 
 test('an order that was on no shift is told what its money is about to do', () => {

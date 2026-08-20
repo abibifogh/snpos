@@ -2,7 +2,7 @@ import { db, DB_ID, ID, Query, listAll } from './client';
 import type { Doc, Settings } from './types';
 import type { Order, OrderItem } from './orders';
 import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from './stock';
-import { postShift } from './ledger';
+import { postShift, reverseEntry, shiftCloseEntries, lockedThroughFor, isLocked } from './ledger';
 import { isLivePayment } from './payments';
 import { featureConfig, isEnabled, type FeatureMap } from './features';
 import type { Module } from './access';
@@ -848,4 +848,152 @@ export async function changeShiftClose(opts: {
     reason: opts.reason.slice(0, 500),
     shift_id: opts.shift.$id,
   }).catch(() => undefined);
+}
+
+/**
+ * Put a closed shift's accounting entries back in step with its records.
+ *
+ * `recomputeClosedShift` fixes what the shift itself says it took. This fixes
+ * what the BOOKS say it took, which is a different thing and the one an
+ * accountant reads. An order moved onto another shift leaves the losing shift
+ * still crediting sales it no longer made, and — the part that actually costs
+ * somebody money — still carrying a cash shortage that was only ever the sale
+ * being filed in the wrong place.
+ *
+ * Reversed and reposted rather than edited. The figures are rebuilt from the
+ * rows as they now stand by the same postShift the close itself uses, so a
+ * corrected shift is posted identically to one that had been right first time
+ * — no second implementation of what a shift's entry looks like, which is how
+ * the two would eventually disagree.
+ *
+ * BOTH HALVES ARE DATED ON THE ORIGINAL. A reversal is normally dated today
+ * and should be; that is for undoing something that genuinely happened. This
+ * is a figure that was never true, and leaving its cancellation in this month
+ * while the replacement lands in the month it belongs to would move a night's
+ * takings between two periods that never saw them.
+ *
+ * THREE THINGS ARE DELIBERATELY LEFT ALONE:
+ *
+ *   - Expenses. They post themselves by their own id and have nothing to do
+ *     with which shift an order was filed under.
+ *   - The cost of goods sold. It is derived from a stock depletion that has
+ *     already physically happened, and cannot be re-derived here without
+ *     recipes; both shifts are on the same side of the business, so the
+ *     account it sits in is the same either way.
+ *   - Anything in a period the books have been closed off through. Refused
+ *     whole rather than half done, and said plainly, because the alternative
+ *     is a reversal posted with no replacement behind it.
+ */
+export async function repostShiftAccounts(opts: {
+  shiftId: string;
+  userId: string;
+  reason: string;
+}): Promise<{ changed: boolean; note: string }> {
+  const shift = (await db.getDocument(DB_ID, 'shifts', opts.shiftId).catch(() => null)) as unknown as
+    (Shift & { counted?: string; cogs_total?: number }) | null;
+  if (!shift) return { changed: false, note: '' };
+  if (shift.status !== 'closed') {
+    // Nothing has been posted yet and nothing needs correcting: an open shift
+    // works its figures out from the rows and posts them when it closes.
+    return { changed: false, note: '' };
+  }
+
+  const venueId = shift.venue_id;
+  const live = await shiftCloseEntries(venueId, shift.$id);
+  /*
+    Only the two entries whose figures move.
+
+    Matched on the memos postShift writes, which are fixed strings in that one
+    function rather than anything a person types. The cost-of-goods entry is
+    left standing; see the note above.
+  */
+  const MOVES = ['Shift sales', 'Cash short', 'Cash over'];
+  const stale = live.filter((e) => MOVES.includes(e.memo ?? ''));
+
+  // Where the replacement belongs: exactly where the original sat. Falling
+  // back to the close itself for a shift whose posting never happened.
+  const when = new Date(stale[0]?.date ?? shift.closed_at ?? shift.$createdAt);
+
+  const lockedThrough = await lockedThroughFor(venueId);
+  for (const d of [when.toISOString(), ...stale.map((e) => e.date)]) {
+    if (isLocked(d, lockedThrough)) {
+      return {
+        changed: false,
+        note: `The books are closed through ${lockedThrough}, so the accounts for ${shift.code} were not `
+          + 'touched. Reopen the period under Accounting, or post the correction by hand.',
+      };
+    }
+  }
+
+  const methods = await loadPaymentMethods(venueId);
+  const takings = await expectedTakings(shift, methods);
+
+  let counted: Record<string, number> = {};
+  try {
+    counted = JSON.parse(shift.counted || '{}');
+  } catch {
+    // A count that cannot be read cannot produce an over-or-short, and
+    // inventing one against nothing is worse than leaving the books alone.
+    return { changed: false, note: `${shift.code}'s drawer count could not be read, so its books were left alone.` };
+  }
+  const totalOff = Object.keys(counted).reduce(
+    (a, k) => a + ((counted[k] ?? 0) - (takings.byMethod[k] ?? 0)),
+    0,
+  );
+
+  const paid = (await listAll<Order>('orders', [Query.equal('shift_id', shift.$id)]))
+    .filter((o) => o.payment_status === 'paid');
+
+  const byKind = { cash: 0, card: 0, mobile_money: 0, other: 0 };
+  for (const p of takings.payments) {
+    const kind = (methods.find((x) => x.$id === p.method_id)?.kind ?? 'other') as keyof typeof byKind;
+    byKind[kind in byKind ? kind : 'other'] += p.amount;
+  }
+
+  // Out first, in second. A replacement posted before the cancellation would
+  // leave a moment in which the books double-count the night, and anything
+  // reading them in that moment reads a figure that was never true either.
+  for (const e of stale) {
+    await reverseEntry(e, {
+      postedBy: opts.userId,
+      date: new Date(e.date),
+      memo: `Correcting ${shift.code}: ${opts.reason}`.slice(0, 300),
+    });
+  }
+
+  await postShift({
+    venueId,
+    shiftId: shift.$id,
+    postedBy: opts.userId,
+    date: when,
+    takings: byKind,
+    tips: takings.tipsTotal,
+    tax: paid.reduce((a, o) => a + o.tax_total, 0),
+    discounts: paid.reduce((a, o) => a + o.discount_total, 0),
+    // Left where it is. See the note above.
+    cogs: 0,
+    cashVariance: totalOff,
+    module: (shift.module ?? 'kitchen') as Module,
+    // They post themselves, by their own id, and none of them moved.
+    expenses: [],
+  });
+
+  await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
+    venue_id: venueId,
+    actor_id: opts.userId,
+    action: 'shift_accounts_reposted',
+    entity_type: 'shift',
+    entity_id: shift.$id,
+    before: JSON.stringify({ reversed: stale.map((e) => ({ id: e.$id, memo: e.memo })) }).slice(0, 4000),
+    after: JSON.stringify({ takings: byKind, tips: takings.tipsTotal, cashVariance: totalOff }).slice(0, 4000),
+    reason: opts.reason.slice(0, 500),
+    shift_id: shift.$id,
+  }).catch(() => undefined);
+
+  return {
+    changed: true,
+    note: stale.length > 0
+      ? `${shift.code}'s accounts were reposted.`
+      : `${shift.code} had nothing on the books; its accounts were posted.`,
+  };
 }

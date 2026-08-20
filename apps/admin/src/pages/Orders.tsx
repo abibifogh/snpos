@@ -10,6 +10,7 @@ import {
   voidPayment, isLivePayment, changePaymentMethod, logPaymentMethodChange,
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, flatten, MODULE_LABELS,
   listByIds, listCreatedBetween, moveOrderToShift, shiftChoices, moveProblem, moveEffects, describeMove,
+  repostShiftAccounts,
 } from '@snpos/core';
 import type {
   Order, OrderItem, StaffProfile, Doc, Venue, Module, GroupChoice, SortChoice, MovableShift,
@@ -228,6 +229,28 @@ export function OrdersPage() {
       if (before) await recomputeClosedShift(before).catch(() => null);
       await recomputeClosedShift(to.$id).catch(() => null);
 
+      /*
+        And the books, which are a separate set of figures.
+
+        Recomputing puts the SHIFT right; this puts the ACCOUNTS right, and
+        the difference is the one that costs somebody money. A shift that
+        loses a sale goes on crediting revenue it never made and goes on
+        carrying a cash shortage that was only ever the sale being filed in
+        the wrong place — which is a shortage with a person's name against it.
+
+        Best effort on purpose. The move itself has already happened and is
+        correct; a period locked off, or a posting that will not go, must not
+        be reported as a failed move. Whatever did or did not happen to the
+        books is said out loud instead.
+      */
+      const notes: string[] = [];
+      for (const id of [before, to.$id].filter((x): x is string => !!x)) {
+        const done = await repostShiftAccounts({
+          shiftId: id, userId: user?.$id ?? '', reason: moveReason.trim(),
+        }).catch((e) => ({ changed: false, note: humanError(e) }));
+        if (done.note) notes.push(done.note);
+      }
+
       setMoving(null);
       setOpen(null);
       await load();
@@ -244,6 +267,10 @@ export function OrdersPage() {
           `${moving.order.order_no} now counts under ${to.code}`
           + (moved > 0 ? `, with ${moved} payment${moved === 1 ? '' : 's'}` : ''),
         );
+        // Said as its own message rather than tacked on. What happened to the
+        // books is a separate fact from what happened to the order, and the
+        // one somebody may have to act on.
+        for (const n of notes) toast(n);
       }
     } catch (e) {
       toast(humanError(e), 'err');
