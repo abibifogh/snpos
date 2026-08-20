@@ -454,7 +454,7 @@ export function OrderView({
               </button>
             ))}
           </div>
-          <div className={ctx.module === 'craft' ? 'menu-grid with-pics' : 'menu-grid'}>
+          <div className={ctx.module === 'kitchen' ? 'menu-grid' : 'menu-grid with-pics'}>
             {(shownSection?.entries ?? []).map((entry) => {
               /*
                 A shop sells things that look like something.
@@ -470,9 +470,22 @@ export function OrderView({
                 worse than a grid of names, so an item with no photograph keeps
                 the plain tile rather than being given an empty frame.
               */
-              const img = ctx.module === 'craft'
-                ? previewUrl(entry.item.image_id, 'menu', ctx.settings, 240, 240)
-                : null;
+              /*
+                A picture wherever there is one, on both counters that sell
+                things rather than cook them.
+
+                This was the shop's alone. A bar has the same problem for the
+                same reason: forty bottles whose names are three words of
+                brand and one of size, told apart far faster by the label than
+                by reading. The kitchen is the exception — nobody serving
+                needs a photograph of jollof to find it.
+
+                Still only where a picture exists. A grid of grey placeholders
+                is worse than a grid of names.
+              */
+              const img = ctx.module === 'kitchen'
+                ? null
+                : previewUrl(entry.item.image_id, 'menu', ctx.settings, 240, 240);
               /*
                 A bartender should be able to check how a drink is made.
 
@@ -536,10 +549,6 @@ export function OrderView({
               );
             })}
           </div>
-          <p className="small dim" style={{ marginTop: '0.8rem' }}>
-            Items with options are added with their defaults. Change them from the bill, or take the order on the
-            customer's phone for the full choice.
-          </p>
         </div>
 
         <Card title={counterSale ? 'Sale' : 'Bill'} pad>

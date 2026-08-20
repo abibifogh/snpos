@@ -268,14 +268,22 @@
 */
 .order-layout > .card { overflow: hidden; }
 .bill { position: static; overflow-y: auto; max-height: 100%; padding-bottom: 0.2rem; }
-.bill-total.grand,
-.bill > .btn-primary,
-.bill .pay-now {
+/*
+  The total needs a background; the button already has one.
+
+  This originally set `background: var(--surface)` on both, to stop the lines
+  scrolling through them. On the button that painted white over its own brand
+  colour, leaving white text on white — invisible until pressed. A solid
+  element does not need a backdrop, and giving it one covers what it is.
+*/
+.bill-total.grand {
   position: sticky;
   bottom: 0;
   background: var(--surface);
   z-index: 1;
 }
+.bill > .btn-primary,
+.bill .pay-now { position: sticky; bottom: 0; z-index: 1; }
 
 .bill-line { padding: 0.6rem 0; gap: 0.6rem; font-size: 0.95rem; }
 .cart-line .name { font-size: 0.98rem; font-weight: 600; }
