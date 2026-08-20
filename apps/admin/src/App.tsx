@@ -16,6 +16,7 @@ import { HelpPage } from './pages/Help';
 import { AddonsPage } from './pages/Addons';
 import { ExpensesPage } from './pages/Expenses';
 import { ImprestPage } from './pages/Imprest';
+import { CustomersPage } from './pages/Customers';
 import { AccountingPage } from './pages/Accounting';
 import { TablesPage } from './pages/Tables';
 import { ShiftsPage } from './pages/Shifts';
@@ -79,6 +80,7 @@ export function App() {
         <Route path="/menu/options" element={guard('menu_options', <AddonsPage />)} />
         <Route path="/expenses" element={guard('expenses', <ExpensesPage />)} />
         <Route path="/imprest" element={guard('imprest', <ImprestPage />)} />
+        <Route path="/customers" element={guard('customers', <CustomersPage />)} />
         <Route path="/accounting" element={guard('accounting', <AccountingPage />)} />
         <Route path="/vouchers" element={guard('vouchers', <VouchersPage />)} />
         <Route path="/consignors" element={guard('consignors', <ConsignorsPage />)} />

@@ -137,6 +137,17 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'dashboard', label: 'Dashboard', path: '/', group: 'Overview' },
   { key: 'orders', label: 'Orders', path: '/orders', group: 'Overview' },
   { key: 'reports', label: 'Reports', path: '/reports', group: 'Overview' },
+  /*
+    The people who have bought something.
+
+    Off for every role until an owner grants it by name — it is not in
+    DEFAULT_ACCESS, so only an admin sees it to begin with. Names, phone
+    numbers and email addresses are the one kind of data on this system that
+    belongs to somebody outside the business, and "who can read the customer
+    list" is a decision worth making on purpose rather than inheriting from a
+    job title.
+  */
+  { key: 'customers', label: 'Customers', path: '/customers', group: 'Overview' },
   // Everything one side of the business owns lives under that side, so the two
   // catalogues never share a list. A cook adding a dish and a shop assistant
   // adding a basket are doing unrelated jobs on unrelated stock.
