@@ -63,7 +63,11 @@ const packHint = (ing: { unit?: string; pack_name?: string; pack_size?: number }
   // The worked example is the house's own: a 750ml bottle poured as 5cl
   // measures is fifteen. A number picked out of the air here is a number
   // somebody copies.
-  if (!(size > 1)) return `Leave at 0 if you buy it by the ${unit}. A 750ml bottle poured as 5cl measures would be 15.`;
+  //
+  // No longer told to "leave it at 0" for something bought by the unit. That
+  // answer now lives in the dropdown above, and this box is not shown at all
+  // until a pack has been named.
+  if (!(size > 1)) return `How many ${unit} come in one ${name}? A 750ml bottle poured as 5cl measures would be 15.`;
   return `Buying 1 ${name} adds ${size} ${unit} to stock, and a price of ${symbol}280 a ${name} `
     + `is stored as ${symbol}${(280 / size).toFixed(2)} a ${unit}.`;
 };
@@ -620,7 +624,16 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
             <Field label="Name">
               <Input value={editing.name ?? ''} autoFocus onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
             </Field>
-            <Field label="Unit" hint="How you count it. Recipes use the same unit.">
+            {/*
+              "Counted in", not "Unit".
+
+              Sat next to "Bought as", the word Unit reads as the same question
+              asked twice — both of them are units, after all. Naming each one
+              for the JOB it does is what tells them apart: this is the unit
+              the shelf is counted in and recipes draw on, and the one below is
+              only about how it turns up at the door.
+            */}
+            <Field label="Counted and cooked in" hint="What the count sheet asks for and what recipes draw on.">
               <Select value={editing.unit ?? 'kg'} onChange={(e) => setEditing({ ...editing, unit: e.target.value })}>
                 {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
               </Select>
@@ -674,9 +687,17 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
               is really on it. Left at nought, nothing changes anywhere, which
               is what every kitchen ingredient wants.
             */}
+            <div style={{ gridColumn: '1 / -1', marginTop: '0.4rem' }}>
+              <h4 style={{ margin: '0 0 0.15rem' }}>How it arrives</h4>
+              <p className="small dim" style={{ margin: 0 }}>
+                Only different from the unit above when you buy it in something bigger than you count it in —
+                a sack of rice counted in kg, a bottle of gin poured as shots. Buy it by the{' '}
+                {editing.unit ?? 'unit'} and there is nothing to set here.
+              </p>
+            </div>
             <Field
-              label="Bought as"
-              hint={`What one purchase is called, if you do not buy it by the ${editing.unit ?? 'unit'}. Manage the list under the Packs tab.`}
+              label={`Bought by the ${editing.unit ?? 'unit'}, or in something bigger?`}
+              hint="Manage the list of sacks, crates and cases under the Packs tab."
             >
               <Select
                 value={editing.pack_name ?? ''}
@@ -708,18 +729,33 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
                 )}
               </Select>
             </Field>
-            <Field
-              label={`${plainPack(editing.pack_name)} holds how many ${editing.unit ?? 'unit'}?`}
-              hint={packHint(editing, settings?.currency_symbol ?? '')}
-            >
-              <Input
-                type="number"
-                step="any"
-                min="0"
-                value={editing.pack_size ?? 0}
-                onChange={(e) => setEditing({ ...editing, pack_size: Number(e.target.value) })}
-              />
-            </Field>
+            {/*
+              Only once there is a pack to describe.
+
+              This box was always on screen, and with no pack chosen it read
+              "One purchase holds how many kg?" directly under a unit of kg —
+              which is the same question twice to anybody reading quickly, and
+              a question with no answer for the kitchen ingredients that make
+              up most of this list.
+
+              A size left over from before the name was cleared still shows it,
+              or the form would claim there is no pack while a pack size sat
+              underneath deciding what every delivery books.
+            */}
+            {(editing.pack_name || Number(editing.pack_size ?? 0) > 1) && (
+              <Field
+                label={`${plainPack(editing.pack_name)} holds how many ${editing.unit ?? 'unit'}?`}
+                hint={packHint(editing, settings?.currency_symbol ?? '')}
+              >
+                <Input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={editing.pack_size ?? 0}
+                  onChange={(e) => setEditing({ ...editing, pack_size: Number(e.target.value) })}
+                />
+              </Field>
+            )}
             {packProblem(Number(editing.pack_size ?? 0), editing.unit ?? '', editing.pack_name ?? '') && (
               <div style={{ gridColumn: '1 / -1' }}>
                 <Notice tone="warn">
