@@ -197,6 +197,84 @@ export function needsExplaining(variance: number, tolerance = IMPREST_TOLERANCE)
  */
 export const boxOverdrawn = (amount: number, balance: number): boolean => amount > balance;
 
+/* ------------------------------------------- what belongs to which count */
+
+export interface CountedPeriod {
+  /** The moment the previous count closed. Absent means from the beginning. */
+  covers_from?: string;
+  counted_at?: string;
+  $createdAt?: string;
+}
+
+const whenOf = (m: { occurred_at?: string; $createdAt?: string }): string =>
+  m.occurred_at ?? m.$createdAt ?? '';
+
+/**
+ * The movements one count was settling.
+ *
+ * A count is not just a number; it is a line drawn under everything that had
+ * happened up to then. Once it is made, those movements have been accounted
+ * for and reading them alongside this week's is what makes the list useless —
+ * a box counted every Friday shows a year of history on one screen, and the
+ * six things that have happened since Friday are lost in it.
+ *
+ * The window is the PREVIOUS count's moment to this one's. Held as a pair of
+ * timestamps rather than stamped onto each movement: a movement is a statement
+ * that money moved and nothing about it changes when somebody counts, so
+ * writing to forty rows to record a fact about one is forty chances to half
+ * finish the job.
+ */
+export function movementsFor<T extends { occurred_at?: string; $createdAt?: string }>(
+  movements: T[],
+  count: CountedPeriod,
+): T[] {
+  const to = count.counted_at ?? count.$createdAt ?? '';
+  const from = count.covers_from ?? '';
+  return movements.filter((m) => {
+    const at = whenOf(m);
+    if (!at || (to && at > to)) return false;
+    return !from || at > from;
+  });
+}
+
+/**
+ * What has happened since the box was last counted.
+ *
+ * The only list that is actually live. Everything older belongs to a count and
+ * is read there.
+ */
+export function movementsSince<T extends { occurred_at?: string; $createdAt?: string }>(
+  movements: T[],
+  counts: CountedPeriod[],
+): T[] {
+  const last = latestCount(counts);
+  const after = last?.counted_at ?? last?.$createdAt ?? '';
+  return after ? movements.filter((m) => whenOf(m) > after) : movements;
+}
+
+/** The most recent count, by when it was made rather than when it was written. */
+export function latestCount<T extends CountedPeriod>(counts: T[]): T | null {
+  let best: T | null = null;
+  for (const c of counts) {
+    const at = c.counted_at ?? c.$createdAt ?? '';
+    const bestAt = best?.counted_at ?? best?.$createdAt ?? '';
+    if (!best || at > bestAt) best = c;
+  }
+  return best;
+}
+
+/**
+ * Where a new count's window starts.
+ *
+ * The last count's moment, or nothing at all for the first one — which
+ * deliberately sweeps up everything that has ever happened to the box,
+ * including the top-up that opened it. A first count whose window began
+ * "now" would show as covering no movements at all, which is the opposite
+ * of true.
+ */
+export const coversFrom = (counts: CountedPeriod[]): string =>
+  latestCount(counts)?.counted_at ?? latestCount(counts)?.$createdAt ?? '';
+
 /* --------------------------------------------- who may do what with a box */
 
 export interface BoxHolder {

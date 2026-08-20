@@ -803,6 +803,30 @@ export function ExpenseModal({
               </div>
             );
           })}
+          {/*
+            Said with a button, not left to be discovered.
+
+            A blank row has always appeared as soon as an item is picked, so
+            several things could always be listed — but nothing on screen said
+            so, and a shop run with four things in the bag was being recorded
+            as one line with one total. What the form could do and what people
+            knew it could do were different, which is the same as it not doing
+            it.
+          */}
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <Button
+              size="sm"
+              onClick={() => setLines((r) => [...r, { ingredientId: '', qtyText: '', totalText: '' }])}
+            >
+              Add another item
+            </Button>
+            {filledLines.length > 0 && (
+              <span className="small dim">
+                {filledLines.length} {filledLines.length === 1 ? 'item' : 'items'} ·{' '}
+                {formatMoney(linesTotal, settings)}
+              </span>
+            )}
+          </div>
         </div>
       </Field>}
 

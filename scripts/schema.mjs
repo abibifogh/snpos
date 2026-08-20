@@ -2729,6 +2729,20 @@ export const COLLECTIONS = [
       ['variance', 'i', null, true, 0],
       ['counted_by', 's', 64, true],
       ['counted_at', 'd', null, false],
+      /**
+       * Where this count's window starts: the previous count's moment.
+       *
+       * A count is a line drawn under everything that had happened up to it,
+       * and this is the other end of that line. Held as a timestamp rather
+       * than stamped onto every movement it covers — a movement is a statement
+       * that money moved, nothing about it changes when somebody counts, and
+       * writing to forty rows to record a fact about one is forty chances to
+       * half finish the job.
+       *
+       * Blank on the first count, which sweeps up everything the box has ever
+       * done including the top-up that opened it.
+       */
+      ['covers_from', 'd', null, false],
       ['note', 's', 500, false],
       // What was put back in to restore the box, if anything was, at the same
       // sitting. Zero when the count was only a count.

@@ -4,6 +4,7 @@ import {
   boxBalance, spentSince, topUpNeeded, overBy, healthOf, countBox, countProblem,
   needsExplaining, boxOverdrawn, withoutReceipt, IMPREST_LOW_BP, IMPREST_TOLERANCE,
   holdsBox, canFundBoxes, canUseBox, boxesFor,
+  movementsFor, movementsSince, latestCount, coversFrom,
   type ImprestMovement,
 } from '../imprest-rules.ts';
 
@@ -189,4 +190,89 @@ test('a box belongs to nobody until somebody is named on it', () => {
   assert.equal(holdsBox(holder(), { custodian_id: '' }), false);
   assert.equal(holdsBox(null, box()), false);
   assert.equal(canUseBox(holder({ $id: 'someone-else' }), box()), false);
+});
+
+/* ------------------------------------------- what belongs to which count */
+
+const mv = (id: string, when: string, over: Record<string, unknown> = {}) =>
+  ({ $id: id, occurred_at: when, amount: -100, kind: 'spend' as const, ...over });
+
+test('a count is a line drawn under everything up to it', () => {
+  /**
+   * Once a count is made, those movements have been accounted for. Reading
+   * them alongside this week's is what made the list useless: a box counted
+   * every Friday showed a year of history on one screen, and the six things
+   * that had happened since Friday were lost in it.
+   */
+  const movements = [
+    mv('a', '2026-08-01T10:00:00.000Z'),
+    mv('b', '2026-08-05T10:00:00.000Z'),
+    mv('c', '2026-08-12T10:00:00.000Z'),
+  ];
+  const counts = [{ counted_at: '2026-08-08T18:00:00.000Z', covers_from: '' }];
+
+  assert.deepEqual(movementsSince(movements, counts).map((m) => m.$id), ['c']);
+  assert.deepEqual(movementsFor(movements, counts[0]).map((m) => m.$id), ['a', 'b']);
+});
+
+test('the first count sweeps up everything the box has ever done', () => {
+  /**
+   * Including the top-up that opened it. A first count whose window began
+   * "now" would show as covering no movements at all, which is the opposite
+   * of true.
+   */
+  assert.equal(coversFrom([]), '');
+  const movements = [mv('a', '2026-07-01T10:00:00.000Z'), mv('b', '2026-08-01T10:00:00.000Z')];
+  const first = { counted_at: '2026-08-08T18:00:00.000Z', covers_from: '' };
+  assert.deepEqual(movementsFor(movements, first).map((m) => m.$id), ['a', 'b']);
+});
+
+test('each count holds only its own window, not everything before it', () => {
+  const movements = [
+    mv('a', '2026-08-01T10:00:00.000Z'),
+    mv('b', '2026-08-10T10:00:00.000Z'),
+    mv('c', '2026-08-20T10:00:00.000Z'),
+  ];
+  const first = { counted_at: '2026-08-05T18:00:00.000Z', covers_from: '' };
+  const second = { counted_at: '2026-08-15T18:00:00.000Z', covers_from: '2026-08-05T18:00:00.000Z' };
+
+  assert.deepEqual(movementsFor(movements, first).map((m) => m.$id), ['a']);
+  assert.deepEqual(movementsFor(movements, second).map((m) => m.$id), ['b']);
+  assert.deepEqual(movementsSince(movements, [first, second]).map((m) => m.$id), ['c']);
+});
+
+test('the newest count wins however the list is ordered', () => {
+  // The list comes back newest-first from the database and oldest-first from a
+  // test. Depending on either is a bug that only shows up in one of them.
+  const a = { counted_at: '2026-08-05T18:00:00.000Z' };
+  const b = { counted_at: '2026-08-15T18:00:00.000Z' };
+  assert.equal(latestCount([a, b]), b);
+  assert.equal(latestCount([b, a]), b);
+  assert.equal(latestCount([]), null);
+});
+
+test('the adjustment a count makes belongs to that count, not the next one', () => {
+  /**
+   * reconcileFloat writes the correction and any restoring top-up BEFORE it
+   * writes the count row, so both fall a moment before `counted_at` — inside
+   * the window, which is right: they are part of settling it. Getting this
+   * backwards would push every count's own correction into the following
+   * period, where it would look like money that moved for no reason.
+   */
+  const movements = [
+    mv('spend', '2026-08-10T10:00:00.000Z'),
+    mv('correction', '2026-08-15T17:59:59.000Z', { kind: 'adjust' as const, amount: -400 }),
+    mv('restore', '2026-08-15T17:59:59.500Z', { kind: 'top_up' as const, amount: 5_000 }),
+  ];
+  const count = { counted_at: '2026-08-15T18:00:00.000Z', covers_from: '' };
+  assert.deepEqual(
+    movementsFor(movements, count).map((m) => m.$id),
+    ['spend', 'correction', 'restore'],
+  );
+  assert.deepEqual(movementsSince(movements, [count]), []);
+});
+
+test('with no counts at all, everything is still live', () => {
+  const movements = [mv('a', '2026-08-01T10:00:00.000Z')];
+  assert.deepEqual(movementsSince(movements, []).map((m) => m.$id), ['a']);
 });

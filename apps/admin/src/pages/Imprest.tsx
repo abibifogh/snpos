@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, useToast,
   ExpenseModal,
@@ -9,6 +9,7 @@ import {
   loadFloats, loadMovements, loadCounts, balancesFor, accountFor,
   topUpFloat, returnFromFloat, reconcileFloat,
   boxBalance, countBox, healthOf, topUpNeeded, overBy, countProblem, withoutReceipt,
+  movementsSince, movementsFor, latestCount,
   boxesFor, canFundBoxes, holdsBox, NO_BOX_HELD,
   needsExplaining, IMPREST_KIND_LABELS, loadPaidToOptions, loadAccounts, ACCOUNTS,
   uploadFile, downloadUrl, listByIds, saveDropping as saveRow,
@@ -144,6 +145,20 @@ export function ImprestPage() {
     ).catch(() => []);
     setReceipts(Object.fromEntries(rows.filter((r) => r.receipt_file_id).map((r) => [r.$id, r.receipt_file_id as string])));
   };
+
+  /**
+   * What has happened since the box was last counted.
+   *
+   * A count is a line drawn under everything up to it, and once it is made
+   * those movements have been accounted for. Reading them alongside this
+   * week's is what made the list useless: a box counted every Friday showed a
+   * year of history on one screen, and the six things that had happened since
+   * Friday were lost in it.
+   */
+  const live = useMemo(() => movementsSince(movements ?? [], counts), [movements, counts]);
+  const lastCount = useMemo(() => latestCount(counts), [counts]);
+  /** Which past count is open, showing what it settled. */
+  const [openCount, setOpenCount] = useState<string | null>(null);
 
   const liveBalance = useMemo(
     () => (movements ? boxBalance(movements) : openBox ? balances[openBox.$id] ?? 0 : 0),
@@ -433,21 +448,30 @@ export function ImprestPage() {
           {/* Said where somebody counting the box will read it. A box that
               balances with no receipts behind it has proved nothing except
               that somebody can subtract. */}
-          {movements && withoutReceipt(movements, receipts).length > 0 && (
+          {live.length > 0 && withoutReceipt(live, receipts).length > 0 && (
             <Notice tone="warn">
-              {withoutReceipt(movements, receipts).length}{' '}
-              {withoutReceipt(movements, receipts).length === 1 ? 'spend has' : 'spends have'} no receipt against
-              {withoutReceipt(movements, receipts).length === 1 ? ' it' : ' them'}. Attach them from the list
+              {withoutReceipt(live, receipts).length}{' '}
+              {withoutReceipt(live, receipts).length === 1 ? 'spend has' : 'spends have'} no receipt against
+              {withoutReceipt(live, receipts).length === 1 ? ' it' : ' them'}. Attach them from the list
               below — the count tells you the money is gone, and only the receipt says what for.
             </Notice>
           )}
 
-          <h3>Everything that has moved</h3>
+          <h3>{lastCount ? 'Since the last count' : 'Everything that has moved'}</h3>
+          {lastCount && (
+            <p className="small dim" style={{ marginTop: 0 }}>
+              Counted {new Date(lastCount.counted_at ?? lastCount.$createdAt).toLocaleString()}.
+              Everything before that is filed under its count below.
+            </p>
+          )}
           {!movements ? (
             <Spinner />
-          ) : movements.length === 0 ? (
-            <Empty title="Nothing yet">
-              Top the box up to put money in it. Until then there is nothing to spend and nothing to count.
+          ) : live.length === 0 ? (
+            <Empty title={lastCount ? 'Nothing since the last count' : 'Nothing yet'}>
+              {lastCount
+                ? 'The box has not been touched since it was counted. Spend from it or top it up and it will '
+                  + 'appear here.'
+                : 'Top the box up to put money in it. Until then there is nothing to spend and nothing to count.'}
             </Empty>
           ) : (
             <div className="table-wrap">
@@ -459,7 +483,7 @@ export function ImprestPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {movements.map((m) => (
+                  {live.map((m) => (
                     <tr key={m.$id}>
                       <td className="dim small">
                         {new Date(m.occurred_at ?? m.$createdAt).toLocaleDateString()}
@@ -522,6 +546,102 @@ export function ImprestPage() {
                 </tbody>
               </table>
             </div>
+          )}
+
+          {/*
+            The counts, each holding what it settled.
+
+            This is where the live list goes when it is cleared: not deleted,
+            filed. "What happened during the week the box came up forty short"
+            is the question an admin actually has, and it can only be answered
+            if the movements stay attached to the count that found it.
+          */}
+          {counts.length > 0 && (
+            <>
+              <h3 style={{ marginTop: '1.4rem' }}>Counts</h3>
+              <div className="table-wrap">
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th>Counted</th><th>By</th>
+                      <th className="num">Expected</th><th className="num">Found</th>
+                      <th className="num">Difference</th><th className="num">Put back</th><th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {counts.map((c) => {
+                      const covered = movementsFor(movements ?? [], c);
+                      const isOpen = openCount === c.$id;
+                      return (
+                        <Fragment key={c.$id}>
+                          <tr>
+                            <td className="small">
+                              {new Date(c.counted_at ?? c.$createdAt).toLocaleString()}
+                              {c.note && <div className="small dim">{c.note}</div>}
+                            </td>
+                            <td className="dim small">{nameOf(c.counted_by) || '—'}</td>
+                            <td className="num dim">{money(c.expected)}</td>
+                            <td className="num">{money(c.counted)}</td>
+                            <td className="num">
+                              {c.variance === 0 ? (
+                                <Badge tone="ok">Balanced</Badge>
+                              ) : (
+                                <Badge tone={c.variance < 0 ? 'danger' : 'warn'}>
+                                  {c.variance > 0 ? '+' : ''}{money(c.variance)}
+                                </Badge>
+                              )}
+                            </td>
+                            <td className="num dim">{c.topped_up ? money(c.topped_up) : ''}</td>
+                            <td className="num">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setOpenCount(isOpen ? null : c.$id)}
+                              >
+                                {isOpen ? 'Hide' : `${covered.length} ${covered.length === 1 ? 'entry' : 'entries'}`}
+                              </Button>
+                            </td>
+                          </tr>
+                          {isOpen && (
+                            <tr>
+                              <td colSpan={7} style={{ background: 'var(--surface-2, rgba(0,0,0,0.03))' }}>
+                                {covered.length === 0 ? (
+                                  <p className="small dim" style={{ margin: 0 }}>
+                                    Nothing moved between this count and the one before it.
+                                  </p>
+                                ) : (
+                                  <table className="data">
+                                    <thead>
+                                      <tr>
+                                        <th>When</th><th>What</th><th>Note</th>
+                                        <th className="num">In</th><th className="num">Out</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {covered.map((m) => (
+                                        <tr key={m.$id}>
+                                          <td className="dim small">
+                                            {new Date(m.occurred_at ?? m.$createdAt).toLocaleDateString()}
+                                          </td>
+                                          <td>{IMPREST_KIND_LABELS[m.kind] ?? m.kind}</td>
+                                          <td className="small dim">{m.note || '—'}</td>
+                                          <td className="num">{m.amount > 0 ? money(m.amount) : ''}</td>
+                                          <td className="num">{m.amount < 0 ? money(-m.amount) : ''}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </Modal>
       )}

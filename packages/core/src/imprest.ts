@@ -1,7 +1,7 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
 import type { Doc } from './types';
 import { ACCOUNTS, postEntry } from './ledger';
-import { boxBalance, countBox } from './imprest-rules';
+import { boxBalance, countBox, coversFrom } from './imprest-rules';
 import type { ImprestMovement, ImprestKind } from './imprest-rules';
 
 /**
@@ -314,6 +314,16 @@ export async function reconcileFloat(opts: {
   const balance = boxBalance(await loadMovements(opts.box.$id));
   const result = countBox({ fixedAmount: opts.box.fixed_amount, balance, counted: opts.counted });
 
+  /*
+    Where this count's window starts, read BEFORE anything is written.
+
+    The adjustment and the restoring top-up below both happen as part of
+    settling this count and belong inside its window — so the start has to be
+    taken from the previous count, now, rather than worked out afterwards from
+    a list this function is about to add to.
+  */
+  const from = coversFrom(await loadCounts(opts.box.$id));
+
   if (result.variance !== 0) {
     await moveMoney({
       venueId: opts.venueId,
@@ -353,6 +363,7 @@ export async function reconcileFloat(opts: {
     variance: result.variance,
     counted_by: opts.userId,
     counted_at: new Date().toISOString(),
+    covers_from: from || null,
     note: (opts.note ?? '').slice(0, 500),
     topped_up: toppedUp,
   });
