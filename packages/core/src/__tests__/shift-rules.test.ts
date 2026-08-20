@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit, mustWaitForNextShift, shouldWarnLateOrder,
   SHIFT_MAX_HOURS, SHIFT_WARN_HOURS,
-  shiftAgeOf, openShiftsFor, blockerFor, isLivePayment, sellBlockedReason,
+  shiftAgeOf, openShiftsFor, blockerFor, isLivePayment, sellBlockedReason, carryOverFloats,
 } from '../shift-rules.ts';
 
 const at = (iso: string) => new Date(iso);
@@ -335,4 +335,33 @@ test('a bar with no shift open is told it cannot sell, not that it can keep cook
   assert.match(none ?? '', /nowhere to be recorded/i);
   assert.match(none ?? '', /ring it up/i);
   assert.doesNotMatch(none ?? '', /order/i);
+});
+
+test('a card terminal is not carried over as a float', () => {
+  /**
+   * A float is money left in a drawer overnight. Nothing is left in a card
+   * terminal — the takings are swept to the bank and the machine starts
+   * tomorrow at nothing.
+   *
+   * Carrying the card's count forward added yesterday's card takings to
+   * today's expectation, and the day after added both: an expected figure that
+   * grew every shift and could only be matched by typing a running total
+   * instead of counting. That is a drawer which can never balance, and a
+   * screen people stop reading.
+   */
+  const floats = carryOverFloats(
+    { 'm-cash': 166_500, 'm-card': 69_000, 'm-momo': 4_000 },
+    [{ $id: 'm-cash', kind: 'cash' }, { $id: 'm-card', kind: 'card' }, { $id: 'm-momo', kind: 'mobile_money' }],
+  );
+  assert.equal(floats['m-cash'], 166_500);
+  assert.equal(floats['m-card'], 0);
+  assert.equal(floats['m-momo'], 0);
+});
+
+test('a method with nothing counted against it starts at nothing, not undefined', () => {
+  // Every method gets a key. A missing one reads as undefined downstream and
+  // turns an expected figure into NaN, which is worse than a wrong number
+  // because nothing on screen looks like an error.
+  const floats = carryOverFloats({}, [{ $id: 'm-cash', kind: 'cash' }]);
+  assert.equal(floats['m-cash'], 0);
 });

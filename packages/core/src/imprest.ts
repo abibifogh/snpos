@@ -135,8 +135,21 @@ async function moveMoney(opts: {
       opts.venueId,
       {
         date: opts.date,
-        source: 'imprest',
-        sourceId: opts.refId ? `${opts.refType}:${opts.refId}` : undefined,
+        /*
+          'adjustment', not 'imprest'.
+
+          `journal_entries.source` is a fixed list and does not have a value
+          for this — writing one Appwrite has never heard of is refused whole,
+          which is exactly what topping a box up did: "Attribute source has
+          invalid format". An enum cannot be widened without provisioning the
+          database again, and a feature that only works after somebody runs a
+          workflow is a feature that does not work.
+
+          Nothing reads `source` to find these; what identifies them is the
+          source id below, which carries the box and what happened to it.
+        */
+        source: 'adjustment',
+        sourceId: `imprest:${opts.refType ?? 'move'}:${opts.refId || opts.box.$id}`,
         memo: opts.memo,
         postedBy: opts.userId,
       },

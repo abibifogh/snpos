@@ -6,7 +6,9 @@ import { postShift, reverseEntry, shiftCloseEntries, lockedThroughFor, isLocked 
 import { isLivePayment } from './payments';
 import { featureConfig, isEnabled, type FeatureMap } from './features';
 import type { Module } from './access';
-import { shiftAge, shiftCode, mustWaitForNextShift, openShiftsFor, blockerFor, SHIFT_MAX_HOURS } from './shift-rules';
+import {
+  shiftAge, shiftCode, mustWaitForNextShift, openShiftsFor, blockerFor, SHIFT_MAX_HOURS, carryOverFloats,
+} from './shift-rules';
 import { lockedProblem, sealProblem, isSealed } from './shift-lock';
 import type { LockableShift } from './shift-lock';
 
@@ -86,9 +88,11 @@ export async function openingFloats(
       try {
         const counted = JSON.parse(last.counted) as Record<string, number>;
         return {
-          floats: Object.fromEntries(methods.map((m) => [m.$id, counted[m.$id] ?? 0])),
+          // Cash only. See carryOverFloats for why a card is not a float.
+          floats: carryOverFloats(counted, methods),
           source: 'carry_over',
-          note: `Carried over from ${last.code}. Count it to be sure.`,
+          note: `Cash carried over from ${last.code}. Count it to be sure. Card and mobile money start at nothing —`
+            + ' nothing is left in a terminal overnight.',
         };
       } catch {
         // A malformed count is not worth failing an open over.

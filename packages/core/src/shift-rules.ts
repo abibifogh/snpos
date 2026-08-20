@@ -374,3 +374,27 @@ export function sellBlockedReason(
   if (!age.over) return null;
   return shiftAgeMessage(age, maxHours, module);
 }
+
+/**
+ * What a new shift starts with when the policy is to carry yesterday over.
+ *
+ * CASH ONLY, the same rule the fixed policy already follows. A float is money
+ * left in a drawer overnight; nothing is left in a card terminal, because the
+ * day's takings are swept to the bank and the machine starts tomorrow at
+ * nothing.
+ *
+ * Carrying a card's count forward added yesterday's card takings to today's
+ * expectation, and the day after added both — an expected figure that grew
+ * every single shift and could only ever be matched by somebody typing a
+ * running total instead of counting what was there. A drawer that can never
+ * balance is a screen people stop reading, which costs the shortage that
+ * matters as well as the ones that do not.
+ */
+export function carryOverFloats<T extends { $id: string; kind?: string }>(
+  counted: Record<string, number>,
+  methods: T[],
+): Record<string, number> {
+  return Object.fromEntries(
+    methods.map((m) => [m.$id, m.kind === 'cash' ? counted[m.$id] ?? 0 : 0]),
+  );
+}

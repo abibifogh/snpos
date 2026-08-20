@@ -8,7 +8,7 @@ import {
   formatMoney, byStaff, destinationLabel, fromTakings,
   changeShiftClose, closeTimeProblem, closeTimeEffects, describeCloseChange, hoursBetween, SHIFT_MAX_HOURS,
   listCreatedBetween, listByIds, setShiftSealed, isSealed, describeSeal, lockedProblem,
-  rangeTotals, kindsWorthShowing, KIND_LABELS,
+  rangeTotals, kindsWorthShowing, KIND_LABELS, canOpen,
 } from '@snpos/core';
 import type { Module, Doc, CashHandover } from '@snpos/core';
 import { useSession } from '../session';
@@ -114,6 +114,15 @@ export function ShiftsPage() {
    * one a cashier should be able to make to a night they were short on.
    */
   const isAdmin = profile?.role === 'admin';
+  /**
+   * May this person see what a shift paid out?
+   *
+   * The same permission the Expenses page is behind, asked here too. It was
+   * readable from this modal by anybody who could open Shifts, however
+   * carefully that page had been withheld — a screen quietly undoing a
+   * decision made elsewhere.
+   */
+  const maySeeExpenses = canOpen('expenses', profile, settings);
   const [closeEdit, setCloseEdit] = useState<Shift | null>(null);
   const [closeAt, setCloseAt] = useState('');
   const [closeReason, setCloseReason] = useState('');
@@ -495,6 +504,20 @@ export function ShiftsPage() {
           </div>
 
           <h3 style={{ marginTop: '1rem' }}>Cash reconciliation</h3>
+          {/*
+            What "expected" actually means, said where it is read.
+
+            It is three numbers folded into one — the float it started with,
+            what was taken, less what was paid out of it — and none of those
+            are on screen. Somebody comparing a figure they do not understand
+            against a count they made themselves concludes the system is
+            wrong, which is a fair conclusion from what they can see.
+          */}
+          <p className="small dim" style={{ marginTop: 0 }}>
+            <strong>Expected</strong> is the float this drawer opened with, plus everything taken through it,
+            less anything paid out of it. <strong>Counted</strong> is what the person closing physically found.
+            The difference between them is the only figure here that nobody typed.
+          </p>
           <div className="table-wrap">
             <table className="data">
               <thead>
@@ -578,6 +601,17 @@ export function ShiftsPage() {
             </div>
           )}
 
+          {/*
+            Only for somebody allowed to see spending at all.
+
+            What a shift paid out — and to whom — is the same information the
+            Expenses page holds, and it was readable here by anybody who could
+            open Shifts however carefully that page had been withheld. One
+            permission, asked in both places, rather than a screen that quietly
+            undoes a decision made elsewhere. An owner sets it under
+            Settings, "Who can see what".
+          */}
+          {maySeeExpenses && <>
           <h3 style={{ marginTop: '1rem' }}>Expenses in this shift</h3>
           {expenses.filter((e) => e.shift_id === detail.$id).length === 0 ? (
             <p className="small dim">None recorded.</p>
@@ -608,6 +642,7 @@ export function ShiftsPage() {
               </table>
             </div>
           )}
+          </>}
         </Modal>
       )}
 
