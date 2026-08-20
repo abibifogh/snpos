@@ -150,3 +150,181 @@
   cursor: pointer; display: grid; place-items: center; padding: 0;
 }
 .recipe-peek:hover { color: var(--text); border-color: var(--brand); }
+
+/* ====================================================================
+   The till, made to be worked at
+
+   What was here was correct and thin: 150px tiles, a 340px column of small
+   type, and money the same size as everything around it. It reads as a form.
+   A till is not a form — it is a tool somebody uses two hundred times a shift,
+   at arm's length, standing up, often without looking directly at it.
+
+   So: bigger targets, one obvious total, and a clear division between the
+   half you pick from and the half you check. Nothing below is new behaviour;
+   every control was already here.
+   ==================================================================== */
+
+/*
+  Two panes that scroll independently.
+
+  The bill used to scroll away with the menu, so adding the tenth item put the
+  total off the bottom of the screen — the one number the customer is waiting
+  to be told. Now the catalogue scrolls under a bill that stays put.
+*/
+@media (min-width: 901px) {
+  .pos-body.order-layout,
+  .order-layout { height: calc(100dvh - 3.9rem); min-height: 0; }
+  .order-layout > div:first-child { min-height: 0; overflow-y: auto; padding-right: 0.35rem; }
+  .order-layout > .card { min-height: 0; display: flex; flex-direction: column; }
+  .order-layout { grid-template-columns: minmax(0, 1fr) clamp(340px, 30vw, 420px); }
+}
+
+/* ---------------------------------------------------------- the catalogue */
+
+/*
+  Sections as a rail, not a wrapped paragraph of pills.
+
+  A shop with fourteen categories was wrapping them onto four lines and pushing
+  the products below the fold. One line that scrolls sideways keeps the goods
+  where they were, and a thumb already moves that way.
+*/
+.pos-tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+}
+.pos-tabs::-webkit-scrollbar { display: none; }
+.pos-tabs button {
+  flex: none;
+  scroll-snap-align: start;
+  padding: 0.55rem 1.05rem;
+  font-size: 0.95rem;
+  font-weight: 550;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.pos-tabs button.on { box-shadow: 0 1px 6px rgb(15 118 110 / 0.28); }
+
+.menu-grid { gap: 0.7rem; grid-template-columns: repeat(auto-fill, minmax(clamp(140px, 15vw, 176px), 1fr)); }
+
+/*
+  A tile you can hit without aiming.
+
+  Raised rather than outlined, so the grid reads as a tray of things to pick up
+  instead of a table of rows. The press is felt: it dips and darkens, which on a
+  screen with no travel is the only confirmation a cashier gets that the tap
+  landed — and a cashier who is unsure taps again, which is how a customer ends
+  up charged for two.
+*/
+.menu-card {
+  min-height: 92px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.8rem;
+  transition: transform 0.08s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+  /* No 300ms wait for a double-tap that means nothing here, and no grey flash
+     over a tile that is already showing its own press. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.menu-card:hover:not(:disabled) { border-color: var(--brand); }
+.menu-card:active:not(:disabled) { transform: scale(0.97); box-shadow: none; }
+.menu-card:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+.menu-card .n { font-size: 0.98rem; line-height: 1.25; }
+/* The price is the second thing read and it was the faintest thing on the
+   tile. Same weight as the name, in the brand colour, so the eye lands on it. */
+.menu-card .p {
+  color: var(--brand);
+  font-weight: 700;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  margin-top: 0;
+}
+.menu-card:disabled { box-shadow: none; }
+
+.menu-grid.with-pics { grid-template-columns: repeat(auto-fill, minmax(clamp(150px, 17vw, 200px), 1fr)); }
+.menu-card .pic { height: 132px; }
+
+/* ---------------------------------------------------------------- the bill */
+
+.order-layout > .card > .card-body,
+.order-layout > .card > div { min-height: 0; }
+
+/*
+  The bill scrolls; the total does not.
+
+  Done with stickiness rather than by splitting the panel in two, because the
+  bill is one list with several sections — orders already sent, then the cart —
+  and cutting a fixed footer out of it would mean deciding which of those the
+  cut falls after. The total simply refuses to leave the bottom of the view.
+
+  The background is not decoration: without it the lines scroll THROUGH the
+  total and the one number that matters becomes unreadable at exactly the
+  moment the bill is long enough to need scrolling.
+*/
+.order-layout > .card { overflow: hidden; }
+.bill { position: static; overflow-y: auto; max-height: 100%; padding-bottom: 0.2rem; }
+.bill-total.grand,
+.bill > .btn-primary,
+.bill .pay-now {
+  position: sticky;
+  bottom: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+.bill-line { padding: 0.6rem 0; gap: 0.6rem; font-size: 0.95rem; }
+.cart-line .name { font-size: 0.98rem; font-weight: 600; }
+.cart-line .line-price { font-weight: 650; font-size: 1rem; }
+
+/* A till key, not a form control. 34px was under a fingertip. */
+.qty-step button { width: 42px; height: 42px; font-size: 1.3rem; touch-action: manipulation; }
+.qty-step button:active { transform: scale(0.94); }
+.qty-step .n { min-width: 38px; font-size: 1.05rem; }
+
+.bill-total { font-size: 0.95rem; padding: 0.3rem 0; font-variant-numeric: tabular-nums; }
+/*
+  One number, larger than anything else on the screen.
+
+  It is the figure said out loud to the customer, read across a counter, often
+  by somebody also counting change. It was 1.1rem and looked like a subtotal.
+*/
+.bill-total.grand {
+  font-size: clamp(1.5rem, 2.6vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  border-top: 0;
+  padding-top: 0.3rem;
+  align-items: baseline;
+}
+
+/* The one action the screen exists for. Full width, unmissable, thumb-sized. */
+.bill .btn-primary {
+  width: 100%;
+  padding: 1rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  border-radius: var(--radius);
+  box-shadow: 0 2px 10px rgb(15 118 110 / 0.3);
+  touch-action: manipulation;
+}
+.bill .btn-primary:active { transform: scale(0.99); box-shadow: none; }
+
+/* An empty bill says what to do rather than showing a blank panel, which reads
+   as something still loading. */
+.bill-empty {
+  display: grid; place-items: center; gap: 0.3rem; text-align: center;
+  padding: 2.2rem 1rem; color: var(--text-dim);
+}
+.bill-empty .big { font-size: 2rem; opacity: 0.35; }
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-card, .qty-step button, .bill .btn-primary { transition: none; }
+  .menu-card:active:not(:disabled),
+  .qty-step button:active,
+  .bill .btn-primary:active { transform: none; }
+}
