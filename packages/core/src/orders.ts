@@ -734,3 +734,83 @@ export async function removeOrder(
 
   return { removed };
 }
+
+/**
+ * File an order under a different shift.
+ *
+ * The money goes with it, and that is the whole design. A sale counted under
+ * one night and paid for under another is not a correction, it is a second
+ * error: the first shift stays over by the amount and the second stays short
+ * by it, and the two now disagree in a way that reads as theft. So the order
+ * and its payments move together or the caller is told they did not.
+ *
+ * Order of writes, and why. The order goes FIRST, because it is the write that
+ * decides whether any of this is permitted at all — if it is refused, nothing
+ * else has been touched. The payments follow, and any that will not move are
+ * counted and reported rather than swallowed: this operation is safe to run
+ * again, so an admin who is told "the sale moved, two of three payments did
+ * not" can simply repeat it, whereas one who is told nothing has money sitting
+ * on a shift with no sale to explain it.
+ *
+ * `shelved_at` is cleared on the way through. An order that was set aside for
+ * the next shift and has now been given one by hand is not still waiting, and
+ * leaving the flag on would have the next shift opened adopt it straight back
+ * off the shift somebody just chose. See adoptShelved.
+ *
+ * Both shifts are worked out again afterwards. A closed shift stored what it
+ * took and what it expected at the moment it closed and those figures do not
+ * move on their own; an open one works itself out from the rows every time it
+ * is looked at, so recomputing it is a no-op rather than a special case. What
+ * was physically counted is never touched — see recomputeClosedShift.
+ */
+export async function moveOrderToShift(opts: {
+  order: Pick<Order, '$id' | 'venue_id' | 'order_no' | 'shift_id'>;
+  toShiftId: string;
+  userId: string;
+  reason: string;
+}): Promise<{ payments: number; stranded: number }> {
+  const { order, toShiftId } = opts;
+  const from = order.shift_id ?? '';
+
+  // Two writes, and the split is deliberate — the same lesson adoptShelved
+  // learned. A rejected `null` on the shelved flag would take the shift stamp
+  // down with it if they travelled together, leaving an order that had been
+  // moved nowhere and a screen saying it had.
+  await db.updateDocument(DB_ID, 'orders', order.$id, { shift_id: toShiftId });
+  // Given a shift by hand, so it is no longer waiting for one. Tidiness only:
+  // without this the next shift opened would adopt it straight back off the
+  // shift somebody just chose.
+  await db.updateDocument(DB_ID, 'orders', order.$id, { shelved_at: null }).catch(() => undefined);
+
+  const payments = await listAll<Doc & { shift_id?: string }>('payments', [
+    Query.equal('order_id', order.$id),
+  ]).catch(() => [] as (Doc & { shift_id?: string })[]);
+
+  let moved = 0;
+  let stranded = 0;
+  for (const p of payments) {
+    const ok = await db
+      .updateDocument(DB_ID, 'payments', p.$id, { shift_id: toShiftId })
+      .then(() => true)
+      .catch(() => false);
+    if (ok) moved += 1;
+    else stranded += 1;
+  }
+
+  await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
+    venue_id: order.venue_id,
+    actor_id: opts.userId,
+    action: 'order_shift_changed',
+    entity_type: 'order',
+    entity_id: order.$id,
+    before: JSON.stringify({ shift_id: from }),
+    after: JSON.stringify({ shift_id: toShiftId, payments: moved }),
+    // In its own field rather than buried in the JSON. A before/after pair
+    // says what changed; only this says whether it was a correction or
+    // somebody moving a sale off a night they were answerable for.
+    reason: opts.reason.slice(0, 500),
+    shift_id: toShiftId,
+  }).catch(() => undefined);
+
+  return { payments: moved, stranded };
+}

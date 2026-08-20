@@ -9,10 +9,10 @@ import {
   settleOrderNumbers, recomputeOrderTotals, cancelOrder, removeOrder, recomputeClosedShift,
   voidPayment, isLivePayment, changePaymentMethod, logPaymentMethodChange,
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, flatten, MODULE_LABELS,
-  listByIds,
+  listByIds, listCreatedBetween, moveOrderToShift, shiftChoices, moveProblem, moveEffects, describeMove,
 } from '@snpos/core';
 import type {
-  Order, OrderItem, StaffProfile, Doc, Venue, Module, GroupChoice, SortChoice,
+  Order, OrderItem, StaffProfile, Doc, Venue, Module, GroupChoice, SortChoice, MovableShift,
 } from '@snpos/core';
 import { useSession } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
@@ -121,6 +121,136 @@ export function OrdersPage() {
   const [killing, setKilling] = useState<{ order: Order; how: 'cancel' | 'delete' } | null>(null);
   const [killReason, setKillReason] = useState('');
   const [killBusy, setKillBusy] = useState(false);
+
+  /**
+   * Moving a real sale onto the shift it belongs to.
+   *
+   * The shifts are fetched when somebody asks, not with the page. There is one
+   * of these for every night this business has ever traded, and reading them
+   * all to fill a dropdown nobody opens is exactly the kind of greed that put
+   * the tills on the floor. Fetched around the order's own date, because the
+   * shift somebody means is always one either side of it.
+   */
+  const [moving, setMoving] = useState<{ order: Order; shifts: MovableShift[] } | null>(null);
+  const [moveTo, setMoveTo] = useState('');
+  const [moveReason, setMoveReason] = useState('');
+  const [moveBusy, setMoveBusy] = useState(false);
+  const [moveLoading, setMoveLoading] = useState(false);
+  /** Shifts already seen, so the name can be shown without another read. */
+  const [shiftNames, setShiftNames] = useState<Record<string, string>>({});
+
+  const shiftLabel = (id?: string) => {
+    if (!id) return 'Not counted under any shift';
+    return shiftNames[id] ? `Counted under ${shiftNames[id]}` : 'Counted under a shift';
+  };
+
+  /*
+    The name of the one shift an open order sits on.
+
+    A single read, only when an admin actually opens an order, so the line
+    above reads "Counted under BIST-07" rather than "a shift" — which is the
+    difference between somebody who can see what they are about to change and
+    somebody guessing. Not fetched for the list: that would be a shift lookup
+    per row for a line most people never read.
+  */
+  useEffect(() => {
+    const id = open?.shift_id;
+    if (!isAdmin || !id || shiftNames[id]) return;
+    let live = true;
+    void db.getDocument(DB_ID, 'shifts', id)
+      .then((s) => {
+        const code = (s as unknown as { code?: string }).code;
+        if (live && code) setShiftNames((n) => ({ ...n, [id]: code }));
+      })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [open?.shift_id, isAdmin, shiftNames]);
+
+  /** A week either side. Wide enough for a bill settled after a handover. */
+  const MOVE_WINDOW_DAYS = 7;
+
+  const startMove = async (order: Order) => {
+    setMoveLoading(true);
+    try {
+      const at = new Date(order.$createdAt).getTime();
+      const span = MOVE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+      const rows = await listCreatedBetween<MovableShift>(
+        'shifts',
+        new Date(at - span).toISOString(),
+        new Date(at + span).toISOString(),
+      );
+      /*
+        The shift it is on now may be older than the window.
+
+        An order shelved for weeks, or one being moved back off a shift it was
+        wrongly adopted onto. Without this the screen would say "a shift" where
+        it should name one, which is the difference between an admin who knows
+        what they are undoing and one who is guessing.
+      */
+      const here = order.shift_id && !rows.some((s) => s.$id === order.shift_id)
+        ? await db.getDocument(DB_ID, 'shifts', order.shift_id).catch(() => null) as MovableShift | null
+        : null;
+      const all = here ? [...rows, here] : rows;
+      setShiftNames((n) => ({ ...n, ...Object.fromEntries(all.map((s) => [s.$id, s.code])) }));
+      setMoveTo('');
+      setMoveReason('');
+      setMoving({ order, shifts: all });
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setMoveLoading(false);
+    }
+  };
+
+  const doMove = async () => {
+    if (!moving) return;
+    const to = moving.shifts.find((s) => s.$id === moveTo);
+    if (!to) return;
+    setMoveBusy(true);
+    try {
+      const { payments: moved, stranded } = await moveOrderToShift({
+        order: moving.order,
+        toShiftId: to.$id,
+        userId: user?.$id ?? '',
+        reason: moveReason.trim(),
+      });
+      /*
+        Both ends, and in this order.
+
+        A closed shift stored what it took and what it expected at the moment
+        it closed, and neither moves on its own — so the shift losing the sale
+        would go on reporting money it no longer has, and the one gaining it
+        would not expect the money now sitting against it. An open shift works
+        itself out from the rows, so this is a no-op there rather than a case
+        to special-case.
+      */
+      const before = moving.order.shift_id;
+      if (before) await recomputeClosedShift(before).catch(() => null);
+      await recomputeClosedShift(to.$id).catch(() => null);
+
+      setMoving(null);
+      setOpen(null);
+      await load();
+      // A partial move is the one outcome that must never pass quietly: money
+      // left on a shift with no sale to explain it reads as theft.
+      if (stranded > 0) {
+        toast(
+          `${moving.order.order_no} moved to ${to.code}, but ${stranded} payment${stranded === 1 ? '' : 's'} `
+          + 'would not move. Try again — repeating this is safe.',
+          'err',
+        );
+      } else {
+        toast(
+          `${moving.order.order_no} now counts under ${to.code}`
+          + (moved > 0 ? `, with ${moved} payment${moved === 1 ? '' : 's'}` : ''),
+        );
+      }
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setMoveBusy(false);
+    }
+  };
 
   const doKill = async () => {
     if (!killing) return;
@@ -873,6 +1003,25 @@ export function OrdersPage() {
                   Delete it entirely
                 </Button>
               </div>
+
+              {/*
+                A real sale on the wrong night.
+
+                Different from everything above it, and worth saying so: nothing
+                about this order is wrong except which shift it counts towards.
+                A bill started before midnight and settled after the handover, a
+                till left open from the afternoon. The alternatives without this
+                are cancelling a sale that genuinely happened, or leaving one
+                shift permanently over and the next permanently short.
+              */}
+              <h3 style={{ margin: '1.4rem 0 0.4rem' }}>Which shift it counts under</h3>
+              <p className="small dim" style={{ marginTop: 0 }}>
+                {shiftLabel(open.shift_id)}. Move it if it was rung up on the wrong one — the payments go with
+                it, so the drawer it is counted against moves too.
+              </p>
+              <Button size="sm" onClick={() => void startMove(open)} loading={moveLoading}>
+                Move to another shift
+              </Button>
             </>
           )}
 
@@ -941,6 +1090,101 @@ export function OrdersPage() {
           )}
         </Modal>
       )}
+
+      {moving && (() => {
+        const order = moving.order;
+        const choices = shiftChoices(order, moving.shifts);
+        const to = choices.find((s) => s.$id === moveTo) ?? null;
+        const mine = payments.filter((p) => p.order_id === order.$id && isLivePayment(p));
+        const from = moving.shifts.find((s) => s.$id === order.shift_id) ?? null;
+        const problem = to ? moveProblem(order, to) : null;
+        const effects = to ? moveEffects({ from, to, payments: mine }) : null;
+        return (
+          <Modal
+            title="Which shift should this count under?"
+            onClose={() => (moveBusy ? undefined : setMoving(null))}
+            footer={
+              <>
+                <Button variant="ghost" onClick={() => setMoving(null)} disabled={moveBusy}>Cancel</Button>
+                <Button
+                  variant="primary"
+                  onClick={() => void doMove()}
+                  loading={moveBusy}
+                  disabled={!to || !!problem || !moveReason.trim()}
+                >
+                  Move it
+                </Button>
+              </>
+            }
+          >
+            <p style={{ marginTop: 0 }}>
+              {order.order_no}, {money(order.total)}
+              {mine.length > 0 && `, paid ${money(mine.reduce((a, p) => a + p.amount + (p.tip ?? 0), 0))}`}.
+              {' '}Currently {from ? `counted under ${from.code}` : 'not counted under any shift'}.
+            </p>
+
+            {choices.length === 0 ? (
+              <Notice tone="info">
+                No other shift on this side within a week either side of this order. If the one you want is
+                further back than that, it cannot be picked here.
+              </Notice>
+            ) : (
+              <>
+                <Field
+                  label="Count it under"
+                  hint="Only shifts on the same side of the business — each side keeps its own takings."
+                >
+                  <Select value={moveTo} onChange={(e) => setMoveTo(e.target.value)}>
+                    <option value="">Pick a shift</option>
+                    {choices.map((s) => (
+                      <option key={s.$id} value={s.$id}>
+                        {s.code} · {new Date(s.opened_at).toLocaleString()}
+                        {s.status === 'closed' ? ' · closed' : ' · still open'}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+
+                {problem && <Notice tone="warn">{problem}</Notice>}
+
+                {to && !problem && (
+                  <>
+                    <p style={{ marginBottom: '0.4rem' }}>
+                      <strong>{describeMove(order, from, to)}</strong>
+                    </p>
+                    <ul className="small" style={{ marginTop: 0 }}>
+                      <li>
+                        {effects && effects.payments > 0
+                          ? `Its ${effects.payments} payment${effects.payments === 1 ? '' : 's'}, `
+                            + `${money(effects.amount)} in all, move with it — so the drawer expected to hold `
+                            + `that money moves too.`
+                          : 'Nothing has been paid on it, so no drawer figures change.'}
+                      </li>
+                      <li>The sale itself is untouched: same items, same total, same customer, same receipt.</li>
+                    </ul>
+                    {/* Every one of these is something an admin would otherwise
+                        hear about from an accountant. See moveEffects. */}
+                    {effects?.warnings.map((w) => (
+                      <Notice key={w} tone="warn">{w}</Notice>
+                    ))}
+                  </>
+                )}
+
+                <Field
+                  label="Why"
+                  hint="Kept against your name. In a year this is the only thing that says whether it was a correction."
+                >
+                  <Input
+                    value={moveReason}
+                    placeholder="Bill started before the handover and settled after"
+                    onChange={(e) => setMoveReason(e.target.value)}
+                  />
+                </Field>
+              </>
+            )}
+          </Modal>
+        );
+      })()}
 
       {repaying && (
         <Modal
