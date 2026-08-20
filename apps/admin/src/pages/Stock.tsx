@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast, ViewTabs} from '@snpos/ui';
+import {
+  Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast, ViewTabs,
+  PickerMenu, PickerItem, FacetChips, GroupedRows, SortableTh,
+} from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, levelOf, saveDropping,
   purchasesFor, priceHistory, priceMoveNote, packProblem, hasPack, packSize,
   matches, sortStock, stockState, STOCK_SORTS, STOCK_STATES,
+  groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, normaliseName,
 } from '@snpos/core';
-import type { StockSort, StockState, Module, Ingredient, Recipe, MenuItem, Doc, Settings, PurchaseRow } from '@snpos/core';
+import type {
+  StockSort, StockState, Module, Ingredient, Recipe, MenuItem, Doc, Settings, PurchaseRow,
+  GroupChoice, SortChoice,
+} from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
 import { StockImport } from '../components/StockImport';
 import { useSession } from '../session';
@@ -41,6 +48,18 @@ type Cadence = 'shift' | 'close' | 'never';
 const countCadence = (i: { counted_at_close?: boolean; count_each_shift?: boolean }): Cadence => {
   if (i.counted_at_close === false) return 'never';
   return i.count_each_shift ? 'shift' : 'close';
+};
+
+/**
+ * The same question in the words somebody reads on a list.
+ *
+ * Kept beside the type rather than written at the call site, so the column and
+ * the form cannot end up describing one setting two different ways.
+ */
+const CADENCE_WORDS: Record<Cadence, { label: string; tone: 'ok' | 'default' | 'warn'; detail: string }> = {
+  shift: { label: 'Every shift', tone: 'ok', detail: 'Counted in at the start and out at the end' },
+  close: { label: 'At close', tone: 'default', detail: 'Counted once, when the shift ends' },
+  never: { label: 'Never counted', tone: 'warn', detail: 'No shelf to walk — used up in the buying' },
 };
 
 const cadenceFields = (c: Cadence) => ({
@@ -123,6 +142,11 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   const [q, setQ] = useState('');
   const [state, setState] = useState<StockState>('any');
   const [sortBy, setSortBy] = useState<StockSort>('level');
+  /** Stacked grouping and sorting, the same shape as the orders list. */
+  const [groups, setGroups] = useState<GroupChoice[]>([]);
+  const [sorts, setSorts] = useState<SortChoice[]>([]);
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(new Set());
+  const [menu, setMenu] = useState<'group' | 'sort' | null>(null);
 
   /**
    * What this side calls the things on its shelves.
@@ -230,6 +254,53 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
     [ingredients, showArchived, q, state, sortBy, lowDefaultBp],
   );
 
+  /*
+    Grouping and sorting, stacked in the order they were chosen.
+
+    The same shape as the orders and products lists, deliberately: somebody who
+    has learnt it on one page should not have to learn it again here. The
+    header sort sits ON TOP of the existing "order by" dropdown rather than
+    replacing it — that one answers "what needs buying", which is the question
+    the page opens with, and a header click is for the times it is not.
+  */
+  const GROUPABLE: GroupChoice[] = [
+    { key: 'category', label: 'Category' },
+    { key: 'counted', label: 'How often it is counted' },
+    { key: 'supplier', label: 'Supplier' },
+    { key: 'level', label: 'Level' },
+  ];
+
+  const groupValue = (i: Ingredient, key: string): string => {
+    if (key === 'counted') return CADENCE_WORDS[countCadence(i)].label;
+    if (key === 'supplier') return supplierName(i.supplier_id) || '';
+    if (key === 'level') {
+      const l = levelOf(i, lowDefaultBp);
+      return l === 'out' ? 'Out' : l === 'low' ? 'Low' : 'OK';
+    }
+    const named = nameForKey(categories, i.category);
+    return named === ', ' ? '' : named;
+  };
+
+  const compareIngredients = (a: Ingredient, b: Ingredient, key: string): number => {
+    if (key === 'qty') return (a.current_qty ?? 0) - (b.current_qty ?? 0);
+    if (key === 'cost') return (a.base_unit_cost ?? 0) - (b.base_unit_cost ?? 0);
+    if (key === 'category' || key === 'counted') {
+      return groupValue(a, key).localeCompare(groupValue(b, key));
+    }
+    return a.name.localeCompare(b.name);
+  };
+
+  const ordered = useMemo(
+    () => (sorts.length ? sortRows(shownIngredients, sorts, compareIngredients) : shownIngredients),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [shownIngredients, sorts],
+  );
+  const tree = useMemo(
+    () => groupRows(ordered, groups, groupValue),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ordered, groups, categories, suppliers],
+  );
+
   const alerts = useMemo(
     () => (ingredients ?? []).filter((i) => i.active && levelOf(i, lowDefaultBp) !== 'ok'),
     [ingredients, lowDefaultBp],
@@ -288,6 +359,42 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
     if (!editing?.name?.trim()) { setError('Give the ingredient a name.'); return; }
     const cost = parseMoney(costText, decimals);
     if (cost === null || cost < 0) { setError('Enter a valid cost per unit.'); return; }
+
+    /*
+      One shelf, one row.
+
+      Two ingredients with the same name are two running quantities for one
+      thing on one shelf, and nothing afterwards can tell them apart: half the
+      recipes draw on one and half on the other, the count corrects whichever
+      the person happened to pick, and the shelf never agrees with the system
+      again. It is also silent — the list is alphabetical, so the duplicate
+      sits directly under the original where it looks deliberate.
+
+      Compared the way somebody typing would mean it: case and spacing ignored,
+      which is where duplicates actually come from. Archived rows count, and
+      say so — the answer there is to bring the old one back, not to make a
+      second.
+
+      Within this side only. A kitchen's "Lime" and a bar's "Lime" are
+      genuinely two things: one is counted at close in the larder, the other
+      poured from behind the bar.
+    */
+    const wanted = normaliseName(editing.name);
+    const clash = (ingredients ?? []).find(
+      (i) => i.$id !== editing.$id
+        && (i.module ?? 'kitchen') === (editing.module ?? module)
+        && normaliseName(i.name) === wanted,
+    );
+    if (clash) {
+      setError(
+        clash.active === false
+          ? `There is already an archived ingredient called "${clash.name}". Bring that one back instead — a `
+            + 'second row for the same shelf gives it two running quantities and nothing can tell them apart.'
+          : `There is already an ingredient called "${clash.name}". Edit that one instead: two rows for the same `
+            + 'shelf means two running quantities for one thing, and no count can ever put them right.',
+      );
+      return;
+    }
 
     setBusy(true);
     setError(null);
@@ -467,12 +574,47 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
           <Select value={sortBy} onChange={(e) => setSortBy(e.target.value as StockSort)}>
             {STOCK_SORTS.map((s2) => <option key={s2.value} value={s2.value}>{s2.label}</option>)}
           </Select>
+          {/* Grouping, stacked in the order it is chosen — category inside
+              supplier and supplier inside category are different answers, and
+              both get asked. */}
+          <PickerMenu
+            label="Group by"
+            count={groups.length}
+            open={menu === 'group'}
+            onOpen={(o) => setMenu(o ? 'group' : null)}
+          >
+            {GROUPABLE.map((g) => (
+              <PickerItem
+                key={g.key}
+                label={g.label}
+                on={groups.some((c) => c.key === g.key)}
+                position={groups.findIndex((c) => c.key === g.key) + 1 || undefined}
+                onClick={() => setGroups(toggleGroup(groups, g))}
+              />
+            ))}
+          </PickerMenu>
           {(q || state !== 'any') && (
             <span className="small dim">
               {shownIngredients.length} of {(ingredients ?? []).filter((i) => showArchived || i.active).length}
             </span>
           )}
         </div>
+      )}
+
+      {/* What is applied, in order. Without this the sequence — the whole
+          point of stacking them — is not visible anywhere on the page. */}
+      {tab === 'ingredients' && (
+        <FacetChips
+          facets={[
+            ...groups.map((g) => ({ kind: 'Group', label: g.label })),
+            ...sorts.map((x) => ({ kind: 'Sort', label: x.label, detail: x.dir === 'asc' ? '↑' : '↓' })),
+          ]}
+          onRemove={(i) => {
+            if (i < groups.length) setGroups(groups.filter((_, n) => n !== i));
+            else setSorts(sorts.filter((_, n) => n !== i - groups.length));
+          }}
+          onClear={() => { setGroups([]); setSorts([]); }}
+        />
       )}
 
       {tab === 'packs' ? (
@@ -507,13 +649,60 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
               <table className="data">
                 <thead>
                   <tr>
-                    <th>Ingredient</th><th>Category</th><th>Supplier</th><th>Used in</th>
-                    <th className="num">In stock</th><th className="num">Par</th>
-                    <th className="num">Unit cost</th><th>Level</th><th />
+                    {/* Click a heading to sort by it; click again to reverse,
+                        a third time to drop it. Several stack in the order
+                        they were chosen, the same as the orders list. */}
+                    <SortableTh
+                      label="Ingredient"
+                      dir={sortDir(sorts, 'name')}
+                      position={sortPosition(sorts, 'name')}
+                      onClick={() => setSorts(cycleSort(sorts, 'name', 'Name'))}
+                    />
+                    <SortableTh
+                      label="Category"
+                      dir={sortDir(sorts, 'category')}
+                      position={sortPosition(sorts, 'category')}
+                      onClick={() => setSorts(cycleSort(sorts, 'category', 'Category'))}
+                    />
+                    <SortableTh
+                      label="Counted"
+                      dir={sortDir(sorts, 'counted')}
+                      position={sortPosition(sorts, 'counted')}
+                      onClick={() => setSorts(cycleSort(sorts, 'counted', 'How often it is counted'))}
+                    />
+                    <th>Supplier</th><th>Used in</th>
+                    <SortableTh
+                      label="In stock"
+                      className="num"
+                      dir={sortDir(sorts, 'qty')}
+                      position={sortPosition(sorts, 'qty')}
+                      onClick={() => setSorts(cycleSort(sorts, 'qty', 'In stock'))}
+                    />
+                    <th className="num">Par</th>
+                    <SortableTh
+                      label="Unit cost"
+                      className="num"
+                      dir={sortDir(sorts, 'cost')}
+                      position={sortPosition(sorts, 'cost')}
+                      onClick={() => setSorts(cycleSort(sorts, 'cost', 'Unit cost'))}
+                    />
+                    <th>Level</th><th />
                   </tr>
                 </thead>
                 <tbody>
-                  {shownIngredients.map((i) => {
+                  <GroupedRows
+                    nodes={tree}
+                    rows={ordered}
+                    columns={10}
+                    closed={closedGroups}
+                    onToggle={(path) => setClosedGroups((c) => {
+                      const next = new Set(c);
+                      if (next.has(path)) next.delete(path); else next.add(path);
+                      return next;
+                    })}
+                    rowKey={(i) => i.$id}
+                    summary={(rs) => `${rs.length} ${rs.length === 1 ? 'ingredient' : 'ingredients'}`}
+                    renderRow={(i) => {
                     const level = levelOf(i, lowDefaultBp);
                     const run = i.consecutive_low_count ?? 0;
                     return (
@@ -525,7 +714,6 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
                           {/* A wrong pack size multiplies the shelf by itself
                               and is otherwise invisible until a count goes
                               badly, so it is shown where the list is read. */}
-                          {i.count_each_shift && <Badge tone="ok">Counted every shift</Badge>}
                           {hasPack(i) && (
                             <div className="small dim">
                               bought by the {(i.pack_name || 'pack').trim()} of {packSize(i)} {i.unit}
@@ -533,6 +721,22 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
                           )}
                         </td>
                         <td className="dim small">{nameForKey(categories, i.category) === ', ' ? '' : nameForKey(categories, i.category)}</td>
+                        {/*
+                          How often somebody walks past this and writes a
+                          number down.
+
+                          It was set on the form and shown nowhere, so the only
+                          way to see whether the shift count covered the right
+                          things was to open every ingredient in turn — which
+                          is how a bar ends up counting four items twice a day
+                          and nobody noticing the fifth was never on the sheet.
+                        */}
+                        <td className="small">
+                          <Badge tone={CADENCE_WORDS[countCadence(i)].tone}>
+                            {CADENCE_WORDS[countCadence(i)].label}
+                          </Badge>
+                          <div className="small dim">{CADENCE_WORDS[countCadence(i)].detail}</div>
+                        </td>
                         <td className="dim small">{supplierName(i.supplier_id)}</td>
                         <td className="small">{usedIn(i.$id)}</td>
                         <td className="num">{i.current_qty} {i.unit}</td>
@@ -554,7 +758,8 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
                         </td>
                       </tr>
                     );
-                  })}
+                    }}
+                  />
                 </tbody>
               </table>
             </div>
