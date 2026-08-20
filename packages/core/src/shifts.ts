@@ -815,3 +815,37 @@ export async function recomputeClosedShift(shiftId: string): Promise<{
 
   return { expected: takings.byMethod, variance, totalOff };
 }
+
+/**
+ * Correct when a shift ended.
+ *
+ * Only the clock. Nothing about the money moves and nothing needs to be worked
+ * out again: the takings come from payments stamped with the shift and the
+ * count came from a person, and neither has any opinion about what the closing
+ * timestamp says. See shift-times for what it does affect — which day the
+ * shift is reported under, and one half of the window in ordersForShift.
+ *
+ * The reason is required by the screen and stored in its own field, because
+ * "the manager closed it at breakfast" and "somebody moved a shift off the day
+ * it was short on" look identical in a before-and-after pair.
+ */
+export async function changeShiftClose(opts: {
+  shift: Pick<Shift, '$id' | 'venue_id' | 'code' | 'closed_at'>;
+  closedAt: string;
+  userId: string;
+  reason: string;
+}): Promise<void> {
+  await db.updateDocument(DB_ID, 'shifts', opts.shift.$id, { closed_at: opts.closedAt });
+
+  await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
+    venue_id: opts.shift.venue_id,
+    actor_id: opts.userId,
+    action: 'shift_close_changed',
+    entity_type: 'shift',
+    entity_id: opts.shift.$id,
+    before: JSON.stringify({ closed_at: opts.shift.closed_at ?? '' }),
+    after: JSON.stringify({ closed_at: opts.closedAt }),
+    reason: opts.reason.slice(0, 500),
+    shift_id: opts.shift.$id,
+  }).catch(() => undefined);
+}

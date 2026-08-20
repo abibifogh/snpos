@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Card, Empty, Notice, Spinner, Badge, Modal, Button } from '@snpos/ui';
+import { Card, Empty, Notice, Spinner, Badge, Modal, Button, Field, Input, useToast } from '@snpos/ui';
 import { listAll, humanError, Query } from '../lib';
-import { formatMoney, byStaff, destinationLabel, fromTakings } from '@snpos/core';
+import {
+  formatMoney, byStaff, destinationLabel, fromTakings,
+  changeShiftClose, closeTimeProblem, closeTimeEffects, describeCloseChange, hoursBetween, SHIFT_MAX_HOURS,
+} from '@snpos/core';
 import type { Module, Doc, CashHandover } from '@snpos/core';
 import { useSession } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
@@ -56,7 +59,8 @@ const parseMap = (raw?: string): Record<string, number> => {
 };
 
 export function ShiftsPage() {
-  const { settings, profile } = useSession();
+  const { settings, profile, user } = useSession();
+  const toast = useToast();
   const [rows, setRows] = useState<Shift[] | null>(null);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -87,6 +91,60 @@ export function ShiftsPage() {
   const [openExpense, setOpenExpense] = useState<Expense | null>(null);
   const [expenseItems, setExpenseItems] = useState<ExpenseItem[] | null>(null);
 
+  /**
+   * Correcting when a shift ended.
+   *
+   * An admin's, because it changes which day a night's trading is reported
+   * under. Not a dangerous change — no money moves, see shift-times — but not
+   * one a cashier should be able to make to a night they were short on.
+   */
+  const isAdmin = profile?.role === 'admin';
+  const [closeEdit, setCloseEdit] = useState<Shift | null>(null);
+  const [closeAt, setCloseAt] = useState('');
+  const [closeReason, setCloseReason] = useState('');
+  const [closeBusy, setCloseBusy] = useState(false);
+
+  /*
+    A datetime-local box wants the browser's own local wall clock, with no
+    zone and no seconds. Building it from the ISO string directly would show
+    UTC, and a bar in Accra correcting a 1am close would be handed midnight.
+  */
+  const forInput = (iso?: string): string => {
+    const at = iso ? new Date(iso) : new Date();
+    if (Number.isNaN(at.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`
+      + `T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  };
+
+  const startCloseEdit = (shift: Shift) => {
+    setCloseAt(forInput(shift.closed_at));
+    setCloseReason('');
+    setCloseEdit(shift);
+  };
+
+  const saveCloseTime = async () => {
+    if (!closeEdit || !closeAt) return;
+    const iso = new Date(closeAt).toISOString();
+    setCloseBusy(true);
+    try {
+      await changeShiftClose({
+        shift: closeEdit,
+        closedAt: iso,
+        userId: user?.$id ?? '',
+        reason: closeReason.trim(),
+      });
+      setCloseEdit(null);
+      setDetail(null);
+      await load();
+      toast(describeCloseChange(closeEdit, iso));
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setCloseBusy(false);
+    }
+  };
+
   const openLines = async (e: Expense) => {
     setOpenExpense(e);
     setExpenseItems(null);
@@ -99,19 +157,21 @@ export function ShiftsPage() {
   const [side, setSide] = useState<Side>('all');
   const [error, setError] = useState<string | null>(null);
 
+  const load = async () => {
+    const [s, m, e, h] = await Promise.all([
+      listAll<Shift>('shifts'),
+      listAll<PaymentMethod>('payment_methods'),
+      listAll<Expense>('shift_expenses'),
+      listAll<CashHandover>('cash_handovers').catch(() => [] as CashHandover[]),
+    ]);
+    setRows(s.sort((a, b) => b.opened_at.localeCompare(a.opened_at)));
+    setMethods(m);
+    setExpenses(e);
+    setHandovers(h);
+  };
+
   useEffect(() => {
-    (async () => {
-      const [s, m, e, h] = await Promise.all([
-        listAll<Shift>('shifts'),
-        listAll<PaymentMethod>('payment_methods'),
-        listAll<Expense>('shift_expenses'),
-        listAll<CashHandover>('cash_handovers').catch(() => [] as CashHandover[]),
-      ]);
-      setRows(s.sort((a, b) => b.opened_at.localeCompare(a.opened_at)));
-      setMethods(m);
-      setExpenses(e);
-      setHandovers(h);
-    })().catch((err) => setError(humanError(err)));
+    void load().catch((err) => setError(humanError(err)));
   }, []);
 
   const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? id;
@@ -211,7 +271,22 @@ export function ShiftsPage() {
             </div>
             <div>
               <h3>Closed</h3>
-              <p className="small dim">{detail.closed_at ? new Date(detail.closed_at).toLocaleString() : 'Still open'}</p>
+              <p className="small dim" style={{ marginBottom: '0.35rem' }}>
+                {detail.closed_at ? new Date(detail.closed_at).toLocaleString() : 'Still open'}
+                {detail.closed_at && (
+                  <> · {hoursBetween(detail.opened_at, detail.closed_at)} hours</>
+                )}
+              </p>
+              {/*
+                The commonest wrong figure in the system, and the least
+                sinister: a bar that closed at one and a till nobody touched
+                until eleven. Correcting it moves no money — see shift-times —
+                which is why it sits here as an ordinary action rather than
+                under a heading full of warnings.
+              */}
+              {isAdmin && detail.status === 'closed' && (
+                <Button size="sm" onClick={() => startCloseEdit(detail)}>Correct the closing time</Button>
+              )}
             </div>
           </div>
 
@@ -331,6 +406,74 @@ export function ShiftsPage() {
           )}
         </Modal>
       )}
+
+      {closeEdit && (() => {
+        const iso = closeAt ? new Date(closeAt).toISOString() : '';
+        const problem = iso ? closeTimeProblem(closeEdit, iso) : 'Say when it actually closed.';
+        const effects = iso && !problem
+          ? closeTimeEffects({ shift: closeEdit, closedAt: iso, maxHours: SHIFT_MAX_HOURS })
+          : null;
+        return (
+          <Modal
+            title={`When did ${closeEdit.code} close?`}
+            onClose={() => (closeBusy ? undefined : setCloseEdit(null))}
+            footer={
+              <>
+                <Button variant="ghost" onClick={() => setCloseEdit(null)} disabled={closeBusy}>Cancel</Button>
+                <Button
+                  variant="primary"
+                  onClick={() => void saveCloseTime()}
+                  loading={closeBusy}
+                  disabled={!!problem || !closeReason.trim()}
+                >
+                  Save the time
+                </Button>
+              </>
+            }
+          >
+            <p className="small dim" style={{ marginTop: 0 }}>
+              For a till nobody got back to: a bar that stopped serving at one and was closed on the system at
+              eleven the next morning. Opened {new Date(closeEdit.opened_at).toLocaleString()}.
+            </p>
+            {/* Said early and plainly, because it is the question an admin
+                actually has and the answer is reassuring. */}
+            <Notice tone="info">
+              No money moves. The takings are worked out from the payments taken on this shift and the count
+              came from a person; neither has any opinion about the clock. What changes is which day this shift
+              is reported under, and how long it says it ran.
+            </Notice>
+
+            <Field label="Closed at">
+              <Input type="datetime-local" value={closeAt} onChange={(e) => setCloseAt(e.target.value)} />
+            </Field>
+
+            {problem && <Notice tone="warn">{problem}</Notice>}
+
+            {effects && (
+              <>
+                <p style={{ marginBottom: '0.3rem' }}>
+                  <strong>{describeCloseChange(closeEdit, iso)}</strong>
+                </p>
+                <p className="small dim" style={{ marginTop: 0 }}>
+                  That makes it {effects.hours} hours long.
+                </p>
+                {effects.warnings.map((w) => <Notice key={w} tone="warn">{w}</Notice>)}
+              </>
+            )}
+
+            <Field
+              label="Why"
+              hint="Kept against your name. A correction and a shift moved off a bad night look identical without it."
+            >
+              <Input
+                value={closeReason}
+                placeholder="Nobody closed the till until the morning"
+                onChange={(e) => setCloseReason(e.target.value)}
+              />
+            </Field>
+          </Modal>
+        );
+      })()}
 
       {/*
         What one expense was actually spent on.
