@@ -63,5 +63,6 @@ export * from './shift-lock';
 export * from './shift-totals';
 export * from './purchase-flags';
 export * from './purchase-alerts';
+export * from './expense-analysis';
 export * from './shift-move';
 export * from './shift-times';

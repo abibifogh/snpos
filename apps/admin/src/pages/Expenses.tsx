@@ -8,9 +8,10 @@ import {
   postExpense, accountForExpense,
   buyOptions, convertPurchase, describePurchase, hasPack, categoriesForSide, canSeePrivateExpenses,
 } from '@snpos/core';
-import type { Module, Doc, Ingredient, PaidToKind, BuyOption } from '@snpos/core';
+import type { Module, Doc, Ingredient, PaidToKind, BuyOption, ExpenseCategoryDoc } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
 import { AccountsManager } from '../components/AccountsManager';
+import { ExpenseAnalysisTab } from '../components/ExpenseAnalysis';
 import { useSession } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 
@@ -112,7 +113,7 @@ export function ExpensesPage() {
   const decimals = settings?.currency_decimals ?? 2;
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const [tab, setTab] = useState<'expenses' | 'categories' | 'accounts'>('expenses');
+  const [tab, setTab] = useState<'expenses' | 'analysis' | 'categories' | 'accounts'>('expenses');
   const [rows, setRows] = useState<Expense[] | null>(null);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [side, setSide] = useState<Side>('all');
@@ -471,12 +472,19 @@ export function ExpensesPage() {
         onChange={setTab}
         options={[
           { value: 'expenses', label: 'Expenses' },
+          { value: 'analysis', label: 'Analysis' },
           { value: 'categories', label: 'Categories' },
           { value: 'accounts', label: 'Accounts' },
         ]}
       />
 
-      {tab === 'accounts' ? (
+      {tab === 'analysis' ? (
+        /* The list says what was spent. This says what that means — on what, by
+           which trade, whether it is going up, and how much has nothing behind
+           it. Its own component because it reads its own two windows and would
+           otherwise double the size of this file. */
+        <ExpenseAnalysisTab categories={(categories ?? []) as unknown as ExpenseCategoryDoc[]} />
+      ) : tab === 'accounts' ? (
         <AccountsManager />
       ) : tab === 'categories' ? (
         <KeyedListManager
