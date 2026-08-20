@@ -1,0 +1,393 @@
+import { db, DB_ID, ID, Query, listAll } from './client';
+import type { Doc } from './types';
+import { ACCOUNTS, postEntry, postExpense, accountForExpense } from './ledger';
+import { boxBalance, countBox } from './imprest-rules';
+import type { ImprestMovement, ImprestKind } from './imprest-rules';
+
+/**
+ * Petty cash boxes, and the two sets of books they have to agree with.
+ *
+ * A box has its own record of what is in it — the movements — and it also has
+ * a place on the balance sheet. Those must never be allowed to drift apart, so
+ * every function here that moves money does both in one go and stores the
+ * journal entry's id on the movement. Walk it from either end and the same
+ * figure comes back.
+ *
+ * The arithmetic lives next door in imprest-rules, which imports nothing.
+ */
+
+export * from './imprest-rules';
+
+export interface ImprestFloatDoc extends Doc {
+  venue_id: string;
+  name: string;
+  fixed_amount: number;
+  account_code?: string;
+  custodian_id?: string;
+  module?: string;
+  note?: string;
+  active?: boolean;
+  sort?: number;
+}
+
+export interface ImprestMovementDoc extends Doc, ImprestMovement {
+  venue_id: string;
+  float_id: string;
+  ref_type?: string;
+  ref_id?: string;
+  entry_id?: string;
+  note?: string;
+  created_by: string;
+}
+
+export interface ImprestCountDoc extends Doc {
+  venue_id: string;
+  float_id: string;
+  expected: number;
+  counted: number;
+  variance: number;
+  counted_by: string;
+  counted_at?: string;
+  note?: string;
+  topped_up: number;
+}
+
+/** Where a box sits on the balance sheet, with the shared one as the default. */
+export const accountFor = (box: Pick<ImprestFloatDoc, 'account_code'>): string =>
+  box.account_code || ACCOUNTS.pettyCash;
+
+export const loadFloats = async (venueId: string): Promise<ImprestFloatDoc[]> =>
+  (await listAll<ImprestFloatDoc>('imprest_floats', [Query.equal('venue_id', venueId)]).catch(
+    () => [] as ImprestFloatDoc[],
+  )).sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.name.localeCompare(b.name));
+
+export const loadMovements = async (floatId: string): Promise<ImprestMovementDoc[]> =>
+  (await listAll<ImprestMovementDoc>('imprest_movements', [Query.equal('float_id', floatId)]).catch(
+    () => [] as ImprestMovementDoc[],
+  )).sort((a, b) => (b.occurred_at ?? b.$createdAt).localeCompare(a.occurred_at ?? a.$createdAt));
+
+export const loadCounts = async (floatId: string): Promise<ImprestCountDoc[]> =>
+  (await listAll<ImprestCountDoc>('imprest_counts', [Query.equal('float_id', floatId)]).catch(
+    () => [] as ImprestCountDoc[],
+  )).sort((a, b) => (b.counted_at ?? b.$createdAt).localeCompare(a.counted_at ?? a.$createdAt));
+
+/**
+ * Every box's balance in one pass.
+ *
+ * One read of the movements rather than one per box. A business with four
+ * boxes and a year of history behind them would otherwise make four full
+ * reads to draw a list that fits on half a screen — the exact greed that put
+ * the tills on the floor when the month's allowance ran out.
+ */
+export async function balancesFor(floats: ImprestFloatDoc[]): Promise<Record<string, number>> {
+  if (floats.length === 0) return {};
+  const ids = floats.map((f) => f.$id);
+  const rows = await listAll<ImprestMovementDoc>('imprest_movements', [
+    Query.equal('float_id', ids),
+  ]).catch(() => [] as ImprestMovementDoc[]);
+
+  const out: Record<string, number> = Object.fromEntries(ids.map((id) => [id, 0]));
+  for (const m of rows) out[m.float_id] = (out[m.float_id] ?? 0) + m.amount;
+  return out;
+}
+
+/**
+ * One box's balance.
+ *
+ * Named for the box rather than "balanceOf", which a consignor's ledger owns
+ * already. Two exports with one name in a package everything imports from is a
+ * collision waiting for whichever file is compiled second.
+ */
+export const floatBalance = async (floatId: string): Promise<number> =>
+  boxBalance(await loadMovements(floatId));
+
+/**
+ * Write a movement and the entry that goes with it.
+ *
+ * The posting FIRST, then the movement that points at it. The other order
+ * leaves a box that says money moved and books that never heard about it,
+ * which is the harder of the two to notice — a box short of a movement is
+ * visible the moment somebody counts it, and a ledger short of an entry is
+ * visible to nobody until an accountant asks.
+ */
+async function moveMoney(opts: {
+  venueId: string;
+  box: ImprestFloatDoc;
+  /** Signed. Positive into the box, negative out of it. */
+  amount: number;
+  kind: ImprestKind;
+  /** The other side of the entry. What the money came from, or went to. */
+  againstAccount: string;
+  memo: string;
+  userId: string;
+  refType?: string;
+  refId?: string;
+  note?: string;
+  date?: Date;
+}): Promise<ImprestMovementDoc> {
+  const box = accountFor(opts.box);
+  const size = Math.abs(opts.amount);
+  const into = opts.amount > 0;
+
+  let entryId = '';
+  if (size > 0) {
+    const entry = await postEntry(
+      opts.venueId,
+      {
+        date: opts.date,
+        source: 'imprest',
+        sourceId: opts.refId ? `${opts.refType}:${opts.refId}` : undefined,
+        memo: opts.memo,
+        postedBy: opts.userId,
+      },
+      into
+        // Money into the box: the box holds more, the safe holds less.
+        ? [
+            { account_code: box, debit: size, credit: 0, memo: opts.memo },
+            { account_code: opts.againstAccount, debit: 0, credit: size, memo: opts.memo },
+          ]
+        : [
+            { account_code: opts.againstAccount, debit: size, credit: 0, memo: opts.memo },
+            { account_code: box, debit: 0, credit: size, memo: opts.memo },
+          ],
+    );
+    entryId = entry.$id;
+  }
+
+  return (await db.createDocument(DB_ID, 'imprest_movements', ID.unique(), {
+    venue_id: opts.venueId,
+    float_id: opts.box.$id,
+    amount: opts.amount,
+    kind: opts.kind,
+    ref_type: opts.refType ?? '',
+    ref_id: opts.refId ?? '',
+    entry_id: entryId,
+    note: (opts.note ?? '').slice(0, 500),
+    created_by: opts.userId,
+    occurred_at: (opts.date ?? new Date()).toISOString(),
+  })) as unknown as ImprestMovementDoc;
+}
+
+/**
+ * Put money into the box.
+ *
+ * Establishing a box and topping one up are the same act and are not told
+ * apart: the first top-up IS the establishment, and having two words for it
+ * only creates a way to get the first one wrong.
+ *
+ * `fromAccount` is where the money came from — the till's cash by default,
+ * a bank account when somebody drew it out. Recorded rather than assumed,
+ * because "the petty cash went up by 500 and nothing went down" is an entry
+ * that does not balance and cannot be posted at all.
+ */
+export async function topUpFloat(opts: {
+  venueId: string;
+  box: ImprestFloatDoc;
+  amount: number;
+  userId: string;
+  fromAccount?: string;
+  note?: string;
+  date?: Date;
+}): Promise<ImprestMovementDoc> {
+  if (opts.amount <= 0) throw new Error('Enter how much went into the box.');
+  return moveMoney({
+    venueId: opts.venueId,
+    box: opts.box,
+    amount: opts.amount,
+    kind: 'top_up',
+    againstAccount: opts.fromAccount || ACCOUNTS.cash,
+    memo: `Topped up ${opts.box.name}`,
+    userId: opts.userId,
+    refType: 'top_up',
+    note: opts.note,
+    date: opts.date,
+  });
+}
+
+/** And take it back out, when a box is being wound down or is simply too full. */
+export async function returnFromFloat(opts: {
+  venueId: string;
+  box: ImprestFloatDoc;
+  amount: number;
+  userId: string;
+  toAccount?: string;
+  note?: string;
+}): Promise<ImprestMovementDoc> {
+  if (opts.amount <= 0) throw new Error('Enter how much came out of the box.');
+  return moveMoney({
+    venueId: opts.venueId,
+    box: opts.box,
+    amount: -opts.amount,
+    kind: 'return',
+    againstAccount: opts.toAccount || ACCOUNTS.cash,
+    memo: `Returned from ${opts.box.name}`,
+    userId: opts.userId,
+    refType: 'return',
+    note: opts.note,
+  });
+}
+
+/**
+ * Spend from the box.
+ *
+ * Three things happen and all three are the point of this feature: the expense
+ * is recorded where every other expense is recorded, so it appears in the
+ * spending reports alongside them; it is posted to the books against the RIGHT
+ * account, crediting the box rather than the till; and the box's own balance
+ * moves so the next count has something true to measure against.
+ *
+ * The expense row is written first and carries the box's id. That row is the
+ * thing somebody will look for afterwards — "what did we spend that on" — and
+ * it must exist even if the posting behind it fails.
+ */
+export async function spendFromFloat(opts: {
+  venueId: string;
+  box: ImprestFloatDoc;
+  amount: number;
+  categoryKey: string;
+  userId: string;
+  payee?: string;
+  note?: string;
+  receiptFileId?: string;
+  module?: string;
+  shiftId?: string;
+}): Promise<{ expenseId: string; movement: ImprestMovementDoc }> {
+  if (opts.amount <= 0) throw new Error('Enter what was spent.');
+
+  const expense = await db.createDocument(DB_ID, 'shift_expenses', ID.unique(), {
+    venue_id: opts.venueId,
+    shift_id: opts.shiftId ?? '',
+    module: opts.module ?? 'kitchen',
+    // The old fixed column, still required. `category_key` is what everything
+    // reads; this keeps the row valid for a database provisioned before it.
+    category: 'petty_cash',
+    category_key: opts.categoryKey,
+    payee: (opts.payee ?? '').slice(0, 160),
+    paid_to_kind: 'other',
+    amount: opts.amount,
+    // No payment method took this: it came out of a tin. The column is
+    // required, so the box's own id stands in and `imprest_float_id` is what
+    // anything reading it actually looks at.
+    paid_from_method_id: opts.box.$id,
+    imprest_float_id: opts.box.$id,
+    /*
+      Not out of the shift's takings.
+
+      This is the field that decides whether a drawer is counted short. Money
+      from a petty cash box never sat in the till, so deducting it would make
+      the drawer look short by an amount it never held — the exact accusation
+      that stops people recording expenses at all.
+    */
+    from_takings: false,
+    note: (opts.note ?? '').slice(0, 500),
+    receipt_file_id: opts.receiptFileId ?? '',
+    created_by: opts.userId,
+    approval_status: 'not_required',
+  });
+
+  const accountCode = await accountForExpense({ category_key: opts.categoryKey });
+
+  // Posted through the same postExpense everything else uses, keyed by the
+  // expense's own id so it cannot land twice — but credited against the box
+  // instead of the till, which is the whole difference.
+  const entryId = await postExpense(opts.venueId, {
+    expenseId: expense.$id,
+    amount: opts.amount,
+    accountCode,
+    postedBy: opts.userId,
+    fromAccount: accountFor(opts.box),
+    memo: `Paid from ${opts.box.name}`,
+  });
+
+  const movement = (await db.createDocument(DB_ID, 'imprest_movements', ID.unique(), {
+    venue_id: opts.venueId,
+    float_id: opts.box.$id,
+    amount: -opts.amount,
+    kind: 'spend',
+    ref_type: 'expense',
+    ref_id: expense.$id,
+    entry_id: entryId ?? '',
+    note: (opts.note || opts.payee || '').slice(0, 500),
+    created_by: opts.userId,
+    occurred_at: new Date().toISOString(),
+  })) as unknown as ImprestMovementDoc;
+
+  return { expenseId: expense.$id, movement };
+}
+
+/**
+ * Count the box, and settle whatever the count found.
+ *
+ * The count is written whether or not anything was wrong with it, because "we
+ * counted it and it was right" is a fact worth being able to show. A record
+ * that only exists when money was missing makes every row in it read as an
+ * accusation, and boxes stop being counted.
+ *
+ * A difference is posted to cash over/short exactly as a drawer's is. It is
+ * the same event — money that should be somewhere and is not — and filing it
+ * anywhere else would keep petty cash losses out of the one figure an owner
+ * looks at to find them.
+ *
+ * The top-up, if one is being made at the same sitting, happens AFTER the
+ * adjustment. The other order tops the box up to its level and then books a
+ * shortage against the money that was just put in, which is arithmetically the
+ * same and tells the wrong story about which money went missing.
+ */
+export async function reconcileFloat(opts: {
+  venueId: string;
+  box: ImprestFloatDoc;
+  counted: number;
+  userId: string;
+  note?: string;
+  /** Restore the box to its fixed amount at the same time. */
+  topUp?: boolean;
+  topUpFrom?: string;
+}): Promise<{ variance: number; toppedUp: number; countId: string }> {
+  const balance = boxBalance(await loadMovements(opts.box.$id));
+  const result = countBox({ fixedAmount: opts.box.fixed_amount, balance, counted: opts.counted });
+
+  if (result.variance !== 0) {
+    await moveMoney({
+      venueId: opts.venueId,
+      box: opts.box,
+      amount: result.variance,
+      kind: 'adjust',
+      // The same account a drawer's shortage goes to. A loss is a loss
+      // wherever the money was sitting.
+      againstAccount: ACCOUNTS.cashOverShort,
+      memo: result.variance < 0
+        ? `${opts.box.name} short at count`
+        : `${opts.box.name} over at count`,
+      userId: opts.userId,
+      refType: 'count',
+      note: opts.note,
+    });
+  }
+
+  let toppedUp = 0;
+  if (opts.topUp && result.toRestore > 0) {
+    await topUpFloat({
+      venueId: opts.venueId,
+      box: opts.box,
+      amount: result.toRestore,
+      userId: opts.userId,
+      fromAccount: opts.topUpFrom,
+      note: 'Restored to its level after counting',
+    });
+    toppedUp = result.toRestore;
+  }
+
+  const count = await db.createDocument(DB_ID, 'imprest_counts', ID.unique(), {
+    venue_id: opts.venueId,
+    float_id: opts.box.$id,
+    expected: result.expected,
+    counted: result.counted,
+    variance: result.variance,
+    counted_by: opts.userId,
+    counted_at: new Date().toISOString(),
+    note: (opts.note ?? '').slice(0, 500),
+    topped_up: toppedUp,
+  });
+
+  return { variance: result.variance, toppedUp, countId: count.$id };
+}

@@ -159,6 +159,14 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'payouts', label: 'Payouts', path: '/payouts', group: 'Craft shop', module: 'craft' },
   { key: 'shifts', label: 'Shifts', path: '/shifts', group: 'Money' },
   { key: 'expenses', label: 'Expenses', path: '/expenses', group: 'Money' },
+  /*
+    Petty cash, on the imprest system.
+
+    Under Money rather than beside Expenses, because it is not a list of
+    spending — it is a thing that holds money and has to be counted, which is
+    closer to a shift than to a receipt.
+  */
+  { key: 'imprest', label: 'Petty cash', path: '/imprest', group: 'Money' },
   { key: 'vouchers', label: 'Discount vouchers', path: '/vouchers', group: 'Money' },
   /**
    * The books, and the parts of them, each granted separately.

@@ -36,6 +36,15 @@ export const ACCOUNTS = {
   cardClearing: '1010',
   momoClearing: '1020',
   /**
+   * Money that has left the safe but has not yet been spent.
+   *
+   * Its own asset account rather than part of Cash on hand. A petty cash box
+   * is somebody else's responsibility and is counted on its own schedule, and
+   * folding it into the till's cash makes a shortage in the box and a shortage
+   * in the drawer the same number — which is to say neither can be found.
+   */
+  pettyCash: '1030',
+  /**
    * Stock owned but not yet sold, one account per trade.
    *
    * Buying stock is not spending: the money turns into something the business
@@ -628,7 +637,24 @@ function endOfMonth(month: string): Date {
  */
 export async function postExpense(
   venueId: string,
-  e: { expenseId?: string; amount: number; accountCode: string; postedBy: string; shiftId?: string; date?: Date },
+  e: {
+    expenseId?: string;
+    amount: number;
+    accountCode: string;
+    postedBy: string;
+    shiftId?: string;
+    date?: Date;
+    /**
+     * What the money actually came out of. The till's cash unless said.
+     *
+     * Given for anything paid from a petty cash box, where crediting the till
+     * would take money out of a drawer that never held it — leaving the box
+     * showing a balance it does not have and the drawer chased for a shortage
+     * sitting in a tin in the office.
+     */
+    fromAccount?: string;
+    memo?: string;
+  },
 ): Promise<string | null> {
   if (!e.amount || e.amount <= 0) return null;
 
@@ -649,15 +675,17 @@ export async function postExpense(
       source: 'expense',
       sourceId: key || undefined,
       shiftId: e.shiftId,
-      memo: 'Money paid out',
+      memo: e.memo || 'Money paid out',
       postedBy: e.postedBy,
     },
     [
       { account_code: e.accountCode, debit: e.amount, credit: 0 },
-      // Out of the drawer. What it was paid FROM is on the expense; every
-      // method a business may pay an expense from is cash or a cash-like
-      // float, and none of them is a card the customer holds.
-      { account_code: ACCOUNTS.cash, debit: 0, credit: e.amount },
+      // Out of the drawer unless the caller names somewhere else. Every method
+      // a business may pay an expense from is cash or a cash-like float, and
+      // none of them is a card the customer holds — but a petty cash box is a
+      // float of its own with its own account, and money out of it must not be
+      // taken off a till that never held it.
+      { account_code: e.fromAccount || ACCOUNTS.cash, debit: 0, credit: e.amount },
     ],
   );
   return entry.$id;

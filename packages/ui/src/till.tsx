@@ -7,10 +7,11 @@ import {
   expenseMethods, recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
   fromTakings, postExpense, accountForExpense,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
+  loadFloats, balancesFor, accountFor,
 } from '@snpos/core';
 import type {
   PaymentMethod, Settings, StaffProfile, PaidToKind, Supplier, ExpenseCategoryDoc, Ingredient,
-  CashHandover, HandoverDestination, Module, ShiftExpense,
+  CashHandover, HandoverDestination, Module, ShiftExpense, ImprestFloatDoc,
 } from '@snpos/core';
 
 /**
@@ -102,6 +103,17 @@ export function ExpenseModal({
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [categoryKey, setCategoryKey] = useState(editing?.category_key || editing?.category || '');
   const [methodId, setMethodId] = useState(editing?.paid_from_method_id ?? '');
+  /**
+   * The petty cash boxes this side may spend out of, and what is in them.
+   *
+   * "From petty cash" used to mean only "do not take this off my drawer". The
+   * money really did come from somewhere — a tin in the office with somebody's
+   * name on it — and none of it reached that tin's records, so the box was
+   * spent down all week and only its custodian knew.
+   */
+  const [boxes, setBoxes] = useState<ImprestFloatDoc[]>([]);
+  const [boxBalances, setBoxBalances] = useState<Record<string, number>>({});
+  const [boxId, setBoxId] = useState(editing?.imprest_float_id ?? '');
   const [amountText, setAmountText] = useState(
     editing ? toInput(editing.amount, settings.currency_decimals ?? 2) : '',
   );
@@ -283,9 +295,35 @@ export function ExpenseModal({
         setMethodId((cur) => cur || allowed.find((x) => x.kind === 'cash')?.$id || allowed[0]?.$id || '');
       }
       setIngredients(ing.filter((i) => i.active).sort((a, b) => a.name.localeCompare(b.name)));
+
+      /*
+        The petty cash boxes this side may spend from.
+
+        A box with no side on it serves everybody, which is how a single
+        office tin works in practice. Loaded here with the rest of the form
+        rather than when the dropdown is touched: the balance decides whether
+        a spend can even be recorded, and finding that out after somebody has
+        filled in the whole form is finding it out too late.
+      */
+      const tins: ImprestFloatDoc[] = (await loadFloats(venueId).catch(() => [] as ImprestFloatDoc[]))
+        .filter((f: ImprestFloatDoc) => f.active !== false && (!f.module || f.module === module));
+      setBoxes(tins);
+      setBoxBalances(await balancesFor(tins).catch(() => ({})));
+      if (!editing) setBoxId((cur: string) => cur || tins[0]?.$id || '');
     })().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [venueId, settings.expense_paid_from, stocks, module]);
+
+  /**
+   * The box this spend is coming out of, if it is coming out of one.
+   *
+   * Only when "from petty cash" is the answer. Choosing a box and then saying
+   * the money came from the drawer would credit a tin that never paid for
+   * anything, and the drawer would still be counted short.
+   */
+  const chosenBox = fromDrawer ? null : boxes.find((b) => b.$id === boxId) ?? boxes[0] ?? null;
+  /** What is being spent, as the form currently stands, for the warning below. */
+  const boxSpend = parseMoney(amountText, settings.currency_decimals ?? 2) ?? 0;
 
   const filledLines = stocks ? lines.filter((l) => l.ingredientId && Number(l.qtyText) > 0) : [];
 
@@ -419,6 +457,14 @@ export function ExpenseModal({
             : '',
         ].filter(Boolean).join(' · ').slice(0, 500), // the column's own limit
         from_takings: fromDrawer,
+        /*
+          The tin it came out of, so the money leaves the right place.
+
+          This is what turns "not off my drawer" into an actual record. It
+          decides the account the expense is credited against — see
+          postExpense — and it is what the box's own balance is rebuilt from.
+        */
+        imprest_float_id: chosenBox?.$id ?? '',
       };
 
       /**
@@ -469,13 +515,43 @@ export function ExpenseModal({
        * would not save is a hole in the drawer nobody can explain.
        */
       void accountForExpense({ category_key: categoryKey })
-        .then((accountCode) => postExpense(venueId, {
-          expenseId,
-          amount,
-          accountCode,
-          postedBy: userId,
-          shiftId: shiftId || undefined,
-        }))
+        .then(async (accountCode) => {
+          const entryId = await postExpense(venueId, {
+            expenseId,
+            amount,
+            accountCode,
+            postedBy: userId,
+            shiftId: shiftId || undefined,
+            // Out of the tin, not the till. Crediting cash for money that
+            // never left the drawer is how a box quietly empties while the
+            // balance sheet says the business still has it in hand.
+            fromAccount: chosenBox ? accountFor(chosenBox) : undefined,
+            memo: chosenBox ? `Paid from ${chosenBox.name}` : undefined,
+          });
+
+          /*
+            And the box's own record.
+
+            Written after the posting, pointing at it, so the tin and the
+            books can be walked from either end. Without this the expense
+            would reach the accounts and the box would never hear about it —
+            which is exactly the hole this feature exists to close.
+          */
+          if (chosenBox) {
+            await saveDropping('imprest_movements', null, {
+              venue_id: venueId,
+              float_id: chosenBox.$id,
+              amount: -amount,
+              kind: 'spend',
+              ref_type: 'expense',
+              ref_id: expenseId,
+              entry_id: entryId ?? '',
+              note: (noteText.trim() || payee || '').slice(0, 500),
+              created_by: userId,
+              occurred_at: new Date().toISOString(),
+            });
+          }
+        })
         .catch(() => undefined);
 
       // Each line is recorded and then delivered into stock. From where the
@@ -806,7 +882,9 @@ export function ExpenseModal({
         label="Where did the money come from"
         hint={fromDrawer
           ? 'Taken off what your drawer should hold at the end of the shift.'
-          : 'Recorded as money the business spent. Not taken off your drawer.'}
+          : boxes.length > 0
+            ? 'Comes out of the petty cash box, not your drawer. The box is counted on its own.'
+            : 'Recorded as money the business spent. Not taken off your drawer.'}
       >
         <Select
           value={fromDrawer ? 'shift' : 'petty'}
@@ -816,6 +894,50 @@ export function ExpenseModal({
           <option value="petty">From petty cash</option>
         </Select>
       </Field>
+
+      {/*
+        Which tin, and what is left in it.
+
+        Only asked when there is more than one. A kitchen with a single box
+        should not be made to choose it, and the line underneath says which
+        one it is going to anyway — the balance is the part somebody standing
+        there actually needs, because a box cannot pay out what it does not
+        hold.
+      */}
+      {!fromDrawer && !editing && boxes.length > 0 && (
+        <Field
+          label={boxes.length > 1 ? 'Which petty cash box' : 'The petty cash box'}
+          hint={
+            chosenBox
+              ? `${formatMoney(boxBalances[chosenBox.$id] ?? 0, settings)} in it, of ${formatMoney(chosenBox.fixed_amount, settings)}.`
+              : undefined
+          }
+        >
+          {boxes.length > 1 ? (
+            <Select value={boxId} onChange={(e) => setBoxId(e.target.value)}>
+              {boxes.map((b) => (
+                <option key={b.$id} value={b.$id}>
+                  {b.name} — {formatMoney(boxBalances[b.$id] ?? 0, settings)}
+                </option>
+              ))}
+            </Select>
+          ) : (
+            <Input value={boxes[0].name} disabled />
+          )}
+        </Field>
+      )}
+      {!fromDrawer && boxes.length === 0 && (
+        <Notice tone="info">
+          No petty cash box has been set up, so this is recorded as money the business spent and nothing else.
+          An admin can add one under Money, Petty cash, and then spending from it is counted and reconciled.
+        </Notice>
+      )}
+      {!fromDrawer && chosenBox && boxSpend > (boxBalances[chosenBox.$id] ?? 0) && (
+        <Notice tone="warn">
+          That is more than {chosenBox.name} holds ({formatMoney(boxBalances[chosenBox.$id] ?? 0, settings)}).
+          It will be recorded anyway and the box will show as overdrawn until somebody tops it up or corrects it.
+        </Notice>
+      )}
 
       <Field label="Paid to" hint="Not every purchase has a supplier behind it.">
         <Select value={paidToKind} onChange={(e) => setPaidToKind(e.target.value as PaidToKind)}>

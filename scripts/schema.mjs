@@ -1092,6 +1092,16 @@ export const COLLECTIONS = [
       ['amount', 'i', null, true, 0],
       ['paid_from_method_id', 's', 64, true],
       /**
+       * The petty cash box this came out of, when it came out of one.
+       *
+       * Blank on everything else, which is most of it. What it changes is
+       * which account the expense is credited against: money out of a box
+       * reduces the box, not the till's cash, and crediting the till for
+       * money that never left it is how a drawer ends up chased for a
+       * shortage that is sitting in a tin in the office. See postExpense.
+       */
+      ['imprest_float_id', 's', 64, false],
+      /**
        * Whether this came out of the money taken during the shift.
        *
        * Two different things were being filed as one. A cook sent to the market
@@ -2573,6 +2583,111 @@ export const COLLECTIONS = [
     ],
   },
 
+  /* ------------------------------------------------------ petty cash boxes */
+  {
+    /**
+     * A petty cash box, run on the imprest system.
+     *
+     * Set at a fixed amount, spent against receipts, topped back up by exactly
+     * what was spent. The fixed amount is what makes the box checkable: cash
+     * in the box plus receipts held should always come to it, so a shortage
+     * shows up at the next count rather than being noticed by somebody who
+     * happens to remember what was in there.
+     */
+    id: 'imprest_floats',
+    name: 'Petty cash boxes',
+    // Read by anybody who might be sent to the market with it; changed by
+    // management only. What a box is SET at is a decision about how much cash
+    // the business is prepared to have walking around, which is not a
+    // cashier's to make.
+    perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['name', 's', 120, true],
+      // What it holds when full, in minor units.
+      ['fixed_amount', 'i', null, true, 0],
+      // Where it sits on the balance sheet. Its own account by default; a
+      // business running several boxes can point each at one of its own.
+      ['account_code', 's', 20, false],
+      // Whose box it is. A box with nobody's name on it is a box nobody counts.
+      ['custodian_id', 's', 64, false],
+      // Which side of the business it serves. Blank serves all of them.
+      ['module', 'e', ['kitchen', 'craft', 'bar'], false],
+      ['note', 's', 500, false],
+      ['active', 'b', null, true, true],
+      ['sort', 'i', null, true, 0],
+    ],
+    indexes: [['venue_active', 'key', ['venue_id', 'active']]],
+  },
+  {
+    /**
+     * Every change in what a box holds.
+     *
+     * The balance is the sum of these and is never stored anywhere. A running
+     * total kept as a field drifts the first time a write half fails, and once
+     * it has drifted nothing in the system can say so. Summed from the
+     * movements it cannot be wrong, only incomplete — and incomplete is
+     * visible.
+     */
+    id: 'imprest_movements',
+    name: 'Petty cash movements',
+    // Created by anybody who can spend from a box. Never updated: a movement
+    // is a statement that money moved, and correcting one is done by recording
+    // the movement that puts it back.
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['float_id', 's', 64, true],
+      // Signed minor units: positive into the box, negative out of it. One
+      // signed figure rather than a pair of columns, so the balance is a sum
+      // and cannot be got wrong by reading the wrong one.
+      ['amount', 'i', null, true, 0],
+      ['kind', 'e', ['top_up', 'spend', 'adjust', 'return'], true, 'spend'],
+      // What it was: an expense, a count, a hand-back to the safe.
+      ['ref_type', 's', 40, false],
+      ['ref_id', 's', 64, false],
+      // The journal entry this movement posted, so the box and the books can
+      // be walked from either end.
+      ['entry_id', 's', 64, false],
+      ['note', 's', 500, false],
+      ['created_by', 's', 64, true],
+      // When the money actually moved, which is not always when it was typed.
+      ['occurred_at', 'd', null, false],
+    ],
+    indexes: [
+      ['float_created', 'key', ['float_id', '$createdAt']],
+      ['ref', 'key', ['ref_type', 'ref_id']],
+    ],
+  },
+  {
+    /**
+     * A count of what is actually in a box.
+     *
+     * Kept even when it balances, which is the point of it. "We counted it and
+     * it was right" is a fact worth being able to show, and a record that only
+     * exists when something was wrong makes every entry in it look like an
+     * accusation.
+     */
+    id: 'imprest_counts',
+    name: 'Petty cash counts',
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['float_id', 's', 64, true],
+      // What the movements said, and what was in the tin.
+      ['expected', 'i', null, true, 0],
+      ['counted', 'i', null, true, 0],
+      ['variance', 'i', null, true, 0],
+      ['counted_by', 's', 64, true],
+      ['counted_at', 'd', null, false],
+      ['note', 's', 500, false],
+      // What was put back in to restore the box, if anything was, at the same
+      // sitting. Zero when the count was only a count.
+      ['topped_up', 'i', null, true, 0],
+    ],
+    indexes: [['float_created', 'key', ['float_id', '$createdAt']]],
+  },
+
   // ---- 11. Kitchen busy mode --------------------------------------------
   {
     id: 'kitchen_status',
@@ -3387,6 +3502,10 @@ export const FEATURES = [
  */
 export const SYSTEM_ACCOUNT_CODES = [
   '1000', '1010', '1020', '1200', '2100', '2200', '4000', '4900', '5000', '7000',
+  // A petty cash box credits this when it spends and debits it when it is
+  // topped up. Deleting it would not produce an error message; it would
+  // produce a box that cannot record what it paid for.
+  '1030',
   // One sales and one cost-of-sales account per side of the business. A shift
   // knows which side it belongs to, so the split happens as the entry is
   // written rather than being guessed at afterwards from a merged figure.
@@ -3403,6 +3522,16 @@ export const SEED_ACCOUNTS = [
   ['1000', 'Cash on hand', 'asset'],
   ['1010', 'Card clearing', 'asset'],
   ['1020', 'Mobile money clearing', 'asset'],
+  /*
+    Money that has left the safe but has not yet been spent.
+
+    Its own asset account, not part of Cash on hand. A petty cash box is
+    somebody else's responsibility and is counted on its own schedule, and
+    folding it into the till's cash means a shortage in the box and a shortage
+    in the drawer are the same number on the balance sheet — which is to say
+    neither of them can be found.
+  */
+  ['1030', 'Petty cash (imprest)', 'asset'],
   ['1200', 'Inventory - kitchen', 'asset'],
   ['1210', 'Inventory - bar', 'asset'],
   ['1220', 'Inventory - craft shop', 'asset'],

@@ -56,5 +56,6 @@ export * from './margins';
 export * from './changes';
 export * from './words';
 export * from './reassign';
+export * from './imprest';
 export * from './shift-move';
 export * from './shift-times';

@@ -73,6 +73,8 @@ export interface ShiftExpense extends Doc {
   supplier_id?: string;
   paid_to_staff_id?: string;
   paid_from_method_id: string;
+  /** The petty cash box it came out of, when it came out of one. */
+  imprest_float_id?: string;
   from_takings?: boolean;
   note?: string;
   receipt_file_id?: string;
