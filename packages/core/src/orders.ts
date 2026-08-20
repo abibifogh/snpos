@@ -1,6 +1,8 @@
 import { db, DB_ID, ID, Query, Permission, Role, account, listAll } from './client';
 import { cookMinutes, estimateMinutes, fireTimeFor, queueMinutes, waitIncludingOpening } from './orders-time';
 import { parseWindows, minutesUntilOpen } from './availability';
+import { lockedProblem } from './shift-lock';
+import type { LockableShift } from './shift-lock';
 
 /**
  * The timing arithmetic lives next door, in a file that imports nothing.
@@ -771,6 +773,21 @@ export async function moveOrderToShift(opts: {
 }): Promise<{ payments: number; stranded: number }> {
   const { order, toShiftId } = opts;
   const from = order.shift_id ?? '';
+
+  /*
+    Neither end may be a settled night.
+
+    Checked here rather than only on the screen that offers the move, because
+    a rule kept by the page that has the button is a rule with as many ways
+    round it as there are pages. Both shifts are read: moving a sale OFF a
+    settled night changes its takings just as surely as moving one on.
+  */
+  for (const [id, side] of [[from, 'the shift it is on'], [toShiftId, 'the shift it is moving to']] as const) {
+    if (!id) continue;
+    const shift = await db.getDocument(DB_ID, 'shifts', id).catch(() => null);
+    const settled = lockedProblem(shift as unknown as LockableShift | null, `${side}`);
+    if (settled) throw new Error(settled);
+  }
 
   // Two writes, and the split is deliberate — the same lesson adoptShelved
   // learned. A rejected `null` on the shelved flag would take the shift stamp

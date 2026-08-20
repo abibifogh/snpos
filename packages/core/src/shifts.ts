@@ -7,6 +7,8 @@ import { isLivePayment } from './payments';
 import { featureConfig, isEnabled, type FeatureMap } from './features';
 import type { Module } from './access';
 import { shiftAge, shiftCode, mustWaitForNextShift, openShiftsFor, blockerFor, SHIFT_MAX_HOURS } from './shift-rules';
+import { lockedProblem, sealProblem, isSealed } from './shift-lock';
+import type { LockableShift } from './shift-lock';
 
 export * from './shift-rules';
 
@@ -830,11 +832,21 @@ export async function recomputeClosedShift(shiftId: string): Promise<{
  * it was short on" look identical in a before-and-after pair.
  */
 export async function changeShiftClose(opts: {
-  shift: Pick<Shift, '$id' | 'venue_id' | 'code' | 'closed_at'>;
+  shift: Pick<Shift, '$id' | 'venue_id' | 'code' | 'closed_at'> & LockableShift;
   closedAt: string;
   userId: string;
   reason: string;
 }): Promise<void> {
+  /*
+    Refused here, not only on the screen that offers it.
+
+    A rule enforced in the page that has the button is a rule with as many ways
+    round it as there are pages, and the close time is reachable from more than
+    one. See shift-lock.
+  */
+  const settled = lockedProblem(opts.shift, 'the close time');
+  if (settled) throw new Error(settled);
+
   await db.updateDocument(DB_ID, 'shifts', opts.shift.$id, { closed_at: opts.closedAt });
 
   await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
@@ -996,4 +1008,47 @@ export async function repostShiftAccounts(opts: {
       ? `${shift.code}'s accounts were reposted.`
       : `${shift.code} had nothing on the books; its accounts were posted.`,
   };
+}
+
+/**
+ * Settle a shift, or open it back up.
+ *
+ * A row on the shift and an entry in the audit log, which together are the
+ * whole feature: what changed, who did it, and why. Reopening is recorded in
+ * exactly the same way as settling — somebody unlocking a night to change one
+ * figure is precisely the event worth being able to see afterwards, and a
+ * field that was simply cleared would forget it happened.
+ */
+export async function setShiftSealed(opts: {
+  // Only what this needs, so a screen holding its own narrower shift row can
+  // call it without owning the whole type.
+  shift: { $id: string; venue_id: string } & LockableShift;
+  sealed: boolean;
+  userId: string;
+  reason: string;
+}): Promise<void> {
+  if (opts.sealed) {
+    const problem = sealProblem(opts.shift);
+    if (problem) throw new Error(problem);
+  } else if (!isSealed(opts.shift)) {
+    return;
+  }
+
+  await db.updateDocument(DB_ID, 'shifts', opts.shift.$id, {
+    locked_at: opts.sealed ? new Date().toISOString() : null,
+    locked_by: opts.sealed ? opts.userId : '',
+    lock_reason: opts.sealed ? opts.reason.slice(0, 300) : '',
+  });
+
+  await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
+    venue_id: opts.shift.venue_id,
+    actor_id: opts.userId,
+    action: opts.sealed ? 'shift_settled' : 'shift_reopened',
+    entity_type: 'shift',
+    entity_id: opts.shift.$id,
+    before: JSON.stringify({ locked_at: opts.shift.locked_at ?? '' }),
+    after: JSON.stringify({ locked_at: opts.sealed ? new Date().toISOString() : '' }),
+    reason: opts.reason.slice(0, 500),
+    shift_id: opts.shift.$id,
+  }).catch(() => undefined);
 }

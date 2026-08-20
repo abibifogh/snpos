@@ -1024,6 +1024,23 @@ export const COLLECTIONS = [
       ['covers', 'i', null, true, 0],
       ['stock_check_status', 'e', ['pending', 'complete'], true, 'pending'],
       ['posted_to_ledger', 'b', null, true, false],
+      /**
+       * Settled: this night is finished and nothing in it may be changed.
+       *
+       * Closing a shift ends it; it does not settle it. The close time can be
+       * corrected, an order moved onto or off it, a payment voided, an expense
+       * reclassified — all deliberate, all needed. What was missing was any
+       * way to say "this one has been reported on now", so a figure somebody
+       * has read and acted upon could quietly become a different figure a week
+       * later.
+       *
+       * Not the same as closing an accounting PERIOD, which draws a line under
+       * every entry up to a date. This is one night and the rows hanging off
+       * it, and a business can want either without the other.
+       */
+      ['locked_at', 'd', null, false],
+      ['locked_by', 's', 64, false],
+      ['lock_reason', 's', 300, false],
       ['notes', 's', 1000, false],
       /**
        * Which side of the business this shift belongs to.

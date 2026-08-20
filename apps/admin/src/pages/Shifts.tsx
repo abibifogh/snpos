@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Card, Empty, Notice, Spinner, Badge, Modal, Button, Field, Input, useToast } from '@snpos/ui';
+import {
+  Card, Empty, Notice, Spinner, Badge, Modal, Button, Field, Input, Textarea, useToast,
+  FilterBar, FilterField,
+} from '@snpos/ui';
 import { listAll, humanError, Query } from '../lib';
 import {
   formatMoney, byStaff, destinationLabel, fromTakings,
   changeShiftClose, closeTimeProblem, closeTimeEffects, describeCloseChange, hoursBetween, SHIFT_MAX_HOURS,
+  listCreatedBetween, listByIds, setShiftSealed, isSealed, describeSeal, lockedProblem,
+  rangeTotals, kindsWorthShowing, KIND_LABELS,
 } from '@snpos/core';
 import type { Module, Doc, CashHandover } from '@snpos/core';
 import { useSession } from '../session';
@@ -25,6 +30,10 @@ interface Shift extends Doc {
   sales_total: number;
   expense_total: number;
   covers: number;
+  /** Settled: this night is finished and nothing in it may be changed. */
+  locked_at?: string;
+  locked_by?: string;
+  lock_reason?: string;
 }
 
 interface PaymentMethod extends Doc { name: string }
@@ -48,6 +57,12 @@ interface ExpenseItem extends Doc {
   line_total: number;
   stocked?: boolean;
 }
+
+/** Local midnight, so "today" means today here rather than in UTC. */
+const dayStart = (d: string) => new Date(`${d}T00:00:00`).toISOString();
+const dayEnd = (d: string) => new Date(`${d}T23:59:59.999`).toISOString();
+const todayStr = () => new Date().toLocaleDateString('en-CA');
+const daysAgoStr = (n: number) => new Date(Date.now() - n * 86400_000).toLocaleDateString('en-CA');
 
 const parseMap = (raw?: string): Record<string, number> => {
   if (!raw) return {};
@@ -157,13 +172,40 @@ export function ShiftsPage() {
   const [side, setSide] = useState<Side>('all');
   const [error, setError] = useState<string | null>(null);
 
+  /*
+    A range, not every shift this business has ever run.
+
+    The page read all of them, and all of their expenses, to draw a list
+    nobody scrolls past the first screen of — the same greed that put the
+    tills on the floor when the month's allowance ran out. Thirty days
+    answers "how did last month go", which is the question; the boxes are
+    there for the times it is not.
+  */
+  const [from, setFrom] = useState(daysAgoStr(30));
+  const [to, setTo] = useState(todayStr());
+
+  /** Settling a night, so nothing in it can be changed again. */
+  const [sealing, setSealing] = useState<Shift | null>(null);
+  const [sealReason, setSealReason] = useState('');
+  const [sealBusy, setSealBusy] = useState(false);
+
   const load = async () => {
-    const [s, m, e, h] = await Promise.all([
-      listAll<Shift>('shifts'),
+    const s = await listCreatedBetween<Shift>('shifts', dayStart(from), dayEnd(to));
+    const [m, h] = await Promise.all([
       listAll<PaymentMethod>('payment_methods'),
-      listAll<Expense>('shift_expenses'),
       listAll<CashHandover>('cash_handovers').catch(() => [] as CashHandover[]),
     ]);
+    /*
+      The expenses of THESE shifts, fetched by their ids.
+
+      Not every expense ever recorded, and not a date window either: an
+      expense belongs to the shift it was recorded against, and one entered
+      the morning after a late close belongs to that night rather than to the
+      day it was typed.
+    */
+    const e = await listByIds<Expense>('shift_expenses', 'shift_id', s.map((x) => x.$id)).catch(
+      () => [] as Expense[],
+    );
     setRows(s.sort((a, b) => b.opened_at.localeCompare(a.opened_at)));
     setMethods(m);
     setExpenses(e);
@@ -171,8 +213,10 @@ export function ShiftsPage() {
   };
 
   useEffect(() => {
+    setRows(null);
     void load().catch((err) => setError(humanError(err)));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to]);
 
   const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? id;
   const tolerance = settings?.cash_variance_tolerance ?? 500;
@@ -183,6 +227,32 @@ export function ShiftsPage() {
 
   const totalVariance = (s: Shift) =>
     Object.values(parseMap(s.variance)).reduce((a, b) => a + b, 0);
+
+  /*
+    What this range came to, built from what was COUNTED.
+
+    Not from what was expected. Expected is what the records say should have
+    been in the drawer; counted is what somebody's hand found in it. Adding up
+    the expected figures produces a week that always balances perfectly, which
+    is a comforting number and a useless one. See shift-totals.
+  */
+  const totals = rangeTotals({ shifts: shown, methods, expenses });
+  const kinds = kindsWorthShowing(totals.counted);
+
+  const saveSeal = async (shift: Shift, sealed: boolean) => {
+    setSealBusy(true);
+    try {
+      await setShiftSealed({ shift, sealed, userId: user?.$id ?? '', reason: sealReason.trim() });
+      setSealing(null);
+      setDetail(null);
+      await load();
+      toast(describeSeal(shift, sealed));
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setSealBusy(false);
+    }
+  };
 
   if (error) return <Notice>{error}</Notice>;
 
@@ -197,14 +267,70 @@ export function ShiftsPage() {
         what was expected in each drawer, what was actually counted, and the difference.
       </p>
 
+      <FilterBar>
+        <FilterField label="From"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></FilterField>
+        <FilterField label="To"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></FilterField>
+      </FilterBar>
+
+      {rows && shown.length > 0 && (
+        <Card>
+          <div className="row row-wrap" style={{ gap: '1.8rem', alignItems: 'flex-end' }}>
+            <div>
+              <div className="dim small">Shifts</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{totals.closed}</div>
+            </div>
+            {kinds.map((k) => (
+              <div key={k}>
+                <div className="dim small">{KIND_LABELS[k]} counted</div>
+                <div style={{ fontSize: '1.3rem', fontWeight: 650 }}>
+                  {settings ? formatMoney(totals.counted[k], settings) : totals.counted[k]}
+                </div>
+              </div>
+            ))}
+            <div>
+              <div className="dim small">Everything counted</div>
+              <div style={{ fontSize: '1.3rem', fontWeight: 650 }}>
+                {settings ? formatMoney(totals.countedTotal, settings) : totals.countedTotal}
+              </div>
+            </div>
+            <div>
+              <div className="dim small">Spent</div>
+              <div style={{ fontSize: '1.3rem', fontWeight: 650 }}>
+                {settings ? formatMoney(totals.expenses, settings) : totals.expenses}
+              </div>
+            </div>
+            <div>
+              <div className="dim small">Over or short</div>
+              <div style={{ fontSize: '1.3rem', fontWeight: 650, color: totals.variance === 0 ? undefined : 'var(--warn)' }}>
+                {totals.variance > 0 ? '+' : ''}
+                {settings ? formatMoney(totals.variance, settings) : totals.variance}
+              </div>
+            </div>
+          </div>
+
+          <p className="small dim" style={{ margin: '0.9rem 0 0' }}>
+            These are the amounts <strong>counted</strong> at each close, not what the records expected — adding
+            up the expected figures would give a week that always balances, which is a comforting number and a
+            useless one.
+            {totals.open > 0 && (
+              <>
+                {' '}
+                <strong>{totals.open}</strong> {totals.open === 1 ? 'shift is' : 'shifts are'} still open and
+                counted by nobody, so {totals.open === 1 ? 'it adds' : 'they add'} nothing here.
+              </>
+            )}
+          </p>
+        </Card>
+      )}
+
       <Card pad={false}>
         {!rows ? (
           <div className="card-pad"><Spinner /></div>
         ) : shown.length === 0 ? (
-          <Empty title={rows.length === 0 ? 'No shifts yet' : 'No shifts on that side'}>
+          <Empty title={rows.length === 0 ? 'No shifts in these dates' : 'No shifts on that side'}>
             {rows.length === 0
-              ? 'Open the first one from the terminal app when you start trading.'
-              : 'Each side of the business opens and closes its own shift. Nothing has been opened on this one yet.'}
+              ? 'Widen the dates above, or open the first one from the terminal app when you start trading.'
+              : 'Each side of the business opens and closes its own shift. Nothing was opened on this one in these dates.'}
           </Empty>
         ) : (
           <div className="table-wrap">
@@ -244,13 +370,34 @@ export function ShiftsPage() {
                           ', '
                         )}
                       </td>
-                      <td>{s.status === 'open' ? <Badge tone="ok">Open</Badge> : <Badge>Closed</Badge>}</td>
+                      <td>
+                        {s.status === 'open' ? (
+                          <Badge tone="ok">Open</Badge>
+                        ) : isSealed(s) ? (
+                          /* Settled is a stronger statement than closed, and
+                             the two were being shown as one word. */
+                          <Badge tone="ok">Settled</Badge>
+                        ) : (
+                          <Badge>Closed</Badge>
+                        )}
+                      </td>
                       {/* Named only when both are on screen together. A column
                           that always says the same word is a column of noise. */}
                       {side === 'all' && (
                         <td className="dim small">{(s.module ?? 'kitchen') === 'craft' ? 'Craft shop' : 'Kitchen'}</td>
                       )}
                       <td className="num">
+                        {/* An admin's, and only once the night has finished
+                            happening. See sealProblem. */}
+                        {isAdmin && s.status === 'closed' && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => { setSealReason(''); setSealing(s); }}
+                          >
+                            {isSealed(s) ? 'Reopen' : 'Settle'}
+                          </Button>
+                        )}
                         <Button size="sm" variant="ghost" onClick={() => setDetail(s)}>Details</Button>
                       </td>
                     </tr>
@@ -261,6 +408,58 @@ export function ShiftsPage() {
           </div>
         )}
       </Card>
+
+      {sealing && (
+        <Modal
+          title={isSealed(sealing) ? `Reopen ${sealing.code}` : `Settle ${sealing.code}`}
+          onClose={() => setSealing(null)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setSealing(null)}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={() => void saveSeal(sealing, !isSealed(sealing))}
+                loading={sealBusy}
+              >
+                {isSealed(sealing) ? 'Reopen it' : 'Settle it'}
+              </Button>
+            </>
+          }
+        >
+          {isSealed(sealing) ? (
+            <>
+              <p className="small dim" style={{ marginTop: 0 }}>
+                This night was settled{sealing.locked_at ? ` on ${new Date(sealing.locked_at).toLocaleDateString()}` : ''}.
+                Reopening it lets its close time, its orders, its payments and its spending be changed again.
+              </p>
+              <Notice tone="warn">
+                If this night has already been reported on or handed to an accountant, changing it now changes a
+                figure somebody has read and acted on. That is sometimes exactly right — but it is worth saying
+                why, below, because in a month nobody will remember.
+              </Notice>
+            </>
+          ) : (
+            <>
+              <p className="small dim" style={{ marginTop: 0 }}>
+                Closing a shift ends it. Settling says it is <strong>finished</strong>: its close time, its
+                orders, its payments and its spending can no longer be changed. Use it once a night has been
+                checked and reported on, so a figure somebody has acted on cannot quietly become a different one.
+              </p>
+              <p className="small dim">
+                An admin can reopen it, and that is recorded too. Nothing is lost — this is a gate, not a delete.
+              </p>
+              <Notice tone="info">
+                This is a rule the screens keep, not a lock in the database itself. It stops the ordinary
+                accidents, which is what accidents are; it is not a defence against somebody determined.
+              </Notice>
+            </>
+          )}
+
+          <Field label="Why" hint="Optional, and worth it. Kept on the record with your name against it.">
+            <Textarea rows={2} value={sealReason} onChange={(e) => setSealReason(e.target.value)} />
+          </Field>
+        </Modal>
+      )}
 
       {detail && (
         <Modal title={`Shift ${detail.code}`} onClose={() => setDetail(null)}>
@@ -284,8 +483,13 @@ export function ShiftsPage() {
                 which is why it sits here as an ordinary action rather than
                 under a heading full of warnings.
               */}
-              {isAdmin && detail.status === 'closed' && (
+              {isAdmin && detail.status === 'closed' && !isSealed(detail) && (
                 <Button size="sm" onClick={() => startCloseEdit(detail)}>Correct the closing time</Button>
+              )}
+              {/* Said rather than simply missing. A button that vanishes is
+                  indistinguishable from a screen that is broken. */}
+              {isSealed(detail) && (
+                <span className="small dim">{lockedProblem(detail, 'anything in this shift')}</span>
               )}
             </div>
           </div>
