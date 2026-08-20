@@ -8,10 +8,11 @@ import {
   formatMoney, listCreatedBetween, listAll, toCsv, downloadCsv,
   analyseExpenses, previousWindow, changeWords, highlights, sideOf, SIDES, SIDE_WORDS,
   loadAlerts, acknowledgeAlert, isOutstanding, describeFlag, FLAG_WORDS,
+  rankItems, itemCoverage, vitalFew, itemHighlights, listByIds,
 } from '@snpos/core';
 import type {
   AnalysedExpense, ExpenseAnalysis as Analysis, Slice, Side, Settings, StaffProfile,
-  PurchaseAlert, ExpenseCategoryDoc,
+  PurchaseAlert, ExpenseCategoryDoc, AnalysedItem,
 } from '@snpos/core';
 import { useSession } from '../session';
 
@@ -132,8 +133,20 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
   const [before, setBefore] = useState<AnalysedExpense[]>([]);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [alerts, setAlerts] = useState<PurchaseAlert[]>([]);
+  /**
+   * The actual things bought, under the expenses that bought them.
+   *
+   * The category tables answer "how much went on supplies". These answer the
+   * question underneath, which is the one that changes what somebody buys:
+   * WHICH THINGS. A kitchen spending a third of its money on one item does not
+   * find that out from a category called Supplies.
+   */
+  const [items, setItems] = useState<AnalysedItem[]>([]);
+  const [itemsBefore, setItemsBefore] = useState<AnalysedItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyAlert, setBusyAlert] = useState<string | null>(null);
+  /** Fifteen is what fits without scrolling past the next question. */
+  const [showAll, setShowAll] = useState(false);
 
   const money = (n: number) => (settings ? formatMoney(n, settings as Settings) : String(n));
 
@@ -159,6 +172,21 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
       setBefore(b);
       setStaff(p);
       setAlerts(al);
+
+      /*
+        The lines behind those expenses, fetched by the expenses they belong to.
+
+        By id rather than by date: an expense line carries no date of its own,
+        only the expense it hangs off, and reading every line ever written to
+        filter them afterwards is exactly the greed that put the tills on the
+        floor when the month's read allowance ran out.
+      */
+      const [ai, bi] = await Promise.all([
+        listByIds<AnalysedItem>('expense_items', 'expense_id', a.map((x) => x.$id)).catch(() => []),
+        listByIds<AnalysedItem>('expense_items', 'expense_id', b.map((x) => x.$id)).catch(() => []),
+      ]);
+      setItems(ai);
+      setItemsBefore(bi);
     } catch (e) {
       setError(humanError(e));
       setNow([]);
@@ -198,6 +226,37 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
 
   const notes = useMemo(() => (a ? highlights(a, money) : []), [a, settings]);
 
+  /*
+    The ranking, narrowed to the chosen side through the expenses it belongs to.
+
+    A line knows nothing about which trade bought it; its expense does. Joined
+    here rather than stored twice, because a line and its expense disagreeing
+    about which side they are on is a class of bug with no honest resolution.
+  */
+  const sideByExpense = useMemo(
+    () => new Map((now ?? []).map((e) => [e.$id, sideOf(e)])),
+    [now],
+  );
+  const mineIds = useMemo(() => new Set(mine.map((e) => e.$id)), [mine]);
+  const beforeIds = useMemo(() => new Set(mineBefore.map((e) => e.$id)), [mineBefore]);
+
+  const ranked = useMemo(
+    () => rankItems({
+      now: items.filter((i) => mineIds.has(i.expense_id)),
+      before: itemsBefore.filter((i) => beforeIds.has(i.expense_id)),
+      sideOfExpense: (id) => sideByExpense.get(id) ?? 'kitchen',
+    }),
+    [items, itemsBefore, mineIds, beforeIds, sideByExpense],
+  );
+
+  const coverage = useMemo(
+    () => itemCoverage(items.filter((i) => mineIds.has(i.expense_id)), a?.spend.now ?? 0),
+    [items, mineIds, a],
+  );
+
+  const few = useMemo(() => vitalFew(ranked), [ranked]);
+  const itemNotes = useMemo(() => itemHighlights(ranked, coverage, money), [ranked, coverage, settings]);
+
   const outstanding = useMemo(
     () => alerts.filter(isOutstanding).filter((x) => side === 'all' || (x.module ?? 'kitchen') === side),
     [alerts, side],
@@ -218,12 +277,37 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
   const exportCsv = () => {
     if (!a) return;
     downloadCsv(
-      `expense-analysis-${from}-to-${to}.csv`,
+      `expense-categories-${from}-to-${to}.csv`,
       toCsv(
         ['Category', 'This period', 'Period before', 'Change %', 'Share %', 'Times'],
         a.categories.map((c) => [
           c.label, c.now, c.before, c.changeBp === null ? '' : (c.changeBp / 100).toFixed(1),
           (c.shareBp / 100).toFixed(1), c.count,
+        ]),
+      ),
+    );
+  };
+
+  /*
+    The items as their own file.
+
+    Separate from the categories rather than bolted underneath them: this is
+    the one somebody takes to a supplier, and a spreadsheet with two different
+    shapes of table in it is a spreadsheet nobody sorts.
+  */
+  const exportItems = () => {
+    downloadCsv(
+      `expense-items-${from}-to-${to}.csv`,
+      toCsv(
+        ['Rank', 'Item', 'Side', 'Spent', 'Before', 'Change %', 'Share %', 'Running %',
+          'Quantity', 'Per unit', 'Per unit before', 'Price change %', 'Times'],
+        ranked.filter((r) => r.now > 0).map((r, i) => [
+          i + 1, r.label, SIDE_WORDS[r.side], r.now, r.before,
+          r.changeBp === null ? '' : (r.changeBp / 100).toFixed(1),
+          (r.shareBp / 100).toFixed(1), (r.cumulativeBp / 100).toFixed(1),
+          r.qty, r.unitCost, r.beforeUnitCost,
+          r.priceMoveBp === null ? '' : (r.priceMoveBp / 100).toFixed(1),
+          r.times,
         ]),
       ),
     );
@@ -257,7 +341,10 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
             {label}
           </Button>
         ))}
-        <Button size="sm" onClick={exportCsv}>Export</Button>
+        <Button size="sm" onClick={exportCsv}>Export categories</Button>
+        {ranked.some((r) => r.now > 0) && (
+          <Button size="sm" onClick={exportItems}>Export items</Button>
+        )}
       </FilterBar>
 
       {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
@@ -417,6 +504,122 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
                 shop&rsquo;s is barely anything at all. Added together they describe none of them, which is why
                 they are shown apart.
               </p>
+            </Card>
+          )}
+
+          {/*
+            The items themselves, ranked and drawn.
+
+            A bar per thing, longest first, with the running share beside it.
+            "These four things are two thirds of what we buy" is a sentence
+            somebody can act on; a list of forty percentages is not.
+          */}
+          {ranked.filter((r) => r.now > 0).length > 0 && (
+            <Card title="Every item, ranked by what it cost">
+              <p className="small dim" style={{ marginTop: 0 }}>
+                Measured against the {money(coverage.itemised)} that was itemised, not against everything spent.
+                Transport, gas and repairs have no lines behind them — {(coverage.coverBp / 100).toFixed(0)}% of
+                spending in these dates does.
+              </p>
+
+              {itemNotes.length > 0 && (
+                <ul className="small" style={{ marginTop: 0, paddingLeft: '1.1rem' }}>
+                  {itemNotes.map((n) => <li key={n} style={{ marginBottom: '0.3rem' }}>{n}</li>)}
+                </ul>
+              )}
+
+              <div className="stack" style={{ gap: '0.35rem', marginTop: '0.8rem' }}>
+                {ranked.filter((r) => r.now > 0).slice(0, showAll ? 100 : 15).map((r, i) => {
+                  const widest = ranked[0]?.now || 1;
+                  const inFew = i < few.length;
+                  return (
+                    <div key={r.key}>
+                      <div className="row" style={{ justifyContent: 'space-between', gap: '0.6rem' }}>
+                        <span className="small" style={{ fontWeight: inFew ? 650 : 500 }}>
+                          {i + 1}. {r.label}
+                          {side === 'all' && <span className="dim"> · {SIDE_WORDS[r.side]}</span>}
+                        </span>
+                        <span className="small" style={{ whiteSpace: 'nowrap' }}>
+                          {money(r.now)} <span className="dim">({(r.shareBp / 100).toFixed(1)}%)</span>
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          height: '0.5rem',
+                          background: 'var(--surface-2, #e5e7eb)',
+                          borderRadius: '3px',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <div
+                          title={`${r.label}: ${money(r.now)}`}
+                          style={{
+                            width: `${Math.max(1, (r.now / widest) * 100)}%`,
+                            height: '100%',
+                            // The few that make up most of it are picked out,
+                            // because that is the list worth acting on.
+                            background: inFew ? 'var(--primary, #0f766e)' : 'var(--muted, #9ca3af)',
+                          }}
+                        />
+                      </div>
+                      <div className="small dim">
+                        {r.qty > 0 && <>{r.qty} bought · {money(r.unitCost)} each · </>}
+                        {r.times} {r.times === 1 ? 'time' : 'times'} · running {(r.cumulativeBp / 100).toFixed(0)}%
+                        {r.priceMoveBp !== null && Math.abs(r.priceMoveBp) >= 500 && (
+                          <>
+                            {' · '}
+                            <span style={{ color: r.priceMoveBp > 0 ? 'var(--warn)' : 'var(--ok)' }}>
+                              {r.priceMoveBp > 0 ? 'up' : 'down'} {Math.abs(r.priceMoveBp / 100).toFixed(0)}% a unit
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {ranked.filter((r) => r.now > 0).length > 15 && (
+                <Button size="sm" variant="ghost" onClick={() => setShowAll(!showAll)}>
+                  {showAll ? 'Show the top fifteen' : `Show all ${ranked.filter((r) => r.now > 0).length}`}
+                </Button>
+              )}
+            </Card>
+          )}
+
+          {/* The same figures as a table, because a bar shows a shape and a
+              table answers "by how much". Both, rather than choosing. */}
+          {ranked.filter((r) => r.now > 0).length > 0 && (
+            <Card title="Item by item, against the period before" pad={false}>
+              <div className="table-wrap">
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th>#</th><th>Item</th>
+                      <th className="num">Spent</th><th className="num">Before</th><th>Change</th>
+                      <th className="num">Bought</th><th className="num">Per unit</th><th>Price</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ranked.filter((r) => r.now > 0).slice(0, showAll ? 100 : 15).map((r, i) => (
+                      <tr key={r.key}>
+                        <td className="dim small">{i + 1}</td>
+                        <td style={{ fontWeight: 550 }}>{r.label}</td>
+                        <td className="num">{money(r.now)}</td>
+                        <td className="num dim">{r.before ? money(r.before) : '—'}</td>
+                        <td><Change bp={r.changeBp} /></td>
+                        <td className="num dim">{r.qty || '—'}</td>
+                        <td className="num">{r.unitCost ? money(r.unitCost) : '—'}</td>
+                        {/* Told apart from the spend on purpose. An item up a
+                            third because three times as much was bought is not
+                            the same problem as one up a third a unit, and they
+                            need completely different answers. */}
+                        <td><Change bp={r.priceMoveBp} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </Card>
           )}
 

@@ -395,3 +395,233 @@ export function highlights(a: ExpenseAnalysis, money: (n: number) => string): st
 
   return out;
 }
+
+/* ------------------------------------------------- down to the actual items */
+
+export interface AnalysedItem {
+  expense_id: string;
+  ingredient_id?: string;
+  /** The name as it was when it was bought. See below. */
+  name_snapshot: string;
+  qty: number;
+  unit_cost?: number;
+  line_total?: number;
+}
+
+export interface ItemSlice {
+  key: string;
+  label: string;
+  /** What was spent on this thing in the period. */
+  now: number;
+  before: number;
+  changeBp: number | null;
+  /** Its share of everything ITEMISED, not of everything spent. See below. */
+  shareBp: number;
+  /** Its share of the running total once everything above it is added up. */
+  cumulativeBp: number;
+  qty: number;
+  /** How many separate times it was bought. */
+  times: number;
+  /** What it averaged per unit across the period, for a price that moved. */
+  unitCost: number;
+  beforeUnitCost: number;
+  /** How far the unit price has moved, in basis points. */
+  priceMoveBp: number | null;
+  side: Side;
+}
+
+/**
+ * Every expense line, ranked by what it actually cost.
+ *
+ * The category tables answer "how much went on supplies". This answers the
+ * question underneath it, which is the one that changes what somebody buys:
+ * WHICH THINGS. A kitchen spending a third of its money on one item does not
+ * find that out from a category called Supplies, and until it does there is
+ * nothing to act on.
+ *
+ * TWO FIGURES PER ITEM, and they are different questions. What was SPENT on it
+ * is the ranking — that is where the money went. What it COST PER UNIT is the
+ * price, and it moves for reasons that have nothing to do with how much was
+ * bought. An item can be up thirty per cent in spend because the price rose,
+ * or because three times as much was bought at a lower price, and those need
+ * completely different responses.
+ *
+ * SHARES ARE OF WHAT WAS ITEMISED, never of all spending. Transport and gas
+ * have no lines behind them, so measuring an item against total spending would
+ * quietly understate every one of them by however much of the month went on
+ * things nobody lists. The screen says which total it is using.
+ *
+ * The name is the SNAPSHOT, not the ingredient's current name. An ingredient
+ * renamed in March must not silently rewrite what January's report says was
+ * bought — and one archived entirely would otherwise vanish from its own
+ * history.
+ */
+export function rankItems(opts: {
+  now: AnalysedItem[];
+  before: AnalysedItem[];
+  /** Which side each expense belongs to, to colour and filter the ranking. */
+  sideOfExpense?: (expenseId: string) => Side;
+}): ItemSlice[] {
+  const { now, before, sideOfExpense } = opts;
+  const total = now.reduce((a, i) => a + (i.line_total ?? 0), 0);
+
+  interface Row { now: number; before: number; qty: number; beforeQty: number; times: number; side: Side }
+  const sums = new Map<string, Row>();
+
+  const keyOf = (i: AnalysedItem) => i.ingredient_id || i.name_snapshot.trim().toLowerCase();
+  const bump = (i: AnalysedItem, which: 'now' | 'before') => {
+    const key = keyOf(i);
+    const row = sums.get(key)
+      ?? { now: 0, before: 0, qty: 0, beforeQty: 0, times: 0, side: 'kitchen' as Side };
+    if (which === 'now') {
+      row.now += i.line_total ?? 0;
+      row.qty += i.qty || 0;
+      row.times += 1;
+      if (sideOfExpense) row.side = sideOfExpense(i.expense_id);
+    } else {
+      row.before += i.line_total ?? 0;
+      row.beforeQty += i.qty || 0;
+    }
+    sums.set(key, row);
+  };
+
+  const labels = new Map<string, string>();
+  for (const i of now) { bump(i, 'now'); labels.set(keyOf(i), i.name_snapshot); }
+  for (const i of before) {
+    bump(i, 'before');
+    // Only where this period has no name of its own to use, so a thing bought
+    // last month and not this one still reads as something rather than an id.
+    if (!labels.has(keyOf(i))) labels.set(keyOf(i), i.name_snapshot);
+  }
+
+  const ranked = [...sums.entries()]
+    .map(([key, row]) => {
+      const unitCost = row.qty > 0 ? Math.round(row.now / row.qty) : 0;
+      const beforeUnitCost = row.beforeQty > 0 ? Math.round(row.before / row.beforeQty) : 0;
+      return {
+        key,
+        label: labels.get(key) ?? key,
+        now: row.now,
+        before: row.before,
+        changeBp: row.before > 0 ? Math.round(((row.now - row.before) / row.before) * 10_000) : null,
+        shareBp: total > 0 ? Math.round((row.now / total) * 10_000) : 0,
+        cumulativeBp: 0,
+        qty: Math.round(row.qty * 1000) / 1000,
+        times: row.times,
+        unitCost,
+        beforeUnitCost,
+        priceMoveBp: beforeUnitCost > 0 && unitCost > 0
+          ? Math.round(((unitCost - beforeUnitCost) / beforeUnitCost) * 10_000)
+          : null,
+        side: row.side,
+      };
+    })
+    .sort((a, b) => b.now - a.now || b.before - a.before);
+
+  /*
+    The running total, added after the sort.
+
+    "These four things are two thirds of everything we buy" is a sentence
+    somebody can act on in a way that a list of forty percentages is not — and
+    it can only be worked out once the order is settled.
+  */
+  let running = 0;
+  for (const row of ranked) {
+    running += row.shareBp;
+    row.cumulativeBp = Math.min(10_000, running);
+  }
+
+  return ranked;
+}
+
+/** Everything the ranking was measured against, said plainly on screen. */
+export interface ItemCoverage {
+  /** What was spent on lines somebody itemised. */
+  itemised: number;
+  /** Everything spent, itemised or not. */
+  spent: number;
+  /** How much of the spending has lines behind it, in basis points. */
+  coverBp: number;
+}
+
+export function itemCoverage(items: AnalysedItem[], spent: number): ItemCoverage {
+  const itemised = items.reduce((a, i) => a + (i.line_total ?? 0), 0);
+  return {
+    itemised,
+    spent,
+    coverBp: spent > 0 ? Math.round((itemised / spent) * 10_000) : 0,
+  };
+}
+
+/**
+ * The few things that make up most of the spending.
+ *
+ * Where the cumulative share first crosses the mark — eighty per cent by
+ * default, which is the line most people mean by "most of it". It is the
+ * shortest list worth arguing about at a supplier, and it is almost always
+ * far shorter than anybody expects.
+ */
+export function vitalFew(ranked: ItemSlice[], throughBp = 8_000): ItemSlice[] {
+  const out: ItemSlice[] = [];
+  for (const row of ranked) {
+    if (row.now <= 0) break;
+    out.push(row);
+    if (row.cumulativeBp >= throughBp) break;
+  }
+  return out;
+}
+
+/** The one or two things worth saying about the items themselves. */
+export function itemHighlights(
+  ranked: ItemSlice[],
+  coverage: ItemCoverage,
+  money: (n: number) => string,
+): string[] {
+  const out: string[] = [];
+  const few = vitalFew(ranked);
+
+  if (few.length > 0 && ranked.filter((r) => r.now > 0).length > few.length) {
+    out.push(
+      `${few.length} of ${ranked.filter((r) => r.now > 0).length} things account for `
+      + `${(few[few.length - 1].cumulativeBp / 100).toFixed(0)}% of everything itemised. `
+      + `That is the list worth taking to a supplier.`,
+    );
+  }
+
+  /*
+    A price that moved, told apart from a quantity that moved.
+
+    An item up thirty per cent because it was bought three times over is not a
+    problem; the same item up thirty per cent a unit is. Only the second is
+    worth a sentence, and saying so needs both figures.
+  */
+  const dearer = ranked
+    .filter((r) => r.priceMoveBp !== null && r.priceMoveBp >= 2_000 && r.now > 0)
+    .sort((a, b) => (b.priceMoveBp ?? 0) - (a.priceMoveBp ?? 0))[0];
+  if (dearer) {
+    out.push(
+      `${dearer.label} costs ${((dearer.priceMoveBp ?? 0) / 100).toFixed(0)}% more per unit than last period — `
+      + `${money(dearer.unitCost)} against ${money(dearer.beforeUnitCost)}.`,
+    );
+  }
+
+  const cheaper = ranked
+    .filter((r) => r.priceMoveBp !== null && r.priceMoveBp <= -2_000 && r.now > 0)
+    .sort((a, b) => (a.priceMoveBp ?? 0) - (b.priceMoveBp ?? 0))[0];
+  if (cheaper) {
+    out.push(
+      `${cheaper.label} is ${Math.abs((cheaper.priceMoveBp ?? 0) / 100).toFixed(0)}% cheaper per unit than last `
+      + `period, at ${money(cheaper.unitCost)}.`,
+    );
+  }
+
+  if (coverage.coverBp < 5_000 && coverage.spent > 0) {
+    out.push(
+      `Only ${(coverage.coverBp / 100).toFixed(0)}% of spending is itemised, so this ranking covers `
+      + `${money(coverage.itemised)} of ${money(coverage.spent)}. Transport, gas and repairs have no lines `
+      + 'behind them; anything bought as stock should.',
+    );
+  }
+
+  return out;
+}

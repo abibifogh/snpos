@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   previousWindow, movement, sliceBy, analyseSide, analyseExpenses, overTime,
   changeWords, highlights, sideOf, SIDE_WORDS,
-  type AnalysedExpense,
+  rankItems, itemCoverage, vitalFew, itemHighlights,
+  type AnalysedExpense, type AnalysedItem,
 } from '../expense-analysis.ts';
 
 const spend = (over: Partial<AnalysedExpense> = {}): AnalysedExpense => ({
@@ -188,4 +189,122 @@ test('the trades are named the way the rest of the system names them', () => {
   assert.equal(SIDE_WORDS.kitchen, 'Bistro');
   assert.equal(SIDE_WORDS.bar, 'Bar');
   assert.equal(SIDE_WORDS.craft, 'Craft shop');
+});
+
+const line = (over: Partial<AnalysedItem> = {}): AnalysedItem => ({
+  expense_id: 'x1', ingredient_id: 'i1', name_snapshot: 'Tomatoes', qty: 10, unit_cost: 100,
+  line_total: 1_000, ...over,
+});
+
+test('items are ranked by what was actually spent on them', () => {
+  /**
+   * The category tables answer "how much went on supplies". This answers the
+   * question underneath, which is the one that changes what somebody buys:
+   * WHICH THINGS. A kitchen spending a third of its money on one item does not
+   * find that out from a category called Supplies.
+   */
+  const ranked = rankItems({
+    now: [
+      line({ ingredient_id: 'rice', name_snapshot: 'Rice', line_total: 60_000, qty: 60 }),
+      line({ ingredient_id: 'oil', name_snapshot: 'Oil', line_total: 25_000, qty: 5 }),
+      line({ ingredient_id: 'salt', name_snapshot: 'Salt', line_total: 15_000, qty: 3 }),
+    ],
+    before: [],
+  });
+  assert.deepEqual(ranked.map((r) => r.label), ['Rice', 'Oil', 'Salt']);
+  assert.equal(ranked[0].shareBp, 6_000);
+  // The running share, which is what makes "these two are most of it" sayable.
+  assert.deepEqual(ranked.map((r) => r.cumulativeBp), [6_000, 8_500, 10_000]);
+});
+
+test('the few things that make up most of the spending are picked out', () => {
+  // The shortest list worth arguing about at a supplier, and almost always
+  // far shorter than anybody expects.
+  const ranked = rankItems({
+    now: [
+      line({ ingredient_id: 'a', name_snapshot: 'A', line_total: 70_000 }),
+      line({ ingredient_id: 'b', name_snapshot: 'B', line_total: 20_000 }),
+      line({ ingredient_id: 'c', name_snapshot: 'C', line_total: 5_000 }),
+      line({ ingredient_id: 'd', name_snapshot: 'D', line_total: 5_000 }),
+    ],
+    before: [],
+  });
+  assert.deepEqual(vitalFew(ranked).map((r) => r.label), ['A', 'B']);
+});
+
+test('a price that moved is told apart from a quantity that moved', () => {
+  /**
+   * An item up thirty per cent because three times as much was bought is not
+   * the same problem as one up thirty per cent a unit, and they need
+   * completely different answers. Reporting only the spend hides which it is.
+   */
+  const ranked = rankItems({
+    // Three times the quantity at the SAME unit price.
+    now: [line({ ingredient_id: 'rice', name_snapshot: 'Rice', qty: 30, line_total: 30_000 })],
+    before: [line({ ingredient_id: 'rice', name_snapshot: 'Rice', qty: 10, line_total: 10_000 })],
+  });
+  assert.equal(ranked[0].changeBp, 20_000, 'spending tripled');
+  assert.equal(ranked[0].unitCost, 1_000);
+  assert.equal(ranked[0].priceMoveBp, 0, 'but the price did not move at all');
+});
+
+test('a real price rise is reported as one', () => {
+  const ranked = rankItems({
+    now: [line({ ingredient_id: 'oil', name_snapshot: 'Oil', qty: 10, line_total: 20_000 })],
+    before: [line({ ingredient_id: 'oil', name_snapshot: 'Oil', qty: 10, line_total: 10_000 })],
+  });
+  assert.equal(ranked[0].priceMoveBp, 10_000, 'twice the price a unit');
+});
+
+test('the name is the one it was bought under, not the one it has now', () => {
+  /**
+   * An ingredient renamed in March must not silently rewrite what January's
+   * report says was bought, and one archived entirely would otherwise vanish
+   * from its own history.
+   */
+  const ranked = rankItems({
+    now: [line({ ingredient_id: 'i9', name_snapshot: 'Palm oil, 5L' })],
+    before: [line({ ingredient_id: 'i9', name_snapshot: 'Palm oil' })],
+  });
+  assert.equal(ranked.length, 1, 'still one item, matched on its id');
+  assert.equal(ranked[0].label, 'Palm oil, 5L', 'named as this period had it');
+});
+
+test('something bought last period and not this one keeps its name', () => {
+  // Otherwise it reads as a database id in the one row somebody is looking for.
+  const ranked = rankItems({
+    now: [line({ ingredient_id: 'a', name_snapshot: 'A' })],
+    before: [line({ ingredient_id: 'gone', name_snapshot: 'Charcoal', line_total: 9_000 })],
+  });
+  const charcoal = ranked.find((r) => r.key === 'gone');
+  assert.equal(charcoal?.label, 'Charcoal');
+  assert.equal(charcoal?.now, 0);
+});
+
+test('shares are of what was itemised, and the gap is reported', () => {
+  /**
+   * Transport and gas have no lines behind them. Measuring an item against
+   * total spending would quietly understate every one of them by however much
+   * of the month went on things nobody lists.
+   */
+  const items = [line({ line_total: 40_000 })];
+  const cover = itemCoverage(items, 100_000);
+  assert.equal(cover.itemised, 40_000);
+  assert.equal(cover.coverBp, 4_000, 'only 40% of spending is itemised');
+  const said = itemHighlights(rankItems({ now: items, before: [] }), cover, money).join(' | ');
+  assert.match(said, /Only 40% of spending is itemised/);
+});
+
+test('a line with no ingredient behind it is still ranked, by its name', () => {
+  // A market stall's "assorted vegetables" is a real cost and must not fall
+  // out of the ranking for want of an id.
+  const ranked = rankItems({
+    now: [
+      line({ ingredient_id: '', name_snapshot: 'Assorted veg', line_total: 5_000 }),
+      line({ ingredient_id: '', name_snapshot: 'assorted veg', line_total: 3_000 }),
+    ],
+    before: [],
+  });
+  assert.equal(ranked.length, 1, 'matched on the name, case aside');
+  assert.equal(ranked[0].now, 8_000);
 });
