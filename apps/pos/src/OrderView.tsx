@@ -7,6 +7,7 @@ import {
   sellBlockedReason, previewUrl,
   findCode, codeProblem, discountAmount, needsManager, discountLabelFor,
   loadRecipes, loadIngredients, pourList, showsRecipe,
+  park, unpark, parkProblem, parkKey, describeParked, autoLabel, isStale,
 } from '@snpos/core';
 import type {
   CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, Settings, DiscountRow,
@@ -14,6 +15,7 @@ import type {
 } from '@snpos/core';
 import { OptionSheet } from './OptionSheet';
 import { COUNTER_TABLE_ID, BAR_COUNTER_TABLE_ID } from './App';
+import type { ParkedSale } from '@snpos/core';
 import type { PosContext, TableRow } from './App';
 
 /**
@@ -64,9 +66,114 @@ export function OrderView({
   const pass = ctx.module === 'bar' ? 'the bar' : 'the kitchen';
 
   const [cart, setCart] = useState<CartLine[]>([]);
+  /**
+   * Sales put down so the next customer can be served.
+   *
+   * On this device only, and nothing is written to the database — see the note
+   * in parking.ts. A parked sale is a basket somebody is still filling, and
+   * turning it into a real unpaid order would put drinks on the bar screen
+   * nobody has asked to be poured and hold the shift open on bills that do not
+   * exist.
+   */
+  const [parked, setParked] = useState<ParkedSale[]>([]);
+  const [showParked, setShowParked] = useState(false);
+  const [parkLabel, setParkLabel] = useState('');
+  const [parking, setParking] = useState(false);
   const [existing, setExisting] = useState<Order[]>([]);
   const [existingItems, setExistingItems] = useState<Record<string, OrderItem[]>>({});
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
+
+  /*
+    Parked sales, read from and written to this device.
+
+    Wrapped in try/catch at both ends. A browser with site data blocked throws
+    on the accessor itself, and a till that will not open because it could not
+    read a basket is a till nobody can sell from — the sale in front of
+    somebody matters more than the ones put down earlier.
+  */
+  const parkStore = parkKey(ctx.venue.$id, ctx.module);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(parkStore);
+      setParked(raw ? (JSON.parse(raw) as ParkedSale[]) : []);
+    } catch {
+      setParked([]);
+    }
+  }, [parkStore]);
+
+  const writeParked = (next: ParkedSale[]) => {
+    setParked(next);
+    try {
+      window.localStorage.setItem(parkStore, JSON.stringify(next));
+    } catch {
+      // Nothing to do and nothing worth interrupting a sale over. The list on
+      // screen is still right for as long as this till stays open.
+    }
+  };
+
+  const doPark = () => {
+    const lines = cart.map((l) => ({
+      key: l.key,
+      menu_item_id: l.menu_item_id,
+      name: l.name,
+      unit_price: l.unit_price,
+      qty: l.qty,
+      // The whole add-on, ids included. A basket picked back up must be the
+      // one that was put down; losing the option and group would produce a
+      // bill that looks right on screen and orders the wrong thing.
+      addons: (l.addons ?? []).map((a) => ({ ...a })),
+      notes: l.notes,
+      variant_id: l.variant_id,
+      variant_label: l.variant_label,
+      list_price: l.list_price,
+    }));
+    const problem = parkProblem(lines, parked);
+    if (problem) { onToast(problem, 'err'); return; }
+
+    writeParked(park(parked, {
+      id: `p${Date.now()}`,
+      label: parkLabel.trim() || autoLabel(lines),
+      lines,
+      discount,
+      discountLabel,
+      discountId,
+      parkedAt: new Date().toISOString(),
+      by: ctx.profile?.display_name,
+    }));
+    // The counter is cleared, which is the point: the next customer is served
+    // on an empty till rather than on somebody else's basket.
+    setCart([]);
+    setDiscount(0);
+    setDiscountLabel('');
+    setDiscountId('');
+    setParkLabel('');
+    setParking(false);
+    onToast('Parked. Pick it back up from Parked sales.');
+  };
+
+  const doUnpark = (id: string) => {
+    const { sale, rest } = unpark(parked, id);
+    if (!sale) return;
+    /*
+      Refused while something is already on the counter.
+
+      Merging two baskets would be a guess at what somebody meant, and the
+      wrong guess charges a customer for another customer's shopping. Park
+      what is there first, then pick this one up — two taps, and neither of
+      them can go wrong.
+    */
+    if (cart.length > 0) {
+      onToast('Park or clear the sale on the counter first, so the two do not get mixed up.', 'err');
+      return;
+    }
+    setCart(sale.lines.map((l) => ({ ...l, addons: l.addons ?? [] })));
+    setDiscount(sale.discount ?? 0);
+    setDiscountLabel(sale.discountLabel ?? '');
+    setDiscountId(sale.discountId ?? '');
+    writeParked(rest);
+    setShowParked(false);
+    onToast(`${sale.label} is back on the counter.`);
+  };
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [paying, setPaying] = useState(false);
@@ -400,7 +507,23 @@ export function OrderView({
             : isTakeaway ? 'Takeaway order'
             : `Table ${table.label}`}
         </strong>
-        <div className="row">
+        <div className="row" style={{ gap: '0.35rem' }}>
+          {/*
+            Putting a bill down and picking it up again.
+
+            Only where a sale is rung up and paid in one movement — a table
+            already holds its own bill, so parking one would be two ways of
+            doing the same thing and a way to lose a table's order. See
+            counterSale.
+          */}
+          {counterSale && cart.length > 0 && (
+            <Button onClick={() => { setParkLabel(''); setParking(true); }}>Park this sale</Button>
+          )}
+          {counterSale && parked.length > 0 && (
+            <Button onClick={() => setShowParked(true)}>
+              Parked · {parked.length}
+            </Button>
+          )}
           {existing.length > 0 && (
             <Button
               variant="primary"
@@ -858,6 +981,92 @@ export function OrderView({
         };
         return counterSale ? <CounterPaymentModal {...props} /> : <PaymentModal {...props} />;
       })()}
+
+      {/* Naming it before it goes down. Optional — the first thing in the
+          basket is used when nobody types anything — because a customer is
+          remembered by what they were buying, and a numbered list of
+          anonymous baskets is one where the wrong basket gets picked up. */}
+      {parking && (
+        <Modal
+          title="Park this sale"
+          onClose={() => setParking(false)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setParking(false)}>Cancel</Button>
+              <Button variant="primary" onClick={doPark}>Park it</Button>
+            </>
+          }
+        >
+          <p className="small dim" style={{ marginTop: 0 }}>
+            The counter is cleared so you can serve the next customer, and this sale waits here until it is
+            picked back up. Nothing is ordered and nothing is charged.
+          </p>
+          <Field
+            label="Whose is it?"
+            hint="Optional. A name, or what they are buying — whatever makes it recognisable when they come back."
+          >
+            <Input
+              value={parkLabel}
+              placeholder={autoLabel(cart.map((l) => ({
+                key: l.key, menu_item_id: l.menu_item_id, name: l.name, unit_price: l.unit_price, qty: l.qty,
+              })))}
+              onChange={(e) => setParkLabel(e.target.value)}
+            />
+          </Field>
+          <p className="small dim" style={{ marginBottom: 0 }}>
+            Parked sales stay on this till and this device only. Another till will not show them.
+          </p>
+        </Modal>
+      )}
+
+      {showParked && (
+        <Modal title="Parked sales" onClose={() => setShowParked(false)}>
+          {parked.length === 0 ? (
+            <p className="small dim" style={{ margin: 0 }}>Nothing is parked.</p>
+          ) : (
+            <div className="stack" style={{ gap: '0.5rem' }}>
+              {parked.map((sale) => (
+                <div key={sale.id} className="row" style={{ justifyContent: 'space-between', gap: '0.6rem' }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>
+                      {sale.label}
+                      {/* Said rather than removed. A basket from this morning
+                          is still somebody's, and a till that quietly bins it
+                          is one nobody trusts to hold anything. */}
+                      {isStale(sale) && <> <Badge tone="warn">Been a while</Badge></>}
+                    </div>
+                    <div className="small dim">
+                      {describeParked(sale, (n) => formatMoney(n, ctx.settings))}
+                      {sale.by && ` · ${sale.by}`}
+                    </div>
+                  </div>
+                  <div className="row" style={{ gap: '0.3rem' }}>
+                    <Button size="sm" variant="primary" onClick={() => doUnpark(sale.id)}>Pick up</Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        // Cleared, not paid. Nothing was ever ordered, so
+                        // there is nothing to refund or reverse — but it is
+                        // still somebody's shopping, so it is a deliberate tap
+                        // rather than a swipe.
+                        writeParked(parked.filter((x) => x.id !== sale.id));
+                        onToast(`${sale.label} cleared.`);
+                      }}
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="small dim" style={{ marginBottom: 0, marginTop: '0.8rem' }}>
+            These live on this till only, and nothing has been ordered or charged. Picking one up puts it back on
+            the counter as it was.
+          </p>
+        </Modal>
+      )}
     </div>
   );
 }
