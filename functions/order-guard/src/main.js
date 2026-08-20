@@ -536,6 +536,155 @@ const CANCEL_WINDOW_MS = 2 * 60 * 1000;
  * would leave real money sitting against nothing. Those get an opposite entry
  * and the note says so.
  */
+/**
+ * The same product, from a different supplier.
+ *
+ * Runs here for the reason reverseSale does: `consignor_ledger` has no create,
+ * update or delete permission for anybody at all, because it is what a maker
+ * is paid from. An admin says what should happen; the thing holding the API
+ * key does it.
+ *
+ * Four modes, differing along two axes — whether the stock on the shelf
+ * changes hands, and whether anything already recorded does. Mirrors
+ * reassign.ts in core, which carries the reasoning and the tests.
+ *
+ * One rule holds across all four: an entry already PAID OUT never moves. The
+ * payout points at it, so moving it would leave real money sitting against a
+ * sale that is no longer on the statement it was paid from. Those are counted
+ * and named rather than silently skipped.
+ */
+async function reassignSupplier({ db, DB_ID, doc, log }) {
+  const settle = (status, note) =>
+    db.updateDocument(DB_ID, 'consignor_reassignments', doc.$id, {
+      status,
+      note: (note || '').slice(0, 1000),
+    }).catch(() => undefined);
+
+  const item = await db.getDocument(DB_ID, 'menu_items', doc.menu_item_id).catch(() => null);
+  if (!item) return settle('failed', 'That product no longer exists.').then(() => ({ ok: false }));
+
+  const from = doc.from_consignor_id || '';
+  const to = doc.to_consignor_id;
+  const mode = doc.mode;
+  const said = [];
+
+  /** Everything of a kind belonging to this product and the old supplier. */
+  const mine = async (collection) => {
+    const q = [Query.equal('menu_item_id', item.$id), Query.limit(100)];
+    if (from) q.push(Query.equal('consignor_id', from));
+    const out = [];
+    let cursor = null;
+    for (;;) {
+      const page = await db.listDocuments(DB_ID, collection, cursor ? [...q, Query.cursorAfter(cursor)] : q)
+        .catch(() => ({ documents: [] }));
+      out.push(...page.documents);
+      if (page.documents.length < 100) return out;
+      cursor = page.documents[page.documents.length - 1].$id;
+    }
+  };
+
+  /* --------------------------------------------------------- the shelf itself */
+
+  if (mode === 'split') {
+    /*
+      Two products, because a product row has one owner.
+
+      Leaving the old stock with the old maker and giving new deliveries to the
+      new one cannot be done by changing a field: the shelf has to become two
+      things with the same name. The alternative is telling a maker their
+      remaining baskets now belong to a supplier who never brought them.
+
+      The new one starts empty. It is the row the next delivery books into.
+    */
+    const copy = await db.createDocument(DB_ID, 'menu_items', 'unique()', {
+      category_id: item.category_id,
+      name: item.name,
+      description: item.description || '',
+      price: item.price || 0,
+      active: true,
+      prep_minutes: 0,
+      station: 'inherit',
+      station_key: '',
+      sort: item.sort || 0,
+      track_stock: false,
+      image_focal_x: 0.5,
+      image_focal_y: 0.5,
+      module: 'craft',
+      consignor_id: to,
+      // Deliberately not copied: the picture belongs to the old maker's piece,
+      // the barcode is one physical label, and the count starts at nothing.
+      on_hand: 0,
+      is_one_off: false,
+    }).catch(() => null);
+    if (!copy) return settle('failed', 'Could not create the second product.').then(() => ({ ok: false }));
+    said.push(`A second "${item.name}" was created for the new supplier, empty.`);
+    said.push(`${item.on_hand || 0} on the shelf stayed with the old supplier.`);
+    await settle('done', said.join(' '));
+    log(`Split ${item.name} between suppliers`);
+    return { ok: true, mode, created: copy.$id };
+  }
+
+  await db.updateDocument(DB_ID, 'menu_items', item.$id, { consignor_id: to }).catch(() => undefined);
+  said.push('The product now belongs to the new supplier.');
+  if (item.on_hand) said.push(`${item.on_hand} on the shelf moved with it.`);
+
+  if (mode === 'future_and_stock') {
+    said.push('Sales already made were left with the old supplier.');
+    await settle('done', said.join(' '));
+    log(`${item.name} moved to a new supplier, history untouched`);
+    return { ok: true, mode };
+  }
+
+  /* ------------------------------------------------------------- the history */
+
+  // Both ends included: somebody naming the day the supplier changed means
+  // that whole day, and a window stopping at the previous midnight leaves a
+  // day behind with nothing on screen to say so.
+  const withinWindow = (at) => {
+    if (mode !== 'period') return true;
+    if (!at) return false;
+    if (doc.from_at && at < doc.from_at) return false;
+    if (doc.to_at && at > doc.to_at) return false;
+    return true;
+  };
+
+  let moved = 0;
+  let paidOut = 0;
+
+  for (const e of await mine('consignor_ledger')) {
+    if (!withinWindow(e.entry_at || e.$createdAt)) continue;
+    if ((e.payout_id || '').trim()) { paidOut += 1; continue; }
+    await db.updateDocument(DB_ID, 'consignor_ledger', e.$id, { consignor_id: to }).catch(() => undefined);
+    moved += 1;
+  }
+
+  let movesMoved = 0;
+  for (const m of await mine('product_moves')) {
+    if (!withinWindow(m.$createdAt)) continue;
+    await db.updateDocument(DB_ID, 'product_moves', m.$id, { consignor_id: to }).catch(() => undefined);
+    movesMoved += 1;
+  }
+
+  // The sale lines too, so a receipt reprinted next year names the supplier
+  // the statement was actually settled against.
+  let linesMoved = 0;
+  for (const l of await mine('order_items')) {
+    if (!withinWindow(l.$createdAt)) continue;
+    await db.updateDocument(DB_ID, 'order_items', l.$id, { consignor_id: to }).catch(() => undefined);
+    linesMoved += 1;
+  }
+
+  said.push(`${moved} statement entr${moved === 1 ? 'y' : 'ies'}, ${movesMoved} stock movement${movesMoved === 1 ? '' : 's'} and ${linesMoved} sale line${linesMoved === 1 ? '' : 's'} moved.`);
+  if (paidOut > 0) {
+    said.push(`${paidOut} could not move because the old supplier has already been paid for ${paidOut === 1 ? 'it' : 'them'}; ${paidOut === 1 ? 'it stays' : 'they stay'} where ${paidOut === 1 ? 'it is' : 'they are'}.`);
+  }
+
+  const note = said.join(' ');
+  log(`${item.name}: ${note}`);
+  await settle('done', note);
+  return { ok: true, mode, moved, paidOut };
+}
+
 async function reverseSale({ db, DB_ID, doc, log }) {
   const settle = (status, note) =>
     db.updateDocument(DB_ID, 'order_reversals', doc.$id, {
@@ -822,6 +971,21 @@ export default async ({ req, res, log, error }) => {
   // An admin asking for a paid sale to be taken back out. Only the server may
   // touch the consignor ledger, so the request comes in as a row and the work
   // happens here.
+  // An admin moving a product to a different supplier. Only the server may
+  // touch the consignor ledger, so the request arrives as a row.
+  if (events.some((e) => e.includes('collections.consignor_reassignments'))) {
+    if (doc.status && doc.status !== 'requested') return res.json({ skipped: 'already handled' });
+    try {
+      return res.json(await reassignSupplier({ db, DB_ID, doc, log }));
+    } catch (e) {
+      error(`Reassignment failed for ${doc.$id}: ${e.message}`);
+      await db.updateDocument(DB_ID, 'consignor_reassignments', doc.$id, {
+        status: 'failed', note: e.message.slice(0, 1000),
+      }).catch(() => undefined);
+      return res.json({ ok: false, error: e.message }, 500);
+    }
+  }
+
   if (events.some((e) => e.includes('collections.order_reversals'))) {
     if (doc.status && doc.status !== 'requested') return res.json({ skipped: 'already handled' });
     try {

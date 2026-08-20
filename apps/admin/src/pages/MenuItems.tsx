@@ -11,6 +11,7 @@ import {
 } from '@snpos/core';
 import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
+import { ReassignSupplier } from '../components/ReassignSupplier';
 import { KeyedListManager } from '../components/KeyedList';
 import { ImageField } from '../components/ImageField';
 import { RecipeEditor, draftFrom, type DraftRecipe } from '../components/RecipeEditor';
@@ -118,6 +119,15 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
    * sizes is two dishes, or an option group.
    */
   const hasSizes = module === 'craft' || module === 'bar';
+  /*
+    A supplier being changed on a product that already has a history.
+
+    Changing the field alone silently picks one of four answers — the one where
+    the stock moves and the past does not — and it is the answer somebody wants
+    least often. So the save stops and asks, and the server does the work,
+    because the consignor ledger cannot be written from here at all.
+  */
+  const [reassigning, setReassigning] = useState<{ itemId: string; from: string; to: string } | null>(null);
   const [tab, setTab] = useState<'items' | 'types'>('items');
   const [variants, setVariants] = useState<DraftVariant[]>([]);
   const [removedVariantIds, setRemovedVariantIds] = useState<string[]>([]);
@@ -397,6 +407,17 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
 
   const save = async () => {
     if (!mayEdit) { setError('Only a manager or the owner can change what is for sale.'); return; }
+    /*
+      Has the supplier moved on a product that already exists?
+
+      Only then is there a question to ask. A NEW piece has no history and no
+      stock, so setting its supplier is just setting it; and a product whose
+      supplier is unchanged is not being reassigned however else it is edited.
+    */
+    const before = editing?.$id ? (items ?? []).find((i) => i.$id === editing.$id) ?? null : null;
+    const supplierChanged = module === 'craft'
+      && !!before
+      && (editing?.consignor_id ?? '') !== (before.consignor_id ?? '');
     const thing = W.one;
     if (!editing?.name?.trim()) { setError(`This ${thing} needs a name.`); return; }
     if (pickedCategories.length === 0) {
@@ -433,8 +454,15 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       image_focal_y: editing.image_focal_y ?? 0.5,
       sku: editing.sku ?? '',
       module,
-      // Consignment. Blank on every kitchen row, and nothing reads them there.
-      consignor_id: editing.consignor_id ?? '',
+      /*
+        Consignment. Blank on every kitchen row, and nothing reads them there.
+
+        The supplier is deliberately NOT written here when it has changed on a
+        product that already exists — see the check above the save. Writing it
+        would answer, silently and always the same way, a question with four
+        answers.
+      */
+      consignor_id: supplierChanged ? (before?.consignor_id ?? '') : (editing.consignor_id ?? ''),
       commission_bp: editing.commission_bp ?? undefined,
       // Zero means "no flat amount on this piece, use the percentage". Written
       // either way so switching a piece back to a share actually clears it.
@@ -483,8 +511,14 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       void logProductChange(itemId, editing.$id ? (was ?? null) : null, payload);
 
       await syncLinks(itemId);
+      // Everything else about the product is saved; the supplier is the one
+      // thing still to settle, and it needs an answer this form cannot guess.
+      const ask = supplierChanged
+        ? { itemId, from: before?.consignor_id ?? '', to: editing.consignor_id ?? '' }
+        : null;
       setEditing(null);
       await load();
+      if (ask) setReassigning(ask);
       if (dropped.length > 0) {
         toast(
           `Saved, but ${dropped.join(', ')} could not be stored. Run Provision, then save this again.`,
@@ -825,6 +859,26 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
           onDone={async (m) => { await load(); toast(m); }}
         />
       )}
+
+      {reassigning && (() => {
+        const item = (items ?? []).find((i) => i.$id === reassigning.itemId);
+        if (!item) return null;
+        return (
+          <ReassignSupplier
+            item={item}
+            fromId={reassigning.from}
+            toId={reassigning.to}
+            consignors={consignors}
+            userId={user?.$id ?? ''}
+            onClose={() => setReassigning(null)}
+            onDone={async (message) => {
+              setReassigning(null);
+              await load();
+              toast(message);
+            }}
+          />
+        );
+      })()}
 
       {editing && (
         <Modal

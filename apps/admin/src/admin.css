@@ -114,3 +114,20 @@
   .nav-group > summary .fold-caret { transition: none; }
 }
 
+
+/* A choice with consequences, laid out so they can be read.
+
+   Radio buttons in a row would be quicker to draw and wrong here: each of
+   these four does something different and irreversible to two people's
+   statements, and the difference is entirely in the sentence underneath. So
+   the whole card is the target and the explanation is part of it. */
+.choice {
+  display: flex; gap: 0.7rem; align-items: flex-start;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0.8rem; cursor: pointer; background: var(--surface);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.choice:hover { border-color: var(--brand); }
+.choice.on { border-color: var(--brand); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--brand); }
+.choice input { margin-top: 0.2rem; flex: none; }
+.choice-title { font-weight: 600; margin-bottom: 0.15rem; }
