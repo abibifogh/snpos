@@ -61,6 +61,15 @@ export interface Settings extends Doc {
    * turns this on for a bar that genuinely cannot manage it every time.
    */
   bar_count_skippable?: boolean;
+  /**
+   * Whether whoever holds a petty cash box may count it themselves.
+   *
+   * Off unless set. A count is the check ON the custodian, and it catches
+   * nothing when the person answerable for the money is the one answering it.
+   * See canCountBox — there are real places with nobody else to do it, which
+   * is why this exists at all.
+   */
+  imprest_custodian_counts?: boolean;
   /** What a shift expense may be paid out of. Cash only, or any method. */
   expense_paid_from?: 'cash_only' | 'any';
   /** Older setups said what they were. Read only as a fallback, see modulesOf. */

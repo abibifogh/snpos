@@ -10,7 +10,7 @@ import {
   topUpFloat, returnFromFloat, reconcileFloat,
   boxBalance, countBox, healthOf, topUpNeeded, overBy, countProblem, withoutReceipt,
   movementsSince, movementsFor, latestCount,
-  boxesFor, canFundBoxes, holdsBox, NO_BOX_HELD,
+  boxesFor, canFundBoxes, holdsBox, canCountBox, NO_BOX_HELD, WHY_NO_COUNT,
   needsExplaining, IMPREST_KIND_LABELS, loadPaidToOptions, loadAccounts, ACCOUNTS,
   uploadFile, downloadUrl, listByIds, saveDropping as saveRow,
 } from '@snpos/core';
@@ -159,6 +159,17 @@ export function ImprestPage() {
   const lastCount = useMemo(() => latestCount(counts), [counts]);
   /** Which past count is open, showing what it settled. */
   const [openCount, setOpenCount] = useState<string | null>(null);
+
+  /**
+   * Whether this person may count the box in front of them.
+   *
+   * Read per box rather than once for the page: somebody can hold one tin and
+   * be the person who checks another, and a single answer for both would give
+   * them the wrong one half the time. Declared below `openBox` rather than
+   * above it — a const read before its declaration is a trap this codebase has
+   * already sprung once.
+   */
+  const mayCount = !openBox || canCountBox(profile, openBox, settings);
 
   const liveBalance = useMemo(
     () => (movements ? boxBalance(movements) : openBox ? balances[openBox.$id] ?? 0 : 0),
@@ -421,13 +432,19 @@ export function ImprestPage() {
 
           {!mayFund && (
             <p className="small dim" style={{ marginTop: '0.6rem', marginBottom: 0 }}>
-              You can spend from this box and count it. Putting money in and taking it out is done by an admin —
-              keeping those two apart is what makes the count worth making.
+              You can spend from this box{mayCount ? ' and count it' : ''}. Putting money in and taking it out is
+              done by an admin — keeping those apart is what makes a count worth making.
+              {!mayCount && ` ${WHY_NO_COUNT}`}
             </p>
           )}
 
           <div className="row" style={{ gap: '0.4rem', flexWrap: 'wrap', margin: '0.8rem 0' }}>
-            <Button variant="primary" onClick={() => startDoing('count')}>Count and reconcile</Button>
+            {/* Not the custodian's, unless an admin has said so. A count is
+                the check ON whoever holds the box, and it catches nothing when
+                the same person makes it. See canCountBox. */}
+            {mayCount && (
+              <Button variant="primary" onClick={() => startDoing('count')}>Count and reconcile</Button>
+            )}
             {/* The till's own spend form, opened against this box.
 
                 It already knows how to turn a market run into a list of

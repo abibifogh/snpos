@@ -43,6 +43,7 @@ const FIELD_LABELS: Record<string, string> = {
   stock_check_mode: 'How the stock check asks',
   stock_count_decimals: 'Part amounts in the stock count',
   bar_count_skippable: 'Letting staff skip the bar count',
+  imprest_custodian_counts: 'Letting a petty cash holder count their own box',
   expense_paid_from: 'What money spent during a shift can come out of',
   kitchen_enabled: 'The kitchen side',
   craft_enabled: 'The craft shop side',
@@ -277,6 +278,7 @@ export function SettingsPage() {
         stock_check_mode: form.stock_check_mode ?? 'levels',
         stock_count_decimals: form.stock_count_decimals !== false,
         bar_count_skippable: form.bar_count_skippable === true,
+        imprest_custodian_counts: form.imprest_custodian_counts === true,
         expense_paid_from: form.expense_paid_from ?? 'cash_only',
         kitchen_enabled: mods.kitchen,
         craft_enabled: mods.craft,
@@ -675,6 +677,34 @@ export function SettingsPage() {
             </p>
           </>
         )}
+        <h3 style={{ marginTop: '1.6rem' }}>Petty cash counts</h3>
+        <p className="small dim" style={{ marginTop: 0 }}>
+          A petty cash box is counted against what its records say should be in it. That count is the check on
+          whoever holds the box, which is why it is normally somebody else who makes it.
+        </p>
+        <Toggle
+          checked={form.imprest_custodian_counts === true}
+          onChange={(v) => set('imprest_custodian_counts', v)}
+          label="Let whoever holds a box count it themselves"
+        />
+        <p className="small dim" style={{ marginBottom: 0 }}>
+          {form.imprest_custodian_counts === true ? (
+            <>
+              <strong>On.</strong> The person holding a box can count it and settle any difference. That is the
+              only moment the system catches a shortage, and it catches nothing when the person answerable for
+              the money is the one answering — a figure typed to match makes a shortage disappear. Turn this on
+              where there genuinely is nobody else to count, which is a real situation and better than a box
+              nobody counts at all.
+            </>
+          ) : (
+            <>
+              <strong>Off, which is the safe setting.</strong> Whoever holds a box can spend from it and see its
+              history, but the count is made by an admin or by somebody granted{' '}
+              <strong>Put money into petty cash boxes</strong> under Staff. The screen says so where the button
+              would have been, so a missing button is never a mystery.
+            </>
+          )}
+        </p>
       </FoldCard>
 
       <FoldCard title="Orders and the kitchen" summary={`Numbers ${form.order_number_prefix ?? ''}0001 · ping every ${form.kitchen_ack_sla_seconds ?? 60}s`}>

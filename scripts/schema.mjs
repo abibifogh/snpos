@@ -367,6 +367,10 @@ export const COLLECTIONS = [
       // waved past is waved past on the nights it would have caught something,
       // and a shortage with two shifts to belong to belongs to neither.
       ['bar_count_skippable', 'b', null, false, false],
+      // Whether whoever holds a petty cash box may count it themselves. Off:
+      // a count is the check ON the custodian and catches nothing when the
+      // person answerable for the money is the one answering. See canCountBox.
+      ['imprest_custodian_counts', 'b', null, false, false],
       ['stock_variance_threshold_bp', 'i', null, true, 1000],
       ['stock_variance_value_floor', 'i', null, true, 2000],
       ['expense_approval_threshold', 'i', null, true, 20000],

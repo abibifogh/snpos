@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   boxBalance, spentSince, topUpNeeded, overBy, healthOf, countBox, countProblem,
   needsExplaining, boxOverdrawn, withoutReceipt, IMPREST_LOW_BP, IMPREST_TOLERANCE,
-  holdsBox, canFundBoxes, canUseBox, boxesFor,
+  holdsBox, canFundBoxes, canUseBox, canCountBox, boxesFor,
   movementsFor, movementsSince, latestCount, coversFrom,
   type ImprestMovement,
 } from '../imprest-rules.ts';
@@ -275,4 +275,35 @@ test('the adjustment a count makes belongs to that count, not the next one', () 
 test('with no counts at all, everything is still live', () => {
   const movements = [mv('a', '2026-08-01T10:00:00.000Z')];
   assert.deepEqual(movementsSince(movements, []).map((m) => m.$id), ['a']);
+});
+
+test('the person who holds a box does not count it', () => {
+  /**
+   * A count is the check ON the custodian. It is the only moment the imprest
+   * system catches anything, and it catches nothing when the person answerable
+   * for the money is the one answering — a figure typed to match makes a
+   * shortage disappear.
+   */
+  const custodian = holder();
+  assert.equal(canUseBox(custodian, box()), true, 'they still spend from it');
+  assert.equal(canCountBox(custodian, box(), null), false);
+  assert.equal(canCountBox(custodian, box(), {}), false, 'off unless said');
+});
+
+test('an admin can hand the count back where nobody else can make it', () => {
+  /**
+   * A one-manager business, a site nobody visits daily. Refusing outright
+   * would mean the box never gets counted, which is worse than counting it
+   * imperfectly.
+   */
+  const custodian = holder();
+  assert.equal(canCountBox(custodian, box(), { imprest_custodian_counts: true }), true);
+});
+
+test('whoever funds boxes always counts them', () => {
+  // They are not the custodian in the sense this guards against.
+  assert.equal(canCountBox(holder({ role: 'admin' }), box(), null), true);
+  assert.equal(canCountBox(holder({ can_fund_petty_cash: true }), box(), null), true);
+  // And somebody with no connection to the box counts nothing.
+  assert.equal(canCountBox(holder({ $id: 'stranger' }), box(), { imprest_custodian_counts: true }), false);
 });

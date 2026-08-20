@@ -340,6 +340,40 @@ export function boxesFor<T extends HeldBox>(who: BoxHolder | null, boxes: T[]): 
   return boxes.filter((b) => holdsBox(who, b));
 }
 
+/**
+ * Whether the person holding a box may count it themselves.
+ *
+ * No, unless an admin says otherwise, and for the same reason funding is not
+ * theirs: a count is the check ON the custodian, and somebody checking their
+ * own work can make a shortage disappear by typing the expected figure into
+ * the box. The count is the only moment the imprest system actually catches
+ * anything, and it catches nothing when the person answerable for the money is
+ * the person who answers it.
+ *
+ * There are real places where the custodian is the only person who ever sees
+ * the tin — a one-manager business, a site nobody visits daily — and refusing
+ * outright would mean the box never gets counted at all, which is worse than
+ * counting it imperfectly. So an admin can turn it on, and it is off until
+ * they do.
+ *
+ * Anybody who may FUND boxes may always count them: they are not the custodian
+ * in the sense this is guarding against.
+ */
+export const canCountBox = (
+  who: BoxHolder | null,
+  box: HeldBox,
+  settings?: { imprest_custodian_counts?: boolean } | null,
+): boolean => {
+  if (canFundBoxes(who)) return true;
+  if (!holdsBox(who, box)) return false;
+  return settings?.imprest_custodian_counts === true;
+};
+
+/** Said where the button would have been, so a missing one is not a mystery. */
+export const WHY_NO_COUNT =
+  'Counting this box is somebody else\'s job — a count is the check on whoever holds it, and it catches nothing '
+  + 'when the same person makes it. An admin can allow it under Settings if there is nobody else to count.';
+
 /** What to tell somebody the page has nothing for. */
 export const NO_BOX_HELD =
   'No petty cash box is assigned to you. An admin assigns one under Money, Petty cash, by setting you as who '
