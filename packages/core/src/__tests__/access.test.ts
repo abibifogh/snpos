@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { shiftPrefix } from '../shift-rules.ts';
 import {
   modulesOf, modulesForStaff, parseAccess, canOpen, inTrade, sectionsFor,
-  canEditCatalogue, selfOrderModule, ADMIN_SECTIONS, DEFAULT_ACCESS, areasOf,
+  canEditCatalogue, selfOrderModule, ADMIN_SECTIONS, DEFAULT_ACCESS, areasOf, sidesOf, legacySide,
 } from '../access.ts';
 import type { Settings, StaffProfile } from '../types.ts';
 
@@ -274,4 +274,94 @@ test('a bar shift is told apart from the other two at a glance', () => {
   assert.equal(shiftPrefix('bar'), 'BAR');
   assert.equal(shiftPrefix('kitchen'), 'BIST');
   assert.equal(shiftPrefix('craft'), 'CRAF');
+});
+
+/* ------------------------------------------- which sides somebody works on */
+
+const threeTrades = settings({ kitchen_enabled: true, craft_enabled: true, bar_enabled: true });
+
+test('a bartender gets the bar and not the bistro', () => {
+  /**
+   * The whole point. The old field could say one side or "both", and the form
+   * that set it was only shown to businesses running the kitchen AND the craft
+   * shop — so a place with a kitchen and a bar never saw the question, and
+   * every bartender could open the bistro.
+   */
+  const mods = modulesForStaff(staff({ works_in_modules: ['bar'] }), threeTrades);
+  assert.deepEqual(mods, { kitchen: false, craft: false, bar: true });
+});
+
+test('and a combination the old field could not say at all', () => {
+  // Somebody covering the bar and the bistro. Under "both" they were handed
+  // the craft shop as well, which is the opposite of what was being asked.
+  const mods = modulesForStaff(staff({ works_in_modules: ['kitchen', 'bar'] }), threeTrades);
+  assert.deepEqual(mods, { kitchen: true, craft: false, bar: true });
+});
+
+test('an empty list means everywhere, not nowhere', () => {
+  /**
+   * Every row written before this existed has no list on it. Reading empty as
+   * "works nowhere" would have locked the entire staff out of every till the
+   * moment this shipped.
+   */
+  assert.deepEqual(modulesForStaff(staff({ works_in_modules: [] }), threeTrades), {
+    kitchen: true, craft: true, bar: true,
+  });
+  assert.deepEqual(modulesForStaff(staff(), threeTrades), { kitchen: true, craft: true, bar: true });
+});
+
+test('the old single answer is still honoured where no list was saved', () => {
+  assert.deepEqual(modulesForStaff(staff({ works_in: 'craft' }), threeTrades), {
+    kitchen: false, craft: true, bar: false,
+  });
+  assert.deepEqual(modulesForStaff(staff({ works_in: 'both' }), threeTrades), {
+    kitchen: true, craft: true, bar: true,
+  });
+});
+
+test('the list wins over the old answer when both are present', () => {
+  // A row saved by the new form carries both: the list, and the nearest single
+  // value for a database that has not been provisioned yet. They disagree by
+  // design, and the list is the one that means anything.
+  const mods = modulesForStaff(
+    staff({ works_in: 'both', works_in_modules: ['bar'] }),
+    threeTrades,
+  );
+  assert.deepEqual(mods, { kitchen: false, craft: false, bar: true });
+});
+
+test('a side the business has switched off cannot be worked on', () => {
+  const noBar = settings({ kitchen_enabled: true, craft_enabled: true, bar_enabled: false });
+  assert.deepEqual(modulesForStaff(staff({ works_in_modules: ['kitchen', 'bar'] }), noBar), {
+    kitchen: true, craft: false, bar: false,
+  });
+});
+
+test('somebody assigned only to a closed side is not left with nothing', () => {
+  // A screen with no trades on it explains nothing and looks broken. What the
+  // business runs is the honest fallback.
+  const kitchenOnly = settings({ kitchen_enabled: true, craft_enabled: false, bar_enabled: false });
+  assert.deepEqual(modulesForStaff(staff({ works_in_modules: ['bar'] }), kitchenOnly), {
+    kitchen: true, craft: false, bar: false,
+  });
+});
+
+test('the form reads a person’s sides from whichever field holds them', () => {
+  assert.deepEqual(sidesOf(staff({ works_in_modules: ['bar', 'kitchen'] })), ['bar', 'kitchen']);
+  assert.deepEqual(sidesOf(staff({ works_in: 'craft' })), ['craft']);
+  // "Both" and "unanswered" are the same thing, and neither names a side.
+  assert.deepEqual(sidesOf(staff({ works_in: 'both' })), []);
+  assert.deepEqual(sidesOf(staff()), []);
+});
+
+test('the single-value column is written as the nearest thing that is true', () => {
+  /**
+   * Only ever read when the list column does not exist yet. One side maps
+   * exactly; a combination cannot be said at all, and 'both' is the only value
+   * that does not LOSE a side — the right way to be wrong, because the list is
+   * what gets read the moment the column is provisioned.
+   */
+  assert.equal(legacySide(['bar']), 'bar');
+  assert.equal(legacySide(['kitchen', 'bar']), 'both');
+  assert.equal(legacySide([]), 'both');
 });

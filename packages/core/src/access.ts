@@ -394,6 +394,33 @@ export function canDeleteCatalogue(profile: StaffProfile | null): boolean {
  */
 export function modulesForStaff(profile: StaffProfile | null, settings: Settings | null): Modules {
   const running = modulesOf(settings);
+
+  /*
+    The list wins over the old single answer, when there is one.
+
+    `works_in` could only ever say one side or "both", which is a two-trade
+    word in a business running three: a bartender who should see the bar and
+    nothing else was fine, but somebody covering the bar AND the bistro had to
+    be given "both" — and "both" quietly handed them the craft shop as well.
+
+    An EMPTY list is not an answer and falls through to the old field, which
+    itself defaults to every side. That matters for every row written before
+    this existed: reading empty as "works nowhere" would lock the whole staff
+    out of every till the moment this shipped.
+  */
+  const listed = (profile?.works_in_modules ?? []).filter((m): m is Module => !!m);
+  if (listed.length > 0) {
+    const narrowed = {
+      kitchen: running.kitchen && listed.includes('kitchen'),
+      craft: running.craft && listed.includes('craft'),
+      bar: running.bar && listed.includes('bar'),
+    };
+    // Somebody assigned only to sides the business has since switched off has
+    // nowhere to work, and a screen with nothing on it explains nothing. What
+    // the business runs is the honest fallback.
+    return narrowed.kitchen || narrowed.craft || narrowed.bar ? narrowed : running;
+  }
+
   const theirs = profile?.works_in ?? 'both';
   if (theirs === 'both') return running;
 
@@ -403,6 +430,35 @@ export function modulesForStaff(profile: StaffProfile | null, settings: Settings
     bar: running.bar && theirs === 'bar',
   };
   return narrowed.kitchen || narrowed.craft || narrowed.bar ? narrowed : running;
+}
+
+/**
+ * The sides a person is set to, as a list, whichever field they were saved in.
+ *
+ * For the form that edits them and for anything that wants to SHOW the setting
+ * rather than act on it. Distinct from `modulesForStaff`, which answers what
+ * they may open today — that one narrows by what the business currently runs,
+ * and a form must not silently drop a side an owner switched off last month
+ * and may switch back on tomorrow.
+ */
+export function sidesOf(profile: StaffProfile | null): Module[] {
+  const listed = (profile?.works_in_modules ?? []).filter((m): m is Module => !!m);
+  if (listed.length > 0) return listed;
+  const theirs = profile?.works_in;
+  return theirs && theirs !== 'both' ? [theirs] : [];
+}
+
+/**
+ * The single-value form of a set of sides, for the column that only holds one.
+ *
+ * Written alongside the list so a database that has not been provisioned yet
+ * still records something true. One side maps exactly. Any combination cannot
+ * be said at all, and 'both' is the only value that does not LOSE a side —
+ * which is the right way to be wrong here, because the list is what will be
+ * read the moment the column exists.
+ */
+export function legacySide(sides: Module[]): 'both' | Module {
+  return sides.length === 1 ? sides[0] : 'both';
 }
 
 /**

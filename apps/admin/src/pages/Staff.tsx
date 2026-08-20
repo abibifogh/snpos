@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { encodePin, pinProblem, modulesOf } from '@snpos/core';
-import type { StaffProfile } from '@snpos/core';
+import { encodePin, pinProblem, modulesOf, sidesOf, legacySide, MODULE_LABELS } from '@snpos/core';
+import type { StaffProfile, Module } from '@snpos/core';
 import type { Doc } from '@snpos/core';
 import { useSession } from '../session';
 
@@ -90,6 +90,15 @@ export function StaffPage() {
   const [wantsLogin, setWantsLogin] = useState(false);
   const { settings } = useSession();
   const mods = modulesOf(settings);
+  /**
+   * The trades this business actually runs, in a fixed order.
+   *
+   * Declared here rather than rebuilt at each use so the save and the form
+   * cannot disagree about what "every side" means — which is the difference
+   * between storing an empty list and storing three entries that go stale the
+   * moment a fourth trade is switched on.
+   */
+  const runningSides = (['kitchen', 'craft', 'bar'] as Module[]).filter((m) => mods[m]);
 
   const load = async () => {
     const [s, v] = await Promise.all([listAll<StaffProfile>('staff_profiles'), listAll<VenueRow>('venues')]);
@@ -99,7 +108,20 @@ export function StaffPage() {
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
 
   const open = (p?: StaffProfile, asInvite = false) => {
-    setEditing(p ?? { display_name: '', email: '', role: 'waiter', active: true, ...DEFAULTS.waiter, venue_ids: [] });
+    /*
+      The old single answer is read into the new list on the way in.
+
+      A profile saved as "craft only" before the list existed has no
+      works_in_modules at all, and the toggles would show every side ticked —
+      which reads as "this person works everywhere", the opposite of what is
+      stored. sidesOf answers from whichever field the row actually has, and
+      an empty result genuinely does mean every side.
+    */
+    setEditing(
+      p
+        ? { ...p, works_in_modules: sidesOf(p).length ? sidesOf(p) : runningSides }
+        : { display_name: '', email: '', role: 'waiter', active: true, ...DEFAULTS.waiter, venue_ids: [] },
+    );
     setWantsLogin(asInvite ? false : !!p?.email);
     setPin('');
     setError(null);
@@ -130,6 +152,22 @@ export function StaffPage() {
       }
     }
 
+    /*
+      The sides they work on, narrowed to what the business runs.
+
+      Every side ticked is stored as an empty list, not as three entries. Empty
+      means "wherever the business trades" and keeps meaning that if a fourth
+      trade is switched on next year; a frozen list of today's three would
+      quietly exclude somebody from it.
+    */
+    const picked = (editing.works_in_modules ?? runningSides).filter((m) => runningSides.includes(m));
+    const sides: Module[] = picked.length === runningSides.length ? [] : picked;
+
+    if (runningSides.length > 1 && picked.length === 0) {
+      setError('Choose at least one side of the business for them to work on.');
+      return;
+    }
+
     setBusy(true);
     setError(null);
     try {
@@ -149,7 +187,17 @@ export function StaffPage() {
         role,
         active: editing.active ?? true,
         phone: editing.phone ?? '',
-        works_in: editing.works_in ?? 'both',
+        /*
+          Both fields, and the list is the one that counts.
+
+          `works_in` cannot say "the bar and the bistro but not the shop", so
+          it is written as the nearest true single value — see legacySide —
+          purely so a database that has not been provisioned yet still records
+          something rather than nothing. The moment the column exists, the
+          list is what modulesForStaff reads.
+        */
+        works_in: legacySide(sides),
+        works_in_modules: sides,
         can_open_shift: editing.can_open_shift ?? false,
         can_close_shift: editing.can_close_shift ?? false,
         can_void: editing.can_void ?? false,
@@ -178,6 +226,23 @@ export function StaffPage() {
         id,
         editing.$id ? { ...payload, user_id: editing.user_id || null } : payload,
       );
+
+      /*
+        Said out loud when the side list could not be stored.
+
+        Without the column the only thing that saved is `works_in`, which
+        cannot hold a combination — so somebody set to the bar and the bistro
+        would quietly come back as working everywhere, including the shop.
+        That is the opposite of what was just asked for, and a save that
+        silently does the opposite must not report success.
+      */
+      if (dropped.includes('works_in_modules') && sides.length !== 1) {
+        toast(
+          'Saved, but which sides they work on could not be. This project\'s database has not been updated '
+          + 'yet — run "Provision Appwrite" in GitHub Actions, then save this person again.',
+          'err',
+        );
+      }
 
       const outcome = !(wantsLogin && payload.email)
         ? pin ? 'Saved, PIN set' : 'Saved'
@@ -350,23 +415,50 @@ export function StaffPage() {
             </Field>
           </div>
 
-          {/* Only asked where there is an answer. A business running one side
-              has nothing to choose between, and a dropdown with one real option
-              is a question that wastes a moment on every new starter. */}
-          {mods.kitchen && mods.craft && (
+          {/*
+            Which sides, as a list rather than one choice.
+
+            It used to be a dropdown offering kitchen, craft, or "both", and it
+            was shown only where a business ran BOTH of those two — so a place
+            with a kitchen and a bar never saw the question at all, and every
+            bartender could open the bistro. "Both" is also a two-trade word:
+            somebody covering the bar and the kitchen had no way to say so
+            without being handed the craft shop as well.
+
+            Still only asked where there is something to choose between. A
+            business running one trade has one answer.
+          */}
+          {runningSides.length > 1 && (
             <Field
-              label="Which side do they work on?"
-              hint="Decides what they see on the till and in the admin app. It is not a permission; it is about keeping their screens to the work they actually do."
+              label="Which sides do they work on?"
+              hint="Keeps their till and their admin screens to the work they actually do. Somebody on the bar will not see the bistro, or the other way round."
             >
-              <Select
-                value={editing.works_in ?? 'both'}
-                onChange={(e) => setEditing({ ...editing, works_in: e.target.value as StaffProfile['works_in'] })}
-              >
-                <option value="both">Both</option>
-                <option value="kitchen">Kitchen only, food and drink</option>
-                <option value="craft">Craft shop only</option>
-              </Select>
+              <div className="row row-wrap" style={{ gap: '1rem' }}>
+                {runningSides.map((m) => {
+                  const on = (editing.works_in_modules ?? runningSides).includes(m);
+                  return (
+                    <Toggle
+                      key={m}
+                      checked={on}
+                      label={MODULE_LABELS[m]}
+                      onChange={(v) => {
+                        const now = new Set(editing.works_in_modules ?? runningSides);
+                        if (v) now.add(m); else now.delete(m);
+                        setEditing({
+                          ...editing,
+                          works_in_modules: runningSides.filter((x) => now.has(x)),
+                        });
+                      }}
+                    />
+                  );
+                })}
+              </div>
             </Field>
+          )}
+          {runningSides.length > 1 && (editing.works_in_modules ?? runningSides).length === 0 && (
+            <Notice tone="warn">
+              Pick at least one. Somebody who works nowhere has no till to open and no screens to see.
+            </Notice>
           )}
 
           <h3 style={{ margin: '1.1rem 0 0.5rem' }}>How they sign in</h3>

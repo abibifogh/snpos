@@ -205,8 +205,17 @@ export interface StaffProfile extends Doc {
   hourly_rate?: number;
   email?: string;
   venue_ids?: string[];
-  /** Which side of the business they work on. Absent means both. */
+  /**
+   * The old single answer, kept as a fallback for rows written before the
+   * list below existed. It cannot express a combination; `works_in_modules`
+   * is what the app writes now.
+   */
   works_in?: 'both' | Module;
+  /**
+   * Which sides of the business they work on. Empty or absent means all of
+   * them, which is what an unanswered question has always meant here.
+   */
+  works_in_modules?: Module[];
   login_link_requested_at?: string;
   login_link_sent_at?: string;
 }

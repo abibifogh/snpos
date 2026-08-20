@@ -2140,7 +2140,29 @@ export const COLLECTIONS = [
        * wrong in that direction only shows somebody a page they ignore, 
        * guessing wrong the other way hides the work they came in to do.
        */
+      /*
+        The old single answer. Kept, and still read as a fallback.
+
+        It cannot say "kitchen and bar but not the shop", which is an ordinary
+        way to staff a place with three trades — and an enum cannot be widened
+        into a combination without listing every one of them. See
+        `works_in_modules`, which is what the app writes now.
+      */
       ['works_in', 'e', ['both', 'kitchen', 'craft', 'bar'], false, 'both'],
+      /**
+       * The sides this person actually works on, any combination.
+       *
+       * A list rather than one choice, because "both" is a two-trade word in a
+       * business running three. A bartender should see the bar and nothing
+       * else; somebody who covers the bar and the bistro should see those two
+       * and not the craft shop; and neither of those can be said with a single
+       * value.
+       *
+       * Empty means every side the business runs, which is what an unanswered
+       * question has always meant here and is the only safe reading for the
+       * rows written before this existed.
+       */
+      ['works_in_modules', 's[]', 20, false],
       ['login_link_requested_at', 'd', null, false],
       ['login_link_sent_at', 'd', null, false],
     ],
