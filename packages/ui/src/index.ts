@@ -9,6 +9,7 @@ export * from './shift';
 // presentational; a second copy of "record what left the drawer" is how the
 // same purchase ends up filed two different ways.
 export * from './shifthistory';
+export * from './barcount';
 export * from './till';
 export * from './eightysix';
 export * from './ErrorBoundary';

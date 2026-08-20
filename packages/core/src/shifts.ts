@@ -613,7 +613,19 @@ export async function closeShift(opts: {
     for (const [ingredientId, level] of Object.entries(levels)) {
       const ing = ingredients.find((i) => i.$id === ingredientId);
       if (!ing) continue;
-      const theoretical = Number((ing.current_qty - (usage[ingredientId] ?? 0)).toFixed(4));
+      /*
+        A bar's drinks have already been taken off the shelf.
+
+        `depleteForShift` deliberately skips the bar — see the note there — so
+        by the time a bar shift closes, `current_qty` is ALREADY net of the
+        night's pours. Subtracting the usage a second time would set what the
+        shelf "should" hold to well below what was actually sold from it, and
+        every bartender would be told they were short by exactly the amount
+        they served. What the recipes say was used is still the right figure
+        for the kitchen, whose depletion happens here and now.
+      */
+      const poured = (ing.module ?? 'kitchen') === 'bar' ? 0 : usage[ingredientId] ?? 0;
+      const theoretical = Number((ing.current_qty - poured).toFixed(4));
       const countedQty = stockCounts[ingredientId];
       const wasCounted = typeof countedQty === 'number' && Number.isFinite(countedQty);
 

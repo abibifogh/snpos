@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Button, Modal, Field, Input, Notice, Badge, ShiftCloseForm, resolveCounts,
-  ShiftHistory, ExpenseModal, HandoverModal,
+  ShiftHistory, ExpenseModal, HandoverModal, BarCountModal,
 } from '@snpos/ui';
 import type { BlockerRow, CountRow, StockRow, ShiftFlow } from '@snpos/ui';
 import {
   formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift as createShift, shiftBlockers, expectedTakings, closeShift,
   openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, HANDOVER_ENABLED,
+  countsAtBothEnds, hasOpeningCount,
 } from '@snpos/core';
 import type { PaymentMethod, Shift } from '@snpos/core';
 import type { PosContext } from './App';
@@ -44,8 +45,40 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   const [history, setHistory] = useState(false);
   const [spending, setSpending] = useState(false);
   const [handingOver, setHandingOver] = useState(false);
+  /**
+   * The bar's own count, at both ends of the shift.
+   *
+   * `counted` is what the shift has already been counted in on. It starts
+   * undefined rather than false, because "we have not looked yet" and "nobody
+   * counted" would otherwise show the same warning — and a bar would be
+   * accused of skipping its count for the second it takes to read.
+   */
+  const [barCount, setBarCount] = useState<'open' | 'close' | null>(null);
+  const [countedIn, setCountedIn] = useState<boolean | undefined>(undefined);
+  const [countedOut, setCountedOut] = useState(false);
 
   const decimals = ctx.settings.currency_decimals ?? 2;
+
+  /*
+    Whether THIS shift has been counted in.
+
+    Asked on the shift rather than on the day. A bar that opened at six and
+    handed over at eleven is two shifts and two counts, and reading the
+    question against anything wider would let the second one inherit the
+    first's answer.
+  */
+  const countsShelves = countsAtBothEnds(ctx.module);
+  const shiftId = ctx.shift?.$id;
+  useEffect(() => {
+    if (!countsShelves || !shiftId) { setCountedIn(undefined); return; }
+    let live = true;
+    void hasOpeningCount(shiftId)
+      .then((done) => { if (live) setCountedIn(done); })
+      // A read that fails must not invent an accusation. Silence is better
+      // than telling a bartender they skipped a count they may well have made.
+      .catch(() => { if (live) setCountedIn(true); });
+    return () => { live = false; };
+  }, [countsShelves, shiftId]);
 
   // A day is the limit. See shift-rules.
   const age = shiftAgeOf(ctx.shift);
@@ -94,6 +127,15 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       await ctx.reloadShift();
       setOpening(false);
       onToast('Shift opened');
+      /*
+        Straight into the count, on the side that counts.
+
+        Not a separate button somebody remembers to press. The moment the bar
+        is opened is the only moment the opening count is worth anything —
+        five drinks later it is a count of a shift already under way, and it
+        will be the next person who pays for the difference.
+      */
+      if (countsShelves) { setCountedIn(false); setBarCount('open'); }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not open the shift.');
     } finally {
@@ -101,8 +143,17 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
     }
   };
 
-  const startClose = async () => {
+  /**
+   * @param countDone the bar has just been counted out, or was waved past.
+   *
+   * The shelf is counted BEFORE the drawer, on the side that counts a shelf.
+   * The other order does not work: once the cash close has been filled in,
+   * asking for forty bottles is a wall between somebody and the end of their
+   * night, and it gets guessed.
+   */
+  const startClose = async (countDone = false) => {
     if (!ctx.shift) return;
+    if (countsShelves && !countDone && !countedOut) { setBarCount('close'); return; }
     setBusy(true);
     setError(null);
     try {
@@ -158,9 +209,18 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
        * the kitchen's overnight report. The shop's own stock moves through
        * consignment intakes and sales, which count themselves.
        */
-      // The shop has no larder to count; the kitchen and the bar each count
-      // their own, and never each other's.
-      const list = ctx.module === 'craft' ? [] : await stockCheckRows(ctx.venue.$id, ctx.module);
+      /*
+        The shop has no larder to count, and the bar has already counted its own.
+
+        The bar's shelf is asked for on its own sheet, a moment ago, measured
+        against the same room it was counted into at the start of the shift.
+        Asking again here would be the same bottles a second time on a
+        different basis — the business total rather than the bar's own — and
+        two counts of one shelf that disagree is worse than either alone.
+      */
+      const list = ctx.module === 'craft' || countsShelves
+        ? []
+        : await stockCheckRows(ctx.venue.$id, ctx.module);
       setStockList(list);
       setLevels(Object.fromEntries(list.map((i) => [i.$id, 'OK' as const])));
       setStockCounts({});
@@ -304,7 +364,12 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
             </>
           )}
           {ctx.shift ? (
-            <Button size="sm" onClick={startClose} loading={busy && !closing} disabled={!ctx.profile?.can_close_shift}>
+            <Button
+              size="sm"
+              onClick={() => void startClose()}
+              loading={busy && !closing}
+              disabled={!ctx.profile?.can_close_shift}
+            >
               Close shift
             </Button>
           ) : (
@@ -337,6 +402,26 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
             </div>
             <div className="small dim" style={{ marginTop: '0.3rem' }}>
               Waiting: {ctx.alsoOpen.map((s) => s.code).join(', ')}
+            </div>
+          </Notice>
+        </div>
+      )}
+
+      {/* A bar shift running on an uncounted shelf.
+          Left on screen rather than shown once and dismissed, because the cost
+          of skipping it does not land tonight — it lands on whoever counts out,
+          measured against a figure nobody checked. Still not a refusal: the
+          doors are open and drinks have to be served. */}
+      {ctx.shift && countsShelves && countedIn === false && (
+        <div style={{ padding: '0.5rem 1rem 0' }}>
+          <Notice tone="warn">
+            <strong>The bar has not been counted in.</strong>
+            <div className="small" style={{ marginTop: '0.3rem' }}>
+              Until it is, tonight&rsquo;s handover is measured against whatever the last shift left rather than
+              against what you accepted.
+            </div>
+            <div style={{ marginTop: '0.45rem' }}>
+              <Button size="sm" variant="primary" onClick={() => setBarCount('open')}>Count the bar in</Button>
             </div>
           </Notice>
         </div>
@@ -385,6 +470,33 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         />
       )}
 
+      {barCount && ctx.shift && (
+        <BarCountModal
+          venueId={ctx.venue.$id}
+          shiftId={ctx.shift.$id}
+          phase={barCount}
+          userId={ctx.userId}
+          settings={ctx.settings}
+          dismissLabel={barCount === 'close' ? 'Close without counting' : 'Not now'}
+          // Nothing set up to count, so nothing to be warned about.
+          onEmpty={() => { setCountedIn(true); setCountedOut(true); }}
+          onClose={() => {
+            const wasClosing = barCount === 'close';
+            setBarCount(null);
+            // Waving past the closing count carries on to the drawer; the
+            // shift still has to be closeable on a night when the sheet
+            // genuinely cannot be finished. The close says so before it saves.
+            if (wasClosing) void startClose(true);
+          }}
+          onDone={(m) => {
+            const wasClosing = barCount === 'close';
+            setBarCount(null);
+            if (wasClosing) { setCountedOut(true); void startClose(true); } else setCountedIn(true);
+            onToast(m);
+          }}
+        />
+      )}
+
       {opening && (
         <Modal
           title="Open shift"
@@ -429,6 +541,22 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           }
         >
           {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
+          {/* Said here, at the last moment it can still be put right, and with
+              the way back on it. Once this closes the shelf is signed off. */}
+          {countsShelves && !countedOut && (
+            <Notice tone="warn">
+              <strong>The bar was not counted out.</strong>
+              <div className="small" style={{ marginTop: '0.3rem' }}>
+                The shift will close on whatever the sales say is left, and nobody will know whether that is what
+                is actually there.
+              </div>
+              <div style={{ marginTop: '0.45rem' }}>
+                <Button size="sm" onClick={() => { setClosing(false); setBarCount('close'); }}>
+                  Count the bar out first
+                </Button>
+              </div>
+            </Notice>
+          )}
           <ShiftCloseForm
             blockers={blockers}
             rows={rows}

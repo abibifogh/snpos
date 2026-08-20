@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   byUnit, wasCountedBar, variancesIn, summariseBarCount, readyToClose, unitLabel,
   BAR_VARIANCE_TOLERANCE, type BarCountLine,
-  shiftCounted, hasShiftCountChoice,
+  shiftCounted, hasShiftCountChoice, countsAtBothEnds, readyToAccept,
 } from '../bar-count.ts';
 
 const bottle = (over: Partial<BarCountLine> = {}): BarCountLine => ({
@@ -155,4 +155,54 @@ test('an explicit no is not the same as never having said', () => {
   const rows = [{ name: 'Club', count_each_shift: false }];
   assert.equal(shiftCounted(rows).length, 1);
   assert.equal(hasShiftCountChoice(rows), false);
+});
+
+test('the bar counts at both ends of a shift; nobody else does', () => {
+  // The kitchen counts once, at the end: nobody accepts the rice at four in
+  // the afternoon. The shop's stock counts itself through intakes and sales.
+  assert.equal(countsAtBothEnds('bar'), true);
+  assert.equal(countsAtBothEnds('kitchen'), false);
+  assert.equal(countsAtBothEnds('craft'), false);
+  // An older row with no side on it is the kitchen, the same fallback the
+  // rest of the system uses. Defaulting the other way would start asking
+  // every restaurant for an opening count it never agreed to.
+  assert.equal(countsAtBothEnds(undefined), false);
+});
+
+test('counting in is held up by blanks and by nothing else', () => {
+  /**
+   * A shortage found at the START is not this shift's shortage — it is what
+   * they are declining to sign for. So however big it is, writing it down is
+   * the right outcome, and there is nothing to escalate.
+   */
+  const huge = [
+    bottle({ ingredientId: 'a', name: 'Gin', expected: 40, countedText: '2' }),
+    bottle({ ingredientId: 'b', name: 'Rum', expected: 40, countedText: '1' }),
+  ];
+  const check = readyToAccept(huge);
+  assert.equal(check.clear, true, 'a big shortage at the start is a finding, not a refusal');
+  assert.equal(check.missing, 0);
+
+  // The same figures at the END do stop the close, which is the difference
+  // between the two questions.
+  assert.equal(readyToClose(huge).clear, false);
+});
+
+test('an opening count with gaps in it is refused', () => {
+  // Worse than no count at all, because it looks like one: the lines nobody
+  // reached keep last night's figure and quietly become this shift's problem.
+  const check = readyToAccept([
+    bottle({ ingredientId: 'a', countedText: '5' }),
+    bottle({ ingredientId: 'b', name: 'Tonic', countedText: '' }),
+    bottle({ ingredientId: 'c', name: 'Club', countedText: '  ' }),
+  ]);
+  assert.equal(check.clear, false);
+  assert.equal(check.missing, 2);
+  assert.match(check.reason ?? '', /2 lines still to count/);
+});
+
+test('a counted nought is an answer; a blank one is not', () => {
+  // The rule the whole file turns on, checked at the opening end too.
+  assert.equal(readyToAccept([bottle({ countedText: '0' })]).clear, true);
+  assert.equal(readyToAccept([bottle({ countedText: '' })]).clear, false);
 });

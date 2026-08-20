@@ -61,6 +61,25 @@ export function shiftCounted<T extends { count_each_shift?: boolean }>(rows: T[]
 export const hasShiftCountChoice = (rows: { count_each_shift?: boolean }[]): boolean =>
   rows.some((r) => r.count_each_shift);
 
+/**
+ * Which sides count their shelves at BOTH ends of a shift.
+ *
+ * The kitchen counts once, at the end. Nobody accepts the rice at four in the
+ * afternoon and nobody signs for it, so an opening count there would be a
+ * question with no purpose.
+ *
+ * A bar is the other thing entirely. What is behind the bar is handed from one
+ * person to the next, and a handover with only one count in it is not a
+ * handover — it is a single number that the next person is stuck with. So the
+ * bar is asked twice: what did you accept, and what are you handing over.
+ *
+ * A function rather than a comparison spelled out at each call site, because
+ * "does this side count at open" is asked from the till, from the close, and
+ * from the sheet itself, and three copies of `module === 'bar'` is three places
+ * to forget when a fourth trade arrives.
+ */
+export const countsAtBothEnds = (module?: string): boolean => (module ?? 'kitchen') === 'bar';
+
 export interface BarCountLine {
   ingredientId: string;
   name: string;
@@ -234,4 +253,33 @@ export function readyToClose(lines: BarCountLine[], tolerance = BAR_VARIANCE_TOL
   }
 
   return { clear: true, missing: 0 };
+}
+
+/**
+ * Whether the bar has been counted IN, and what to say when it has not.
+ *
+ * One gate here, not two, and the difference from `readyToClose` is the whole
+ * point of counting at the start.
+ *
+ * A shortage found at the beginning of a shift is not this shift's shortage.
+ * It is the thing they are declining to sign for — the delivery nobody booked
+ * in, the bottle taken for a function, last night's count rushed at two in the
+ * morning. So there is no value threshold to breach and nothing to escalate to
+ * an admin: whatever the number is, writing it down is the correct outcome,
+ * and refusing the count because it is large would leave the bar accepted on
+ * figures nobody checked.
+ *
+ * What does matter is blanks. An opening count with gaps in it is worse than
+ * no opening count at all, because it looks like one — the lines nobody
+ * reached keep last night's figure and quietly become this shift's problem.
+ */
+export function readyToAccept(lines: BarCountLine[]): CloseCheck {
+  const missing = lines.filter((l) => !wasCountedBar(l)).length;
+  if (missing === 0) return { clear: true, missing: 0 };
+  return {
+    clear: false,
+    missing,
+    reason: `${missing} line${missing === 1 ? '' : 's'} still to count. Blank is not nought — anything left `
+      + 'empty keeps last night\'s figure and becomes yours.',
+  };
 }

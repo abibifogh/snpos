@@ -508,14 +508,30 @@ export async function stockCheckRows(venueId: string, module: Module = 'kitchen'
     shiftCounted keeps the old behaviour for anyone who has marked nothing:
     with no choice made, the check asks for everything, exactly as it did.
   */
-  return shiftCounted(ingredients)
-    // Everything active that is actually on a shelf. A list with a taxi in it
-    // is a list people learn to tap through, which costs the count on the
-    // things that do matter.
-    // This side's shelves only. A bar counting rice and a kitchen counting gin
-    // are both counting somebody else's larder, and a sheet with forty lines
-    // on it that are not yours is a sheet people tap through.
-    .filter((i) => i.active && i.counted_at_close !== false && (i.module ?? 'kitchen') === module)
+  /*
+    THIS SIDE FIRST, then the shift's narrowing. The order matters.
+
+    `shiftCounted` means "if anybody has ticked anything, count only what was
+    ticked". Run across the whole building it answers for the building: a
+    kitchen that ticks four items narrows the list to those four, and the bar's
+    lines are then filtered out by side — leaving the bar closing with an empty
+    sheet and nobody asked to count anything at all.
+
+    Narrowed within the side, it answers the question actually being asked:
+    what does THIS side count every shift, and if this side has ticked nothing,
+    it counts everything of its own.
+  */
+  // Everything active that is actually on a shelf. A list with a taxi in it
+  // is a list people learn to tap through, which costs the count on the
+  // things that do matter.
+  // This side's shelves only. A bar counting rice and a kitchen counting gin
+  // are both counting somebody else's larder, and a sheet with forty lines
+  // on it that are not yours is a sheet people tap through.
+  const mine = ingredients.filter(
+    (i) => i.active && i.counted_at_close !== false && (i.module ?? 'kitchen') === module,
+  );
+
+  return shiftCounted(mine)
     .sort(
       (a, b) =>
         rank(a.category) - rank(b.category) ||
