@@ -1086,3 +1086,83 @@ export async function setShiftSealed(opts: {
     shift_id: opts.shift.$id,
   }).catch(() => undefined);
 }
+
+/**
+ * Correct what a shift is recorded as having started with.
+ *
+ * The float is the one figure in a close that nobody counts twice. Everything
+ * else is measured — takings from payments, spending from expenses, the drawer
+ * from a person's hands — but the float is asserted once at the start and then
+ * silently believed for the rest of the night. A wrong one is therefore
+ * invisible until the drawer comes up short by exactly that amount, at which
+ * point it looks like missing money with somebody's name against it.
+ *
+ * So it is correctable, and correcting it is an admin's job.
+ *
+ * AN OPEN SHIFT IS THE SIMPLE CASE and the one this was asked for: nothing has
+ * been counted against it and nothing posted, so the correction is the write
+ * and no more.
+ *
+ * A CLOSED ONE IS NOT, and is handled rather than refused, because a float is
+ * usually discovered to be wrong at exactly the moment the drawer fails to
+ * balance — which is after the close. Its expected figures are worked out
+ * again and its accounting entries reposted from the corrected numbers, the
+ * same path an order moved between shifts takes. What was physically counted
+ * is never touched: that was a person with money in their hands, and it is the
+ * one figure here that was never in doubt.
+ */
+export async function changeOpeningFloat(opts: {
+  shift: Pick<Shift, '$id' | 'venue_id' | 'code' | 'status' | 'opening_floats'> & LockableShift;
+  floats: Record<string, number>;
+  userId: string;
+  reason: string;
+}): Promise<{ note: string }> {
+  // Refused here as well as on the screen. A rule enforced only where the
+  // button is has as many ways round it as there are pages.
+  const settled = lockedProblem(opts.shift, 'the opening float');
+  if (settled) throw new Error(settled);
+
+  const before = opts.shift.opening_floats || '{}';
+  await db.updateDocument(DB_ID, 'shifts', opts.shift.$id, {
+    opening_floats: JSON.stringify(opts.floats),
+  });
+
+  await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
+    venue_id: opts.shift.venue_id,
+    actor_id: opts.userId,
+    action: 'shift_float_changed',
+    entity_type: 'shift',
+    entity_id: opts.shift.$id,
+    before: JSON.stringify({ opening_floats: before }).slice(0, 4000),
+    after: JSON.stringify({ opening_floats: opts.floats }).slice(0, 4000),
+    reason: opts.reason.slice(0, 500),
+    shift_id: opts.shift.$id,
+  }).catch(() => undefined);
+
+  if (opts.shift.status !== 'closed') {
+    return { note: `${opts.shift.code} now starts with what you entered.` };
+  }
+
+  /*
+    A closed shift's figures do not recompute themselves.
+
+    Both halves, and in this order. The shift's own expected and variance
+    first, so the books are rebuilt from numbers that are already right —
+    reposting against stale figures would put the old error back on the ledger
+    in a fresh entry.
+
+    Best effort on both. The correction itself has happened and is right; a
+    period locked off in the accounts must not be reported as a failed edit.
+  */
+  await recomputeClosedShift(opts.shift.$id).catch(() => null);
+  const posted = await repostShiftAccounts({
+    shiftId: opts.shift.$id,
+    userId: opts.userId,
+    reason: opts.reason,
+  }).catch(() => ({ changed: false, note: '' }));
+
+  return {
+    note: `${opts.shift.code}'s expected figures were worked out again.`
+      + (posted.note ? ` ${posted.note}` : ''),
+  };
+}

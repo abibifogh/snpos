@@ -427,3 +427,60 @@ export function lastForSide<T extends { module?: string; status?: string; $creat
     .sort((a, b) => (b.$createdAt ?? '').localeCompare(a.$createdAt ?? ''))
     .find((s) => (s.module ?? 'kitchen') === module);
 }
+
+/* ------------------------------------------------ correcting a shift's float */
+
+export interface FloatEdit {
+  /** Per payment method, in minor units. */
+  floats: Record<string, number>;
+  /** What the shift is currently recorded as having started with. */
+  was: Record<string, number>;
+}
+
+/**
+ * Why this opening float cannot be saved, or nothing.
+ *
+ * A float is what was physically in a drawer when a shift began. Two things
+ * are therefore never true of one, and both are refused rather than warned
+ * about, because neither is a judgement call:
+ *
+ *   - It cannot be negative. A drawer holding less than no money is not a
+ *     small float, it is a missing record.
+ *   - It has to be a number. A blank box is not nought here; it means somebody
+ *     has not answered, and saving it would silently write the drawer down.
+ */
+export function floatProblem(text: Record<string, string>, names: Record<string, string>): string | null {
+  for (const [id, raw] of Object.entries(text)) {
+    const value = (raw ?? '').trim();
+    const name = names[id] ?? 'that drawer';
+    if (value === '') return `Enter what ${name} actually started with. A blank is not nought.`;
+    if (value.startsWith('-')) return `${name} cannot have started with less than nothing.`;
+    if (!Number.isFinite(Number(value.replace(/[^0-9.]/g, '')))) return `${name}'s amount is not a number.`;
+  }
+  return null;
+}
+
+/**
+ * What correcting the float does to the shift, in one sentence.
+ *
+ * The figure people care about is not the float itself but what it does to the
+ * expectation: a drawer told to start with money it never held comes up short
+ * by exactly that amount, and that shortage has somebody's name against it.
+ */
+export function describeFloatChange(
+  edit: FloatEdit,
+  money: (n: number) => string,
+): { delta: number; text: string } {
+  const now = Object.values(edit.floats).reduce((a, b) => a + b, 0);
+  const before = Object.values(edit.was).reduce((a, b) => a + b, 0);
+  const delta = now - before;
+  if (delta === 0) return { delta, text: 'That is what it already says. Nothing changes.' };
+  return {
+    delta,
+    text: delta < 0
+      ? `The shift is expected to hold ${money(Math.abs(delta))} less than it was a moment ago, so a `
+        + `shortage of that size disappears.`
+      : `The shift is expected to hold ${money(delta)} more than it was a moment ago, so it will read as `
+        + `short by that much unless the money is really there.`,
+  };
+}

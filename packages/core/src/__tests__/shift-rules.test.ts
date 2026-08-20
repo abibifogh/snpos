@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit, mustWaitForNextShift, shouldWarnLateOrder,
   SHIFT_MAX_HOURS, SHIFT_WARN_HOURS,
-  shiftAgeOf, openShiftsFor, blockerFor, isLivePayment, sellBlockedReason, carryOverFloats, lastForSide,
+  shiftAgeOf, openShiftsFor, blockerFor, isLivePayment, sellBlockedReason, carryOverFloats, lastForSide, floatProblem, describeFloatChange,
 } from '../shift-rules.ts';
 
 const at = (iso: string) => new Date(iso);
@@ -406,4 +406,42 @@ test('a shift still open is never carried over from', () => {
     { $id: 'done', module: 'kitchen', status: 'closed', $createdAt: '2026-08-19T21:00:00.000Z' },
   ];
   assert.equal(lastForSide(shifts, 'kitchen')?.$id, 'done');
+});
+
+test('a float box left blank is refused, not read as nothing', () => {
+  /**
+   * A blank does not mean the drawer was empty; it means nobody answered.
+   * Saving it would silently write the drawer down and turn an unanswered
+   * question into a shortage somebody has to explain.
+   */
+  const names = { cash: 'Cash', card: 'Card' };
+  assert.match(floatProblem({ cash: '', card: '0' }, names) ?? '', /Cash actually started with/);
+  assert.match(floatProblem({ cash: '   ' }, names) ?? '', /blank is not nought/);
+  // A counted nought is a real answer and goes through.
+  assert.equal(floatProblem({ cash: '0', card: '0' }, names), null);
+});
+
+test('a drawer cannot have started with less than nothing', () => {
+  // Not a small float — a missing record. Refused rather than warned about,
+  // because it is not a judgement call.
+  assert.match(floatProblem({ cash: '-50' }, { cash: 'Cash' }) ?? '', /less than nothing/);
+});
+
+test('the float change is described by what it does to the shortage', () => {
+  /**
+   * The figure people care about is not the float but what it does to the
+   * expectation: a drawer told to start with money it never held comes up
+   * short by exactly that, and that shortage has somebody's name against it.
+   */
+  const money = (n: number) => `GH¢${(n / 100).toFixed(2)}`;
+  const down = describeFloatChange({ floats: { cash: 0 }, was: { cash: 145_000 } }, money);
+  assert.equal(down.delta, -145_000);
+  assert.match(down.text, /GH¢1450\.00 less/);
+  assert.match(down.text, /shortage of that size disappears/);
+
+  const up = describeFloatChange({ floats: { cash: 145_000 }, was: { cash: 0 } }, money);
+  assert.match(up.text, /short by that much unless the money is really there/);
+
+  // Saying nothing changed is more useful than a sentence about nought.
+  assert.match(describeFloatChange({ floats: { cash: 100 }, was: { cash: 100 } }, money).text, /already says/);
 });

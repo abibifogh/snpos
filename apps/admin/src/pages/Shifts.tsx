@@ -7,6 +7,7 @@ import { listAll, humanError, Query } from '../lib';
 import {
   formatMoney, byStaff, destinationLabel, fromTakings,
   changeShiftClose, closeTimeProblem, closeTimeEffects, describeCloseChange, hoursBetween, SHIFT_MAX_HOURS,
+  changeOpeningFloat, floatProblem, describeFloatChange, parseMoney, toInput,
   listCreatedBetween, listByIds, setShiftSealed, isSealed, describeSeal, lockedProblem,
   rangeTotals, kindsWorthShowing, KIND_LABELS, canOpen,
 } from '@snpos/core';
@@ -123,6 +124,19 @@ export function ShiftsPage() {
    * decision made elsewhere.
    */
   const maySeeExpenses = canOpen('expenses', profile, settings);
+  /**
+   * Correcting what a shift is recorded as having started with.
+   *
+   * The float is the one figure in a close that nobody counts twice.
+   * Everything else is measured; this is asserted once and then believed for
+   * the rest of the night, so a wrong one stays invisible until the drawer
+   * comes up short by exactly that amount — at which point it reads as missing
+   * money with somebody's name against it.
+   */
+  const [floatEdit, setFloatEdit] = useState<Shift | null>(null);
+  const [floatText, setFloatText] = useState<Record<string, string>>({});
+  const [floatReason, setFloatReason] = useState('');
+  const [floatBusy, setFloatBusy] = useState(false);
   const [closeEdit, setCloseEdit] = useState<Shift | null>(null);
   const [closeAt, setCloseAt] = useState('');
   const [closeReason, setCloseReason] = useState('');
@@ -145,6 +159,45 @@ export function ShiftsPage() {
     setCloseAt(forInput(shift.closed_at));
     setCloseReason('');
     setCloseEdit(shift);
+  };
+
+  const startFloatEdit = (sh: Shift) => {
+    const was = parseMap(sh.opening_floats);
+    setFloatEdit(sh);
+    // Prefilled with what it says now, so a correction is one box changed
+    // rather than every drawer retyped from nothing.
+    setFloatText(
+      Object.fromEntries(methods.map((m) => [m.$id, toInput(was[m.$id] ?? 0, settings?.currency_decimals ?? 2)])),
+    );
+    setFloatReason('');
+  };
+
+  const saveFloat = async () => {
+    if (!floatEdit) return;
+    const decimals = settings?.currency_decimals ?? 2;
+    const names = Object.fromEntries(methods.map((m) => [m.$id, m.name]));
+    const problem = floatProblem(floatText, names);
+    if (problem) { toast(problem, 'err'); return; }
+    if (!floatReason.trim()) {
+      toast('Say why it is being changed. This is the figure a shortage is measured against.', 'err');
+      return;
+    }
+    setFloatBusy(true);
+    try {
+      const floats = Object.fromEntries(
+        Object.entries(floatText).map(([id, v]) => [id, parseMoney(v, decimals) ?? 0]),
+      );
+      const { note } = await changeOpeningFloat({
+        shift: floatEdit, floats, userId: user?.$id ?? '', reason: floatReason.trim(),
+      });
+      setFloatEdit(null);
+      await load();
+      toast(note);
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setFloatBusy(false);
+    }
   };
 
   const saveCloseTime = async () => {
@@ -503,7 +556,15 @@ export function ShiftsPage() {
             </div>
           </div>
 
-          <h3 style={{ marginTop: '1rem' }}>Cash reconciliation</h3>
+          <div className="spread" style={{ marginTop: '1rem', alignItems: 'baseline' }}>
+            <h3 style={{ margin: 0 }}>Cash reconciliation</h3>
+            {/* An admin's, and put beside the figures it moves rather than in a
+                menu. A float carried from the wrong drawer is discovered here,
+                looking at a shortage that will not add up. */}
+            {isAdmin && !isSealed(detail) && (
+              <Button size="sm" onClick={() => startFloatEdit(detail)}>Correct the opening float</Button>
+            )}
+          </div>
           {/*
             What "expected" actually means, said where it is read.
 
@@ -645,6 +706,70 @@ export function ShiftsPage() {
           </>}
         </Modal>
       )}
+
+      {floatEdit && (() => {
+        const decimals = settings?.currency_decimals ?? 2;
+        const was = parseMap(floatEdit.opening_floats);
+        const floats = Object.fromEntries(
+          Object.entries(floatText).map(([id, v]) => [id, parseMoney(v, decimals) ?? 0]),
+        );
+        const change = describeFloatChange(
+          { floats, was },
+          (n) => (settings ? formatMoney(n, settings) : String(n)),
+        );
+        return (
+          <Modal
+            title={`What did ${floatEdit.code} start with?`}
+            onClose={() => (floatBusy ? undefined : setFloatEdit(null))}
+            footer={
+              <>
+                <Button variant="ghost" onClick={() => setFloatEdit(null)} disabled={floatBusy}>Cancel</Button>
+                <Button variant="primary" onClick={() => void saveFloat()} loading={floatBusy}>
+                  Save the float
+                </Button>
+              </>
+            }
+          >
+            <p className="small dim" style={{ marginTop: 0 }}>
+              What was physically in each drawer when this shift opened. It is the one figure in a close nobody
+              counts twice — everything else is measured, this is asserted once and then believed all night — so
+              a wrong one stays invisible until the drawer comes up short by exactly that amount.
+            </p>
+
+            {methods.map((m) => (
+              <Field key={m.$id} label={`${m.name} (${settings?.currency_symbol ?? ''})`}>
+                <Input
+                  value={floatText[m.$id] ?? ''}
+                  inputMode="decimal"
+                  onChange={(e) => setFloatText({ ...floatText, [m.$id]: e.target.value })}
+                />
+              </Field>
+            ))}
+
+            {change.delta !== 0 && (
+              <Notice tone={change.delta > 0 ? 'warn' : 'info'}>{change.text}</Notice>
+            )}
+
+            {/* Said before it is done, because the two cases are genuinely
+                different and only one of them is quiet. */}
+            {floatEdit.status === 'closed' && (
+              <Notice tone="warn">
+                {floatEdit.code} has already been closed and counted. What was physically counted is not
+                touched — that was a person with money in their hands. What changes is what the shift was
+                expected to hold, and the over-or-short with it; its accounting entries are posted again from
+                the corrected figures.
+              </Notice>
+            )}
+
+            <Field
+              label="Why"
+              hint="Kept with the change. In a month this is the only thing that explains why a signed-off night moved."
+            >
+              <Textarea rows={2} value={floatReason} onChange={(e) => setFloatReason(e.target.value)} />
+            </Field>
+          </Modal>
+        );
+      })()}
 
       {closeEdit && (() => {
         const iso = closeAt ? new Date(closeAt).toISOString() : '';
