@@ -8,10 +8,11 @@ import {
   fromTakings, postExpense, accountForExpense,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
   loadFloats, balancesFor, accountFor, recordBoxSpend, boxOverdrawn,
+  checkPurchase, raiseAlerts, FLAG_WORDS,
 } from '@snpos/core';
 import type {
   PaymentMethod, Settings, StaffProfile, PaidToKind, Supplier, ExpenseCategoryDoc, Ingredient,
-  CashHandover, HandoverDestination, Module, ShiftExpense, ImprestFloatDoc,
+  CashHandover, HandoverDestination, Module, ShiftExpense, ImprestFloatDoc, CheckedLine,
 } from '@snpos/core';
 
 /**
@@ -162,6 +163,20 @@ export function ExpenseModal({
   const [lines, setLines] = useState<DraftLine[]>([{ ingredientId: '', qtyText: '', totalText: '' }]);
   const [receipt, setReceipt] = useState<{ file: File; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  /**
+   * Lines that looked dear, or larger than usual, waiting to be looked at.
+   *
+   * The moment to catch a slipped nought is while the person who was at the
+   * market is still standing at the screen. Afterwards it is a number in a
+   * report somebody has to reconstruct from memory — and a unit cost with an
+   * extra nought does not merely record a wrong price, it revalues the shelf
+   * and every dish the ingredient is in.
+   *
+   * Never a refusal. Prices genuinely triple, and a system that will not take
+   * the truth gets a smaller number typed into it.
+   */
+  const [checked, setChecked] = useState<CheckedLine[] | null>(null);
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Set when this form opened onto work somebody had already started. */
   const [restored, setRestored] = useState(false);
@@ -409,6 +424,51 @@ export function ExpenseModal({
     );
   };
 
+  /**
+   * Look over the shop run before saving it.
+   *
+   * Between the button and the write, and only once: answering the question
+   * and pressing save again goes straight through. A prompt that reappears
+   * after somebody has said "yes, it really was that dear" is a prompt they
+   * learn to dismiss without reading, which costs the one that matters.
+   */
+  const lookOver = async (): Promise<boolean> => {
+    if (checked || editing || filledLines.length === 0) return true;
+    setChecking(true);
+    try {
+      const rows = await checkPurchase(
+        filledLines.map((l) => {
+          const ing = ingredients.find((x) => x.$id === l.ingredientId);
+          const opt = buyOptionFor(ing ?? { unit: 'unit' }, l.buyKey);
+          const converted = convertPurchase({
+            qty: Number(l.qtyText) || 0,
+            costPerBought: unitCostOf(l),
+            per: opt.per,
+          });
+          return {
+            ingredientId: l.ingredientId,
+            name: ing?.name ?? 'this',
+            unit: ing?.unit,
+            // In the unit it is COUNTED in, not the unit it was bought in — a
+            // case of twenty-four against a history kept in bottles would read
+            // as twenty-four times too little and never flag anything.
+            qty: converted.qty,
+            unitCost: converted.unitCost,
+          };
+        }),
+      );
+      const surprises = rows.filter((r) => r.flags.length > 0);
+      if (surprises.length === 0) return true;
+      setChecked(rows);
+      return false;
+    } catch {
+      // A check that could not run must not stop a purchase being recorded.
+      return true;
+    } finally {
+      setChecking(false);
+    }
+  };
+
   const save = async () => {
     // The lines win when there are any: they are the itemised truth, and a
     // total that disagrees with them is a total somebody mistyped. Plus
@@ -525,6 +585,25 @@ export function ExpenseModal({
       });
       const expense = { $id: expenseId };
       const lostSource = dropped.includes('from_takings');
+
+      /*
+        Write down that somebody was asked, whatever they answered.
+
+        After the expense, never instead of it, and best effort: the purchase
+        is the record that matters and must not fail because a note about it
+        could not be written. A prompt nobody records is a prompt that teaches
+        nothing — the same wrong price gets typed every month and no report can
+        say so.
+      */
+      if (checked?.some((c) => c.flags.length > 0)) {
+        void raiseAlerts({
+          venueId,
+          userId,
+          expenseId,
+          module,
+          lines: checked.filter((c) => c.flags.length > 0),
+        }).catch(() => undefined);
+      }
 
       /**
        * On the books straight away, not at shift close.
@@ -672,7 +751,11 @@ export function ExpenseModal({
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={save} loading={busy}>
+          <Button
+            variant="primary"
+            loading={busy || checking}
+            onClick={() => void (async () => { if (await lookOver()) await save(); })()}
+          >
             {editing ? 'Save the correction' : 'Save'}
           </Button>
         </>
@@ -1059,6 +1142,40 @@ export function ExpenseModal({
           />
         )}
       </Field>
+
+      {/*
+        The question, asked once and then got out of the way of.
+
+        Not a modal and not a refusal — it appears above the button that was
+        just pressed, says what looks odd and why, and pressing that button
+        again saves. Somebody who was at the market knows whether tomatoes
+        really did triple this week; this system does not, and pretending
+        otherwise would only teach them to type a smaller number.
+      */}
+      {checked?.some((c) => c.flags.length > 0) && (
+        <Notice tone="warn">
+          <strong>Worth a second look before you save.</strong>
+          <div className="stack" style={{ gap: '0.4rem', marginTop: '0.45rem' }}>
+            {checked.filter((c) => c.flags.length > 0).map((c) => (
+              <div key={c.ingredientId}>
+                {c.flags.map((f) => (
+                  <div key={f.kind} className="small">
+                    <strong>{FLAG_WORDS[f.kind]}:</strong>{' '}
+                    {f.message
+                      .replace('%TYPICAL%', formatMoney(f.typical, settings))
+                      .replace('%TYPICALQTY%', `${f.typical}${c.unit ? ` ${c.unit}` : ''}`)}
+                    <span className="dim"> Based on {f.seen} past purchases.</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+          <div className="small dim" style={{ marginTop: '0.45rem' }}>
+            Change it if it is wrong. If it is right, press save again — it goes through, and an admin sees that
+            the question was asked.
+          </div>
+        </Notice>
+      )}
 
       <Field label="Note" hint="Optional.">
         <Textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} />

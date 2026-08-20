@@ -2632,6 +2632,61 @@ export const COLLECTIONS = [
     ],
   },
 
+  /* ------------------------------------------- purchases worth a second look */
+  {
+    /**
+     * A purchase that looked dear, or larger than usual, when it was recorded.
+     *
+     * Written at the moment somebody was asked to check it, whatever they then
+     * answered. That is the point: the question is asked and got out of the
+     * way of, and the fact that it was asked survives. A prompt nobody records
+     * is a prompt that teaches nothing — the same wrong price gets typed every
+     * month and no report can say so.
+     *
+     * These are questions, not accusations. Prices genuinely triple, and a bulk
+     * buy before a function is not a mistake. What makes the list worth reading
+     * is that somebody can tick off the ones that were fine and be left with
+     * the ones that were not.
+     */
+    id: 'purchase_alerts',
+    name: 'Purchase alerts',
+    // Anybody may raise one, because anybody may record a spend, and the alert
+    // is written by the same act. Ticking one off is management's: "that was
+    // fine" is a judgement about somebody else's purchase.
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['ingredient_id', 's', 64, false],
+      // The name as it was, so an alert still reads after somebody renames or
+      // archives the ingredient behind it.
+      ['ingredient_name', 's', 160, true],
+      ['unit', 's', 20, false],
+      ['expense_id', 's', 64, false],
+      ['kind', 'e', ['price', 'qty'], true, 'price'],
+      // What was paid or bought, and what this normally goes for. Both stored:
+      // the typical figure moves as more is bought, and an alert that
+      // recomputed it would stop describing the moment it was raised.
+      ['value', 'i', null, true, 0],
+      ['typical', 'i', null, true, 0],
+      ['rise_bp', 'i', null, true, 0],
+      // How many past purchases the typical figure rested on.
+      ['seen', 'i', null, true, 0],
+      ['module', 'e', ['kitchen', 'craft', 'bar'], false, 'kitchen'],
+      ['created_by', 's', 64, true],
+      // Whether somebody has looked and decided. Absent is outstanding, which
+      // is what every row written before this could be ticked really is.
+      ['acknowledged', 'b', null, false, false],
+      ['acknowledged_by', 's', 64, false],
+      ['acknowledged_at', 'd', null, false],
+      ['note', 's', 500, false],
+    ],
+    indexes: [
+      ['venue_created', 'key', ['venue_id', '$createdAt']],
+      ['outstanding', 'key', ['acknowledged', '$createdAt']],
+      ['ingredient', 'key', ['ingredient_id']],
+    ],
+  },
+
   /* ------------------------------------------------------ petty cash boxes */
   {
     /**
