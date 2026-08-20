@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { encodePin, pinProblem, modulesOf, sidesOf, legacySide, MODULE_LABELS } from '@snpos/core';
+import {
+  encodePin, pinProblem, modulesOf, sidesOf, legacySide, MODULE_LABELS,
+  inviteState, inviteWords, stuckInvites, meanwhile, INVITE_CHECKS,
+} from '@snpos/core';
 import type { StaffProfile, Module } from '@snpos/core';
 import type { Doc } from '@snpos/core';
 import { useSession } from '../session';
@@ -99,6 +102,14 @@ export function StaffPage() {
    * moment a fourth trade is switched on.
    */
   const runningSides = (['kitchen', 'craft', 'bar'] as Module[]).filter((m) => mods[m]);
+  /**
+   * Anybody whose link was asked for and never went.
+   *
+   * Worked out from the two stamps the server already keeps, so this needs no
+   * new field and reports on invitations sent long before the page could say
+   * anything about them.
+   */
+  const stuck = stuckInvites(rows ?? []);
 
   const load = async () => {
     const [s, v] = await Promise.all([listAll<StaffProfile>('staff_profiles'), listAll<VenueRow>('venues')]);
@@ -244,11 +255,21 @@ export function StaffPage() {
         );
       }
 
+      /*
+        What was asked for, not what was achieved.
+
+        This used to say "a sign-in link is on its way", which the browser has
+        no way of knowing: it writes a field, and a background job sends the
+        mail. Where that job was not deployed, or the mail settings were never
+        filled in, nothing happened at all and this line said it had — which is
+        why an invitation that never arrived looked like a mail problem rather
+        than a setup one. The row now shows whether it actually went.
+      */
       const outcome = !(wantsLogin && payload.email)
         ? pin ? 'Saved, PIN set' : 'Saved'
         : dropped.includes('login_link_requested_at')
-          ? 'Saved, but no sign-in link can be sent yet. Run "Provision Appwrite" in GitHub Actions, then use "Send sign-in link" on their row.'
-          : `Saved, a sign-in link is on its way to ${payload.email}`;
+          ? 'Saved, but no sign-in link can be asked for yet. Run "Provision Appwrite" in GitHub Actions, then use "Send sign-in link" on their row.'
+          : `Saved. A sign-in link has been asked for; their row will say "Link sent" once it has gone.`;
 
       setEditing(null);
       setPin('');
@@ -284,7 +305,17 @@ export function StaffPage() {
       await db.updateDocument(DB_ID, 'staff_profiles', p.$id, {
         login_link_requested_at: new Date().toISOString(),
       });
-      toast(`Sending a sign-in link to ${p.email}`);
+      toast(`Asked for a sign-in link for ${p.email}. Their row will say "Link sent" once it has gone.`);
+      /*
+        Look again shortly, so the badge settles itself.
+
+        The job answers in seconds, and without this the row sits on "Sending…"
+        until somebody reloads — which reads exactly like the silent failure
+        this whole change is about. One look, not a poll: if it has not landed
+        by then the row says so, which is the honest outcome.
+      */
+      await load().catch(() => undefined);
+      window.setTimeout(() => { void load().catch(() => undefined); }, 8_000);
     } catch (e) {
       const raw = e instanceof Error ? e.message : String(e);
       toast(
@@ -328,6 +359,37 @@ export function StaffPage() {
 
       {error && !editing && <Notice>{error}</Notice>}
 
+      {/*
+        Only when something is genuinely wrong.
+
+        A standing note about mail settings on a page that works is one people
+        learn to scroll past, and it would be there on the day it finally
+        mattered. This appears when a link was asked for and never went.
+      */}
+      {stuck.length > 0 && (
+        <Notice tone="warn">
+          <strong>
+            {stuck.length === 1
+              ? `${stuck[0].display_name}'s sign-in link was never sent.`
+              : `${stuck.length} sign-in links were asked for and never sent.`}
+          </strong>
+          <div className="small" style={{ marginTop: '0.4rem' }}>
+            Nothing has reached them. The sending is done by the server, not by this screen, so there are two
+            things to check — in this order:
+          </div>
+          <ol className="small" style={{ margin: '0.5rem 0 0', paddingLeft: '1.1rem' }}>
+            {INVITE_CHECKS.map((c) => (
+              <li key={c.what} style={{ marginBottom: '0.35rem' }}>
+                <strong>{c.what}.</strong> {c.how}
+              </li>
+            ))}
+          </ol>
+          <div className="small" style={{ marginTop: '0.5rem' }}>
+            {meanwhile(stuck[0])}
+          </div>
+        </Notice>
+      )}
+
       <Card pad={false}>
         {!rows ? (
           <div className="card-pad"><Spinner /></div>
@@ -353,14 +415,29 @@ export function StaffPage() {
                       {p.can_discount_up_to_bp ? `up to ${(p.can_discount_up_to_bp / 100).toFixed(0)}%` : 'none'}
                     </td>
                     <td>
-                      {!linked(p) && p.email ? (
-                        <Badge tone="warn">Invited</Badge>
-                      ) : !linked(p) && p.pin_hash ? (
-                        <Badge tone="ok">PIN only</Badge>
-                      ) : p.active ? (
-                        <Badge tone="ok">Active</Badge>
+                      {/*
+                        Two different facts, and they were being shown as one.
+
+                        "Invited" meant only "has an email and has not signed in
+                        yet" — it said nothing about whether an email was ever
+                        sent, which is the question somebody actually has when
+                        one does not arrive. The sign-in state and the account
+                        state are now separate lines.
+                      */}
+                      {linked(p) ? (
+                        p.active ? <Badge tone="ok">Active</Badge> : <Badge>Disabled</Badge>
                       ) : (
-                        <Badge>Disabled</Badge>
+                        (() => {
+                          const words = inviteWords(inviteState(p));
+                          return (
+                            <>
+                              <Badge tone={words.tone}>{words.label}</Badge>
+                              {words.detail && (
+                                <div className="small dim" style={{ marginTop: '0.25rem' }}>{words.detail}</div>
+                              )}
+                            </>
+                          );
+                        })()
                       )}
                     </td>
                     <td className="num">
