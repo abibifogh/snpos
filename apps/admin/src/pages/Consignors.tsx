@@ -488,7 +488,8 @@ function StatementModal({
   const [entries, setEntries] = useState<LedgerEntry[] | null>(null);
   const [intakes, setIntakes] = useState<ConsignmentIntake[]>([]);
   const [unsold, setUnsold] = useState<UnsoldLine[]>([]);
-  const [from, setFrom] = useState(iso(startOfMonth(new Date())));
+  // Today, both ends, like every other date range in the admin app.
+  const [from, setFrom] = useState(iso(new Date()));
   const [to, setTo] = useState(iso(new Date()));
   const [paying, setPaying] = useState(false);
   const [payText, setPayText] = useState('');
@@ -637,6 +638,27 @@ function StatementModal({
       <div className="grid-2">
         <Field label="From"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
         <Field label="To"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+      </div>
+      {/* The dates open on today. A statement is usually wanted for the month,
+          so that is one tap rather than two date pickers. */}
+      <div className="row row-wrap" style={{ gap: '0.4rem', marginBottom: '0.8rem' }}>
+        <Button size="sm" onClick={() => { setFrom(iso(startOfMonth(new Date()))); setTo(iso(new Date())); }}>
+          This month
+        </Button>
+        <Button
+          size="sm"
+          onClick={() => {
+            const first = startOfMonth(new Date());
+            const lastMonth = new Date(first);
+            lastMonth.setMonth(lastMonth.getMonth() - 1);
+            setFrom(iso(startOfMonth(lastMonth)));
+            // The day before this month began, which is the last day of the
+            // one before it however many days that month happened to have.
+            setTo(iso(new Date(first.getTime() - 86400_000)));
+          }}
+        >
+          Last month
+        </Button>
       </div>
 
       {statement === null ? (

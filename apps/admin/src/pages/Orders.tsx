@@ -65,7 +65,17 @@ export function OrdersPage() {
   const { settings, profile, user } = useSession();
   const toast = useToast();
 
-  const [from, setFrom] = useState(daysAgoStr(7));
+  /*
+    Today, both ends.
+
+    Every one of these screens opened on a week or a month, which answers
+    "how have we been doing" — a question somebody asks occasionally. The one
+    they ask constantly is "what has happened today", and opening on a range
+    that buries it behind six other days means scrolling past yesterday to
+    find this morning. The quick ranges beside the dates widen it in one tap;
+    nothing has been taken away.
+  */
+  const [from, setFrom] = useState(todayStr());
   const [to, setTo] = useState(todayStr());
   const [staffId, setStaffId] = useState('');
   const [statusFilter, setStatusFilter] = useState('');

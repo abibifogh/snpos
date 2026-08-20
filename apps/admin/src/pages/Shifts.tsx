@@ -74,6 +74,12 @@ const parseMap = (raw?: string): Record<string, number> => {
   }
 };
 
+/** Widening the dates in one tap, since they open on today. */
+const RANGES = [
+  { days: 7, label: 'Last 7 days' },
+  { days: 30, label: 'Last 30 days' },
+];
+
 export function ShiftsPage() {
   const { settings, profile, user } = useSession();
   const toast = useToast();
@@ -243,7 +249,8 @@ export function ShiftsPage() {
     answers "how did last month go", which is the question; the boxes are
     there for the times it is not.
   */
-  const [from, setFrom] = useState(daysAgoStr(30));
+  // Today, both ends, like every other date range in the admin app.
+  const [from, setFrom] = useState(todayStr());
   const [to, setTo] = useState(todayStr());
 
   /** Settling a night, so nothing in it can be changed again. */
@@ -332,6 +339,13 @@ export function ShiftsPage() {
       <FilterBar>
         <FilterField label="From"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></FilterField>
         <FilterField label="To"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></FilterField>
+        {/* The dates open on today. These widen them in one tap, so a narrow
+            default costs nothing to somebody who wanted the month. */}
+        {RANGES.map(({ days, label }) => (
+          <Button key={days} size="sm" onClick={() => { setFrom(daysAgoStr(days)); setTo(todayStr()); }}>
+            {label}
+          </Button>
+        ))}
       </FilterBar>
 
       {rows && shown.length > 0 && (

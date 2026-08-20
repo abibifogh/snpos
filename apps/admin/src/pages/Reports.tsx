@@ -42,7 +42,10 @@ export function ReportsPage() {
   // A manager may read the reports; what the headline figure is made of is the
   // owner's decision, not something to change from a screen you are reviewing.
   const isAdmin = profile?.role === 'admin';
-  const [from, setFrom] = useState(daysAgoStr(30));
+  // Today, both ends. The quick ranges beside the dates widen it in one tap.
+  // See the note in Orders: "what happened today" is the question actually
+  // asked, and a month-long default buries it.
+  const [from, setFrom] = useState(todayStr());
   const [to, setTo] = useState(todayStr());
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [items, setItems] = useState<OrderItem[]>([]);

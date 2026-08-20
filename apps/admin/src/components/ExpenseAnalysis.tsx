@@ -110,11 +110,20 @@ function SliceTable({
   );
 }
 
+/** Widening the dates in one tap, since they open on today. */
+const RANGES = [
+  { days: 7, label: 'Last 7 days' },
+  { days: 30, label: 'Last 30 days' },
+];
+
 export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategoryDoc[] }) {
   const { settings, profile, user } = useSession();
   const isAdmin = profile?.role === 'admin';
 
-  const [from, setFrom] = useState(daysAgoStr(30));
+  // Today, both ends. The comparison then reads today against yesterday,
+  // which is the shape of the question somebody has standing in the shop.
+  // Widen the dates for a month against the month before.
+  const [from, setFrom] = useState(todayStr());
   const [to, setTo] = useState(todayStr());
   const [side, setSide] = useState<'all' | Side>('all');
   const [by, setBy] = useState<'day' | 'week'>('day');
@@ -241,6 +250,13 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
             <option value="week">By week</option>
           </Select>
         </FilterField>
+        {/* The dates open on today, so today reads against yesterday. These
+            widen them in one tap for a month against the month before. */}
+        {RANGES.map(({ days, label }) => (
+          <Button key={days} size="sm" onClick={() => { setFrom(daysAgoStr(days)); setTo(todayStr()); }}>
+            {label}
+          </Button>
+        ))}
         <Button size="sm" onClick={exportCsv}>Export</Button>
       </FilterBar>
 
