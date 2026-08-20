@@ -362,6 +362,11 @@ export const COLLECTIONS = [
       // till with a numeric keypad will produce one by accident if the decimal
       // point is there to be pressed.
       ['stock_count_decimals', 'b', null, false, true],
+      // Whether the bar's count at the start and end of a shift may be left
+      // unfinished. Off, so it may not. See countGate: a count that can be
+      // waved past is waved past on the nights it would have caught something,
+      // and a shortage with two shifts to belong to belongs to neither.
+      ['bar_count_skippable', 'b', null, false, false],
       ['stock_variance_threshold_bp', 'i', null, true, 1000],
       ['stock_variance_value_floor', 'i', null, true, 2000],
       ['expense_approval_threshold', 'i', null, true, 20000],

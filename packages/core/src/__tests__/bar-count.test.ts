@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   byUnit, wasCountedBar, variancesIn, summariseBarCount, readyToClose, unitLabel,
   BAR_VARIANCE_TOLERANCE, type BarCountLine,
-  shiftCounted, hasShiftCountChoice, countsAtBothEnds, readyToAccept,
+  shiftCounted, hasShiftCountChoice, countsAtBothEnds, readyToAccept, countGate,
 } from '../bar-count.ts';
 
 const bottle = (over: Partial<BarCountLine> = {}): BarCountLine => ({
@@ -205,4 +205,60 @@ test('a counted nought is an answer; a blank one is not', () => {
   // The rule the whole file turns on, checked at the opening end too.
   assert.equal(readyToAccept([bottle({ countedText: '0' })]).clear, true);
   assert.equal(readyToAccept([bottle({ countedText: '' })]).clear, false);
+});
+
+test('a count cannot be walked away from unless an admin has said so', () => {
+  /**
+   * The default. A count that can be waved past is waved past on exactly the
+   * nights it would have caught something, and a shortage with two shifts to
+   * belong to belongs to neither.
+   */
+  const half = [
+    bottle({ ingredientId: 'a', countedText: '5' }),
+    bottle({ ingredientId: 'b', name: 'Tonic', countedText: '' }),
+  ];
+  const shut = countGate({ lines: half, phase: 'open' });
+  assert.equal(shut.maySkip, false, 'no way out while lines are blank');
+  assert.equal(shut.maySave, false, 'and no way to file a half-finished sheet');
+  assert.match(shut.reason ?? '', /1 line still to count/);
+
+  // Answered in full, and the way forward opens.
+  const whole = half.map((l) => ({ ...l, countedText: '4' }));
+  assert.deepEqual(countGate({ lines: whole, phase: 'open' }), { maySkip: false, maySave: true, reason: undefined });
+});
+
+test('an admin can hand back the way out, and a part count with it', () => {
+  const half = [
+    bottle({ ingredientId: 'a', countedText: '5' }),
+    bottle({ ingredientId: 'b', name: 'Tonic', countedText: '' }),
+  ];
+  const open = countGate({ lines: half, phase: 'open', skippable: true });
+  assert.equal(open.maySkip, true);
+  // What WAS counted is still worth keeping; the blanks are reported as blanks.
+  assert.equal(open.maySave, true);
+  assert.match(open.reason ?? '', /still to count/);
+
+  // Nothing counted at all is not a count, whatever the setting says.
+  const none = half.map((l) => ({ ...l, countedText: '' }));
+  assert.equal(countGate({ lines: none, phase: 'close', skippable: true }).maySave, false);
+});
+
+test('a shift that is genuinely short can still file the count that says so', () => {
+  /**
+   * The value threshold in readyToClose warns; it must never be a bar to
+   * saving. Refusing the count would leave typing numbers that balance as the
+   * only way off the screen, which is the one outcome worse than no count.
+   */
+  const short = [bottle({ expected: 40, countedText: '2' })];
+  assert.equal(readyToClose(short).clear, false, 'it is well over tolerance');
+  assert.equal(countGate({ lines: short, phase: 'close' }).maySave, true);
+});
+
+test('nobody is locked out over a count the system cannot describe', () => {
+  // A bar whose bottles are not set up yet, and a sheet that would not load.
+  // Insisting on either would brick the till with a door that cannot be walked
+  // through and cannot be walked away from.
+  assert.deepEqual(countGate({ lines: [], phase: 'open' }), { maySkip: true, maySave: false });
+  const failed = countGate({ lines: [], phase: 'close', loadFailed: true });
+  assert.equal(failed.maySkip, true);
 });

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Field, Input, Modal, Notice, Spinner } from './components';
 import {
-  barCountSheet, saveBarCount, byUnit, summariseBarCount, readyToClose, readyToAccept,
+  barCountSheet, saveBarCount, byUnit, summariseBarCount, countGate,
   formatMoney, loadLocations, saleLocation,
 } from '@snpos/core';
 import type { BarCountLine, Settings, StockLocation } from '@snpos/core';
@@ -48,10 +48,14 @@ export interface BarCountModalProps {
   onDone: (message: string) => void;
 }
 
+/** An empty sheet is not a loading one. Told apart so neither traps anybody. */
+type Sheet = { lines: BarCountLine[]; failed: boolean } | null;
+
 export function BarCountModal({
   venueId, shiftId, phase, userId, settings, onClose, dismissLabel, onEmpty, onDone,
 }: BarCountModalProps) {
-  const [lines, setLines] = useState<BarCountLine[] | null>(null);
+  const [sheet, setSheet] = useState<Sheet>(null);
+  const lines = sheet?.lines ?? null;
   const [places, setPlaces] = useState<StockLocation[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,19 +78,21 @@ export function BarCountModal({
         const where = await loadLocations(venueId).catch(() => [] as StockLocation[]);
         const bar = where.filter((l) => (l.module ?? 'kitchen') === 'bar' && l.active !== false);
         setPlaces(bar);
-        const sheet = await barCountSheet(venueId, saleLocation(bar, 'bar')?.$id);
-        setLines(sheet);
-        if (sheet.length === 0) onEmpty?.();
+        const rows = await barCountSheet(venueId, saleLocation(bar, 'bar')?.$id);
+        setSheet({ lines: rows, failed: false });
+        if (rows.length === 0) onEmpty?.();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not load the count sheet.');
-        setLines([]);
+        // Flagged as failed, not as empty. A sheet nobody could read must not
+        // hold the till shut over a count it cannot describe.
+        setSheet({ lines: [], failed: true });
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [venueId]);
 
   const setLine = (id: string, patch: Partial<BarCountLine>) =>
-    setLines((rows) => (rows ?? []).map((r) => (r.ingredientId === id ? { ...r, ...patch } : r)));
+    setSheet((s) => (s ? { ...s, lines: s.lines.map((r) => (r.ingredientId === id ? { ...r, ...patch } : r)) } : s));
 
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -95,11 +101,19 @@ export function BarCountModal({
 
   const groups = useMemo(() => byUnit(shown), [shown]);
   const summary = useMemo(() => summariseBarCount(lines ?? []), [lines]);
-  // Two different gates. Counting in has nothing to escalate; counting out
-  // does. See readyToAccept and readyToClose.
-  const check = useMemo(
-    () => (phase === 'open' ? readyToAccept(lines ?? []) : readyToClose(lines ?? [])),
-    [lines, phase],
+  /*
+    Whether there is a way out of here, and whether the count can be filed.
+
+    Both from one place. Two screens deciding separately is how you get a
+    button that saves what the other half of the screen says is unfinished.
+    While the sheet is still loading the gate is left open: nobody should be
+    shut in by a question that has not arrived yet.
+  */
+  const gate = useMemo(
+    () => (sheet
+      ? countGate({ lines: sheet.lines, phase, skippable: settings.bar_count_skippable, loadFailed: sheet.failed })
+      : { maySkip: true, maySave: false }),
+    [sheet, phase, settings.bar_count_skippable],
   );
 
   const save = async () => {
@@ -135,20 +149,22 @@ export function BarCountModal({
       title={phase === 'open' ? 'Count the bar in' : 'Count the bar out'}
       wide
       onClose={onClose}
+      dismissible={gate.maySkip}
       footer={
         <>
-          {/* Not a refusal. A bar opens when the doors open, and a till that
-              would not let somebody start serving until forty bottles had been
-              counted is a till they work around. The nag on the shift bar is
-              what keeps it honest. */}
-          <Button variant="ghost" onClick={onClose}>
-            {dismissLabel ?? (phase === 'open' ? 'Not now' : 'Cancel')}
-          </Button>
+          {/* Only where there is a way out to offer. When the count is not
+              optional the ✕ goes with it: a way out that does not finish the
+              count is a way to record that it was done when it was not. */}
+          {gate.maySkip && (
+            <Button variant="ghost" onClick={onClose}>
+              {dismissLabel ?? (phase === 'open' ? 'Not now' : 'Cancel')}
+            </Button>
+          )}
           <Button
             variant="primary"
             onClick={() => void save()}
             loading={busy}
-            disabled={summary.countedLines === 0}
+            disabled={!gate.maySave}
           >
             {counting}
           </Button>
@@ -164,10 +180,21 @@ export function BarCountModal({
             + 'times a shortage gets argued about later.'
           : 'Count what you are handing over. The difference between this and what the sales say should be left '
             + 'is the figure the whole bar stock system exists to produce.'}
+        {!gate.maySkip && lines && lines.length > 0 && (
+          <>
+            {' '}<strong>Every line has to be answered.</strong> An admin can allow counts to be left
+            unfinished under Settings, Stock.
+          </>
+        )}
       </p>
 
       {!lines ? (
         <Spinner />
+      ) : sheet?.failed ? (
+        <Notice tone="warn">
+          The count sheet could not be loaded, so the shift is not being held up over it. Try again from Bar
+          counts once the connection is back.
+        </Notice>
       ) : lines.length === 0 ? (
         <Notice tone="info">
           Nothing is set up for the bar to count yet. An admin adds bottles and mixers under Bar, Bottles &amp;
@@ -192,7 +219,7 @@ export function BarCountModal({
             )}
           </div>
 
-          {!check.clear && <Notice tone="warn">{check.reason}</Notice>}
+          {gate.reason && <Notice tone="warn">{gate.reason}</Notice>}
 
           {/* Only worth a search box on a sheet long enough to scroll. */}
           {lines.length > 12 && (

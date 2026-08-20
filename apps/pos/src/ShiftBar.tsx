@@ -56,6 +56,8 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   const [barCount, setBarCount] = useState<'open' | 'close' | null>(null);
   const [countedIn, setCountedIn] = useState<boolean | undefined>(undefined);
   const [countedOut, setCountedOut] = useState(false);
+  /** The opening sheet has already been put in front of somebody this session. */
+  const [pushed, setPushed] = useState(false);
 
   const decimals = ctx.settings.currency_decimals ?? 2;
 
@@ -79,6 +81,39 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       .catch(() => { if (live) setCountedIn(true); });
     return () => { live = false; };
   }, [countsShelves, shiftId]);
+
+  /**
+   * Whether the count is optional. It is not, unless an admin has said so.
+   *
+   * See countGate. The sheet itself enforces this — no way out and no way to
+   * file a half-finished count — and it is read here as well so the till does
+   * not offer routes around the thing the sheet is refusing.
+   */
+  const mustCount = countsShelves && ctx.settings.bar_count_skippable !== true;
+
+  /*
+    A bar shift that is open and was never counted in.
+
+    Put back in front of whoever is standing there rather than left as a
+    warning to be worked around. This is the case that made the setting
+    necessary: a till reloaded, a browser closed at the wrong moment, a shift
+    inherited mid-evening. Without it, "cannot be skipped" would mean only
+    "cannot be skipped in the ten seconds after tapping Open shift".
+  */
+  useEffect(() => {
+    if (!mustCount || countedIn !== false || pushed) return;
+    /*
+      Once, not on a loop.
+
+      The sheet lets somebody out when it could not be loaded, or when there is
+      nothing on it to count. Reopening it the instant they leave would put
+      them in a door that cannot be walked through and cannot be walked away
+      from, which is a bricked till. The warning below stays either way, and
+      the next time this screen loads it asks again.
+    */
+    setPushed(true);
+    setBarCount('open');
+  }, [mustCount, countedIn, pushed]);
 
   // A day is the limit. See shift-rules.
   const age = shiftAgeOf(ctx.shift);
@@ -410,8 +445,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       {/* A bar shift running on an uncounted shelf.
           Left on screen rather than shown once and dismissed, because the cost
           of skipping it does not land tonight — it lands on whoever counts out,
-          measured against a figure nobody checked. Still not a refusal: the
-          doors are open and drinks have to be served. */}
+          measured against a figure nobody checked. */}
       {ctx.shift && countsShelves && countedIn === false && (
         <div style={{ padding: '0.5rem 1rem 0' }}>
           <Notice tone="warn">
@@ -419,6 +453,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
             <div className="small" style={{ marginTop: '0.3rem' }}>
               Until it is, tonight&rsquo;s handover is measured against whatever the last shift left rather than
               against what you accepted.
+              {mustCount && ' The sheet could not be loaded a moment ago; open it again once you have a connection.'}
             </div>
             <div style={{ marginTop: '0.45rem' }}>
               <Button size="sm" variant="primary" onClick={() => setBarCount('open')}>Count the bar in</Button>
@@ -483,9 +518,15 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           onClose={() => {
             const wasClosing = barCount === 'close';
             setBarCount(null);
-            // Waving past the closing count carries on to the drawer; the
-            // shift still has to be closeable on a night when the sheet
-            // genuinely cannot be finished. The close says so before it saves.
+            /*
+              Leaving the closing sheet carries on to the drawer.
+
+              Only reachable when the sheet itself allowed it — an admin has
+              made counts skippable, or the sheet is empty or would not load.
+              Where the count is required there is no button here to press, and
+              the close simply does not proceed. The cash close says which of
+              those happened before it saves anything.
+            */
             if (wasClosing) void startClose(true);
           }}
           onDone={(m) => {

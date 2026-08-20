@@ -159,6 +159,7 @@ export function Modal({
   children,
   footer,
   wide,
+  dismissible = true,
 }: {
   title: string;
   onClose: () => void;
@@ -166,14 +167,27 @@ export function Modal({
   footer?: ReactNode;
   /** For content that genuinely needs the room, like the manual. */
   wide?: boolean;
+  /**
+   * Whether Escape and the ✕ get somebody out of here.
+   *
+   * True for everything that asks a question. False for the very few that set
+   * a condition — a bar shift's stock count, where an admin has said the count
+   * is not optional. A ✕ on one of those is not a way out of the task, it is a
+   * way to record that the task was done when it was not.
+   *
+   * Only ever use it where the screen ITSELF offers a way forward. A modal
+   * with no exit and no satisfiable action is a bricked till.
+   */
+  dismissible?: boolean;
 }) {
   // Escape closes: a modal you can only leave with the mouse is a trap on a
   // terminal where staff are working quickly.
   useEffect(() => {
+    if (!dismissible) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, dismissible]);
 
   /**
    * Fit inside what the keyboard has left, not inside the screen.
@@ -246,7 +260,7 @@ export function Modal({
       <div className={wide ? 'modal modal-wide' : 'modal'} role="dialog" aria-modal="true" aria-label={title}>
         <header className="card-head">
           <h2>{title}</h2>
-          <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close">✕</Button>
+          {dismissible && <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close">✕</Button>}
         </header>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}

@@ -42,6 +42,7 @@ const FIELD_LABELS: Record<string, string> = {
   allow_negative_cash: 'Allow a drawer to close below nothing',
   stock_check_mode: 'How the stock check asks',
   stock_count_decimals: 'Part amounts in the stock count',
+  bar_count_skippable: 'Letting staff skip the bar count',
   expense_paid_from: 'What money spent during a shift can come out of',
   kitchen_enabled: 'The kitchen side',
   craft_enabled: 'The craft shop side',
@@ -275,6 +276,7 @@ export function SettingsPage() {
         allow_negative_cash: !!form.allow_negative_cash,
         stock_check_mode: form.stock_check_mode ?? 'levels',
         stock_count_decimals: form.stock_count_decimals !== false,
+        bar_count_skippable: form.bar_count_skippable === true,
         expense_paid_from: form.expense_paid_from ?? 'cash_only',
         kitchen_enabled: mods.kitchen,
         craft_enabled: mods.craft,
@@ -634,6 +636,42 @@ export function SettingsPage() {
               On for anything measured: half a bucket of rice, a quarter bottle of oil. Off for anything counted in
               pieces, nobody has 2.5 eggs, and a till with a numeric keypad will produce one by accident if the
               decimal point is there to be pressed.
+            </p>
+          </>
+        )}
+
+        {/* Only where there is a bar. A kitchen counts once, at the end, and
+            nobody hands the rice over. */}
+        {form.bar_enabled && (
+          <>
+            <h3 style={{ marginTop: '1.6rem' }}>The bar&rsquo;s count at both ends of a shift</h3>
+            <p className="small dim" style={{ marginTop: 0 }}>
+              The bar is counted when a shift opens and again when it closes: one person accepts what is behind
+              the bar, the next hands it over, and the difference is what somebody is answerable for. Both counts
+              happen at the till.
+            </p>
+            <Toggle
+              checked={form.bar_count_skippable === true}
+              onChange={(v) => set('bar_count_skippable', v)}
+              label="Let staff skip the count"
+            />
+            <p className="small dim" style={{ marginBottom: 0 }}>
+              {form.bar_count_skippable === true ? (
+                <>
+                  <strong>On.</strong> Staff can leave the sheet unfinished and carry on, and a shift can close
+                  on a shelf nobody counted. It gets skipped on the busy nights, which are the nights it would
+                  have caught something — a shortage then has two shifts it could belong to and no way to choose
+                  between them. Turn this on only if the count genuinely cannot be made every time.
+                </>
+              ) : (
+                <>
+                  <strong>Off, which is the safe setting.</strong> Every line has to be answered before the bar
+                  can be accepted or handed over. There is no way past it at the till, so leave this off unless
+                  somebody is stuck. A shelf with nothing set up on it, or a sheet that will not load, lets
+                  people through either way — nobody is ever locked out of the till over a count the system
+                  cannot describe.
+                </>
+              )}
             </p>
           </>
         )}

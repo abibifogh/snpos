@@ -283,3 +283,72 @@ export function readyToAccept(lines: BarCountLine[]): CloseCheck {
       + 'empty keeps last night\'s figure and becomes yours.',
   };
 }
+
+export interface CountGate {
+  /** Whether walking away without counting is offered at all. */
+  maySkip: boolean;
+  /** Whether the count, as it stands, may be filed. */
+  maySave: boolean;
+  /** What to say to somebody who can do neither yet. */
+  reason?: string;
+}
+
+/**
+ * Whether somebody may leave this count, and whether they may file it.
+ *
+ * The default is that they may not leave it. A count that can be waved past
+ * gets waved past on exactly the nights it would have caught something — the
+ * busy ones, the short-handed ones, the ones after a delivery nobody booked
+ * in. Every shortage then has two shifts it could belong to and no way to
+ * choose between them, which is the same as having no count at all while
+ * costing the time of one.
+ *
+ * An admin can turn skipping back on, and there are real bars that need it: a
+ * long list, a shelf that cannot be walked before the doors open, a night with
+ * one person on. That is a decision for whoever reads the variances, not for
+ * whoever happens to be standing at the till when it is inconvenient.
+ *
+ * Two things override the setting in the other direction, because insisting on
+ * them would trap somebody at a screen they cannot satisfy:
+ *
+ *   - A sheet with nothing on it. A bar whose bottles have not been set up
+ *     cannot count them, and holding the till over an empty list would make
+ *     the first evening after switching this on impossible.
+ *   - A sheet that failed to load. A count cannot be insisted upon when the
+ *     system could not say what there is to count.
+ */
+export function countGate(opts: {
+  lines: BarCountLine[];
+  phase: 'open' | 'close';
+  /** An admin has allowed counts to be left unfinished. Off unless set. */
+  skippable?: boolean;
+  /** The sheet could not be read, so there is nothing to insist on. */
+  loadFailed?: boolean;
+}): CountGate {
+  const { lines, phase, skippable = false, loadFailed = false } = opts;
+
+  if (loadFailed || lines.length === 0) return { maySkip: true, maySave: lines.length > 0 };
+
+  const check = phase === 'open' ? readyToAccept(lines) : readyToClose(lines);
+  const counted = lines.filter(wasCountedBar).length;
+
+  if (skippable) {
+    // Leaving is allowed, so filing a partial count is the lesser evil: what
+    // was counted is worth keeping, and the blanks are reported as blanks.
+    return { maySkip: true, maySave: counted > 0, reason: check.clear ? undefined : check.reason };
+  }
+
+  /*
+    Nothing left blank — and nothing else.
+
+    The value threshold inside `readyToClose` is deliberately NOT a bar to
+    saving here. A shift that is genuinely short must still be able to file the
+    count that says so; refusing it would leave typing numbers that balance as
+    the only way off the screen, which is the one outcome worse than no count.
+  */
+  return {
+    maySkip: false,
+    maySave: check.missing === 0,
+    reason: check.missing === 0 ? undefined : check.reason,
+  };
+}

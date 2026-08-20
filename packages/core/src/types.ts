@@ -53,6 +53,14 @@ export interface Settings extends Doc {
   stock_check_mode?: 'levels' | 'counts';
   /** Whether a counted amount may be a part, 0.5, 0.25, or whole only. */
   stock_count_decimals?: boolean;
+  /**
+   * Whether the bar's shift count may be left unfinished.
+   *
+   * Absent or false means it may not: the bar is counted in when a shift opens
+   * and counted out when it closes, and there is no way past either. An admin
+   * turns this on for a bar that genuinely cannot manage it every time.
+   */
+  bar_count_skippable?: boolean;
   /** What a shift expense may be paid out of. Cash only, or any method. */
   expense_paid_from?: 'cash_only' | 'any';
   /** Older setups said what they were. Read only as a fallback, see modulesOf. */
