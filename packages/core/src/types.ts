@@ -197,6 +197,13 @@ export interface StaffProfile extends Doc {
   can_delete_items?: boolean;
   /** May see the spending categories marked admin only. Admins always may. */
   can_see_private_expenses?: boolean;
+  /**
+   * May put money into a petty cash box, take it out, or set one up.
+   *
+   * Separate from HOLDING one, which is the only real control the imprest
+   * system has. See canFundBoxes.
+   */
+  can_fund_petty_cash?: boolean;
   can_mark_paid?: boolean;
   can_apply_discount_codes?: boolean;
   pin_hash?: string;

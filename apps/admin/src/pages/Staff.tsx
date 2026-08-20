@@ -217,6 +217,7 @@ export function StaffPage() {
         can_change_line_price: editing.can_change_line_price ?? false,
         can_delete_items: editing.can_delete_items ?? false,
         can_see_private_expenses: editing.can_see_private_expenses ?? false,
+        can_fund_petty_cash: editing.can_fund_petty_cash ?? false,
         can_record_waste: editing.can_record_waste ?? true,
         venue_ids: editing.venue_ids ?? [],
         ...(pin ? { pin_hash: await encodePin(pin), pin_set_at: new Date().toISOString() } : {}),
@@ -621,6 +622,14 @@ export function StaffPage() {
               disabled={editing.role === 'admin'}
               onChange={(v) => setEditing({ ...editing, can_see_private_expenses: v })}
               label="See the admin-only spending categories"
+            />
+          </Field>
+          <Field hint="Holding a box and deciding how much is in it are separate jobs, and keeping them apart is the only real control petty cash has: somebody who could record their own top-ups could cover a shortage on paper and no count would ever find it. Leave this off for the person who holds the tin. Turn it on for whoever actually hands the money over.">
+            <Toggle
+              checked={editing.role === 'admin' || (editing.can_fund_petty_cash ?? false)}
+              disabled={editing.role === 'admin'}
+              onChange={(v) => setEditing({ ...editing, can_fund_petty_cash: v })}
+              label="Put money into petty cash boxes, and set them up"
             />
           </Field>
 

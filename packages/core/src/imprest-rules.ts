@@ -204,6 +204,76 @@ export function spendProblem(opts: {
   return null;
 }
 
+/* --------------------------------------------- who may do what with a box */
+
+export interface BoxHolder {
+  $id?: string;
+  role?: string;
+  can_fund_petty_cash?: boolean;
+}
+
+export interface HeldBox {
+  custodian_id?: string;
+}
+
+/**
+ * Whether this person holds this box.
+ *
+ * Matched on the staff profile's own id, which is what the custodian picker
+ * writes. Not on a name: two people share one often enough, and a box is a
+ * responsibility with somebody's name on it — attaching it to the wrong person
+ * is attaching a shortage to them too.
+ */
+export const holdsBox = (who: BoxHolder | null, box: HeldBox): boolean =>
+  !!who?.$id && !!box.custodian_id && box.custodian_id === who.$id;
+
+/**
+ * Who may put money into a box, take it out, or set one up.
+ *
+ * Deliberately NOT the person who holds it, and this is the one real control in
+ * the whole feature. Recording a top-up credits the till's cash and debits the
+ * box, so a custodian who could invent one could top their own box back up on
+ * paper and a shortage would never appear at the count. Separating "holds the
+ * money" from "decides how much money it holds" is the entire reason an imprest
+ * system is trusted at all.
+ *
+ * An owner can hand it to somebody by name — see `can_fund_petty_cash` — which
+ * is how a manager who genuinely does the handing over gets to record it.
+ * Nobody has it by role except an admin.
+ */
+export const canFundBoxes = (who: BoxHolder | null): boolean =>
+  who?.role === 'admin' || who?.can_fund_petty_cash === true;
+
+/**
+ * Whether somebody may spend from a box and count it.
+ *
+ * The custodian's job, and the job the page exists for. Anybody who may fund
+ * boxes may also use them: an owner is not locked out of their own tin.
+ */
+export const canUseBox = (who: BoxHolder | null, box: HeldBox): boolean =>
+  canFundBoxes(who) || holdsBox(who, box);
+
+/**
+ * The boxes to put in front of somebody.
+ *
+ * A custodian sees the box they hold and no others. It is not a secret that
+ * the office keeps a tin, but a list of every box in the building with its
+ * balance is somebody else's business — and a screen offering four boxes to a
+ * person responsible for one is a screen where the wrong one gets counted.
+ *
+ * Anybody who may fund boxes sees all of them, because setting one up and
+ * moving money between them cannot be done from a list that hides most of them.
+ */
+export function boxesFor<T extends HeldBox>(who: BoxHolder | null, boxes: T[]): T[] {
+  if (canFundBoxes(who)) return boxes;
+  return boxes.filter((b) => holdsBox(who, b));
+}
+
+/** What to tell somebody the page has nothing for. */
+export const NO_BOX_HELD =
+  'No petty cash box is assigned to you. An admin assigns one under Money, Petty cash, by setting you as who '
+  + 'holds it.';
+
 /**
  * Spends out of the box with nothing to show for them.
  *

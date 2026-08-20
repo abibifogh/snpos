@@ -8,6 +8,7 @@ import {
   loadFloats, loadMovements, loadCounts, balancesFor, accountFor,
   topUpFloat, returnFromFloat, spendFromFloat, reconcileFloat,
   boxBalance, countBox, healthOf, topUpNeeded, overBy, countProblem, spendProblem, withoutReceipt,
+  boxesFor, canFundBoxes, holdsBox, NO_BOX_HELD,
   needsExplaining, IMPREST_KIND_LABELS, loadPaidToOptions, categoriesForSide,
   canSeePrivateExpenses, loadAccounts, ACCOUNTS,
   uploadFile, downloadUrl, listByIds, saveDropping as saveRow,
@@ -47,6 +48,14 @@ export function ImprestPage() {
   const toast = useToast();
   const userId = user?.$id ?? '';
   const isAdmin = profile?.role === 'admin';
+  /**
+   * Whether this person may fund a box, or only use one.
+   *
+   * The one real control the imprest system has. See canFundBoxes: somebody
+   * who could record their own top-ups could cover a shortage on paper, and no
+   * count would ever find it.
+   */
+  const mayFund = canFundBoxes(profile);
 
   const [floats, setFloats] = useState<ImprestFloatDoc[] | null>(null);
   const [balances, setBalances] = useState<Record<string, number>>({});
@@ -90,7 +99,16 @@ export function ImprestPage() {
 
   const load = async () => {
     try {
-      const rows = await loadFloats('main');
+      const all = await loadFloats('main');
+      /*
+        Only the boxes this person has anything to do with.
+
+        A custodian sees the tin they hold. A list of every box in the building
+        with its balance on it is somebody else's business, and a screen
+        offering four boxes to a person responsible for one is a screen where
+        the wrong one gets counted.
+      */
+      const rows = boxesFor(profile, all);
       setFloats(rows);
       setBalances(await balancesFor(rows));
     } catch (e) {
@@ -327,7 +345,7 @@ export function ImprestPage() {
     <>
       <div className="spread">
         <h1>Petty cash</h1>
-        {isAdmin && (
+        {mayFund && (
           <Button variant="primary" onClick={() => { setEditing({ active: true }); setError(null); }}>
             Add a box
           </Button>
@@ -336,7 +354,11 @@ export function ImprestPage() {
 
       {error && !editing && !doing && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
 
-      {floats.length === 0 ? (
+      {floats.length === 0 && !mayFund ? (
+        <Card>
+          <Empty title="No box is assigned to you">{NO_BOX_HELD}</Empty>
+        </Card>
+      ) : floats.length === 0 ? (
         <Card>
           <Empty title="No petty cash box yet">
             A box is a fixed amount of cash somebody holds for small spending — market runs, a taxi, a gas
@@ -370,7 +392,9 @@ export function ImprestPage() {
                         {f.active === false && <> <Badge>Retired</Badge></>}
                         {f.module && <div className="small dim">{f.module}</div>}
                       </td>
-                      <td className="dim small">{nameOf(f.custodian_id) || '—'}</td>
+                      <td className="dim small">
+                        {holdsBox(profile, f) ? 'You' : nameOf(f.custodian_id) || <span className="dim">Nobody</span>}
+                      </td>
                       <td className="num" style={{ fontWeight: 650 }}>{money(balance)}</td>
                       <td className="num dim">{money(f.fixed_amount)}</td>
                       <td>
@@ -384,7 +408,7 @@ export function ImprestPage() {
                       </td>
                       <td className="right">
                         <Button size="sm" onClick={() => void openDetail(f)}>Open</Button>
-                        {isAdmin && (
+                        {mayFund && (
                           <Button size="sm" variant="ghost" onClick={() => { setEditing(f); setError(null); }}>
                             Edit
                           </Button>
@@ -449,11 +473,21 @@ export function ImprestPage() {
             </p>
           )}
 
+          {!mayFund && (
+            <p className="small dim" style={{ marginTop: '0.6rem', marginBottom: 0 }}>
+              You can spend from this box and count it. Putting money in and taking it out is done by an admin —
+              keeping those two apart is what makes the count worth making.
+            </p>
+          )}
+
           <div className="row" style={{ gap: '0.4rem', flexWrap: 'wrap', margin: '0.8rem 0' }}>
             <Button variant="primary" onClick={() => startDoing('count')}>Count and reconcile</Button>
             <Button onClick={() => startDoing('spend')}>Record a spend</Button>
-            <Button onClick={() => startDoing('top_up')}>Top up</Button>
-            <Button onClick={() => startDoing('return')}>Take money out</Button>
+            {/* Putting money in and taking it out are somebody else's job. See
+                canFundBoxes: a custodian who could record their own top-ups
+                could cover a shortage on paper. */}
+            {mayFund && <Button onClick={() => startDoing('top_up')}>Top up</Button>}
+            {mayFund && <Button onClick={() => startDoing('return')}>Take money out</Button>}
           </div>
 
           {error && doing === null && <Notice>{error}</Notice>}

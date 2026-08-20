@@ -2121,6 +2121,16 @@ export const COLLECTIONS = [
        * the staff list is no.
        */
       ['can_see_private_expenses', 'b', null, false, false],
+      /*
+        May put money into a petty cash box, take it out, or set one up.
+
+        Separate from holding one, and that separation is the only real control
+        in the imprest system: recording a top-up credits the till's cash and
+        debits the box, so a custodian who could invent one could top their own
+        box back up on paper and no count would ever find the shortage. Off for
+        everybody until an owner hands it to somebody by name.
+      */
+      ['can_fund_petty_cash', 'b', null, false, false],
       ['can_record_waste', 'b', null, false, true],
       ['hourly_rate', 'i', null, false], // feature 4: labour cost
       // Getting somebody their first sign-in.

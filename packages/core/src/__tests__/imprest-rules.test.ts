@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   boxBalance, spentSince, topUpNeeded, overBy, healthOf, countBox, countProblem,
   needsExplaining, spendProblem, withoutReceipt, IMPREST_LOW_BP, IMPREST_TOLERANCE,
+  holdsBox, canFundBoxes, canUseBox, boxesFor,
   type ImprestMovement,
 } from '../imprest-rules.ts';
 
@@ -143,4 +144,52 @@ test('a spend pointing at nothing counts as missing, not as filed', () => {
   // that as "documented" is how a gap becomes invisible.
   const rows = [{ kind: 'spend' as const, ref_type: 'expense', ref_id: '' }];
   assert.equal(withoutReceipt(rows, {}).length, 1);
+});
+
+/* ------------------------------------------------- who may do what with a box */
+
+const holder = (over: Record<string, unknown> = {}) => ({ $id: 'p1', role: 'cashier', ...over });
+const box = (over: Record<string, unknown> = {}) => ({ custodian_id: 'p1', ...over });
+
+test('holding a box and funding it are separate jobs', () => {
+  /**
+   * The only real control the whole feature has. Recording a top-up credits
+   * the till's cash and debits the box, so a custodian who could invent one
+   * could top their own box back up on paper and no count would ever find the
+   * shortage.
+   */
+  const custodian = holder();
+  assert.equal(holdsBox(custodian, box()), true);
+  assert.equal(canUseBox(custodian, box()), true, 'they may spend from it and count it');
+  assert.equal(canFundBoxes(custodian), false, 'and may not decide how much is in it');
+});
+
+test('an admin may do both, and so may anybody handed it by name', () => {
+  assert.equal(canFundBoxes(holder({ role: 'admin' })), true);
+  assert.equal(canFundBoxes(holder({ can_fund_petty_cash: true })), true);
+  // Not by job title. A manager is trusted with a great deal and still has to
+  // be given this one deliberately.
+  assert.equal(canFundBoxes(holder({ role: 'manager' })), false);
+  assert.equal(canFundBoxes(null), false);
+});
+
+test('a custodian sees the box they hold and no others', () => {
+  const boxes = [
+    { $id: 'a', custodian_id: 'p1' },
+    { $id: 'b', custodian_id: 'p2' },
+    { $id: 'c' },
+  ];
+  assert.deepEqual(boxesFor(holder(), boxes).map((b) => b.$id), ['a']);
+  // Anybody who may fund boxes sees all of them: setting one up and moving
+  // money between them cannot be done from a list that hides most of them.
+  assert.deepEqual(boxesFor(holder({ role: 'admin' }), boxes).map((b) => b.$id), ['a', 'b', 'c']);
+});
+
+test('a box belongs to nobody until somebody is named on it', () => {
+  // A blank custodian must never match a blank profile id, or every box with
+  // no holder would belong to everybody who has no profile.
+  assert.equal(holdsBox(holder({ $id: '' }), { custodian_id: '' }), false);
+  assert.equal(holdsBox(holder(), { custodian_id: '' }), false);
+  assert.equal(holdsBox(null, box()), false);
+  assert.equal(canUseBox(holder({ $id: 'someone-else' }), box()), false);
 });
