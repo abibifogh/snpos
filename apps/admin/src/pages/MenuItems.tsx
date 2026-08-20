@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Select, Notice, Spinner, Textarea, Toggle, Badge, useToast, ViewTabs} from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Select, Notice, Spinner, Textarea, Toggle, Badge, useToast, ViewTabs,
+  PickerMenu, PickerItem, FacetChips, GroupedRows,
+} from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError, saveDropping } from '../lib';
 import {
   formatMoney, parseMoney, toInput, previewUrl, Query, loadConsignors, loadVariants, canEditCatalogue, canDeleteCatalogue,
@@ -8,8 +10,9 @@ import {
   marginOf, marginIsThin, bpAsPercent, MARGIN_WARN_BP_DEFAULT,
   diffFields, describeChanges, fitForLog, PRODUCT_WATCH,
   hasOwnRecipe, ingredientNameFor, OWN_STOCK_QTY,
+  groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition,
 } from '@snpos/core';
-import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType } from '@snpos/core';
+import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice} from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
 import { ReassignSupplier } from '../components/ReassignSupplier';
 import { KeyedListManager } from '../components/KeyedList';
@@ -96,6 +99,18 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       ingredients,
     );
   const [sortBy, setSortBy] = useState<ItemSort>('menu');
+  /*
+    Grouping and sorting, stacked in the order they were chosen.
+
+    A consignment shop's first question about its own catalogue is whose it
+    is: what has Ama got with us, what is left of Kofi's, who is the shelf of
+    unsold baskets actually owed to. That was answerable only by reading two
+    hundred rows and remembering.
+  */
+  const [groups, setGroups] = useState<GroupChoice[]>([]);
+  const [sorts, setSorts] = useState<SortChoice[]>([]);
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(new Set());
+  const [listMenu, setListMenu] = useState<'group' | 'sort' | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadingDrinks, setUploadingDrinks] = useState(false);
   const [editing, setEditing] = useState<Partial<MenuItem> | null>(null);
@@ -206,6 +221,50 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     ),
     [items, filter, onlyCategory, sortBy, links, byCategory, showArchived],
   );
+
+  /**
+   * What this side can be grouped and sorted by.
+   *
+   * The owner only where there is one. On a kitchen or a bar nothing has a
+   * maker, so offering it would be a control that empties the list into a
+   * single group called "—".
+   */
+  const GROUPABLE: GroupChoice[] = [
+    ...(module === 'craft' ? [{ key: 'owner', label: 'Owner' }] : []),
+    { key: 'category', label: 'Category' },
+    { key: 'status', label: 'Status' },
+  ];
+  const SORTABLE = [
+    ...(module === 'craft' ? [{ key: 'owner', label: 'Owner' }] : []),
+    { key: 'name', label: 'Name' },
+    { key: 'category', label: 'Category' },
+    { key: 'price', label: 'Price' },
+    ...(module === 'craft' ? [{ key: 'on_hand', label: 'On the shelf' }] : []),
+  ];
+
+  const ownerName = (id?: string) => consignors.find((c) => c.$id === id)?.name ?? '';
+
+  const groupValue = (i: MenuItem & { categoryName?: string }, key: string): string => {
+    if (key === 'owner') return ownerName(i.consignor_id) || 'The shop’s own';
+    if (key === 'category') return i.categoryName || byCategory[i.category_id] || '';
+    if (key === 'status') return i.active ? 'For sale' : 'Archived';
+    return String((i as unknown as Record<string, unknown>)[key] ?? '');
+  };
+
+  const compareItems = (a: MenuItem, b: MenuItem, key: string): number => {
+    if (key === 'price') return (a.price ?? 0) - (b.price ?? 0);
+    if (key === 'on_hand') return (a.on_hand ?? 0) - (b.on_hand ?? 0);
+    if (key === 'owner') return ownerName(a.consignor_id).localeCompare(ownerName(b.consignor_id));
+    if (key === 'category') return (byCategory[a.category_id] ?? '').localeCompare(byCategory[b.category_id] ?? '');
+    return (a.name ?? '').localeCompare(b.name ?? '');
+  };
+
+  // Sorted first, then grouped, so the order holds inside every group.
+  const ordered = useMemo(
+    () => (sorts.length ? sortRows(visible, sorts, compareItems) : visible),
+    [visible, sorts],
+  );
+  const tree = useMemo(() => groupRows(ordered, groups, groupValue), [ordered, groups, consignors]);
 
   /** Every category a dish belongs to: its primary, plus any extra links. */
   const categoriesFor = (item: MenuItem): string[] => {
@@ -688,6 +747,43 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
           <Select value={sortBy} onChange={(e) => setSortBy(e.target.value as ItemSort)}>
             {ITEM_SORTS.map((s2) => <option key={s2.value} value={s2.value}>{s2.label}</option>)}
           </Select>
+
+          {/* Ticking one that is already on moves it to the end of the order
+              rather than removing it; the chip has an × for removing. */}
+          <PickerMenu
+            label="Group by"
+            count={groups.length}
+            open={listMenu === 'group'}
+            onOpen={(o) => setListMenu(o ? 'group' : null)}
+          >
+            {GROUPABLE.map((g) => (
+              <PickerItem
+                key={g.key}
+                label={g.label}
+                on={groups.some((c) => c.key === g.key)}
+                position={groups.findIndex((c) => c.key === g.key) + 1}
+                onClick={() => setGroups(toggleGroup(groups, g))}
+              />
+            ))}
+          </PickerMenu>
+
+          <PickerMenu
+            label="Sort"
+            count={sorts.length}
+            open={listMenu === 'sort'}
+            onOpen={(o) => setListMenu(o ? 'sort' : null)}
+          >
+            {SORTABLE.map((s2) => (
+              <PickerItem
+                key={s2.key}
+                label={s2.label}
+                on={!!sortDir(sorts, s2.key)}
+                dir={sortDir(sorts, s2.key)}
+                position={sortPosition(sorts, s2.key)}
+                onClick={() => setSorts(cycleSort(sorts, s2.key, s2.label))}
+              />
+            ))}
+          </PickerMenu>
           {archivedCount > 0 && (
             <Button onClick={() => setShowArchived((v) => !v)}>
               {showArchived ? 'Hide archived' : `Show archived (${archivedCount})`}
@@ -700,6 +796,20 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
           )}
         </div>
       )}
+
+      {/* What is applied, in order. The menus say what is available; these say
+          what is ON, and the sequence is the whole point of stacking them. */}
+      <FacetChips
+        facets={[
+          ...groups.map((g) => ({ kind: 'Group', label: g.label })),
+          ...sorts.map((s2) => ({ kind: 'Sort', label: s2.label, detail: s2.dir === 'asc' ? '↑' : '↓' })),
+        ]}
+        onRemove={(i) => {
+          if (i < groups.length) setGroups(groups.filter((_, n) => n !== i));
+          else setSorts(sorts.filter((_, n) => n !== i - groups.length));
+        }}
+        onClear={() => { setGroups([]); setSorts([]); }}
+      />
 
       <Card pad={false}>
         {!items ? (
@@ -728,7 +838,23 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((i) => (
+                <GroupedRows
+                  nodes={tree}
+                  rows={ordered}
+                  columns={isAdmin ? 9 : 7}
+                  closed={closedGroups}
+                  onToggle={(path) => setClosedGroups((c) => {
+                    const next = new Set(c);
+                    if (next.has(path)) next.delete(path); else next.add(path);
+                    return next;
+                  })}
+                  rowKey={(i) => i.$id}
+                  /* What a shop actually wants to know about a maker's group:
+                     how much of their stock is standing on the shelf. */
+                  summary={(rs) => (module === 'craft'
+                    ? `${rs.reduce((n, i) => n + (i.on_hand ?? 0), 0)} on the shelf`
+                    : null)}
+                  renderRow={(i) => (
                   <tr key={i.$id}>
                     <td>
                       {previewUrl(i.image_id, 'menu', settings, 96, 96) ? (
@@ -828,7 +954,8 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
                       )}
                     </td>
                   </tr>
-                ))}
+                  )}
+                />
               </tbody>
             </table>
           </div>
