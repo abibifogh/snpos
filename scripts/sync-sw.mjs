@@ -75,7 +75,23 @@ for (const app of building) {
   if (!meta) continue;
 
   const dir = join(root, 'apps', app, 'public');
-  copyFileSync(join(ui, 'icon.svg'), join(dir, 'icon.svg'));
+  /*
+    Three icons, and the two PNGs are not decoration.
+
+    Android does not install a web app from a manifest that offers only SVG.
+    Chrome hands the job to a server that mints a real Android package, and
+    that server needs a raster image — given none, it silently gives up on
+    installing and drops a BOOKMARK on the home screen instead, which is why
+    the till appeared with a little Chrome badge in the corner and opened in a
+    browser tab. Nothing said so; it just quietly did the lesser thing.
+
+    So a 192 and a 512 are shipped as files. They are rendered from the same
+    icon.svg — see scripts/make-icons.mjs — rather than drawn separately, so
+    the three can never disagree about what the mark is.
+  */
+  for (const file of ['icon.svg', 'icon-192.png', 'icon-512.png']) {
+    copyFileSync(join(ui, file), join(dir, file));
+  }
 
   // Vite's BASE_PATH, the same value the app is built with. Always ends in a
   // slash, so joining a filename onto it needs nothing added.
@@ -104,12 +120,23 @@ for (const app of building) {
     orientation: 'any',
     background_color: '#f6f7f9',
     theme_color: '#0f766e',
+    /*
+      The rasters first, because they are what decides whether this installs.
+
+      A 192 and a 512 are what Android checks for. The SVG stays alongside
+      them: a browser that prefers it gets a mark that is sharp at any size,
+      and one that needs a PNG is no longer left without one.
+
+      `maskable` is the same image on purpose. The tile is full-bleed and the
+      receipt sits well inside the circle a launcher crops to, so there is
+      nothing a second drawing would do except become the one that gets
+      forgotten when the mark changes.
+    */
     icons: [
-      // One scalable icon rather than a ladder of PNGs. It is a flat mark of
-      // a few shapes; there is nothing a raster copy at each size would add
-      // except four more files to keep in step.
+      { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
       { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
-      { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
     ],
   };
 
