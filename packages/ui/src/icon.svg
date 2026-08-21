@@ -1,7 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512">
   <!--
-    The home-screen icon: the same cloche as the tab icon, in the colours this
+    The home-screen icon: the same receipt as the tab icon, in the colours this
     system ships with.
+
+    It used to be a serving cloche, which was right when this was a restaurant
+    system and wrong the moment it was not. A business running a bistro, a bar
+    and a craft shop off one till was being told by its own home screen that
+    this is a thing for food — and somebody selling a woven basket had a silver
+    dome sitting on the tablet in front of them. A receipt is what all three
+    have in common, whether the thing sold was cooked, poured, or carried in by
+    a maker.
 
     A file rather than the runtime `logoSvg`, which redraws itself from
     whatever colours an admin has set. An installed icon is baked into the
@@ -14,9 +22,17 @@
     loses its edges.
   -->
   <rect width="64" height="64" rx="14" fill="#0f766e"/>
-  <g transform="translate(32 32) scale(0.78) translate(-32 -32)">
-    <path d="M11 41a21 21 0 0 1 42 0z" fill="#ffffff"/>
-    <rect x="7" y="44" width="50" height="7" rx="3.5" fill="#ffffff"/>
-    <circle cx="32" cy="15" r="4.5" fill="#f59e0b"/>
+  <g transform="translate(32 32) scale(0.86) translate(-32 -32)">
+    <!-- The slip, torn off at the bottom. The tear is what makes it a receipt
+         at any size; without it this is a rectangle. -->
+    <path d="M16 15a4 4 0 0 1 4-4h24a4 4 0 0 1 4 4v36l-4-3.5-4 3.5-4-3.5-4 3.5-4-3.5-4 3.5-4-3.5-4 3.5Z" fill="#ffffff"/>
+    <!-- The paper's lines are the tile showing through rather than ink on top,
+         so the mark holds up when a launcher shrinks it. -->
+    <rect x="22" y="21" width="20" height="3" rx="1.5" fill="#0f766e"/>
+    <rect x="22" y="28" width="20" height="3" rx="1.5" fill="#0f766e"/>
+    <rect x="22" y="35" width="13" height="3" rx="1.5" fill="#0f766e"/>
+    <!-- The total: the one spot of contrast, and the line on a receipt anybody
+         actually looks at. -->
+    <rect x="22" y="42" width="20" height="4" rx="2" fill="#f59e0b"/>
   </g>
 </svg>

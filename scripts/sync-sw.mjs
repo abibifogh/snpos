@@ -106,7 +106,7 @@ for (const app of building) {
     theme_color: '#0f766e',
     icons: [
       // One scalable icon rather than a ladder of PNGs. It is a flat mark of
-      // three shapes; there is nothing a raster copy at each size would add
+      // a few shapes; there is nothing a raster copy at each size would add
       // except four more files to keep in step.
       { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
       { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
