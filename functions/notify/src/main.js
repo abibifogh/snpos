@@ -400,10 +400,27 @@ export default async ({ req, res, log, error }) => {
   // 9a1b2c001@smtp-brevo.com, never a verified sender, so falling back to it
   // produces mail the provider accepts and then drops, which looks like
   // success everywhere except the customer's inbox.
+  /*
+    REFUSED, not warned about and then sent anyway.
+
+    This used to log a complaint and carry on with SMTP_USER, which on Resend
+    or Brevo is a login rather than a verified sender — so the provider took
+    the message, dropped it, and every screen in this system reported success.
+    Mail that vanishes silently is the worst failure this function can have,
+    because nobody goes looking for it: the staff profile saved, no error
+    appeared, and the invitation simply never existed.
+
+    Stopping here instead means the function's log says exactly one thing, in
+    words somebody can act on, and the admin screen shows the send as failed
+    rather than as done.
+  */
   if (!settings.email_from_address) {
-    error('No from-address set. Admin -> Settings -> Email. Nothing will send until it is, and it must be an address the provider has verified.');
+    const why = 'No from-address is set, so nothing can be sent. Set it under Admin, Settings, Email — it has '
+      + 'to be an address the mail provider has verified for your domain, such as pos@yourdomain.com.';
+    error(why);
+    return res.json({ ok: false, error: why }, 500);
   }
-  const from = `"${settings.email_from_name || settings.restaurant_name}" <${settings.email_from_address || process.env.SMTP_USER}>`;
+  const from = `"${settings.email_from_name || settings.restaurant_name}" <${settings.email_from_address}>`;
   const brand = settings.primary_color || '#0f766e';
 
   const featureConfig = async (key, option, fallback) => {

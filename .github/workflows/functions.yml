@@ -152,6 +152,80 @@ jobs:
             exit 1
           fi
 
+      - name: Subscribe each function to the events it exists for
+        # WITHOUT THIS A FUNCTION IS DEPLOYED AND NEVER RUNS.
+        #
+        # Appwrite triggers a function from an event list held on the function
+        # itself, and nothing in this repo used to set it — it was a thing
+        # somebody ticked in the console once and nobody could see afterwards.
+        # A staff invite that never arrives looks exactly like a mail problem
+        # from every screen: the profile saves, no error appears anywhere, and
+        # the function that was supposed to create the account was simply never
+        # called.
+        #
+        # Set on every deploy, so the subscription cannot drift away from the
+        # code that depends on it, and printed afterwards so the log says what
+        # is actually listening.
+        env:
+          DB_ID: ${{ secrets.APPWRITE_DB_ID || 'main' }}
+        run: |
+          set -u
+          doc() { echo "databases.$DB_ID.collections.$1.documents.*.$2"; }
+
+          events_for() {
+            case "$1" in
+              notify)
+                # Receipts and notices, shift summaries, staff logins, and a
+                # dish going off the menu. See the header of notify/main.js.
+                echo "$(doc orders update)"
+                echo "$(doc shifts update)"
+                echo "$(doc staff_profiles create)"
+                echo "$(doc staff_profiles update)"
+                echo "$(doc staff_profiles delete)"
+                echo "$(doc item_availability create)"
+                ;;
+              order-guard)
+                echo "$(doc orders create)"
+                echo "$(doc orders update)"
+                ;;
+              preorder-fire) ;;      # schedule only
+              kitchen-escalate) ;;   # schedule only
+            esac
+          }
+
+          FAILED=""
+          for fn in order-guard notify; do
+            args=""
+            while read -r ev; do
+              [ -n "$ev" ] && args="$args --events $ev"
+            done <<EOF
+          $(events_for "$fn")
+          EOF
+
+            [ -z "$args" ] && continue
+            name=$(appwrite functions get --function-id "$fn" 2>/dev/null \
+                   | sed -n 's/.*"name"[^"]*"\([^"]*\)".*/\1/p' | head -1)
+            # shellcheck disable=SC2086
+            if appwrite functions update --function-id "$fn" --name "${name:-$fn}" $args >/dev/null 2>&1; then
+              echo "  $fn subscribed"
+            else
+              echo "::warning::Could not set the events for $fn"
+              FAILED="$FAILED $fn"
+            fi
+          done
+
+          echo "What each function is now listening to:"
+          for fn in order-guard preorder-fire kitchen-escalate notify; do
+            echo "  $fn:"
+            appwrite functions get --function-id "$fn" 2>/dev/null \
+              | tr ',' '\n' | grep -o 'databases\.[^"]*' | sed 's/^/    /' || echo "    (none)"
+          done
+
+          if [ -n "$FAILED" ]; then
+            echo "::error::These functions were deployed but are not subscribed to anything:$FAILED"
+            exit 1
+          fi
+
       - name: Confirm they are actually there
         # The push can succeed and still leave nothing running — a build that
         # failed, a function that was never created. Checking is three seconds
