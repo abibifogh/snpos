@@ -27,14 +27,6 @@ export function Shell({ children }: { children: ReactNode }) {
   }
   groups.push({ group: 'You', links: [{ to: '/account', label: 'Your account' }, { to: '/help', label: 'Help' }] });
 
-  /**
-   * A phone has no room to fold, and folding there hid things for good.
-   *
-   * On a narrow screen the sidebar becomes a wrapping row of links and the
-   * group headings are hidden to keep it compact — which left every group but
-   * the current one closed, with the only control for opening them not on the
-   * screen. Half the app was unreachable from a phone.
-   */
   const [narrow, setNarrow] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(max-width: 820px)').matches,
   );
@@ -45,9 +37,78 @@ export function Shell({ children }: { children: ReactNode }) {
     return () => mq.removeEventListener('change', seen);
   }, []);
 
+  /**
+   * On a phone the navigation is a drawer, not a wall.
+   *
+   * It used to lay every section out as a wrapping row of links above the
+   * page. With thirty-nine of them that is most of a phone screen spent on
+   * navigation before a word of the actual page — and because the block is a
+   * different height on every screen and reflows as it loads, the content
+   * under it moved each time somebody navigated. That is the whole of "the
+   * tabs are scattered and the page will not sit still".
+   *
+   * So it is put away behind a button and comes over the page when asked for.
+   * The page below it then starts in the same place every time, which is the
+   * property that was actually missing.
+   */
+  const [drawer, setDrawer] = useState(false);
+
+  /*
+    Closed by going somewhere. A drawer that stays open over the page you
+    just asked for makes somebody close it every single time.
+  */
+  useEffect(() => { setDrawer(false); }, [path]);
+
+  /*
+    Escape closes it, and while it is open the page behind does not scroll.
+    Scrolling the thing underneath a drawer loses your place in both.
+  */
+  useEffect(() => {
+    if (!drawer) return undefined;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setDrawer(false); };
+    window.addEventListener('keydown', onKey);
+    const had = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = had;
+    };
+  }, [drawer]);
+
+  /** What to put in the bar, so somebody knows where they are with it shut. */
+  const hereLabel = sections.find((sec) => (sec.path === '/' ? path === '/' : path.startsWith(sec.path)))?.label
+    ?? 'Admin';
+
   return (
-    <div className="shell">
-      <aside className="sidebar">
+    <div className={`shell${drawer ? ' drawer-open' : ''}`}>
+      {/* Only on a phone; the sidebar is always there on a wide screen and a
+          button to reveal what is already visible is a button that confuses. */}
+      {narrow && (
+        <header className="topbar">
+          <Button
+            size="sm"
+            onClick={() => setDrawer(true)}
+            aria-expanded={drawer}
+            aria-controls="admin-nav"
+          >
+            ☰ Menu
+          </Button>
+          <span className="topbar-here">{hereLabel}</span>
+          <Logo size={22} />
+        </header>
+      )}
+      {/* Tapping beside the drawer closes it, which is what everybody tries
+          first. Rendered only while open so it can never swallow a tap on the
+          page underneath. */}
+      {narrow && drawer && (
+        <button
+          type="button"
+          className="drawer-scrim"
+          aria-label="Close the menu"
+          onClick={() => setDrawer(false)}
+        />
+      )}
+      <aside className="sidebar" id="admin-nav">
         <div className="sidebar-brand">
           <Logo size={24} />
           <span>{settings?.restaurant_name ?? 'NiceOps POS'}</span>
@@ -72,7 +133,11 @@ export function Shell({ children }: { children: ReactNode }) {
               l.end ? path === l.to : path === l.to || path.startsWith(`${l.to}/`),
             );
             return (
-              <details key={section.group} className="nav-group" open={here || narrow}>
+              /* Open where you are standing, folded elsewhere — on a phone
+                 too, now that the drawer is a column with room to scroll
+                 rather than a row squeezed above the page. Forcing all of
+                 them open was only ever a way to keep a flat row navigable. */
+              <details key={section.group} className="nav-group" open={here}>
                 <summary className="group">
                   <span className="fold-caret" aria-hidden="true" />
                   {section.group}

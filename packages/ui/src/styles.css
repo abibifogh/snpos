@@ -882,3 +882,68 @@ table.data th .sort-mark { font-size: 0.75rem; margin-left: 0.25rem; color: var(
 table.data th .sort-order {
   font-size: 0.62rem; vertical-align: super; color: var(--text-dim); margin-left: 0.1rem;
 }
+
+
+/* ---- a phone -------------------------------------------------------------
+   The admin app is read standing up as often as it is sat down at, and the
+   two complaints about it were the same complaint: nothing stays where it was
+   put. What follows is about keeping the page still. */
+@media (max-width: 700px) {
+  /*
+    NOTHING DRIFTS SIDEWAYS.
+
+    A single wide table or a long filter row pushes the whole document wider
+    than the screen, and then every vertical scroll drags the page left and
+    right as well. It reads as the page refusing to sit still, which is
+    exactly what it is. Tables already scroll inside their own box; this stops
+    anything else escaping.
+  */
+  html, body { overflow-x: hidden; }
+
+  /*
+    Tabs scroll rather than wrap.
+
+    Four tabs on one line and a fifth on the next moves everything underneath
+    by a row the moment a tab is added, and gives the page two different
+    heights depending on how long the words are. One line that slides keeps
+    the content below it in one place.
+  */
+  .view-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 0.9rem;
+    scrollbar-width: none;
+  }
+  .view-tabs::-webkit-scrollbar { display: none; }
+  .view-tabs button { white-space: nowrap; flex: 0 0 auto; }
+
+  /*
+    Filters stack instead of squeezing.
+
+    A label beside its box is right on a desk and wrong on a phone: the two
+    fight for the same forty millimetres and the box ends up too narrow to
+    read what is in it. Above it, each filter gets the full width.
+  */
+  .filter-field { display: flex; flex-direction: column; align-items: stretch; gap: 0.2rem; }
+  .filter-field > label { font-size: 0.78rem; }
+  .filter-bar, .filter-bar-controls { align-items: stretch; }
+  .filter-bar-end { margin-left: 0; }
+  .filter-field select, .filter-field input { width: 100%; }
+
+  /* A row of actions belongs under the heading on a phone, not squeezed
+     beside it into two words per line. */
+  .spread { flex-wrap: wrap; gap: 0.5rem; }
+
+  /* Two columns of anything at this width is one column of half-words. */
+  .grid-2 { grid-template-columns: 1fr; }
+
+  /*
+    A modal is the page on a phone.
+
+    Centred with margins it becomes a letterbox with its own scrollbar inside
+    the page's, and reaching a button at the bottom means scrolling the right
+    one of two things.
+  */
+  .modal { max-width: 100%; width: 100%; max-height: 100dvh; border-radius: 0; }
+  .modal-backdrop { padding: 0; align-items: stretch; }
+}
