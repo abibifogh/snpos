@@ -22,7 +22,15 @@ jobs:
       - name: Check the confirmation
         if: ${{ inputs.confirm != 'provision' }}
         run: |
-          echo "Type 'provision' in the confirmation box to run this."
+          echo "Nothing was run."
+          echo
+          echo "This workflow writes to the live database, so it asks you to"
+          echo "confirm on purpose. Start it again and type the word"
+          echo
+          echo "    provision"
+          echo
+          echo "into the box marked 'Type \"provision\" to confirm', exactly and"
+          echo "in lower case. It was given: '${{ inputs.confirm }}'"
           exit 1
 
       - uses: actions/checkout@v4
@@ -47,7 +55,13 @@ jobs:
           CURRENCY_SYMBOL: ${{ vars.CURRENCY_SYMBOL || 'GHS ' }}
 
       - name: Report what exists
-        if: always()
+        # `always()` so a half-finished provision still reports what landed —
+        # that is the whole value of this step. But NOT when the confirmation
+        # was never given: nothing has been checked out at that point, so npm
+        # fails on a missing package.json and buries the one line that
+        # matters ("Type 'provision' in the confirmation box") under a red
+        # error that looks like a broken build.
+        if: ${{ always() && inputs.confirm == 'provision' }}
         run: npm run doctor
         env:
           APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT }}
