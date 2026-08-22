@@ -830,10 +830,41 @@ export default async ({ req, res, log, error }) => {
 
     // ----------------------------------------------------- shift summary
     if (events.some((e) => e.includes('collections.shifts')) && doc.status === 'closed') {
+      /*
+        Sent once, unless somebody asks for it again.
+
+        `summary_resend_at` is an admin pressing "send the report again" on the
+        shift. It lives there rather than on the report because nobody can
+        write to summary_reports from a browser — that row is the record of
+        what was sent — and because a shift update is already an event this job
+        answers, so asking for a resend needs no new trigger.
+
+        The flag is cleared once the mail is away, which is what makes it a
+        request rather than a setting. Clearing it is itself a shift update, so
+        this runs once more and takes the branch above: already sent, nothing
+        asked for, nothing to do.
+      */
+      const resendWanted = !!doc.summary_resend_at;
+      /*
+        Cleared on the way out, whatever happened.
+
+        Including when the send failed. The request has been answered — there
+        is now a row saying what went wrong — and leaving the flag set would
+        have this run again on the next touch of the shift, and again after
+        that, quietly retrying something that is not going to start working
+        until somebody changes a setting.
+      */
+      const clearResend = async () => {
+        if (!resendWanted) return;
+        await db.updateDocument(DB_ID, 'shifts', doc.$id, { summary_resend_at: null })
+          .catch(() => undefined);
+      };
       const already = await db.listDocuments(DB_ID, 'summary_reports', [
         Query.equal('shift_id', doc.$id), Query.limit(1),
       ]);
-      if (already.total > 0) return res.json({ ok: true, skipped: 'summary already sent' });
+      if (already.total > 0 && !resendWanted) {
+        return res.json({ ok: true, skipped: 'summary already sent' });
+      }
 
       const threshold = await featureConfig('shift_summary', 'persistent_stock_threshold', 3);
       if (threshold === null) {
@@ -854,6 +885,10 @@ export default async ({ req, res, log, error }) => {
           last_error: 'The shift summary is switched off under Admin, Features. Nothing was sent.',
         }).catch(() => undefined);
         log('Shift summary is switched off; recorded and not sent.');
+        if (doc.summary_resend_at) {
+          await db.updateDocument(DB_ID, 'shifts', doc.$id, { summary_resend_at: null })
+            .catch(() => undefined);
+        }
         return res.json({ ok: true, skipped: 'summary feature off' });
       }
 
@@ -1056,6 +1091,7 @@ export default async ({ req, res, log, error }) => {
           last_error: !transport ? 'No SMTP configured' : 'No recipients configured',
         });
         log(`Summary stored but not sent: ${!transport ? 'no SMTP' : 'no recipients'}`);
+        await clearResend();
         return res.json({ ok: true, stored: true, sent: false });
       }
 
@@ -1078,7 +1114,8 @@ export default async ({ req, res, log, error }) => {
         });
         error(`Summary failed: ${e.message}`);
       }
-      return res.json({ ok: true });
+      await clearResend();
+      return res.json({ ok: true, resent: resendWanted });
     }
 
     return res.json({ ok: true, skipped: 'event not handled' });

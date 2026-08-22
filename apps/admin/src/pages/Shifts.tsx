@@ -8,6 +8,7 @@ import {
   formatMoney, byStaff, destinationLabel, fromTakings,
   changeShiftClose, closeTimeProblem, closeTimeEffects, describeCloseChange, hoursBetween, SHIFT_MAX_HOURS,
   changeOpeningFloat, floatProblem, describeFloatChange, parseMoney, toInput,
+  requestSummaryResend, resendPending,
   listCreatedBetween, listByIds, setShiftSealed, isSealed, describeSeal, lockedProblem,
   rangeTotals, kindsWorthShowing, KIND_LABELS, canOpen,
 } from '@snpos/core';
@@ -24,6 +25,8 @@ interface Shift extends Doc {
   opened_at: string;
   closed_at?: string;
   opening_floats: string;
+  /** An admin has asked for the closing report to go again, and it has not yet. */
+  summary_resend_at?: string | null;
   expected?: string;
   counted?: string;
   variance?: string;
@@ -143,6 +146,8 @@ export function ShiftsPage() {
   const [floatText, setFloatText] = useState<Record<string, string>>({});
   const [floatReason, setFloatReason] = useState('');
   const [floatBusy, setFloatBusy] = useState(false);
+  /** Which shift's closing report is being asked for again. */
+  const [resendBusy, setResendBusy] = useState<string | null>(null);
   const [closeEdit, setCloseEdit] = useState<Shift | null>(null);
   const [closeAt, setCloseAt] = useState('');
   const [closeReason, setCloseReason] = useState('');
@@ -165,6 +170,30 @@ export function ShiftsPage() {
     setCloseAt(forInput(shift.closed_at));
     setCloseReason('');
     setCloseEdit(shift);
+  };
+
+  /**
+   * Ask for a closing report to go out again.
+   *
+   * The browser does not send it. It writes a request the background job
+   * already watches — see requestSummaryResend — because the recipients and
+   * the mail provider live on the server, and a second copy of that here would
+   * be a second thing to keep in step.
+   */
+  const resend = async (sh: Shift) => {
+    setResendBusy(sh.$id);
+    try {
+      await requestSummaryResend({ shift: sh, userId: user?.$id ?? '' });
+      await load();
+      toast(
+        `Asked for ${sh.code}'s report to go again. It sends within a moment; `
+        + 'Settings, "What actually happened" says whether it did.',
+      );
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setResendBusy(null);
+    }
   };
 
   const startFloatEdit = (sh: Shift) => {
@@ -561,6 +590,30 @@ export function ShiftsPage() {
               */}
               {isAdmin && detail.status === 'closed' && !isSealed(detail) && (
                 <Button size="sm" onClick={() => startCloseEdit(detail)}>Correct the closing time</Button>
+              )}
+              {/*
+                The closing report, again.
+
+                Offered on a sealed shift too, unlike everything else here:
+                sending an email a second time changes no figure and settles
+                nothing — it is the one action on this screen that only reads.
+
+                Not offered while one is already waiting. Pressing it twice
+                would put two identical reports in somebody's inbox and teach
+                them to ignore both.
+              */}
+              {isAdmin && detail.status === 'closed' && (
+                resendPending(detail) ? (
+                  <span className="small dim">Report queued to send again…</span>
+                ) : (
+                  <Button
+                    size="sm"
+                    loading={resendBusy === detail.$id}
+                    onClick={() => void resend(detail)}
+                  >
+                    Send the closing report again
+                  </Button>
+                )
               )}
               {/* Said rather than simply missing. A button that vanishes is
                   indistinguishable from a screen that is broken. */}

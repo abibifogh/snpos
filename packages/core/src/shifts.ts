@@ -1,4 +1,4 @@
-import { db, DB_ID, ID, Query, listAll } from './client';
+import { db, DB_ID, ID, Query, listAll, saveDropping } from './client';
 import type { Doc, Settings } from './types';
 import type { Order, OrderItem } from './orders';
 import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from './stock';
@@ -9,7 +9,7 @@ import { MODULE_LABELS } from './access';
 import type { Module } from './access';
 import {
   shiftAge, shiftCode, mustWaitForNextShift, openShiftsFor, blockerFor, SHIFT_MAX_HOURS, carryOverFloats,
-  lastForSide,
+  lastForSide, resendProblem,
 } from './shift-rules';
 import { lockedProblem, sealProblem, isSealed } from './shift-lock';
 import type { LockableShift } from './shift-lock';
@@ -19,6 +19,8 @@ export * from './shift-rules';
 export interface Shift extends Doc {
   venue_id: string;
   code: string;
+  /** An admin has asked for the closing report to go again. See requestSummaryResend. */
+  summary_resend_at?: string | null;
   status: 'open' | 'closing' | 'closed' | 'reopened';
   opened_by: string;
   opened_at: string;
@@ -1165,4 +1167,41 @@ export async function changeOpeningFloat(opts: {
     note: `${opts.shift.code}'s expected figures were worked out again.`
       + (posted.note ? ` ${posted.note}` : ''),
   };
+}
+
+/**
+ * Ask for a shift's closing report to be sent again.
+ *
+ * A request, not a send. The browser cannot email anything and must not try:
+ * the recipients, the mail provider's credentials and the whole summary live
+ * on the server, and a second copy of that arrangement in the admin app would
+ * be a second thing to keep in step.
+ *
+ * So this writes a flag the background job already watches. `summary_resend_at`
+ * sits on the SHIFT rather than on the report for two reasons: nobody can
+ * write to summary_reports from a browser — it is the record of what was
+ * actually sent, and an admin able to edit it could rewrite what a report said
+ * — and a shift update is already an event the job answers, so asking needs no
+ * new trigger and no new permission.
+ *
+ * The job clears the flag once the mail is away, or once it has recorded why
+ * it could not be. Present therefore means somebody is still waiting.
+ */
+export async function requestSummaryResend(opts: {
+  shift: Pick<Shift, '$id' | 'code' | 'status'>;
+  userId: string;
+}): Promise<void> {
+  // Checked here as well as on the screen. A rule held only where the button
+  // is has as many ways round it as there are screens.
+  const problem = resendProblem(opts.shift);
+  if (problem) throw new Error(problem);
+  const { dropped } = await saveDropping('shifts', opts.shift.$id, {
+    summary_resend_at: new Date().toISOString(),
+    summary_resend_by: opts.userId,
+  });
+  if (dropped.includes('summary_resend_at')) {
+    throw new Error(
+      'This project\'s database has not been updated for resending yet. Run Provision, then try again.',
+    );
+  }
 }

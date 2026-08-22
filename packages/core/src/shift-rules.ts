@@ -484,3 +484,34 @@ export function describeFloatChange(
         + `short by that much unless the money is really there.`,
   };
 }
+
+/* ------------------------------------------ sending a closing report again */
+
+/**
+ * Why this shift's closing report cannot be asked for again, or nothing.
+ *
+ * There is no closing report until there is a close. Offering to resend one
+ * from an open shift would either send nothing or send a summary of a night
+ * still in progress, and both are worse than the button not being there.
+ *
+ * A sealed shift is deliberately allowed. Everything else that can be done to
+ * a sealed shift changes a figure; sending an email a second time changes
+ * none, and refusing it would mean the one night somebody most wants a copy of
+ * is the one night they cannot have one.
+ */
+export function resendProblem(shift: { code?: string; status?: string }): string | null {
+  if (shift.status !== 'closed') {
+    return `${shift.code ?? 'That shift'} has not closed yet, so there is no closing report to send.`;
+  }
+  return null;
+}
+
+/**
+ * Whether a resend is still outstanding.
+ *
+ * Read from the shift rather than from the report, because the report for a
+ * resend does not exist until the job has run — so "still waiting" is a fact
+ * only the request itself carries.
+ */
+export const resendPending = (shift: { summary_resend_at?: string | null }): boolean =>
+  !!shift.summary_resend_at;

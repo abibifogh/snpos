@@ -1026,6 +1026,20 @@ export const COLLECTIONS = [
       ['refund_total', 'i', null, true, 0],
       ['cogs_total', 'i', null, true, 0],
       ['covers', 'i', null, true, 0],
+      /*
+        An admin asking for the closing report to go out again.
+
+        On the SHIFT rather than on the report, for two reasons. Nobody can
+        write to summary_reports from a browser — it is the record of what was
+        sent, and an admin able to edit it could rewrite what a report said —
+        and the shift is already an update the background job is subscribed to,
+        so asking here needs no new trigger and no new permission.
+
+        Cleared by the job once the report has gone, so the field is a request
+        rather than a setting: present means somebody is waiting for an email.
+      */
+      ['summary_resend_at', 'd', null, false],
+      ['summary_resend_by', 's', 64, false],
       ['stock_check_status', 'e', ['pending', 'complete'], true, 'pending'],
       ['posted_to_ledger', 'b', null, true, false],
       /**

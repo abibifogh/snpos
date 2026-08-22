@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit, mustWaitForNextShift, shouldWarnLateOrder,
   SHIFT_MAX_HOURS, SHIFT_WARN_HOURS,
-  shiftAgeOf, openShiftsFor, blockerFor, isLivePayment, sellBlockedReason, carryOverFloats, lastForSide, floatProblem, describeFloatChange,
+  shiftAgeOf, openShiftsFor, blockerFor, isLivePayment, sellBlockedReason, carryOverFloats, lastForSide, floatProblem, describeFloatChange, resendProblem, resendPending,
 } from '../shift-rules.ts';
 
 const at = (iso: string) => new Date(iso);
@@ -444,4 +444,34 @@ test('the float change is described by what it does to the shortage', () => {
 
   // Saying nothing changed is more useful than a sentence about nought.
   assert.match(describeFloatChange({ floats: { cash: 100 }, was: { cash: 100 } }, money).text, /already says/);
+});
+
+test('a report can only be asked for again once a shift has closed', () => {
+  /**
+   * There is no closing report until there is a close. Resending from an open
+   * shift would either send nothing or send a summary of a night still in
+   * progress, and both are worse than the button not being there.
+   */
+  assert.equal(resendProblem({ code: 'BIST-07', status: 'closed' }), null);
+  assert.match(resendProblem({ code: 'BIST-08', status: 'open' }) ?? '', /BIST-08 has not closed yet/);
+  assert.match(resendProblem({}) ?? '', /That shift has not closed yet/);
+});
+
+test('a sealed shift may still have its report sent again', () => {
+  /**
+   * Everything else that can be done to a sealed shift changes a figure.
+   * Sending an email a second time changes none — and refusing it would mean
+   * the one night somebody most wants a copy of is the night they cannot have
+   * one.
+   */
+  assert.equal(resendProblem({ code: 'BIST-07', status: 'closed', locked_at: '2026-08-20T09:00:00.000Z' } as never), null);
+});
+
+test('a resend is outstanding until the server clears it', () => {
+  // Read from the shift, not from the report: the report for a resend does not
+  // exist until the job has run, so "still waiting" is a fact only the request
+  // carries.
+  assert.equal(resendPending({ summary_resend_at: '2026-08-21T10:00:00.000Z' }), true);
+  assert.equal(resendPending({}), false);
+  assert.equal(resendPending({ summary_resend_at: null }), false);
 });
