@@ -836,7 +836,26 @@ export default async ({ req, res, log, error }) => {
       if (already.total > 0) return res.json({ ok: true, skipped: 'summary already sent' });
 
       const threshold = await featureConfig('shift_summary', 'persistent_stock_threshold', 3);
-      if (threshold === null) return res.json({ ok: true, skipped: 'summary feature off' });
+      if (threshold === null) {
+        /*
+          Written down rather than returned quietly.
+
+          This used to skip in silence, which from every screen in the system
+          looks identical to the function never having run at all — and those
+          two have completely different fixes. One is a switch somebody turned
+          off; the other is a subscription that was never set. Leaving a row
+          behind is what makes them tell apart.
+        */
+        await db.createDocument(DB_ID, 'summary_reports', 'unique()', {
+          venue_id: doc.venue_id, kind: 'shift_close', shift_id: doc.$id,
+          period_start: doc.opened_at, period_end: doc.closed_at || new Date().toISOString(),
+          payload: '{}',
+          delivery_status: 'failed',
+          last_error: 'The shift summary is switched off under Admin, Features. Nothing was sent.',
+        }).catch(() => undefined);
+        log('Shift summary is switched off; recorded and not sent.');
+        return res.json({ ok: true, skipped: 'summary feature off' });
+      }
 
       // The shift's own clock, used for anything a customer could have started.
       // A QR order has no shift stamped on it, the phone that placed it has no

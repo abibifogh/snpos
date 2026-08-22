@@ -922,10 +922,30 @@ export function SettingsPage() {
         {deliveries === null ? (
           <p className="small dim">Loading…</p>
         ) : deliveries.length === 0 ? (
-          <p className="small dim" style={{ marginBottom: 0 }}>
-            Nothing produced yet. The end-of-shift report appears when a shift is closed; the daily ones after
-            the hour set above.
-          </p>
+          /*
+            An empty list is a finding, not a blank.
+
+            Nothing here means the server never got as far as recording an
+            attempt — and that has one cause, not several: the background job
+            was not called. A report that WAS attempted and failed leaves a row
+            saying why, so silence and failure look different and lead
+            different places. Saying only "nothing yet" sent people to look at
+            their mail provider, which is the one thing that cannot be at
+            fault when nothing was ever sent.
+          */
+          <>
+            <p className="small dim">
+              <strong>Nothing has been produced at all.</strong> A report that was attempted and failed leaves a
+              row here saying why, so an empty list means the background job was never called rather than that
+              mail is going astray.
+            </p>
+            <p className="small dim" style={{ marginBottom: 0 }}>
+              If shifts have been closed since this was set up, run <strong>Deploy functions</strong> — that is
+              what subscribes the job to the events it answers, and until it has run, closing a shift tells
+              nothing on the server that anything happened. The end-of-shift report appears when a shift is
+              closed; the daily ones after the hour set above.
+            </p>
+          </>
         ) : (
           <div className="table-wrap">
             <table className="data">
