@@ -5,10 +5,13 @@ import {
   formatMoney, parseMoney, toInput, uploadFile, downloadUrl, deleteFile, receiveStock, Query,
   PAID_TO_KINDS, payeeLabel as sharedPayeeLabel, legacyExpenseCategory as legacyFor,
   isPostableExpenseAccount, expenseMethods, modulesOf, recomputeClosedShift,
-  postExpense, accountForExpense,
+  repostExpense, accountForExpense,
+  balancesFor, accountFor, settleBoxSpend, boxesFor, boxOverdrawn,
   buyOptions, convertPurchase, describePurchase, hasPack, categoriesForSide, canSeePrivateExpenses,
 } from '@snpos/core';
-import type { Module, Doc, Ingredient, PaidToKind, BuyOption, ExpenseCategoryDoc } from '@snpos/core';
+import type {
+  Module, Doc, Ingredient, PaidToKind, BuyOption, ExpenseCategoryDoc, ImprestFloatDoc,
+} from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
 import { AccountsManager } from '../components/AccountsManager';
 import { ExpenseAnalysisTab } from '../components/ExpenseAnalysis';
@@ -29,6 +32,8 @@ interface Expense extends Doc {
   paid_from_method_id: string;
   /** Whether the drawer is short by this. See fromTakings in core. */
   from_takings?: boolean;
+  /** Which petty cash box paid for it, when a box did. */
+  imprest_float_id?: string;
   note?: string;
   receipt_file_id?: string;
   created_by: string;
@@ -136,6 +141,18 @@ export function ExpensesPage() {
     });
 
   const [editing, setEditing] = useState<Partial<Expense> | null>(null);
+  /**
+   * The petty cash boxes, and what is in each.
+   *
+   * "Petty cash" on this form used to be a label and nothing more: it kept the
+   * spend off the shift's drawer, correctly, and then stopped. No box was
+   * named, so no box was ever lighter for it — the tin's own record and the
+   * money actually in it drifted apart by every expense recorded here, and the
+   * reconciliation that exists to catch a shortage was quietly counting those
+   * as shortages too.
+   */
+  const [boxes, setBoxes] = useState<ImprestFloatDoc[]>([]);
+  const [boxBalances, setBoxBalances] = useState<Record<string, number>>({});
   const [amountText, setAmountText] = useState('');
   const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
   const [savedItems, setSavedItems] = useState<ExpenseItem[]>([]);
@@ -144,7 +161,7 @@ export function ExpensesPage() {
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
-    const [e, m, v, s, p, i, a] = await Promise.all([
+    const [e, m, v, s, p, i, a, tins] = await Promise.all([
       listAll<Expense>('shift_expenses'),
       listAll<PaymentMethod>('payment_methods'),
       listAll<VenueRow>('venues'),
@@ -152,6 +169,12 @@ export function ExpensesPage() {
       listAll<Staff>('staff_profiles'),
       listAll<Ingredient>('ingredients'),
       listAll<AccountRow>('accounts'),
+      // Loaded with everything else rather than when the dropdown is touched:
+      // what a box holds decides whether this spend can come out of it, and
+      // finding that out after the form is filled in is finding it out late.
+      // Every venue's, filtered to the one being recorded when it is offered —
+      // this page lists spending across all of them at once.
+      listAll<ImprestFloatDoc>('imprest_floats').catch(() => [] as ImprestFloatDoc[]),
     ]);
     setRows(e.sort((a2, b) => b.$createdAt.localeCompare(a2.$createdAt)));
     // The same restriction the kitchen form obeys. An admin recording a shop
@@ -173,6 +196,17 @@ export function ExpensesPage() {
       a.filter((a2) => isPostableExpenseAccount(a2) && a2.active !== false)
         .sort((a2, b) => a2.code.localeCompare(b.code)),
     );
+    /*
+      The boxes this person may spend out of.
+
+      Whoever holds a box, plus anybody who may fund them — an admin doing the
+      books after the fact is not locked out of a tin they are answerable for.
+      See boxesFor: a custodian sees their own box and no others, because a
+      list of every tin in the building is somebody else's business.
+    */
+    const live = boxesFor(profile, tins.filter((f) => f.active !== false));
+    setBoxes(live);
+    setBoxBalances(await balancesFor(live).catch(() => ({})));
   };
   useEffect(() => { load().catch((err) => setError(humanError(err))); }, []);
 
@@ -240,6 +274,23 @@ export function ExpensesPage() {
    * every line agrees, a trip that bought rice and a new gas bottle is two
    * categories, and guessing one of them would be worse than asking.
    */
+  /**
+   * The boxes on offer for the expense being recorded, and the one chosen.
+   *
+   * Narrowed by venue and by side: a shop tin is not where the kitchen's gas
+   * came from, and offering it is how a spend ends up against the wrong tin
+   * and two boxes fail their next count. A box with no side on it serves
+   * everybody, which is how a single office tin works in practice.
+   */
+  const boxesOnOffer = editing
+    ? boxes.filter((b) => b.venue_id === (editing.venue_id ?? 'main')
+      && (!b.module || b.module === (editing.module ?? 'kitchen')))
+    : [];
+  const fromBox = !!editing && editing.from_takings === false;
+  const chosenBox = fromBox
+    ? boxesOnOffer.find((b) => b.$id === editing?.imprest_float_id) ?? null
+    : null;
+
   const impliedCategory = (() => {
     const keys = draftItems
       .filter((d) => d.ingredient_id)
@@ -307,6 +358,9 @@ export function ExpensesPage() {
         paid_from_method_id: editing.paid_from_method_id,
         // Absent means yes, for every row written before the question existed.
         from_takings: editing.from_takings !== false,
+        // Which tin paid, when one did. Blank on a shift spend, and blanked
+        // deliberately when one is moved back onto the shift.
+        imprest_float_id: editing.from_takings === false ? editing.imprest_float_id ?? '' : '',
         // Which side's books this comes out of. Defaults to the kitchen for a
         // business that runs one side, where the question has one answer.
         module: editing.module ?? 'kitchen',
@@ -335,14 +389,46 @@ export function ExpensesPage() {
       // On the books, keyed by the expense's own id so it cannot be posted
       // twice however many routes reach it. An expense recorded here, outside
       // any shift, used to reach the ledger through no route at all.
+      const paidFromBox = payload.imprest_float_id
+        ? boxes.find((b) => b.$id === payload.imprest_float_id) ?? null
+        : null;
       void accountForExpense(payload)
-        .then((accountCode) => postExpense(payload.venue_id, {
-          expenseId,
-          amount,
-          accountCode,
-          postedBy: user?.$id ?? '',
-          shiftId: payload.shift_id || undefined,
-        }))
+        .then(async (accountCode) => {
+          // Corrections included, unlike postExpense, which is once-only by
+          // design. See repostExpense: an amount fixed a week later used to
+          // leave the books on the old figure with nothing to show for it.
+          const entryId = await repostExpense(payload.venue_id, {
+            expenseId,
+            amount,
+            accountCode,
+            postedBy: user?.$id ?? '',
+            shiftId: payload.shift_id || undefined,
+            // Credited to the tin, not to the till. Crediting cash for money
+            // that never left a drawer is how a box quietly empties while the
+            // balance sheet says the business still holds it.
+            fromAccount: paidFromBox ? accountFor(paidFromBox) : undefined,
+            memo: paidFromBox ? `Paid from ${paidFromBox.name}` : undefined,
+          });
+
+          /*
+            And the box's own record, brought into line with whatever this
+            expense now says.
+
+            Corrections included: an amount changed, a different tin named, or
+            a spend moved back onto the shift all have to reach the box, and
+            none of them does on its own. See settleBoxSpend — it writes only
+            the difference, so saving an unchanged expense moves nothing.
+          */
+          await settleBoxSpend({
+            venueId: payload.venue_id,
+            expenseId,
+            boxId: payload.imprest_float_id || null,
+            amount,
+            userId: user?.$id ?? '',
+            note: payload.payee || payload.note,
+            entryId: entryId ?? undefined,
+          });
+        })
         .catch(() => undefined);
 
       let recomputed = false;
@@ -533,7 +619,16 @@ export function ExpensesPage() {
                           {r.paid_to_kind === 'open_market' && <div className="small dim">Open market</div>}
                           {r.paid_to_kind === 'staff' && <div className="small dim">Staff</div>}
                         </td>
-                        <td className="dim small">{methodName(r.paid_from_method_id)}</td>
+                        {/* Which drawer, and whose money. "Cash" alone does not
+                            say whether a shift is short by this or a tin is. */}
+                        <td className="dim small">
+                          {methodName(r.paid_from_method_id)}
+                          {r.from_takings === false && (
+                            <div className="small dim">
+                              {boxes.find((b) => b.$id === r.imprest_float_id)?.name ?? 'Petty cash'}
+                            </div>
+                          )}
+                        </td>
                         <td className="num">{settings ? formatMoney(r.amount, settings) : r.amount}</td>
                         <td>
                           {r.receipt_file_id ? (
@@ -680,13 +775,75 @@ export function ExpensesPage() {
             >
               <Select
                 value={editing.from_takings !== false ? 'shift' : 'petty'}
-                onChange={(e) => setEditing({ ...editing, from_takings: e.target.value === 'shift' })}
+                onChange={(e) => {
+                  const shift = e.target.value === 'shift';
+                  setEditing({
+                    ...editing,
+                    from_takings: shift,
+                    // Back on the shift, so no box paid for it. Leaving the id
+                    // behind would keep charging a tin for a spend the drawer
+                    // is now short by, and both would be wrong at once.
+                    imprest_float_id: shift ? '' : (editing.imprest_float_id || boxesOnOffer[0]?.$id || ''),
+                  });
+                }}
               >
                 <option value="shift">The shift</option>
                 <option value="petty">Petty cash</option>
               </Select>
             </Field>
+            {/*
+              Which tin, and not just "petty cash".
+
+              Saying the money did not come off the shift is only half the
+              answer. Until this was asked, no box was ever named, so no box
+              was ever lighter for it: the tin's record and the money in it
+              drifted apart by every expense recorded on this screen, and the
+              count that exists to catch a shortage counted those as one.
+            */}
+            {fromBox && boxesOnOffer.length > 0 && (
+              <Field
+                label={boxesOnOffer.length > 1 ? 'Which petty cash box' : 'The petty cash box'}
+                hint={chosenBox && settings
+                  ? `${formatMoney(boxBalances[chosenBox.$id] ?? 0, settings)} in it, `
+                    + `of ${formatMoney(chosenBox.fixed_amount, settings)}.`
+                  : 'Pick the tin the money actually came out of.'}
+              >
+                <Select
+                  value={editing.imprest_float_id ?? ''}
+                  onChange={(e) => setEditing({ ...editing, imprest_float_id: e.target.value })}
+                >
+                  <option value="">Choose</option>
+                  {boxesOnOffer.map((b) => (
+                    <option key={b.$id} value={b.$id}>
+                      {b.name} · {settings ? formatMoney(boxBalances[b.$id] ?? 0, settings) : ''}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
           </div>
+
+          {/* No tin to name, so the spend is recorded as it always was: off the
+              books' cash, not off any box. Said rather than left as a missing
+              dropdown somebody assumes they have already answered. */}
+          {fromBox && boxesOnOffer.length === 0 && (
+            <Notice>
+              There is no petty cash box set up for this side. The spend will be recorded as not coming off the
+              shift, and no box will be lighter for it. Set one up under <strong>Petty cash</strong>.
+            </Notice>
+          )}
+
+          {/* More than is in it. Not refused — the money has already been
+              spent and refusing to record it only hides that — but said. */}
+          {chosenBox && settings && boxOverdrawn(
+            lineCount > 0 ? draftTotal : (parseMoney(amountText, decimals) ?? 0),
+            boxBalances[chosenBox.$id] ?? 0,
+          ) && (
+            <Notice tone="warn">
+              That is more than {chosenBox.name} holds ({formatMoney(boxBalances[chosenBox.$id] ?? 0, settings)}).
+              Recording it will leave the box overdrawn, which its next count will show as money owed to it.
+            </Notice>
+          )}
 
           {editing.paid_to_kind === 'supplier' && (
             <Field label="Which supplier" hint="Add and edit suppliers under Stock → Suppliers.">

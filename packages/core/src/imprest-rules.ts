@@ -406,3 +406,56 @@ export function describeMovement(m: ImprestMovement & { note?: string }): string
   const sign = m.amount >= 0 ? 'in' : 'out';
   return `${label}, ${sign}${m.note ? `: ${m.note}` : ''}`;
 }
+
+/* ----------------------- keeping a box in step with the expense that moved it */
+
+/**
+ * What has to be written so a box's record matches what an expense now says.
+ *
+ * An expense can be corrected long after it was recorded, and every part of it
+ * that a box cares about can change: the amount, which box paid, or whether it
+ * came out of a box at all rather than the drawer. The box does not follow on
+ * its own — a movement is a statement that money moved, and the ones already
+ * written stay written.
+ *
+ * So the difference is worked out and written as its own movement, the way a
+ * correction is made to anything else here. Three cases fall out of one
+ * subtraction:
+ *
+ *   - nothing recorded yet, and a box now: the spend itself.
+ *   - the amount or the box changed: an adjustment for the difference, and on
+ *     the old box an adjustment that puts back everything it was charged.
+ *   - no longer a box spend at all: the whole amount goes back.
+ *
+ * Idempotent, which is the property that matters. Saving the same expense
+ * twice, or a page retried on a bad connection, produces no corrections the
+ * second time — because the second time there is no difference to correct.
+ *
+ * Amounts are signed as movements are: negative out of the box.
+ */
+export function spendCorrections(
+  movements: { float_id: string; amount: number }[],
+  want: { boxId: string | null; amount: number },
+): { floatId: string; amount: number; kind: 'spend' | 'adjust' }[] {
+  const already: Record<string, number> = {};
+  for (const m of movements) already[m.float_id] = (already[m.float_id] ?? 0) + m.amount;
+
+  const wanted: Record<string, number> = {};
+  // Out of the box, so negative — and never the other sign, whatever an
+  // amount typed with a minus in front of it says.
+  if (want.boxId) wanted[want.boxId] = -Math.abs(want.amount);
+
+  const out: { floatId: string; amount: number; kind: 'spend' | 'adjust' }[] = [];
+  for (const floatId of new Set([...Object.keys(already), ...Object.keys(wanted)])) {
+    const delta = (wanted[floatId] ?? 0) - (already[floatId] ?? 0);
+    if (delta === 0) continue;
+    out.push({
+      floatId,
+      amount: delta,
+      // The first movement against a box is the spend. Anything after it is a
+      // correction to a spend already recorded, and reads as one.
+      kind: already[floatId] === undefined ? 'spend' : 'adjust',
+    });
+  }
+  return out;
+}

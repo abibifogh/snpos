@@ -692,6 +692,80 @@ export async function postExpense(
 }
 
 /**
+ * Post an expense, or bring what was already posted into line with it.
+ *
+ * `postExpense` is deliberately once-only: it is called from three places and
+ * the shift close calls it again for everything the till already booked, so a
+ * second call has to be harmless. The cost of that is an expense CORRECTED
+ * afterwards — a figure retyped, a category changed, a spend moved onto a
+ * petty cash box — leaving the books at the old version for ever, silently.
+ *
+ * Nobody sees it. The expense list shows the corrected figure, the shift is
+ * worked out again from the rows, the petty cash box follows; only the
+ * accounts keep the number somebody already fixed, and the first sign of it is
+ * a profit figure that disagrees with the expenses behind it by an amount
+ * nobody can trace.
+ *
+ * So the entry is edited to match, with what it said before written into the
+ * audit log — the house rule for a correction, see editEntry. Nothing happens
+ * at all when the entry already says the right thing, which is the ordinary
+ * case: most saves change a note, not a number.
+ */
+export async function repostExpense(
+  venueId: string,
+  e: {
+    expenseId: string;
+    amount: number;
+    accountCode: string;
+    postedBy: string;
+    shiftId?: string;
+    /** Where the money came out of. See postExpense. */
+    fromAccount?: string;
+    memo?: string;
+  },
+): Promise<string | null> {
+  const key = `expense:${e.expenseId}`;
+  const found = await db.listDocuments(DB_ID, 'journal_entries', [
+    Query.equal('venue_id', venueId),
+    Query.equal('source_id', key),
+    Query.limit(1),
+  ]).catch(() => ({ documents: [] as unknown[] }));
+  const entry = (found.documents ?? [])[0] as JournalEntry | undefined;
+
+  // Never posted, so this is the ordinary first posting.
+  if (!entry) return postExpense(venueId, e);
+
+  const want: PostingLine[] = [
+    { account_code: e.accountCode, debit: e.amount, credit: 0 },
+    { account_code: e.fromAccount || ACCOUNTS.cash, debit: 0, credit: e.amount },
+  ];
+
+  const lines = await listAll<JournalLine>('journal_lines', [Query.equal('entry_id', entry.$id)])
+    .catch(() => [] as JournalLine[]);
+  const same = lines.length === want.length
+    && want.every((w) => lines.some((l) => l.account_code === w.account_code
+      && l.debit === w.debit && l.credit === w.credit));
+  if (same) return entry.$id;
+
+  /*
+    A reversed entry is not edited, and neither is a locked period.
+
+    editEntry refuses both, and rightly — but this runs on every save of an
+    expense, including ones where nothing about the money changed, and a save
+    that fails because a month was closed six weeks ago would be the accounts
+    blocking an admin from fixing a spelling. The correction is refused, the
+    expense is not.
+  */
+  await editEntry(
+    entry,
+    { memo: e.memo || entry.memo || 'Money paid out', lines: want },
+    { editedBy: e.postedBy },
+  ).catch(() => undefined);
+
+  return entry.$id;
+}
+
+/**
  * Which account an expense's category points at.
  *
  * Shared so the till, the admin form and the shift close cannot disagree about

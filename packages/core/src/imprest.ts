@@ -1,7 +1,7 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
 import type { Doc } from './types';
 import { ACCOUNTS, postEntry } from './ledger';
-import { boxBalance, countBox, coversFrom } from './imprest-rules';
+import { boxBalance, countBox, coversFrom, spendCorrections } from './imprest-rules';
 import type { ImprestMovement, ImprestKind } from './imprest-rules';
 
 /**
@@ -281,6 +281,61 @@ export async function recordBoxSpend(opts: {
     created_by: opts.userId,
     occurred_at: new Date().toISOString(),
   })) as unknown as ImprestMovementDoc;
+}
+
+/**
+ * Make a box's record agree with what an expense now says.
+ *
+ * The till records a spend once and never touches it again, which is why
+ * `recordBoxSpend` above is all it needs. An admin correcting an expense
+ * afterwards is the other case, and everything a box cares about can change:
+ * the amount, which box paid for it, or whether it came out of a box at all.
+ *
+ * None of that follows on its own. A movement is a statement that money moved
+ * on a day, and the ones already written stay written — so the difference is
+ * worked out and recorded as its own movement. See spendCorrections, where the
+ * arithmetic lives and is tested; this does the reading and the writing.
+ *
+ * Safe to call on every save, including the ones that changed nothing about
+ * the money: with no difference to correct, it writes nothing at all.
+ */
+export async function settleBoxSpend(opts: {
+  venueId: string;
+  expenseId: string;
+  /** The box it is now paid from, or null if it is no longer a box spend. */
+  boxId: string | null;
+  amount: number;
+  userId: string;
+  note?: string;
+  entryId?: string;
+}): Promise<{ written: number }> {
+  const movements = await listAll<ImprestMovementDoc>('imprest_movements', [
+    Query.equal('ref_type', 'expense'),
+    Query.equal('ref_id', opts.expenseId),
+  ]).catch(() => [] as ImprestMovementDoc[]);
+
+  const corrections = spendCorrections(movements, { boxId: opts.boxId, amount: opts.amount });
+
+  let written = 0;
+  for (const c of corrections) {
+    const done = await db.createDocument(DB_ID, 'imprest_movements', ID.unique(), {
+      venue_id: opts.venueId,
+      float_id: c.floatId,
+      amount: c.amount,
+      kind: c.kind,
+      ref_type: 'expense',
+      ref_id: opts.expenseId,
+      entry_id: opts.entryId ?? '',
+      note: (c.kind === 'adjust'
+        ? `Corrected: ${opts.note ?? 'the expense was changed'}`
+        : (opts.note ?? '')).slice(0, 500),
+      created_by: opts.userId,
+      occurred_at: new Date().toISOString(),
+    }).then(() => true).catch(() => false);
+    if (done) written += 1;
+  }
+
+  return { written };
 }
 
 /**

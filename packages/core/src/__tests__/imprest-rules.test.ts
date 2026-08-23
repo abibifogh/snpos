@@ -4,7 +4,7 @@ import {
   boxBalance, spentSince, topUpNeeded, overBy, healthOf, countBox, countProblem,
   needsExplaining, boxOverdrawn, withoutReceipt, IMPREST_LOW_BP, IMPREST_TOLERANCE,
   holdsBox, canFundBoxes, canUseBox, canCountBox, boxesFor,
-  movementsFor, movementsSince, latestCount, coversFrom,
+  movementsFor, movementsSince, latestCount, coversFrom, spendCorrections,
   type ImprestMovement,
 } from '../imprest-rules.ts';
 
@@ -306,4 +306,77 @@ test('whoever funds boxes always counts them', () => {
   assert.equal(canCountBox(holder({ can_fund_petty_cash: true }), box(), null), true);
   // And somebody with no connection to the box counts nothing.
   assert.equal(canCountBox(holder({ $id: 'stranger' }), box(), { imprest_custodian_counts: true }), false);
+});
+
+
+test('a spend against a box with nothing recorded yet is the spend itself', () => {
+  const out = spendCorrections([], { boxId: 'tin', amount: 4_500 });
+  assert.deepEqual(out, [{ floatId: 'tin', amount: -4_500, kind: 'spend' }]);
+});
+
+test('an amount typed with a minus in front still comes out of the box', () => {
+  // The form should not allow it and the box must not depend on that. A
+  // correction that ADDS money to a tin because somebody typed -45 is money
+  // appearing out of a subtraction.
+  const out = spendCorrections([], { boxId: 'tin', amount: -4_500 });
+  assert.deepEqual(out, [{ floatId: 'tin', amount: -4_500, kind: 'spend' }]);
+});
+
+test('saving an expense again changes nothing about the box', () => {
+  /*
+    The property that makes this safe to call on every save. A page retried on
+    a bad connection, or an admin fixing a typo in the note, must not charge
+    the tin a second time.
+  */
+  const already = [{ float_id: 'tin', amount: -4_500 }];
+  assert.deepEqual(spendCorrections(already, { boxId: 'tin', amount: 4_500 }), []);
+});
+
+test('a corrected amount moves only the difference', () => {
+  // GHS 45 recorded, GHS 60 actually spent: the tin is fifteen further down,
+  // not sixty. Charging the whole amount again is the mistake this prevents.
+  const already = [{ float_id: 'tin', amount: -4_500 }];
+  assert.deepEqual(
+    spendCorrections(already, { boxId: 'tin', amount: 6_000 }),
+    [{ floatId: 'tin', amount: -1_500, kind: 'adjust' }],
+  );
+  // And downwards: GHS 30 was the real figure, so GHS 15 goes back in.
+  assert.deepEqual(
+    spendCorrections(already, { boxId: 'tin', amount: 3_000 }),
+    [{ floatId: 'tin', amount: 1_500, kind: 'adjust' }],
+  );
+});
+
+test('naming a different box puts the first one back whole', () => {
+  /*
+    Both halves, or the correction is worse than the error: the kitchen tin
+    would stay short for a spend it never made while the bar tin goes down as
+    well, and two boxes fail their next count over one mistake.
+  */
+  const already = [{ float_id: 'kitchen-tin', amount: -4_500 }];
+  const out = spendCorrections(already, { boxId: 'bar-tin', amount: 4_500 });
+  assert.deepEqual(out.find((c) => c.floatId === 'kitchen-tin'), {
+    floatId: 'kitchen-tin', amount: 4_500, kind: 'adjust',
+  });
+  assert.deepEqual(out.find((c) => c.floatId === 'bar-tin'), {
+    floatId: 'bar-tin', amount: -4_500, kind: 'spend',
+  });
+});
+
+test('moving a spend back onto the shift gives the box its money back', () => {
+  const already = [{ float_id: 'tin', amount: -4_500 }];
+  assert.deepEqual(
+    spendCorrections(already, { boxId: null, amount: 4_500 }),
+    [{ floatId: 'tin', amount: 4_500, kind: 'adjust' }],
+  );
+});
+
+test('a box already corrected once is not corrected again', () => {
+  // Movements accumulate; what matters is the net, not the last row. A spend
+  // of 45 raised to 60 and then read back must come out level.
+  const already = [
+    { float_id: 'tin', amount: -4_500 },
+    { float_id: 'tin', amount: -1_500 },
+  ];
+  assert.deepEqual(spendCorrections(already, { boxId: 'tin', amount: 6_000 }), []);
 });
