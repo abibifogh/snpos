@@ -57,6 +57,16 @@ export interface StockRow {
 export interface ShiftFlow {
   /** What each drawer started with. Not takings. */
   opening: number;
+  /**
+   * Where that opening figure came from, in words. See floatOrigin.
+   *
+   * The float is the one number on this screen that nobody present chose, and
+   * when it is wrong it is wrong by the whole amount: a drawer that was
+   * emptied overnight but opened on yesterday's count reads short by exactly
+   * that much, and the person counting has no way to tell why. Saying where it
+   * came from turns "the till is short" into a question with an answer.
+   */
+  openingFrom?: string;
   /** Sales taken during the shift, tips excluded. */
   sales: number;
   tips: number;
@@ -297,7 +307,10 @@ export function ShiftCloseForm({
           <table className="data">
             <tbody>
               <tr>
-                <td>Started with</td>
+                <td>
+                  Started with
+                  {flow.openingFrom && <div className="small dim">{flow.openingFrom}</div>}
+                </td>
                 <td className="num dim">{money(flow.opening)}</td>
               </tr>
               <tr>

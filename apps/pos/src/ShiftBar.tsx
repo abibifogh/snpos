@@ -8,9 +8,9 @@ import {
   formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift as createShift, shiftBlockers, expectedTakings, closeShift,
   openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, HANDOVER_ENABLED,
-  countsAtBothEnds, hasOpeningCount,
+  countsAtBothEnds, hasOpeningCount, ownFigure, floatOrigin,
 } from '@snpos/core';
-import type { PaymentMethod, Shift } from '@snpos/core';
+import type { PaymentMethod, Shift, FloatSource } from '@snpos/core';
 import type { PosContext } from './App';
 
 export type { Shift } from '@snpos/core';
@@ -38,8 +38,17 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   const [shelving, setShelving] = useState<{ id: string; label: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [floatSource, setFloatSource] = useState('zero');
+  const [floatSource, setFloatSource] = useState<FloatSource>('zero');
   const [floatNote, setFloatNote] = useState('');
+  /**
+   * What the till filled the boxes in with, and where from.
+   *
+   * Kept so the open can tell whether the figure it is saving is the one the
+   * policy produced or one a person typed over it, and so a carried float can
+   * name the shift it came out of on the row it creates.
+   */
+  const [floatFilled, setFloatFilled] = useState<Record<string, number>>({});
+  const [floatFrom, setFloatFrom] = useState<{ id: string; code: string } | undefined>(undefined);
   // What this shift has done, and what has been paid out of it. Both are
   // things a cashier is asked about long before the shift ends.
   const [history, setHistory] = useState(false);
@@ -126,6 +135,8 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
 
   const tolerance = ctx.settings.cash_variance_tolerance ?? 500;
   const money = (n: number) => formatMoney(n, ctx.settings);
+  /** What is currently typed into the opening boxes, added up. */
+  const carried = Object.values(floats).reduce((a, v) => a + (parseMoney(v, decimals) ?? 0), 0);
 
   const startOpen = async () => {
     const m = await loadPaymentMethods(ctx.venue.$id);
@@ -138,9 +149,11 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
     const opening = await openingFloats(ctx.venue.$id, ctx.settings, m, ctx.module);
     setFloatSource(opening.source);
     setFloatNote(opening.note);
+    setFloatFrom(opening.from);
+    setFloatFilled(Object.fromEntries(m.map((x) => [x.$id, opening.floats[x.$id] ?? 0])));
     setFloats(
       Object.fromEntries(
-        m.map((x) => [x.$id, opening.source === 'prompt' ? '' : toInput(opening.floats[x.$id] ?? 0, decimals)]),
+        m.map((x) => [x.$id, opening.policy === 'prompt' ? '' : toInput(opening.floats[x.$id] ?? 0, decimals)]),
       ),
     );
     setOpening(true);
@@ -151,11 +164,18 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
     setBusy(true);
     setError(null);
     try {
+      const entered = Object.fromEntries(
+        Object.entries(floats).map(([k, v]) => [k, parseMoney(v, decimals) ?? 0]),
+      );
+      // Typed over, so it is a person's figure and not the policy's, whatever
+      // the policy filled in. See ownFigure.
+      const changed = ownFigure(entered, floatFilled);
       await createShift({
         venueId: ctx.venue.$id,
         userId: ctx.userId,
-        floats: Object.fromEntries(Object.entries(floats).map(([k, v]) => [k, parseMoney(v, decimals) ?? 0])),
-        floatSource: floatSource,
+        floats: entered,
+        floatSource: changed ? 'manual' : floatSource,
+        carriedFrom: !changed && floatSource === 'carried_over' ? floatFrom?.id : undefined,
         // The side this till is on. Without it every shift was opened as the
         // kitchen's, and a craft till then looked for a craft shift, found
         // none, and showed no shift open a moment after somebody opened one.
@@ -228,6 +248,12 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       // What came in and what went out, before any drawer is counted.
       setFlow({
         opening: Object.values(takings.openingFloats).reduce((a, b) => a + b, 0),
+        // Where that figure came from, said next to it. See floatOrigin.
+        openingFrom: floatOrigin(
+          ctx.shift?.float_source,
+          undefined,
+          Object.values(takings.openingFloats).reduce((a, b) => a + b, 0),
+        ),
         sales: takings.salesTotal,
         tips: takings.tipsTotal,
         // What actually left the drawers. Spending somebody covered from their
@@ -555,7 +581,35 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
             Count what is in the drawer now. This is the figure the close will measure against, so a guess here becomes
             a false discrepancy later.
           </p>
-          {floatNote && <p className="small dim">{floatNote}</p>}
+          {/*
+            A float that came from somewhere else is said out loud, not left as
+            a grey line under a box that is already filled in.
+
+            This is money the person opening the till did not count and may not
+            have. If the night's takings were banked and the drawer emptied,
+            the figure sitting in that box is money that is not there — and
+            nothing goes wrong until midnight, when the same drawer reads short
+            by exactly that amount and somebody is asked to account for it. So
+            it is stated, with the shift it came out of named, and there is one
+            button to say the drawer is empty.
+          */}
+          {floatSource === 'carried_over' && carried > 0 && (
+            <Notice tone="warn">
+              <strong>This drawer is starting with {money(carried)}.</strong>
+              <div className="small" style={{ marginTop: '0.3rem' }}>
+                {floatNote}
+              </div>
+              <div style={{ marginTop: '0.5rem' }}>
+                <Button
+                  size="sm"
+                  onClick={() => setFloats(Object.fromEntries(methods.map((m) => [m.$id, toInput(0, decimals)])))}
+                >
+                  The drawer was emptied — start at nothing
+                </Button>
+              </div>
+            </Notice>
+          )}
+          {floatSource !== 'carried_over' && floatNote && <p className="small dim">{floatNote}</p>}
           {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
           {methods.map((m) => (
             <Field key={m.$id} label={`${m.name} float (${ctx.settings.currency_symbol})`}>

@@ -10,7 +10,7 @@ import {
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
   itemsAvailableNow, dueMinutes, ticketLines, linesComplete, isOverdue, minutesOver, seatFor, amountOutstanding,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, addonNames, addonsUnreadable,
-  formatWait,
+  formatWait, giveTheMoneyBack,
 } from '@snpos/core';
 import type {
   Order, OrderItem, Settings, Venue, StaffProfile, StaffSession, HelpRole, MenuItem, Doc, FeatureMap,
@@ -575,13 +575,36 @@ export function App() {
   const reject = async () => {
     if (!rejecting) return;
     if (settings?.require_reject_reason && !rejectCode) return;
-    await patch(rejecting, {
+    const turned = rejecting;
+    await patch(turned, {
       status: 'REJECTED',
       rejected_at: new Date().toISOString(),
       reject_reason_code: rejectCode,
       reject_reason_note: rejectNote,
       alert_level: 0,
     });
+    /*
+      An order turned away at the pass keeps none of its money.
+
+      Most are rejected before anybody has paid, and then this does nothing at
+      all. The one that matters is the order paid for at the counter and then
+      refused in the kitchen — out of an ingredient, too late in the night. The
+      money is handed straight back over the counter, but the payment stayed on
+      the shift, so the drawer was expected at midnight to hold cash that had
+      already gone back to the customer, and the cashier was asked to explain
+      a shortage the till itself had invented.
+    */
+    const back = await giveTheMoneyBack(turned, {
+      reason: rejectNote || rejectCode || 'turned away at the pass',
+      userId: who?.$id ?? '',
+    }).catch(() => ({ givenBack: 0, payments: 0 }));
+    if (back.payments > 0 && settings) {
+      setError(
+        `${formatMoney(back.givenBack, settings)} was already paid for ${displayOrderNo(turned.order_no)}. `
+        + 'It has been taken back out of the shift, so the drawer is not expected to hold it. '
+        + 'Hand it back to the customer.',
+      );
+    }
     setRejecting(null);
     setRejectNote('');
   };

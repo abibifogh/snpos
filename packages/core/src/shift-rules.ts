@@ -515,3 +515,57 @@ export function resendProblem(shift: { code?: string; status?: string }): string
  */
 export const resendPending = (shift: { summary_resend_at?: string | null }): boolean =>
   !!shift.summary_resend_at;
+
+/* --------------------------------------- where an opening figure came from */
+
+/**
+ * Did somebody type their own figure over the one the till filled in?
+ *
+ * The till pre-fills the opening float from whatever the business's policy
+ * says, and the person opening may change it — that is the whole point of it
+ * being a box rather than a line of text. Which of the two it ended up being
+ * decides what the shift records about itself, and that is the difference
+ * between "the system put this here" and "a person counted this", which is the
+ * first thing anybody asks when an opening float is disputed.
+ */
+export function ownFigure(
+  entered: Record<string, number>,
+  filled: Record<string, number>,
+): boolean {
+  const keys = new Set([...Object.keys(entered), ...Object.keys(filled)]);
+  for (const k of keys) {
+    if ((entered[k] ?? 0) !== (filled[k] ?? 0)) return true;
+  }
+  return false;
+}
+
+/**
+ * Where a shift's opening figure came from, said in words.
+ *
+ * Shown next to the figure itself, on the close and in the shift record. An
+ * opening float is the one number on a close that nobody present chose, so
+ * when it is wrong — money banked overnight, a drawer emptied, a figure typed
+ * in error — the person counting has no way to tell which of those it was, and
+ * the argument comes down to what somebody remembers about a morning three
+ * weeks ago.
+ */
+export function floatOrigin(source?: string, carriedFromCode?: string, amount?: number): string {
+  if (source === 'carried_over') {
+    return carriedFromCode
+      ? `carried over from ${carriedFromCode}, the last shift on this side`
+      : 'carried over from the last shift on this side';
+  }
+  if (source === 'manual') return 'counted and typed in when the shift was opened';
+  /*
+    Recorded as starting at nothing, and holding something.
+
+    The till fills in nought under that policy, so anything else in the box got
+    there because a person put it there — including on every shift opened
+    before this was written down, which is the case that matters. Saying
+    "started at nothing" over a float of GH₵650 would be the screen flatly
+    contradicting the figure beside it, and the reader would be right not to
+    believe either.
+  */
+  if ((amount ?? 0) > 0) return 'typed in when the shift was opened';
+  return 'started at nothing';
+}

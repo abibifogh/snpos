@@ -10,7 +10,7 @@ import {
   changeOpeningFloat, floatProblem, describeFloatChange, parseMoney, toInput,
   requestSummaryResend, resendPending,
   listCreatedBetween, listByIds, setShiftSealed, isSealed, describeSeal, lockedProblem,
-  rangeTotals, kindsWorthShowing, KIND_LABELS, canOpen,
+  rangeTotals, kindsWorthShowing, KIND_LABELS, canOpen, floatOrigin,
 } from '@snpos/core';
 import type { Module, Doc, CashHandover } from '@snpos/core';
 import { useSession } from '../session';
@@ -25,6 +25,10 @@ interface Shift extends Doc {
   opened_at: string;
   closed_at?: string;
   opening_floats: string;
+  /** Where that opening figure came from. See floatOrigin. */
+  float_source?: string;
+  /** The shift the cash was carried out of, where it was carried. */
+  carried_from_shift_id?: string;
   /** An admin has asked for the closing report to go again, and it has not yet. */
   summary_resend_at?: string | null;
   expected?: string;
@@ -266,6 +270,16 @@ export function ShiftsPage() {
   };
   const [handovers, setHandovers] = useState<CashHandover[]>([]);
   const [detail, setDetail] = useState<Shift | null>(null);
+  /**
+   * The shift a carried float came out of, by its code rather than its id.
+   *
+   * Only findable when that shift is one of the rows on screen, which for a
+   * float carried overnight it usually is. Absent is not a problem: floatOrigin
+   * still says the money was carried over, it just cannot name where from.
+   */
+  const carriedCode = detail?.carried_from_shift_id
+    ? (rows ?? []).find((r) => r.$id === detail.carried_from_shift_id)?.code
+    : undefined;
   const [side, setSide] = useState<Side>('all');
   const [error, setError] = useState<string | null>(null);
 
@@ -645,6 +659,20 @@ export function ShiftsPage() {
             <strong>Expected</strong> is the float this drawer opened with, plus everything taken through it,
             less anything paid out of it. <strong>Counted</strong> is what the person closing physically found.
             The difference between them is the only figure here that nobody typed.
+          </p>
+          {/*
+            Where the float came from, on the screen where a float is argued
+            about. It is the one figure in this table that the people who
+            worked the shift did not choose, so when a drawer reads short by
+            exactly the float, this line is the difference between an answer
+            and a suspicion.
+          */}
+          <p className="small dim" style={{ marginTop: '-0.4rem' }}>
+            The <strong>float</strong> on this shift was {floatOrigin(
+              detail.float_source,
+              carriedCode,
+              Object.values(parseMap(detail.opening_floats)).reduce((a, b) => a + b, 0),
+            )}.
           </p>
           <div className="table-wrap">
             <table className="data">

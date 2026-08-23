@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit, mustWaitForNextShift, shouldWarnLateOrder,
   SHIFT_MAX_HOURS, SHIFT_WARN_HOURS,
-  shiftAgeOf, openShiftsFor, blockerFor, isLivePayment, sellBlockedReason, carryOverFloats, lastForSide, floatProblem, describeFloatChange, resendProblem, resendPending,
+  shiftAgeOf, openShiftsFor, blockerFor, isLivePayment, sellBlockedReason, carryOverFloats, lastForSide, floatProblem, describeFloatChange, resendProblem, resendPending, ownFigure, floatOrigin,
 } from '../shift-rules.ts';
 
 const at = (iso: string) => new Date(iso);
@@ -474,4 +474,54 @@ test('a resend is outstanding until the server clears it', () => {
   assert.equal(resendPending({ summary_resend_at: '2026-08-21T10:00:00.000Z' }), true);
   assert.equal(resendPending({}), false);
   assert.equal(resendPending({ summary_resend_at: null }), false);
+});
+
+
+test('a figure typed over the one the till filled in is the person\'s own', () => {
+  /*
+    The float the policy produces and the float somebody counted are recorded
+    differently, and this is what tells them apart. Accepting the pre-filled
+    figure is not the same act as typing it, even when the number matches.
+  */
+  assert.equal(ownFigure({ cash: 65_000 }, { cash: 65_000 }), false);
+  assert.equal(ownFigure({ cash: 0 }, { cash: 65_000 }), true);
+  assert.equal(ownFigure({ cash: 65_000 }, { cash: 0 }), true);
+});
+
+test('a method missing from one side counts as nothing, not as a difference', () => {
+  /*
+    The till fills in every enabled method; the boxes only carry the ones on
+    screen. A card terminal filled in at zero and left out of the typed map is
+    the same answer twice, and reading it as a change would file every shift
+    opened on a policy as manually counted.
+  */
+  assert.equal(ownFigure({ cash: 0 }, { cash: 0, card: 0 }), false);
+  assert.equal(ownFigure({ cash: 0, card: 0 }, { cash: 0 }), false);
+  assert.equal(ownFigure({ cash: 0 }, { cash: 0, card: 500 }), true);
+});
+
+test('an opening figure says where it came from', () => {
+  /*
+    The words matter more than the branch. This line is read by somebody
+    holding a drawer that is short by exactly the float, and "carried over from
+    BIST-07" is an answer where "started with GH₵650" is only a fact.
+  */
+  assert.equal(floatOrigin('carried_over', 'BIST-07'), 'carried over from BIST-07, the last shift on this side');
+  assert.equal(floatOrigin('carried_over'), 'carried over from the last shift on this side');
+  assert.equal(floatOrigin('manual'), 'counted and typed in when the shift was opened');
+  assert.equal(floatOrigin('zero'), 'started at nothing');
+  // A shift written before any of this existed says the least wrong thing.
+  assert.equal(floatOrigin(undefined), 'started at nothing');
+});
+
+test('a float recorded as nothing, holding something, was typed', () => {
+  /*
+    Every shift opened before the source was recorded properly reads as 'zero'.
+    Saying "started at nothing" above a float of GH650 is the screen arguing
+    with the number next to it, and the only thing that puts a figure in that
+    box under the zero policy is somebody typing it.
+  */
+  assert.equal(floatOrigin('zero', undefined, 65_000), 'typed in when the shift was opened');
+  assert.equal(floatOrigin(undefined, undefined, 65_000), 'typed in when the shift was opened');
+  assert.equal(floatOrigin('zero', undefined, 0), 'started at nothing');
 });

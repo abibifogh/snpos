@@ -9,10 +9,10 @@ import {
   db, DB_ID, formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift, loadOpenShift, loadOpenShifts, shiftBlockers, expectedTakings, closeShift, openingFloats,
   recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, shouldWarnLateOrder,
-  HANDOVER_ENABLED,
+  HANDOVER_ENABLED, ownFigure, floatOrigin,
 } from '@snpos/core';
 import type {
-  PaymentMethod, Shift, Settings, Venue, StaffProfile, FeatureMap, Order,
+  PaymentMethod, Shift, Settings, Venue, StaffProfile, FeatureMap, Order, FloatSource,
 } from '@snpos/core';
 
 /**
@@ -47,8 +47,11 @@ export function CombinedBar({
   const [handingOver, setHandingOver] = useState(false);
   const [history, setHistory] = useState(false);
   const [floats, setFloats] = useState<Record<string, string>>({});
-  const [floatSource, setFloatSource] = useState('zero');
+  const [floatSource, setFloatSource] = useState<FloatSource>('zero');
   const [floatNote, setFloatNote] = useState('');
+  /** What the screen filled in, and the shift a carried float came out of. */
+  const [floatFilled, setFloatFilled] = useState<Record<string, number>>({});
+  const [floatFrom, setFloatFrom] = useState<{ id: string; code: string } | undefined>(undefined);
   const [rows, setRows] = useState<CountRow[]>([]);
   const [blockers, setBlockers] = useState<BlockerRow[]>([]);
   const [note, setNote] = useState('');
@@ -76,6 +79,8 @@ export function CombinedBar({
   const resolved = resolveCounts(stockList, stockCounts, stockDecimals);
   const tolerance = settings.cash_variance_tolerance ?? 500;
   const money = (n: number) => formatMoney(n, settings);
+  /** What is currently typed into the opening boxes, added up. */
+  const carried = Object.values(floats).reduce((a, v) => a + (parseMoney(v, decimals) ?? 0), 0);
 
   const reload = useCallback(async () => {
     // This screen is the kitchen, so it opens and closes the kitchen's shift.
@@ -103,9 +108,11 @@ export function CombinedBar({
     const opening = await openingFloats(venue.$id, settings, m, 'kitchen');
     setFloatSource(opening.source);
     setFloatNote(opening.note);
+    setFloatFrom(opening.from);
+    setFloatFilled(Object.fromEntries(m.map((x) => [x.$id, opening.floats[x.$id] ?? 0])));
     setFloats(
       Object.fromEntries(
-        m.map((x) => [x.$id, opening.source === 'prompt' ? '' : toInput(opening.floats[x.$id] ?? 0, decimals)]),
+        m.map((x) => [x.$id, opening.policy === 'prompt' ? '' : toInput(opening.floats[x.$id] ?? 0, decimals)]),
       ),
     );
     setOpening(true);
@@ -116,11 +123,18 @@ export function CombinedBar({
     setBusy(true);
     setError(null);
     try {
+      const entered = Object.fromEntries(
+        Object.entries(floats).map(([k, v]) => [k, parseMoney(v, decimals) ?? 0]),
+      );
+      // A figure typed over the one the policy filled in belongs to the person
+      // who typed it. See ownFigure.
+      const changed = ownFigure(entered, floatFilled);
       await openShift({
         venueId: venue.$id,
         userId: who?.user_id || who?.$id || '',
-        floats: Object.fromEntries(Object.entries(floats).map(([k, v]) => [k, parseMoney(v, decimals) ?? 0])),
-        floatSource,
+        floats: entered,
+        floatSource: changed ? 'manual' : floatSource,
+        carriedFrom: !changed && floatSource === 'carried_over' ? floatFrom?.id : undefined,
         module: 'kitchen',
       });
       await reload();
@@ -169,6 +183,12 @@ export function CombinedBar({
       // What came in and what went out, before the per-drawer arithmetic.
       setFlow({
         opening: Object.values(takings.openingFloats).reduce((a, b) => a + b, 0),
+        // Where that figure came from, said next to it. See floatOrigin.
+        openingFrom: floatOrigin(
+          shift?.float_source,
+          undefined,
+          Object.values(takings.openingFloats).reduce((a, b) => a + b, 0),
+        ),
         sales: takings.salesTotal,
         tips: takings.tipsTotal,
         // What actually left the drawers. Spending somebody covered from their
@@ -365,7 +385,23 @@ export function CombinedBar({
           <p className="small dim" style={{ marginTop: 0 }}>
             Count what is in the drawer now. A guess here becomes a false discrepancy at the end of the night.
           </p>
-          {floatNote && <p className="small dim">{floatNote}</p>}
+          {/* Money nobody in the room counted, stated rather than pre-filled
+              quietly. See the same notice on the terminal's open. */}
+          {floatSource === 'carried_over' && carried > 0 && (
+            <Notice tone="warn">
+              <strong>This drawer is starting with {money(carried)}.</strong>
+              <div className="small" style={{ marginTop: '0.3rem' }}>{floatNote}</div>
+              <div style={{ marginTop: '0.5rem' }}>
+                <Button
+                  size="sm"
+                  onClick={() => setFloats(Object.fromEntries(methods.map((m) => [m.$id, toInput(0, decimals)])))}
+                >
+                  The drawer was emptied — start at nothing
+                </Button>
+              </div>
+            </Notice>
+          )}
+          {floatSource !== 'carried_over' && floatNote && <p className="small dim">{floatNote}</p>}
           {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
           {methods.map((m) => (
             <Field key={m.$id} label={`${m.name} float (${settings.currency_symbol})`}>

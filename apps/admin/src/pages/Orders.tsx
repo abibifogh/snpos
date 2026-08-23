@@ -343,8 +343,12 @@ export function OrdersPage() {
         }
       }
 
+      let gaveBack = '';
       if (how === 'cancel') {
-        await cancelOrder(order, { reason: killReason.trim(), userId: user?.$id ?? '' });
+        const back = await cancelOrder(order, { reason: killReason.trim(), userId: user?.$id ?? '' });
+        // Money is never quietly moved. If a payment came back out of the
+        // takings, the person who did it is told, in figures.
+        if (back.payments > 0) gaveBack = `${money(back.givenBack)} marked refunded and taken off the shift.`;
       } else {
         await removeOrder(order, { userId: user?.$id ?? '' });
       }
@@ -365,7 +369,7 @@ export function OrdersPage() {
       // What went back matters more than the fact it was cancelled, so it is
       // said rather than left on a row nobody opens.
       const did = how === 'cancel' ? `${order.order_no} cancelled` : `${order.order_no} deleted`;
-      toast(unwound ? `${did}. ${unwound}` : did);
+      toast([did, gaveBack, unwound].filter(Boolean).map((s) => s.replace(/\.$/, '')).join('. '));
     } catch (e) {
       toast(humanError(e), 'err');
     } finally {
@@ -1334,6 +1338,18 @@ export function OrdersPage() {
                 The record stays and stays readable. It stops counting towards the shift, and it comes off
                 the list the kitchen sees under “This shift”.
               </p>
+              {/* Said before the button is pressed, because it is money and
+                  because somebody has to physically hand it over. */}
+              {(killing.order.payment_status === 'paid' || killing.order.payment_status === 'partial') && (
+                <Notice tone="warn">
+                  <strong>This order has been paid for.</strong>
+                  <div className="small" style={{ marginTop: '0.3rem' }}>
+                    Cancelling marks that payment refunded and takes it back out of the shift's takings, so the
+                    drawer is no longer expected to hold it. Make sure the money has actually gone back to the
+                    customer.
+                  </div>
+                </Notice>
+              )}
               <Field label="Why" hint="Goes on the order and into the audit log. Somebody will ask.">
                 <Input value={killReason} onChange={(e) => setKillReason(e.target.value)} />
               </Field>

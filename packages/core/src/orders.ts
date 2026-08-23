@@ -18,6 +18,9 @@ export {
 } from './orders-time';
 import { createOrQueue, isOffline } from './offline';
 import { computeTotals, lineUnitPrice, lineTotal } from './pricing';
+// Pure, and the same rule the shift close reads. A payment that is not live is
+// not money in a drawer, wherever the question is asked from.
+import { isLivePayment } from './shift-rules';
 import type { CartLine } from './pricing';
 import type { Settings, Doc } from './types';
 import type { Module } from './access';
@@ -669,7 +672,7 @@ export async function recomputeOrderTotals(
 export async function cancelOrder(
   order: Pick<Order, '$id' | 'venue_id' | 'shift_id'>,
   opts: { reason: string; userId: string },
-): Promise<void> {
+): Promise<{ givenBack: number; payments: number }> {
   await db.updateDocument(DB_ID, 'orders', order.$id, {
     status: 'CANCELLED',
     /*
@@ -691,14 +694,86 @@ export async function cancelOrder(
     alert_level: 0,
   });
 
+  // The money goes back with it. See giveTheMoneyBack — without this the
+  // drawer was still expected to hold cash that had been handed to a customer.
+  const back = await giveTheMoneyBack(order, opts);
+
   await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
     venue_id: order.venue_id,
     actor_id: opts.userId,
     action: 'order_cancelled',
     entity_type: 'order',
     entity_id: order.$id,
-    after: JSON.stringify({ reason: opts.reason, shift_id: order.shift_id ?? '' }),
+    after: JSON.stringify({
+      reason: opts.reason,
+      shift_id: order.shift_id ?? '',
+      given_back: back.givenBack,
+    }),
   }).catch(() => undefined);
+
+  return back;
+}
+
+/**
+ * Take back the money recorded against an order that is not going to happen.
+ *
+ * An order can be called off after it has been paid for — a duplicate rung up
+ * twice, a bill against the wrong table, a customer who walked out and was
+ * given their money back at the door. Cancelling it used to change the order
+ * and nothing else, which left the payment rows exactly as they were.
+ *
+ * The consequence lands on somebody else, hours later. The shift counts a
+ * payment as money it took, and expects to find it in the drawer at closing
+ * time. So the cashier who handed GH₵200 back to a customer is told at
+ * midnight that the drawer is GH₵200 short, and there is nothing on the screen
+ * connecting the two — the order is marked cancelled, which reads like the
+ * money went with it. Every one of those is a person asked to account for a
+ * shortage that the system created.
+ *
+ * Marked refunded rather than deleted, the same way a payment voided by hand
+ * is: the row is the record that money came in and then went back out again,
+ * and erasing it would make a night's takings change with nothing to show why.
+ * `isLivePayment` already treats a refunded row as no longer in the drawer, so
+ * the expected figure, the takings and the accounts all move together.
+ *
+ * Nothing here is allowed to fail the cancellation itself. An order that will
+ * not cancel because one payment row would not update is worse than a
+ * cancellation with a payment left to tidy up by hand — and the audit entry
+ * records what actually went back, not what was intended.
+ */
+export async function giveTheMoneyBack(
+  order: Pick<Order, '$id' | 'venue_id'>,
+  opts: { reason: string; userId: string },
+): Promise<{ givenBack: number; payments: number }> {
+  const rows = await listAll<{
+    $id: string; amount: number; tip?: number; status?: string;
+  }>('payments', [Query.equal('order_id', order.$id)]).catch(() => []);
+
+  const live = rows.filter(isLivePayment);
+  let givenBack = 0;
+  let payments = 0;
+  for (const p of live) {
+    const done = await db
+      .updateDocument(DB_ID, 'payments', p.$id, {
+        status: 'refunded',
+        refund_reason: `Order cancelled: ${opts.reason}`.slice(0, 300),
+      })
+      .then(() => true)
+      .catch(() => false);
+    if (!done) continue;
+    givenBack += p.amount + (p.tip ?? 0);
+    payments += 1;
+  }
+
+  // Refunded, not unpaid. Both are true in the sense that nothing is held any
+  // more, but only one of them says what happened, and "unpaid" against an
+  // order somebody definitely paid for is how a customer gets chased for money
+  // they already handed over and got back.
+  if (payments > 0) {
+    await db.updateDocument(DB_ID, 'orders', order.$id, { payment_status: 'refunded' }).catch(() => undefined);
+  }
+
+  return { givenBack, payments };
 }
 
 /**

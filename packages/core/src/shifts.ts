@@ -26,6 +26,8 @@ export interface Shift extends Doc {
   opened_at: string;
   opening_floats: string;
   float_source: string;
+  /** The shift its opening cash was carried out of, where it was carried. */
+  carried_from_shift_id?: string;
   closed_at?: string;
   closed_by?: string;
   /** JSON, per method, written at close. */
@@ -61,6 +63,22 @@ export const loadPaymentMethods = async (venueId: string): Promise<PaymentMethod
   (await listAll<PaymentMethod>('payment_methods', [Query.equal('venue_id', venueId)])).filter((m) => m.enabled);
 
 /**
+ * What the shift row records about where its opening figure came from.
+ *
+ * THREE VALUES, and only these three. The field is a fixed list in the
+ * database and always has been, while this function used to answer with the
+ * name of the SETTING instead — 'carry_over', 'fixed', 'prompt'. None of those
+ * is in the list, and Appwrite refuses a whole write for one bad value, so
+ * every attempt to open a shift under any float policy except "start at
+ * nothing" was rejected outright with a message about an invalid format.
+ *
+ * The three settings that could not open a till are exactly the three that
+ * put money in the drawer, which is why it looked like a float problem rather
+ * than a broken save.
+ */
+export type FloatSource = 'zero' | 'manual' | 'carried_over';
+
+/**
  * What each drawer should start the shift holding.
  *
  * Starting every shift at zero means somebody physically empties the till
@@ -82,7 +100,16 @@ export async function openingFloats(
    * shift closed last, whichever trade it belonged to — see below.
    */
   module: Module = 'kitchen',
-): Promise<{ floats: Record<string, number>; source: string; note: string }> {
+): Promise<{
+  floats: Record<string, number>;
+  /** What goes on the shift row. See FloatSource. */
+  source: FloatSource;
+  /** What the setting asked for. The screens read this, the database does not. */
+  policy: 'zero' | 'carry_over' | 'fixed' | 'prompt';
+  /** The shift the cash was carried from, where that is what happened. */
+  from?: { id: string; code: string };
+  note: string;
+}> {
   const policy = settings.shift_float_policy ?? 'zero';
 
   if (policy === 'carry_over') {
@@ -120,7 +147,9 @@ export async function openingFloats(
         return {
           // Cash only. See carryOverFloats for why a card is not a float.
           floats: carryOverFloats(counted, methods),
-          source: 'carry_over',
+          source: 'carried_over',
+          policy,
+          from: { id: last.$id, code: last.code },
           // The shift it came from is named. A float carried from the wrong
           // drawer is invisible as a number and obvious as a shift code.
           note: `Cash carried over from ${last.code}, this side's last shift. Count it to be sure. `
@@ -132,7 +161,9 @@ export async function openingFloats(
     }
     return {
       floats: Object.fromEntries(methods.map((m) => [m.$id, 0])),
-      source: 'carry_over',
+      // Nothing was carried, so nothing is what this started with.
+      source: 'zero',
+      policy,
       note: `No previous ${MODULE_LABELS[module].toLowerCase()} shift to carry over from, starting at nothing.`,
     };
   }
@@ -144,18 +175,27 @@ export async function openingFloats(
       floats: Object.fromEntries(
         methods.map((m) => [m.$id, m.kind === 'cash' ? settings.shift_float_default ?? 0 : 0]),
       ),
-      source: 'fixed',
+      // A figure the business set, not one worked out from a previous count.
+      source: 'manual',
+      policy,
       note: 'The standard opening float. Change it if the drawer holds something else.',
     };
   }
 
   if (policy === 'prompt') {
-    return { floats: {}, source: 'prompt', note: 'Count each drawer and enter what is in it.' };
+    return {
+      floats: {},
+      // Whatever is typed into an empty box is somebody's own count.
+      source: 'manual',
+      policy,
+      note: 'Count each drawer and enter what is in it.',
+    };
   }
 
   return {
     floats: Object.fromEntries(methods.map((m) => [m.$id, 0])),
     source: 'zero',
+    policy: 'zero',
     note: 'Starting at nothing. Enter anything already in the drawer.',
   };
 }
@@ -164,8 +204,17 @@ export async function openShift(opts: {
   venueId: string;
   userId: string;
   floats: Record<string, number>;
-  /** Where the opening figure came from, for the record. */
-  floatSource?: string;
+  /** Where the opening figure came from, for the record. See FloatSource. */
+  floatSource?: FloatSource;
+  /**
+   * The shift the cash was carried out of, when it was carried.
+   *
+   * Written down because "why did this shift start with GH₵650 that was not in
+   * the drawer" is a question with no answer anywhere else. A float is the one
+   * figure on a close that nobody at the close chose, and without a trail back
+   * to where it came from the only way to settle the argument is to remember.
+   */
+  carriedFrom?: string;
   /**
    * Which side of the business this shift is for.
    *
@@ -213,6 +262,7 @@ export async function openShift(opts: {
     opened_at: new Date().toISOString(),
     opening_floats: JSON.stringify(opts.floats),
     float_source: opts.floatSource ?? 'zero',
+    ...(opts.carriedFrom ? { carried_from_shift_id: opts.carriedFrom } : {}),
     sales_total: 0, expense_total: 0, tax_total: 0, tip_total: 0, discount_total: 0,
     void_total: 0, refund_total: 0, cogs_total: 0, covers: 0,
     stock_check_status: 'pending', posted_to_ledger: false,
