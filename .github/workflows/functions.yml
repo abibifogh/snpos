@@ -156,53 +156,46 @@ jobs:
         # WITHOUT THIS A FUNCTION IS DEPLOYED AND NEVER RUNS.
         #
         # Appwrite triggers a function from an event list held on the function
-        # itself, and nothing in this repo used to set it — it was a thing
-        # somebody ticked in the console once and nobody could see afterwards.
-        # A staff invite that never arrives looks exactly like a mail problem
-        # from every screen: the profile saves, no error appears anywhere, and
-        # the function that was supposed to create the account was simply never
+        # itself. A staff invite that never arrives looks exactly like a mail
+        # problem from every screen: the profile saves, no error appears
+        # anywhere, and the function that was supposed to answer was never
         # called.
         #
-        # Set on every deploy, so the subscription cannot drift away from the
-        # code that depends on it, and printed afterwards so the log says what
-        # is actually listening.
+        # READ FROM appwrite.json, NOT WRITTEN OUT AGAIN HERE.
+        #
+        # This step used to carry its own copy of the list, and a copy of a
+        # list is a list that goes wrong. It did, in both possible ways at
+        # once: it named a database that does not exist — `main`, from a
+        # setting nothing sets, while every other step passes `snpos` — and it
+        # was five events short on the order guard, so pushing it REMOVED the
+        # subscriptions appwrite.json had put there. Cancellations, reversals,
+        # discount redemptions, payments and payouts all stopped being
+        # answered, silently, and every one of those looks from the outside
+        # like the feature was never built.
+        #
+        # So the file that declares the functions is the only thing that says
+        # what they listen to. Only the database name is substituted, so a
+        # project whose database is called something else still works.
         env:
-          DB_ID: ${{ secrets.APPWRITE_DB_ID || 'main' }}
+          DB_ID: ${{ vars.DB_ID || 'snpos' }}
         run: |
           set -u
-          doc() { echo "databases.$DB_ID.collections.$1.documents.*.$2"; }
-
-          events_for() {
-            case "$1" in
-              notify)
-                # Receipts and notices, shift summaries, staff logins, and a
-                # dish going off the menu. See the header of notify/main.js.
-                echo "$(doc orders update)"
-                echo "$(doc shifts update)"
-                echo "$(doc staff_profiles create)"
-                echo "$(doc staff_profiles update)"
-                echo "$(doc staff_profiles delete)"
-                echo "$(doc item_availability create)"
-                ;;
-              order-guard)
-                echo "$(doc orders create)"
-                echo "$(doc orders update)"
-                ;;
-              preorder-fire) ;;      # schedule only
-              kitchen-escalate) ;;   # schedule only
-            esac
-          }
+          echo "Subscribing against database: $DB_ID"
 
           FAILED=""
-          for fn in order-guard notify; do
+          for fn in $(jq -r '.functions[]."$id"' appwrite.json); do
             args=""
             while read -r ev; do
               [ -n "$ev" ] && args="$args --events $ev"
             done <<EOF
-          $(events_for "$fn")
+          $(jq -r --arg fn "$fn" '.functions[] | select(."$id" == $fn) | .events[]?' appwrite.json \
+             | sed -E "s/^databases\.[^.]+\./databases.$DB_ID./")
           EOF
 
-            [ -z "$args" ] && continue
+            # No events declared means a job that runs on a timer. Clearing
+            # what is there would be this step inventing an opinion.
+            [ -z "$args" ] && { echo "  $fn listens to nothing (runs on a schedule)"; continue; }
+
             name=$(appwrite functions get --function-id "$fn" 2>/dev/null \
                    | sed -n 's/.*"name"[^"]*"\([^"]*\)".*/\1/p' | head -1)
             # shellcheck disable=SC2086
@@ -215,11 +208,22 @@ jobs:
           done
 
           echo "What each function is now listening to:"
-          for fn in order-guard preorder-fire kitchen-escalate notify; do
+          for fn in $(jq -r '.functions[]."$id"' appwrite.json); do
             echo "  $fn:"
             appwrite functions get --function-id "$fn" 2>/dev/null \
               | tr ',' '\n' | grep -o 'databases\.[^"]*' | sed 's/^/    /' || echo "    (none)"
           done
+
+          # A subscription against the wrong database passes every check above:
+          # it is set, it is listed, it looks right, and it can never fire.
+          # That is what cost weeks of "the email is not sending", so the one
+          # thing that was wrong is now the one thing that is asserted.
+          if ! appwrite functions get --function-id notify 2>/dev/null \
+               | grep -q "databases\.$DB_ID\.collections\.shifts"; then
+            echo "::error::notify is not listening for shift closes on database '$DB_ID'."
+            echo "Nothing that depends on an event will fire. Check the DB_ID repository variable."
+            exit 1
+          fi
 
           if [ -n "$FAILED" ]; then
             echo "::error::These functions were deployed but are not subscribed to anything:$FAILED"
