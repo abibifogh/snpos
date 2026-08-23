@@ -330,6 +330,84 @@
 }
 .bill-empty .big { font-size: 2rem; opacity: 0.35; }
 
+/* =====================================================================
+   The till on a phone
+   ===================================================================== */
+
+/*
+  The bar across the top was one row: who is signed in, the kitchen/bar/shop
+  switcher, the view tabs, and four buttons on the right. On a tablet that
+  fits. On a phone it does not — and the two strips of tabs are the only
+  children of that row allowed to scroll, so they were the ones the browser
+  squeezed, down to a sliver a few pixels wide with the buttons hidden inside
+  it. The switcher was still on the screen, and there was no way to reach it.
+
+  So on a narrow screen the bar becomes two lines. The name and the buttons
+  keep the top line; the switcher and the tabs get a full-width line of their
+  own underneath, where they are read at full size and thumbed sideways if
+  there are more than fit. `pos-strips` is the box holding those two, and it
+  is nothing at all on a wide screen — see `display: contents` below.
+*/
+.pos-strips { display: contents; }
+
+/*
+  Who gives way when the bar runs out of room, at every width.
+
+  Left alone, a flex row shrinks whichever child will let it, and the strips of
+  tabs were the only ones that would — so the switcher lost its last button
+  before the venue name lost a single letter. It is the other way round now:
+  the switcher and the buttons keep their size, the name is shortened with an
+  ellipsis, and the view tabs take whatever squeeze is left and scroll.
+*/
+.pos-whoami { flex: 0 1 auto; min-width: 0; }
+.pos-whoami > div { min-width: 0; }
+.pos-whoami strong,
+.pos-top .who { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pos-side, .pos-acts { flex: none; }
+
+@media (max-width: 900px) {
+  .pos-top {
+    flex-wrap: wrap;
+    gap: 0.4rem 0.6rem;
+    padding: 0.5rem 0.75rem;
+    padding-top: calc(0.5rem + env(safe-area-inset-top, 0));
+    padding-left: calc(0.75rem + env(safe-area-inset-left, 0));
+    padding-right: calc(0.75rem + env(safe-area-inset-right, 0));
+  }
+
+  .pos-whoami { flex: 1 1 auto; }
+  .pos-top .who { font-size: 0.78rem; }
+
+  /* Run out, Help, Lock, Sign out. Four of them will not sit beside the name
+     on a 360px screen, so they are allowed to fold into two short rows rather
+     than shove the name off or shrink into unreadable stubs. */
+  .pos-acts {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.3rem;
+    margin-left: auto;
+  }
+
+  /* The second line: the whole width, and it scrolls sideways if the switcher
+     and the tabs together are wider than the phone. */
+  .pos-strips {
+    display: flex;
+    flex: 1 1 100%;
+    min-width: 0;
+    align-items: center;
+    gap: 0.5rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .pos-strips::-webkit-scrollbar { display: none; }
+  /* The strips no longer scroll themselves — the line they sit on does, so
+     that a switcher squeezed against tabs still shows all of both. */
+  .pos-strips > .pos-tabs { overflow: visible; flex: none; }
+  .pos-side { margin-right: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .menu-card, .qty-step button, .bill .btn-primary { transition: none; }
   .menu-card:active:not(:disabled),

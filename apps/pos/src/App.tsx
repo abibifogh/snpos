@@ -350,13 +350,20 @@ export function App() {
       />
       <OfflineBar queued={queued} onRetry={() => void flushQueue()} />
       <div className="pos-top">
-        <div className="row">
+        <div className="row pos-whoami">
           <Logo size={26} />
           <div>
             <strong>{ctx.venue.name}</strong>
             <div className="who">{ctx.profile?.display_name ?? 'Staff'} · {ctx.profile?.role ?? 'no profile'}</div>
           </div>
         </div>
+        {/* The two strips of buttons, held together.
+            On a wide screen this box is not there at all — `display: contents`
+            — and the strips sit in the top row as they always have. On a phone
+            it becomes the second line of the bar, so that the switcher and the
+            tabs have the width to be read instead of being squeezed to nothing
+            between the name on the left and the buttons on the right. */}
+        <div className="pos-strips">
         {/* Which counter this till is. Only shown to somebody who works both
             sides in a business that runs both, everyone else is already where
             they belong and a switch would just be a way to end up in the wrong
@@ -400,7 +407,8 @@ export function App() {
             )}
           </div>
         )}
-        <div className="row">
+        </div>
+        <div className="row pos-acts">
           {isEnabled(ctx.features, 'item_availability') && (
             <Button
               size="sm"
