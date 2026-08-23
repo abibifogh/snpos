@@ -2666,6 +2666,18 @@ export const COLLECTIONS = [
       ['delivered_to', 's', 2000, false],
       ['last_error', 's', 500, false],
       ['sent_at', 'd', null, false],
+      /*
+        What the mail server said when it took the message.
+
+        Its own reference and its reply, kept because "sent" and "arrived" are
+        two different facts and this row could only ever report the first. A
+        report that the provider accepted and then dropped — an unverified
+        sender, a bounce, a spam filter — looked identical here to one sitting
+        in somebody's inbox, and there was nothing to search the provider's
+        own records with.
+      */
+      ['provider_ref', 's', 200, false],
+      ['provider_reply', 's', 300, false],
     ],
     indexes: [
       ['venue_kind_created', 'key', ['venue_id', 'kind', '$createdAt']],

@@ -2,6 +2,33 @@ import { Query } from 'node-appwrite';
 import { receiptPdf } from './receipt-pdf.js';
 
 /**
+ * What the mail server actually said, written onto the report row.
+ *
+ * sendMail resolves when the message is accepted for AT LEAST ONE recipient,
+ * so "it did not throw" and "everybody got it" are different facts and only
+ * the first one was ever recorded. And a provider that accepts a message and
+ * then drops it — an unverified sender, a bounce, a spam filter — leaves a row
+ * here reading "sent" with nothing to look the message up by.
+ *
+ * So the accepted list, the refused list and the server's own reply are all
+ * kept. `250 Ok, queued as ...` is the reference the provider's records are
+ * searched by, and it is the only way past "it says sent and it never came".
+ */
+export function deliveryFrom(info, asked) {
+  const took = info?.accepted ?? asked;
+  const refused = info?.rejected ?? [];
+  return {
+    delivery_status: refused.length === 0 ? 'sent' : (took.length > 0 ? 'partial' : 'failed'),
+    sent_at: new Date().toISOString(),
+    delivered_to: took.join(', ').slice(0, 2000),
+    provider_ref: (info?.messageId ?? '').slice(0, 200),
+    provider_reply: String(info?.response ?? '').slice(0, 300),
+    ...(refused.length ? { last_error: `The mail server refused ${refused.join(', ')}`.slice(0, 500) } : {}),
+  };
+}
+
+
+/**
  * The two things that happen once a day rather than once a shift.
  *
  * Both hang off the same hourly timer the availability sweep uses, because
@@ -236,17 +263,16 @@ export async function dailyDigest({ db, DB_ID, settings, transport, from, shell,
   }
 
   try {
-    await transport.sendMail({
+    const info = await transport.sendMail({
       from,
       to: to.join(','),
       subject: `${settings.restaurant_name}, ${day} · ${money(sales, settings)} taken`,
       html,
     });
-    await db.updateDocument(DB_ID, 'summary_reports', report.$id, {
-      delivery_status: 'sent',
-      sent_at: new Date().toISOString(),
-    });
-    log(`Daily summary sent for ${day} to ${to.length}`);
+    const delivery = deliveryFrom(info, to);
+    await db.updateDocument(DB_ID, 'summary_reports', report.$id, delivery).catch(() => undefined);
+    log(`Daily summary for ${day} accepted for ${delivery.delivered_to || 'nobody'}`
+      + `${info?.response ? ` — ${info.response}` : ''}`);
     return { sent: to.length };
   } catch (e) {
     await db.updateDocument(DB_ID, 'summary_reports', report.$id, {
@@ -394,7 +420,7 @@ export async function nightlyBackup({ db, DB_ID, settings, transport, from, shel
   }
 
   try {
-    await transport.sendMail({
+    const info = await transport.sendMail({
       from,
       to: to.join(','),
       subject: `${settings.restaurant_name}, backup ${day} (${rowsTotal} records)`,
@@ -411,11 +437,11 @@ export async function nightlyBackup({ db, DB_ID, settings, transport, from, shel
       ),
       attachments,
     });
-    await db.updateDocument(DB_ID, 'summary_reports', report.$id, {
-      delivery_status: 'sent',
-      sent_at: new Date().toISOString(),
-    });
-    log(`Backup sent for ${day}: ${rowsTotal} rows in ${attachments.length} files`);
+    const delivery = deliveryFrom(info, to);
+    await db.updateDocument(DB_ID, 'summary_reports', report.$id, delivery).catch(() => undefined);
+    log(`Backup for ${day} accepted for ${delivery.delivered_to || 'nobody'}: `
+      + `${rowsTotal} rows in ${attachments.length} files`
+      + `${info?.response ? ` — ${info.response}` : ''}`);
     return { sent: to.length, rows: rowsTotal };
   } catch (e) {
     await db.updateDocument(DB_ID, 'summary_reports', report.$id, {

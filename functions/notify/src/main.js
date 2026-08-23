@@ -2,7 +2,7 @@ import { Client, Databases, Query, Users } from 'node-appwrite';
 import nodemailer from 'nodemailer';
 import { receiptPdf } from './receipt-pdf.js';
 import { tradeWords, offSubject } from './words.js';
-import { dailyDigest, nightlyBackup } from './daily.js';
+import { dailyDigest, nightlyBackup, deliveryFrom } from './daily.js';
 import { ensureLogin, revokeLogin } from './staff.js';
 import { handleReports } from './reports.js';
 import { handleSso } from './sso.js';
@@ -1096,7 +1096,7 @@ export default async ({ req, res, log, error }) => {
       }
 
       try {
-        await transport.sendMail({
+        const info = await transport.sendMail({
           from, to: recipients.join(','),
           // Which side, in the subject line. Three trades closing three
           // shifts a day produced three near-identical subjects, and an owner
@@ -1104,10 +1104,14 @@ export default async ({ req, res, log, error }) => {
           subject: `${settings.restaurant_name}, shift ${doc.code} closed${SIDE_NAME[side] || ''}`,
           html,
         });
-        await db.updateDocument(DB_ID, 'summary_reports', report.$id, {
-          delivery_status: 'sent', sent_at: new Date().toISOString(),
-        });
-        log(`Summary sent to ${recipients.length} recipient(s)`);
+
+        // Who the server actually took, and what it said. See deliveryFrom:
+        // accepting the message for one of two recipients still resolves here,
+        // and used to be filed as sent to both.
+        const delivery = deliveryFrom(info, recipients);
+        await db.updateDocument(DB_ID, 'summary_reports', report.$id, delivery).catch(() => undefined);
+        log(`Summary accepted for ${delivery.delivered_to || 'nobody'} of ${recipients.length} asked`
+          + `${info?.response ? ` — ${info.response}` : ''}`);
       } catch (e) {
         await db.updateDocument(DB_ID, 'summary_reports', report.$id, {
           delivery_status: 'failed', last_error: e.message,

@@ -81,6 +81,9 @@ interface Delivery extends Doc {
   delivery_status: 'queued' | 'sent' | 'partial' | 'failed';
   last_error?: string;
   delivered_to?: string;
+  /** The mail server's own reference for the message, and its reply. */
+  provider_ref?: string;
+  provider_reply?: string;
 }
 
 interface ReportSub extends Doc {
@@ -916,8 +919,18 @@ export function SettingsPage() {
 
         <h3 style={{ margin: '1.4rem 0 0.4rem' }}>What actually happened</h3>
         <p className="small dim" style={{ marginTop: 0 }}>
-          The last few reports the server produced, and whether they reached anybody. If something is not
-          arriving, the reason is here rather than in a log nobody can read.
+          The last few reports the server produced, and what happened when it tried to send them.
+        </p>
+        {/*
+          The limit of what this panel can know, said before somebody reads
+          more into it than it says. Three different failures used to look
+          identical from here, and only two of them are ours.
+        */}
+        <p className="small dim">
+          <strong>Handed to the mail server</strong> means the provider took the message — not that it reached an
+          inbox. If it says that and nothing arrived, the message left this system correctly and went astray
+          afterwards: check the spam folder first, then look the reference below up in your mail provider&rsquo;s own
+          records, which will say whether it was delivered, bounced or blocked.
         </p>
         {deliveries === null ? (
           <p className="small dim">Loading…</p>
@@ -957,16 +970,38 @@ export function SettingsPage() {
                   <tr key={d.$id}>
                     <td className="small dim">{new Date(d.$createdAt).toLocaleString()}</td>
                     <td className="small">{REPORT_NAMES[d.kind] ?? d.kind}</td>
+                    {/*
+                      "Handed over", not "arrived".
+
+                      This column said Sent, and people read that as "it is in
+                      their inbox". It never meant that and cannot: all this
+                      end knows is that the mail server took the message. A
+                      provider can accept a message and drop it — an unverified
+                      sender, a bounce, a spam filter — and every one of those
+                      shows here as a success, correctly, because the send did
+                      succeed. So it now says what actually happened, and
+                      carries the server's own reference for the message, which
+                      is what the provider's records are searched by when the
+                      answer to "was it delivered" has to come from them.
+                    */}
                     <td className="small">
-                      {d.delivery_status === 'sent' ? (
-                        <>
-                          <Badge tone="ok">Sent</Badge>{' '}
-                          <span className="dim">{d.delivered_to || ''}</span>
-                        </>
-                      ) : (
+                      {d.delivery_status === 'failed' ? (
                         <>
                           <Badge tone="danger">Not sent</Badge>{' '}
                           <span className="dim">{d.last_error || 'No reason recorded.'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Badge tone={d.delivery_status === 'partial' ? 'warn' : 'ok'}>
+                            {d.delivery_status === 'partial' ? 'Partly accepted' : 'Handed to the mail server'}
+                          </Badge>{' '}
+                          <span className="dim">{d.delivered_to || ''}</span>
+                          {d.last_error && <div className="dim">{d.last_error}</div>}
+                          {(d.provider_reply || d.provider_ref) && (
+                            <div className="dim" style={{ wordBreak: 'break-all' }}>
+                              {d.provider_reply || d.provider_ref}
+                            </div>
+                          )}
                         </>
                       )}
                     </td>
