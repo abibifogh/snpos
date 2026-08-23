@@ -431,6 +431,19 @@ export const COLLECTIONS = [
     name: 'Categories',
     perms: { read: ['any'], create: MGMT, update: MGMT, delete: MGMT },
     attributes: [
+      /*
+        A colour for the till, where there is no picture.
+
+        The categories along the top of a till are words, and words at arm's
+        length on a busy counter all look like each other. A colour turns
+        "read four labels" into "reach for the blue one".
+
+        Second to a picture on purpose: a photograph of the thing is more
+        recognisable than any swatch, and one uploaded deliberately must not be
+        overridden by a colour chosen in a hurry. Blank is the default and
+        keeps the plain chip. See category-colour.ts.
+      */
+      ['colour', 's', 9, false],
       ['name', 's', 120, true],
       ['description', 's', 500, false],
       ['sort', 'i', null, true, 0],

@@ -140,6 +140,13 @@ export interface Category extends Doc {
   availability?: string;
   unavailable_display: 'grey' | 'hide';
   group_only?: boolean;
+  /**
+   * A colour for the till chip, where this category has no picture.
+   *
+   * Blank means the plain chip it has always had. See category-colour.ts: a
+   * picture wins over a colour, and neither is invented.
+   */
+  colour?: string;
   /** Kitchen or craft. Decides which catalogue screen manages it. */
   module?: Module;
   station: Station;

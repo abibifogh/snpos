@@ -66,5 +66,6 @@ export * from './purchase-alerts';
 export * from './expense-analysis';
 export * from './parking';
 export * from './lock';
+export * from './category-colour';
 export * from './shift-move';
 export * from './shift-times';

@@ -8,6 +8,7 @@ import {
   findCode, codeProblem, discountAmount, needsManager, discountLabelFor,
   loadRecipes, loadIngredients, pourList, showsRecipe,
   park, unpark, parkProblem, parkKey, describeParked, autoLabel, isStale,
+  chipColour, showsPicture, inkOn, downloadUrl,
 } from '@snpos/core';
 import type {
   CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, Settings, DiscountRow,
@@ -570,12 +571,51 @@ export function OrderView({
       <div className="pos-body order-layout">
         <div>
           <div className="pos-tabs" style={{ marginBottom: '0.8rem', flexWrap: 'wrap' }}>
-            {sections.map((s) => (
-              <button key={s.category.$id} className={sectionId === s.category.$id ? 'on' : ''} onClick={() => setSectionId(s.category.$id)}>
-                {s.category.name}
-                {!s.open && ' ·'}
-              </button>
-            ))}
+            {sections.map((s) => {
+              /*
+                The colour an admin gave this category, or nothing.
+
+                Painted on every chip INCLUDING the selected one, and selection
+                is shown as a ring instead. The first attempt left the selected
+                chip alone so it kept the till's own highlight — which is a
+                colour, and a category coloured the same as that highlight was
+                then indistinguishable from the live tab. Signalling selection
+                with colour cannot survive somebody choosing that colour.
+
+                A ring is a shape, so it works on any colour and on none.
+
+                A category with a picture gets its picture instead; see
+                chipColour, which returns nothing for those.
+              */
+              const paint = chipColour(s.category);
+              const chosen = sectionId === s.category.$id;
+              const pic = showsPicture(s.category) && s.category.image_id
+                ? downloadUrl(s.category.image_id, 'menu', ctx.settings)
+                : null;
+              return (
+                <button
+                  key={s.category.$id}
+                  className={chosen ? 'on' : ''}
+                  onClick={() => setSectionId(s.category.$id)}
+                  style={paint
+                    ? {
+                      background: paint,
+                      color: inkOn(paint),
+                      borderColor: paint,
+                      // The ring is drawn in the chip's own text colour, so it
+                      // is legible on a dark swatch and on a light one without
+                      // needing to know which this is.
+                      boxShadow: chosen ? `inset 0 0 0 3px ${inkOn(paint)}` : undefined,
+                      fontWeight: chosen ? 700 : undefined,
+                    }
+                    : undefined}
+                >
+                  {pic && <img className="chip-pic" src={pic} alt="" />}
+                  {s.category.name}
+                  {!s.open && ' ·'}
+                </button>
+              );
+            })}
           </div>
           <div className={ctx.module === 'kitchen' ? 'menu-grid' : 'menu-grid with-pics'}>
             {(shownSection?.entries ?? []).map((entry) => {

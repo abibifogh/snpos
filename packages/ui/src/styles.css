@@ -884,6 +884,13 @@ table.data th .sort-order {
 }
 
 
+/* A category's own picture on its till chip, where it has one. Small and
+   round: it is a hint to reach by, not a photograph to look at. */
+.pos-tabs .chip-pic {
+  width: 1.15rem; height: 1.15rem; border-radius: 50%;
+  object-fit: cover; margin-right: 0.4rem; vertical-align: -0.2rem;
+}
+
 /* ---- locked on purpose ---------------------------------------------------
    The same face as the idle clock, and a different door. Asleep is a
    screensaver that any touch dismisses; this one costs a PIN. */

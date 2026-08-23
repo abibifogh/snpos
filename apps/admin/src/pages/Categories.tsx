@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { parseWindows, describeWindows, isAvailable } from '@snpos/core';
+import {
+  parseWindows, describeWindows, isAvailable,
+  CATEGORY_COLOURS, normaliseColour, colourName, inkOn,
+} from '@snpos/core';
 import type { Module, Category, Windows } from '@snpos/core';
 import { HoursEditor } from '../components/HoursEditor';
 import { ImageField } from '../components/ImageField';
@@ -77,6 +80,8 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: Module }) {
       station_key: editing.station_key ?? '',
       availability: Object.keys(hours).length ? JSON.stringify(hours) : '',
       image_id: editing.image_id ?? '',
+      // Normalised on the way in, so '0F766E' and '#0f766e' are one value.
+      colour: normaliseColour(editing.colour),
       // Whichever side of the business this screen is showing. Not a choice on
       // the form: somebody adding a category on the craft page means a craft
       // category, and a dropdown that could contradict the page they are on is
@@ -260,6 +265,65 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: Module }) {
             label="Category photo"
             hint="Optional. Shown as the category header on the customer menu."
           />
+
+          {/*
+            Offered only where there is no picture.
+
+            A photograph of the thing is more recognisable than any swatch, so
+            a category that has one is shown by it and a colour would be a
+            setting with no effect — which is worse than not offering it, as
+            somebody sets it and then wonders why nothing changed.
+          */}
+          {!editing.image_id && (
+            <Field
+              label="Colour on the till"
+              hint={`Optional. The categories along the top of a till are words, and words at arm's length all
+                look alike — a colour turns "read four labels" into "reach for the blue one". ${colourName(editing.colour)}.`}
+            >
+              <div className="row row-wrap" style={{ gap: '0.4rem' }}>
+                {/* No colour first, because it is the default and the way back
+                    from a choice somebody has changed their mind about. */}
+                <button
+                  type="button"
+                  onClick={() => setEditing({ ...editing, colour: '' })}
+                  aria-label="No colour"
+                  aria-pressed={!normaliseColour(editing.colour)}
+                  title="No colour"
+                  style={{
+                    width: '2.2rem', height: '2.2rem', borderRadius: '0.5rem', cursor: 'pointer',
+                    background: 'transparent',
+                    border: normaliseColour(editing.colour)
+                      ? '1px solid var(--border)'
+                      : '3px solid var(--text)',
+                  }}
+                >
+                  ×
+                </button>
+                {CATEGORY_COLOURS.map((c) => (
+                  <button
+                    key={c.hex}
+                    type="button"
+                    onClick={() => setEditing({ ...editing, colour: c.hex })}
+                    aria-label={c.name}
+                    aria-pressed={normaliseColour(editing.colour) === c.hex}
+                    title={c.name}
+                    style={{
+                      width: '2.2rem', height: '2.2rem', borderRadius: '0.5rem', cursor: 'pointer',
+                      background: c.hex,
+                      color: inkOn(c.hex),
+                      // The chosen one is ringed rather than merely bigger:
+                      // a size difference is invisible on a row of squares.
+                      border: normaliseColour(editing.colour) === c.hex
+                        ? '3px solid var(--text)'
+                        : '1px solid var(--border)',
+                    }}
+                  >
+                    {normaliseColour(editing.colour) === c.hex ? '✓' : ''}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
 
           <Field
             label="Available hours"
