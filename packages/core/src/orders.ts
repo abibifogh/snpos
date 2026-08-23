@@ -672,7 +672,21 @@ export async function cancelOrder(
 ): Promise<void> {
   await db.updateDocument(DB_ID, 'orders', order.$id, {
     status: 'CANCELLED',
-    reject_reason_code: 'admin_cancelled',
+    /*
+      'other', not 'admin_cancelled'.
+
+      `reject_reason_code` is a fixed list and has never had that value in it,
+      so every attempt to cancel an order was refused outright by the database
+      with a message about an invalid format. The button had never worked.
+
+      Widening the list is the wrong fix twice over: it would need the database
+      provisioned again before cancelling started working, and the code is not
+      where an admin cancellation is distinguished anyway. The STATUS already
+      says which this was — CANCELLED is an admin taking a finished order back,
+      REJECTED is the kitchen turning one away before cooking it — and the
+      reason somebody typed is on the row beneath.
+    */
+    reject_reason_code: 'other',
     reject_reason_note: opts.reason.slice(0, 500),
     alert_level: 0,
   });

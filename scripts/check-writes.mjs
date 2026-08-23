@@ -45,6 +45,19 @@ const schema = new Map(
       // Required attributes get no default, provisioning drops it, so every
       // create must carry them itself.
       required: c.attributes.filter((a) => a[3] === true).map((a) => a[0]),
+      /*
+        The fixed lists, so a value that can never be stored is caught here.
+
+        This checker knew which FIELDS existed and nothing about what may go in
+        them, which let `reject_reason_code: 'admin_cancelled'` ship — a value
+        the database has never accepted, so cancelling an order was refused
+        every single time with a message about an invalid format. Nothing in
+        the build had an opinion; the first thing that did was a person trying
+        to cancel an order.
+      */
+      enums: new Map(
+        c.attributes.filter((a) => a[1] === 'e' && Array.isArray(a[2])).map((a) => [a[0], a[2]]),
+      ),
     },
   ]),
 );
@@ -89,8 +102,16 @@ function objectAt(src, open) {
  * Returns null when the literal contains anything it cannot account for, so an
  * unusual payload is skipped rather than misreported.
  */
+/**
+ * The keys of a write, and any values written as a plain string.
+ *
+ * Only literals. A value that comes from a variable cannot be checked here and
+ * is not guessed at — this reports what it can prove, and says nothing about
+ * the rest.
+ */
 function topLevelKeys(body) {
   const keys = new Set();
+  const literals = new Map();
   let depth = 0;
   let expectKey = false;
   let i = 0;
@@ -150,6 +171,10 @@ function topLevelKeys(body) {
       const m = /^([A-Za-z_$][A-Za-z0-9_$]*)\s*([:,}])/.exec(body.slice(i));
       if (m) {
         keys.add(m[1]);
+        // `field: 'value'`, and only that. Anything else — a variable, a
+        // ternary, a template — is left alone rather than half-read.
+        const lit = /^[A-Za-z_$][A-Za-z0-9_$]*\s*:\s*(['"])([^'"\\]*)\1\s*[,}]/.exec(body.slice(i));
+        if (lit) literals.set(m[1], lit[2]);
         expectKey = false;
         // Step past the name only; the value is walked normally so nested
         // objects still adjust the depth.
@@ -164,6 +189,7 @@ function topLevelKeys(body) {
     i += 1;
   }
 
+  keys.literals = literals;
   return keys;
 }
 
@@ -196,6 +222,25 @@ for (const root of ROOTS) {
 
       const unknown = [...keys].filter((k) => !def.all.has(k) && !SYSTEM_KEYS.has(k));
       if (unknown.length) problems.push({ file, line, collection, kind: 'unknown', fields: unknown });
+
+      /*
+        A value the column will never accept.
+
+        Appwrite refuses the whole document, so this is not a field quietly
+        going missing — it is a button that does nothing and an error about an
+        "invalid format" in front of somebody trying to work. Checked only for
+        values written as plain strings, which is where this class of mistake
+        actually lives: somebody adds a case to the code and not to the list.
+      */
+      for (const [field, value] of keys.literals ?? []) {
+        const allowed = def.enums.get(field);
+        if (allowed && !allowed.includes(value)) {
+          problems.push({
+            file, line, collection, kind: 'enum',
+            fields: [`${field}: '${value}' — must be one of (${allowed.join(', ')})`],
+          });
+        }
+      }
 
       // Only a create must carry every required field; an update touches a
       // subset on purpose.
@@ -277,10 +322,12 @@ for (const p of problems) {
   console.error(
     p.kind === 'missing'
       ? `    ${p.collection} requires, and this create omits: ${p.fields.join(', ')}\n`
-      : `    ${p.collection} has no such field: ${p.fields.join(', ')}\n`,
+      : p.kind === 'enum'
+        ? `    ${p.collection} will not store this value: ${p.fields.join(', ')}\n`
+        : `    ${p.collection} has no such field: ${p.fields.join(', ')}\n`,
   );
 }
 console.error('Appwrite rejects the whole document either way, so this fails for the person');
-console.error('using the app, not for you. Add the field to scripts/schema.mjs, or stop');
-console.error('writing it.');
+console.error('using the app, not for you. Add the field or the value to scripts/schema.mjs,');
+console.error('or stop writing it.');
 process.exit(1);

@@ -398,8 +398,26 @@ export async function flagVariances(
       opening_qty: c.openingQty,
       theoretical_qty: c.theoretical,
       counted_qty: c.counted,
-      status: 'counted',
-      status_source: 'manual',
+      /*
+        Worked out from the count, in the words the column accepts.
+
+        This said 'counted' and 'manual', neither of which the lists have ever
+        held, so Appwrite refused the whole row — and the `.catch` below
+        swallowed it. A stocktake wrote no check at all: no variance, nothing
+        in the shift's figures, and nothing on the screen to say so.
+
+        The rule is the one the shift close already uses, so a count typed at
+        a stocktake and a count typed at close are filed identically rather
+        than two ways of describing the same shelf.
+      */
+      status: c.counted <= 0
+        ? 'OUT'
+        : c.ingredient.low_threshold !== undefined && c.counted <= c.ingredient.low_threshold
+          ? 'LOW'
+          : 'OK',
+      // 'auto' because it did come from a number. Nobody overrode anything;
+      // the thresholds decided. See closeShift.
+      status_source: 'auto',
       variance_qty: Number(varianceQty.toFixed(4)),
       variance_value: varianceValue,
       checked_by: userId,
@@ -430,7 +448,17 @@ export async function flagVariances(
       await db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
         venue_id: venueId,
         ingredient_id: c.ingredient.$id,
-        type: 'count_adjustment',
+        /*
+          'count_correction', which is what the column accepts.
+
+          This said 'count_adjustment', a value the list has never held, so
+          Appwrite refused the whole movement — and the `.catch` below swallowed
+          it. Every stocktake corrected the running figure on the ingredient
+          and wrote no movement to explain why, which is precisely the drift
+          the movement exists to prevent: a shelf that jumps with nothing
+          saying what moved it.
+        */
+        type: 'count_correction',
         qty_delta: Number((c.counted - c.ingredient.current_qty).toFixed(4)),
         unit_cost: c.ingredient.base_unit_cost,
         ref_type: 'shift',
