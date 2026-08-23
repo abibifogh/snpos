@@ -376,6 +376,32 @@ export const COLLECTIONS = [
       ['expense_approval_threshold', 'i', null, true, 20000],
       ['cash_variance_tolerance', 'i', null, true, 500],
       ['terminal_idle_lock_seconds', 'i', null, true, 180],
+      /*
+        THESE TWO LIVE HERE, ON SETTINGS, AND NOWHERE ELSE.
+
+        Both were declared inside the ORDERS collection, a few hundred lines
+        down, immediately after a field about waiting for the doors to open.
+        Provisioning did exactly as it was told and created them there, so
+        every run reported everything present and correct — while the settings
+        screen, which is the only thing that writes them, was told by the
+        database that it had never heard of either.
+
+        The effect was a save that half worked and an instruction that could
+        not help: "those settings do not exist yet, run Provision Appwrite",
+        followed by a provision run that had nothing to add, followed by the
+        same message. Nothing in the log ever said the field had been made
+        somewhere else, because from the schema's point of view nothing was
+        wrong.
+      */
+      // Minutes of quiet before a till puts a clock up. 0, and absent, is off.
+      // Not required and off by default: a shop that has not asked for a
+      // screensaver should not find one.
+      ['idle_minutes', 'i', null, false, 0],
+      // The margin below which a drink or dish is flagged, in basis points.
+      // 3000 is 30%. Absent reads as the default rather than as "flag
+      // nothing": a house that has not set a line still wants the obviously
+      // thin ones coloured.
+      ['margin_warn_bp', 'i', null, false, 3000],
       // Language (feature 8). All other per-feature config lives in
       // feature_flags.config so it can be overridden per venue.
       ['default_locale', 's', 10, false, 'en'],
@@ -842,22 +868,6 @@ export const COLLECTIONS = [
        * after the rows do can never be required.
        */
       ['opening_wait_minutes', 'i', null, false],
-      /**
-       * Minutes of quiet before a till puts a clock up. 0, and absent, is off.
-       *
-       * Not required, and off by default: a shop that has not asked for a
-       * screensaver should not find one, and a field arriving after the rows
-       * do can never be required.
-       */
-      ['idle_minutes', 'i', null, false, 0],
-      /**
-       * The margin below which a drink or dish is flagged, in basis points.
-       *
-       * 3000 is 30%. Not required, and absent reads as the default rather than
-       * as "flag nothing": a house that has not set a line still wants the
-       * obviously thin ones coloured.
-       */
-      ['margin_warn_bp', 'i', null, false, 3000],
       /**
        * What the KITCHEN is measured against: the cooking time alone, summed
        * from the prep time set on each dish.

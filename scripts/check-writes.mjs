@@ -303,6 +303,52 @@ for (const col of COLLECTIONS) {
   }
 }
 
+/**
+ * Every setting the code knows about must exist on the settings collection.
+ *
+ * The one write in this system that the check above cannot see. Settings are
+ * saved as one assembled object — the page builds a patch from the form and
+ * hands it over — so there is no object literal at the call site to read, and
+ * a field written there is invisible to a checker that reads call sites.
+ *
+ * That is where two of them went missing. `idle_minutes` and `margin_warn_bp`
+ * were declared inside the ORDERS collection, a few hundred lines from where
+ * they belonged, so provisioning created them faithfully in the wrong place
+ * and reported everything present. The settings screen was told the database
+ * had never heard of either, and the message it showed — run provisioning and
+ * save again — sent somebody to a workflow that had nothing to add. Twice.
+ *
+ * The Settings interface is the list of what the code believes it can store,
+ * and it is checked against what the collection actually holds. The other
+ * direction is not an error: a column the type has stopped using is ordinary
+ * history, and removing it from a live database is a separate decision.
+ */
+const settingsFaults = [];
+{
+  const types = readFileSync('packages/core/src/types.ts', 'utf8');
+  const block = /export interface Settings extends Doc \{([\s\S]*?)\n\}/.exec(types);
+  const col = COLLECTIONS.find((c) => c.id === 'settings');
+  if (block && col) {
+    const columns = new Set(col.attributes.map(([key]) => key));
+    // Field lines only: `name?: type;` at one level of indentation. Comments,
+    // blank lines and anything nested are skipped by the same pattern.
+    for (const line of block[1].split('\n')) {
+      const field = /^ {2}([a-z_][A-Za-z0-9_]*)\??:/.exec(line);
+      if (!field) continue;
+      if (!columns.has(field[1])) settingsFaults.push(field[1]);
+    }
+  }
+}
+
+if (settingsFaults.length) {
+  console.error('The settings collection has no room for these, and the code writes them:\n');
+  for (const f of settingsFaults) console.error(`  ${f}`);
+  console.error('\nSaving them is refused by the database, and the admin screen can only say');
+  console.error('so and suggest provisioning — which will not help, because provisioning does');
+  console.error('what scripts/schema.mjs says. Add them to the settings collection there.');
+  process.exit(1);
+}
+
 if (indexFaults.length) {
   console.error('These indexes cannot be built:\n');
   for (const f of indexFaults) console.error(`  ${f}`);
