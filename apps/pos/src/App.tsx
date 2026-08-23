@@ -10,8 +10,11 @@ import {
   markUnavailable, markAvailable, isUnavailable, loadMenu as reloadMenu, itemsAvailableNow,
   requireStaff, signOutCompletely, staffProfileFor, loadOpenShifts, modulesForStaff, MODULE_LABELS,
   onQueueChange, startOfflineSync, flushQueue,
+  lockKey, lockProblem,
 } from '@snpos/core';
-import type { Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc, Module } from '@snpos/core';
+import type {
+  Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc, Module, Unlocker,
+} from '@snpos/core';
 import { TablesView } from './TablesView';
 import { OrderView } from './OrderView';
 import { ShiftBar, type Shift } from './ShiftBar';
@@ -102,6 +105,55 @@ export function App() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [openTable, setOpenTable] = useState<TableRow | null>(null);
+
+  /**
+   * Locked on purpose, and it survives a reload.
+   *
+   * A lock a refresh clears is a lock anybody clears, because reloading a page
+   * is not a skill. So the fact lives on the device rather than in a variable,
+   * keyed per venue and per side — two tills in one building are two doors,
+   * and locking the bar must not shut the shop counter.
+   */
+  const lockStore = ctx ? lockKey(ctx.venue.$id, ctx.module) : '';
+  const [locked, setLocked] = useState(false);
+  /** Everybody who could open it again. Read once; PINs rarely change mid-shift. */
+  const [staff, setStaff] = useState<Unlocker[]>([]);
+
+  useEffect(() => {
+    if (!lockStore) return;
+    try {
+      setLocked(window.localStorage.getItem(lockStore) === '1');
+    } catch {
+      // A browser refusing storage is a till that cannot stay locked across a
+      // reload. Worth nothing more than not crashing over.
+    }
+  }, [lockStore]);
+
+  useEffect(() => {
+    if (!ctx) return;
+    void listAll<Unlocker & Doc>('staff_profiles')
+      .then((rows) => setStaff(rows))
+      .catch(() => setStaff([]));
+  }, [ctx?.venue.$id]);
+
+  const lock = () => {
+    /*
+      Refused when nobody could open it again.
+
+      A lock nobody can undo is a broken till, not a secure one: whoever is
+      standing there would be stranded with a shift open and a queue in front
+      of them, and the only way back would be clearing the browser's storage.
+    */
+    const problem = lockProblem(staff);
+    if (problem) { toast(problem, 'err'); return; }
+    setLocked(true);
+    try { window.localStorage.setItem(lockStore, '1'); } catch { /* see above */ }
+  };
+
+  const unlock = () => {
+    setLocked(false);
+    try { window.localStorage.removeItem(lockStore); } catch { /* see above */ }
+  };
   const queued = useOfflineQueue(onQueueChange, startOfflineSync);
   const [tab, setTab] = useState<'tables' | 'takeaway' | 'kitchen' | 'counter'>('tables');
   const [helpOpen, setHelpOpen] = useState(false);
@@ -292,6 +344,9 @@ export function App() {
         hasOpenShift={!!ctx.shift}
         module={ctx.module}
         busy={!!openTable}
+        locked={locked}
+        staff={staff}
+        onUnlock={unlock}
       />
       <OfflineBar queued={queued} onRetry={() => void flushQueue()} />
       <div className="pos-top">
@@ -365,6 +420,17 @@ export function App() {
               Help
             </Button>
           )}
+          {/*
+            Stepping away from an open drawer.
+
+            Not sign out: signing out ends the session, drops the shift off
+            this screen and makes coming back a matter of an email and a
+            password. Somebody going to the store room for two minutes wants
+            the till exactly as they left it, behind a PIN.
+          */}
+          <Button size="sm" variant="ghost" onClick={lock} title="Lock this till">
+            Lock
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => account.deleteSession('current').then(() => location.reload())}>
             Sign out
           </Button>

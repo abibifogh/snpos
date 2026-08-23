@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   clockFace, shouldSleep, msUntilSleep, wakeLabel, IDLE_MINUTES_MIN, downloadUrl,
+  verifyPin, unlockers, pushDigit, dropDigit, worthChecking, waitAfter, lockMessage,
 } from '@snpos/core';
-import type { Settings } from '@snpos/core';
+import type { Settings, Unlocker } from '@snpos/core';
 import { Logo } from './logo';
 
 /**
@@ -26,6 +27,9 @@ export function IdleScreen({
   busy,
   wakeSignal,
   onWake,
+  locked,
+  staff,
+  onUnlock,
 }: {
   settings?: Settings | null;
   /** Minutes of quiet before it appears. 0 turns it off. */
@@ -43,10 +47,28 @@ export function IdleScreen({
    */
   wakeSignal?: number;
   onWake?: () => void;
+  /**
+   * Locked on purpose, rather than asleep from disuse.
+   *
+   * The two wear the same face and are entirely different doors. Asleep is a
+   * screensaver: it keeps a bright menu off the panel and any touch dismisses
+   * it. Locked is somebody stepping away from an open shift with a drawer
+   * under it, and getting back in costs a PIN.
+   */
+  locked?: boolean;
+  /** Who could open it again. Anybody with a PIN, not only whoever locked it. */
+  staff?: Unlocker[];
+  onUnlock?: () => void;
 }) {
   const [asleep, setAsleep] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const lastActive = useRef(Date.now());
+
+  /** What has been typed on the pad, and how it has been going. */
+  const [entry, setEntry] = useState('');
+  const [wrong, setWrong] = useState(0);
+  const [waitUntil, setWaitUntil] = useState(0);
+  const [checking, setChecking] = useState(false);
 
   const wake = () => {
     lastActive.current = Date.now();
@@ -97,10 +119,123 @@ export function IdleScreen({
 
   // The clock only ticks while it is up. Nothing is reading it otherwise.
   useEffect(() => {
-    if (!asleep) return undefined;
+    if (!asleep && !locked) return undefined;
     const tick = setInterval(() => setNow(new Date()), 1_000);
     return () => clearInterval(tick);
-  }, [asleep]);
+  }, [asleep, locked]);
+
+  /*
+    The pad is cleared when the door closes, not when it opens.
+
+    Leaving half a PIN on screen from last time is both a hint and a
+    confusion — somebody types four more digits onto two that are already
+    there and is told they got it wrong.
+  */
+  useEffect(() => {
+    if (!locked) { setEntry(''); setWrong(0); setWaitUntil(0); }
+  }, [locked]);
+
+  /** Counts down the wait after wrong guesses, so the pad re-enables itself. */
+  useEffect(() => {
+    if (waitUntil <= Date.now()) return undefined;
+    const t = setTimeout(() => setNow(new Date()), waitUntil - Date.now() + 50);
+    return () => clearTimeout(t);
+  }, [waitUntil, now]);
+
+  const waitingMs = Math.max(0, waitUntil - now.getTime());
+
+  const tryUnlock = async (pin: string) => {
+    if (waitingMs > 0 || checking) return;
+    setChecking(true);
+    try {
+      /*
+        Against everybody who has a PIN, not against one person.
+
+        A till is a place. Whoever comes back to it is often the next one on,
+        and a lock only its locker could open gets worked around by not
+        locking it. See unlockers.
+      */
+      for (const person of unlockers(staff ?? [])) {
+        if (await verifyPin(pin, person.pin_hash)) {
+          setEntry('');
+          setWrong(0);
+          onUnlock?.();
+          return;
+        }
+      }
+      const tries = wrong + 1;
+      setWrong(tries);
+      setEntry('');
+      const wait = waitAfter(tries);
+      if (wait > 0) setWaitUntil(Date.now() + wait);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const type = (digit: string) => {
+    if (waitingMs > 0) return;
+    const next = pushDigit(entry, digit);
+    setEntry(next);
+    // Checked as it reaches a length that could match, so a correct PIN opens
+    // the till without also needing somebody to find an Enter key.
+    if (worthChecking(next)) void tryUnlock(next);
+  };
+
+  if (locked) {
+    const face = clockFace(now, settings?.timezone);
+    const note = lockMessage({ wrongTries: wrong, waitingMs });
+    return (
+      <div className="idle idle-locked">
+        <div className="idle-top">
+          <div className="idle-clock">{face.time}</div>
+          <div className="idle-date">
+            <div>{face.day}</div>
+            <div>{face.date}</div>
+          </div>
+        </div>
+
+        <div className="idle-mark">
+          {settings?.logo_light_id
+            ? <img src={downloadUrl(settings.logo_light_id, 'branding', settings)} alt={settings.restaurant_name ?? ''} />
+            : <Logo size={56} />}
+        </div>
+
+        <div className="lock-pad">
+          <div className="lock-title">Locked</div>
+          <div className="lock-sub">Enter your PIN to carry on</div>
+
+          {/* Dots rather than the digits. A till is at chest height on a
+              counter with a queue in front of it. */}
+          <div className="lock-dots" aria-label={`${entry.length} digits entered`}>
+            {Array.from({ length: Math.max(4, entry.length) }, (_, i) => (
+              <span key={i} className={i < entry.length ? 'on' : ''} />
+            ))}
+          </div>
+
+          {note && <div className="lock-note">{note}</div>}
+
+          <div className="lock-keys">
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => (
+              <button key={d} type="button" onClick={() => type(d)} disabled={waitingMs > 0}>{d}</button>
+            ))}
+            <button type="button" onClick={() => setEntry('')} disabled={waitingMs > 0}>Clear</button>
+            <button type="button" onClick={() => type('0')} disabled={waitingMs > 0}>0</button>
+            <button
+              type="button"
+              onClick={() => setEntry(dropDigit(entry))}
+              disabled={waitingMs > 0}
+              aria-label="Delete the last digit"
+            >
+              ⌫
+            </button>
+          </div>
+        </div>
+
+        <div className="idle-foot">{settings?.restaurant_name ?? ''}</div>
+      </div>
+    );
+  }
 
   if (!asleep) return null;
 
