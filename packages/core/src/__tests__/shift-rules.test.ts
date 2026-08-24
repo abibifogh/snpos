@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit, mustWaitForNextShift, shouldWarnLateOrder,
   SHIFT_MAX_HOURS, SHIFT_WARN_HOURS,
-  shiftAgeOf, openShiftsFor, blockerFor, isLivePayment, sellBlockedReason, carryOverFloats, lastForSide, floatProblem, describeFloatChange, resendProblem, resendPending, ownFigure, floatOrigin,
+  shiftAgeOf, openShiftsFor, blockerFor, isLivePayment, sellBlockedReason, carryOverFloats, lastForSide, floatProblem, describeFloatChange, resendProblem, resendPending, ownFigure, floatOrigin, floatMethods,
 } from '../shift-rules.ts';
 
 const at = (iso: string) => new Date(iso);
@@ -524,4 +524,25 @@ test('a float recorded as nothing, holding something, was typed', () => {
   assert.equal(floatOrigin('zero', undefined, 65_000), 'typed in when the shift was opened');
   assert.equal(floatOrigin(undefined, undefined, 65_000), 'typed in when the shift was opened');
   assert.equal(floatOrigin('zero', undefined, 0), 'started at nothing');
+});
+
+test('an opening float is asked for on cash and nothing else', () => {
+  /*
+    A card terminal holds nothing overnight and gives no change. Asking is a
+    question with one right answer, and one shift answered wrongly expects
+    that much extra through the terminal all night.
+  */
+  const methods = [
+    { $id: 'cash', kind: 'cash' },
+    { $id: 'card', kind: 'card' },
+    { $id: 'momo', kind: 'mobile_money' },
+  ];
+  assert.deepEqual(floatMethods(methods).map((m) => m.$id), ['cash']);
+});
+
+test('a business with two cash drawers is asked about both', () => {
+  // Cash and petty cash, a second till: any of them can genuinely hold a
+  // float, and narrowing to one would be a different wrong answer.
+  const methods = [{ $id: 'a', kind: 'cash' }, { $id: 'b', kind: 'cash' }, { $id: 'c', kind: 'card' }];
+  assert.equal(floatMethods(methods).length, 2);
 });

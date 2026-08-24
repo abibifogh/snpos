@@ -6,7 +6,7 @@ import {
   formatMoney, isAvailable, parseWindows, nextAvailable, describeWindows, loadFeatures, isEnabled,
   articlesFor, HELP_AREAS,
   featureConfig, previewUrl, humanError,
-  onQueueChange, startOfflineSync, flushQueue, loadWithFallback,
+  onQueueChange, startOfflineSync, flushQueue, loadWithFallback, screenShouldReset,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc,
@@ -30,6 +30,13 @@ interface TableRow extends Doc {
   active: boolean;
   sort?: number;
 }
+
+/**
+ * The mark that says this device is one of the restaurant's own screens.
+ *
+ * Per browser, not per address. See the note where it is read.
+ */
+const SCREEN_DEVICE_KEY = 'snpos-screen';
 
 /** Everything the menu needs before it can render a single dish. */
 interface Boot {
@@ -77,7 +84,28 @@ export function App() {
    * or stale address gets the ordinary walk-in menu rather than a mode it was
    * not given.
    */
-  const [screenMode, setScreenMode] = useState(false);
+  const [screenMode, setScreenMode] = useState(() => {
+    /*
+      REMEMBERED ON THIS DEVICE, not read from the address every time.
+
+      A counter screen is a fixed thing: set up once, switched on every morning,
+      never typed into again. The address is the fragile part — a bookmark
+      saved without the query string, a browser restoring a tab, a home-screen
+      shortcut made from the wrong page, somebody tapping the venue's own link
+      to check something. Any of those quietly turns the display back into an
+      ordinary phone menu, which does not stay awake, has no invitation on it,
+      and follows an order to a status page and sits there.
+
+      None of that announces itself. So once a screen token has been matched
+      against the venue, this device knows what it is until somebody says
+      otherwise. See `screenMode=off` below for the way out.
+    */
+    try {
+      return window.localStorage.getItem(SCREEN_DEVICE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
   /*
     A screen at rest.
 
@@ -101,10 +129,68 @@ export function App() {
     for the rest of their evening to solve a problem they do not have.
   */
   useWakeLock(screenMode);
+
   /** The order just sent, while the thank-you is up. */
   const [thanks, setThanks] = useState<
     { no: string; eta?: number; emailed: boolean; fromOpening?: boolean; doors?: number } | null
   >(null);
+
+  /*
+    A screen clears itself between customers.
+
+    Everything left on a shared display belongs to the last person who stood
+    at it: a basket half filled, the menu scrolled to the puddings, an order
+    already sent. The next person should walk up to the invitation and nothing
+    else. Two minutes of nobody touching it — see screenShouldReset, which is
+    deliberately generous, because this throws work away rather than dimming a
+    panel, and a customer reading an allergen label must not look up to find
+    their order gone.
+
+    The address is wiped with it. `#order/...` survives a reload, so a screen
+    that ever showed one carried it into the next morning.
+  */
+  const lastTouched = useRef(Date.now());
+  useEffect(() => {
+    if (!screenMode) return undefined;
+    const touched = () => { lastTouched.current = Date.now(); };
+    const events = ['pointerdown', 'keydown', 'touchstart', 'wheel'] as const;
+    for (const e of events) window.addEventListener(e, touched, { passive: true });
+
+    const timer = window.setInterval(() => {
+      // Never over a sheet that is sending. See screenShouldReset.
+      if (!screenShouldReset({ lastTouchedAt: lastTouched.current }, Date.now())) return;
+      // Already back at the invitation with nothing to clear: leave it alone
+      // rather than re-rendering the same screen every ten seconds all day.
+      if (attract && cart.length === 0 && !thanks && !viewing) return;
+      setCart([]);
+      setThanks(null);
+      setShowCart(false);
+      setOpenDish(null);
+      showOrderInAddress(null);
+      setViewing(null);
+      setAttract(true);
+    }, 10_000);
+
+    return () => {
+      for (const e of events) window.removeEventListener(e, touched);
+      window.clearInterval(timer);
+    };
+  }, [screenMode, attract, cart.length, thanks, viewing]);
+
+  /*
+    And the address is cleared the moment a screen recognises itself.
+
+    Not only on the timer above: a display that was showing an order when it
+    was last switched off would otherwise come back to it, sit behind the
+    invitation, and hand it to whoever tapped first.
+  */
+  useEffect(() => {
+    if (screenMode && viewing) {
+      showOrderInAddress(null);
+      setViewing(null);
+    }
+  }, [screenMode, viewing]);
+
   const queued = useOfflineQueue(onQueueChange, startOfflineSync);
 
   // Two kinds of QR: /?t=<token> is a specific table, /?v=<token> is a walk-in
@@ -180,7 +266,23 @@ export function App() {
         // A guessed or stale one quietly gets the ordinary menu rather than an
         // error, which tells somebody poking at addresses nothing at all.
         setGroupMode(!!groupToken && venue.group_token === groupToken);
-        setScreenMode(!!screenToken && venue.screen_token === screenToken);
+        /*
+          A matched token switches this device into screen mode for good; an
+          address that says so explicitly switches it back. Anything else —
+          most importantly an address with no token at all — leaves whatever
+          this device already is, which is the whole point of remembering.
+        */
+        const matched = !!screenToken && venue.screen_token === screenToken;
+        if (matched || params.get('screenMode') === 'off') {
+          setScreenMode(matched);
+          try {
+            if (matched) window.localStorage.setItem(SCREEN_DEVICE_KEY, '1');
+            else window.localStorage.removeItem(SCREEN_DEVICE_KEY);
+          } catch {
+            // A browser refusing storage means the address has to carry the
+            // token every time, which is how this worked before.
+          }
+        }
 
         // Remembered on the device, so a guest whose signal drops between the
         // car park and the table still gets a menu rather than a spinner.
@@ -405,7 +507,17 @@ export function App() {
     );
   }
 
-  if (viewing) {
+  /*
+    A shared screen never shows an order.
+
+    Two reasons, and either alone would be enough. It is the LAST person's
+    order — their food, their name, their money — in front of whoever walks up
+    next. And the address survives everything: `#order/...` is still there
+    after a reload, so a screen that ever showed one showed it again every
+    morning, behind the invitation, waiting for the first customer to tap past
+    it and land on a stranger's receipt instead of the menu.
+  */
+  if (viewing && !screenMode) {
     return (
       <OrderStatus
         orderId={viewing}

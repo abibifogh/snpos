@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Button, Spinner, Card, Field, Input, Notice, useToast, Logo, HelpModal, EightySixModal,
-  OfflineBar, useOfflineQueue, IdleScreen,
+  OfflineBar, useOfflineQueue, IdleScreen, ThemeButton,
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
@@ -94,6 +94,13 @@ export interface PosContext {
   /** Both sides running and this person works on both, so the till can switch. */
   canSwitch: boolean;
   setModule: (m: Module) => void;
+  /**
+   * Who is standing here, when somebody unlocked their way in.
+   *
+   * What a till may sell follows the person at it, not the account that was
+   * signed in this morning. Absent means those are the same person.
+   */
+  working?: StaffProfile | null;
 }
 
 export function App() {
@@ -116,8 +123,41 @@ export function App() {
    */
   const lockStore = ctx ? lockKey(ctx.venue.$id, ctx.module) : '';
   const [locked, setLocked] = useState(false);
-  /** Everybody who could open it again. Read once; PINs rarely change mid-shift. */
-  const [staff, setStaff] = useState<Unlocker[]>([]);
+  /**
+   * Everybody who could open it again. Read once; PINs rarely change mid-shift.
+   *
+   * Whole profiles rather than names and PINs, because whoever opens the door
+   * is then the person standing at the till, and what they may work is on
+   * their profile. See `working`.
+   */
+  const [staff, setStaff] = useState<StaffProfile[]>([]);
+  /**
+   * Who is actually at this till, when that is not who signed into it.
+   *
+   * A till is signed in once, in the morning, usually by whoever opens up —
+   * often a manager or the owner. Everybody else reaches it through the lock
+   * screen. Until now the PIN only opened the door: the screen came back with
+   * the SIGNED-IN person's reach on it, so a bartender who let themselves in
+   * with a bar-only PIN could switch the till to the kitchen or the shop and
+   * sell from either.
+   *
+   * That is the wrong way round. The PIN says who is here; it should decide
+   * what this till is for as long as they are. Null until somebody unlocks,
+   * which is the ordinary case of the person who signed in still being there.
+   */
+  const [working, setWorking] = useState<StaffProfile | null>(null);
+  /**
+   * The same answer, readable from inside the context built at boot.
+   *
+   * setModule lives in a closure made once, and a piece of state captured
+   * there would be whoever was at the till when the app started — which is
+   * exactly the stale answer this is here to stop.
+   */
+  const whoIsHere = useRef<StaffProfile | null>(null);
+  useEffect(() => {
+    whoIsHere.current = working;
+    setCtx((c) => (c && c.working !== working ? { ...c, working } : c));
+  }, [working]);
 
   useEffect(() => {
     if (!lockStore) return;
@@ -131,7 +171,7 @@ export function App() {
 
   useEffect(() => {
     if (!ctx) return;
-    void listAll<Unlocker & Doc>('staff_profiles')
+    void listAll<StaffProfile & Doc>('staff_profiles')
       .then((rows) => setStaff(rows))
       .catch(() => setStaff([]));
   }, [ctx?.venue.$id]);
@@ -150,9 +190,32 @@ export function App() {
     try { window.localStorage.setItem(lockStore, '1'); } catch { /* see above */ }
   };
 
-  const unlock = () => {
+  const unlock = (who?: Unlocker) => {
     setLocked(false);
     try { window.localStorage.removeItem(lockStore); } catch { /* see above */ }
+    /*
+      And the till becomes theirs.
+
+      Matched back to the full profile: the lock screen is handed a narrow
+      shape — a name and a PIN — because that is all it needs to check one, and
+      what somebody may WORK is a different question living on the same row.
+    */
+    const person = who ? staff.find((p) => p.$id === who.$id) ?? null : null;
+    setWorking(person);
+    /*
+      If this till is showing a side they do not work, it moves.
+
+      Refusing the switch alone would leave a bartender looking at the craft
+      counter with no way off it, which is worse than the hole being closed:
+      the door opened, and the room behind it is one they may not be in.
+    */
+    if (person) {
+      const mine = modulesForStaff(person, ctx?.settings ?? null);
+      if (ctx && !mine[ctx.module]) {
+        const first = (['kitchen', 'bar', 'craft'] as Module[]).find((m) => mine[m]);
+        if (first) ctx.setModule(first);
+      }
+    }
   };
   /**
    * An order arriving, so the clock gets out of its way.
@@ -310,7 +373,22 @@ export function App() {
       alsoOpen: open.slice(1),
       module: startingModule,
       canSwitch,
+      working: null,
       setModule: (m) => {
+        /*
+          REFUSED HERE, not only by which buttons get drawn.
+
+          The switcher only ever offered sides somebody may work, which reads
+          like a rule and is a drawing. Everything else in this system that
+          decides who may do what is checked where it happens, and this was the
+          exception — one call from anywhere and the till was selling from a
+          side its user has no business on.
+        */
+        const at = whoIsHere.current ?? profile;
+        if (!modulesForStaff(at, settings)[m]) {
+          toast(`${at?.display_name ?? 'You'} is not set to work the ${MODULE_LABELS[m].toLowerCase()}.`, 'err');
+          return;
+        }
         localStorage.setItem('snpos.till.module', m);
         setCtx((c) => (c ? { ...c, module: m } : c));
         // Land on the tab that side opens on, rather than carrying the last
@@ -415,6 +493,18 @@ export function App() {
     );
   }
 
+  /**
+   * The sides the person standing here may work.
+   *
+   * Not the sides the ACCOUNT signed into this device may work. A till is
+   * signed in once in the morning, usually by whoever opens up, and reached by
+   * PIN by everybody else all day — so a bar-only bartender who unlocked a
+   * till that was signed in by the owner was being offered the kitchen and the
+   * shop, and could sell from either.
+   */
+  const sidesHere = (['kitchen', 'bar', 'craft'] as Module[])
+    .filter((m) => modulesForStaff(ctx.working ?? ctx.profile, ctx.settings)[m]);
+
   if (openTable) {
     return (
       <OrderView
@@ -462,14 +552,18 @@ export function App() {
             sides in a business that runs both, everyone else is already where
             they belong and a switch would just be a way to end up in the wrong
             books. It sits left of the tabs because it changes what they mean. */}
-        {ctx.canSwitch && (
+        {/* Worked out here rather than read from the boot, because the answer
+            changes the moment somebody unlocks: a till signed in by a manager
+            and opened by a bartender is a bar till until they walk away. */}
+        {sidesHere.length > 1 && (
           <div className="pos-tabs pos-side">
             {/* Built from what this person may actually work rather than three
                 hard-coded buttons, so a bar-only cashier is never offered a
                 shop they cannot sell from. */}
-            {(['kitchen', 'bar', 'craft'] as Module[])
-              .filter((m) => modulesForStaff(ctx.profile, ctx.settings)[m])
-              .map((m) => (
+            {/* Whoever is standing here, not whoever signed in this morning.
+                A till is signed in once and reached by PIN all day; the sides
+                on offer belong to the person who opened the lock. */}
+            {sidesHere.map((m) => (
                 <button
                   key={m}
                   className={ctx.module === m ? 'on' : ''}
@@ -530,6 +624,10 @@ export function App() {
             password. Somebody going to the store room for two minutes wants
             the till exactly as they left it, behind a PIN.
           */}
+          {/* Light or dark, from the room this screen is standing in. The
+              setting lived in the admin app, which is where nobody working a
+              till ever is. */}
+          <ThemeButton />
           <Button size="sm" variant="ghost" onClick={lock} title="Lock this till">
             Lock
           </Button>

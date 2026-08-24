@@ -148,3 +148,38 @@ export function latestMovement(orders: { $updatedAt?: string; $createdAt?: strin
   }
   return latest;
 }
+
+
+/* ------------------------------------------- a screen between two customers */
+
+/**
+ * How long a counter screen waits before it clears itself, in milliseconds.
+ *
+ * Generous on purpose. This is not a screensaver — it throws away a basket
+ * somebody was filling — and the cost of being too quick is a customer looking
+ * up from reading an allergen label to find their order gone. Two minutes of
+ * no touching at all is longer than any pause in choosing and shorter than the
+ * gap between two customers.
+ */
+export const SCREEN_RESET_MS = 120_000;
+
+/**
+ * Should a shared screen throw away what is on it and start again?
+ *
+ * A counter screen serves one stranger after another, and everything left on
+ * it belongs to the last one: a half-filled basket, a menu scrolled to the
+ * puddings, an order that has been paid for. The next person should walk up to
+ * an invitation, never to somebody else's session.
+ *
+ * Only when nothing is happening, and never while an order is being sent —
+ * clearing a basket mid-send would take the order with it while the kitchen
+ * has already been told about it.
+ */
+export function screenShouldReset(
+  state: { lastTouchedAt: number; sending?: boolean },
+  now: number,
+  after: number = SCREEN_RESET_MS,
+): boolean {
+  if (state.sending) return false;
+  return now - state.lastTouchedAt >= after;
+}

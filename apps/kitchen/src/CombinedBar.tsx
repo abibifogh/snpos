@@ -9,7 +9,7 @@ import {
   db, DB_ID, formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift, loadOpenShift, loadOpenShifts, shiftBlockers, expectedTakings, closeShift, openingFloats,
   recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, shouldWarnLateOrder,
-  HANDOVER_ENABLED, ownFigure, floatOrigin,
+  HANDOVER_ENABLED, ownFigure, floatOrigin, floatMethods,
 } from '@snpos/core';
 import type {
   PaymentMethod, Shift, Settings, Venue, StaffProfile, FeatureMap, Order, FloatSource,
@@ -403,7 +403,10 @@ export function CombinedBar({
           )}
           {floatSource !== 'carried_over' && floatNote && <p className="small dim">{floatNote}</p>}
           {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
-          {methods.map((m) => (
+          {/* Cash drawers only. A card terminal holds nothing overnight and
+              gives no change, so a "Card float" box is a question with one
+              right answer — see floatMethods. */}
+          {floatMethods(methods).map((m) => (
             <Field key={m.$id} label={`${m.name} float (${settings.currency_symbol})`}>
               <Input
                 value={floats[m.$id] ?? ''}

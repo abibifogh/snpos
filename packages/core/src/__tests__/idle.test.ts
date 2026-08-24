@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   shouldSleep, msUntilSleep, clockFace, wakeLabel,
   IDLE_MINUTES_DEFAULT, IDLE_MINUTES_MIN, wakesScreen, latestMovement,
+  screenShouldReset, SCREEN_RESET_MS,
 } from '../idle.ts';
 
 const MIN = 60_000;
@@ -134,4 +135,27 @@ test('an order that has never been touched still counts as having moved', () => 
     latestMovement([{ $createdAt: '2026-08-24T09:00:00.000Z', $updatedAt: '2026-08-24T09:30:00.000Z' }]),
     '2026-08-24T09:30:00.000Z',
   );
+});
+
+test('a counter screen clears itself between customers', () => {
+  /*
+    Everything on a shared screen belongs to the last person who stood at it.
+    The next one should find an invitation, not a stranger's basket.
+  */
+  const now = 1_000_000;
+  assert.equal(screenShouldReset({ lastTouchedAt: now - SCREEN_RESET_MS }, now), true);
+  assert.equal(screenShouldReset({ lastTouchedAt: now - 1_000 }, now), false);
+});
+
+test('a screen never clears itself mid-send', () => {
+  // The order has already been told to the kitchen. Throwing the basket away
+  // underneath it would lose the thing that has just been promised.
+  const now = 1_000_000;
+  assert.equal(screenShouldReset({ lastTouchedAt: now - SCREEN_RESET_MS, sending: true }, now), false);
+});
+
+test('the wait is long enough to read a label by', () => {
+  // Not a screensaver: this throws away work. A customer looking up from an
+  // allergen list to find their order gone is the failure worth avoiding.
+  assert.ok(SCREEN_RESET_MS >= 90_000);
 });

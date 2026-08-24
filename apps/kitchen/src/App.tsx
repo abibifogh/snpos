@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo, HelpModal, EightySixModal,
-  OfflineBar, useOfflineQueue, IdleScreen,
+  OfflineBar, useOfflineQueue, IdleScreen, ThemeButton,
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
@@ -885,6 +885,11 @@ export function App() {
           {isEnabled(features, 'help') && (
             <button className="kds-help" onClick={() => setHelpOpen(true)} title="How this works">?</button>
           )}
+          {/* A pass is read across a hot room under strip lights at midday and
+              in a half-dark service area at eleven at night. The right answer
+              differs at those two moments on the same screen, so it belongs
+              here rather than in a settings page on another app. */}
+          <ThemeButton />
           <span>New <b>{pending.length}</b></span>
           <span>Cooking <b>{visible.filter((o) => o.status === 'PREPARING').length}</b></span>
           <span>Ready <b>{visible.filter((o) => o.status === 'READY').length}</b></span>

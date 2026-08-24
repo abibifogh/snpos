@@ -8,7 +8,7 @@ import {
   formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift as createShift, shiftBlockers, expectedTakings, closeShift,
   openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, HANDOVER_ENABLED,
-  countsAtBothEnds, hasOpeningCount, ownFigure, floatOrigin,
+  countsAtBothEnds, hasOpeningCount, ownFigure, floatOrigin, floatMethods,
 } from '@snpos/core';
 import type { PaymentMethod, Shift, FloatSource } from '@snpos/core';
 import type { PosContext } from './App';
@@ -611,7 +611,10 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           )}
           {floatSource !== 'carried_over' && floatNote && <p className="small dim">{floatNote}</p>}
           {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
-          {methods.map((m) => (
+          {/* Cash drawers only. A card terminal holds nothing overnight and
+              gives no change, so a "Card float" box is a question with one
+              right answer — see floatMethods. */}
+          {floatMethods(methods).map((m) => (
             <Field key={m.$id} label={`${m.name} float (${ctx.settings.currency_symbol})`}>
               <Input
                 value={floats[m.$id] ?? ''}

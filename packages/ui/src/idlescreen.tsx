@@ -58,7 +58,16 @@ export function IdleScreen({
   locked?: boolean;
   /** Who could open it again. Anybody with a PIN, not only whoever locked it. */
   staff?: Unlocker[];
-  onUnlock?: () => void;
+  /**
+   * Opened, and BY WHOM.
+   *
+   * The person who types the PIN is the person now standing at the till, and
+   * that used to be thrown away — the door opened and the till carried on as
+   * whoever had signed into it that morning. So a bartender letting themselves
+   * back in got a screen with the manager's reach on it, which is the opposite
+   * of what a PIN is for.
+   */
+  onUnlock?: (who?: Unlocker) => void;
 }) {
   const [asleep, setAsleep] = useState(false);
   const [now, setNow] = useState(() => new Date());
@@ -172,7 +181,7 @@ export function IdleScreen({
         if (await verifyPin(pin, person.pin_hash)) {
           setEntry('');
           setWrong(0);
-          onUnlock?.();
+          onUnlock?.(person);
           return;
         }
       }

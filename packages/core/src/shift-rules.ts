@@ -569,3 +569,26 @@ export function floatOrigin(source?: string, carriedFromCode?: string, amount?: 
   if ((amount ?? 0) > 0) return 'typed in when the shift was opened';
   return 'started at nothing';
 }
+
+
+/* ------------------------------------------- which drawers an open asks about */
+
+/**
+ * The methods worth asking for an opening float on.
+ *
+ * CASH ONLY, and the rest are not a question at all. A float is money left in
+ * a drawer for giving change; a card terminal and a mobile money account hold
+ * nothing overnight, take no change, and start every shift at nothing whatever
+ * anybody types.
+ *
+ * The form asked for all of them. Every open therefore had a box headed "Card
+ * float" sitting at zero, which is a question with one correct answer — and
+ * questions like that are answered wrongly eventually. One shift opened with a
+ * card figure in it expects that much extra through the terminal all night and
+ * reads as short by exactly that amount at close, with somebody's name on it.
+ *
+ * See carryOverFloats, which reached the same conclusion at the other end.
+ */
+export function floatMethods<T extends { kind?: string; enabled?: boolean }>(methods: T[]): T[] {
+  return methods.filter((m) => m.kind === 'cash');
+}
