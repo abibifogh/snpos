@@ -120,7 +120,7 @@ async function alertRecipients({ db, DB_ID, configured }) {
  * not to; repeating it hourly until they do is how a warning becomes noise
  * that gets filtered.
  */
-async function sweepUnavailable({ db, DB_ID, settings, transport, log, error }) {
+async function sweepUnavailable({ db, DB_ID, settings, transport, from, log, error }) {
   const flags = await db.listDocuments(DB_ID, 'feature_flags', [
     Query.equal('key', 'item_availability'), Query.limit(5),
   ]);
@@ -156,7 +156,17 @@ async function sweepUnavailable({ db, DB_ID, settings, transport, log, error }) 
     .join('');
 
   await transport.sendMail({
-    from: `"${settings.email_from_name || settings.restaurant_name}" <${settings.email_from_address || process.env.SMTP_USER}>`,
+    /*
+      The from-address, and no falling back to the login.
+
+      On Resend that login is the literal word "resend"; on Brevo it is an
+      account number. Either produces a From header that is not an address at
+      all, and a provider handed one of those either refuses the message or
+      takes it and drops it. The caller already refuses to do anything without
+      a from-address — see the guard above — so this is the last place that
+      still had an opinion of its own about what to use instead.
+    */
+    from,
     to: to.join(','),
     subject: `${open.total} ${open.total === 1 ? 'dish has' : 'dishes have'} been off the menu over ${hours} hours`,
     html: shell(
@@ -449,7 +459,7 @@ export default async ({ req, res, log, error }) => {
     // summary going out, and neither must stop the availability sweep, three
     // unrelated jobs sharing a timer because the plan allows four functions.
     for (const [name, job] of [
-      ['availability', () => sweepUnavailable({ db, DB_ID, settings, transport, log, error })],
+      ['availability', () => sweepUnavailable({ db, DB_ID, settings, transport, from, log, error })],
       ['stale_shifts', () => sweepStaleShifts({ db, DB_ID, settings, transport, from, shell, log, error })],
       ['daily', () => dailyDigest({ db, DB_ID, settings, transport, from, shell, row, money, log, error })],
       ['backup', () => nightlyBackup({ db, DB_ID, settings, transport, from, shell, log, error })],
