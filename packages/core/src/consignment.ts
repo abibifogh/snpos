@@ -2,7 +2,6 @@ import { db, DB_ID, ID, Query, listAll } from './client';
 import { rateFor, flatFor, splitSale } from './consignment-math';
 import type { LedgerKind } from './consignment-math';
 import type { Doc, Settings, MenuItem } from './types';
-import type { Order, OrderItem } from './orders';
 import { differencesIn, summariseCount, MOVE_FOR_REASON } from './stocktake';
 import type { CountLine, PendingCount, PendingCountLine } from './stocktake';
 import type { ImportMaker } from './maker-import';
@@ -143,79 +142,6 @@ export interface ConsignorPayout extends Doc {
 }
 
 /* -------------------------------------------------------------- the recording */
-
-/**
- * Credit a consignor for everything of theirs on a settled order.
- *
- * Called once, when the bill is paid, not when the order is placed. An order
- * that is cancelled, voided or never paid for owes nobody anything, and a
- * credit written at the till and reversed later is two entries on a statement
- * where there should be none.
- *
- * Safe to call twice. `order_item_id` carries a unique index, so a repeat is
- * refused by the database rather than by a check that can race, which matters,
- * because a payment retried on a bad connection is exactly the case that would
- * otherwise pay somebody twice.
- */
-export async function creditForOrder(opts: {
-  venueId: string;
-  order: Pick<Order, '$id'>;
-  items: OrderItem[];
-  consignors: Consignor[];
-  settings?: Pick<Settings, 'default_commission_bp'>;
-  userId?: string;
-  at?: Date;
-}): Promise<{ credited: number; total: number }> {
-  const { venueId, order, items, consignors, settings, userId } = opts;
-  const at = (opts.at ?? new Date()).toISOString();
-  const byId = new Map(consignors.map((c) => [c.$id, c]));
-
-  let credited = 0;
-  let total = 0;
-
-  for (const line of items) {
-    if (line.status === 'void') continue;
-    const consignorId = line.consignor_id;
-    if (!consignorId) continue;
-
-    const consignor = byId.get(consignorId) ?? null;
-    // The rate written on the line wins over everything: it is what was agreed
-    // at the moment of sale, and that is the only rate a statement may use.
-    const bp = rateFor({ commission_bp: line.commission_bp }, consignor, settings);
-    const flat = flatFor({ commission_flat: line.commission_flat }, consignor);
-    const split = splitSale(line.line_total ?? 0, bp, flat, line.qty ?? 1);
-
-    try {
-      await db.createDocument(DB_ID, 'consignor_ledger', ID.unique(), {
-        venue_id: venueId,
-        consignor_id: consignorId,
-        entry_at: at,
-        kind: 'sale',
-        amount: split.consignor,
-        description: `${line.name_snapshot}${line.variant_label ? ` · ${line.variant_label}` : ''}`,
-        order_id: order.$id,
-        order_item_id: line.$id,
-        menu_item_id: line.menu_item_id,
-        variant_label: line.variant_label ?? '',
-        qty: line.qty,
-        gross: split.gross,
-        commission: split.commission,
-        commission_bp: split.bp,
-        commission_flat: split.flat,
-        created_by: userId ?? '',
-      });
-      credited += 1;
-      total += split.consignor;
-    } catch (e) {
-      // Already credited. The unique index on order_item_id is doing its job,
-      // and the honest response is to carry on rather than to fail the sale
-      // that has already been paid for.
-      if (!/already exists|unique/i.test(e instanceof Error ? e.message : '')) throw e;
-    }
-  }
-
-  return { credited, total };
-}
 
 /** Every ledger line for one consignor, oldest first. */
 export const ledgerFor = (consignorId: string) =>

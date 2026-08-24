@@ -225,6 +225,34 @@ export async function saveDropping(
 }
 
 /**
+ * A write whose failure is counted rather than swallowed.
+ *
+ * There are places here where one failed write genuinely must not stop the
+ * run: a stocktake of forty items, a shift close half-way through settling
+ * the shelf. Throwing would leave the job abandoned in the middle, which is
+ * worse than finishing it imperfectly, so those calls end in `.catch(() =>
+ * undefined)` and carry on.
+ *
+ * The cost of that was paid twice, by the same people, before anybody saw it.
+ * A stocktake wrote two rows the database refused for an unknown value in a
+ * fixed list; both were swallowed, the screen said the count was done, and
+ * every stocktake for weeks corrected nothing and explained nothing. The
+ * feature had never worked and looked exactly like a feature that worked.
+ *
+ * So a swallowed write is still counted. `ok` says whether it landed, and the
+ * caller adds up what did not and tells somebody — a job that half worked has
+ * to say which half, or it is indistinguishable from one that worked.
+ */
+export async function tryWrite(work: Promise<unknown>): Promise<boolean> {
+  try {
+    await work;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Turn an Appwrite failure into something a person can act on.
  *
  * The browser reports a blocked cross-origin request as an ordinary network

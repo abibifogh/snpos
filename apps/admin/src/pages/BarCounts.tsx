@@ -175,7 +175,7 @@ export function BarCountsPage() {
     setBusy(true);
     setError(null);
     try {
-      const { written, shortValue } = await saveBarCount({
+      const { written, shortValue, failed } = await saveBarCount({
         venueId: 'main',
         // Left off for a store room, on purpose: stamping it with whichever
         // shift happened to be open would put a month of drift on one
@@ -190,6 +190,20 @@ export function BarCountsPage() {
       setLines((rows) => (rows ?? []).map((r) => ({ ...r, countedText: '', note: '' })));
       // Saved for real, so the unfinished copy has nothing left to protect.
       if (userId && placeId) clearExpenseDraft(store, draftKey(userId, placeId));
+      /*
+        A count that half saved says which half.
+
+        Every write in a count is allowed to fail without stopping the rest —
+        one refused row must not abandon a count of forty bottles part-way —
+        and for as long as nothing added those up, a count that changed
+        nothing looked exactly like a count that worked. See tryWrite.
+      */
+      if (failed > 0) {
+        setError(
+          `${failed} of these did not save. The shelves are part-counted: count again, and if it keeps `
+          + 'happening the database is refusing something and an admin should be told.',
+        );
+      }
       toast(
         isStore
           // A stocktake reports what it found. It is nobody's handover, so
@@ -201,6 +215,7 @@ export function BarCountsPage() {
             : shortValue > 0
               ? `Counted out. ${money(shortValue)} short — an admin can see it under Variances.`
               : 'Counted out, and it balances.',
+        failed > 0 ? 'err' : undefined,
       );
     } catch (e) {
       setError(humanError(e));

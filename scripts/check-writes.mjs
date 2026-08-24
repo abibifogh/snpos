@@ -304,6 +304,121 @@ for (const col of COLLECTIONS) {
 }
 
 /**
+ * A function that writes to the database, and nothing calls it.
+ *
+ * The most convincing kind of broken feature: it is written, it is exported,
+ * it reads correctly, it has been reviewed and it has been fixed — and it has
+ * never run. Two were found here at once. `flagVariances` raised stock
+ * variance flags nobody had ever seen, and had two wrong enum values
+ * corrected in it a week earlier, which corrected nothing because the function
+ * was unreachable. `creditForOrder` credited makers for a sale from the
+ * browser, where the ledger deliberately allows no writes at all, so wiring it
+ * up would have failed on permissions the moment anybody tried.
+ *
+ * Only writers, and only in core. A pure helper nobody uses is dead weight; a
+ * WRITER nobody uses is a feature the code claims to have. And only core,
+ * because an app's own component is reached from JSX in ways a grep cannot
+ * see.
+ *
+ * Deliberately blunt: a name mentioned anywhere else at all counts as used,
+ * including in a test. Something exercised only by a test is a different
+ * argument, and a check that starts having opinions about that is a check
+ * somebody switches off.
+ */
+const WRITES = /db\.(create|update|delete)Document|saveDropping|createOrQueue|updateOrQueue/;
+
+const unusedWriters = [];
+{
+  const all = [];
+  for (const root of ROOTS) for (const f of sourceFiles(root)) all.push([f, readFileSync(f, 'utf8')]);
+
+  for (const [file, text] of all) {
+    if (!file.startsWith(join('packages', 'core', 'src')) || file.includes('__tests__')) continue;
+    for (const m of text.matchAll(/export (?:async )?function (\w+)/g)) {
+      // The body, up to whatever is exported next.
+      const after = text.indexOf('\nexport ', m.index + 1);
+      const body = text.slice(m.index, after === -1 ? undefined : after);
+      if (!WRITES.test(body)) continue;
+      const named = new RegExp(`\\b${m[1]}\\b`);
+      if (!all.some(([other, otherText]) => other !== file && named.test(otherText))) {
+        unusedWriters.push(`${file} → ${m[1]}`);
+      }
+    }
+  }
+}
+
+if (unusedWriters.length) {
+  console.error('These write to the database and nothing calls them:\n');
+  for (const f of unusedWriters) console.error(`  ${f}`);
+  console.error('\nA writer nobody calls is a feature the code claims to have. Either wire it up');
+  console.error('or delete it — leaving it is how a fix gets made to something that never runs.');
+  process.exit(1);
+}
+
+/**
+ * Every field a document type declares must exist on its collection.
+ *
+ * The generalisation of the settings check below, and it exists for the same
+ * reason: `idle_minutes` and `margin_warn_bp` were declared on the ORDERS
+ * collection, a few hundred lines from where they belonged. Provisioning
+ * created them faithfully in the wrong place and reported everything present,
+ * while the screen that writes them was told the database had never heard of
+ * either — and the message it could give sent somebody to a workflow that had
+ * nothing to add.
+ *
+ * A type is the list of what the code believes it can store. Where that list
+ * and the collection disagree, one of them is wrong and neither says so.
+ *
+ * Only the types that mirror a collection exactly, named here rather than
+ * guessed at: several interfaces in this codebase deliberately describe a
+ * VIEW of a row — a few fields of it, joined with something else — and holding
+ * those to the same rule would be inventing failures.
+ *
+ * The other direction is never an error. A column the type has stopped using
+ * is ordinary history, and removing one from a live database is a decision
+ * somebody makes on purpose.
+ */
+const MIRRORED = [
+  ['Settings', 'settings'],
+  ['Venue', 'venues'],
+  ['StationDoc', 'stations'],
+  ['Category', 'categories'],
+  ['MenuItem', 'menu_items'],
+  ['FeatureFlag', 'feature_flags'],
+  ['StaffProfile', 'staff_profiles'],
+];
+
+const typeFaults = [];
+{
+  const types = readFileSync('packages/core/src/types.ts', 'utf8');
+  for (const [name, collectionId] of MIRRORED) {
+    const block = new RegExp(`export interface ${name} extends Doc \\{([\\s\\S]*?)\\n\\}`).exec(types);
+    const col = COLLECTIONS.find((c) => c.id === collectionId);
+    if (!block || !col) {
+      typeFaults.push(`${name} or ${collectionId} has moved; this check can no longer find it`);
+      continue;
+    }
+    const columns = new Set(col.attributes.map(([key]) => key));
+    // Field lines only: `name?: type;` at one level of indentation. Comments,
+    // blank lines and anything nested are skipped by the same pattern.
+    for (const line of block[1].split('\n')) {
+      const field = /^ {2}([a-z_][A-Za-z0-9_]*)\??:/.exec(line);
+      if (!field) continue;
+      if (!columns.has(field[1])) typeFaults.push(`${collectionId} has no ${field[1]}, and ${name} declares it`);
+    }
+  }
+}
+
+if (typeFaults.length) {
+  console.error('These fields exist in the code and nowhere in the database:\n');
+  for (const f of typeFaults) console.error(`  ${f}`);
+  console.error('\nAppwrite refuses the whole document for one of these, so the save fails for');
+  console.error('the person using the app. Add them to the right collection in scripts/schema.mjs');
+  console.error('— and check they are not already on the wrong one.');
+  process.exit(1);
+}
+
+/**
  * Every setting the code knows about must exist on the settings collection.
  *
  * The one write in this system that the check above cannot see. Settings are

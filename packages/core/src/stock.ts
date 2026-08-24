@@ -1,4 +1,4 @@
-import { db, DB_ID, ID, Query, listAll } from './client';
+import { db, DB_ID, ID, Query, listAll, tryWrite } from './client';
 import type { PurchaseRow } from './price-history';
 import type { Module } from './access';
 import { variancesIn, wasCountedBar, shiftCounted } from './bar-count';
@@ -369,111 +369,6 @@ export async function updateStockAlerts(
 }
 
 /**
- * Compare counted stock with what should be there, and raise a flag when the
- * gap is both proportionally and absolutely material.
- *
- * Both tests matter: 30% of a pinch of saffron is not worth a conversation,
- * and GHS 200 of rice is, even at 4%.
- */
-export async function flagVariances(
-  venueId: string,
-  shiftId: string,
-  counts: { ingredient: Ingredient; theoretical: number; counted: number; openingQty: number }[],
-  thresholdBp: number,
-  valueFloor: number,
-  userId: string,
-): Promise<number> {
-  const periodStart = new Date().toISOString();
-  let flagged = 0;
-
-  for (const c of counts) {
-    const varianceQty = c.counted - c.theoretical;
-    const varianceValue = Math.round(Math.abs(varianceQty) * c.ingredient.base_unit_cost);
-    const varianceBp = c.theoretical > 0 ? Math.round((Math.abs(varianceQty) / c.theoretical) * 10000) : 0;
-
-    await db.createDocument(DB_ID, 'shift_stock_checks', ID.unique(), {
-      venue_id: venueId,
-      shift_id: shiftId,
-      ingredient_id: c.ingredient.$id,
-      opening_qty: c.openingQty,
-      theoretical_qty: c.theoretical,
-      counted_qty: c.counted,
-      /*
-        Worked out from the count, in the words the column accepts.
-
-        This said 'counted' and 'manual', neither of which the lists have ever
-        held, so Appwrite refused the whole row — and the `.catch` below
-        swallowed it. A stocktake wrote no check at all: no variance, nothing
-        in the shift's figures, and nothing on the screen to say so.
-
-        The rule is the one the shift close already uses, so a count typed at
-        a stocktake and a count typed at close are filed identically rather
-        than two ways of describing the same shelf.
-      */
-      status: c.counted <= 0
-        ? 'OUT'
-        : c.ingredient.low_threshold !== undefined && c.counted <= c.ingredient.low_threshold
-          ? 'LOW'
-          : 'OK',
-      // 'auto' because it did come from a number. Nobody overrode anything;
-      // the thresholds decided. See closeShift.
-      status_source: 'auto',
-      variance_qty: Number(varianceQty.toFixed(4)),
-      variance_value: varianceValue,
-      checked_by: userId,
-    }).catch(() => undefined);
-
-    if (varianceBp >= thresholdBp && varianceValue >= valueFloor) {
-      flagged++;
-      await db.createDocument(DB_ID, 'stock_flags', ID.unique(), {
-        venue_id: venueId,
-        ingredient_id: c.ingredient.$id,
-        period_start: periodStart,
-        period_end: periodStart,
-        theoretical_usage: c.theoretical,
-        actual_usage: c.counted,
-        variance_qty: Number(varianceQty.toFixed(4)),
-        variance_bp: varianceBp,
-        variance_value: varianceValue,
-        severity: varianceValue >= valueFloor * 4 ? 'high' : varianceValue >= valueFloor * 2 ? 'medium' : 'low',
-        likely_causes: varianceQty < 0
-          ? 'Over-portioning, unrecorded waste, or stock leaving unrecorded'
-          : 'Under-portioning, a delivery not booked in, or a miscount',
-        status: 'open',
-      }).catch(() => undefined);
-    }
-
-    // Counting is also the moment the book figure is corrected to reality.
-    if (c.counted !== c.ingredient.current_qty) {
-      await db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
-        venue_id: venueId,
-        ingredient_id: c.ingredient.$id,
-        /*
-          'count_correction', which is what the column accepts.
-
-          This said 'count_adjustment', a value the list has never held, so
-          Appwrite refused the whole movement — and the `.catch` below swallowed
-          it. Every stocktake corrected the running figure on the ingredient
-          and wrote no movement to explain why, which is precisely the drift
-          the movement exists to prevent: a shelf that jumps with nothing
-          saying what moved it.
-        */
-        type: 'count_correction',
-        qty_delta: Number((c.counted - c.ingredient.current_qty).toFixed(4)),
-        unit_cost: c.ingredient.base_unit_cost,
-        ref_type: 'shift',
-        ref_id: shiftId,
-        shift_id: shiftId,
-        created_by: userId,
-      }).catch(() => undefined);
-      await db.updateDocument(DB_ID, 'ingredients', c.ingredient.$id, { current_qty: c.counted }).catch(() => undefined);
-    }
-  }
-
-  return flagged;
-}
-
-/**
  * One side's larder, or the whole building when no side is named.
  *
  * Filtered here rather than in the query on purpose: every ingredient written
@@ -701,12 +596,22 @@ export async function saveBarCount(opts: {
   phase: 'open' | 'close';
   lines: BarCountLine[];
   userId: string;
-}): Promise<{ written: number; shortValue: number }> {
+}): Promise<{ written: number; shortValue: number; failed: number }> {
   const places = await loadLocations(opts.venueId);
   const counter = places.find((l) => l.$id === opts.locationId) ?? saleLocation(places, 'bar');
   const variances = variancesIn(opts.lines);
   const shortValue = variances.filter((v) => v.delta < 0).reduce((s, v) => s + v.value, 0);
   let written = 0;
+  /*
+    Counted, not swallowed.
+
+    Every write below ends in a catch so that one bad row cannot abandon a
+    count of forty bottles half-way through. That is right, and it is also how
+    a stocktake once corrected nothing at all for weeks while the screen said
+    it was done. See tryWrite: the run finishes, and then it says what did not
+    save rather than reporting a clean count.
+  */
+  let failed = 0;
 
   for (const line of opts.lines) {
     if (!wasCountedBar(line)) continue;
@@ -729,7 +634,7 @@ export async function saveBarCount(opts: {
       variance_value: Math.round(Math.abs(variance) * line.unitCost),
       checked_by: opts.userId,
       note: line.note ?? '',
-    }).catch(() => undefined);
+    }).catch(() => { failed += 1; });
 
     /*
       A movement for the difference, not just a note about it.
@@ -757,7 +662,7 @@ export async function saveBarCount(opts: {
         note: opts.shiftId
           ? (opts.phase === 'open' ? 'Counted on opening' : 'Counted at close')
           : `Stocktake in ${counter?.name ?? 'the store'}`,
-      }).catch(() => undefined);
+      }).catch(() => { failed += 1; });
     }
 
     /*
@@ -771,15 +676,18 @@ export async function saveBarCount(opts: {
     if (counter) {
       await adjustLevel({ ingredientId: line.ingredientId, locationId: counter.$id, delta: 0, setTo: counted });
     } else {
-      await db.updateDocument(DB_ID, 'ingredients', line.ingredientId, {
+      // The count itself. If this is the one that does not land, the shelf is
+      // unchanged and the person has been told it was counted.
+      const landed = await tryWrite(db.updateDocument(DB_ID, 'ingredients', line.ingredientId, {
         current_qty: counted,
-      }).catch(() => undefined);
+      }));
+      if (!landed) { failed += 1; continue; }
     }
 
     written += 1;
   }
 
-  return { written, shortValue };
+  return { written, shortValue, failed };
 }
 
 /** Whether this shift has already been counted in on the way in. */

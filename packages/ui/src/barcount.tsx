@@ -120,7 +120,7 @@ export function BarCountModal({
     setBusy(true);
     setError(null);
     try {
-      const { written, shortValue } = await saveBarCount({
+      const { written, shortValue, failed } = await saveBarCount({
         venueId,
         shiftId,
         locationId: saleLocation(places, 'bar')?.$id,
@@ -128,6 +128,22 @@ export function BarCountModal({
         lines: lines ?? [],
         userId,
       });
+      /*
+        Stopped here rather than waved through with a cheerful message.
+
+        A count is allowed to lose a line without abandoning the rest — see
+        tryWrite — but a bar counted out on a part-saved sheet hands the next
+        person a shelf that does not match the room, and the shift closes on
+        it. So the sheet stays open and says so, which is the one moment
+        somebody can still put it right.
+      */
+      if (failed > 0) {
+        setError(
+          `${failed} line${failed === 1 ? '' : 's'} did not save. Nothing else has been touched — try the `
+          + 'count again. If it keeps happening, tell an admin before closing the shift.',
+        );
+        return;
+      }
       onDone(
         phase === 'open'
           ? `${written} line${written === 1 ? '' : 's'} counted in. The bar is yours.`
