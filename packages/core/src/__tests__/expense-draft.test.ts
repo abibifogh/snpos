@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   expenseDraftKey, draftWorthKeeping, saveExpenseDraft, readExpenseDraft, clearExpenseDraft,
   type DraftStore, type ExpenseDraft,
+  countDraftKey, saveCountDraft, readCountDraft, restoreCount, draftFromCount,
 } from '../expense-draft.ts';
 
 /** A store that behaves, and one that does not. */
@@ -117,4 +118,61 @@ test('rubbish in storage is ignored rather than restored', () => {
     store.data.set('k', junk);
     assert.equal(readExpenseDraft(store, 'k'), null, `restored from ${junk}`);
   }
+});
+
+/* ------------------------------------------------ a count left half done */
+
+test('counting in and counting out keep separate drafts', () => {
+  /*
+    Two different pieces of work on the same shift. Restoring one onto the
+    other would put last night's closing numbers into this morning's opening
+    sheet, which is a shortage nobody caused.
+  */
+  assert.notEqual(countDraftKey('shift1', 'open'), countDraftKey('shift1', 'close'));
+  assert.notEqual(countDraftKey('shift1', 'open', 'bar'), countDraftKey('shift1', 'open', 'store'));
+});
+
+test('what was typed survives leaving the sheet', () => {
+  const store = memory();
+  const key = countDraftKey('shift1', 'open');
+  saveCountDraft(store, key, draftFromCount([
+    { ingredientId: 'gin', countedText: '12' },
+    { ingredientId: 'rum', countedText: '' },
+  ]));
+  // No `note` key at all: JSON drops undefined, and the round trip is what
+  // the sheet actually gets back.
+  assert.deepEqual(readCountDraft(store, key), { gin: { countedText: '12' } });
+});
+
+test('an empty sheet is not a draft', () => {
+  // Nothing typed is nothing to recover, and announcing a recovered count
+  // that is blank teaches people to distrust the recovery.
+  const store = memory();
+  const key = countDraftKey('shift1', 'open');
+  saveCountDraft(store, key, draftFromCount([{ ingredientId: 'gin', countedText: '  ' }]));
+  assert.equal(readCountDraft(store, key), null);
+});
+
+test('the sheet decides what is on it, the draft only what was typed', () => {
+  /*
+    A bottle added to the bar this morning has to appear even though nothing
+    was typed against it yesterday, and one taken off has to go however
+    carefully it was counted. The draft restores typing, never lines.
+  */
+  const restored = restoreCount(
+    [{ ingredientId: 'gin', countedText: '' }, { ingredientId: 'tonic', countedText: '' }],
+    { gin: { countedText: '12' }, vodka: { countedText: '9' } },
+  );
+  assert.deepEqual(restored.map((r) => r.ingredientId), ['gin', 'tonic']);
+  assert.equal(restored[0].countedText, '12');
+  assert.equal(restored[1].countedText, '');
+});
+
+test('a count of nought is kept, because nought is an answer', () => {
+  // "There are none" is the finding that matters most on a bar sheet, and
+  // treating it as nothing typed would throw away exactly that.
+  const store = memory();
+  const key = countDraftKey('shift1', 'close');
+  saveCountDraft(store, key, draftFromCount([{ ingredientId: 'gin', countedText: '0' }]));
+  assert.deepEqual(readCountDraft(store, key), { gin: { countedText: '0' } });
 });

@@ -582,19 +582,27 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           dismissLabel={barCount === 'close' ? 'Close without counting' : 'Not now'}
           // Nothing set up to count, so nothing to be warned about.
           onEmpty={() => { setCountedIn(true); setCountedOut(true); }}
-          onClose={() => {
+          onClose={(waived) => {
             const wasClosing = barCount === 'close';
             setBarCount(null);
             /*
-              Leaving the closing sheet carries on to the drawer.
+              LEAVING IS NOT SKIPPING, and only one of them lets a close carry
+              on to the drawer.
 
-              Only reachable when the sheet itself allowed it — an admin has
-              made counts skippable, or the sheet is empty or would not load.
-              Where the count is required there is no button here to press, and
-              the close simply does not proceed. The cash close says which of
-              those happened before it saves anything.
+              `waived` is the sheet's own answer: an admin has made counts
+              skippable, or there was nothing on the sheet to count, or it
+              would not load. Then leaving satisfies the count and the cash
+              close follows, exactly as before.
+
+              Otherwise the count is still owed. The till comes back, the
+              warning stays up, the sheet asks again, and the close does not
+              proceed — which is the same rule as when there was no way out at
+              all, minus the stuck screen.
             */
-            if (wasClosing) void startClose(true);
+            if (wasClosing && waived) { void startClose(true); return; }
+            if (wasClosing) {
+              onToast('The bar has not been counted out, so the shift cannot close yet.', 'err');
+            }
           }}
           onDone={(m) => {
             const wasClosing = barCount === 'close';

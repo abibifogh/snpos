@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Field, Input, Modal, Notice, Spinner } from './components';
 import {
   barCountSheet, saveBarCount, byUnit, summariseBarCount, countGate,
+  countDraftKey, readCountDraft, saveCountDraft, restoreCount, draftFromCount, clearCountDraft,
+  type DraftStore,
   formatMoney, loadLocations, saleLocation,
 } from '@snpos/core';
 import type { BarCountLine, Settings, StockLocation } from '@snpos/core';
@@ -27,7 +29,15 @@ export interface BarCountModalProps {
   userId: string;
   settings: Settings;
   /** Dismissed without finishing. The count is not saved; nothing is written. */
-  onClose: () => void;
+  /**
+   * Leave the sheet.
+   *
+   * `waived` says whether leaving SATISFIES the count or merely postpones it.
+   * True where an admin has allowed counts to be left unfinished, or where
+   * there was nothing to count; false where the count is still owed, and the
+   * caller must not treat the shift as counted.
+   */
+  onClose: (waived: boolean) => void;
   /**
    * What walking away is called here.
    *
@@ -60,6 +70,24 @@ export function BarCountModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
+  /** Numbers were already on this sheet when it opened. Said, not assumed. */
+  const [recovered, setRecovered] = useState(false);
+  /** Which room this sheet is for, so two shelves cannot restore each other. */
+  const [draftKey, setDraftKey] = useState(() => countDraftKey(shiftId, phase));
+
+  /**
+   * This device's own store, and nothing if it refuses.
+   *
+   * Private browsing, a full disk, a policy — none of which is a reason to
+   * stop somebody counting. Every draft call takes null happily.
+   */
+  const draftStore = (): DraftStore | null => {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  };
 
   const money = (n: number) => formatMoney(n, settings);
 
@@ -79,7 +107,23 @@ export function BarCountModal({
         const bar = where.filter((l) => (l.module ?? 'kitchen') === 'bar' && l.active !== false);
         setPlaces(bar);
         const rows = await barCountSheet(venueId, saleLocation(bar, 'bar')?.$id);
-        setSheet({ lines: rows, failed: false });
+        /*
+          WHAT WAS ALREADY TYPED, PUT BACK.
+
+          A count of forty bottles is not one sitting: somebody is called to
+          the bar half way through it. Leaving the sheet used to throw away
+          everything typed so far, which made the way out useless — the only
+          safe move was to stand there until it was finished.
+
+          The SHEET decides what is on it and the draft only what was typed,
+          so a bottle added this morning still appears and one taken off is
+          still gone. See restoreCount.
+        */
+        const key = countDraftKey(shiftId, phase, saleLocation(bar, 'bar')?.$id);
+        setDraftKey(key);
+        const kept = readCountDraft(draftStore(), key);
+        setSheet({ lines: restoreCount(rows, kept), failed: false });
+        if (kept) setRecovered(true);
         if (rows.length === 0) onEmpty?.();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not load the count sheet.');
@@ -92,7 +136,21 @@ export function BarCountModal({
   }, [venueId]);
 
   const setLine = (id: string, patch: Partial<BarCountLine>) =>
-    setSheet((s) => (s ? { ...s, lines: s.lines.map((r) => (r.ingredientId === id ? { ...r, ...patch } : r)) } : s));
+    setSheet((s) => {
+      if (!s) return s;
+      const lines = s.lines.map((r) => (r.ingredientId === id ? { ...r, ...patch } : r));
+      /*
+        Kept as it is typed, not on the way out.
+
+        A way out that saves is only half the promise: the till reloads, a
+        browser is closed, a tablet runs out of battery, and none of those go
+        through any button. Written to this device, never to the database — a
+        half-finished count is not a count, and filing one would put a number
+        against a shelf nobody has finished walking.
+      */
+      saveCountDraft(draftStore(), draftKey, draftFromCount(lines));
+      return { ...s, lines };
+    });
 
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -137,6 +195,8 @@ export function BarCountModal({
         it. So the sheet stays open and says so, which is the one moment
         somebody can still put it right.
       */
+      // Filed, so the half-finished copy has nothing left to protect.
+      clearCountDraft(draftStore(), draftKey);
       if (failed > 0) {
         setError(
           `${failed} line${failed === 1 ? '' : 's'} did not save. Nothing else has been touched — try the `
@@ -164,18 +224,31 @@ export function BarCountModal({
     <Modal
       title={phase === 'open' ? 'Count the bar in' : 'Count the bar out'}
       wide
-      onClose={onClose}
-      dismissible={gate.maySkip}
+      onClose={() => onClose(gate.maySkip)}
+      /*
+        THERE IS ALWAYS A WAY BACK.
+
+        There used to be no way out of a count that could not be skipped: no
+        ✕, no button, nothing. The reasoning was that an exit which does not
+        finish the count is a way to record it as done — and that is true of
+        SKIPPING, which is not the same thing as leaving.
+
+        Leaving goes back to the till with the count still owed: the warning
+        stays up, the sheet asks again, and a close will not proceed on it. A
+        screen with no way out is not a stricter rule, it is a stuck till —
+        and the way people get out of a stuck till is by force-closing the
+        browser, which loses whatever they had already typed.
+      */
+      dismissible
       footer={
         <>
-          {/* Only where there is a way out to offer. When the count is not
-              optional the ✕ goes with it: a way out that does not finish the
-              count is a way to record that it was done when it was not. */}
-          {gate.maySkip && (
-            <Button variant="ghost" onClick={onClose}>
-              {dismissLabel ?? (phase === 'open' ? 'Not now' : 'Cancel')}
-            </Button>
-          )}
+          <Button variant="ghost" onClick={() => onClose(gate.maySkip)}>
+            {gate.maySkip
+              ? (dismissLabel ?? (phase === 'open' ? 'Not now' : 'Cancel'))
+              // Says what happens, because it is not what the other label
+              // means: the count is still owed on the other side of this.
+              : 'Back — count later'}
+          </Button>
           <Button
             variant="primary"
             onClick={() => void save()}
@@ -189,6 +262,17 @@ export function BarCountModal({
     >
       {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
 
+      {/* Said, not left to be noticed. Numbers already on a sheet that was
+          expected to be blank are either a relief or a warning, and which one
+          depends on knowing they are yours from earlier rather than somebody
+          else's guess. */}
+      {recovered && (
+        <Notice tone="info">
+          Picking up where this sheet was left. What was already typed is still here — check it still matches
+          the shelf before filing the count.
+        </Notice>
+      )}
+
       <p className="small dim" style={{ marginTop: 0 }}>
         {phase === 'open'
           ? 'Count what is actually behind the bar before service starts. It is usually what last night left, '
@@ -196,10 +280,14 @@ export function BarCountModal({
             + 'times a shortage gets argued about later.'
           : 'Count what you are handing over. The difference between this and what the sales say should be left '
             + 'is the figure the whole bar stock system exists to produce.'}
+        {/* Says what saving needs AND what leaving means, now that leaving is
+            possible. Half of that on its own reads as either a wall or a
+            waiver, and it is neither. */}
         {!gate.maySkip && lines && lines.length > 0 && (
           <>
-            {' '}<strong>Every line has to be answered.</strong> An admin can allow counts to be left
-            unfinished under Settings, Stock.
+            {' '}<strong>Every line has to be answered to file this count.</strong> You can go back and
+            finish it later — the shift will keep asking, and it cannot be closed until it is done. An admin
+            can allow counts to be left unfinished under Settings, Stock.
           </>
         )}
       </p>

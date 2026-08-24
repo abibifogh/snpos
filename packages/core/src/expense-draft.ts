@@ -119,3 +119,107 @@ export function clearExpenseDraft(store: DraftStore | null | undefined, key: str
     // Nothing to do about it, and nothing that depends on it.
   }
 }
+
+/* -------------------------------------------------- a count left half done */
+
+/**
+ * Where a half-finished count is kept, and whose it is.
+ *
+ * Per shift and per phase, so counting in and counting out are two separate
+ * pieces of work and neither can restore the other's numbers. The room is in
+ * it too: a bar sheet and a store-room sheet are different shelves, and
+ * pouring one into the other would be worse than losing both.
+ *
+ * Not per person, unlike an expense draft. A count belongs to the bar rather
+ * than to whoever started it — the whole point of counting in and out is that
+ * one person hands over to the next, and a bartender who takes over half way
+ * should find the numbers already on the sheet rather than a blank one.
+ */
+export const countDraftKey = (shiftId: string, phase: string, locationId = ''): string =>
+  `snpos.count.${shiftId || 'none'}.${phase}.${locationId}`;
+
+/**
+ * What was typed, by stock item.
+ *
+ * Text, not numbers, and deliberately: a half-typed "0." is not nought, and
+ * turning it into one while somebody is still typing is how a shelf holding
+ * twelve gets recorded as empty.
+ */
+export type CountDraft = Record<string, { countedText?: string; note?: string }>;
+
+/** Anything typed at all. An empty draft is not worth keeping or announcing. */
+export function countWorthKeeping(draft: CountDraft | null | undefined): boolean {
+  if (!draft) return false;
+  return Object.values(draft).some((l) => (l?.countedText ?? '').trim() !== '' || (l?.note ?? '').trim() !== '');
+}
+
+export function saveCountDraft(store: DraftStore | null | undefined, key: string, draft: CountDraft): void {
+  if (!store) return;
+  try {
+    if (countWorthKeeping(draft)) store.setItem(key, JSON.stringify(draft));
+    else store.removeItem(key);
+  } catch {
+    // A count that cannot be kept is a count somebody types again. Refusing
+    // to let them count at all would be the worse answer.
+  }
+}
+
+export function readCountDraft(store: DraftStore | null | undefined, key: string): CountDraft | null {
+  if (!store) return null;
+  try {
+    const raw = store.getItem(key);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const draft = parsed as CountDraft;
+    return countWorthKeeping(draft) ? draft : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Put a saved draft back onto a freshly loaded sheet.
+ *
+ * The SHEET decides what is on it, never the draft: a bottle added to the bar
+ * this morning has to appear, and one taken off has to go, whatever was typed
+ * yesterday. So the lines come from the sheet and only the typing is restored.
+ */
+export function restoreCount<T extends { ingredientId: string; countedText?: string; note?: string }>(
+  lines: T[],
+  draft: CountDraft | null | undefined,
+): T[] {
+  if (!draft) return lines;
+  return lines.map((l) => {
+    const kept = draft[l.ingredientId];
+    if (!kept) return l;
+    return {
+      ...l,
+      countedText: kept.countedText ?? l.countedText,
+      note: kept.note ?? l.note,
+    };
+  });
+}
+
+/** The typing on a sheet, ready to be kept. */
+export function draftFromCount(
+  lines: { ingredientId: string; countedText?: string; note?: string }[],
+): CountDraft {
+  const out: CountDraft = {};
+  for (const l of lines) {
+    if ((l.countedText ?? '').trim() === '' && (l.note ?? '').trim() === '') continue;
+    out[l.ingredientId] = { countedText: l.countedText, note: l.note };
+  }
+  return out;
+}
+
+/** Done with, so it stops being offered back. */
+export function clearCountDraft(store: DraftStore | null | undefined, key: string): void {
+  if (!store) return;
+  try {
+    store.removeItem(key);
+  } catch {
+    // A draft that will not clear reappears once and is typed over. Nothing
+    // depends on it having gone.
+  }
+}
