@@ -147,6 +147,14 @@ export function App() {
    */
   const [working, setWorking] = useState<StaffProfile | null>(null);
   /**
+   * Who the DEVICE is signed in as, kept apart from who is standing at it.
+   *
+   * One sign-in per till, done once in the morning by whoever opens up.
+   * Everybody else reaches it by PIN, and it is their name that belongs on
+   * the work — so this is only what to fall back to when nobody has unlocked.
+   */
+  const [device, setDevice] = useState<{ profile: StaffProfile | null; userId: string } | null>(null);
+  /**
    * The same answer, readable from inside the context built at boot.
    *
    * setModule lives in a closure made once, and a piece of state captured
@@ -154,10 +162,31 @@ export function App() {
    * exactly the stale answer this is here to stop.
    */
   const whoIsHere = useRef<StaffProfile | null>(null);
+  /*
+    WHOEVER IS AT THE TILL IS WHO THE WORK IS RECORDED AGAINST.
+
+    Orders were tagged with the account that signed the device in — the
+    manager who opened up, or the address the till was set up with — whoever
+    was actually standing there and had just typed their PIN. A name on an
+    order is how a question gets asked of the right person, and the wrong name
+    on it asks the wrong one.
+
+    The same swap covers what they may DO, which is the other half of the same
+    mistake: a bar-only cashier letting themselves into a till signed in by
+    the owner should not inherit the owner's reach.
+  */
   useEffect(() => {
     whoIsHere.current = working;
-    setCtx((c) => (c && c.working !== working ? { ...c, working } : c));
-  }, [working]);
+    setCtx((c) => {
+      if (!c) return c;
+      const person = working ?? device?.profile ?? null;
+      // Their auth account where they have one, their staff record where they
+      // do not — the admin's name lookup matches on either. See nameOf.
+      const id = working ? (working.user_id || working.$id) : (device?.userId ?? c.userId);
+      if (c.working === working && c.profile === person && c.userId === id) return c;
+      return { ...c, working, profile: person, userId: id };
+    });
+  }, [working, device]);
 
   useEffect(() => {
     if (!lockStore) return;
@@ -187,6 +216,14 @@ export function App() {
     const problem = lockProblem(staff);
     if (problem) { toast(problem, 'err'); return; }
     setLocked(true);
+    /*
+      And nobody is at the till any more.
+
+      Left set, the next person to unlock would be working under the last
+      one's name for as long as it took them to be recognised — and if they
+      never were, for the rest of the shift.
+    */
+    setWorking(null);
     try { window.localStorage.setItem(lockStore, '1'); } catch { /* see above */ }
   };
 
@@ -362,6 +399,10 @@ export function App() {
 
     const open = await loadShift(venue.$id, startingModule);
 
+    // What this device is signed in as, so the swap above has something to
+    // fall back to when the till is nobody's in particular.
+    setDevice({ profile, userId: me.userId });
+
     setCtx({
       settings,
       venue,
@@ -503,7 +544,7 @@ export function App() {
    * shop, and could sell from either.
    */
   const sidesHere = (['kitchen', 'bar', 'craft'] as Module[])
-    .filter((m) => modulesForStaff(ctx.working ?? ctx.profile, ctx.settings)[m]);
+    .filter((m) => modulesForStaff(ctx.profile, ctx.settings)[m]);
 
   if (openTable) {
     return (
@@ -560,9 +601,8 @@ export function App() {
             {/* Built from what this person may actually work rather than three
                 hard-coded buttons, so a bar-only cashier is never offered a
                 shop they cannot sell from. */}
-            {/* Whoever is standing here, not whoever signed in this morning.
-                A till is signed in once and reached by PIN all day; the sides
-                on offer belong to the person who opened the lock. */}
+            {/* `ctx.profile` IS whoever is standing here — it follows the
+                PIN, not the sign-in. See the swap where `working` is read. */}
             {sidesHere.map((m) => (
                 <button
                   key={m}
@@ -574,18 +614,19 @@ export function App() {
               ))}
           </div>
         )}
-        {/* A bar is neither a dining room nor a shop counter.
-            Most drinks are ordered and paid for standing at the bar, so that
-            is the tab it opens on — but a bar with seating runs tabs against
-            a table all night, which a craft counter never does. So it gets
-            both, and not the kitchen pass: a drink is poured where it is
-            ordered, and there is no window to collect it from. */}
-        {ctx.module === 'bar' && (
-          <div className="pos-tabs">
-            <button className={tab === 'counter' ? 'on' : ''} onClick={() => setTab('counter')}>The bar</button>
-            <button className={tab === 'tables' ? 'on' : ''} onClick={() => setTab('tables')}>Tables</button>
-          </div>
-        )}
+        {/*
+          THE BAR HAS NO TABLES TAB.
+
+          It had one, on the reasoning that a bar with seating runs tabs
+          against a table all night. This bar does not: a drink is poured,
+          paid for and handed over where it is ordered, and the second tab was
+          a wrong turning offering a dining room that belongs to the kitchen.
+
+          A bar with seating would want it back, and it is one strip of buttons
+          to restore. Nothing else here assumes it is gone — see the body
+          below, which sends the bar to its counter whatever `tab` happens to
+          say, so a remembered value cannot strand somebody on a blank screen.
+        */}
         {ctx.module === 'kitchen' && (
           <div className="pos-tabs">
             <button className={tab === 'tables' ? 'on' : ''} onClick={() => setTab('tables')}>Tables</button>
@@ -726,7 +767,7 @@ export function App() {
             onBack={() => undefined}
             onToast={(m, t) => toast(m, t)}
           />
-        ) : ctx.module === 'bar' && tab !== 'tables' ? (
+        ) : ctx.module === 'bar' ? (
           /* Straight onto the bar itself: pour, take the money, next customer.
              Its own counter rather than the shop's — see BAR_COUNTER_TABLE_ID. */
           <OrderView
