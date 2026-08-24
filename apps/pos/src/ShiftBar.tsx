@@ -80,6 +80,43 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   */
   const countsShelves = countsAtBothEnds(ctx.module);
   const shiftId = ctx.shift?.$id;
+  /*
+    THE SHEET BELONGS TO THE SIDE THAT COUNTS, AND GOES WITH IT.
+
+    A till that switches sides keeps everything else about itself, and the bar
+    count sheet was no exception: opened at the bar and still on screen after
+    a switch to the craft counter, over a shop till, pointed at the SHOP's
+    shift. Where a count may not be skipped that sheet has no way out of it —
+    so the shop counter was simply blocked, by a bar's shelves, with no
+    button that would dismiss them.
+
+    Worse than blocked, had anybody found a way to save it: the bar's bottles
+    would have been filed against the craft shift.
+
+    Cleared on the way out, along with the note that this shift has already
+    been asked once — the next side asks its own questions.
+  */
+  useEffect(() => {
+    setBarCount(null);
+    setPushed(false);
+    setCountedOut(false);
+    /*
+      And every other sheet that belongs to a shift, for the same reason.
+
+      All of them are built from the side that was open when they opened. A
+      close sheet is the sharp one: it carries the expected cash for that
+      drawer, and left on screen through a switch it would count the shop's
+      till against the bar's figures — money, not just a nuisance. The
+      spending list, the history and the handover are the same shape.
+    */
+    setClosing(false);
+    setOpening(false);
+    setSpending(false);
+    setHistory(false);
+    setHandingOver(false);
+    setError(null);
+  }, [ctx.module]);
+
   useEffect(() => {
     if (!countsShelves || !shiftId) { setCountedIn(undefined); return; }
     let live = true;
@@ -533,7 +570,9 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         />
       )}
 
-      {barCount && ctx.shift && (
+      {/* `countsShelves` as well as the sheet itself, so a side that does not
+          count shelves cannot be shown one however this state was reached. */}
+      {barCount && countsShelves && ctx.shift && (
         <BarCountModal
           venueId={ctx.venue.$id}
           shiftId={ctx.shift.$id}
