@@ -18,6 +18,8 @@ interface PaymentRow extends Doc {
   amount: number;
   tip?: number;
   status?: string;
+  /** What the card machine said, where the till was given it. */
+  reference?: string;
 }
 import { ExpenseModal } from './till';
 
@@ -402,6 +404,20 @@ export function ShiftHistory({
                                       Paid {money(p.amount)}
                                       {p.tip ? ` (+${money(p.tip)} tip)` : ''} by{' '}
                                       <strong>{methodName(p.method_id)}</strong>
+                                      {/* The card machine's number, beside the
+                                          payment it belongs to. This screen is
+                                          where somebody checks the night's card
+                                          takings against the terminal's own
+                                          roll, and the reference is the only
+                                          thing the two have in common. */}
+                                      {p.reference && (
+                                        <span
+                                          className="dim small"
+                                          style={{ fontFamily: 'ui-monospace, monospace', userSelect: 'all' }}
+                                        >
+                                          {' · '}{p.reference}
+                                        </span>
+                                      )}
                                     </span>
                                     {dead && <Badge tone="warn">voided</Badge>}
                                     {!dead && shiftOpen && methods.length > 1 && (

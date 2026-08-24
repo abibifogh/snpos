@@ -31,6 +31,15 @@ export interface ReceiptPayment {
   method: string;
   amount: string;
   change?: string;
+  /**
+   * The card machine's own number, where there is one.
+   *
+   * A customer querying a charge with their bank is asked for it, and the
+   * receipt is the only thing they leave with. It was typed at the till and
+   * never printed, so the one piece of paper that could answer the question
+   * did not carry the answer.
+   */
+  reference?: string;
 }
 
 export interface ReceiptData {
@@ -184,7 +193,12 @@ export function buildReceiptHtml(d: ReceiptData): string {
   ${d.tip ? row('Tip', d.tip) : ''}
   ${!d.taxInclusive && d.tax ? row(d.taxLabel || 'Tax', d.tax) : ''}
   ${row('Total', d.total, { big: true })}
-  ${d.payments.map((p) => row(`Tendered ${p.method}`, p.amount)).join('')}
+  ${d.payments.map((p) => row(
+    // The reference under the method, in the same row, because a line of its
+    // own on a narrow receipt reads as another charge.
+    p.reference ? `Tendered ${p.method} · ${p.reference}` : `Tendered ${p.method}`,
+    p.amount,
+  )).join('')}
   ${d.payments.find((p) => p.change) ? row('Change', d.payments.find((p) => p.change)!.change!, { big: true }) : ''}
   ${d.taxInclusive && d.tax ? row(`${d.taxLabel || 'Tax'} Total`, d.tax) : ''}
 
@@ -255,6 +269,8 @@ interface PaymentRow extends Doc {
   tip: number;
   change_given: number;
   taken_by: string;
+  /** The card machine's number, where the till was given one. */
+  reference?: string;
 }
 
 /**
@@ -330,6 +346,7 @@ export async function receiptForOrder(opts: {
     total: money(order.total),
     payments: payments.map((p) => ({
       method: methods.find((m) => m.$id === p.method_id)?.name ?? p.method_kind_snapshot ?? 'Payment',
+      reference: p.reference || undefined,
       amount: money(p.amount + (p.tip ?? 0)),
       change: p.change_given > 0 ? money(p.change_given) : undefined,
     })),

@@ -28,6 +28,14 @@ interface Payment extends Doc {
   change_given: number;
   /** 'voided' means recorded in error and taken back out. */
   status?: string;
+  /**
+   * The card machine's or the mobile money message's own number.
+   *
+   * Typed at the till and, until now, never shown again anywhere. It is the
+   * only thing that ties a line on this screen to a line on the provider's
+   * statement, which is the job somebody is doing when they come looking.
+   */
+  reference?: string;
 }
 /**
  * `kind` is carried because it travels with a payment as
@@ -1074,7 +1082,8 @@ export function OrdersPage() {
               <table className="data">
                 <thead>
                   <tr>
-                    <th>Method</th><th className="num">Amount</th><th className="num">Tip</th><th>Taken by</th><th />
+                    <th>Method</th><th className="num">Amount</th><th className="num">Tip</th>
+                    <th>Reference</th><th>Taken by</th><th />
                   </tr>
                 </thead>
                 <tbody>
@@ -1090,6 +1099,22 @@ export function OrdersPage() {
                           {money(p.amount)}
                         </td>
                         <td className="num dim">{p.tip ? money(p.tip) : '-'}</td>
+                        {/*
+                          What the card machine said, where it said anything.
+
+                          The till asks for it — and asks insistently, on a
+                          method marked as needing one — and then it was
+                          written down and never shown again. It is the only
+                          thing that ties this line to a line on the
+                          provider's statement, which is precisely the job
+                          somebody has in hand when they open this.
+
+                          Selectable, in a monospace, because it gets copied
+                          into somebody else's search box.
+                        */}
+                        <td className="small" style={{ fontFamily: 'ui-monospace, monospace', userSelect: 'all' }}>
+                          {p.reference || <span className="dim">-</span>}
+                        </td>
                         <td className="dim small">{nameOf(p.taken_by)}</td>
                         <td className="num">
                           {/*
