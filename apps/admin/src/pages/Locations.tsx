@@ -5,8 +5,11 @@ import {
   loadLocations, loadLevels, loadIngredients, transferSheet, transferStock,
   openIn, purchaseLocation, saleLocation, transferProblem, overdrawn, transferQty,
   LOCATION_KINDS, MODULE_LABELS, modulesOf,
+  loadLevelUploads, restoreLevelUpload,
 } from '@snpos/core';
-import type { StockLocation, LocationStock, TransferLine, Module, Doc } from '@snpos/core';
+import type {
+  StockLocation, LocationStock, TransferLine, Module, Doc, LevelUploadDoc,
+} from '@snpos/core';
 import { useSession } from '../session';
 import { LevelUpload } from '../components/LevelUpload';
 
@@ -42,6 +45,9 @@ export function LocationsPage() {
   const [note, setNote] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [uploading, setUploading] = useState(false);
+  /** The opening balances already uploaded, and which one is being put back. */
+  const [uploads, setUploads] = useState<LevelUploadDoc[]>([]);
+  const [restoring, setRestoring] = useState<string | null>(null);
   /** The room whose contents are being read. */
   const [looking, setLooking] = useState<(StockLocation & Doc) | null>(null);
   const [lookFilter, setLookFilter] = useState('');
@@ -49,6 +55,49 @@ export function LocationsPage() {
 
   const mods = modulesOf(settings);
   const isAdmin = profile?.role === 'admin' || profile?.role === 'manager';
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    void loadLevelUploads('main').then(setUploads).catch(() => setUploads([]));
+  }, [isAdmin]);
+
+  /**
+   * Set every shelf an upload named back to the figure it gave.
+   *
+   * Confirmed first, and in figures. This overwrites everything bought, poured
+   * or counted since — which is the point of asking for it, and exactly why
+   * nobody should meet it as a surprise.
+   */
+  const putBack = async (u: LevelUploadDoc) => {
+    const when = new Date(u.uploaded_at ?? u.$createdAt).toLocaleString();
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(
+      `Set ${u.lines} bottle${u.lines === 1 ? '' : 's'} back to what the upload of ${when} said?\n\n`
+      + 'Anything bought, poured or counted since is overwritten by those figures.',
+    )) return;
+
+    setRestoring(u.$id);
+    setError(null);
+    try {
+      const { set, failed, skipped } = await restoreLevelUpload({
+        venueId: 'main',
+        uploadId: u.$id,
+        userId: user?.$id ?? '',
+      });
+      await load();
+      setUploads(await loadLevelUploads('main').catch(() => []));
+      toast(
+        `${set} shel${set === 1 ? 'f' : 'ves'} set back`
+        + `${failed > 0 ? `, ${failed} could not be` : ''}`
+        + `${skipped > 0 ? `, and ${skipped} skipped — the bottle or the room has gone since` : ''}.`,
+        failed > 0 ? 'err' : undefined,
+      );
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setRestoring(null);
+    }
+  };
 
   const load = async () => {
     try {
@@ -203,6 +252,56 @@ export function LocationsPage() {
               .map((m) => ({ value: m, label: MODULE_LABELS[m] }))}
           />
         </div>
+      )}
+
+      {/*
+        THE OPENING BALANCES ALREADY UPLOADED, AND A WAY BACK TO ONE.
+
+        An opening balance is a statement somebody made about a room on a day.
+        Everything since — a delivery, a pour, a count that was wrong — moves
+        the shelves away from it, and until now there was no way back except
+        finding the spreadsheet again and hoping it was the one that was used.
+
+        Restoring is the same statement made again rather than a special kind
+        of write: the same levels set, the same movements recorded, and its own
+        row left in this list pointing at the upload it came from.
+      */}
+      {isAdmin && uploads.length > 0 && (
+        <Card title="Opening levels uploaded">
+          <p className="small dim" style={{ marginTop: 0 }}>
+            Putting one back sets every shelf it named to the figure it gave. Anything bought, poured or counted
+            since is overwritten by it — which is the point, and is why it says what it will touch first.
+          </p>
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr><th>When</th><th>What it said</th><th className="num">Bottles</th><th /></tr>
+              </thead>
+              <tbody>
+                {uploads.map((u) => (
+                  <tr key={u.$id}>
+                    <td className="small dim">{new Date(u.uploaded_at ?? u.$createdAt).toLocaleString()}</td>
+                    <td className="small">
+                      {u.note || 'Opening levels'}
+                      {u.restored_from && <> <Badge>a restore</Badge></>}
+                    </td>
+                    <td className="num">{u.lines}</td>
+                    <td className="num">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        loading={restoring === u.$id}
+                        onClick={() => void putBack(u)}
+                      >
+                        Put these levels back
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       <Card title="Places" pad={false}>

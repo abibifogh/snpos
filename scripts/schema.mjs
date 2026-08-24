@@ -2671,6 +2671,42 @@ export const COLLECTIONS = [
     ],
     indexes: [['active', 'key', ['active']]],
   },
+  /*
+    WHAT AN OPENING-LEVELS UPLOAD SAID, KEPT.
+
+    The upload sets a shelf to a figure. Until this existed, the figures
+    themselves were gone the moment they were applied: the movements record how
+    far each shelf MOVED, which is not the same as what the file said, and
+    working one back from the other means knowing what every shelf held
+    beforehand — which is precisely the thing that has since changed.
+
+    So the upload is stored as it was read. An opening balance is a statement
+    somebody made about a room on a day, and being able to put a bar back to
+    the day it opened is worth one row per upload.
+  */
+  {
+    id: 'stock_level_uploads',
+    name: 'Opening level uploads',
+    // Nobody updates one: an upload is a record of what was said rather than a
+    // document to be edited. Restoring writes a NEW row, so the history reads
+    // forwards and never has to be untangled backwards.
+    perms: { read: MGMT, create: MGMT, update: [], delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['uploaded_at', 'd', null, true],
+      ['uploaded_by', 's', 64, false],
+      ['note', 's', 300, false],
+      // JSON: [{ i: ingredientId, l: locationId, q: qty }]. Short keys because
+      // the column is the limit and a hundred bottles across two rooms is two
+      // hundred entries. See levelPayload.
+      ['payload', 's', 20000, true],
+      ['lines', 'i', null, true, 0],
+      // Set when this upload was itself a restore of an earlier one.
+      ['restored_from', 's', 64, false],
+    ],
+    indexes: [['venue_when', 'key', ['venue_id', 'uploaded_at']]],
+  },
+
   {
     // The generated summary itself, kept so it can be re-read and re-sent.
     id: 'summary_reports',

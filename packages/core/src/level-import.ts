@@ -182,3 +182,89 @@ export function levelTotals(rows: LevelRow[]): { place: string; items: number; u
   }
   return [...by.entries()].map(([place, v]) => ({ place, ...v }));
 }
+
+/* --------------------------------------------- keeping what was uploaded */
+
+/** One shelf as stored: ingredient, place, and the figure the file gave. */
+export interface StoredLevel { i: string; l: string; q: number }
+
+/**
+ * The longest a stored upload may be, in characters.
+ *
+ * The column holds 20000. Kept a little under it so a payload that fits here
+ * cannot fail to save on a rounding difference somewhere else, and so the
+ * message about being too big comes from us rather than from the database.
+ */
+export const LEVEL_PAYLOAD_MAX = 19_000;
+
+/**
+ * The upload, flattened to what has to be remembered to put it back.
+ *
+ * Short keys, and only three of them. The name is not stored: it is on the
+ * ingredient, and a copy here would be the version that was true on the day
+ * of the upload — so restoring would either ignore it or, worse, rename
+ * things back.
+ */
+export function levelPayload(rows: LevelRow[]): StoredLevel[] {
+  const out: StoredLevel[] = [];
+  for (const row of rows) {
+    for (const level of row.levels) {
+      out.push({ i: row.ingredientId, l: level.locationId, q: level.qty });
+    }
+  }
+  return out;
+}
+
+/** Read one back. A payload that cannot be read is no upload at all. */
+export function readLevelPayload(raw: string | undefined): StoredLevel[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((p): p is StoredLevel =>
+      !!p && typeof p === 'object'
+      && typeof (p as StoredLevel).i === 'string'
+      && typeof (p as StoredLevel).l === 'string'
+      && Number.isFinite((p as StoredLevel).q));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Turn a stored upload back into rows the applier understands.
+ *
+ * The places are looked up fresh rather than stored, so a room renamed since
+ * the upload restores under the name it has now. A room DELETED since is
+ * dropped: putting a figure into a place that no longer exists would be a
+ * level nothing can ever count.
+ */
+export function rowsFromPayload(
+  stored: StoredLevel[],
+  context: { ingredients: { $id: string; name: string }[]; locations: { $id: string; name: string }[] },
+): LevelRow[] {
+  const byIngredient = new Map<string, LevelRow>();
+
+  for (const s of stored) {
+    const ing = context.ingredients.find((x) => x.$id === s.i);
+    const place = context.locations.find((x) => x.$id === s.l);
+    if (!ing || !place) continue;
+    const row = byIngredient.get(s.i) ?? { ingredientId: s.i, name: ing.name, levels: [], line: 0 };
+    row.levels.push({ locationId: place.$id, locationName: place.name, qty: s.q });
+    byIngredient.set(s.i, row);
+  }
+
+  return [...byIngredient.values()];
+}
+
+/** Why this upload cannot be put back, or nothing. */
+export function restoreProblem(
+  stored: StoredLevel[],
+  rows: LevelRow[],
+): string | null {
+  if (stored.length === 0) return 'That upload has nothing in it to put back.';
+  if (rows.length === 0) {
+    return 'None of what that upload named still exists — the bottles or the rooms have been removed since.';
+  }
+  return null;
+}

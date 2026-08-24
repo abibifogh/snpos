@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readLevelImport, levelTotals, LEVEL_TEMPLATE_ROWS } from '../level-import.ts';
+import {
+  readLevelImport, levelTotals, LEVEL_TEMPLATE_ROWS,
+  levelPayload, readLevelPayload, rowsFromPayload, restoreProblem,
+} from '../level-import.ts';
 
 const ctx = {
   ingredients: [
@@ -90,4 +93,77 @@ test('matching is loose about case and spacing, strict about meaning', () => {
   assert.deepEqual(r.problems, []);
   assert.equal(r.rows[0].ingredientId, 'i2');
   assert.equal(r.rows[0].name, 'Tonic', 'the stored spelling wins, not the file’s');
+});
+
+/* --------------------------------------------- keeping what was uploaded */
+
+test('an upload is stored as the figures it set, not as the moves it made', () => {
+  /*
+    THE WHOLE POINT.
+
+    A movement says how far a shelf moved. Working the uploaded figure back
+    from that means knowing what the shelf held beforehand — which is exactly
+    the thing that has changed since, or nobody would be restoring anything.
+  */
+  const rows = [
+    { ingredientId: 'gin', name: 'Gin', line: 2, levels: [
+      { locationId: 'store', locationName: 'Store room', qty: 120 },
+      { locationId: 'bar', locationName: 'The bar', qty: 15 },
+    ] },
+  ];
+  assert.deepEqual(levelPayload(rows), [
+    { i: 'gin', l: 'store', q: 120 },
+    { i: 'gin', l: 'bar', q: 15 },
+  ]);
+});
+
+test('a stored upload reads back into rows the applier understands', () => {
+  const stored = [{ i: 'gin', l: 'bar', q: 15 }, { i: 'gin', l: 'store', q: 120 }];
+  const rows = rowsFromPayload(stored, {
+    ingredients: [{ $id: 'gin', name: 'Gin' }],
+    locations: [{ $id: 'bar', name: 'The bar' }, { $id: 'store', name: 'Store room' }],
+  });
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0].levels.map((l) => [l.locationName, l.qty]), [['The bar', 15], ['Store room', 120]]);
+});
+
+test('a room renamed since restores under the name it has now', () => {
+  // The name is looked up fresh rather than stored, so an upload cannot rename
+  // things back to what they were called on the day.
+  const rows = rowsFromPayload([{ i: 'gin', l: 'bar', q: 15 }], {
+    ingredients: [{ $id: 'gin', name: 'Havana Club' }],
+    locations: [{ $id: 'bar', name: 'The front bar' }],
+  });
+  assert.equal(rows[0].name, 'Havana Club');
+  assert.equal(rows[0].levels[0].locationName, 'The front bar');
+});
+
+test('anything since deleted is dropped rather than restored into nothing', () => {
+  /*
+    A figure put into a room that no longer exists is a level nothing can ever
+    count — it would sit in the totals and never appear on a sheet.
+  */
+  const rows = rowsFromPayload([{ i: 'gin', l: 'gone', q: 15 }, { i: 'rum', l: 'bar', q: 4 }], {
+    ingredients: [{ $id: 'gin', name: 'Gin' }, { $id: 'rum', name: 'Rum' }],
+    locations: [{ $id: 'bar', name: 'The bar' }],
+  });
+  assert.deepEqual(rows.map((r) => r.ingredientId), ['rum']);
+});
+
+test('an upload whose every line has gone says so rather than doing nothing', () => {
+  const stored = [{ i: 'gin', l: 'gone', q: 15 }];
+  const rows = rowsFromPayload(stored, { ingredients: [], locations: [] });
+  assert.match(restoreProblem(stored, rows) ?? '', /no longer exists|removed since/);
+  assert.match(restoreProblem([], []) ?? '', /nothing in it/);
+  // And one that still resolves is allowed through.
+  assert.equal(restoreProblem(stored, [{ ingredientId: 'gin', name: 'Gin', levels: [], line: 0 }]), null);
+});
+
+test('a payload that cannot be read is no upload at all', () => {
+  // Rather than throwing in the middle of a restore. A row somebody edited by
+  // hand, or written by an older version, must not take the screen down.
+  assert.deepEqual(readLevelPayload('not json'), []);
+  assert.deepEqual(readLevelPayload(undefined), []);
+  assert.deepEqual(readLevelPayload('{"i":"gin"}'), []);
+  assert.deepEqual(readLevelPayload('[{"i":"gin","l":"bar","q":15},{"i":1}]'), [{ i: 'gin', l: 'bar', q: 15 }]);
 });

@@ -6,6 +6,9 @@ import {
 } from './bar-count';
 import type { FiledCheck } from './bar-count';
 import { levelFor, transferQty, transferMovements, purchaseLocation, saleLocation } from './locations';
+import {
+  levelPayload, readLevelPayload, rowsFromPayload, restoreProblem, LEVEL_PAYLOAD_MAX,
+} from './level-import';
 import type { StockLocation, LocationStock, TransferLine } from './locations';
 import type { LevelRow } from './level-import';
 import type { BarCountLine } from './bar-count';
@@ -871,9 +874,36 @@ export async function applyLevelImport(opts: {
   rows: LevelRow[];
   userId: string;
   note?: string;
-}): Promise<{ set: number; failed: number }> {
+  /** Set when this is putting an earlier upload back. See restoreLevelUpload. */
+  restoredFrom?: string;
+}): Promise<{ set: number; failed: number; uploadId?: string }> {
   let set = 0;
   let failed = 0;
+
+  /*
+    WHAT THE FILE SAID, KEPT BEFORE ANY OF IT IS APPLIED.
+
+    The movements below record how far each shelf MOVED, which is not the same
+    as what the file said — working one back from the other needs to know what
+    every shelf held beforehand, and that is precisely what has changed by the
+    time anybody wants it back. So the figures are stored as figures.
+
+    Written first, so a run that fails half way still leaves the statement it
+    was making. Never allowed to fail the import: an opening balance that goes
+    in without its receipt is worth more than no opening balance.
+  */
+  const payload = JSON.stringify(levelPayload(opts.rows));
+  const uploadId = payload.length > LEVEL_PAYLOAD_MAX
+    ? undefined
+    : (await db.createDocument(DB_ID, 'stock_level_uploads', ID.unique(), {
+      venue_id: opts.venueId,
+      uploaded_at: new Date().toISOString(),
+      uploaded_by: opts.userId,
+      note: (opts.note ?? '').slice(0, 300),
+      payload,
+      lines: opts.rows.length,
+      ...(opts.restoredFrom ? { restored_from: opts.restoredFrom } : {}),
+    }).then((d) => d.$id).catch(() => undefined));
 
   for (const row of opts.rows) {
     for (const level of row.levels) {
@@ -914,7 +944,7 @@ export async function applyLevelImport(opts: {
     }
   }
 
-  return { set, failed };
+  return { set, failed, uploadId };
 }
 
 
@@ -1012,4 +1042,73 @@ export async function undoBarCount(opts: {
   }
 
   return { put_back, failed };
+}
+
+
+/* ---------------------------------------- putting an upload back */
+
+export interface LevelUploadDoc extends Doc {
+  venue_id: string;
+  uploaded_at: string;
+  uploaded_by?: string;
+  note?: string;
+  payload: string;
+  lines: number;
+  restored_from?: string;
+}
+
+/** The opening-level uploads this venue has had, newest first. */
+export const loadLevelUploads = async (venueId: string): Promise<LevelUploadDoc[]> =>
+  (await listAll<LevelUploadDoc>('stock_level_uploads', [Query.equal('venue_id', venueId)])
+    .catch(() => [] as LevelUploadDoc[]))
+    .sort((a, b) => (b.uploaded_at ?? b.$createdAt).localeCompare(a.uploaded_at ?? a.$createdAt));
+
+/**
+ * Set the shelves back to what an upload said.
+ *
+ * The same door the upload itself went through, deliberately: restoring is not
+ * a special kind of write, it is the same statement being made again. So it
+ * sets the same levels, records the same movements, and leaves its own row in
+ * the history — pointing at the upload it came from, so the record reads
+ * forwards rather than having to be untangled backwards.
+ *
+ * The places and the bottles are looked up fresh. A room renamed since comes
+ * back under the name it has now, and anything deleted since is dropped rather
+ * than restored into a place nothing can count. See rowsFromPayload.
+ */
+export async function restoreLevelUpload(opts: {
+  venueId: string;
+  uploadId: string;
+  userId: string;
+}): Promise<{ set: number; failed: number; skipped: number }> {
+  const upload = await db.getDocument(DB_ID, 'stock_level_uploads', opts.uploadId)
+    .catch(() => null) as unknown as LevelUploadDoc | null;
+  if (!upload) throw new Error('That upload could not be found.');
+
+  const stored = readLevelPayload(upload.payload);
+  const [ingredients, locations] = await Promise.all([
+    loadIngredients(opts.venueId),
+    loadLocations(opts.venueId),
+  ]);
+  const rows = rowsFromPayload(stored, { ingredients, locations });
+
+  const problem = restoreProblem(stored, rows);
+  if (problem) throw new Error(problem);
+
+  const { set, failed } = await applyLevelImport({
+    venueId: opts.venueId,
+    rows,
+    userId: opts.userId,
+    note: `Restored from the upload of ${new Date(upload.uploaded_at).toLocaleDateString()}`,
+    restoredFrom: upload.$id,
+  });
+
+  return {
+    set,
+    failed,
+    // Said rather than quietly dropped: an upload of forty that puts back
+    // thirty-six has had four bottles or rooms removed since, and that is
+    // worth knowing at the moment somebody is restoring an opening balance.
+    skipped: stored.length - rows.reduce((n, r) => n + r.levels.length, 0),
+  };
 }
