@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Button, Spinner, Card, Field, Input, Notice, useToast, Logo, HelpModal, EightySixModal,
   OfflineBar, useOfflineQueue, IdleScreen,
@@ -10,10 +10,10 @@ import {
   markUnavailable, markAvailable, isUnavailable, loadMenu as reloadMenu, itemsAvailableNow,
   requireStaff, signOutCompletely, staffProfileFor, loadOpenShifts, modulesForStaff, MODULE_LABELS,
   onQueueChange, startOfflineSync, flushQueue,
-  lockKey, lockProblem,
+  lockKey, lockProblem, subscribeCollection, wakesScreen, latestMovement,
 } from '@snpos/core';
 import type {
-  Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc, Module, Unlocker,
+  Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc, Module, Unlocker, Order,
 } from '@snpos/core';
 import { TablesView } from './TablesView';
 import { OrderView } from './OrderView';
@@ -154,6 +154,99 @@ export function App() {
     setLocked(false);
     try { window.localStorage.removeItem(lockStore); } catch { /* see above */ }
   };
+  /**
+   * An order arriving, so the clock gets out of its way.
+   *
+   * The till never had this. The kitchen screen woke for its tickets and the
+   * till woke for nothing at all, so a customer's QR order — the one kind that
+   * arrives with nobody standing at the counter, which is precisely when the
+   * screensaver is up — landed behind a clock and waited there to be found.
+   *
+   * Watched here rather than in the views underneath. Those come and go with
+   * the tab somebody last pressed: the table grid is not mounted on the
+   * takeaway tab, and the pass is not mounted at all unless combined mode is
+   * on, so anything relying on them would wake on some tabs and not others.
+   * The screensaver belongs to the whole app, and so does noticing.
+   */
+  const [wakeSignal, setWakeSignal] = useState(0);
+  /** How far this screen has been told about. Only the poll below reads it. */
+  const seenUpTo = useRef('');
+
+  const venueId = ctx?.venue.$id;
+  const side = ctx?.module;
+  useEffect(() => {
+    if (!venueId) return undefined;
+    const off = subscribeCollection<Order>('orders', (order) => {
+      if (wakesScreen(order, { module: side, venueId })) setWakeSignal((n) => n + 1);
+    });
+    return off;
+  }, [venueId, side]);
+
+  /*
+    And a look on a timer, because the live connection drops silently.
+
+    The same net the kitchen keeps under itself, for the same reason: the case
+    where nothing is telling this screen anything is exactly the case where a
+    ticket sits behind a clock unseen. One small read a minute, skipped while
+    the tab is in the background, and it wakes only for something that moved
+    after the last look.
+  */
+  useEffect(() => {
+    if (!venueId) return undefined;
+    let alive = true;
+    /*
+      A fresh bookmark whenever the till changes sides.
+
+      The mark belongs to one side's orders. Carrying the kitchen's over to the
+      bar would compare two unrelated timelines, and whichever side happened to
+      be busier last would decide whether the first look woke anything. Cleared
+      here, so the look below sets the baseline and wakes for nothing.
+    */
+    seenUpTo.current = '';
+    const look = async () => {
+      if (!alive || document.hidden) return;
+      try {
+        /*
+          One small page, narrowed by the database rather than in the browser.
+
+          Not loadOpenOrders, which reads every order the venue has ever taken
+          and filters them here — fine once at startup on a screen that wants
+          them all, wasteful every minute on a till that only wants to know
+          whether anything moved. The status list is an index on this
+          collection, so the server does the work; the side is checked here,
+          because orders written before that column existed carry none and a
+          filter on it would step straight over them.
+        */
+        const page = await db.listDocuments(DB_ID, 'orders', [
+          Query.equal('venue_id', venueId),
+          Query.equal('status', ['SCHEDULED', 'PENDING', 'ACCEPTED', 'PREPARING', 'READY']),
+          Query.limit(40),
+        ]);
+        if (!alive) return;
+        const open = page.documents as unknown as Order[];
+        const moved = latestMovement(open.filter((o) => wakesScreen(o, { module: side })));
+        if (!moved) return;
+        // Never on the first pass: everything is new to a screen that has just
+        // loaded, and a till would then be unable to fall asleep at all.
+        if (seenUpTo.current && moved > seenUpTo.current) setWakeSignal((n) => n + 1);
+        seenUpTo.current = moved;
+      } catch {
+        // Offline, most likely. The next tick tries again.
+      }
+    };
+    const timer = window.setInterval(look, 60_000);
+    const now = () => void look();
+    document.addEventListener('visibilitychange', now);
+    window.addEventListener('online', now);
+    void look();
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', now);
+      window.removeEventListener('online', now);
+    };
+  }, [venueId, side]);
+
   const queued = useOfflineQueue(onQueueChange, startOfflineSync);
   const [tab, setTab] = useState<'tables' | 'takeaway' | 'kitchen' | 'counter'>('tables');
   const [helpOpen, setHelpOpen] = useState(false);
@@ -344,6 +437,7 @@ export function App() {
         hasOpenShift={!!ctx.shift}
         module={ctx.module}
         busy={!!openTable}
+        wakeSignal={wakeSignal}
         locked={locked}
         staff={staff}
         onUnlock={unlock}

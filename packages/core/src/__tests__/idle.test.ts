@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   shouldSleep, msUntilSleep, clockFace, wakeLabel,
-  IDLE_MINUTES_DEFAULT, IDLE_MINUTES_MIN,
+  IDLE_MINUTES_DEFAULT, IDLE_MINUTES_MIN, wakesScreen, latestMovement,
 } from '../idle.ts';
 
 const MIN = 60_000;
@@ -65,4 +65,73 @@ test('the button offers what can actually be done', () => {
   assert.equal(wakeLabel(true, 'bar'), 'Back to the bar');
   assert.equal(wakeLabel(true, 'craft'), 'Back to the counter');
   assert.equal(wakeLabel(false, 'bar'), 'Open a shift', 'no shift beats which side it is');
+});
+
+
+test('a live order for this side lifts the clock', () => {
+  /*
+    The whole point of the screen: it is not idle because nobody touched it,
+    it is idle because nothing is happening. A ticket landing is something
+    happening, whoever caused it.
+  */
+  for (const status of ['SCHEDULED', 'PENDING', 'ACCEPTED', 'PREPARING', 'READY']) {
+    assert.equal(wakesScreen({ status, module: 'kitchen' }, { module: 'kitchen' }), true, status);
+  }
+});
+
+test('an order being tidied away is not news', () => {
+  // A clock that lifts for a closing order lifts all evening, which is the
+  // same as not having one.
+  for (const status of ['CLOSED', 'CANCELLED', 'REJECTED']) {
+    assert.equal(wakesScreen({ status, module: 'kitchen' }, { module: 'kitchen' }), false, status);
+  }
+});
+
+test('a screen does not wake for another side of the business', () => {
+  /*
+    A bar till cannot cook a plate of jollof, cannot serve it and cannot do
+    anything about it. A screen that wakes for other people's work stops
+    meaning anything by the third time.
+  */
+  assert.equal(wakesScreen({ status: 'PENDING', module: 'kitchen' }, { module: 'bar' }), false);
+  assert.equal(wakesScreen({ status: 'PENDING', module: 'bar' }, { module: 'bar' }), true);
+});
+
+test('an order with no side on it belongs to the kitchen', () => {
+  // Every order written before the shop existed carries none, and reading
+  // those as "no side" would leave the kitchen screen asleep through them.
+  assert.equal(wakesScreen({ status: 'PENDING' }, { module: 'kitchen' }), true);
+  assert.equal(wakesScreen({ status: 'PENDING' }, {}), true);
+  assert.equal(wakesScreen({ status: 'PENDING' }, { module: 'craft' }), false);
+});
+
+test('another venue is not this screen\'s business', () => {
+  assert.equal(wakesScreen({ status: 'PENDING', venue_id: 'a' }, { venueId: 'b' }), false);
+  assert.equal(wakesScreen({ status: 'PENDING', venue_id: 'a' }, { venueId: 'a' }), true);
+  // Nothing asked, nothing refused: a caller that has already narrowed by
+  // venue should not have to say so twice.
+  assert.equal(wakesScreen({ status: 'PENDING', venue_id: 'a' }, {}), true);
+});
+
+test('the high-water mark is the latest thing that moved', () => {
+  /*
+    What the polling screens compare against. The list comes back in whatever
+    order the database felt like, so the answer cannot depend on position.
+  */
+  assert.equal(latestMovement([
+    { $updatedAt: '2026-08-24T10:00:00.000Z' },
+    { $updatedAt: '2026-08-24T12:00:00.000Z' },
+    { $updatedAt: '2026-08-24T11:00:00.000Z' },
+  ]), '2026-08-24T12:00:00.000Z');
+  assert.equal(latestMovement([]), '');
+});
+
+test('an order that has never been touched still counts as having moved', () => {
+  // A new order has no $updatedAt in some shapes, and reading that as "never"
+  // would leave the newest ticket unable to wake anything.
+  assert.equal(latestMovement([{ $createdAt: '2026-08-24T09:00:00.000Z' }]), '2026-08-24T09:00:00.000Z');
+  assert.equal(
+    latestMovement([{ $createdAt: '2026-08-24T09:00:00.000Z', $updatedAt: '2026-08-24T09:30:00.000Z' }]),
+    '2026-08-24T09:30:00.000Z',
+  );
 });

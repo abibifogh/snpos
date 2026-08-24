@@ -70,12 +70,25 @@ export function IdleScreen({
   const [waitUntil, setWaitUntil] = useState(0);
   const [checking, setChecking] = useState(false);
 
+  /*
+    Mirrored in a ref so waking can read it without going stale.
+
+    The window listeners below are registered once and would close over
+    whatever `asleep` was at the time. The old way round that was to call
+    onWake from inside the setState updater — a function React is entitled to
+    run more than once and expects to do nothing but return the next value, so
+    the one thing this screen exists for was riding on an implementation
+    detail.
+  */
+  const asleepRef = useRef(false);
+  useEffect(() => { asleepRef.current = asleep; }, [asleep]);
+
   const wake = () => {
     lastActive.current = Date.now();
-    setAsleep((was) => {
-      if (was) onWake?.();
-      return false;
-    });
+    if (!asleepRef.current) return;
+    asleepRef.current = false;
+    setAsleep(false);
+    onWake?.();
   };
 
   // Anything a person does counts, listened for on the window rather than on

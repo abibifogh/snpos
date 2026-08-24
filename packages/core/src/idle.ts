@@ -90,3 +90,61 @@ export function wakeLabel(hasOpenShift: boolean, module?: string): string {
   if (module === 'craft') return 'Back to the counter';
   return 'Back to the till';
 }
+
+/* -------------------------------------------- what is worth waking a screen */
+
+/**
+ * The statuses that mean an order is still somebody's problem.
+ *
+ * CLOSED, CANCELLED and REJECTED are not on it. An order being tidied away is
+ * not news, and a clock that lifts for one is a clock that lifts all evening,
+ * which is the same as not having one.
+ */
+const LIVE = ['SCHEDULED', 'PENDING', 'ACCEPTED', 'PREPARING', 'READY'];
+
+/**
+ * Should this order lift the clock on this screen?
+ *
+ * Asked in one place because two screens were answering it differently and one
+ * of them was not answering it at all. The kitchen woke for its own tickets;
+ * the till never woke for anything, so a QR order placed by a customer landed
+ * behind a screensaver on the counter it was meant to be seen at.
+ *
+ * The side matters. A bar till has no business lighting up for a plate of
+ * jollof: it cannot cook it, cannot serve it and cannot do anything about it,
+ * and a screen that wakes for other people's work stops meaning anything the
+ * third time it happens. Absent is the kitchen, as everywhere else.
+ *
+ * A status CHANGE counts too, not only a new order. A ticket going READY is
+ * news to whoever is plating, and it is exactly the moment nobody is touching
+ * the screen.
+ */
+export function wakesScreen(
+  order: { status?: string; module?: string; venue_id?: string },
+  screen: { module?: string; venueId?: string },
+): boolean {
+  if (screen.venueId && order.venue_id && order.venue_id !== screen.venueId) return false;
+  if ((order.module ?? 'kitchen') !== (screen.module ?? 'kitchen')) return false;
+  return LIVE.includes(order.status ?? '');
+}
+
+/**
+ * The high-water mark of a list of orders: the latest moment any of them moved.
+ *
+ * For the screens that find out by asking rather than by being told. The live
+ * connection drops without saying so — that is why anything reads on a timer
+ * at all — and on the poll there is no event to react to, only a list that is
+ * now different from the last one.
+ *
+ * Comparing this against the last mark answers "did anything happen while we
+ * were not being told" in one string comparison, with no diffing and no
+ * false positives from a list that came back in another order.
+ */
+export function latestMovement(orders: { $updatedAt?: string; $createdAt?: string }[]): string {
+  let latest = '';
+  for (const o of orders) {
+    const at = o.$updatedAt ?? o.$createdAt ?? '';
+    if (at > latest) latest = at;
+  }
+  return latest;
+}

@@ -10,7 +10,7 @@ import {
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
   itemsAvailableNow, dueMinutes, ticketLines, linesComplete, isOverdue, minutesOver, seatFor, amountOutstanding,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, addonNames, addonsUnreadable,
-  formatWait, giveTheMoneyBack,
+  formatWait, giveTheMoneyBack, wakesScreen, latestMovement,
 } from '@snpos/core';
 import type {
   Order, OrderItem, Settings, Venue, StaffProfile, StaffSession, HelpRole, MenuItem, Doc, FeatureMap,
@@ -56,6 +56,14 @@ export function App() {
    * screensaver is a ticket nobody cooks until somebody walks past.
    */
   const [wakeSignal, setWakeSignal] = useState(0);
+  /**
+   * The latest moment any of our orders moved, as far as this screen knows.
+   *
+   * Only for the polling path — the live connection is told what changed, and
+   * a poll has to work it out. A ref rather than state: it is a bookmark, and
+   * nothing on screen reads it.
+   */
+  const seenUpTo = useRef('');
   const [items, setItems] = useState<Record<string, OrderItem[]>>({});
   // Read by the reconcile timer without making it depend on `items`, that
   // dependency would tear down and rebuild the timer every time a ticket
@@ -259,14 +267,20 @@ export function App() {
     if (!venue) return;
     const off = subscribeCollection<Order>('orders', (order, events) => {
       if (order.venue_id !== venue.$id) return;
+      /*
+        Decided out here, not inside the updater below.
+
+        It used to be worked out inside setOrders, which is a function React
+        may call more than once and expects to have no effect on anything but
+        the list it returns. Waking the screen from inside it made the one
+        thing this screen exists for depend on an implementation detail of
+        somebody else's library.
+      */
+      const live = wakesScreen(order, { module: 'kitchen', venueId: venue.$id });
+      if (live) setWakeSignal((n) => n + 1);
       setOrders((prev) => {
         // A craft counter sale is somebody else's business. Checked here as
         // well as in the initial load, because realtime bypasses that entirely.
-        const mine = (order.module ?? 'kitchen') === 'kitchen';
-        const live = mine && ['SCHEDULED', 'PENDING', 'ACCEPTED', 'PREPARING', 'READY'].includes(order.status);
-        // Anything of ours that is still live is worth waking for, a status
-        // change included: a ticket going READY is news to whoever is plating.
-        if (live) setWakeSignal((n) => n + 1);
         const without = prev.filter((o) => o.$id !== order.$id);
         return live ? [...without, order].sort((a, b) => a.$createdAt.localeCompare(b.$createdAt)) : without;
       });
@@ -305,6 +319,27 @@ export function App() {
         ]);
         if (!alive) return;
         const fresh = [...open, ...booked];
+        /*
+          THE POLL WAKES THE SCREEN TOO.
+
+          This loop exists because the live connection drops without saying so.
+          For as long as only the live connection woke the clock, the one case
+          this net was built to catch — orders arriving with nothing telling us
+          — was also the one case where the ticket landed behind a screensaver
+          and stayed there until somebody walked past and touched the glass.
+
+          The high-water mark rather than a diff: one string comparison says
+          whether anything moved since the last look, and a list that comes
+          back in a different order does not read as news. See latestMovement.
+        */
+        const moved = latestMovement(fresh.filter((o) => wakesScreen(o, { module: 'kitchen' })));
+        if (moved && moved > seenUpTo.current) {
+          // Not on the first pass. Everything is new to a screen that has just
+          // loaded, and waking for a list that was already there would mean a
+          // reload could never settle into the clock at all.
+          if (seenUpTo.current) setWakeSignal((n) => n + 1);
+          seenUpTo.current = moved;
+        }
         setOrders((prev) => {
           // Only touched when it actually differs, so a re-render every minute
           // does not restart animations or fight a cook mid-tap.
