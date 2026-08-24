@@ -53,10 +53,44 @@ const KIOSK = {
   },
 };
 
+/*
+  The icons go to EVERY app, not only the three that install.
+
+  The admin app has no manifest and never will — it is a desk tool, and taking
+  the back button off a page of settings is a nuisance rather than a kiosk. It
+  is still a page somebody bookmarks and pins, and a page that names icon files
+  it was never given is worse than one that names none: every browser asks for
+  them, gets a 404, and falls back to exactly the generic mark this is here to
+  replace.
+*/
 for (const app of APPS) {
   const dir = join(root, 'apps', app, 'public');
   mkdirSync(dir, { recursive: true });
   copyFileSync(join(ui, 'sw.js'), join(dir, 'sw.js'));
+  /*
+    Three icons, and the two PNGs are not decoration.
+
+    Android does not install a web app from a manifest that offers only SVG.
+    Chrome hands the job to a server that mints a real Android package, and
+    that server needs a raster image — given none, it silently gives up on
+    installing and drops a BOOKMARK on the home screen instead, which is why
+    the till appeared with a little Chrome badge in the corner and opened in a
+    browser tab. Nothing said so; it just quietly did the lesser thing.
+
+    So a 192 and a 512 are shipped as files. They are rendered from the same
+    icon.svg — see scripts/make-icons.mjs — rather than drawn separately, so
+    the three can never disagree about what the mark is.
+  */
+  for (const file of [
+    'icon.svg',
+    // Windows builds a taskbar icon out of these small ones. See make-icons:
+    // handed only a 512 it downscales by sixteen times, and a smudge is how a
+    // taskbar ends up showing the browser's own icon instead.
+    'icon-16.png', 'icon-32.png', 'icon-48.png', 'icon-64.png',
+    'icon-128.png', 'icon-192.png', 'icon-256.png', 'icon-512.png',
+  ]) {
+    copyFileSync(join(ui, file), join(dir, file));
+  }
 }
 
 /**
@@ -75,24 +109,6 @@ for (const app of building) {
   if (!meta) continue;
 
   const dir = join(root, 'apps', app, 'public');
-  /*
-    Three icons, and the two PNGs are not decoration.
-
-    Android does not install a web app from a manifest that offers only SVG.
-    Chrome hands the job to a server that mints a real Android package, and
-    that server needs a raster image — given none, it silently gives up on
-    installing and drops a BOOKMARK on the home screen instead, which is why
-    the till appeared with a little Chrome badge in the corner and opened in a
-    browser tab. Nothing said so; it just quietly did the lesser thing.
-
-    So a 192 and a 512 are shipped as files. They are rendered from the same
-    icon.svg — see scripts/make-icons.mjs — rather than drawn separately, so
-    the three can never disagree about what the mark is.
-  */
-  for (const file of ['icon.svg', 'icon-192.png', 'icon-512.png']) {
-    copyFileSync(join(ui, file), join(dir, file));
-  }
-
   // Vite's BASE_PATH, the same value the app is built with. Always ends in a
   // slash, so joining a filename onto it needs nothing added.
   const base = process.env.BASE_PATH || '/';
@@ -133,7 +149,22 @@ for (const app of building) {
       forgotten when the mark changes.
     */
     icons: [
+      /*
+        Small ones first, and all of them real files.
+
+        Windows makes the taskbar icon by building an .ico, whose sizes run
+        from 16 to 256. Offered only a 192 and a 512 it downscales, and a
+        sixteen-times downscale of a detailed mark is a smudge — at which
+        point the browser's own icon is the more legible thing to show, which
+        is exactly what a pinned app was doing.
+      */
+      { src: 'icon-16.png', sizes: '16x16', type: 'image/png', purpose: 'any' },
+      { src: 'icon-32.png', sizes: '32x32', type: 'image/png', purpose: 'any' },
+      { src: 'icon-48.png', sizes: '48x48', type: 'image/png', purpose: 'any' },
+      { src: 'icon-64.png', sizes: '64x64', type: 'image/png', purpose: 'any' },
+      { src: 'icon-128.png', sizes: '128x128', type: 'image/png', purpose: 'any' },
       { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: 'icon-256.png', sizes: '256x256', type: 'image/png', purpose: 'any' },
       { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
       { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
       { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },

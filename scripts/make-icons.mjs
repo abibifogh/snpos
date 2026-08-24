@@ -48,7 +48,19 @@ if (!chrome) {
 const work = mkdtempSync(join(tmpdir(), 'snpos-icons-'));
 copyFileSync(join(ui, 'icon.svg'), join(work, 'icon.svg'));
 
-for (const size of [192, 512]) {
+/*
+  The sizes each platform actually reaches for.
+
+  192 and 512 are Android's. The small ones are WINDOWS: pinning an installed
+  app to the taskbar builds an .ico, and the sizes in one are 16 through 256.
+  Chromium will downscale a 512 to fill them, and downscaling a mark with fine
+  detail by sixteen times produces a smudge — which is how a taskbar ends up
+  showing the browser's own icon as the more legible option.
+
+  256 is the largest a Windows taskbar or Start tile uses; 48 is the classic
+  shortcut size; 32 and 16 are the title bar and the file list.
+*/
+for (const size of [16, 32, 48, 64, 128, 192, 256, 512]) {
   const page = join(work, `${size}.html`);
   // No margin, no scrollbars, and a transparent page behind it: the icon's own
   // rounded tile is the whole image, and a white page around it would show up

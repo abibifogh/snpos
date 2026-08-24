@@ -23,10 +23,27 @@
       first row of buttons.
     -->
     <link rel="manifest" href="manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="icon.svg" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!--
+      THE ICON, AS FILES, DECLARED HERE.
+
+      These pages declared no icon at all: the tab's mark is drawn in the
+      browser at load time so it can follow the restaurant's own colours, and
+      nothing static was ever offered. Anything that wants an icon BEFORE the
+      page runs — Windows building a taskbar shortcut, a bookmark, a link
+      preview — found nothing, and Windows fell back to the browser's own logo
+      on a pinned app.
+
+      Several sizes, because an .ico holds 16 through 256 and a browser handed
+      only a 512 downscales it by sixteen times. The live-coloured one is still
+      added at runtime alongside these; see applyFavicon.
+    -->
+    <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
     <title>NiceOps POS, Terminal</title>
   </head>
   <body>

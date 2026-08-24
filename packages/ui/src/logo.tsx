@@ -93,10 +93,22 @@ export const logoDataUri = (c: BrandColours, rounded = true): string =>
  */
 export function applyFavicon(c: BrandColours = currentBrand()): void {
   if (typeof document === 'undefined') return;
-  let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  /*
+    ITS OWN LINK, beside the static ones rather than on top of them.
+
+    This used to take the first `link[rel="icon"]` it found and rewrite it as
+    an SVG data URI. Harmless while the pages declared no icon at all — and
+    the moment they declared real PNG files, it would have overwritten the
+    first of them with something Windows cannot build a taskbar icon out of.
+
+    Both belong in the head. The tab takes the live-coloured SVG; anything
+    making a shortcut, a tile or an .ico takes the PNG it needs by size.
+  */
+  let link = document.querySelector<HTMLLinkElement>('link[rel="icon"][data-live]');
   if (!link) {
     link = document.createElement('link');
     link.rel = 'icon';
+    link.dataset.live = 'brand';
     document.head.appendChild(link);
   }
   link.type = 'image/svg+xml';

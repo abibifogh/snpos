@@ -3,6 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      THE ICON, AS FILES, DECLARED HERE.
+
+      These pages declared no icon at all: the tab's mark is drawn in the
+      browser at load time so it can follow the restaurant's own colours, and
+      nothing static was ever offered. Anything that wants an icon BEFORE the
+      page runs — Windows building a taskbar shortcut, a bookmark, a link
+      preview — found nothing, and Windows fell back to the browser's own logo
+      on a pinned app.
+
+      Several sizes, because an .ico holds 16 through 256 and a browser handed
+      only a 512 downscales it by sixteen times. The live-coloured one is still
+      added at runtime alongside these; see applyFavicon.
+    -->
+    <link rel="icon" type="image/png" sizes="32x32" href="icon-32.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
     <title>NiceOps POS, Admin</title>
   </head>
   <body>
