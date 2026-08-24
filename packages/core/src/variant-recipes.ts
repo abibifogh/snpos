@@ -131,3 +131,30 @@ export function drinkStockIsSpare(
 ): boolean {
   return module === 'bar' && variants.length > 0 && variants.every((v) => v.ownStock);
 }
+
+/**
+ * Should a size be given its own shelf, when nobody has said either way?
+ *
+ * Asked because leaving it off was the wrong default twice over, and the same
+ * report came back: a bottled beer with a small and a large, and a count sheet
+ * asking for the drink once. The toggle existed, the warning explaining it
+ * existed, and neither is much use to somebody who has ten drinks to set up
+ * and no reason to expect a stock question inside a price editor.
+ *
+ * The rule is not a guess about names. A drink WITH a recipe already says what
+ * it pours: a gin's single and double both come out of the same bottle, and
+ * inventing a "Gin · Double" stock item would put a second, wrong number beside
+ * the one that is actually true. A drink with NO recipe pours nothing at all —
+ * whatever its sizes are, they are objects bought and stacked and counted, and
+ * without a shelf each they are invisible to every count in the building.
+ *
+ * So: no recipe means the sizes are the stock. Anything else is left alone.
+ */
+export function sizesNeedOwnStock(
+  rows: RecipeRow[],
+  menuItemId: string,
+  module?: string,
+): boolean {
+  if (module !== 'bar') return false;
+  return !rows.some((r) => r.menu_item_id === menuItemId && !r.addon_option_id);
+}

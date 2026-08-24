@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   recipeFor, hasOwnRecipe, ingredientNameFor, OWN_STOCK_QTY,
-  countedAsWarning, drinkStockIsSpare,
+  countedAsWarning, drinkStockIsSpare, sizesNeedOwnStock,
 } from '../variant-recipes.ts';
 
 const rows = [
@@ -125,4 +125,40 @@ test('a drink sold only as sizes no longer needs a shelf of its own', () => {
   assert.equal(drinkStockIsSpare([{ ownStock: true }, { ownStock: false }], 'bar'), false);
   assert.equal(drinkStockIsSpare([], 'bar'), false);
   assert.equal(drinkStockIsSpare([{ ownStock: true }], 'craft'), false);
+});
+
+test('a drink that pours nothing has its sizes as the stock', () => {
+  /*
+    A bottled beer has no recipe: there is nothing to pour, the bottle IS the
+    thing. Its small and large are two objects bought and stacked separately,
+    and without a shelf each they are invisible to every count in the
+    building — which is the report that came back twice.
+  */
+  assert.equal(sizesNeedOwnStock([], 'club', 'bar'), true);
+});
+
+test('a drink with a recipe already says what it pours', () => {
+  /*
+    A gin's single and double both come out of the same bottle. Inventing a
+    "Gin · Double" stock item would put a second, wrong number beside the one
+    that is actually true.
+  */
+  const rows = [{ menu_item_id: 'gin', ingredient_id: 'gin_bottle', qty_per_unit: 0.05 }];
+  assert.equal(sizesNeedOwnStock(rows, 'gin', 'bar'), false);
+});
+
+test('only the bar is assumed about', () => {
+  // A craft shop's sizes are consignment stock with their own counts already,
+  // and a kitchen dish has no shelf of its own at all.
+  assert.equal(sizesNeedOwnStock([], 'basket', 'craft'), false);
+  assert.equal(sizesNeedOwnStock([], 'jollof', 'kitchen'), false);
+  assert.equal(sizesNeedOwnStock([], 'jollof', undefined), false);
+});
+
+test('an addon recipe is not the drink saying what it pours', () => {
+  // A recipe tied to an option — a shot of syrup — describes the extra, not
+  // the drink, and reading it as "this drink already pours something" would
+  // leave the sizes without shelves again.
+  const rows = [{ menu_item_id: 'club', ingredient_id: 'syrup', qty_per_unit: 1, addon_option_id: 'shot' }];
+  assert.equal(sizesNeedOwnStock(rows, 'club', 'bar'), true);
 });

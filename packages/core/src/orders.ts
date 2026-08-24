@@ -18,6 +18,8 @@ export {
 } from './orders-time';
 import { createOrQueue, isOffline } from './offline';
 import { computeTotals, lineUnitPrice, lineTotal } from './pricing';
+// Pure, and the reason a bar can ring up a sale at all. See order-numbers.
+import { nextInRun, formatOrderNo } from './order-numbers';
 // Pure, and the same rule the shift close reads. A payment that is not live is
 // not money in a drawer, wherever the question is asked from.
 import { isLivePayment } from './shift-rules';
@@ -151,14 +153,27 @@ export const newIdempotencyKey = (): string =>
  * `provisionalOrderNo` instead and order-guard settles the real number the
  * moment the order lands.
  */
-async function nextOrderNo(venueId: string, settings: Settings, module: Module = 'kitchen'): Promise<string> {
+async function nextOrderNo(
+  venueId: string,
+  settings: Settings,
+  module: Module = 'kitchen',
+  /** Numbers a collision has already proved are taken. See nextInRun. */
+  skip = 0,
+): Promise<string> {
   /**
-   * Each side counts on its own.
+   * Each PREFIX counts on its own — not each side.
    *
    * A shared run of numbers meant a shop receipt and a restaurant receipt could
    * look alike and sort together, while the two sides keep separate books
    * everywhere else. The craft prefix falls back to the kitchen's when it is
    * blank, which is what a business running only one side wants.
+   *
+   * And the counter follows the prefix from there, because that is exactly how
+   * far uniqueness reaches. Counting per SIDE while sharing a prefix is what
+   * stopped the bar taking money: no prefix of its own, so it shared the
+   * kitchen's, and counted only its own orders — the kitchen at ORD0222, the
+   * bar asking for ORD0006 on its sixth drink, and a database that refuses the
+   * same number twice. See order-numbers.
    */
   const prefix = module === 'craft'
     ? (settings.craft_order_prefix ?? 'S') || (settings.order_number_prefix ?? '')
@@ -183,16 +198,17 @@ async function nextOrderNo(venueId: string, settings: Settings, module: Module =
   }
 
   const latest = await db.listDocuments(DB_ID, 'orders', queries);
-  // Only this side's, so the two sequences never read each other's last number.
-  const numbered = (latest.documents as unknown as Order[])
-    .filter((o) => !isProvisionalOrderNo(o.order_no) && (o.module ?? 'kitchen') === module);
-  const last = numbered[0]?.order_no ?? '';
-  // Strip the prefix before reading the number, so a prefix containing digits
-  // ("B2-") does not get counted as part of it.
-  const digits = (prefix && last.startsWith(prefix) ? last.slice(prefix.length) : last).replace(/\D/g, '');
-  const n = Number(digits) || 0;
-  const from = numbered.length === 0 ? Math.max(1, settings.order_number_next ?? 1) : n + 1;
-  return `${prefix}${String(from).padStart(padding, '0')}`;
+  /*
+    Everything carrying this prefix, whichever side rang it up.
+
+    Filtered by the PREFIX rather than the module, and the highest taken
+    rather than the newest row: a run only goes up, and the newest row assumes
+    the clock and the counter agree about order — which they do not when two
+    tills sell in the same second. See nextInRun.
+  */
+  const run = (latest.documents as unknown as Order[]).map((o) => o.order_no);
+  const from = nextInRun(run, prefix, settings.order_number_next ?? 1, skip);
+  return formatOrderNo(prefix, from, padding);
 }
 
 /**
@@ -353,7 +369,7 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
   // the moment it lands rather than needing anything special.
   const orderNo = input.guest
     ? provisionalOrderNo()
-    : await nextOrderNo(venueId, settings, input.module ?? 'kitchen').catch((e) => {
+    : await nextOrderNo(venueId, settings, input.module ?? 'kitchen', attempt).catch((e) => {
         if (isOffline(e)) return provisionalOrderNo();
         throw e;
       });
@@ -467,6 +483,14 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
     // Two terminals took the same number in the same instant; take the next one.
     const msg = e instanceof Error ? e.message : '';
     if (/already exists|unique/i.test(msg) && attempt < 5) {
+      /*
+        The attempt number is carried into the number itself.
+
+        It was not, and that is what turned one collision into five identical
+        failures: each retry worked the next number out from the same rows,
+        got the same answer, and was refused for the same reason. The message
+        that reached the bar was about a unique attribute constraint.
+      */
       return createOrder(input, attempt + 1);
     }
     throw e;

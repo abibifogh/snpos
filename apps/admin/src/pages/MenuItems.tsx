@@ -9,7 +9,7 @@ import {
   matches, sortItems, ITEM_SORTS,
   marginOf, marginIsThin, bpAsPercent, MARGIN_WARN_BP_DEFAULT,
   diffFields, describeChanges, fitForLog, PRODUCT_WATCH,
-  hasOwnRecipe, ingredientNameFor, OWN_STOCK_QTY,
+  hasOwnRecipe, sizesNeedOwnStock, giveSizeItsOwnStock, repairSizeStock,
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition,
 } from '@snpos/core';
 import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice} from '@snpos/core';
@@ -327,7 +327,22 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
             // so opening a drink and saving it again does not make a second
             // stock item for a shelf that already exists.
             ...d,
-            ownStock: !!d.$id && hasOwnRecipe(recipes, item.$id, d.$id),
+            /*
+              And a drink that pours nothing has its sizes as the stock.
+
+              Off by default was the wrong answer twice: a bottled beer with a
+              small and a large, both leaning on a drink that has no recipe,
+              so nothing depletes and the count sheet asks for the drink once.
+              The toggle was there and the warning was there, and neither is
+              much use to somebody setting up ten drinks who has no reason to
+              expect a stock question inside a price editor.
+
+              A drink WITH a recipe is left alone — it already says what it
+              pours, and a gin's double comes out of the same bottle as its
+              single. See sizesNeedOwnStock.
+            */
+            ownStock: (!!d.$id && hasOwnRecipe(recipes, item.$id, d.$id))
+              || sizesNeedOwnStock(recipes, item.$id, module),
           }));
           setVariants(copy ? drafts.map((d) => ({ ...d, $id: undefined })) : drafts);
         })
@@ -434,41 +449,56 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
         shelf it was counted on.
       */
       if (module === 'bar' && v.ownStock && !hasOwnRecipe(recipes, itemId, variantId)) {
-        const name = ingredientNameFor(editing?.name?.trim() ?? '', v.label.trim());
         /*
-          NOT SWALLOWED.
+          One implementation, shared with the repair on the list behind this
+          form. Two ways in — saving a drink, and fixing every drink at once —
+          and a second copy of "what a size's shelf looks like" is how the two
+          end up disagreeing about the unit, the side, or whether it is counted
+          each shift.
 
-          This used to end in a catch that returned null, and the save carried
-          on reporting success. A size that failed to get its shelf then
-          behaved exactly like one nobody had asked for: on the menu, priced,
-          selling, and absent from every count sheet, with nothing anywhere
-          saying why. The write is allowed to fail; it is not allowed to fail
-          quietly.
+          Not swallowed. A size that silently fails to get its shelf behaves
+          exactly like one nobody asked for: on the menu, priced, selling, and
+          absent from every count, with nothing anywhere saying why.
         */
-        const ing = await db.createDocument(DB_ID, 'ingredients', ID.unique(), {
-          venue_id: 'main',
-          name,
-          unit: v.kindKey === 'crate' ? 'case' : 'bottle',
-          base_unit_cost: 0,
-          module: 'bar',
-          current_qty: 0,
-          par_level: 0,
-          low_threshold: 0,
-          critical: false,
-          // Bottled stock is what a bar counts in and out of every shift; that
-          // is the whole reason for giving it a shelf of its own.
-          count_each_shift: true,
-          active: true,
-        });
-        await db.createDocument(DB_ID, 'recipes', ID.unique(), {
-          menu_item_id: itemId,
-          variant_id: variantId,
-          addon_option_id: '',
-          ingredient_id: ing.$id,
-          qty_per_unit: OWN_STOCK_QTY,
-          wastage_bp: 0,
+        await giveSizeItsOwnStock({
+          venueId: 'main',
+          menuItemId: itemId,
+          variantId,
+          drinkName: editing?.name ?? '',
+          sizeLabel: v.label,
+          kindKey: v.kindKey,
         });
       }
+    }
+  };
+
+  const [repairing, setRepairing] = useState(false);
+  /**
+   * Put every size that has no shelf onto one.
+   *
+   * Says what it did in figures, including nothing: "no drinks needed this"
+   * is a useful answer, and a button that goes quiet is one people press
+   * again to find out whether it worked.
+   */
+  const repairSizes = async () => {
+    setRepairing(true);
+    try {
+      const { fixed, failed } = await repairSizeStock('main');
+      await load();
+      if (fixed === 0 && failed === 0) {
+        toast('Every size already has its own shelf. Nothing needed changing.');
+        return;
+      }
+      toast(
+        `${fixed} size${fixed === 1 ? '' : 's'} now counted separately`
+        + `${failed > 0 ? `, and ${failed} could not be` : ''}. `
+        + 'They start at nothing, so count the bar in to say what is there.',
+        failed > 0 ? 'err' : undefined,
+      );
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setRepairing(false);
     }
   };
 
@@ -726,6 +756,24 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
               the file too, because a bar setting itself up has neither yet. */}
           {mayEdit && module === 'bar' && (
             <Button onClick={() => setUploadingDrinks(true)}>Upload a drinks list</Button>
+          )}
+          {/*
+            The drinks set up before a size could have a shelf of its own.
+
+            Opening each one and saving it does the same job — and asking a
+            house with thirty drinks to do that is how the same report came
+            back twice. Only touches what is unambiguous: a bar drink with
+            sizes and no recipe of its own, which pours nothing and therefore
+            IS its sizes. See repairSizeStock.
+          */}
+          {mayEdit && module === 'bar' && (
+            <Button
+              onClick={() => void repairSizes()}
+              loading={repairing}
+              title="Give every size its own shelf, for drinks set up before that was possible"
+            >
+              Count sizes separately
+            </Button>
           )}
           {mayEdit && (
             <Button variant="primary" onClick={() => open()} disabled={categories.length === 0}>

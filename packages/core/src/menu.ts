@@ -4,6 +4,10 @@ import type { Category, MenuItem, Doc } from './types';
 import type { ProductVariant } from './consignment';
 import type { Module } from './access';
 import type { ImportDrink } from './drink-import';
+// The rule that decides whether a size is its own thing on the shelf, and the
+// name it goes under. Pure, and shared with the form that offers the choice.
+import { ingredientNameFor, sizesNeedOwnStock, OWN_STOCK_QTY } from './variant-recipes';
+import type { RecipeRow } from './recipe-card';
 
 export interface MenuItemCategory extends Doc {
   menu_item_id: string;
@@ -341,4 +345,104 @@ export async function importDrinks(opts: {
   }
 
   return { drinks, updated, categories, recipeLines };
+}
+
+/**
+ * Give a size its own shelf, and bind the size to it.
+ *
+ * One implementation, because there are two ways in and they must not drift:
+ * saving a drink with the toggle on, and the repair below that fixes every
+ * drink already set up without it.
+ *
+ * Two writes and both matter. The ingredient is the shelf a count asks about;
+ * the recipe is what makes selling this size take one off it. Either alone is
+ * worse than neither — a shelf nothing depletes reads as a surplus for ever,
+ * and a recipe pointing at nothing stops the sale depleting anything at all.
+ *
+ * Neither is swallowed. A size that silently fails to get its shelf behaves
+ * exactly like one nobody asked for: on the menu, priced, selling, and absent
+ * from every count, with nothing anywhere saying why.
+ */
+export async function giveSizeItsOwnStock(opts: {
+  venueId: string;
+  menuItemId: string;
+  variantId: string;
+  drinkName: string;
+  sizeLabel: string;
+  /** A crate is counted as a case; everything else as bottles. */
+  kindKey?: string;
+}): Promise<{ ingredientId: string }> {
+  const ing = await db.createDocument(DB_ID, 'ingredients', ID.unique(), {
+    venue_id: opts.venueId,
+    name: ingredientNameFor(opts.drinkName.trim(), opts.sizeLabel.trim()),
+    unit: opts.kindKey === 'crate' ? 'case' : 'bottle',
+    base_unit_cost: 0,
+    module: 'bar',
+    current_qty: 0,
+    par_level: 0,
+    low_threshold: 0,
+    critical: false,
+    // Bottled stock is what a bar counts in and out of every shift; that is
+    // the whole reason for giving it a shelf of its own.
+    count_each_shift: true,
+    active: true,
+  });
+
+  await db.createDocument(DB_ID, 'recipes', ID.unique(), {
+    menu_item_id: opts.menuItemId,
+    variant_id: opts.variantId,
+    addon_option_id: '',
+    ingredient_id: ing.$id,
+    qty_per_unit: OWN_STOCK_QTY,
+    wastage_bp: 0,
+  });
+
+  return { ingredientId: ing.$id };
+}
+
+/**
+ * Every bar size still leaning on a drink that pours nothing, put right.
+ *
+ * For the drinks set up before a size could have a shelf of its own. Opening
+ * each one and saving it does the same job; a house with thirty drinks should
+ * not have to, and asking them to was how the same report came back twice.
+ *
+ * Only where it is unambiguous — see sizesNeedOwnStock. A drink with a recipe
+ * already says what it pours and is left alone, so this cannot invent a "Gin ·
+ * Double" shelf beside the bottle that is actually true.
+ */
+export async function repairSizeStock(venueId: string): Promise<{ fixed: number; failed: number }> {
+  const [items, variants, recipes] = await Promise.all([
+    listAll<MenuItem>('menu_items', [Query.equal('venue_id', venueId)]).catch(() => [] as MenuItem[]),
+    listAll<ProductVariant>('product_variants').catch(() => [] as ProductVariant[]),
+    listAll<RecipeRow & Doc>('recipes').catch(() => [] as (RecipeRow & Doc)[]),
+  ]);
+
+  let fixed = 0;
+  let failed = 0;
+
+  for (const item of items) {
+    if ((item.module ?? 'kitchen') !== 'bar' || item.active === false) continue;
+    if (!sizesNeedOwnStock(recipes, item.$id, 'bar')) continue;
+
+    for (const v of variants.filter((x) => x.menu_item_id === item.$id && x.active !== false)) {
+      try {
+        await giveSizeItsOwnStock({
+          venueId,
+          menuItemId: item.$id,
+          variantId: v.$id,
+          drinkName: item.name,
+          sizeLabel: v.label,
+          kindKey: v.kind_key ?? v.kind,
+        });
+        fixed += 1;
+      } catch {
+        // Counted, not swallowed: a repair that half worked has to say so, or
+        // it is indistinguishable from one that worked.
+        failed += 1;
+      }
+    }
+  }
+
+  return { fixed, failed };
 }
