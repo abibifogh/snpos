@@ -2,6 +2,7 @@ import { db, DB_ID, ID, Query, listAll, saveDropping } from './client';
 import type { Doc, Settings } from './types';
 import type { Order, OrderItem } from './orders';
 import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from './stock';
+import { countable } from './bar-count';
 import { postShift, reverseEntry, shiftCloseEntries, lockedThroughFor, isLocked } from './ledger';
 import { isLivePayment } from './payments';
 import { featureConfig, isEnabled, type FeatureMap } from './features';
@@ -760,7 +761,9 @@ export async function closeShift(opts: {
       // Same list the closing check shows. Something nobody counts cannot be
       // reported as running low, and saying a taxi is low on stock is how an
       // alert email teaches people to ignore alert emails.
-      after.filter((i) => i.active && i.counted_at_close !== false),
+      // One rule for "there is a shelf to walk", shared with every other
+      // sheet in the system. See countable.
+      countable(after.filter((i) => i.active)),
       settings.low_stock_default_bp ?? 3000,
       threshold,
       // What the cook reported wins over what the recipes imply. Without this,

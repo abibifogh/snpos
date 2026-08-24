@@ -4,6 +4,7 @@ import {
   byUnit, wasCountedBar, variancesIn, summariseBarCount, readyToClose, unitLabel,
   BAR_VARIANCE_TOLERANCE, type BarCountLine,
   shiftCounted, hasShiftCountChoice, countsAtBothEnds, readyToAccept, countGate,
+  countable,
 } from '../bar-count.ts';
 
 const bottle = (over: Partial<BarCountLine> = {}): BarCountLine => ({
@@ -261,4 +262,44 @@ test('nobody is locked out over a count the system cannot describe', () => {
   assert.deepEqual(countGate({ lines: [], phase: 'open' }), { maySkip: true, maySave: false });
   const failed = countGate({ lines: [], phase: 'close', loadFailed: true });
   assert.equal(failed.maySkip, true);
+});
+
+test('never counted is off every sheet, whatever else is true of it', () => {
+  /*
+    "Never counted" means there is no shelf to walk — a bag of ice, a box of
+    straws, used up in the buying. Asking somebody to find and count one is a
+    question with no answer, and a sheet full of those is a sheet people learn
+    to tap through, which costs the count on the things that matter.
+  */
+  const rows = [
+    { $id: 'gin', counted_at_close: true },
+    { $id: 'ice', counted_at_close: false },
+    { $id: 'rum' },
+  ];
+  assert.deepEqual(countable(rows).map((r) => r.$id), ['gin', 'rum']);
+});
+
+test('a row written before the setting existed is still counted', () => {
+  // Reading a missing value as "never" would empty every sheet in the
+  // building at once, on the first load after the column appeared.
+  assert.equal(countable([{ $id: 'a', counted_at_close: undefined }]).length, 1);
+});
+
+test('the count-everything fallback cannot sweep a never-counted item back in', () => {
+  /*
+    The bug this pair exists for. shiftCounted means "if anybody ticked
+    anything, count only what was ticked" — and if nobody has, count
+    everything. Run on its own over a list containing never-counted rows, that
+    fallback puts them straight back on the sheet.
+
+    Order matters: countable first, then the shift's narrowing.
+  */
+  const rows = [
+    { $id: 'ice', counted_at_close: false, count_each_shift: false },
+    { $id: 'rum', counted_at_close: true, count_each_shift: false },
+  ];
+  // Nobody has ticked anything, so shiftCounted alone returns both.
+  assert.equal(shiftCounted(rows).length, 2);
+  // Narrowed first, the ice is gone before the fallback ever sees it.
+  assert.deepEqual(shiftCounted(countable(rows)).map((r) => r.$id), ['rum']);
 });

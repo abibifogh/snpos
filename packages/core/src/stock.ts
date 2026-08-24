@@ -1,7 +1,7 @@
 import { db, DB_ID, ID, Query, listAll, tryWrite } from './client';
 import type { PurchaseRow } from './price-history';
 import type { Module } from './access';
-import { variancesIn, wasCountedBar, shiftCounted } from './bar-count';
+import { variancesIn, wasCountedBar, shiftCounted, countable } from './bar-count';
 import { levelFor, transferQty, transferMovements, purchaseLocation, saleLocation } from './locations';
 import type { StockLocation, LocationStock, TransferLine } from './locations';
 import type { LevelRow } from './level-import';
@@ -450,8 +450,8 @@ export async function stockCheckRows(venueId: string, module: Module = 'kitchen'
   // This side's shelves only. A bar counting rice and a kitchen counting gin
   // are both counting somebody else's larder, and a sheet with forty lines
   // on it that are not yours is a sheet people tap through.
-  const mine = ingredients.filter(
-    (i) => i.active && i.counted_at_close !== false && (i.module ?? 'kitchen') === module,
+  const mine = countable(ingredients).filter(
+    (i) => i.active && (i.module ?? 'kitchen') === module,
   );
 
   return shiftCounted(mine)
@@ -550,7 +550,16 @@ export async function barCountSheet(venueId: string, locationId?: string): Promi
     the sheet entirely, and the count would come back saying the store holds
     nothing but beer.
   */
-  const onShelf = ingredients.filter((i) => i.active && (i.module ?? 'kitchen') === 'bar');
+  /*
+    Never counted wins over everything, in both rooms.
+
+    It says there is no shelf to walk, and that is not a matter of which place
+    is being counted or how often. Neither branch below used to ask: a store
+    room's sheet had no cadence filter at all, and the bar's own fell back to
+    "count everything" whenever nothing had been marked for the shift. See
+    countable.
+  */
+  const onShelf = countable(ingredients.filter((i) => i.active && (i.module ?? 'kitchen') === 'bar'));
   const rows = counter?.kind === 'store' ? onShelf : shiftCounted(onShelf);
 
   return rows

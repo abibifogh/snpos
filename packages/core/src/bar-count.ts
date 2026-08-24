@@ -52,6 +52,28 @@ export const unitLabel = (unit?: string): string => UNIT_LABELS[unit ?? ''] ?? u
  * count narrows to what was ticked. The alternative — an opt-in that starts
  * empty — silently turns the count off for every bar that upgrades.
  */
+/**
+ * Anything with a shelf to walk.
+ *
+ * "Never counted" means there is no shelf: the thing is used up in the buying
+ * — a bag of ice, a box of straws, a cleaning spray — and asking somebody to
+ * find it and count it is asking a question with no answer.
+ *
+ * Applied BEFORE anything else narrows a sheet, and this is the fix for a real
+ * report: a store room's sheet had no cadence filter at all, so everything
+ * marked never counted turned up on it; and on the bar's own sheet the
+ * "nobody has chosen, so count everything" fallback in shiftCounted swept them
+ * straight back in. Two different routes to the same wrong list, which is why
+ * the rule now sits on its own rather than inside either of them.
+ *
+ * Absent means yes, because every row written before the setting existed was
+ * counted, and reading a missing value as "never" would empty every sheet in
+ * the building at once.
+ */
+export function countable<T extends { counted_at_close?: boolean }>(rows: T[]): T[] {
+  return rows.filter((r) => r.counted_at_close !== false);
+}
+
 export function shiftCounted<T extends { count_each_shift?: boolean }>(rows: T[]): T[] {
   const chosen = rows.filter((r) => r.count_each_shift);
   return chosen.length > 0 ? chosen : rows;
