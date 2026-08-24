@@ -7,6 +7,9 @@ import type { ImportDrink } from './drink-import';
 // The rule that decides whether a size is its own thing on the shelf, and the
 // name it goes under. Pure, and shared with the form that offers the choice.
 import { ingredientNameFor, sizesNeedOwnStock, OWN_STOCK_QTY } from './variant-recipes';
+import { newShelfCadence } from './bar-count';
+import { loadIngredients } from './stock';
+import { tryWrite } from './client';
 import type { RecipeRow } from './recipe-card';
 
 export interface MenuItemCategory extends Doc {
@@ -371,6 +374,16 @@ export async function giveSizeItsOwnStock(opts: {
   sizeLabel: string;
   /** A crate is counted as a case; everything else as bottles. */
   kindKey?: string;
+  /**
+   * Whether this shelf is counted at both ends of a shift.
+   *
+   * FOLLOWS THE ROOM IT IS JOINING, and the caller works it out from what is
+   * already there. Ticking a shelf nobody asked to tick, in a bar that has
+   * ticked nothing, makes that one shelf the whole count sheet — see
+   * newShelfCadence, and the bar that lost every bottle off its closing count
+   * to exactly this.
+   */
+  countEachShift?: boolean;
 }): Promise<{ ingredientId: string }> {
   const ing = await db.createDocument(DB_ID, 'ingredients', ID.unique(), {
     venue_id: opts.venueId,
@@ -382,9 +395,8 @@ export async function giveSizeItsOwnStock(opts: {
     par_level: 0,
     low_threshold: 0,
     critical: false,
-    // Bottled stock is what a bar counts in and out of every shift; that is
-    // the whole reason for giving it a shelf of its own.
-    count_each_shift: true,
+    // Whatever the rest of this bar does. See the note on countEachShift.
+    count_each_shift: opts.countEachShift === true,
     active: true,
   });
 
@@ -411,15 +423,48 @@ export async function giveSizeItsOwnStock(opts: {
  * already says what it pours and is left alone, so this cannot invent a "Gin ·
  * Double" shelf beside the bottle that is actually true.
  */
-export async function repairSizeStock(venueId: string): Promise<{ fixed: number; failed: number }> {
+export async function repairSizeStock(
+  venueId: string,
+): Promise<{ fixed: number; failed: number; realigned: number }> {
   const [items, variants, recipes] = await Promise.all([
     listAll<MenuItem>('menu_items', [Query.equal('venue_id', venueId)]).catch(() => [] as MenuItem[]),
     listAll<ProductVariant>('product_variants').catch(() => [] as ProductVariant[]),
     listAll<RecipeRow & Doc>('recipes').catch(() => [] as (RecipeRow & Doc)[]),
   ]);
 
+  /*
+    What the rest of this bar already does, worked out from the shelves that
+    are NOT sizes.
+
+    Excluding the sizes matters: including them would ask what the last run of
+    this decided rather than what the house decided, and the answer would stick
+    on the first wrong value it ever had.
+  */
+  const barShelves = await loadIngredients(venueId, 'bar');
+  const sizeShelves = new Set(
+    recipes.filter((r) => r.variant_id && !r.addon_option_id).map((r) => r.ingredient_id),
+  );
+  const cadence = newShelfCadence(barShelves.filter((i) => !sizeShelves.has(i.$id)));
+
   let fixed = 0;
   let failed = 0;
+
+  /*
+    THE SHELVES ALREADY CREATED, PUT BACK IN STEP.
+
+    The first run of this created them ticked, in bars that had ticked nothing
+    — which made those sizes the entire closing count and dropped every other
+    bottle off the sheet. Fixing the rule going forward does nothing for the
+    rows already written, and the bar that hit it cannot count tonight.
+  */
+  let realigned = 0;
+  for (const shelf of barShelves) {
+    if (!sizeShelves.has(shelf.$id)) continue;
+    if ((shelf.count_each_shift ?? false) === cadence) continue;
+    if (await tryWrite(db.updateDocument(DB_ID, 'ingredients', shelf.$id, {
+      count_each_shift: cadence,
+    }))) realigned += 1;
+  }
 
   for (const item of items) {
     if ((item.module ?? 'kitchen') !== 'bar' || item.active === false) continue;
@@ -434,6 +479,7 @@ export async function repairSizeStock(venueId: string): Promise<{ fixed: number;
           drinkName: item.name,
           sizeLabel: v.label,
           kindKey: v.kind_key ?? v.kind,
+          countEachShift: cadence,
         });
         fixed += 1;
       } catch {
@@ -444,5 +490,5 @@ export async function repairSizeStock(venueId: string): Promise<{ fixed: number;
     }
   }
 
-  return { fixed, failed };
+  return { fixed, failed, realigned };
 }

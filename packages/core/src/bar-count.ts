@@ -84,6 +84,30 @@ export const hasShiftCountChoice = (rows: { count_each_shift?: boolean }[]): boo
   rows.some((r) => r.count_each_shift);
 
 /**
+ * What a shelf the SYSTEM creates should be set to count as.
+ *
+ * Whatever the rest of that bar already does, and this is not a nicety.
+ *
+ * `shiftCounted` above means "if anybody has ticked anything, count only what
+ * was ticked". A bar that has ticked nothing is counted in full through the
+ * fallback — which is how most bars run, because nobody ever visits that
+ * setting. Create ONE shelf ticked in a bar like that and the fallback stops
+ * applying: the ticked shelf is now the whole sheet, and every bottle the bar
+ * has counted for months silently drops off it.
+ *
+ * That is exactly what happened. Giving each drink size its own shelf created
+ * them ticked, and the next closing count asked about the new sizes and
+ * nothing else. Nothing failed, nothing was deleted, and the sheet was empty
+ * of everything that mattered.
+ *
+ * So a shelf nobody asked for follows the room it is joining. Pass the
+ * ingredients that already exist WITHOUT the ones being created, or the answer
+ * is whatever the last run of this decided.
+ */
+export const newShelfCadence = (existing: { count_each_shift?: boolean }[]): boolean =>
+  hasShiftCountChoice(existing);
+
+/**
  * Which sides count their shelves at BOTH ends of a shift.
  *
  * The kitchen counts once, at the end. Nobody accepts the rice at four in the

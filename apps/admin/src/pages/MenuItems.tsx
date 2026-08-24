@@ -9,7 +9,7 @@ import {
   matches, sortItems, ITEM_SORTS,
   marginOf, marginIsThin, bpAsPercent, MARGIN_WARN_BP_DEFAULT,
   diffFields, describeChanges, fitForLog, PRODUCT_WATCH,
-  hasOwnRecipe, sizesNeedOwnStock, giveSizeItsOwnStock, repairSizeStock,
+  hasOwnRecipe, sizesNeedOwnStock, giveSizeItsOwnStock, repairSizeStock, newShelfCadence,
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition,
 } from '@snpos/core';
 import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice} from '@snpos/core';
@@ -467,6 +467,17 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
           drinkName: editing?.name ?? '',
           sizeLabel: v.label,
           kindKey: v.kindKey,
+          /*
+            Whatever the rest of this bar does.
+
+            Worked out from the shelves that are not sizes, because ticking a
+            shelf nobody asked to tick — in a bar that has ticked nothing —
+            makes that one shelf the entire closing count and drops every
+            other bottle off the sheet. See newShelfCadence.
+          */
+          countEachShift: newShelfCadence(
+            ingredients.filter((i) => !recipes.some((r) => r.variant_id && r.ingredient_id === i.$id)),
+          ),
         });
       }
     }
@@ -483,15 +494,16 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   const repairSizes = async () => {
     setRepairing(true);
     try {
-      const { fixed, failed } = await repairSizeStock('main');
+      const { fixed, failed, realigned } = await repairSizeStock('main');
       await load();
-      if (fixed === 0 && failed === 0) {
+      if (fixed === 0 && failed === 0 && realigned === 0) {
         toast('Every size already has its own shelf. Nothing needed changing.');
         return;
       }
       toast(
         `${fixed} size${fixed === 1 ? '' : 's'} now counted separately`
-        + `${failed > 0 ? `, and ${failed} could not be` : ''}. `
+        + `${failed > 0 ? `, and ${failed} could not be` : ''}`
+        + `${realigned > 0 ? `, and ${realigned} put back in step with the rest of the bar` : ''}. `
         + 'They start at nothing, so count the bar in to say what is there.',
         failed > 0 ? 'err' : undefined,
       );

@@ -5,7 +5,7 @@ import {
   barCountSheet, saveBarCount, hasOpeningCount, byUnit, summariseBarCount, readyToClose,
   formatMoney, listAll, Query, loadOpenShifts, loadLocations, saleLocation,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
-  filedCounts, undoProblem, undoBarCount,
+  filedCounts, undoProblem, undoBarCount, pourMissedSales,
 } from '@snpos/core';
 import type { BarCountLine, Shift, Doc, StockLocation, FiledCheck, FiledCount } from '@snpos/core';
 import { useSession } from '../session';
@@ -58,6 +58,7 @@ export function BarCountsPage() {
   const [history, setHistory] = useState<CheckRow[]>([]);
   /** Which count is being taken back, so only its own button spins. */
   const [undoing, setUndoing] = useState<string | null>(null);
+  const [pouring, setPouring] = useState(false);
   const [filter, setFilter] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -262,6 +263,38 @@ export function BarCountsPage() {
       setError(humanError(e));
     } finally {
       setUndoing(null);
+    }
+  };
+
+  /**
+   * Put this shift's unaccounted sales through the shelves.
+   *
+   * Idempotent by the sale line, the same way the server is, so pressing it
+   * again moves nothing — which is what makes it safe to offer at all.
+   */
+  const catchUp = async () => {
+    if (!shift) return;
+    setPouring(true);
+    setError(null);
+    try {
+      const { poured, lines, failed } = await pourMissedSales({
+        venueId: 'main',
+        shiftId: shift.$id,
+        module: 'bar',
+        userId: user?.$id ?? '',
+      });
+      await load();
+      toast(
+        lines === 0
+          ? 'Nothing was missed — every sale on this shift has already come off a shelf.'
+          : `${lines} sale${lines === 1 ? '' : 's'} put through, moving ${poured} shel${poured === 1 ? 'f' : 'ves'}`
+            + `${failed > 0 ? `, and ${failed} could not be` : ''}.`,
+        failed > 0 ? 'err' : undefined,
+      );
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setPouring(false);
     }
   };
 
@@ -482,6 +515,33 @@ export function BarCountsPage() {
         and wrote a number down — so it stays, marked, and the shelf is
         corrected by an opposite movement. See undoBarCount.
       */}
+      {/*
+        SALES THAT NEVER CAME OFF A SHELF.
+
+        A bar deducts as each drink is paid for, which needs the drink to have
+        a recipe naming a shelf. Until a size was given one, a bottled drink
+        had no recipe at all — so it poured nothing, correctly, and the sales
+        made before the shelves existed came off nothing.
+
+        No amount of counting reconciles that stretch of the night: the shelf
+        says what was counted and the sales say what went, and nothing has ever
+        connected the two. This pours what was missed, once, from what each
+        line actually sold — a large Club off the large Club's shelf, not off
+        the drink it is a size of.
+      */}
+      {isAdmin && shift && (
+        <Card title="Sales that never came off a shelf">
+          <p className="small dim" style={{ marginTop: 0 }}>
+            Drinks sold before their size had a shelf of its own were never taken off anything. This puts them
+            through now, so what the shelves say includes tonight&rsquo;s sales. Safe to press twice — a sale
+            already accounted for is left alone.
+          </p>
+          <Button loading={pouring} onClick={() => void catchUp()}>
+            Bring the shelves up to date with this shift
+          </Button>
+        </Card>
+      )}
+
       {isAdmin && filed.length > 0 && (
         <Card title="Counts filed on this shift">
           <p className="small dim" style={{ marginTop: 0 }}>

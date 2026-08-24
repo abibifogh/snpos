@@ -1,4 +1,4 @@
-import { db, DB_ID, ID, Query, listAll, tryWrite } from './client';
+import { db, DB_ID, ID, Query, listAll, listByIds, tryWrite } from './client';
 import type { PurchaseRow } from './price-history';
 import type { Module } from './access';
 import {
@@ -6,6 +6,9 @@ import {
 } from './bar-count';
 import type { FiledCheck } from './bar-count';
 import { levelFor, transferQty, transferMovements, purchaseLocation, saleLocation } from './locations';
+// What a sale actually pours from: a size's own rows win over the drink's.
+import { recipeFor } from './variant-recipes';
+import type { RecipeRow } from './recipe-card';
 import {
   levelPayload, readLevelPayload, rowsFromPayload, restoreProblem, LEVEL_PAYLOAD_MAX,
 } from './level-import';
@@ -59,6 +62,14 @@ export interface Ingredient extends Doc {
 
 export interface Recipe extends Doc {
   menu_item_id?: string;
+  /**
+   * The size this applies to, where it applies to one.
+   *
+   * Missing from this type while the column existed and was written and read
+   * everywhere else — so anything reading a recipe through it could not see
+   * which size a row belonged to, and had to be told the type was wrong.
+   */
+  variant_id?: string;
   addon_option_id?: string;
   ingredient_id: string;
   qty_per_unit: number;
@@ -1111,4 +1122,121 @@ export async function restoreLevelUpload(opts: {
     // worth knowing at the moment somebody is restoring an opening balance.
     skipped: stored.length - rows.reduce((n, r) => n + r.levels.length, 0),
   };
+}
+
+
+/* ------------------------------ sales that never reached a shelf */
+
+/**
+ * Pour a shift's sales that never came off anything.
+ *
+ * A bar deducts as each drink is paid for, which needs the drink to have a
+ * recipe naming a shelf. A drink with no recipe pours nothing — correctly,
+ * because there was nothing to pour from — and that is the state every bottled
+ * drink was in until its sizes were given shelves of their own.
+ *
+ * So the sales made BEFORE those shelves existed came off nothing, and no
+ * amount of counting will make them agree: the shelf says what was counted,
+ * the sales say what went, and nothing has ever connected the two for that
+ * part of the night.
+ *
+ * This walks the shift and pours what was missed, once. Idempotent by the sale
+ * line, exactly as the server is: a movement stamped with the line's id is the
+ * proof it has already been poured, so running this twice — or running it on a
+ * shift the server handled properly — moves nothing.
+ *
+ * It pours from what the line ACTUALLY SOLD, so a large Club comes off the
+ * large Club's shelf and not off the drink it is a size of. See recipeFor: a
+ * size's own rows win outright over the drink's rather than adding to them.
+ */
+export async function pourMissedSales(opts: {
+  venueId: string;
+  shiftId: string;
+  module?: Module;
+  userId: string;
+}): Promise<{ poured: number; lines: number; failed: number }> {
+  const [orders, recipes, places] = await Promise.all([
+    listAll<{ $id: string; status?: string; module?: string }>('orders', [
+      Query.equal('venue_id', opts.venueId),
+      Query.equal('shift_id', opts.shiftId),
+    ]).catch(() => []),
+    loadRecipes(),
+    loadLocations(opts.venueId),
+  ]);
+
+  const counter = saleLocation(places, opts.module ?? 'bar');
+  const mine = orders.filter((o) => (o.module ?? 'kitchen') === (opts.module ?? 'bar')
+    && !['CANCELLED', 'REJECTED'].includes(o.status ?? ''));
+  if (mine.length === 0) return { poured: 0, lines: 0, failed: 0 };
+
+  const lines = await listByIds<{
+    $id: string; order_id: string; menu_item_id: string; variant_id?: string;
+    qty?: number; status?: string; name_snapshot?: string;
+  }>('order_items', 'order_id', mine.map((o) => o.$id)).catch(() => []);
+
+  let poured = 0;
+  let touched = 0;
+  let failed = 0;
+
+  for (const line of lines) {
+    if (line.status === 'void') continue;
+
+    /*
+      Already poured? Then leave it alone.
+
+      The same test the server makes, against the same rows, so this cannot
+      double-count a drink the server handled — and cannot be made to by
+      pressing the button again.
+    */
+    const already = await db.listDocuments(DB_ID, 'stock_movements', [
+      Query.equal('ref_type', 'order_item'),
+      Query.equal('ref_id', line.$id),
+      Query.limit(1),
+    ]).catch(() => ({ total: 1 }));
+    if ((already.total ?? 1) > 0) continue;
+
+    const applies = recipeFor(recipes as unknown as RecipeRow[], line.menu_item_id, line.variant_id);
+    if (applies.length === 0) continue;
+
+    touched += 1;
+    for (const r of applies) {
+      const ing = await db.getDocument(DB_ID, 'ingredients', r.ingredient_id).catch(() => null) as
+        { base_unit_cost?: number } | null;
+      if (!ing) continue;
+
+      // The kitchen's arithmetic, mirrored: a bar over-pours as a kitchen
+      // trims, and a recipe ignoring wastage reports a shortage every night.
+      const perUnit = (r.qty_per_unit ?? 0) * (1 + (r.wastage_bp ?? 0) / 10000);
+      const used = perUnit * (line.qty ?? 1);
+      if (!used) continue;
+
+      const wrote = await tryWrite(db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
+        venue_id: opts.venueId,
+        ingredient_id: r.ingredient_id,
+        type: 'sale_depletion',
+        qty_delta: -used,
+        unit_cost: ing.base_unit_cost ?? 0,
+        location_id: counter?.$id ?? '',
+        ref_type: 'order_item',
+        ref_id: line.$id,
+        shift_id: opts.shiftId,
+        created_by: opts.userId,
+        note: `${line.name_snapshot ?? 'Sold'}, poured late`,
+      }));
+      if (!wrote) { failed += 1; continue; }
+
+      if (counter) {
+        await adjustLevel({ ingredientId: r.ingredient_id, locationId: counter.$id, delta: -used });
+      } else {
+        const now = await db.getDocument(DB_ID, 'ingredients', r.ingredient_id).catch(() => null) as
+          { current_qty?: number } | null;
+        await tryWrite(db.updateDocument(DB_ID, 'ingredients', r.ingredient_id, {
+          current_qty: Number(((now?.current_qty ?? 0) - used).toFixed(4)),
+        }));
+      }
+      poured += 1;
+    }
+  }
+
+  return { poured, lines: touched, failed };
 }

@@ -4,7 +4,8 @@ import {
   byUnit, wasCountedBar, variancesIn, summariseBarCount, readyToClose, unitLabel,
   BAR_VARIANCE_TOLERANCE, type BarCountLine,
   shiftCounted, hasShiftCountChoice, countsAtBothEnds, readyToAccept, countGate,
-  countable, filedCounts, undoDeltas, undoProblem, soldInShift, soldTotals, type FiledCheck,
+  countable, filedCounts, undoDeltas, undoProblem, soldInShift, soldTotals, newShelfCadence,
+  type FiledCheck,
 } from '../bar-count.ts';
 
 const bottle = (over: Partial<BarCountLine> = {}): BarCountLine => ({
@@ -430,4 +431,34 @@ test('the busiest drink leads', () => {
   ]);
   assert.equal(sold[0].name, 'Club');
   assert.deepEqual(soldTotals(sold), { items: 10, worth: 31500 });
+});
+
+test('a shelf the system creates does not flip a bar into narrow counting', () => {
+  /*
+    THE REGRESSION THIS EXISTS TO STOP, AND IT REACHED A LIVE BAR.
+
+    shiftCounted means "if anybody ticked anything, count only what was
+    ticked". A bar that has ticked nothing is counted in full through the
+    fallback, which is how most bars run because nobody visits that setting.
+
+    Creating one shelf ticked in a bar like that makes it the whole sheet.
+    Giving each drink size its own shelf did precisely that, and the next
+    closing count asked about the new sizes and nothing else.
+  */
+  const untouched = [{ count_each_shift: undefined }, { count_each_shift: undefined }];
+  assert.equal(newShelfCadence(untouched), false);
+
+  // And with that answer, everything is still on the sheet.
+  const after = [...untouched, { count_each_shift: newShelfCadence(untouched) }];
+  assert.equal(shiftCounted(after).length, 3);
+});
+
+test('a bar that has chosen keeps its choice, and the new shelf joins it', () => {
+  // The other half: a house that ticked four bottles means those four, and a
+  // size created afterwards belongs with them rather than reopening the sheet.
+  const chosen = [{ count_each_shift: true }, { count_each_shift: false }];
+  assert.equal(newShelfCadence(chosen), true);
+
+  const after = [...chosen, { count_each_shift: newShelfCadence(chosen) }];
+  assert.deepEqual(shiftCounted(after).map((r) => r.count_each_shift), [true, true]);
 });
