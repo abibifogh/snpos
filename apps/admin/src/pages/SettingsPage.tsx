@@ -51,6 +51,7 @@ const FIELD_LABELS: Record<string, string> = {
   self_order_enabled: 'Customers ordering for themselves',
   default_commission_bp: 'Default commission',
   craft_order_prefix: 'Craft sale number prefix',
+  bar_order_prefix: 'Bar sale number prefix',
   order_number_prefix: 'Order number prefix',
   order_number_mode: 'Order numbering',
   order_number_padding: 'Order number length',
@@ -289,6 +290,7 @@ export function SettingsPage() {
         self_order_enabled: form.self_order_enabled !== false,
         default_commission_bp: Number(form.default_commission_bp ?? 3000),
         craft_order_prefix: form.craft_order_prefix ?? 'S',
+        bar_order_prefix: form.bar_order_prefix ?? '',
       });
       await refreshSettings();
 
@@ -373,6 +375,32 @@ export function SettingsPage() {
           One of these has to stay on. Turning a side off only hides its sections, the products, sales and
           statements behind them stay exactly where they are.
         </p>
+
+        {/*
+          The bar's own run of numbers, or the kitchen's.
+
+          Blank shares the kitchen's, which is what a house thinking in one
+          sequence expects — and is why this is not defaulted to anything. Set
+          it and the bar starts again at the beginning under the new letters
+          from that moment; the numbers already issued keep theirs.
+        */}
+        {mods.bar && (
+          <Field
+            label="Bar sale number prefix"
+            hint={
+              form.bar_order_prefix?.trim()
+                ? 'The bar counts on its own from here. Numbers already issued keep the ones they were given.'
+                : 'Blank, so bar sales share the kitchen\'s run of numbers. Put something here — BAR, B — to '
+                  + 'give the bar a sequence of its own.'
+            }
+          >
+            <Input
+              value={form.bar_order_prefix ?? ''}
+              placeholder="Shares the kitchen's"
+              onChange={(e) => set('bar_order_prefix', e.target.value)}
+            />
+          </Field>
+        )}
 
         {mods.craft && (
           <>

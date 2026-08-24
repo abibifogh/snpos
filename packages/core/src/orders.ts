@@ -19,7 +19,7 @@ export {
 import { createOrQueue, isOffline } from './offline';
 import { computeTotals, lineUnitPrice, lineTotal } from './pricing';
 // Pure, and the reason a bar can ring up a sale at all. See order-numbers.
-import { nextInRun, formatOrderNo } from './order-numbers';
+import { nextInRun, formatOrderNo, prefixFor } from './order-numbers';
 // Pure, and the same rule the shift close reads. A payment that is not live is
 // not money in a drawer, wherever the question is asked from.
 import { isLivePayment } from './shift-rules';
@@ -175,9 +175,9 @@ async function nextOrderNo(
    * bar asking for ORD0006 on its sixth drink, and a database that refuses the
    * same number twice. See order-numbers.
    */
-  const prefix = module === 'craft'
-    ? (settings.craft_order_prefix ?? 'S') || (settings.order_number_prefix ?? '')
-    : settings.order_number_prefix ?? '';
+  // Each side may have its own and falls back to the kitchen's. See prefixFor,
+  // where the rule lives and is tested.
+  const prefix = prefixFor(settings, module);
   const padding = Math.max(1, settings.order_number_padding ?? 4);
   const daily = settings.order_number_mode === 'daily';
 

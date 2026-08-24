@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { inRun, numberIn, nextInRun, formatOrderNo } from '../order-numbers.ts';
+import { inRun, numberIn, nextInRun, formatOrderNo, prefixFor } from '../order-numbers.ts';
 
 test('two sides sharing a prefix share the run', () => {
   /*
@@ -88,4 +88,44 @@ test('the printed number is padded to the house width', () => {
   // A number wider than the padding is not truncated: an order number that
   // loses a digit is a different order.
   assert.equal(formatOrderNo('ORD', 12345, 4), 'ORD12345');
+});
+
+test('a side with no prefix of its own shares the kitchen\'s run', () => {
+  /*
+    Blank is a real answer. A house thinking in one sequence expects the bar's
+    drinks to carry on from the kitchen's numbers — and because the counter
+    follows the prefix, sharing one now means sharing the run rather than
+    colliding with it.
+  */
+  const settings = { order_number_prefix: 'ORD' };
+  assert.equal(prefixFor(settings, 'bar'), 'ORD');
+  assert.equal(prefixFor(settings, 'kitchen'), 'ORD');
+  assert.equal(prefixFor(settings, undefined), 'ORD');
+});
+
+test('a bar given its own prefix counts on its own', () => {
+  const settings = { order_number_prefix: 'ORD', bar_order_prefix: 'BAR' };
+  assert.equal(prefixFor(settings, 'bar'), 'BAR');
+  assert.equal(prefixFor(settings, 'kitchen'), 'ORD');
+  // And the runs cannot see each other: BAR0001 is free however far ORD has
+  // counted, which is the whole point of asking for one.
+  assert.equal(nextInRun(['ORD0222', 'ORD0221'], 'BAR'), 1);
+});
+
+test('the craft shop keeps its default, the bar does not get one', () => {
+  /*
+    A shop receipt and a restaurant receipt wearing the same number is the
+    confusion the split was for, so the shop defaults to S. A bar sharing the
+    kitchen's numbering is ordinary, so an upgrade must not renumber it.
+  */
+  assert.equal(prefixFor({ order_number_prefix: 'ORD' }, 'craft'), 'S');
+  assert.equal(prefixFor({ order_number_prefix: 'ORD' }, 'bar'), 'ORD');
+});
+
+test('a prefix cleared back to blank falls to the house one', () => {
+  // Emptying the box is how somebody puts a side back onto the shared run,
+  // and reading "" as a prefix of its own would leave it counting alone under
+  // no letters at all.
+  assert.equal(prefixFor({ order_number_prefix: 'ORD', bar_order_prefix: '' }, 'bar'), 'ORD');
+  assert.equal(prefixFor({ order_number_prefix: 'ORD', craft_order_prefix: '' }, 'craft'), 'ORD');
 });

@@ -81,3 +81,33 @@ export function nextInRun(
 /** The whole thing, padded, as it is printed and read out. */
 export const formatOrderNo = (prefix: string, n: number, padding: number): string =>
   `${prefix}${String(n).padStart(Math.max(1, padding), '0')}`;
+
+
+/**
+ * Which run of numbers a side belongs to.
+ *
+ * The one decision behind the whole file: two sides answering with the same
+ * prefix share a sequence, and two answering differently keep their own. It is
+ * not a preference — order numbers are unique per venue, so sharing a prefix
+ * and not sharing the counter is the collision that stopped a bar taking
+ * money.
+ *
+ * Blank is a real answer and not a missing one. A bar with no prefix of its
+ * own deliberately shares the kitchen's, which is what a house thinking in one
+ * sequence expects; the craft shop defaults to "S" because a shop receipt and
+ * a restaurant receipt turning up with the same number is exactly the
+ * confusion the split was for.
+ */
+export function prefixFor(
+  settings: {
+    order_number_prefix?: string;
+    craft_order_prefix?: string;
+    bar_order_prefix?: string;
+  },
+  module?: string,
+): string {
+  const house = settings.order_number_prefix ?? '';
+  if (module === 'craft') return (settings.craft_order_prefix ?? 'S') || house;
+  if (module === 'bar') return (settings.bar_order_prefix ?? '') || house;
+  return house;
+}

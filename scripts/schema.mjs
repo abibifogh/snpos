@@ -283,6 +283,23 @@ export const COLLECTIONS = [
        */
       ['craft_order_prefix', 's', 10, false, 'S'],
       /**
+       * What a bar sale's number starts with.
+       *
+       * BLANK BY DEFAULT, and that is not the same choice as the shop's.
+       *
+       * The counter follows the prefix — see order-numbers — so a bar sharing
+       * the kitchen's prefix shares its run of numbers, which is correct and
+       * is what a business that thinks of one sequence expects. Giving the bar
+       * a prefix of its own splits the run in two from that moment: the bar
+       * starts again at the beginning under the new letters, and the numbers
+       * already issued keep the numbers they were given.
+       *
+       * Left blank rather than defaulted to something, because a house with
+       * one run of numbers is not wrong and should not have its receipts
+       * renumbered by an upgrade.
+       */
+      ['bar_order_prefix', 's', 10, false],
+      /**
        * What kind of business this is.
        *
        * One codebase, two trades. A restaurant and a consignment craft shop
