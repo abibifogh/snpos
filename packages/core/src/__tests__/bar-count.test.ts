@@ -4,7 +4,7 @@ import {
   byUnit, wasCountedBar, variancesIn, summariseBarCount, readyToClose, unitLabel,
   BAR_VARIANCE_TOLERANCE, type BarCountLine,
   shiftCounted, hasShiftCountChoice, countsAtBothEnds, readyToAccept, countGate,
-  countable,
+  countable, filedCounts, undoDeltas, undoProblem, soldInShift, soldTotals, type FiledCheck,
 } from '../bar-count.ts';
 
 const bottle = (over: Partial<BarCountLine> = {}): BarCountLine => ({
@@ -302,4 +302,132 @@ test('the count-everything fallback cannot sweep a never-counted item back in', 
   assert.equal(shiftCounted(rows).length, 2);
   // Narrowed first, the ice is gone before the fallback ever sees it.
   assert.deepEqual(shiftCounted(countable(rows)).map((r) => r.$id), ['rum']);
+});
+
+/* ------------------------------------------------- counts already filed */
+
+const check = (over: Partial<FiledCheck> & { $id: string; ingredient_id: string }): FiledCheck => ({
+  theoretical_qty: 0, counted_qty: 0, variance_qty: 0, variance_value: 0, ...over,
+});
+
+test('counting in and counting out are two counts, not one', () => {
+  /*
+    The person coming on accepts the bar; the person going off hands it over.
+    Two statements about the same shelf, and merging them would make the
+    difference between them — the thing the whole system exists to produce —
+    impossible to see.
+  */
+  const counts = filedCounts([
+    check({ $id: 'a', ingredient_id: 'gin', shift_id: 's1', phase: 'open', $createdAt: '2026-08-24T06:00:00Z' }),
+    check({ $id: 'b', ingredient_id: 'gin', shift_id: 's1', phase: 'close', $createdAt: '2026-08-24T23:00:00Z' }),
+  ]);
+  assert.equal(counts.length, 2);
+  assert.deepEqual(counts.map((c) => c.phase), ['close', 'open']);
+});
+
+test('a count is filed when it started, not when the loop finished', () => {
+  // The rows are written one per bottle in a loop, so the last one is only
+  // when the writing ended. A count of forty takes a while.
+  const counts = filedCounts([
+    check({ $id: 'a', ingredient_id: 'gin', shift_id: 's1', phase: 'close', $createdAt: '2026-08-24T23:00:09Z' }),
+    check({ $id: 'b', ingredient_id: 'rum', shift_id: 's1', phase: 'close', $createdAt: '2026-08-24T23:00:01Z' }),
+  ]);
+  assert.equal(counts[0].at, '2026-08-24T23:00:01Z');
+});
+
+test('what a count was worth counts only the lines that moved', () => {
+  const counts = filedCounts([
+    check({ $id: 'a', ingredient_id: 'gin', shift_id: 's1', phase: 'close', variance_qty: -2, variance_value: 4000 }),
+    check({ $id: 'b', ingredient_id: 'rum', shift_id: 's1', phase: 'close', variance_qty: 0, variance_value: 0 }),
+    check({ $id: 'c', ingredient_id: 'tonic', shift_id: 's1', phase: 'close', variance_qty: 3, variance_value: 900 }),
+  ]);
+  assert.equal(counts[0].changed, 2);
+  // Absolute: a shelf two short and another three over is not one over.
+  assert.equal(counts[0].worth, 4900);
+});
+
+test('undoing a count moves the shelf back by the difference, not to the old figure', () => {
+  /*
+    THE POINT OF THE WHOLE THING.
+
+    Setting the shelf to what it held before the count would be wrong by
+    everything poured since — real sales with real movements already recorded.
+    An undo that erased those would fix one mistake by making a larger one.
+  */
+  const [count] = filedCounts([
+    check({ $id: 'a', ingredient_id: 'gin', shift_id: 's1', phase: 'close', variance_qty: -2 }),
+    check({ $id: 'b', ingredient_id: 'rum', shift_id: 's1', phase: 'close', variance_qty: 0 }),
+    check({ $id: 'c', ingredient_id: 'tonic', shift_id: 's1', phase: 'close', variance_qty: 3 }),
+  ]);
+  assert.deepEqual(undoDeltas(count), [
+    { ingredientId: 'gin', delta: 2 },
+    { ingredientId: 'tonic', delta: -3 },
+  ]);
+});
+
+test('a count is only taken back once', () => {
+  const [count] = filedCounts([
+    check({
+      $id: 'a', ingredient_id: 'gin', shift_id: 's1', phase: 'close',
+      variance_qty: -2, undone_at: '2026-08-25T09:00:00Z',
+    }),
+  ]);
+  assert.match(undoProblem(count) ?? '', /already been taken back/);
+});
+
+test('a count that found what it expected has nothing to put back', () => {
+  // Undoing it would write a movement of nought and mark a count as reversed
+  // when nothing was ever corrected by it.
+  const [count] = filedCounts([
+    check({ $id: 'a', ingredient_id: 'gin', shift_id: 's1', phase: 'close', variance_qty: 0 }),
+  ]);
+  assert.match(undoProblem(count) ?? '', /nothing to put back/);
+  assert.equal(undoProblem(null), 'That count could not be found.');
+});
+
+test('what sold is counted by the thing, not by the sale', () => {
+  /*
+    A shift's orders answer "what did each customer buy", which nobody asks.
+    The question at the end of a night is "how many Clubs went", and it is the
+    other half of a count: a shelf four down and four sold balances, the same
+    shelf with two sold is a conversation.
+  */
+  const sold = soldInShift([
+    { name_snapshot: 'Club', qty: 2, line_total: 5000 },
+    { name_snapshot: 'Club', qty: 3, line_total: 7500 },
+    { name_snapshot: 'Gin', qty: 1, line_total: 3000 },
+  ]);
+  assert.deepEqual(sold.map((s) => [s.name, s.qty, s.worth]), [
+    ['Club', 5, 12500],
+    ['Gin', 1, 3000],
+  ]);
+});
+
+test('a size is its own line', () => {
+  // A small and a large Club are two different things going out of the door,
+  // and adding them together hides the difference somebody is looking for.
+  const sold = soldInShift([
+    { name_snapshot: 'Club', variant_label: 'Large', qty: 2, line_total: 6000 },
+    { name_snapshot: 'Club', variant_label: 'Small', qty: 1, line_total: 2500 },
+  ]);
+  assert.deepEqual(sold.map((s) => s.name), ['Club · Large', 'Club · Small']);
+});
+
+test('a line struck off a bill sold nothing', () => {
+  // It is still on the shelf. Counting it would put drinks on this list that
+  // never left, and the count would then look short by exactly those.
+  const sold = soldInShift([
+    { name_snapshot: 'Club', qty: 2, line_total: 5000 },
+    { name_snapshot: 'Gin', qty: 1, line_total: 3000, status: 'void' },
+  ]);
+  assert.deepEqual(sold.map((s) => s.name), ['Club']);
+});
+
+test('the busiest drink leads', () => {
+  const sold = soldInShift([
+    { name_snapshot: 'Gin', qty: 1, line_total: 9000 },
+    { name_snapshot: 'Club', qty: 9, line_total: 22500 },
+  ]);
+  assert.equal(sold[0].name, 'Club');
+  assert.deepEqual(soldTotals(sold), { items: 10, worth: 31500 });
 });

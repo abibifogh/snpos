@@ -5,8 +5,9 @@ import {
   barCountSheet, saveBarCount, hasOpeningCount, byUnit, summariseBarCount, readyToClose,
   formatMoney, listAll, Query, loadOpenShifts, loadLocations, saleLocation,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
+  filedCounts, undoProblem, undoBarCount,
 } from '@snpos/core';
-import type { BarCountLine, Shift, Doc, StockLocation } from '@snpos/core';
+import type { BarCountLine, Shift, Doc, StockLocation, FiledCheck, FiledCount } from '@snpos/core';
 import { useSession } from '../session';
 
 interface CheckRow extends Doc {
@@ -55,6 +56,8 @@ export function BarCountsPage() {
   const [lines, setLines] = useState<BarCountLine[] | null>(null);
   const [openingDone, setOpeningDone] = useState(false);
   const [history, setHistory] = useState<CheckRow[]>([]);
+  /** Which count is being taken back, so only its own button spins. */
+  const [undoing, setUndoing] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -225,6 +228,43 @@ export function BarCountsPage() {
   };
 
   /** What the closing count found, for the admin who has to look at it. */
+  /*
+    The counts filed on this shift, grouped as they were made.
+
+    From the same rows the table below reads, rather than a second query: what
+    makes a set of rows one count is only that they name the same shift and the
+    same end of it, and that is a grouping rule rather than a fetch. See
+    filedCounts.
+  */
+  const filed = filedCounts(history as unknown as FiledCheck[]);
+
+  /** Put the shelves back the way they were before a count. */
+  const takeBack = async (c: FiledCount) => {
+    const key = `${c.shiftId}-${c.phase}`;
+    setUndoing(key);
+    setError(null);
+    try {
+      const { put_back, failed } = await undoBarCount({
+        venueId: 'main',
+        shiftId: c.shiftId,
+        phase: c.phase,
+        userId: user?.$id ?? '',
+        locationId: placeId || undefined,
+      });
+      await load();
+      toast(
+        `${put_back} shel${put_back === 1 ? 'f' : 'ves'} put back`
+        + `${failed > 0 ? `, and ${failed} could not be` : ''}. `
+        + 'The count stays on the record, marked as taken back.',
+        failed > 0 ? 'err' : undefined,
+      );
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setUndoing(null);
+    }
+  };
+
   const closingVariances = history
     .filter((h) => h.phase === 'close' && h.variance_qty !== 0)
     .sort((a, b) => b.variance_value - a.variance_value);
@@ -428,6 +468,64 @@ export function BarCountsPage() {
             ))
           )}
         </>
+      )}
+
+      {/*
+        THE COUNTS ALREADY FILED, AND A WAY TO TAKE ONE BACK.
+
+        A count that was wrong moves real stock figures, and nothing could
+        move them back: the only way out was to count again, which files a
+        second count against the same shift and leaves both standing with
+        nothing saying which one to believe.
+
+        Nothing is deleted. The count happened — somebody stood at the shelf
+        and wrote a number down — so it stays, marked, and the shelf is
+        corrected by an opposite movement. See undoBarCount.
+      */}
+      {isAdmin && filed.length > 0 && (
+        <Card title="Counts filed on this shift">
+          <p className="small dim" style={{ marginTop: 0 }}>
+            Taking one back puts the shelves where they were before it, by the difference it made rather than by
+            the figure it wrote — so anything poured since is left alone. The count itself stays on the record,
+            marked as taken back.
+          </p>
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>When</th><th>Which count</th><th className="num">Lines moved</th>
+                  <th className="num">Worth</th><th />
+                </tr>
+              </thead>
+              <tbody>
+                {filed.map((c) => (
+                  <tr key={`${c.shiftId}-${c.phase}`} className={c.undoneAt ? 'dim' : undefined}>
+                    <td className="small dim">{c.at ? new Date(c.at).toLocaleString() : '—'}</td>
+                    <td>{c.phase === 'open' ? 'Counted in' : 'Counted out'}</td>
+                    <td className="num">{c.changed}</td>
+                    <td className="num">{money(c.worth)}</td>
+                    <td className="num">
+                      {c.undoneAt ? (
+                        <Badge tone="warn">Taken back</Badge>
+                      ) : undoProblem(c) ? (
+                        <span className="dim small">Nothing to put back</span>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          loading={undoing === `${c.shiftId}-${c.phase}`}
+                          onClick={() => void takeBack(c)}
+                        >
+                          Take this count back
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       {closingVariances.length > 0 && (

@@ -1,7 +1,10 @@
 import { db, DB_ID, ID, Query, listAll, tryWrite } from './client';
 import type { PurchaseRow } from './price-history';
 import type { Module } from './access';
-import { variancesIn, wasCountedBar, shiftCounted, countable } from './bar-count';
+import {
+  variancesIn, wasCountedBar, shiftCounted, countable, filedCounts, undoDeltas, undoProblem,
+} from './bar-count';
+import type { FiledCheck } from './bar-count';
 import { levelFor, transferQty, transferMovements, purchaseLocation, saleLocation } from './locations';
 import type { StockLocation, LocationStock, TransferLine } from './locations';
 import type { LevelRow } from './level-import';
@@ -912,4 +915,101 @@ export async function applyLevelImport(opts: {
   }
 
   return { set, failed };
+}
+
+
+/* --------------------------------------------- taking a bar count back */
+
+/** Every count filed against a shift, for the admin who has to look at them. */
+export const countsForShift = async (shiftId: string): Promise<FiledCheck[]> =>
+  listAll<FiledCheck & Doc>('shift_stock_checks', [Query.equal('shift_id', shiftId)])
+    .catch(() => [] as (FiledCheck & Doc)[]);
+
+/**
+ * Put the shelf back the way it was before a count.
+ *
+ * A count that was wrong — a number typed into the wrong row, a shelf counted
+ * before a delivery was put away — moves real stock figures, and until now
+ * nothing could move them back. The only way out was to count again, which
+ * files a second count against the same shift and leaves both standing with
+ * nothing saying which one anybody should believe.
+ *
+ * NOTHING IS DELETED. The count happened: somebody stood at the shelf and
+ * wrote a number down, and the stock moved because of it. The rows stay,
+ * marked as taken back, and the shelf is corrected by an opposite movement —
+ * the same way the books undo an entry, and for the same reason. A history
+ * that can be quietly rewritten is not a history.
+ *
+ * And the correction is a DELTA, never the old absolute figure. See
+ * undoDeltas: putting the shelf back to what it held before the count would
+ * be wrong by everything poured since, and those sales are already recorded.
+ */
+export async function undoBarCount(opts: {
+  venueId: string;
+  shiftId: string;
+  phase: 'open' | 'close';
+  userId: string;
+  locationId?: string;
+}): Promise<{ put_back: number; failed: number }> {
+  const all = await countsForShift(opts.shiftId);
+  const count = filedCounts(all).find((c) => c.phase === opts.phase);
+
+  const problem = undoProblem(count);
+  if (problem || !count) throw new Error(problem ?? 'That count could not be found.');
+
+  const places = await loadLocations(opts.venueId);
+  const counter = places.find((l) => l.$id === opts.locationId) ?? saleLocation(places, 'bar');
+  const when = new Date().toISOString();
+
+  let put_back = 0;
+  let failed = 0;
+
+  for (const { ingredientId, delta } of undoDeltas(count)) {
+    const ing = await db.getDocument(DB_ID, 'ingredients', ingredientId).catch(() => null) as
+      { base_unit_cost?: number } | null;
+
+    const wrote = await tryWrite(db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
+      venue_id: opts.venueId,
+      ingredient_id: ingredientId,
+      type: 'count_correction',
+      qty_delta: delta,
+      unit_cost: ing?.base_unit_cost ?? 0,
+      location_id: counter?.$id ?? '',
+      ref_type: 'shift',
+      ref_id: opts.shiftId,
+      shift_id: opts.shiftId,
+      created_by: opts.userId,
+      note: `Count taken back (${opts.phase === 'open' ? 'counted in' : 'counted out'})`,
+    }));
+    if (!wrote) { failed += 1; continue; }
+
+    // The shelf itself, through the same door every other correction uses, so
+    // the room's level and the business total stay in step.
+    if (counter) {
+      await adjustLevel({ ingredientId, locationId: counter.$id, delta });
+    } else if (ing) {
+      const now = await db.getDocument(DB_ID, 'ingredients', ingredientId).catch(() => null) as
+        { current_qty?: number } | null;
+      await tryWrite(db.updateDocument(DB_ID, 'ingredients', ingredientId, {
+        current_qty: Number(((now?.current_qty ?? 0) + delta).toFixed(4)),
+      }));
+    }
+    put_back += 1;
+  }
+
+  /*
+    Marked last, and every row of it including the ones that moved nothing.
+
+    A count is one statement, so it is taken back as one: leaving the
+    unchanged lines unmarked would show a count half undone, which is not a
+    thing that happened.
+  */
+  for (const line of count.lines) {
+    await tryWrite(db.updateDocument(DB_ID, 'shift_stock_checks', line.$id, {
+      undone_at: when,
+      undone_by: opts.userId,
+    }));
+  }
+
+  return { put_back, failed };
 }

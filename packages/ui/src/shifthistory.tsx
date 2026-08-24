@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Badge, Button, Empty, Field, FormError, Input, Modal, Spinner } from './components';
 import {
-  Query, formatMoney, listAll, displayOrderNo, requestReceipt,
+  Query, formatMoney, listAll, displayOrderNo, requestReceipt, soldInShift, soldTotals,
   receiptForOrder, buildReceiptHtml, openPrintable, ordersForShift, fromTakings,
   loadPaymentMethods, isLivePayment, changePaymentMethod, logPaymentMethodChange,
 } from '@snpos/core';
@@ -74,7 +74,7 @@ export function ShiftHistory({
   onToast: (message: string, tone?: 'ok' | 'err') => void;
 }) {
   const venueId = venue.$id;
-  const [tab, setTab] = useState<'orders' | 'spend'>('orders');
+  const [tab, setTab] = useState<'orders' | 'sold' | 'spend'>('orders');
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [items, setItems] = useState<Record<string, OrderItem[]>>({});
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
@@ -152,6 +152,13 @@ export function ShiftHistory({
   };
 
   const money = (n: number) => formatMoney(n, settings);
+
+  /*
+    Worked out from the lines already loaded for the orders list, rather than
+    fetched again. The same rows answer both questions; only the cut differs.
+  */
+  const sold = soldInShift(Object.values(items).flat());
+  const soldSum = soldTotals(sold);
 
   const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? 'a method no longer listed';
   const paymentsFor = (orderId: string) => payments.filter((p) => p.order_id === orderId);
@@ -283,6 +290,18 @@ export function ShiftHistory({
         <Button size="sm" variant={tab === 'orders' ? 'primary' : 'default'} onClick={() => setTab('orders')}>
           Orders {orders ? `(${orders.length})` : ''}
         </Button>
+        {/*
+          What went over the counter, by the thing rather than by the sale.
+
+          The orders list answers "what did each customer buy", which is not a
+          question anybody has at the end of a night. "How many Clubs went" is,
+          and it is the other half of a count: a shelf four bottles down with
+          four sold balances, and the same shelf with two sold is a
+          conversation. Both halves were on different screens.
+        */}
+        <Button size="sm" variant={tab === 'sold' ? 'primary' : 'default'} onClick={() => setTab('sold')}>
+          What sold {sold.length ? `(${soldSum.items})` : ''}
+        </Button>
         <Button size="sm" variant={tab === 'spend' ? 'primary' : 'default'} onClick={() => setTab('spend')}>
           Money out {expenses.length ? `(${expenses.length})` : ''}
         </Button>
@@ -327,6 +346,32 @@ export function ShiftHistory({
 
       {!orders ? (
         <Spinner />
+      ) : tab === 'sold' ? (
+        sold.length === 0 ? (
+          <p className="small dim">Nothing has been sold on this shift yet.</p>
+        ) : (
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr><th>What</th><th className="num">How many</th><th className="num">Worth</th></tr>
+              </thead>
+              <tbody>
+                {sold.map((l) => (
+                  <tr key={l.name}>
+                    <td>{l.name}</td>
+                    <td className="num" style={{ fontWeight: 600 }}>{l.qty}</td>
+                    <td className="num dim">{money(l.worth)}</td>
+                  </tr>
+                ))}
+                <tr>
+                  <td><strong>All of it</strong></td>
+                  <td className="num"><strong>{soldSum.items}</strong></td>
+                  <td className="num"><strong>{money(soldSum.worth)}</strong></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )
       ) : tab === 'orders' ? (
         orders.length === 0 ? (
           <Empty title="Nothing yet this shift">Orders appear here as they come in.</Empty>

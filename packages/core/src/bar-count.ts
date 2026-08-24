@@ -374,3 +374,164 @@ export function countGate(opts: {
     reason: check.missing === 0 ? undefined : check.reason,
   };
 }
+
+/* ------------------------------------------------- counts already filed */
+
+export interface FiledCheck {
+  $id: string;
+  $createdAt?: string;
+  shift_id?: string;
+  ingredient_id: string;
+  phase?: 'open' | 'close';
+  counted_qty?: number;
+  theoretical_qty?: number;
+  variance_qty?: number;
+  variance_value?: number;
+  checked_by?: string;
+  undone_at?: string | null;
+}
+
+export interface FiledCount {
+  /** What identifies this count: one shift, one end of it. */
+  shiftId: string;
+  phase: 'open' | 'close';
+  /** When it was filed, taken from the earliest row in it. */
+  at: string;
+  lines: FiledCheck[];
+  /** How far the shelf moved because of it, in money. */
+  worth: number;
+  /** Lines whose number differed from what was expected. */
+  changed: number;
+  undoneAt?: string;
+}
+
+/**
+ * The counts already filed, newest first.
+ *
+ * A count is one shift and one end of it — the person coming on accepting the
+ * bar, or the person going off handing it over. Those are two different
+ * statements about the same shelf and must never be merged, which is why the
+ * phase is half the key rather than a column on the row.
+ *
+ * Grouped here rather than queried that way because the rows do not carry a
+ * count id: they are written one per bottle, in a loop, and what makes them
+ * one count is only that they name the same shift and the same end of it.
+ */
+export function filedCounts(rows: FiledCheck[]): FiledCount[] {
+  const groups = new Map<string, FiledCount>();
+
+  for (const r of rows) {
+    const phase = r.phase ?? 'close';
+    const key = `${r.shift_id ?? ''}|${phase}`;
+    const at = r.$createdAt ?? '';
+    const group = groups.get(key) ?? {
+      shiftId: r.shift_id ?? '',
+      phase,
+      at,
+      lines: [],
+      worth: 0,
+      changed: 0,
+      undoneAt: r.undone_at ?? undefined,
+    };
+    group.lines.push(r);
+    if ((r.variance_qty ?? 0) !== 0) {
+      group.changed += 1;
+      group.worth += Math.abs(r.variance_value ?? 0);
+    }
+    // The earliest row is when the count was filed; they are written in a loop
+    // and the last one is only when the loop finished.
+    if (at && (!group.at || at < group.at)) group.at = at;
+    // One line taken back takes the count with it — they are undone together.
+    if (r.undone_at) group.undoneAt = r.undone_at;
+    groups.set(key, group);
+  }
+
+  return [...groups.values()].sort((a, b) => b.at.localeCompare(a.at));
+}
+
+/**
+ * What putting a count back is worth doing to each shelf.
+ *
+ * THE OPPOSITE DELTA, never the old absolute figure. A count moved the shelf
+ * by the difference between what was expected and what was found; undoing it
+ * moves the shelf back by that same difference.
+ *
+ * Setting the shelf to what it held before the count would be wrong by
+ * everything that has happened since — the drinks poured in the hours between
+ * the count and somebody noticing it was wrong. Those sales are real and their
+ * movements are already recorded; an undo that erased them would fix one
+ * mistake by making a second, larger one.
+ *
+ * Lines that found exactly what was expected moved nothing and need nothing.
+ */
+export function undoDeltas(count: FiledCount): { ingredientId: string; delta: number }[] {
+  return count.lines
+    .filter((l) => (l.variance_qty ?? 0) !== 0)
+    .map((l) => ({ ingredientId: l.ingredient_id, delta: -(l.variance_qty ?? 0) }));
+}
+
+/** Why this count cannot be taken back, or nothing. */
+export function undoProblem(count: FiledCount | null | undefined): string | null {
+  if (!count) return 'That count could not be found.';
+  if (count.undoneAt) return 'That count has already been taken back.';
+  if (count.changed === 0) return 'That count found exactly what was expected, so there is nothing to put back.';
+  return null;
+}
+
+/* ------------------------------------------------ what actually sold */
+
+export interface SoldLine {
+  name: string;
+  qty: number;
+  worth: number;
+}
+
+/**
+ * What went over the counter this shift, by the thing rather than by the sale.
+ *
+ * A shift's orders answer "what did each customer buy". Nobody asks that. The
+ * questions a bar actually has at the end of a night are "how many Clubs went"
+ * and "is that enough to explain the shelf", and both need the other cut: one
+ * line per drink, added up, biggest first.
+ *
+ * It is also the other half of a count. A shelf four bottles down and a
+ * summary showing four sold is a shelf that balances; the same shelf with two
+ * sold is a conversation. Until now the two halves were on different screens
+ * with nothing to hold them against each other.
+ *
+ * Voided lines are left out. A line struck off a bill sold nothing, and
+ * counting it would put drinks on this list that are still on the shelf.
+ *
+ * The size is part of the name where there is one — a small and a large Club
+ * are two different things going out of the door, and adding them together
+ * would hide exactly the difference somebody is looking for.
+ */
+export function soldInShift<T extends {
+  name_snapshot?: string;
+  variant_label?: string;
+  qty?: number;
+  line_total?: number;
+  status?: string;
+}>(lines: T[]): SoldLine[] {
+  const byName = new Map<string, SoldLine>();
+
+  for (const l of lines) {
+    if (l.status === 'void') continue;
+    const base = (l.name_snapshot ?? '').trim() || 'Something no longer named';
+    const name = l.variant_label?.trim() ? `${base} · ${l.variant_label.trim()}` : base;
+    const at = byName.get(name) ?? { name, qty: 0, worth: 0 };
+    at.qty += l.qty ?? 0;
+    at.worth += l.line_total ?? 0;
+    byName.set(name, at);
+  }
+
+  return [...byName.values()]
+    .filter((l) => l.qty !== 0)
+    .sort((a, b) => b.qty - a.qty || b.worth - a.worth || a.name.localeCompare(b.name));
+}
+
+/** How many drinks left the counter, and what they came to. */
+export const soldTotals = (sold: SoldLine[]): { items: number; worth: number } => ({
+  items: sold.reduce((n, l) => n + l.qty, 0),
+  worth: sold.reduce((n, l) => n + l.worth, 0),
+});

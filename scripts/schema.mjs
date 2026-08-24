@@ -1504,6 +1504,20 @@ export const COLLECTIONS = [
       ['variance_value', 'i', null, true, 0],
       ['checked_by', 's', 64, false],
       ['note', 's', 300, false],
+      /**
+       * When an admin took this count back, and who did.
+       *
+       * A count that was wrong is not deleted. It happened: somebody stood at
+       * the shelf and wrote a number down, and the shelf moved because of it.
+       * Erasing the row would leave the movement that corrected the stock with
+       * nothing behind it and the next person unable to see that the figure
+       * they are looking at was ever disputed.
+       *
+       * So the count stays, marked, and the shelf is put back by an opposite
+       * movement — the same way the books undo an entry. See undoBarCount.
+       */
+      ['undone_at', 'd', null, false],
+      ['undone_by', 's', 64, false],
     ],
     indexes: [['shift_ing', 'key', ['shift_id', 'ingredient_id']], ['shift_phase', 'key', ['shift_id', 'phase']]],
   },
