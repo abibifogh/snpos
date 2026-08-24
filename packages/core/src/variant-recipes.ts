@@ -81,3 +81,53 @@ export function ingredientNameFor(drink: string, variant: string, max = 120): st
  * infer.
  */
 export const OWN_STOCK_QTY = 1;
+
+/**
+ * What the count sheet will actually ask for, said before somebody counts.
+ *
+ * Counting works on stock items, not on what a drink is called. A size only
+ * reaches the count sheet if it has a stock item of its own — see the toggle
+ * this returns the words for — and until it does, a drink with a small and a
+ * large is one line on the sheet however carefully the sizes were set up.
+ *
+ * Nothing said so. The sizes were on the menu, priced, selling, and the person
+ * counting the bar saw "Club (bottled)" once and had nowhere to put the number
+ * of large ones. From the catalogue everything looked finished.
+ *
+ * Returns nothing when there is nothing to warn about: no sizes, not a bar
+ * drink, or every size already carrying its own shelf.
+ */
+export function countedAsWarning(
+  drink: string,
+  variants: { label: string; ownStock: boolean }[],
+  module?: string,
+): string | null {
+  if (module !== 'bar' || variants.length === 0) return null;
+  const shared = variants.filter((v) => !v.ownStock).map((v) => v.label.trim() || 'one size');
+  if (shared.length === 0) return null;
+
+  const names = shared.length === 1
+    ? shared[0]
+    : `${shared.slice(0, -1).join(', ')} and ${shared[shared.length - 1]}`;
+  const name = drink.trim() || 'this drink';
+
+  return `${names} ${shared.length === 1 ? 'draws' : 'draw'} on ${name}'s own stock, so the count sheet `
+    + `asks for ${name} once rather than for each size. Turn on "Counted separately" for a size that is its `
+    + 'own thing on the shelf — a small and a large bottle are bought, stacked and counted apart.';
+}
+
+/**
+ * The drink's own stock row, once every size has a shelf of its own.
+ *
+ * A bottled drink that sells only as sizes stops being sold as itself, so its
+ * own stock item is never poured from again. Left on the count sheet it is a
+ * line that can only ever be right by accident: whatever is counted against it
+ * is a surplus that never moves, and a surplus nobody can explain is what
+ * teaches people to stop trusting the sheet.
+ */
+export function drinkStockIsSpare(
+  variants: { ownStock: boolean }[],
+  module?: string,
+): boolean {
+  return module === 'bar' && variants.length > 0 && variants.every((v) => v.ownStock);
+}

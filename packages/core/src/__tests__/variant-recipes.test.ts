@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   recipeFor, hasOwnRecipe, ingredientNameFor, OWN_STOCK_QTY,
+  countedAsWarning, drinkStockIsSpare,
 } from '../variant-recipes.ts';
 
 const rows = [
@@ -82,4 +83,46 @@ test('a size with no name is just the drink', () => {
 
 test('one of these uses one of its own', () => {
   assert.equal(OWN_STOCK_QTY, 1);
+});
+
+test('a size with no shelf of its own is named before anybody counts', () => {
+  /*
+    The report that prompted this: a bottled drink with a small and a large,
+    and a count sheet asking for the drink once. Everything in the catalogue
+    looked finished, and the sheet was right about the data it had.
+  */
+  const warning = countedAsWarning('Club (bottled)', [
+    { label: 'Small', ownStock: false },
+    { label: 'Large', ownStock: false },
+  ], 'bar');
+  assert.match(warning ?? '', /Small and Large draw on Club \(bottled\)'s own stock/);
+  assert.match(warning ?? '', /asks for Club \(bottled\) once rather than for each size/);
+});
+
+test('one size reads as one size', () => {
+  const warning = countedAsWarning('Club', [
+    { label: 'Small', ownStock: true },
+    { label: 'Large', ownStock: false },
+  ], 'bar');
+  assert.match(warning ?? '', /^Large draws on Club's own stock/);
+});
+
+test('nothing is said when there is nothing to say', () => {
+  // Every size counted apart, no sizes at all, or a kitchen dish — a warning
+  // on any of those is noise, and noise is what makes a real one invisible.
+  assert.equal(countedAsWarning('Club', [{ label: 'Small', ownStock: true }], 'bar'), null);
+  assert.equal(countedAsWarning('Club', [], 'bar'), null);
+  assert.equal(countedAsWarning('Jollof', [{ label: 'Large', ownStock: false }], 'kitchen'), null);
+});
+
+test('a drink sold only as sizes no longer needs a shelf of its own', () => {
+  /*
+    Its own stock item is never poured from again, so counting it can only be
+    right by accident: a surplus that never moves, which is what teaches
+    people to stop trusting the sheet.
+  */
+  assert.equal(drinkStockIsSpare([{ ownStock: true }, { ownStock: true }], 'bar'), true);
+  assert.equal(drinkStockIsSpare([{ ownStock: true }, { ownStock: false }], 'bar'), false);
+  assert.equal(drinkStockIsSpare([], 'bar'), false);
+  assert.equal(drinkStockIsSpare([{ ownStock: true }], 'craft'), false);
 });

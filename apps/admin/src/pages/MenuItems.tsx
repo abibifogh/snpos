@@ -435,6 +435,16 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       */
       if (module === 'bar' && v.ownStock && !hasOwnRecipe(recipes, itemId, variantId)) {
         const name = ingredientNameFor(editing?.name?.trim() ?? '', v.label.trim());
+        /*
+          NOT SWALLOWED.
+
+          This used to end in a catch that returned null, and the save carried
+          on reporting success. A size that failed to get its shelf then
+          behaved exactly like one nobody had asked for: on the menu, priced,
+          selling, and absent from every count sheet, with nothing anywhere
+          saying why. The write is allowed to fail; it is not allowed to fail
+          quietly.
+        */
         const ing = await db.createDocument(DB_ID, 'ingredients', ID.unique(), {
           venue_id: 'main',
           name,
@@ -449,17 +459,15 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
           // is the whole reason for giving it a shelf of its own.
           count_each_shift: true,
           active: true,
-        }).catch(() => null);
-        if (ing) {
-          await db.createDocument(DB_ID, 'recipes', ID.unique(), {
-            menu_item_id: itemId,
-            variant_id: variantId,
-            addon_option_id: '',
-            ingredient_id: ing.$id,
-            qty_per_unit: OWN_STOCK_QTY,
-            wastage_bp: 0,
-          }).catch(() => undefined);
-        }
+        });
+        await db.createDocument(DB_ID, 'recipes', ID.unique(), {
+          menu_item_id: itemId,
+          variant_id: variantId,
+          addon_option_id: '',
+          ingredient_id: ing.$id,
+          qty_per_unit: OWN_STOCK_QTY,
+          wastage_bp: 0,
+        });
       }
     }
   };

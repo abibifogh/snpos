@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Badge, Button, Field, Input, Select, Textarea, Toggle } from '@snpos/ui';
-import { parseMoney, toInput } from '@snpos/core';
+import { Badge, Button, Field, Input, Notice, Select, Textarea, Toggle } from '@snpos/ui';
+import { parseMoney, toInput, countedAsWarning, drinkStockIsSpare } from '@snpos/core';
 import type { Consignor, MenuItem, ProductVariant, VariantType, Module } from '@snpos/core';
 
 /** A size row being edited, before it is written. */
@@ -250,6 +250,38 @@ export function ConsignmentFields({
               No variant types set up yet, so the Kind box will be empty. Add them on the Variant types tab
               {consigned ? '' : ' — “Single and double”, “Glass and carafe”, “Bottle and crate”'}.
             </p>
+          )}
+
+          {/*
+            WHAT THE COUNT SHEET WILL ACTUALLY ASK FOR.
+
+            Counting works on stock items, not on what a drink is called, and a
+            size only reaches a count sheet if it has one of its own. Nothing
+            said so: a bottled beer with a small and a large was on the menu,
+            priced and selling, and the person counting the bar saw the drink
+            once with nowhere to put the number of large ones. Everything in
+            here looked finished, and the sheet was right about the data it
+            had. See countedAsWarning.
+          */}
+          {countedAsWarning(editing.name ?? '', variants, module) && (
+            <Notice tone="warn">{countedAsWarning(editing.name ?? '', variants, module)}</Notice>
+          )}
+
+          {/*
+            And the other way round: nothing left for the drink itself.
+
+            Once every size is counted apart, the drink's own stock item is
+            never poured from again — so a line for it on the count sheet can
+            only ever be right by accident, and a surplus nobody can explain is
+            what teaches people to stop trusting the whole sheet.
+          */}
+          {drinkStockIsSpare(variants, module) && (
+            <Notice>
+              Every size here is counted separately, so <strong>{editing.name || 'this drink'}</strong> itself
+              is no longer poured from anything. If it still has a stock item of its own, set that item to
+              <strong> Never counted</strong> under Stock — left on the sheet it reads as a surplus that never
+              moves, and a surplus nobody can explain is what stops people trusting the count.
+            </Notice>
           )}
 
           {/*
