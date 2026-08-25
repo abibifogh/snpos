@@ -10,10 +10,11 @@ import {
   park, unpark, parkProblem, parkKey, describeParked, autoLabel, isStale,
   cartKey, cartWorthHolding, restorableCart, restoredWords,
   chipColour, showsPicture, inkOn, downloadUrl, isService, canRepriceLine,
+  amountDueOn, unrungProblem,
 } from '@snpos/core';
 import type {
   CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, Settings, DiscountRow,
-  Recipe, Ingredient, MenuItem,
+  Recipe, Ingredient, MenuItem, TakenPayment,
 } from '@snpos/core';
 import { OptionSheet } from './OptionSheet';
 import { COUNTER_TABLE_ID, BAR_COUNTER_TABLE_ID } from './App';
@@ -82,6 +83,14 @@ export function OrderView({
   const [parkLabel, setParkLabel] = useState('');
   const [parking, setParking] = useState(false);
   const [existing, setExisting] = useState<Order[]>([]);
+  /**
+   * Money already recorded against those bills.
+   *
+   * Only so the till can ask for what is LEFT. A table that settled half its
+   * bill owes the other half, and a counter that asks for the whole thing
+   * again either takes it twice or is refused outright by the write.
+   */
+  const [taken, setTaken] = useState<(TakenPayment & Doc)[]>([]);
   const [existingItems, setExistingItems] = useState<Record<string, OrderItem[]>>({});
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
 
@@ -400,6 +409,19 @@ export function OrderView({
           const grouped: Record<string, OrderItem[]> = {};
           for (const r of rows) (grouped[r.order_id] ??= []).push(r);
           setExistingItems(grouped);
+          /*
+            What has already been paid on these bills.
+
+            A table that settled half its bill an hour ago owes the other half,
+            and a till that asks for the whole thing again either takes twice
+            the money or — now that the write refuses an overpayment — cannot
+            take any. Read here, with the lines, rather than per payment.
+          */
+          setTaken(
+            await listAll<TakenPayment & Doc>('payments', [
+              Query.equal('order_id', live.map((o) => o.$id)),
+            ]).catch(() => []),
+          );
         }
       }
       setSectionId(sections[0]?.category.$id ?? null);
@@ -504,8 +526,20 @@ export function OrderView({
 
   const newTotals = computeTotals({ lines: cart, settings: ctx.settings });
 
-  // What is already owed, plus whatever is being added right now.
+  // What is already owed, plus whatever is being added right now. For the
+  // running total on screen, which is what somebody reads out to a customer.
   const billTotal = existing.reduce((s, o) => s + o.total, 0) + (cart.length ? newTotals.total : 0);
+
+  /**
+   * What may actually be TAKEN, which is not the same figure.
+   *
+   * Only bills that exist. The running total above includes what is still on
+   * the counter, and money taken against that gets filed on the orders that do
+   * exist — thirty cedis against a twenty cedi bracelet, while the lip balm
+   * that made up the difference leaves the shop never rung up, never off the
+   * shelf, and never paid to whoever made it. See due.ts.
+   */
+  const dueNow = amountDueOn(existing, taken);
 
   /**
    * Can new business be started on this shift?
@@ -641,10 +675,30 @@ export function OrderView({
           {existing.length > 0 && (
             <Button
               variant="primary"
-              onClick={() => setPaying(true)}
+              onClick={() => {
+                /*
+                  Refused while anything is still on the counter.
+
+                  Not a fussy rule. The money would be taken against the bills
+                  that exist, and the item that made up the difference would
+                  leave the shop never rung up — off nobody's shelf, on nobody's
+                  count sheet, and never paid to whoever made it. Ringing it up
+                  is the button beside this one.
+                */
+                const problem = unrungProblem(
+                  cart.reduce((n, l) => n + l.qty, 0),
+                  newTotals.total,
+                  (n) => formatMoney(n, ctx.settings),
+                );
+                if (problem) { onToast(problem, 'err'); return; }
+                setPaying(true);
+              }}
               disabled={!ctx.shift || !ctx.profile?.can_mark_paid}
             >
-              Take payment · {formatMoney(billTotal, ctx.settings)}
+              {/* What is actually collectable, not the running total. Asking
+                  for a figure the till will then refuse to take is worse than
+                  showing the smaller one. */}
+              Take payment · {formatMoney(Math.max(0, dueNow - discount), ctx.settings)}
             </Button>
           )}
         </div>
@@ -1131,7 +1185,20 @@ export function OrderView({
           ctx,
           methods,
           orders: existing,
-          amountDue: Math.max(0, billTotal - discount),
+          /*
+            THE BILLS, NEVER THE COUNTER.
+
+            This was `billTotal − discount`, and billTotal folds in the cart —
+            so the till asked for money that no order accounted for and then
+            filed it against the orders that existed. See due.ts for what that
+            costs beyond the wrong figure.
+
+            The discount still comes off: on a bill being settled later it has
+            not been applied to any order yet. On a counter sale it has already
+            gone into the order and been reset to nought by then, so this
+            cannot take it off twice.
+          */
+          amountDue: Math.max(0, dueNow - discount),
           onClose: () => setPaying(false),
           onDone: async () => {
             setPaying(false);

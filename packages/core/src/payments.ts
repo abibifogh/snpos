@@ -7,6 +7,8 @@ import { isLivePayment } from './shift-rules';
 // Which shift a settled sale is filed under, which is not always the one that
 // took the money. Pure, for the same reason.
 import { shiftStampForPayment } from './shift-move';
+// What a bill still owes, and what counts as paying more than that. Pure.
+import { overpaying } from './due';
 
 export { isLivePayment };
 
@@ -89,6 +91,38 @@ export async function recordPayment(input: RecordPaymentInput): Promise<number> 
     shiftId: input.shiftId,
     shiftModule: input.shiftModule,
   });
+
+  /*
+    MORE MONEY THAN THE BILL COMES TO IS NOT RECORDED AGAINST THE BILL.
+
+    Checked here, where the row is written, and not only on the screen that
+    typed it. The screen that produced GH₵30 against a GH₵20 bracelet WAS
+    capping the figure — against a number with the un-rung cart folded into it,
+    so the cap agreed with it and let it through. A guard has to measure
+    against the bill itself or it is measuring the same mistake twice.
+
+    Refused rather than trimmed. Trimming would take the money the customer
+    handed over and quietly lose the difference, which is the worse of the two
+    and impossible to notice afterwards. The counter has an answer for the
+    excess — ring the rest up, or put it in the tip box — and both belong to
+    the person standing there, not to this function.
+
+    A tip is not measured. It was never owed on the bill and has its own field.
+
+    FAILS OPEN. If what is outstanding cannot be read — the till is offline,
+    which is a case this system supports and queues writes through — the sale
+    goes ahead. A guard against a rare mistake must not become a till that
+    cannot take money in a power cut, and the screen has already refused the
+    thing this is here to catch.
+  */
+  const outstanding = await amountOutstanding(input.order).catch(() => null);
+  if (outstanding !== null && overpaying(outstanding, input.amount) > 0) {
+    throw new Error(
+      'That is more than this bill still owes. Anything else the customer is buying has to be rung up '
+      + 'first — otherwise the money goes down against the wrong sale and the item never leaves the shelf, '
+      + 'so nobody is paid for it. A genuine extra belongs in the tip box.',
+    );
+  }
 
   await createOrQueue('payments', ID.unique(), {
     venue_id: input.venueId,
