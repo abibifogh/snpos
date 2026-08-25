@@ -66,6 +66,7 @@ export * from './invite';
 export * from './shift-lock';
 export * from './shift-totals';
 export * from './counted-breakdown';
+export * from './unreachable';
 export * from './purchase-flags';
 export * from './purchase-alerts';
 export * from './expense-analysis';

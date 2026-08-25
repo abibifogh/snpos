@@ -1,6 +1,9 @@
 import { Client, Account, Databases, Storage, Teams, ID, Query, Permission, Role } from 'appwrite';
 import { chunk, QUERY_VALUES_MAX } from './reading';
 import { scopedQueries, scopedPayload, scopedPermissions } from './org';
+// What to say when nothing comes back at all. Pure, so both sentences can be
+// checked without a browser in front of them.
+import { looksUnreachable, unreachableMessage } from './unreachable';
 
 /**
  * One Appwrite client per app, configured from build-time env vars.
@@ -89,19 +92,62 @@ export { ID, Query, Permission, Role };
  * items is the kind of bug that only shows up once a real menu is loaded.
  */
 /**
- * Whether Appwrite has answered this browser at all, this session.
+ * Whether Appwrite has ever answered this browser from this address.
  *
  * Not statistics. A "could not reach" message has to guess between an address
  * that was never registered and a service that has stopped answering, and it
  * used to ask the person to work that out — which sends an owner whose app has
  * been running for months to check a platform list where the entry is already
- * there. By the time anything on a page can fail, a read has already succeeded,
- * so the app knows the answer and should not be asking.
+ * there.
+ *
+ * KEPT ON THE DEVICE, and that is the whole point of it.
+ *
+ * It began as a variable, reset by every page load, on the reasoning that by
+ * the time anything can fail a read has already succeeded. That is true
+ * everywhere except the one screen where this message matters most: the sign-in
+ * page, where NOTHING has been read yet. So a till that has been selling for
+ * months, reloaded on a morning when the wifi is down, was told its address had
+ * never worked and sent to register a platform that has been registered since
+ * the day it was set up — while the actual cause, sitting in the same sentence,
+ * read as an afterthought.
+ *
+ * Per hostname, because that is what the claim is about. The staging address
+ * having worked says nothing about the live one.
+ *
+ * Every read and write of it is wrapped: a browser with site data blocked
+ * throws on the accessor itself, and the honest fallback is "we do not know",
+ * which is the message that names both causes.
  */
-let everReached = false;
+const REACHED_KEY = 'snpos.reached';
+
+const hostKey = (): string => {
+  try {
+    return `${REACHED_KEY}.${window.location.hostname}`;
+  } catch {
+    return REACHED_KEY;
+  }
+};
+
+let everReached = ((): boolean => {
+  try {
+    return window.localStorage.getItem(hostKey()) === '1';
+  } catch {
+    return false;
+  }
+})();
 
 /** Called wherever a request comes back, so the error text can stop guessing. */
-export const noteReachable = () => { everReached = true; };
+export const noteReachable = () => {
+  if (everReached) return;
+  everReached = true;
+  try {
+    window.localStorage.setItem(hostKey(), '1');
+  } catch {
+    // Nothing to do. The message is a shade less specific on this device and
+    // nothing else about the app changes, which is not worth a failed write
+    // reaching anybody.
+  }
+};
 export const hasReachedAppwrite = () => everReached;
 
 export async function listAll<T>(collectionId: string, queries: string[] = []): Promise<T[]> {
@@ -288,39 +334,20 @@ export function humanError(e: unknown): string {
   if (/already exists/i.test(msg)) return 'Something with that name or code already exists.';
   if (/Rate limit/i.test(msg)) return 'Too many attempts. Wait a minute and try again.';
 
-  if (/Network|fetch failed|Failed to fetch|Load failed|NetworkError/i.test(msg)) {
-    /**
-     * Three causes, and the browser cannot tell them apart.
-     *
-     * This used to name only the first, confidently, which is right on the day
-     * somebody sets the system up and wrong every day afterwards — an address
-     * that has been working for months has not quietly unregistered itself,
-     * and sending an owner to the platform list to find it already there
-     * teaches them the message is not worth reading.
-     *
-     * Ordered by which is actually likely, and the order depends on whether it
-     * has ever worked from here. Said in that order, briefly, so somebody can
-     * work down it.
-     */
-    // Appwrite has answered this browser already, so the address is registered
-    // and the question is what changed since. Saying so removes the one step
-    // that is certainly not the problem.
-    if (everReached) {
-      return (
-        `Could not reach Appwrite just then, though it answered earlier on this page — so ${window.location.hostname} `
-        + 'is set up correctly and something has changed since. Check this device is still online, then the '
-        + 'Appwrite console for a project that is paused or over its plan limits, then Appwrite\'s own status. '
-        + 'Nothing was saved, so it is safe to try again.'
-      );
+  /*
+    Several causes, and the browser cannot tell them apart. Which one to print
+    first depends on whether Appwrite has ever answered this device from here —
+    see unreachable.ts, where both sentences live so they can be checked
+    without a browser.
+  */
+  if (looksUnreachable(msg)) {
+    let host = '';
+    try {
+      host = window.location.hostname;
+    } catch {
+      // Not in a browser. The message still reads correctly without a name.
     }
-
-    return (
-      `Could not reach Appwrite from ${window.location.hostname}. `
-      + 'If this address has never worked: it needs registering, in the Appwrite console under '
-      + `Settings → Platforms, as a Web app with hostname "${window.location.hostname}". `
-      + 'If it worked until now: check whether the project is paused or over its plan limits, '
-      + 'whether Appwrite itself is having trouble, and whether this device is online.'
-    );
+    return unreachableMessage(host, everReached);
   }
 
   return msg;
