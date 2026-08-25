@@ -1795,10 +1795,27 @@ export const COLLECTIONS = [
       ['missing_pieces', 'i', null, true, 0],
       ['missing_value', 'i', null, true, 0],
       ['surplus_pieces', 'i', null, true, 0],
+      /**
+       * The shift this count was taken on, and which end of it.
+       *
+       * The shop counts its shelf when a shift opens and again when it closes,
+       * the way the bar counts its bottles — a shelf handed from one person to
+       * the next with only one count in it is not a handover, it is a number
+       * the next person is stuck with.
+       *
+       * Both optional. A count taken from the office belongs to no shift at
+       * all, and every count written before this existed has neither.
+       */
+      ['shift_id', 's', 64, false],
+      ['phase', 'e', ['open', 'close'], false],
     ],
     indexes: [
       ['status_counted', 'key', ['status', 'counted_at']],
       ['venue_status', 'key', ['venue_id', 'status']],
+      // "Has this shift been counted in yet" is asked by the till on every
+      // load, so it is answered by the server rather than by reading every
+      // count the shop has ever taken.
+      ['shift_phase', 'key', ['shift_id', 'phase']],
     ],
   },
   {

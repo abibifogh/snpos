@@ -108,7 +108,7 @@ export const newShelfCadence = (existing: { count_each_shift?: boolean }[]): boo
   hasShiftCountChoice(existing);
 
 /**
- * Which sides count their shelves at BOTH ends of a shift.
+ * Which sides count their stock at BOTH ends of a shift.
  *
  * The kitchen counts once, at the end. Nobody accepts the rice at four in the
  * afternoon and nobody signs for it, so an opening count there would be a
@@ -119,12 +119,26 @@ export const newShelfCadence = (existing: { count_each_shift?: boolean }[]): boo
  * handover — it is a single number that the next person is stuck with. So the
  * bar is asked twice: what did you accept, and what are you handing over.
  *
+ * THE SHOP IS THE SAME KIND OF PLACE. A shelf of pieces is handed over in
+ * exactly the way a bar's bottles are, and it is more exposed rather than
+ * less: a woven basket walks out of a shop far more easily than a bottle
+ * walks out from behind a bar, and it is worth more. The shop counted only
+ * when somebody chose to, from a screen in the office, which meant a piece
+ * that went missing had a week of shifts to have gone missing on and no way
+ * to say whose.
+ *
+ * What the two sides count is not the same thing — the bar counts bottles by
+ * volume off its own shelves, the shop counts whole pieces that belong to
+ * makers — so they have their own sheets. This says only that both are asked
+ * twice.
+ *
  * A function rather than a comparison spelled out at each call site, because
  * "does this side count at open" is asked from the till, from the close, and
  * from the sheet itself, and three copies of `module === 'bar'` is three places
  * to forget when a fourth trade arrives.
  */
-export const countsAtBothEnds = (module?: string): boolean => (module ?? 'kitchen') === 'bar';
+export const countsAtBothEnds = (module?: string): boolean =>
+  (module ?? 'kitchen') === 'bar' || (module ?? 'kitchen') === 'craft';
 
 export interface BarCountLine {
   ingredientId: string;

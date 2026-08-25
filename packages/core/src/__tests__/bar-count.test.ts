@@ -159,12 +159,24 @@ test('an explicit no is not the same as never having said', () => {
   assert.equal(hasShiftCountChoice(rows), false);
 });
 
-test('the bar counts at both ends of a shift; nobody else does', () => {
-  // The kitchen counts once, at the end: nobody accepts the rice at four in
-  // the afternoon. The shop's stock counts itself through intakes and sales.
+test('the bar and the shop count at both ends of a shift; the kitchen does not', () => {
+  /**
+   * The kitchen counts once, at the end: nobody accepts the rice at four in
+   * the afternoon and nobody signs for it, so an opening count there would be
+   * a question with no purpose.
+   *
+   * A bar's bottles are handed from one person to the next, and a handover
+   * with only one count in it is a number the next person is stuck with.
+   *
+   * THE SHOP IS THE SAME KIND OF PLACE, and was left out. Its counts happened
+   * only when somebody chose to, from a screen in the office — so a piece that
+   * went missing had a week of shifts to have gone missing on and no way to
+   * say whose. A woven basket walks out of a shop more easily than a bottle
+   * walks out from behind a bar, and is worth more.
+   */
   assert.equal(countsAtBothEnds('bar'), true);
+  assert.equal(countsAtBothEnds('craft'), true);
   assert.equal(countsAtBothEnds('kitchen'), false);
-  assert.equal(countsAtBothEnds('craft'), false);
   // An older row with no side on it is the kitchen, the same fallback the
   // rest of the system uses. Defaulting the other way would start asking
   // every restaurant for an opening count it never agreed to.

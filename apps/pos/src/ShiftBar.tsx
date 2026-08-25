@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import {
   Button, Modal, Field, Input, Notice, Badge, ShiftCloseForm, resolveCounts,
-  ShiftHistory, ExpenseModal, HandoverModal, BarCountModal,
+  ShiftHistory, ExpenseModal, HandoverModal, BarCountModal, CraftCountModal,
 } from '@snpos/ui';
 import type { BlockerRow, CountRow, StockRow, ShiftFlow } from '@snpos/ui';
 import {
   formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift as createShift, shiftBlockers, expectedTakings, closeShift,
   openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, HANDOVER_ENABLED,
-  countsAtBothEnds, hasOpeningCount, ownFigure, floatOrigin, floatMethods,
+  countsAtBothEnds, hasOpeningCount, shiftCountPhases, ownFigure, floatOrigin, floatMethods,
 } from '@snpos/core';
 import type { PaymentMethod, Shift, FloatSource } from '@snpos/core';
 import type { PosContext } from './App';
@@ -117,16 +117,28 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
     setError(null);
   }, [ctx.module]);
 
+  /**
+   * Which sheet this side counts on.
+   *
+   * The bar and the shop are both counted in and out, and what they count is
+   * not the same thing: the bar counts bottles by volume off its own shelves,
+   * the shop counts whole pieces that belong to makers and whose adjustments
+   * go past an admin. One question, two sheets.
+   */
+  const shopCounts = ctx.module === 'craft';
+
   useEffect(() => {
     if (!countsShelves || !shiftId) { setCountedIn(undefined); return; }
     let live = true;
-    void hasOpeningCount(shiftId)
+    void (shopCounts
+      ? shiftCountPhases(shiftId).then((p) => p.has('open'))
+      : hasOpeningCount(shiftId))
       .then((done) => { if (live) setCountedIn(done); })
       // A read that fails must not invent an accusation. Silence is better
       // than telling a bartender they skipped a count they may well have made.
       .catch(() => { if (live) setCountedIn(true); });
     return () => { live = false; };
-  }, [countsShelves, shiftId]);
+  }, [countsShelves, shopCounts, shiftId]);
 
   /**
    * Whether the count is optional. It is not, unless an admin has said so.
@@ -507,21 +519,23 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         </div>
       )}
 
-      {/* A bar shift running on an uncounted shelf.
+      {/* A shift running on an uncounted shelf, bar or shop.
           Left on screen rather than shown once and dismissed, because the cost
           of skipping it does not land tonight — it lands on whoever counts out,
           measured against a figure nobody checked. */}
       {ctx.shift && countsShelves && countedIn === false && (
         <div style={{ padding: '0.5rem 1rem 0' }}>
           <Notice tone="warn">
-            <strong>The bar has not been counted in.</strong>
+            <strong>{shopCounts ? 'The shop' : 'The bar'} has not been counted in.</strong>
             <div className="small" style={{ marginTop: '0.3rem' }}>
               Until it is, tonight&rsquo;s handover is measured against whatever the last shift left rather than
               against what you accepted.
               {mustCount && ' The sheet could not be loaded a moment ago; open it again once you have a connection.'}
             </div>
             <div style={{ marginTop: '0.45rem' }}>
-              <Button size="sm" variant="primary" onClick={() => setBarCount('open')}>Count the bar in</Button>
+              <Button size="sm" variant="primary" onClick={() => setBarCount('open')}>
+                {shopCounts ? 'Count the shop in' : 'Count the bar in'}
+              </Button>
             </div>
           </Notice>
         </div>
@@ -570,9 +584,48 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         />
       )}
 
+      {/*
+        THE SHOP'S OWN SHEET, at the same two moments as the bar's.
+
+        Whole pieces rather than bottles, and it does not move the shelf: the
+        shop's adjustments go to an admin, which is how every other adjustment
+        in this trade already works. A shift can therefore close on a count
+        nobody has approved yet, and that is deliberate — making the close wait
+        for an admin would leave a cashier at a locked till at ten at night.
+
+        The same handling of leaving-versus-skipping as the bar below, because
+        it is the same rule and one of them getting it wrong is how a shift
+        closes on a shelf nobody looked at.
+      */}
+      {barCount && countsShelves && shopCounts && ctx.shift && (
+        <CraftCountModal
+          venueId={ctx.venue.$id}
+          shiftId={ctx.shift.$id}
+          phase={barCount}
+          userId={ctx.userId}
+          settings={ctx.settings}
+          dismissLabel={barCount === 'close' ? 'Close without counting' : 'Not now'}
+          onEmpty={() => { setCountedIn(true); setCountedOut(true); }}
+          onClose={(waived) => {
+            const wasClosing = barCount === 'close';
+            setBarCount(null);
+            if (wasClosing && waived) { void startClose(true); return; }
+            if (wasClosing) {
+              onToast('The shop has not been counted out, so the shift cannot close yet.', 'err');
+            }
+          }}
+          onDone={(m) => {
+            const wasClosing = barCount === 'close';
+            setBarCount(null);
+            if (wasClosing) { setCountedOut(true); void startClose(true); } else setCountedIn(true);
+            onToast(m);
+          }}
+        />
+      )}
+
       {/* `countsShelves` as well as the sheet itself, so a side that does not
           count shelves cannot be shown one however this state was reached. */}
-      {barCount && countsShelves && ctx.shift && (
+      {barCount && countsShelves && !shopCounts && ctx.shift && (
         <BarCountModal
           venueId={ctx.venue.$id}
           shiftId={ctx.shift.$id}
@@ -692,14 +745,14 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
               the way back on it. Once this closes the shelf is signed off. */}
           {countsShelves && !countedOut && (
             <Notice tone="warn">
-              <strong>The bar was not counted out.</strong>
+              <strong>{shopCounts ? 'The shop was' : 'The bar was'} not counted out.</strong>
               <div className="small" style={{ marginTop: '0.3rem' }}>
                 The shift will close on whatever the sales say is left, and nobody will know whether that is what
                 is actually there.
               </div>
               <div style={{ marginTop: '0.45rem' }}>
                 <Button size="sm" onClick={() => { setClosing(false); setBarCount('close'); }}>
-                  Count the bar out first
+                  {shopCounts ? 'Count the shop out first' : 'Count the bar out first'}
                 </Button>
               </div>
             </Notice>

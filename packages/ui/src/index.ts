@@ -10,6 +10,7 @@ export * from './shift';
 // same purchase ends up filed two different ways.
 export * from './shifthistory';
 export * from './barcount';
+export * from './craftcount';
 export * from './till';
 export * from './eightysix';
 export * from './ErrorBoundary';

@@ -661,9 +661,22 @@ export async function submitCount(opts: {
   lines: CountLine[];
   userId: string;
   note?: string;
+  /** The shift this was taken on, and which end of it, where there is one. */
+  shiftId?: string;
+  phase?: 'open' | 'close';
 }): Promise<{ countId: string; lines: number }> {
   const differences = differencesIn(opts.lines);
-  if (differences.length === 0) return { countId: '', lines: 0 };
+  /*
+    A count that found nothing is still a count.
+
+    Only where it belongs to a shift. From the office, a count with no
+    differences is genuinely nothing to file — there is no question it answers.
+    But a shift asked "what is on the shelf" and told "exactly what should be"
+    has ANSWERED, and that answer is the whole record of the handover: without
+    a row, the till has no way to tell a shop that counted and found everything
+    from one that never counted at all, and it would go on asking.
+  */
+  if (differences.length === 0 && !opts.shiftId) return { countId: '', lines: 0 };
 
   const summary = summariseCount(opts.lines);
   const countId = ID.unique();
@@ -686,19 +699,64 @@ export async function submitCount(opts: {
     });
   }
 
-  await db.createDocument(DB_ID, 'stock_counts', countId, {
+  const header: Record<string, unknown> = {
     venue_id: opts.venueId,
     counted_by: opts.userId,
     counted_at: new Date().toISOString(),
     note: opts.note?.trim() ?? '',
-    status: 'pending',
+    /*
+      A count that found nothing needs no approval.
+
+      There is nothing to apply and nothing to argue with, so sending it to an
+      admin would put a decision in front of somebody that has only one answer.
+      Filed as approved on the spot, with the shift's own record intact.
+    */
+    status: differences.length === 0 ? 'approved' : 'pending',
     line_count: differences.length,
     missing_pieces: summary.missingPieces,
     missing_value: summary.missingValue,
     surplus_pieces: summary.surplusPieces,
-  });
+  };
+
+  /*
+    The shift's stamp, on a database that may not have the column yet.
+
+    Appwrite refuses the WHOLE document for one unknown attribute, and this
+    header is written last — so a shop that has not been provisioned since this
+    shipped would lose the entire count rather than just the stamp. The lines
+    are already on file at this point; losing the header would leave them
+    orphaned and invisible. So it is attempted with the stamp and, failing
+    that, written without: a count filed under no shift is a great deal better
+    than a count that vanished.
+  */
+  const stamped = { ...header, shift_id: opts.shiftId ?? '', phase: opts.phase };
+  await db.createDocument(DB_ID, 'stock_counts', countId, opts.shiftId ? stamped : header)
+    .catch(() => db.createDocument(DB_ID, 'stock_counts', countId, header));
 
   return { countId, lines: differences.length };
+}
+
+/**
+ * Which ends of this shift the shop has already counted.
+ *
+ * Asked by the till to decide whether to put the sheet in front of somebody.
+ * Never throws: a till that will not open a shift because it could not find
+ * out whether a count exists is worse than one that asks a second time.
+ */
+export async function shiftCountPhases(shiftId: string): Promise<Set<'open' | 'close'>> {
+  if (!shiftId) return new Set();
+  const rows = await listAll<{ phase?: string; status?: string }>('stock_counts', [
+    Query.equal('shift_id', shiftId),
+  ]).catch(() => []);
+  const done = new Set<'open' | 'close'>();
+  for (const r of rows) {
+    // A REJECTED count is not a count. The shelf was walked and the answer was
+    // turned down, so the question is open again — and a shift that treated it
+    // as answered would close on a figure an admin has already refused.
+    if (r.status === 'rejected') continue;
+    if (r.phase === 'open' || r.phase === 'close') done.add(r.phase);
+  }
+  return done;
 }
 
 export const pendingCounts = () =>
