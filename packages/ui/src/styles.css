@@ -993,3 +993,24 @@ table.data th .sort-order {
   .modal { max-width: 100%; width: 100%; max-height: 100dvh; border-radius: 0; }
   .modal-backdrop { padding: 0; align-items: stretch; }
 }
+
+/*
+  A cell that opens something, still reading as the cell it is.
+
+  Used where a figure in a table has a list behind it. A button styled as a
+  button would say "this is an action", and it is not — it is a name, which
+  happens to be pressable. The underline appears on hover so a first-time
+  reader finds out, and the arrow beside it says so before anybody hovers,
+  which is the only clue a touchscreen ever gets.
+*/
+.linky {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.linky:hover { text-decoration: underline; }
+.linky:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 3px; }

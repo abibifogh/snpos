@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import {
   Card, Empty, Notice, Spinner, Badge, Modal, Button, Field, Input, Textarea, useToast,
   FilterBar, FilterField,
@@ -45,6 +45,20 @@ interface Shift extends Doc {
 }
 
 interface PaymentMethod extends Doc { name: string }
+
+/** A payment as this screen needs it, with the order it settled. */
+interface ShiftPaymentRow extends Doc {
+  order_id: string;
+  method_id: string;
+  amount: number;
+  tip?: number;
+  status?: string;
+  taken_by?: string;
+  /** What the card machine said. The only thing tying this to a statement. */
+  reference?: string;
+  /** Filled in after the orders are read, so the list can name the sale. */
+  orderNo?: string;
+}
 interface Expense extends Doc {
   shift_id?: string;
   amount: number;
@@ -297,9 +311,53 @@ export function ShiftsPage() {
   const [to, setTo] = useState(todayStr());
 
   /** Settling a night, so nothing in it can be changed again. */
+  /**
+   * The payments behind a shift's figures, and which method is open.
+   *
+   * An expected figure is three things folded into one — the float, what was
+   * taken, less what was paid out — and the takings half was a number with
+   * nothing behind it. Somebody matching a card statement had a total and no
+   * list, and somebody querying a cash figure had no way to see which sales
+   * made it up.
+   *
+   * Loaded when a shift is opened rather than for every shift in the range: a
+   * month of payments is a large read to do for a list nobody has clicked.
+   */
+  const [detailPayments, setDetailPayments] = useState<ShiftPaymentRow[] | null>(null);
+  const [openMethod, setOpenMethod] = useState<string | null>(null);
+
   const [sealing, setSealing] = useState<Shift | null>(null);
   const [sealReason, setSealReason] = useState('');
   const [sealBusy, setSealBusy] = useState(false);
+
+  /**
+   * Open a shift, and read the payments that made its figures.
+   *
+   * The order numbers come with them: a payment on its own says an amount and
+   * a method, and the question being asked is always about a SALE. Read by id
+   * rather than by another window, because a bill settled after a handover
+   * belongs to the shift that took the money and not to the clock.
+   */
+  const openDetail = async (shift: Shift) => {
+    setDetail(shift);
+    setOpenMethod(null);
+    setDetailPayments(null);
+    try {
+      const rows = await listAll<ShiftPaymentRow>('payments', [Query.equal('shift_id', shift.$id)]);
+      const orders = await listByIds<Doc & { order_no?: string }>(
+        'orders', '$id', [...new Set(rows.map((r) => r.order_id).filter(Boolean))],
+      ).catch(() => []);
+      const noFor = new Map(orders.map((o) => [o.$id, o.order_no ?? '']));
+      setDetailPayments(
+        rows
+          .map((r) => ({ ...r, orderNo: noFor.get(r.order_id) ?? '' }))
+          .sort((a, b) => a.$createdAt.localeCompare(b.$createdAt)),
+      );
+    } catch {
+      // A list that will not load must not take the figures above it down.
+      setDetailPayments([]);
+    }
+  };
 
   const load = async () => {
     const s = await listCreatedBetween<Shift>('shifts', dayStart(from), dayEnd(to));
@@ -517,7 +575,7 @@ export function ShiftsPage() {
                             {isSealed(s) ? 'Reopen' : 'Settle'}
                           </Button>
                         )}
-                        <Button size="sm" variant="ghost" onClick={() => setDetail(s)}>Details</Button>
+                        <Button size="sm" variant="ghost" onClick={() => void openDetail(s)}>Details</Button>
                       </td>
                     </tr>
                   );
@@ -682,9 +740,36 @@ export function ShiftsPage() {
               <tbody>
                 {Object.keys({ ...parseMap(detail.opening_floats), ...parseMap(detail.expected) }).map((id) => {
                   const diff = parseMap(detail.variance)[id] ?? 0;
+                  /*
+                    The sales behind the figure, opened by pressing the method.
+
+                    "Expected" is three things folded into one — the float,
+                    what was taken, less what was paid out — and the taken half
+                    was a total with nothing behind it. Somebody matching a
+                    card statement had a number and no list; somebody querying
+                    a cash figure had no way to see which sales made it up.
+                  */
+                  const mine = (detailPayments ?? []).filter((p) => p.method_id === id);
+                  const live = mine.filter((p) => p.status !== 'voided' && p.status !== 'refunded');
+                  const taken = live.reduce((n, p) => n + p.amount + (p.tip ?? 0), 0);
+                  const showing = openMethod === id;
                   return (
-                    <tr key={id}>
-                      <td>{methodName(id)}</td>
+                    <Fragment key={id}>
+                    <tr>
+                      <td>
+                        <button
+                          type="button"
+                          className="linky"
+                          aria-expanded={showing}
+                          onClick={() => setOpenMethod(showing ? null : id)}
+                        >
+                          {methodName(id)}
+                          <span className="dim small">
+                            {' '}{showing ? '\u25be' : '\u25b8'}
+                            {detailPayments === null ? '' : ` ${live.length}`}
+                          </span>
+                        </button>
+                      </td>
                       <td className="num dim">{settings ? formatMoney(parseMap(detail.opening_floats)[id] ?? 0, settings) : 0}</td>
                       <td className="num">{settings ? formatMoney(parseMap(detail.expected)[id] ?? 0, settings) : 0}</td>
                       <td className="num">{settings ? formatMoney(parseMap(detail.counted)[id] ?? 0, settings) : 0}</td>
@@ -699,6 +784,83 @@ export function ShiftsPage() {
                         )}
                       </td>
                     </tr>
+                    {showing && (
+                      <tr>
+                        <td colSpan={5} style={{ background: 'var(--surface-2)' }}>
+                          {detailPayments === null ? (
+                            <span className="small dim">Reading the sales…</span>
+                          ) : mine.length === 0 ? (
+                            <span className="small dim">
+                              Nothing was taken by {methodName(id)} on this shift. The expected figure is the
+                              float alone, less anything paid out of it.
+                            </span>
+                          ) : (
+                            <>
+                              <div className="table-wrap">
+                                <table className="data">
+                                  <thead>
+                                    <tr>
+                                      <th>When</th><th>Order</th><th className="num">Amount</th>
+                                      <th className="num">Tip</th><th>Reference</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {mine.map((p) => {
+                                      const dead = p.status === 'voided' || p.status === 'refunded';
+                                      return (
+                                        <tr key={p.$id} className={dead ? 'dim' : undefined}>
+                                          <td className="small dim">
+                                            {new Date(p.$createdAt).toLocaleTimeString([], {
+                                              hour: '2-digit', minute: '2-digit',
+                                            })}
+                                          </td>
+                                          <td className="small">
+                                            {p.orderNo || '\u2014'}
+                                            {dead && <> <Badge tone="warn">{p.status}</Badge></>}
+                                          </td>
+                                          <td
+                                            className="num"
+                                            style={dead ? { textDecoration: 'line-through' } : undefined}
+                                          >
+                                            {settings ? formatMoney(p.amount, settings) : p.amount}
+                                          </td>
+                                          <td className="num dim">
+                                            {p.tip ? (settings ? formatMoney(p.tip, settings) : p.tip) : '\u2014'}
+                                          </td>
+                                          {/* The card machine's own number, in a
+                                              monospace and selectable: it gets
+                                              copied into a provider's search box,
+                                              which is the entire reason anybody
+                                              opens this list. */}
+                                          <td
+                                            className="small"
+                                            style={{ fontFamily: 'ui-monospace, monospace', userSelect: 'all' }}
+                                          >
+                                            {p.reference || <span className="dim">{'\u2014'}</span>}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                              {/* How the figure above is built, said rather than
+                                  left to be worked out: this list adds up to the
+                                  taken half of it and nothing else. */}
+                              <p className="small dim" style={{ margin: '0.5rem 0 0' }}>
+                                {settings ? formatMoney(taken, settings) : taken} taken through{' '}
+                                {methodName(id)}
+                                {(parseMap(detail.opening_floats)[id] ?? 0) > 0
+                                  && `, on top of a float of ${settings
+                                    ? formatMoney(parseMap(detail.opening_floats)[id] ?? 0, settings) : 0}`}
+                                . Anything paid out of it comes off again to give the expected figure.
+                              </p>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>
