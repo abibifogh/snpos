@@ -10,6 +10,7 @@ import {
   voidPayment, isLivePayment, changePaymentMethod, logPaymentMethodChange,
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, flatten, MODULE_LABELS,
   listByIds, listCreatedBetween, moveOrderToShift, shiftChoices, moveProblem, moveEffects, describeMove,
+  shiftDay, shiftsOnDay, dayMoveProblem, openShiftForDay,
   repostShiftAccounts,
 } from '@snpos/core';
 import type {
@@ -152,6 +153,17 @@ export function OrdersPage() {
    */
   const [moving, setMoving] = useState<{ order: Order; shifts: MovableShift[] } | null>(null);
   const [moveTo, setMoveTo] = useState('');
+  /**
+   * The day this sale should be filed under.
+   *
+   * The question an admin actually has is a DATE — "this belongs to Tuesday" —
+   * and a shift code is the answer to it rather than the question. So the day
+   * is picked first and the shifts on it are what is then offered, which is
+   * also what makes "there isn't one" a state the screen can do something
+   * about instead of a dead end.
+   */
+  const [moveDay, setMoveDay] = useState('');
+  const [openingDay, setOpeningDay] = useState(false);
   const [moveReason, setMoveReason] = useState('');
   const [moveBusy, setMoveBusy] = useState(false);
   const [moveLoading, setMoveLoading] = useState(false);
@@ -188,6 +200,36 @@ export function OrdersPage() {
   /** A week either side. Wide enough for a bill settled after a handover. */
   const MOVE_WINDOW_DAYS = 7;
 
+  /**
+   * Open a shift for the chosen day, then offer it as the destination.
+   *
+   * Created closed and empty — see openShiftForDay. The move itself is still a
+   * separate press: opening a container and filing something in it are two
+   * decisions, and doing both on one button would leave an admin who changed
+   * their mind with a shift they did not want and no obvious way back.
+   */
+  const openDayShift = async (order: Order) => {
+    if (!moveDay || !moveReason.trim()) return;
+    setOpeningDay(true);
+    try {
+      const shift = await openShiftForDay({
+        venueId: order.venue_id,
+        day: moveDay,
+        module: (order.module ?? 'kitchen') as Module,
+        userId: user?.$id ?? '',
+        reason: moveReason.trim(),
+      });
+      setMoving((m) => (m ? { ...m, shifts: [...m.shifts, shift as unknown as MovableShift] } : m));
+      setShiftNames((n) => ({ ...n, [shift.$id]: shift.code }));
+      setMoveTo(shift.$id);
+      toast(`${shift.code} opened for ${moveDay}. It is closed and empty until something is moved onto it.`);
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setOpeningDay(false);
+    }
+  };
+
   const startMove = async (order: Order) => {
     setMoveLoading(true);
     try {
@@ -213,6 +255,7 @@ export function OrdersPage() {
       setShiftNames((n) => ({ ...n, ...Object.fromEntries(all.map((s) => [s.$id, s.code])) }));
       setMoveTo('');
       setMoveReason('');
+      setMoveDay(shiftDay({ opened_at: order.$createdAt }));
       setMoving({ order, shifts: all });
     } catch (e) {
       toast(humanError(e), 'err');
@@ -1069,7 +1112,7 @@ export function OrdersPage() {
                 it, so the drawer it is counted against moves too.
               </p>
               <Button size="sm" onClick={() => void startMove(open)} loading={moveLoading}>
-                Move to another shift
+                Change the date it counts under
               </Button>
             </>
           )}
@@ -1159,8 +1202,25 @@ export function OrdersPage() {
 
       {moving && (() => {
         const order = moving.order;
-        const choices = shiftChoices(order, moving.shifts);
+        /*
+          THE DAY FIRST, THEN THE SHIFTS ON IT.
+
+          `shiftChoices` offers everything within a week either side, which is
+          right when somebody knows which shift they mean. The question an
+          admin usually has is a date, so the day narrows that list — and when
+          the day is outside the week, the list is empty and the screen offers
+          to open a shift for it rather than shrugging.
+        */
+        const onDay = moveDay
+          ? shiftsOnDay(
+            moving.shifts as (MovableShift & { opened_at?: string; module?: string })[],
+            moveDay,
+            order.module ?? 'kitchen',
+          )
+          : shiftChoices(order, moving.shifts);
+        const choices = onDay.filter((s) => s.$id !== order.shift_id);
         const to = choices.find((s) => s.$id === moveTo) ?? null;
+        const dayProblem = moveDay ? dayMoveProblem(order, moveDay) : null;
         const mine = payments.filter((p) => p.order_id === order.$id && isLivePayment(p));
         const from = moving.shifts.find((s) => s.$id === order.shift_id) ?? null;
         const problem = to ? moveProblem(order, to) : null;
@@ -1189,12 +1249,55 @@ export function OrdersPage() {
               {' '}Currently {from ? `counted under ${from.code}` : 'not counted under any shift'}.
             </p>
 
-            {choices.length === 0 ? (
+            {/*
+              The day, asked before the shift.
+
+              A sale belongs to a NIGHT, and the shift is how the books hold
+              one. Asking for the code first made an admin translate their own
+              question into somebody else's filing system before they could
+              answer it.
+            */}
+            <Field
+              label="Which day does this sale belong to?"
+              hint="The shifts on that day are offered below. Each side of the business keeps its own."
+            >
+              <Input
+                type="date"
+                value={moveDay}
+                max={new Date().toLocaleDateString('en-CA')}
+                onChange={(e) => { setMoveDay(e.target.value); setMoveTo(''); }}
+              />
+            </Field>
+
+            {dayProblem && <Notice tone="warn">{dayProblem}</Notice>}
+
+            {!dayProblem && choices.length === 0 ? (
+              /*
+                A day with no shift on it is not a dead end.
+
+                It is the ordinary case for a sale filed under the wrong date:
+                the night it really belongs to may never have had a shift
+                opened at all — a bar that traded before anybody thought to
+                open one, a day rung up on the wrong terminal.
+              */
               <Notice tone="info">
-                No other shift on this side within a week either side of this order. If the one you want is
-                further back than that, it cannot be picked here.
+                <strong>No {MODULE_LABELS[order.module ?? 'kitchen'].toLowerCase()} shift on that day.</strong>
+                <div className="small" style={{ marginTop: '0.3rem' }}>
+                  One can be opened for it now. It is created already closed, carrying no float and no count —
+                  a place to file trading that has already happened, not a shift anybody can sell against.
+                </div>
+                <div style={{ marginTop: '0.5rem' }}>
+                  <Button
+                    size="sm"
+                    loading={openingDay}
+                    disabled={!moveReason.trim()}
+                    onClick={() => void openDayShift(order)}
+                  >
+                    {moveReason.trim() ? `Open a shift for ${moveDay}` : 'Say why first, below'}
+                  </Button>
+                </div>
               </Notice>
-            ) : (
+            ) : dayProblem ? null : (
               <>
                 <Field
                   label="Count it under"

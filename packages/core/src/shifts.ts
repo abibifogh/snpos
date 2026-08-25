@@ -13,6 +13,8 @@ import {
   lastForSide, resendProblem,
 } from './shift-rules';
 import { lockedProblem, sealProblem, isSealed } from './shift-lock';
+import { belongsToShift, shiftsOnDay, backdatedWindow } from './shift-move';
+import type { MovableShift } from './shift-move';
 import type { LockableShift } from './shift-lock';
 
 export * from './shift-rules';
@@ -344,10 +346,16 @@ export async function ordersForShift(
 
   const byId = new Map<string, Order>();
   for (const o of [...inWindow, ...stamped]) {
-    // The clock catches everything sold in the building during the window,
-    // including the other side's. The stamp is precise; the clock is not, so
-    // the side has to be checked after the merge rather than before it.
-    if ((o.module ?? 'kitchen') !== module) continue;
+    /*
+      A stamp wins outright, and the clock is only the fallback.
+
+      This asked "is it stamped to me OR was it rung up while I was open", and
+      an order moved to another shift answers yes to the second for ever. So a
+      sale moved to the night it belonged to was counted on BOTH nights, and
+      the two shifts disagreed with each other from then on — which made the
+      move that fixed one figure quietly break another. See belongsToShift.
+    */
+    if (!belongsToShift(o, { ...shift, module }, closed)) continue;
     /**
      * A cancelled order is not part of the shift.
      *
@@ -1257,4 +1265,73 @@ export async function requestSummaryResend(opts: {
       'This project\'s database has not been updated for resending yet. Run Provision, then try again.',
     );
   }
+}
+
+
+/* ------------------------------------- a shift for a day that has passed */
+
+/**
+ * Open a shift for a day already gone, so trading can be filed under it.
+ *
+ * CREATED CLOSED, and that is the whole of the design. An open shift on a past
+ * day is found by every till in the building as "the shift to sell against",
+ * so tonight's drinks would land on last Tuesday and nobody would see it until
+ * the month did not add up.
+ *
+ * It carries no float and no count. It is a container for trading that has
+ * already happened and already been accounted for — the money was taken, the
+ * drawer was counted on the night, and inventing figures for a shift that
+ * nobody worked would be worse than leaving them at nothing. What it holds is
+ * whatever is moved onto it, and its totals are worked out from those.
+ *
+ * Refused where the day already has one for that side. Two containers for one
+ * night is the thing this exists to avoid, and the screen offers the existing
+ * one instead.
+ */
+export async function openShiftForDay(opts: {
+  venueId: string;
+  day: string;
+  module: Module;
+  userId: string;
+  reason: string;
+}): Promise<Shift> {
+  const existing = await listAll<Shift>('shifts', [Query.equal('venue_id', opts.venueId)])
+    .catch(() => [] as Shift[]);
+  const already = shiftsOnDay(
+    existing as unknown as (MovableShift & { opened_at?: string; module?: string })[],
+    opts.day,
+    opts.module,
+  );
+  if (already.length > 0) {
+    throw new Error(`That day already has a ${MODULE_LABELS[opts.module].toLowerCase()} shift. Move the sale onto it.`);
+  }
+
+  const { openedAt, closedAt } = backdatedWindow(opts.day);
+  const doc = await db.createDocument(DB_ID, 'shifts', ID.unique(), {
+    venue_id: opts.venueId,
+    code: shiftCode(opts.module, new Date(openedAt)),
+    status: 'closed',
+    opened_by: opts.userId,
+    opened_at: openedAt,
+    closed_at: closedAt,
+    closed_by: opts.userId,
+    opening_floats: '{}',
+    float_source: 'manual',
+    sales_total: 0, expense_total: 0, tax_total: 0, tip_total: 0, discount_total: 0,
+    void_total: 0, refund_total: 0, cogs_total: 0, covers: 0,
+    stock_check_status: 'pending', posted_to_ledger: false,
+    module: opts.module,
+    variance_note: `Opened afterwards for ${opts.day}: ${opts.reason}`.slice(0, 500),
+  });
+
+  await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
+    venue_id: opts.venueId,
+    actor_id: opts.userId,
+    action: 'shift_backdated',
+    entity_type: 'shift',
+    entity_id: doc.$id,
+    after: JSON.stringify({ day: opts.day, module: opts.module, reason: opts.reason }).slice(0, 4000),
+  }).catch(() => undefined);
+
+  return doc as unknown as Shift;
 }
