@@ -11,8 +11,9 @@ import {
   requestSummaryResend, resendPending,
   listCreatedBetween, listByIds, setShiftSealed, isSealed, describeSeal, lockedProblem,
   rangeTotals, kindsWorthShowing, KIND_LABELS, canOpen, floatOrigin,
+  kindOf, countedParts, partLines, partsWords, unexplained,
 } from '@snpos/core';
-import type { Module, Doc, CashHandover } from '@snpos/core';
+import type { Module, Doc, CashHandover, MoneyKind, CountedParts, Settings } from '@snpos/core';
 import { useSession } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 
@@ -58,6 +59,15 @@ interface ShiftPaymentRow extends Doc {
   reference?: string;
   /** Filled in after the orders are read, so the list can name the sale. */
   orderNo?: string;
+  /**
+   * Which night it was taken on.
+   *
+   * Only meaningful in the range drill-down, where one list covers five
+   * shifts: an amount and an order number with no date in a week of sales is
+   * a row somebody has to go and look up somewhere else.
+   */
+  shiftCode?: string;
+  shift_id?: string;
 }
 interface Expense extends Doc {
   shift_id?: string;
@@ -331,6 +341,49 @@ export function ShiftsPage() {
   const [sealBusy, setSealBusy] = useState(false);
 
   /**
+   * The kind of money whose headline somebody has pressed, and the sales
+   * behind it across the whole range.
+   *
+   * A separate read from the per-shift one above, and for the same reason it
+   * exists at all: a month of payments is a large read to do for a summary
+   * nobody has clicked. Null until somebody asks.
+   */
+  const [openKind, setOpenKind] = useState<MoneyKind | null>(null);
+  const [kindPayments, setKindPayments] = useState<ShiftPaymentRow[] | null>(null);
+
+  /**
+   * Open the sales behind one of the headline figures.
+   *
+   * Every payment on every CLOSED shift in the range, narrowed to this kind of
+   * money. Closed only, matching the headline exactly — a shift still open has
+   * been counted by nobody and adds nothing to the figure being explained, so
+   * its payments must not appear in the explanation either.
+   */
+  const openTotals = async (kind: MoneyKind) => {
+    if (openKind === kind) { setOpenKind(null); return; }
+    setOpenKind(kind);
+    setKindPayments(null);
+    try {
+      const ids = shown.filter((s) => s.status === 'closed').map((s) => s.$id);
+      const rows = await listByIds<ShiftPaymentRow>('payments', 'shift_id', ids);
+      const orders = await listByIds<Doc & { order_no?: string }>(
+        'orders', '$id', [...new Set(rows.map((r) => r.order_id).filter(Boolean))],
+      ).catch(() => []);
+      const noFor = new Map(orders.map((o) => [o.$id, o.order_no ?? '']));
+      const codeFor = new Map(shown.map((s) => [s.$id, s.code]));
+      setKindPayments(
+        rows
+          .filter((r) => kindOf(r.method_id, methods) === kind)
+          .map((r) => ({ ...r, orderNo: noFor.get(r.order_id) ?? '', shiftCode: codeFor.get(r.shift_id ?? '') ?? '' }))
+          .sort((a, b) => a.$createdAt.localeCompare(b.$createdAt)),
+      );
+    } catch {
+      // A list that will not load must not take the figures above it down.
+      setKindPayments([]);
+    }
+  };
+
+  /**
    * Open a shift, and read the payments that made its figures.
    *
    * The order numbers come with them: a payment on its own says an amount and
@@ -456,12 +509,31 @@ export function ShiftsPage() {
               <div className="dim small">Shifts</div>
               <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{totals.closed}</div>
             </div>
+            {/*
+              PRESSABLE, because the question this page gets asked about a
+              headline is always "which sales made that up".
+
+              It is not a simple list, and pretending otherwise is what would
+              go wrong here. A drawer counted at the end of a week holds the
+              float it started with, is missing whatever was spent out of it,
+              and carries whatever it was over or short by — so the sales
+              underneath do NOT add up to the figure above them. The panel
+              shows the arithmetic first and the sales second. See
+              counted-breakdown.
+            */}
             {kinds.map((k) => (
               <div key={k}>
                 <div className="dim small">{KIND_LABELS[k]} counted</div>
-                <div style={{ fontSize: '1.3rem', fontWeight: 650 }}>
+                <button
+                  type="button"
+                  className="linky"
+                  aria-expanded={openKind === k}
+                  onClick={() => void openTotals(k)}
+                  style={{ fontSize: '1.3rem', fontWeight: 650 }}
+                >
                   {settings ? formatMoney(totals.counted[k], settings) : totals.counted[k]}
-                </div>
+                  <span className="dim small">{' '}{openKind === k ? '▾' : '▸'}</span>
+                </button>
               </div>
             ))}
             <div>
@@ -497,6 +569,24 @@ export function ShiftsPage() {
               </>
             )}
           </p>
+
+          {openKind && (
+            <TotalsBreakdown
+              kind={openKind}
+              parts={countedParts({
+                shifts: shown,
+                // One answer to "which bucket is this method in", shared with
+                // the totals above so the explanation and the headline cannot
+                // disagree about where a retired card machine lands.
+                kindFor: (id) => kindOf(id, methods),
+                expenses,
+                kind: openKind,
+              })}
+              payments={kindPayments}
+              settings={settings}
+              methodName={methodName}
+            />
+          )}
         </Card>
       )}
 
@@ -1182,5 +1272,143 @@ export function ShiftsPage() {
         </Modal>
       )}
     </>
+  );
+}
+
+/**
+ * The sales behind one of the headline figures.
+ *
+ * Two halves, in this order on purpose.
+ *
+ * THE ARITHMETIC FIRST, because the headline is what was COUNTED and the sales
+ * are not the same number. A cash drawer counted at the end of a week holds
+ * the float it started with, is missing whatever was spent out of it, and
+ * carries whatever it was over or short by. Showing the list alone would put
+ * two figures on one screen that do not agree, with nothing anywhere saying
+ * why — which is the fault this page was asked to fix, not one to repeat.
+ *
+ * THE SALES SECOND, with the card reference against each, because that is what
+ * somebody with a bank statement in front of them is actually here for.
+ *
+ * And a line at the bottom for anything left over. If the payments do not come
+ * to what the arithmetic predicted, something is unaccounted for — and a list
+ * that quietly falls short of its own total is worse than no list.
+ */
+function TotalsBreakdown({
+  kind, parts, payments, settings, methodName,
+}: {
+  kind: MoneyKind;
+  parts: CountedParts;
+  /** Null while they are being read. Empty is a real answer. */
+  payments: (ShiftPaymentRow & { shiftCode?: string })[] | null;
+  settings: Settings | null;
+  methodName: (id: string) => string;
+}) {
+  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  // Voided and refunded are money that came back out, so they are shown struck
+  // through rather than dropped: a payment reversed is a thing that happened,
+  // and a list it vanishes from cannot explain why a total moved.
+  const live = (payments ?? []).filter((p) => p.status !== 'voided' && p.status !== 'refunded');
+  const paid = live.reduce((n, p) => n + p.amount + (p.tip ?? 0), 0);
+  const over = payments === null ? 0 : unexplained(parts, paid);
+  const tips = live.reduce((n, p) => n + (p.tip ?? 0), 0);
+
+  return (
+    <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border)', paddingTop: '0.9rem' }}>
+      <p className="small" style={{ marginTop: 0 }}>
+        <strong>{KIND_LABELS[kind]}.</strong> {partsWords(parts, money)}
+      </p>
+
+      <div className="table-wrap" style={{ maxWidth: '30rem', marginBottom: '1rem' }}>
+        <table className="data">
+          <tbody>
+            {partLines(parts).map((row) => (
+              <tr key={row.label}>
+                <td>{row.label}</td>
+                <td className="num">
+                  {row.sign < 0 ? '−' : ''}{money(row.amount)}
+                </td>
+              </tr>
+            ))}
+            <tr>
+              <td style={{ fontWeight: 650 }}>Taken on the sales below</td>
+              <td className="num" style={{ fontWeight: 650 }}>{money(parts.taken)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {payments === null ? (
+        <span className="small dim">Reading the sales…</span>
+      ) : live.length === 0 ? (
+        <span className="small dim">
+          Nothing was taken by {KIND_LABELS[kind].toLowerCase()} on these shifts.
+        </span>
+      ) : (
+        <>
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>When</th><th>Shift</th><th>Order</th><th>Method</th>
+                  <th className="num">Amount</th><th className="num">Tip</th><th>Reference</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(payments ?? []).map((p) => {
+                  const dead = p.status === 'voided' || p.status === 'refunded';
+                  return (
+                    <tr key={p.$id} className={dead ? 'dim' : undefined}>
+                      <td className="small dim">
+                        {new Date(p.$createdAt).toLocaleString([], {
+                          day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                        })}
+                      </td>
+                      <td className="small dim">{p.shiftCode}</td>
+                      <td>{p.orderNo || <span className="dim">—</span>}</td>
+                      <td className="small dim">{methodName(p.method_id)}</td>
+                      <td className="num" style={dead ? { textDecoration: 'line-through' } : undefined}>
+                        {money(p.amount)}
+                      </td>
+                      <td className="num dim">{p.tip ? money(p.tip) : ''}</td>
+                      {/*
+                        The one thing tying this row to a bank statement.
+
+                        Said as missing rather than left blank where a method
+                        should carry one: a card payment with no reference is
+                        the row somebody will not be able to match, and finding
+                        that out at reconciliation time is finding out too late.
+                      */}
+                      <td className="small">
+                        {p.reference || <span className="dim">no reference</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr>
+                  <td colSpan={4} style={{ fontWeight: 650 }}>
+                    {live.length} payment{live.length === 1 ? '' : 's'}
+                  </td>
+                  <td className="num" style={{ fontWeight: 650 }}>{money(paid - tips)}</td>
+                  <td className="num" style={{ fontWeight: 650 }}>{tips ? money(tips) : ''}</td>
+                  <td />
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {over !== 0 && (
+            <div style={{ marginTop: '0.8rem' }}>
+              <Notice>
+                {money(Math.abs(over))} {over > 0 ? 'of the count is not on this list' : 'more is on this list than the count accounts for'}.
+                {' '}That means a payment stamped to one of these shifts whose sale is counted elsewhere, an
+                expense recorded against the wrong drawer, or a count typed against a payment method that has
+                since been deleted. Open the shift itself to see which.
+              </Notice>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }

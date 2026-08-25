@@ -27,6 +27,15 @@ export interface TotalledShift {
   counted?: string;
   expected?: string;
   variance?: string;
+  /**
+   * JSON, per payment method id, written at OPEN.
+   *
+   * Not part of any total here, and read by the drill-down that explains one:
+   * a drawer counted at close holds the money it started with, so the float is
+   * the first thing that has to come off before the count says anything about
+   * what was sold. See counted-breakdown.
+   */
+  opening_floats?: string;
   sales_total?: number;
   expense_total?: number;
 }

@@ -65,6 +65,7 @@ export * from './crm';
 export * from './invite';
 export * from './shift-lock';
 export * from './shift-totals';
+export * from './counted-breakdown';
 export * from './purchase-flags';
 export * from './purchase-alerts';
 export * from './expense-analysis';
