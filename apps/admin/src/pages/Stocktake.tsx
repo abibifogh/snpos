@@ -5,9 +5,10 @@ import {
   shelfLines, submitCount, pendingCounts, countLines, approveCount, rejectCount,
   summariseCount, countWarnings, groupLines, COUNT_REASONS, isSelfApproval, formatMoney,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
+  pendingShelfLines, frozenPieces, frozenBy,
 } from '@snpos/core';
 import type {
-  CountLine, CountReason, CountGrouping, PendingCount, PendingCountLine, StaffProfile,
+  CountLine, CountReason, CountGrouping, PendingCount, PendingCountLine, StaffProfile, WaitingChange,
 } from '@snpos/core';
 import { listAll } from '@snpos/core';
 import { CountUpload } from '../components/CountUpload';
@@ -54,6 +55,13 @@ export function StocktakePage() {
   const [shelves, setShelves] = useState<{ $id: string; name: string }[]>([]);
   const [queue, setQueue] = useState<PendingCount[] | null>(null);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
+  /**
+   * Pieces that already have a change waiting, so they cannot be counted into
+   * a second one. See shelf-approval: two pending differences on one shelf are
+   * applied as two deltas, which takes the pieces off twice.
+   */
+  const [waiting, setWaiting] = useState<WaitingChange[]>([]);
+  const frozen = useMemo(() => frozenPieces(waiting), [waiting]);
 
   const isAdmin = profile?.role === 'admin';
   const mayCount = isAdmin || profile?.role === 'manager';
@@ -68,9 +76,10 @@ export function StocktakePage() {
       .catch((e) => setError(humanError(e)));
 
   const loadQueue = () =>
-    pendingCounts()
-      .then(setQueue)
-      .catch(() => setQueue([]));
+    Promise.all([
+      pendingCounts().then(setQueue).catch(() => setQueue([])),
+      pendingShelfLines().then(setWaiting).catch(() => setWaiting([])),
+    ]).then(() => undefined);
 
   useEffect(() => {
     void loadShelf();
@@ -165,9 +174,18 @@ export function StocktakePage() {
     setBusy(true);
     setError(null);
     try {
+      /*
+        Held pieces are dropped on the way out as well as disabled on screen.
+
+        A draft restored from this device can carry a figure typed before
+        somebody else's change arrived, and a disabled box does not clear what
+        is already in the draft behind it. Refusing it here is the one place
+        that cannot be walked around.
+      */
       const { lines: written } = await submitCount({
         venueId: 'main',
-        lines: lines ?? [],
+        lines: (lines ?? []).map((l) =>
+          (frozenBy(frozen, l.menuItemId, l.variantId) ? { ...l, countedText: '' } : l)),
         userId,
         note,
       });
@@ -362,6 +380,18 @@ export function StocktakePage() {
                         const delta = counted === null || !Number.isFinite(counted)
                           ? null
                           : counted - line.onHand;
+                        /*
+                          A piece with a change already waiting on it.
+
+                          Counted again here, it would go in as a SECOND
+                          pending difference on the same shelf — and approving
+                          both would take the same pieces off twice, because
+                          each applies its own delta. So the line is shown, and
+                          shown as held, rather than quietly dropped: a count
+                          sheet missing a piece somebody can see on the shelf
+                          is a count sheet people stop trusting.
+                        */
+                        const held = frozenBy(frozen, line.menuItemId, line.variantId);
                         return (
                           <tr key={`${line.menuItemId}-${line.variantId ?? ''}`}>
                             <td>
@@ -380,13 +410,19 @@ export function StocktakePage() {
                                 type="number"
                                 min="0"
                                 step="1"
-                                placeholder="—"
-                                value={line.countedText ?? ''}
+                                placeholder={held ? 'held' : '—'}
+                                value={held ? '' : line.countedText ?? ''}
                                 onChange={(e) => setLine(index, { countedText: e.target.value })}
+                                disabled={!!held}
                               />
                             </td>
                             <td>
-                              {delta !== null && delta < 0 ? (
+                              {held ? (
+                                <span className="small" style={{ color: 'var(--warn)' }}>
+                                  {nameOf(held.by)} already changed this to {held.line.counted}. Approve or turn
+                                  that down first.
+                                </span>
+                              ) : delta !== null && delta < 0 ? (
                                 <Select
                                   value={line.reason ?? 'counted'}
                                   onChange={(e) => setLine(index, { reason: e.target.value as CountReason })}

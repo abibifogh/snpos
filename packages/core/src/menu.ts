@@ -11,6 +11,7 @@ import { newShelfCadence } from './bar-count';
 import { loadIngredients } from './stock';
 import { tryWrite } from './client';
 import type { RecipeRow } from './recipe-card';
+import { CATALOGUE_COLLECTIONS, newestStamp } from './till-refresh';
 
 export interface MenuItemCategory extends Doc {
   menu_item_id: string;
@@ -101,9 +102,32 @@ export interface LoadedMenu {
 }
 
 /**
+ * The newest change anywhere in the catalogue, as one string.
+ *
+ * The cheap question a till asks on a timer, instead of the expensive one.
+ * Reading the whole catalogue every few minutes on every till, all day, to
+ * discover that nothing has changed is exactly the kind of spending that took
+ * this system down one morning; asking each collection for its single
+ * most-recently-changed row is four documents.
+ *
+ * Empty when nothing could be read at all, which the caller treats as "no
+ * news" rather than as a change — a till that reloaded its menu every time the
+ * network hiccupped would be worse than one that waited for the next look.
+ */
+export async function catalogueStamp(): Promise<string> {
+  const newest = await Promise.all(
+    CATALOGUE_COLLECTIONS.map((id) =>
+      db.listDocuments(DB_ID, id, [Query.orderDesc('$updatedAt'), Query.limit(1)])
+        .then((page) => newestStamp(page.documents as unknown as { $updatedAt?: string }[]))
+        .catch(() => '')),
+  );
+  return newest.filter(Boolean).sort().join('|');
+}
+
+/**
  * Build the menu for one venue at one moment.
  *
- * A dish can belong to several categories, so it may appear more than once, 
+ * A dish can belong to several categories, so it may appear more than once,
  * that is the point. Each appearance is governed by that category's own hours,
  * which is how the same dish shows at lunch under one heading and all day
  * under another.

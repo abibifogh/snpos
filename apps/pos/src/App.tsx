@@ -11,6 +11,7 @@ import {
   requireStaff, signOutCompletely, staffProfileFor, loadOpenShifts, modulesForStaff, MODULE_LABELS,
   onQueueChange, startOfflineSync, flushQueue,
   lockKey, lockProblem, unlockers, subscribeCollection, wakesScreen, latestMovement,
+  catalogueStamp, catalogueMoved, worthLooking, CATALOGUE_COLLECTIONS, SETTLE_MS, LOOK_EVERY_MS,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc, Module, Unlocker, Order,
@@ -381,6 +382,104 @@ export function App() {
       window.removeEventListener('online', now);
     };
   }, [venueId, side]);
+
+  /* ------------------------------------ the catalogue, kept up to date */
+
+  /**
+   * The newest change this till has already got.
+   *
+   * A ref rather than state: nothing on screen depends on it, and putting it
+   * in state would re-run the watcher every time the catalogue moved.
+   */
+  const catalogueSeen = useRef('');
+
+  /**
+   * Fetch the menu again and put it on screen.
+   *
+   * The settings come with it. Prices are read through them — the currency,
+   * the decimals, the rounding — so a menu refreshed against stale settings
+   * would print figures the till then charges differently.
+   */
+  const refreshCatalogue = useCallback(async (venueId: string) => {
+    const [menu, settings] = await Promise.all([
+      reloadMenu(venueId),
+      db.getDocument(DB_ID, 'settings', 'main').then((d) => d as unknown as Settings).catch(() => null),
+    ]);
+    setCtx((c) => (c ? { ...c, menu, settings: settings ?? c.settings } : c));
+    if (settings) applyTheme(settings);
+  }, []);
+
+  /*
+    A TILL THAT NOTICES WHEN THE SHOP CHANGES.
+
+    A till loads the menu once and then holds that copy for as long as the tab
+    stays open, which on a tablet living on a counter is weeks. So a price put
+    up in the office was a price the counter kept charging the old version of,
+    a new product could not be sold at all, and something taken off the menu
+    went on being rung up. The only fix on offer was "reload the page", which
+    is a thing somebody has to know to do.
+
+    Two watchers, because either alone is wrong: the live connection is instant
+    and drops silently, and a look on a timer cannot be instant but cannot lie.
+    See till-refresh for the reasoning, and for why the timed look asks the
+    cheapest possible question rather than fetching the catalogue.
+  */
+  useEffect(() => {
+    if (!venueId) return undefined;
+    let alive = true;
+    let settle: number | undefined;
+
+    // Debounced. A bulk upload writes two hundred rows and fires two hundred
+    // events; without this the till would fetch the whole catalogue two
+    // hundred times, arriving at a half-written menu on most of them.
+    const soon = () => {
+      if (settle) window.clearTimeout(settle);
+      settle = window.setTimeout(() => {
+        if (!alive) return;
+        void refreshCatalogue(venueId)
+          .then(() => catalogueStamp())
+          .then((now) => { if (alive) catalogueSeen.current = now; })
+          .catch(() => undefined);
+      }, SETTLE_MS);
+    };
+
+    const offs = CATALOGUE_COLLECTIONS.map((id) => subscribeCollection(id, soon));
+
+    const look = async () => {
+      if (!alive || !worthLooking(document.hidden, navigator.onLine !== false)) return;
+      try {
+        const now = await catalogueStamp();
+        if (!alive) return;
+        // Never on the first pass. Everything is new to a screen that has just
+        // loaded its menu, and a till that reloaded on its first tick would
+        // reload once at boot for nothing, on every till, every sign-in.
+        if (catalogueMoved(catalogueSeen.current, now)) {
+          await refreshCatalogue(venueId);
+          if (!alive) return;
+        }
+        if (now) catalogueSeen.current = now;
+      } catch {
+        // Offline, most likely. The next tick tries again.
+      }
+    };
+
+    const timer = window.setInterval(look, LOOK_EVERY_MS);
+    // Coming back to the tab, or back onto the network, is exactly when a till
+    // is most likely to be out of date and about to be sold from.
+    const now = () => void look();
+    document.addEventListener('visibilitychange', now);
+    window.addEventListener('online', now);
+    void look();
+
+    return () => {
+      alive = false;
+      if (settle) window.clearTimeout(settle);
+      for (const off of offs) off();
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', now);
+      window.removeEventListener('online', now);
+    };
+  }, [venueId, refreshCatalogue]);
 
   const queued = useOfflineQueue(onQueueChange, startOfflineSync);
   const [tab, setTab] = useState<'tables' | 'takeaway' | 'kitchen' | 'counter'>('tables');

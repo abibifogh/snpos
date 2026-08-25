@@ -1,9 +1,10 @@
-import { db, DB_ID, ID, Query, listAll } from './client';
+import { db, DB_ID, ID, Query, listAll, listByIds } from './client';
 import { rateFor, flatFor, splitSale } from './consignment-math';
 import type { LedgerKind } from './consignment-math';
 import type { Doc, Settings, MenuItem } from './types';
 import { differencesIn, summariseCount, MOVE_FOR_REASON } from './stocktake';
 import type { CountLine, PendingCount, PendingCountLine } from './stocktake';
+import type { WaitingChange } from './shelf-approval';
 import type { ImportMaker } from './maker-import';
 
 /**
@@ -696,6 +697,89 @@ export const pendingCounts = () =>
   listAll<PendingCount & Doc>('stock_counts', [Query.equal('status', 'pending')]).then((rows) =>
     rows.sort((a, b) => (b.counted_at ?? '').localeCompare(a.counted_at ?? '')),
   );
+
+/**
+ * One shelf figure, changed on the products page, sent to be approved.
+ *
+ * A thin wrapper over `submitCount` rather than a second way of writing the
+ * same thing. The products page and the count sheet are two doors into one act
+ * — somebody saying the shelf is wrong — and giving each its own write is how
+ * they would end up disagreeing about what an approval applies, whether a
+ * movement gets written, and which of them the approvals desk can see.
+ *
+ * The note says where it came from. An admin looking at a queue of counts
+ * should not have to work out why one of them has a single line on it.
+ */
+export async function submitShelfChange(opts: {
+  venueId: string;
+  piece: {
+    menuItemId: string;
+    variantId?: string;
+    name: string;
+    variantLabel?: string;
+    consignorId?: string;
+    consignorName?: string;
+    onHand: number;
+    unitPrice: number;
+  };
+  counted: number;
+  reason?: CountLine['reason'];
+  userId: string;
+  note?: string;
+}): Promise<{ countId: string; lines: number }> {
+  const { piece } = opts;
+  return submitCount({
+    venueId: opts.venueId,
+    userId: opts.userId,
+    note: opts.note?.trim() || 'Changed on the products page.',
+    lines: [{
+      menuItemId: piece.menuItemId,
+      variantId: piece.variantId,
+      name: piece.name,
+      variantLabel: piece.variantLabel,
+      consignorId: piece.consignorId,
+      consignorName: piece.consignorName,
+      onHand: piece.onHand,
+      countedText: String(opts.counted),
+      reason: opts.reason ?? 'counted',
+      unitPrice: piece.unitPrice,
+    }],
+  });
+}
+
+/**
+ * Every piece with a change waiting on it.
+ *
+ * Read by the screens that would otherwise let somebody change it again: the
+ * products page, which is where this started, and the count sheet, which could
+ * put a second change on the same piece and have both applied — two deltas off
+ * one shelf, which takes the pieces off twice.
+ *
+ * Applied lines are dropped rather than filtered later. A count left half-done
+ * by a failure stays pending with its applied lines marked, and those pieces
+ * are not waiting for anybody.
+ */
+export async function pendingShelfLines(): Promise<WaitingChange[]> {
+  const counts = await pendingCounts().catch(() => [] as (PendingCount & Doc)[]);
+  if (counts.length === 0) return [];
+  const rows = await listByIds<PendingCountLine & Doc>(
+    'stock_count_lines',
+    'count_id',
+    counts.map((c) => c.$id),
+  ).catch(() => [] as (PendingCountLine & Doc)[]);
+
+  const header = new Map(counts.map((c) => [c.$id, c]));
+  return rows
+    .filter((l) => !l.applied)
+    .map((line) => {
+      const count = header.get(line.count_id);
+      return { line, countId: line.count_id, by: count?.counted_by ?? '', at: count?.counted_at ?? '' };
+    })
+    // An orphan line — its count deleted, or never written because the header
+    // is saved last — freezes a piece that nobody can release. It is not
+    // waiting for anybody, so it does not get to hold anything.
+    .filter((c) => header.has(c.countId));
+}
 
 export const countLines = (countId: string) =>
   listAll<PendingCountLine & Doc>('stock_count_lines', [Query.equal('count_id', countId)]);

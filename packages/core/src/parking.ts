@@ -164,3 +164,100 @@ export function autoLabel(lines: ParkedLine[]): string {
   const more = lines.length - 1;
   return more > 0 ? `${first.name} and ${more} more` : first.name;
 }
+
+
+/* ------------------------------------------ the sale that is on the counter */
+
+/**
+ * The bill being rung up RIGHT NOW, kept so a reload does not throw it away.
+ *
+ * Different from parking, and deliberately so. Parking is somebody choosing to
+ * put a basket down; this is nobody choosing anything. A tablet sleeps and its
+ * browser discards the tab, an app is closed by a stray swipe, the till is
+ * reloaded to pick up a price change — and eleven lines rung up in front of a
+ * waiting customer were gone, with nothing to do but ask them to unpack the
+ * bag again.
+ *
+ * Written as it is typed rather than on the way out, because there is no way
+ * out to hook: the events that lose a cart are exactly the ones that do not
+ * run any code first.
+ *
+ * ON THE DEVICE, like a parked sale, and for the same reason — a till is a
+ * place, and the customer standing at this counter is standing at this one.
+ * Nothing is written to the database, nothing reaches the pass, no stock moves
+ * and no shift is held open by it. It is a basket, not an order.
+ */
+export interface HeldCart {
+  lines: ParkedLine[];
+  discount?: number;
+  discountLabel?: string;
+  discountId?: string;
+  heldAt: string;
+}
+
+/**
+ * Where a device keeps it.
+ *
+ * Per venue, per side AND PER TABLE. A bill on table four and one at the
+ * counter are two bills that exist at the same time, and one key for both
+ * would restore the counter's basket onto table four the moment somebody
+ * walked over to it.
+ */
+export const cartKey = (venueId: string, module: string, tableId: string): string =>
+  `snpos.cart.${venueId}.${module}.${tableId}`;
+
+/**
+ * How long a held basket is worth restoring.
+ *
+ * Twelve hours: long enough to cover a till reloaded in the middle of the
+ * evening, or one closed at the end of a shift and opened by the next, and
+ * short enough that a basket from the day before yesterday does not come back
+ * onto the counter looking like a live sale. The person it belonged to left
+ * hours ago.
+ *
+ * Longer than a parked sale goes stale, on purpose. A parked basket is one
+ * somebody chose to keep and can see on a list; this one is invisible until it
+ * reappears, so it gets the benefit of the doubt for one trading day and no
+ * more.
+ */
+export const HELD_FOR_MS = 12 * 3_600_000;
+
+/**
+ * Is there anything here worth writing down?
+ *
+ * An empty cart is not held, and holding one would be worse than useless: it
+ * would overwrite a real basket the moment a till briefly showed an empty
+ * counter, which is what every till does between a sale being paid for and the
+ * next one starting.
+ */
+export const cartWorthHolding = (lines: ParkedLine[]): boolean => lines.length > 0;
+
+/**
+ * The basket to put back on the counter, or nothing.
+ *
+ * Everything about this returns nothing rather than throwing. A till that will
+ * not open because it could not read a basket is a till nobody can sell from,
+ * and the sale in front of somebody matters more than the one before it.
+ */
+export function restorableCart(raw: string | null, now: Date = new Date()): HeldCart | null {
+  if (!raw) return null;
+  try {
+    const held = JSON.parse(raw) as HeldCart;
+    if (!Array.isArray(held?.lines) || held.lines.length === 0) return null;
+    const at = Date.parse(held.heldAt ?? '');
+    // An unreadable date is treated as too old. A basket that cannot say when
+    // it was put down cannot be trusted to be this morning's.
+    if (!Number.isFinite(at)) return null;
+    if (now.getTime() - at > HELD_FOR_MS) return null;
+    return held;
+  } catch {
+    return null;
+  }
+}
+
+/** What to say when a basket comes back, so nobody thinks it is a new sale. */
+export function restoredWords(held: HeldCart, now: Date = new Date()): string {
+  const count = held.lines.reduce((n, l) => n + l.qty, 0);
+  const ago = parkedAgo({ parkedAt: held.heldAt } as ParkedSale, now);
+  return `${count} item${count === 1 ? '' : 's'} still on the counter from ${ago}.`;
+}

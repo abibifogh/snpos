@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Badge, Button, Field, Input, Notice, Select, Textarea, Toggle } from '@snpos/ui';
-import { parseMoney, toInput, countedAsWarning, drinkStockIsSpare } from '@snpos/core';
-import type { Consignor, MenuItem, ProductVariant, VariantType, Module } from '@snpos/core';
+import { parseMoney, toInput, countedAsWarning, drinkStockIsSpare, frozenBy, waitingWords } from '@snpos/core';
+import type { Consignor, MenuItem, ProductVariant, VariantType, Module, WaitingChange } from '@snpos/core';
 
 /** A size row being edited, before it is written. */
 export interface DraftVariant {
@@ -54,8 +54,19 @@ export const blankVariant = (kindKey = 'size', ownStock = false): DraftVariant =
 export function ConsignmentFields({
   editing, setEditing, consignors, variants, setVariants,
   removedVariantIds, setRemovedVariantIds, symbol, decimals,
-  onHandText, setOnHandText, variantTypes, module,
+  onHandText, setOnHandText, variantTypes, module, frozen, whoChanged,
 }: {
+  /**
+   * Shelf figures with a change already waiting for an admin, by piece.
+   *
+   * A shelf figure that somebody has changed is frozen until an admin has
+   * decided about the change — see shelf-approval. The box is disabled and
+   * says why, rather than accepting a second figure that would either be lost
+   * on save or land as a competing change on the same piece.
+   */
+  frozen?: Map<string, WaitingChange>;
+  /** Whoever sent the waiting change, by name rather than by id. */
+  whoChanged?: (userId: string) => string;
   /**
    * Which side is being edited.
    *
@@ -114,6 +125,16 @@ export function ConsignmentFields({
     });
 
   const consigned = module === 'craft';
+
+  /**
+   * Is this piece's shelf figure waiting on somebody?
+   *
+   * Only ever for a product that already exists. A new one has no previous
+   * figure to disagree with, so there is nothing anybody could be waiting for.
+   */
+  const held = (variantId?: string) =>
+    (consigned && frozen && editing.$id ? frozenBy(frozen, editing.$id, variantId) : null);
+  const heldHere = held(undefined);
 
   return (
     <>
@@ -195,13 +216,31 @@ export function ConsignmentFields({
         <Field label="Barcode" hint="Scanned at the till. Leave blank if you label by hand.">
           <Input value={editing.barcode ?? ''} onChange={(e) => setEditing({ ...editing, barcode: e.target.value })} />
         </Field>
-        <Field label="How many on the shelf" hint="Only used when this piece has no sizes below.">
+        {/*
+          The shelf figure, and the one control on this form that is not simply
+          a fact about the product.
+
+          Changing it is the only write in the shop that can make stock vanish
+          with no sale behind it, so it goes past an admin — see the save path
+          in MenuItems and shelf-approval for the rule. Here that shows up as a
+          box that says what is waiting, rather than one that quietly refuses.
+        */}
+        <Field
+          label="How many on the shelf"
+          hint={
+            heldHere
+              ? waitingWords(heldHere, whoChanged?.(heldHere.by))
+              : editing.$id
+                ? 'Changing this sends it to an admin to approve. The shelf does not move until they do.'
+                : 'Only used when this piece has no sizes below.'
+          }
+        >
           <Input
             type="number"
             min="0"
-            value={onHandText}
+            value={heldHere ? String(heldHere.line.expected) : onHandText}
             onChange={(e) => setOnHandText(e.target.value)}
-            disabled={variants.length > 0}
+            disabled={variants.length > 0 || !!heldHere}
           />
         </Field>
       </div>
@@ -265,6 +304,23 @@ export function ConsignmentFields({
           */}
           {countedAsWarning(editing.name ?? '', variants, module) && (
             <Notice tone="warn">{countedAsWarning(editing.name ?? '', variants, module)}</Notice>
+          )}
+
+          {/*
+            Why some of the shelf boxes below cannot be typed in.
+
+            Said once, above the rows, rather than repeated on each of them.
+            The row badges say WHICH size is held; this says what holding means
+            and where the answer comes from, and somebody who reads it once
+            does not need it four times.
+          */}
+          {consigned && variants.some((v) => held(v.$id)) && (
+            <Notice tone="warn">
+              {variants.filter((v) => held(v.$id)).length === 1 ? 'One size has' : 'Some sizes have'} a shelf
+              change waiting for an admin, so {variants.filter((v) => held(v.$id)).length === 1 ? 'its' : 'their'}
+              {' '}count cannot be changed again yet. Everything else here can still be edited and saved.
+              An admin approves or turns it down under <strong>Craft shop → Count the shelf → Approvals</strong>.
+            </Notice>
           )}
 
           {/*
@@ -336,8 +392,10 @@ export function ConsignmentFields({
                     type="number"
                     min="0"
                     placeholder="0"
-                    value={v.onHandText}
+                    value={held(v.$id) ? String(held(v.$id)!.line.expected) : v.onHandText}
                     onChange={(e) => setVariant(i, { onHandText: e.target.value })}
+                    disabled={!!held(v.$id)}
+                    title={held(v.$id) ? waitingWords(held(v.$id)!, whoChanged?.(held(v.$id)!.by)) : undefined}
                   />
                 </label>
               )}
@@ -377,6 +435,16 @@ export function ConsignmentFields({
               </div>
               {parseMoney(v.priceText, decimals) === null && v.priceText.trim() !== '' && (
                 <Badge tone="warn">That price is not a number</Badge>
+              )}
+              {/* Said on the row as well as in the notice above it. The notice
+                  explains the rule; this says which size it is holding, which
+                  is what somebody looking at four greyed boxes wants to know.
+                  A tooltip alone would be invisible on the tablet this is
+                  actually used on. */}
+              {held(v.$id) && (
+                <Badge tone="warn">
+                  {held(v.$id)!.line.expected} → {held(v.$id)!.line.counted}, waiting for an admin
+                </Badge>
               )}
             </div>
           ))}

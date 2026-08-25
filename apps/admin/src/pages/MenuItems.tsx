@@ -11,8 +11,9 @@ import {
   diffFields, describeChanges, fitForLog, PRODUCT_WATCH,
   hasOwnRecipe, sizesNeedOwnStock, giveSizeItsOwnStock, repairSizeStock, newShelfCadence,
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition,
+  pendingShelfLines, submitShelfChange, frozenPieces, frozenBy, needsApproval, shelfChangeProblem, sentWords,
 } from '@snpos/core';
-import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice} from '@snpos/core';
+import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice, WaitingChange, StaffProfile } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
 import { ReassignSupplier } from '../components/ReassignSupplier';
 import { KeyedListManager } from '../components/KeyedList';
@@ -149,6 +150,39 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /**
+   * Shelf changes an admin has not decided about yet.
+   *
+   * A changed shelf figure does not land here — it waits, and the piece it
+   * belongs to cannot be changed again until somebody has said yes or no. See
+   * shelf-approval for why, and the save path below for what happens instead.
+   */
+  const [waiting, setWaiting] = useState<WaitingChange[]>([]);
+  const [staff, setStaff] = useState<StaffProfile[]>([]);
+  /**
+   * What each size's shelf said when this form was opened.
+   *
+   * Needed because the draft row holds what has been TYPED, and "has this
+   * changed" cannot be answered from that alone. Read from the rows the form
+   * loaded rather than fetched again on save: a second read would be a round
+   * trip to learn something already on screen, and it would also quietly
+   * compare against a figure that moved while somebody was typing.
+   */
+  const [variantWas, setVariantWas] = useState<Record<string, number>>({});
+  const frozen = useMemo(() => frozenPieces(waiting), [waiting]);
+  const whoChanged = (id: string) =>
+    staff.find((s) => s.user_id === id || s.$id === id)?.display_name ?? 'Somebody';
+  /**
+   * How many of a product's sizes are held.
+   *
+   * The list has no shelf column and the sizes are not loaded for it, so this
+   * counts what is waiting rather than looking at any product row. It is what
+   * lets the badge appear against a basket whose LARGE is held and whose own
+   * figure is not.
+   */
+  const variantsFrozenFor = (itemId: string) =>
+    waiting.filter((w) => w.line.menu_item_id === itemId && w.line.variant_id).length;
+
   const decimals = settings?.currency_decimals ?? 2;
 
   const load = async () => {
@@ -194,6 +228,10 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     }
     if (module === 'craft') {
       setConsignors(await loadConsignors().catch(() => []));
+      // Never fatal. A page that will not open because it could not find out
+      // what is waiting is worse than one that opens with nothing held.
+      setWaiting(await pendingShelfLines().catch(() => []));
+      setStaff(await listAll<StaffProfile>('staff_profiles').catch(() => []));
     }
   };
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, [module]);
@@ -319,9 +357,13 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     // their ids, so saving writes new rows instead of moving the original's.
     setRemovedVariantIds([]);
     setVariants([]);
+    setVariantWas({});
     if (hasSizes && item?.$id) {
       void loadVariants(item.$id)
         .then((rows) => {
+          // A copy is a new product with new sizes, so none of these figures
+          // is a previous figure to disagree with.
+          setVariantWas(copy ? {} : Object.fromEntries(rows.map((r) => [r.$id, r.on_hand ?? 0])));
           const drafts = draftVariantsFrom(rows, decimals).map((d) => ({
             // A size already bound to its own ingredient keeps the toggle on,
             // so opening a drink and saving it again does not make a second
@@ -351,13 +393,23 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     setError(null);
   };
 
+  /** A size's shelf figure that has to go past an admin before it moves. */
+  interface ShelfChange { variantId: string; label: string; price: number; was: number; now: number }
+
   /**
    * Reconcile the join rows to match what was ticked.
    *
    * Only the difference is written, leaving untouched rows alone keeps their
    * per-category sort order, which a delete-and-recreate would throw away.
+   *
+   * Returns the shelf changes it did NOT write, so the save can send them to be
+   * approved and say so. Collected here rather than sent from here: this
+   * function's job is to make the database match the form, and a screen that
+   * announced an approval halfway through saving a product would be announcing
+   * it before the product it belongs to exists.
    */
-  const syncLinks = async (itemId: string) => {
+  const syncLinks = async (itemId: string): Promise<ShelfChange[]> => {
+    const shelfChanges: ShelfChange[] = [];
     const wantCats = pickedCategories.slice(1); // the primary lives on the item itself
     const haveCats = links.filter((l) => l.menu_item_id === itemId);
     await Promise.all([
@@ -412,6 +464,35 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       if (!v.label.trim()) continue;
       const price = parseMoney(v.priceText, decimals);
       if (price === null) continue;
+      /*
+        THE SHELF FIGURE IS NOT SAVED WITH THE REST OF THE SIZE.
+
+        On a size that already exists and whose count has moved, the number is
+        left exactly as it is and the change is sent to be approved instead —
+        see the shelf changes collected below. Everything else about the size
+        still saves normally, so somebody correcting a price and a count in one
+        go gets the price immediately and the count when an admin agrees.
+
+        A NEW size keeps its figure, because it is what arrived rather than a
+        disagreement with anything.
+      */
+      const held = v.$id ? Object.prototype.hasOwnProperty.call(variantWas, v.$id) : false;
+      const wasOnShelf = v.$id ? variantWas[v.$id] ?? 0 : 0;
+      const shelfWaits = needsApproval({
+        module,
+        existing: held,
+        was: wasOnShelf,
+        typed: v.onHandText,
+      });
+      if (shelfWaits) {
+        shelfChanges.push({
+          variantId: v.$id as string,
+          label: v.label.trim(),
+          price,
+          was: wasOnShelf,
+          now: Number(v.onHandText.trim()),
+        });
+      }
       const body = {
         venue_id: 'main',
         menu_item_id: itemId,
@@ -422,7 +503,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
         price,
         sku: v.sku.trim(),
         barcode: v.barcode.trim(),
-        on_hand: Number(v.onHandText || 0),
+        on_hand: shelfWaits ? wasOnShelf : Number(v.onHandText || 0),
         sort: variants.indexOf(v),
         active: v.active,
       };
@@ -481,6 +562,8 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
         });
       }
     }
+
+    return shelfChanges;
   };
 
   const [repairing, setRepairing] = useState(false);
@@ -539,6 +622,39 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     const price = parseMoney(priceText, decimals);
     if (price === null || price < 0) { setError('Enter a valid price, for example 25.00'); return; }
 
+    /*
+      The shelf figure, which is not simply a field on this form.
+
+      Checked here so a bad one is refused before anything is written rather
+      than being quietly rounded into a change an admin is then asked to
+      approve. "Three and a half baskets" is not a shelf.
+    */
+    if (module === 'craft' && variants.length === 0) {
+      const bad = shelfChangeProblem(onHandText);
+      if (bad) { setError(bad); return; }
+    }
+    const badShelf = variants.find((v) => v.label.trim() && shelfChangeProblem(v.onHandText));
+    if (module === 'craft' && badShelf) {
+      setError(`"${badShelf.label}" on the shelf: ${shelfChangeProblem(badShelf.onHandText)}`);
+      return;
+    }
+
+    /*
+      IS THE PRODUCT'S OWN SHELF FIGURE BEING CHANGED?
+
+      If it is, it does not save with the rest — it goes to an admin, and the
+      figure on the shelf stays exactly where it was until they agree. A price
+      corrected in the same breath still saves immediately, which is the point
+      of deciding this per field rather than refusing the whole save.
+    */
+    const shelfWas = before?.on_hand ?? 0;
+    const ownShelfWaits = needsApproval({
+      module,
+      existing: !!before && variants.length === 0,
+      was: shelfWas,
+      typed: onHandText,
+    });
+
     setBusy(true);
     setError(null);
     // The first ticked category is the primary one: it gives the dish a home
@@ -580,7 +696,13 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       // Written explicitly. The count is what the shop floor reads, and
       // leaving it out of the payload left new pieces at whatever the column
       // defaulted to rather than what somebody typed.
-      on_hand: Number(onHandText || 0),
+      //
+      // Except where it is waiting for an admin, and then the old figure is
+      // written back deliberately rather than left out: leaving it out would
+      // save nothing here and be right, but it would also mean the one line
+      // that keeps the shelf still depends on a field being absent, which is
+      // the kind of thing a later edit removes without noticing.
+      on_hand: ownShelfWaits ? shelfWas : Number(onHandText || 0),
       is_one_off: editing.is_one_off ?? false,
       maker_note: editing.maker_note ?? '',
     };
@@ -619,7 +741,56 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       */
       void logProductChange(itemId, editing.$id ? (was ?? null) : null, payload);
 
-      await syncLinks(itemId);
+      const sizeShelves = await syncLinks(itemId);
+
+      /*
+        The shelf changes, sent to be approved.
+
+        After the product itself, deliberately. A change pointing at a product
+        that failed to save would sit in an admin's queue naming a piece that
+        does not exist, and there is no good answer to that at the desk.
+
+        The product's own figure and each size's are separate changes rather
+        than one, because they are approved separately: a basket's small may be
+        obviously right and its large obviously a typo, and an admin who can
+        only take both or neither will take both.
+      */
+      const sent: string[] = [];
+      if (ownShelfWaits) {
+        await submitShelfChange({
+          venueId: 'main',
+          userId: user?.$id ?? '',
+          counted: Number(onHandText.trim()),
+          piece: {
+            menuItemId: itemId,
+            name: payload.name,
+            consignorId: editing.consignor_id || undefined,
+            consignorName: consignors.find((c) => c.$id === editing.consignor_id)?.name,
+            onHand: shelfWas,
+            unitPrice: price,
+          },
+        });
+        sent.push(sentWords(payload.name, shelfWas, Number(onHandText.trim())));
+      }
+      for (const change of sizeShelves) {
+        await submitShelfChange({
+          venueId: 'main',
+          userId: user?.$id ?? '',
+          counted: change.now,
+          piece: {
+            menuItemId: itemId,
+            variantId: change.variantId,
+            name: payload.name,
+            variantLabel: change.label,
+            consignorId: editing.consignor_id || undefined,
+            consignorName: consignors.find((c) => c.$id === editing.consignor_id)?.name,
+            onHand: change.was,
+            unitPrice: change.price,
+          },
+        });
+        sent.push(sentWords(`${payload.name} · ${change.label}`, change.was, change.now));
+      }
+
       // Everything else about the product is saved; the supplier is the one
       // thing still to settle, and it needs an answer this form cannot guess.
       const ask = supplierChanged
@@ -634,7 +805,15 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
           'err',
         );
       }
-      toast('Saved');
+      /*
+        Said instead of "Saved", not after it.
+
+        A shelf change that has NOT taken effect must not be reported with the
+        word that means it has. Somebody who reads "Saved" walks away believing
+        the count is right, and finds out it is not from a till that will not
+        sell a piece it says is there.
+      */
+      toast(sent.length > 0 ? sent.join(' ') : 'Saved', sent.length > 0 ? 'err' : undefined);
     } catch (e) {
       setError(humanError(e));
     } finally {
@@ -957,6 +1136,18 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
                         if (module === 'bar') return <Badge tone="warn">No recipe, pours nothing</Badge>;
                         return i.track_stock ? <Badge tone="warn">No recipe</Badge> : null;
                       })()}
+                      {/*
+                        A shelf change nobody has decided about.
+
+                        On the list rather than only inside the form, because
+                        the person who needs to see it is the admin walking
+                        past — and they have no reason to open a product whose
+                        price they are not changing.
+                      */}
+                      {module === 'craft' && (frozenBy(frozen, i.$id)
+                        || variantsFrozenFor(i.$id) > 0) && (
+                        <Badge tone="warn">Shelf change waiting for an admin</Badge>
+                      )}
                     </td>
                     <td className="dim small">
                       {categoriesFor(i).length === 0 ? (
@@ -1171,6 +1362,8 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
               setRemovedVariantIds={setRemovedVariantIds}
               symbol={settings?.currency_symbol ?? ''}
               decimals={decimals}
+              frozen={frozen}
+              whoChanged={whoChanged}
             />
           )}
 

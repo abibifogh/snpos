@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Field, Input, Modal, Notice, Select, Badge, Spinner } from '@snpos/ui';
 import {
   db, DB_ID, ID, Query, listAll, createOrder, computeTotals, lineTotal, formatMoney,
@@ -8,6 +8,7 @@ import {
   findCode, codeProblem, discountAmount, needsManager, discountLabelFor,
   loadRecipes, loadIngredients, pourList, showsRecipe,
   park, unpark, parkProblem, parkKey, describeParked, autoLabel, isStale,
+  cartKey, cartWorthHolding, restorableCart, restoredWords,
   chipColour, showsPicture, inkOn, downloadUrl,
 } from '@snpos/core';
 import type {
@@ -112,6 +113,7 @@ export function OrderView({
     }
   };
 
+
   const doPark = () => {
     const lines = cart.map((l) => ({
       key: l.key,
@@ -142,7 +144,9 @@ export function OrderView({
       by: ctx.profile?.display_name,
     }));
     // The counter is cleared, which is the point: the next customer is served
-    // on an empty till rather than on somebody else's basket.
+    // on an empty till rather than on somebody else's basket. Clearing the cart
+    // clears what was held with it — see the effect that writes it — because
+    // the basket now lives on the parked list instead.
     setCart([]);
     setDiscount(0);
     setDiscountLabel('');
@@ -220,6 +224,101 @@ export function OrderView({
   const [repricing, setRepricing] = useState<CartLine | null>(null);
   /** The dish whose choices are being asked for, and the size already picked. */
   const [pickingOptions, setPickingOptions] = useState<{ menuItemId: string; variantId?: string } | null>(null);
+
+  /*
+    THE SALE ON THE COUNTER, KEPT ACROSS A RELOAD.
+
+    Not parking — nobody chose this. A tablet sleeps and the browser discards
+    the tab, an app is closed by a stray swipe, the till is reloaded to pick up
+    a price change, and eleven lines rung up in front of a waiting customer
+    were gone. See parking.ts for why it lives on the device and not in the
+    database.
+
+    Per table as well as per side: a bill on table four and one at the counter
+    exist at the same time, and one key for both would put the counter's basket
+    onto table four the moment somebody walked over.
+  */
+  const cartStore = cartKey(ctx.venue.$id, ctx.module, table.$id);
+  /**
+   * Whether the basket that was here has been dealt with.
+   *
+   * A ref rather than state: the restore must happen once, and it must not
+   * happen again because a re-render made the cart briefly empty.
+   */
+  const restored = useRef(false);
+
+  const forgetHeld = () => {
+    try { window.localStorage.removeItem(cartStore); } catch { /* see below */ }
+  };
+
+  useEffect(() => {
+    // A different table, or a different side, is a different basket.
+    restored.current = false;
+  }, [cartStore]);
+
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    let held = null;
+    try {
+      held = restorableCart(window.localStorage.getItem(cartStore));
+    } catch {
+      // A browser with site data blocked throws on the accessor itself.
+      return;
+    }
+    if (!held) return;
+    /*
+      Never over the top of something.
+
+      By the time this runs the till may already have a basket on it — a sale
+      picked up from Parked, a line added while the read was in flight — and
+      merging two baskets charges a customer for another customer's shopping.
+      The held one stays where it is and will be restored on the next empty
+      counter instead.
+    */
+    if (cart.length > 0) return;
+    setCart(held.lines.map((l) => ({ ...l, addons: l.addons ?? [] })));
+    setDiscount(held.discount ?? 0);
+    setDiscountLabel(held.discountLabel ?? '');
+    setDiscountId(held.discountId ?? '');
+    onToast(restoredWords(held));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartStore]);
+
+  /*
+    Written as it is typed, not on the way out.
+
+    There is no way out to hook. The events that lose a cart — a tab closing, a
+    tablet sleeping, a browser reloading a page it has sat on all afternoon —
+    are exactly the ones that do not run any code first.
+
+    An EMPTY cart clears the record rather than saving an empty one, so a sale
+    that has been paid for and cleared does not come back on the next reload.
+  */
+  useEffect(() => {
+    const lines = cart.map((l) => ({
+      key: l.key,
+      menu_item_id: l.menu_item_id,
+      name: l.name,
+      unit_price: l.unit_price,
+      qty: l.qty,
+      addons: l.addons,
+      notes: l.notes,
+      variant_id: l.variant_id,
+      variant_label: l.variant_label,
+      list_price: l.list_price,
+    }));
+    if (!cartWorthHolding(lines)) { forgetHeld(); return; }
+    try {
+      window.localStorage.setItem(cartStore, JSON.stringify({
+        lines, discount, discountLabel, discountId, heldAt: new Date().toISOString(),
+      }));
+    } catch {
+      // Nothing worth interrupting a sale over. The basket on screen is still
+      // right for as long as this till stays open, which is the ordinary case.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, discount, discountLabel, discountId, cartStore]);
 
   /**
    * Only this side's catalogue.
