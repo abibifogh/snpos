@@ -10,7 +10,7 @@ import {
   markUnavailable, markAvailable, isUnavailable, loadMenu as reloadMenu, itemsAvailableNow,
   requireStaff, signOutCompletely, staffProfileFor, loadOpenShifts, modulesForStaff, MODULE_LABELS,
   onQueueChange, startOfflineSync, flushQueue,
-  lockKey, lockProblem, subscribeCollection, wakesScreen, latestMovement,
+  lockKey, lockProblem, unlockers, subscribeCollection, wakesScreen, latestMovement,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc, Module, Unlocker, Order,
@@ -188,6 +188,40 @@ export function App() {
     });
   }, [working, device]);
 
+  /**
+   * Nobody has said who they are on this device yet.
+   *
+   * A ref rather than state: it survives every re-render and is read by the
+   * effect that decides whether to ask, which must not run again just because
+   * it has been answered.
+   */
+  const identified = useRef(false);
+
+  /*
+    THE TILL ASKS WHO IS THERE BEFORE IT DOES ANYTHING.
+
+    A till is signed in once, with an email and a password, usually by whoever
+    opens up — and then it stays signed in for months. Everything rung up on it
+    was recorded against that account, so a screen used by five people all day
+    put one name on every sale, and the name was often an address nobody
+    recognises rather than a person.
+
+    So a device with staff PINs set starts at the PIN pad. Whoever unlocks is
+    who the till is for until it is locked again, and their name goes on the
+    work. See the swap where `working` is read.
+
+    Asked on every load rather than remembered: a shift changes hands, a tablet
+    is picked up by somebody else, and four digits is a small price for a name
+    on a sale being true. A till with nobody holding a PIN is left alone —
+    asking a question nothing can answer is a bricked till, not a secure one.
+  */
+  useEffect(() => {
+    if (!lockStore || identified.current) return;
+    if (unlockers(staff).length === 0) return;
+    setLocked(true);
+    try { window.localStorage.setItem(lockStore, '1'); } catch { /* see below */ }
+  }, [lockStore, staff]);
+
   useEffect(() => {
     if (!lockStore) return;
     try {
@@ -228,6 +262,7 @@ export function App() {
   };
 
   const unlock = (who?: Unlocker) => {
+    identified.current = true;
     setLocked(false);
     try { window.localStorage.removeItem(lockStore); } catch { /* see above */ }
     /*
@@ -571,6 +606,9 @@ export function App() {
         wakeSignal={wakeSignal}
         locked={locked}
         staff={staff}
+        // Nobody has said who they are on this device yet, so the pad asks
+        // rather than announcing that something is locked.
+        firstUse={!identified.current}
         onUnlock={unlock}
       />
       <OfflineBar queued={queued} onRetry={() => void flushQueue()} />

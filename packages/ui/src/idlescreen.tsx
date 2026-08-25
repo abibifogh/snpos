@@ -29,6 +29,7 @@ export function IdleScreen({
   onWake,
   locked,
   staff,
+  firstUse,
   onUnlock,
 }: {
   settings?: Settings | null;
@@ -58,6 +59,15 @@ export function IdleScreen({
   locked?: boolean;
   /** Who could open it again. Anybody with a PIN, not only whoever locked it. */
   staff?: Unlocker[];
+  /**
+   * Nobody has identified themselves on this device yet.
+   *
+   * The same pad, and a different sentence. "Enter your PIN to carry on" is
+   * right for somebody coming back to a till they locked; on the first screen
+   * of the day it reads as though something has gone wrong, when all that has
+   * happened is the till asking who is there.
+   */
+  firstUse?: boolean;
   /**
    * Opened, and BY WHOM.
    *
@@ -224,8 +234,12 @@ export function IdleScreen({
         </div>
 
         <div className="lock-pad">
-          <div className="lock-title">Locked</div>
-          <div className="lock-sub">Enter your PIN to carry on</div>
+          <div className="lock-title">{firstUse ? 'Who is on the till?' : 'Locked'}</div>
+          <div className="lock-sub">
+            {firstUse
+              ? 'Enter your PIN to start. Everything rung up goes under your name until the till is locked again.'
+              : 'Enter your PIN to carry on'}
+          </div>
 
           {/* Dots rather than the digits. A till is at chest height on a
               counter with a queue in front of it. */}
