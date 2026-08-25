@@ -12,6 +12,7 @@ import {
   hasOwnRecipe, sizesNeedOwnStock, giveSizeItsOwnStock, repairSizeStock, newShelfCadence,
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition,
   pendingShelfLines, submitShelfChange, frozenPieces, frozenBy, needsApproval, shelfChangeProblem, sentWords,
+  isService, SERVICE_LABEL,
 } from '@snpos/core';
 import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice, WaitingChange, StaffProfile } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
@@ -183,6 +184,21 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   const variantsFrozenFor = (itemId: string) =>
     waiting.filter((w) => w.line.menu_item_id === itemId && w.line.variant_id).length;
 
+  /**
+   * The people who can be named against a product's price.
+   *
+   * Admins are left out. They always may, and a ticked box that cannot be
+   * unticked teaches people that the boxes do not mean anything. Somebody who
+   * has left is left out too — an old name in a permission list is a question
+   * nobody can answer a year later.
+   */
+  const repriceStaff = useMemo(
+    () => staff
+      .filter((s) => s.active !== false && s.role !== 'admin')
+      .sort((a, b) => (a.display_name ?? '').localeCompare(b.display_name ?? '')),
+    [staff],
+  );
+
   const decimals = settings?.currency_decimals ?? 2;
 
   const load = async () => {
@@ -226,12 +242,15 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       const types = await loadVariantTypes().catch(() => []);
       setVariantTypes(types.filter((t) => (t.module ?? 'craft') === module));
     }
+    // Every side. The shop reads these to say who is waiting on a shelf
+    // change; all three read them for the per-product price permission, and a
+    // bar that could not name anybody would have a box with nothing in it.
+    setStaff(await listAll<StaffProfile>('staff_profiles').catch(() => []));
     if (module === 'craft') {
       setConsignors(await loadConsignors().catch(() => []));
       // Never fatal. A page that will not open because it could not find out
       // what is waiting is worse than one that opens with nothing held.
       setWaiting(await pendingShelfLines().catch(() => []));
-      setStaff(await listAll<StaffProfile>('staff_profiles').catch(() => []));
     }
   };
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, [module]);
@@ -285,7 +304,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   const groupValue = (i: MenuItem & { categoryName?: string }, key: string): string => {
     if (key === 'owner') return ownerName(i.consignor_id) || 'The shop’s own';
     if (key === 'category') return i.categoryName || byCategory[i.category_id] || '';
-    if (key === 'status') return i.active ? 'For sale' : 'Archived';
+    if (key === 'status') return i.active ? (module === 'craft' ? 'For sale' : 'Active') : 'Archived';
     return String((i as unknown as Record<string, unknown>)[key] ?? '');
   };
 
@@ -478,7 +497,8 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       */
       const held = v.$id ? Object.prototype.hasOwnProperty.call(variantWas, v.$id) : false;
       const wasOnShelf = v.$id ? variantWas[v.$id] ?? 0 : 0;
-      const shelfWaits = needsApproval({
+      // A size of a service is a rate for work, not a number of things.
+      const shelfWaits = !isService({ module, is_service: editing?.is_service }) && needsApproval({
         module,
         existing: held,
         was: wasOnShelf,
@@ -629,12 +649,16 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       than being quietly rounded into a change an admin is then asked to
       approve. "Three and a half baskets" is not a shelf.
     */
-    if (module === 'craft' && variants.length === 0) {
+    // A service has no shelf, so none of this applies to it — see
+    // craft-services. Checking it would refuse a blank box on a thing that has
+    // no count to put in one.
+    const isWork = isService({ module, is_service: editing.is_service });
+    if (module === 'craft' && !isWork && variants.length === 0) {
       const bad = shelfChangeProblem(onHandText);
       if (bad) { setError(bad); return; }
     }
     const badShelf = variants.find((v) => v.label.trim() && shelfChangeProblem(v.onHandText));
-    if (module === 'craft' && badShelf) {
+    if (module === 'craft' && !isWork && badShelf) {
       setError(`"${badShelf.label}" on the shelf: ${shelfChangeProblem(badShelf.onHandText)}`);
       return;
     }
@@ -648,7 +672,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       of deciding this per field rather than refusing the whole save.
     */
     const shelfWas = before?.on_hand ?? 0;
-    const ownShelfWaits = needsApproval({
+    const ownShelfWaits = !isWork && needsApproval({
       module,
       existing: !!before && variants.length === 0,
       was: shelfWas,
@@ -705,6 +729,13 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       on_hand: ownShelfWaits ? shelfWas : Number(onHandText || 0),
       is_one_off: editing.is_one_off ?? false,
       maker_note: editing.maker_note ?? '',
+      // Work rather than goods. Written on every side so switching a product
+      // back to goods actually clears it; false is the honest value for a dish
+      // and for a bottle, and nothing outside the shop reads it at all.
+      is_service: editing.is_service ?? false,
+      // Who may change this price at the till. Written even when empty, so
+      // taking the last person off a product actually takes them off it.
+      price_editors: editing.price_editors ?? [],
     };
     try {
       /**
@@ -1148,6 +1179,10 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
                         || variantsFrozenFor(i.$id) > 0) && (
                         <Badge tone="warn">Shelf change waiting for an admin</Badge>
                       )}
+                      {/* Told apart on the list. A catalogue with alterations
+                          sitting between two baskets, looking exactly like a
+                          basket, is one where somebody tries to count them. */}
+                      {isService(i) && <Badge>{SERVICE_LABEL}</Badge>}
                     </td>
                     <td className="dim small">
                       {categoriesFor(i).length === 0 ? (
@@ -1182,7 +1217,21 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
                       );
                     })()}
                     <td className="num dim">{i.prep_minutes}m</td>
-                    <td>{i.active ? <Badge tone="ok">Active</Badge> : <Badge>Hidden</Badge>}</td>
+                    {/*
+                      One word for one state.
+
+                      This column said "Hidden", the filter said "Archived" and
+                      the form said "For sale", for the same thing — so the
+                      Archive button beside it did not obviously produce any of
+                      them, and somebody looking for a way to archive a product
+                      could press it and not believe they had. The list agrees
+                      with the filter now, and the shop gets the shop's words.
+                    */}
+                    <td>
+                      {i.active
+                        ? <Badge tone="ok">{module === 'craft' ? 'For sale' : 'Active'}</Badge>
+                        : <Badge>Archived</Badge>}
+                    </td>
                     <td className="num">
                       <Button size="sm" variant="ghost" onClick={() => open(i)}>
                         {mayEdit ? 'Edit' : 'View'}
@@ -1323,6 +1372,53 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
               hint={hasSizes && variants.length > 0 ? 'Ignored, each size below carries its own price.' : undefined}
             >
               <Input value={priceText} inputMode="decimal" onChange={(e) => setPriceText(e.target.value)} />
+            </Field>
+            {/*
+              WHO MAY CHANGE THIS PRICE AT THE TILL.
+
+              Beside the price, because that is what it is about, rather than
+              buried in a permissions screen nobody opens while thinking about
+              a product.
+
+              Named people, on this product only. The grant on a staff record
+              covers the whole board — any price, any item — which is a
+              manager's permission and the wrong shape for the thing a shop
+              actually asks for: the display pieces get haggled over, so the
+              counter that sells them should be able to drop the price of one
+              of those and nothing else.
+
+              Admins are not listed. They always may, and a ticked box that
+              cannot be unticked teaches people that the boxes do not mean
+              anything.
+            */}
+            <Field
+              label="Who may change this price at the till"
+              hint={
+                repriceStaff.length === 0
+                  ? 'Nobody has a staff record to name yet.'
+                  : 'On this item only, and only for that one sale. Anybody already allowed to change any price '
+                    + 'on the till can do this whether or not they are named here.'
+              }
+            >
+              <div className="stack" style={{ gap: '0.35rem', marginTop: '0.2rem' }}>
+                {repriceStaff.length === 0 ? (
+                  <span className="small dim">Add staff under Setup → Staff.</span>
+                ) : repriceStaff.map((s) => (
+                  <div className="row" key={s.$id}>
+                    <Toggle
+                      checked={(editing.price_editors ?? []).includes(s.$id)}
+                      onChange={(v) => setEditing({
+                        ...editing,
+                        price_editors: v
+                          ? [...new Set([...(editing.price_editors ?? []), s.$id])]
+                          : (editing.price_editors ?? []).filter((x) => x !== s.$id),
+                      })}
+                      label={s.display_name || 'Unnamed'}
+                    />
+                    {s.can_change_line_price && <Badge tone="ok">Any price already</Badge>}
+                  </div>
+                ))}
+              </div>
             </Field>
             {module === 'kitchen' && (
               <Field label="Prep time (minutes)" hint="Used to estimate waits and to time pre-orders.">

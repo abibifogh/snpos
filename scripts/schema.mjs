@@ -585,6 +585,33 @@ export const COLLECTIONS = [
        */
       ['is_one_off', 'b', null, false, false],
       ['maker_note', 's', 500, false], // the card that sits beside it
+      /**
+       * Work the shop does, rather than a thing the shop sells.
+       *
+       * Alterations, sewing, a repair. Rung up at the same counter into the
+       * same takings, and with no shelf at all — so nothing comes off when it
+       * sells, it is never counted, it never runs out, and it is not part of
+       * anybody's unsold stock. See craft-services.ts for what each of those
+       * did before there was a way to say this.
+       *
+       * Optional, for the reason written twice above: a field that arrives
+       * after the rows do cannot be required, or every dish written before it
+       * fails its next save.
+       */
+      ['is_service', 'b', null, false, false],
+      /**
+       * People who may change THIS product's price at the till.
+       *
+       * Named, rather than granted across the board. The blanket permission on
+       * a staff record is a manager's grant — any price, any item, any sale —
+       * and it is the wrong shape for what a shop asks for, which is narrow:
+       * the display baskets get haggled over, so the two people on that
+       * counter should be able to drop the price of a basket and nothing else.
+       *
+       * Staff ids, and the till matches either the staff record's own id or
+       * the account behind it. See canRepriceLine.
+       */
+      ['price_editors', 's[]', 64, false],
     ],
     indexes: [
       ['category_active', 'key', ['category_id', 'active']],

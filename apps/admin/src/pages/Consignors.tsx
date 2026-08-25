@@ -8,7 +8,7 @@ import {
   formatMoney, parseMoney, toInput,
   loadConsignors, balancesByConsignor, ledgerFor, buildStatement, recordPayout, nextReference,
   buildStatementHtml, openPrintable, rateFor, flatFor, dueFor, onHandFor,
-  owedBreakdown, labelForKind, makerCode,
+  owedBreakdown, labelForKind, makerCode, hasShelf,
 } from '@snpos/core';
 import type {
   Consignor, LedgerEntry, Statement, Settings, ConsignmentIntake, MenuItem, ProductVariant, UnsoldLine,
@@ -516,7 +516,15 @@ function StatementModal({
       ]);
       setIntakes(deliveries);
 
-      const live = products.filter((p) => p.active !== false);
+      /*
+        What is still standing on the shelf, and only that.
+
+        A service is not unsold stock — there is nothing of it in the shop. Its
+        count is meaningless and, before it could be marked as work, would
+        have been a growing negative dragged into a real valuation. See
+        craft-services.
+      */
+      const live = products.filter((p) => p.active !== false && hasShelf(p));
       const variants = live.length
         ? await listAll<ProductVariant>('product_variants', [
             Query.equal('menu_item_id', live.map((p) => p.$id)),

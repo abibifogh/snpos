@@ -41,13 +41,38 @@ export const PRODUCT_WATCH: WatchList = {
   consignor_id: 'Maker',
   sku: 'Barcode',
   module: 'Side of the business',
+  // On_hand is deliberately absent: a shelf figure is changed through the
+  // approval desk, which keeps its own record with both names on it.
+  is_service: 'Work rather than goods',
+  // Who may drop this price at the counter, which is a permission and
+  // therefore exactly the kind of thing somebody asks about a year later.
+  price_editors: 'Who may change this price',
 };
 
 const same = (a: unknown, b: unknown): boolean => {
   // Blank, absent and empty are the same absence. Without this, opening a
   // record and saving it unchanged logs "Description: null to empty".
-  const empty = (v: unknown) => v === undefined || v === null || v === '';
+  const empty = (v: unknown) =>
+    v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0);
   if (empty(a) && empty(b)) return true;
+  /*
+    A list is the same list when it holds the same things.
+
+    Compared by contents rather than by identity, because these arrive as two
+    separately built arrays on every save — so by identity they are never
+    equal, and a product opened and saved with nothing changed would log "Who
+    may change this price: Ama, Kofi to Ama, Kofi" every time. A log that fills
+    up with changes that are not changes is one nobody reads.
+
+    Order does not count. Ticking two people in the other order is not a
+    different permission.
+  */
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    const left = [...a].map(String).sort();
+    const right = [...b].map(String).sort();
+    return left.every((v, i) => v === right[i]);
+  }
   if (typeof a === 'number' && typeof b === 'number') return a === b;
   return a === b;
 };

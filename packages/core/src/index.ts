@@ -43,6 +43,7 @@ export * from './price-history';
 export * from './stocktake';
 export * from './shelf-approval';
 export * from './till-refresh';
+export * from './craft-services';
 export * from './maker-import';
 export * from './bar-count';
 export * from './drink-import';

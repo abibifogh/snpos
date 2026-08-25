@@ -396,6 +396,46 @@ export function canDeleteCatalogue(profile: StaffProfile | null): boolean {
 }
 
 /**
+ * May this person change the price of THIS line, at the till?
+ *
+ * Two grants, and they answer different questions.
+ *
+ * The one on the PERSON — `can_change_line_price` — says they may change any
+ * price on the till. That is a manager's grant: somebody trusted with the
+ * whole board, on any item, on any sale.
+ *
+ * The one on the PRODUCT names people, and it exists because the blanket grant
+ * is the wrong shape for what a shop actually wants. The real request is
+ * narrow and specific: the display baskets get haggled over, so the two people
+ * who work that counter should be able to drop the price of a basket — and
+ * nothing else. Handing them the whole board to allow that grants far more
+ * than was asked for, and refusing grants nothing, so shops do the first and
+ * then stop looking at repriced lines because there are too many of them.
+ *
+ * Either is enough. They are not a hierarchy: a named person on one product
+ * does not need the blanket grant, and somebody with the blanket grant does
+ * not need naming.
+ *
+ * An admin always may, which is the rule everything else here follows.
+ *
+ * Matched on both ids. A staff record is referred to by its own id in some
+ * places and by the account behind it in others, and a permission that worked
+ * only for whichever one the picker happened to store would fail silently for
+ * half the shop.
+ */
+export function canRepriceLine(
+  profile: (StaffProfile & { $id?: string; user_id?: string }) | null,
+  item: { price_editors?: string[] } | null | undefined,
+): boolean {
+  if (!profile) return false;
+  if (profile.role === 'admin') return true;
+  if (profile.can_change_line_price === true) return true;
+  const named = item?.price_editors ?? [];
+  if (named.length === 0) return false;
+  return named.includes(profile.$id ?? '') || named.includes(profile.user_id ?? '');
+}
+
+/**
  * Which sides of the business a person actually works on.
  *
  * The business's own switches come first: somebody marked as craft-only in a

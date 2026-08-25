@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { Badge, Button, Field, Input, Notice, Select, Textarea, Toggle } from '@snpos/ui';
-import { parseMoney, toInput, countedAsWarning, drinkStockIsSpare, frozenBy, waitingWords } from '@snpos/core';
+import {
+  parseMoney, toInput, countedAsWarning, drinkStockIsSpare, frozenBy, waitingWords,
+  isService, serviceProblem, NO_SHELF_WORDS,
+} from '@snpos/core';
 import type { Consignor, MenuItem, ProductVariant, VariantType, Module, WaitingChange } from '@snpos/core';
 
 /** A size row being edited, before it is written. */
@@ -125,6 +128,9 @@ export function ConsignmentFields({
     });
 
   const consigned = module === 'craft';
+  /** Work rather than goods: no shelf, no count, and it never runs out. */
+  const service = isService({ module, is_service: editing.is_service });
+  const [serviceError, setServiceError] = useState<string | null>(null);
 
   /**
    * Is this piece's shelf figure waiting on somebody?
@@ -217,6 +223,44 @@ export function ConsignmentFields({
           <Input value={editing.barcode ?? ''} onChange={(e) => setEditing({ ...editing, barcode: e.target.value })} />
         </Field>
         {/*
+          Work, or goods.
+
+          Asked as what the thing IS, not as a stock setting, because that is
+          the question a shopkeeper can answer. "Alterations are work, not a
+          thing on a shelf" is a sentence; "do not deplete on sale" is not,
+          and a shop asked the second question answers it wrong.
+        */}
+        <Field label="What is this?" hint={service ? NO_SHELF_WORDS : 'A thing on a shelf. It is counted, it comes off as it sells, and it can run out.'}>
+          <Select
+            value={service ? 'service' : 'goods'}
+            onChange={(e) => {
+              const now = e.target.value === 'service';
+              /*
+                Refused where there are pieces standing on the shelf.
+
+                Work has no shelf, so calling this work would strand that stock
+                where nothing counts it and nothing sells it — it would sit in
+                the shop for ever at whatever number it happened to hold.
+              */
+              const bad = now
+                ? serviceProblem({
+                  onHand: Number(onHandText || 0),
+                  variantsOnHand: variants.map((v) => Number(v.onHandText || 0)),
+                })
+                : null;
+              if (bad) { setServiceError(bad); return; }
+              setServiceError(null);
+              setEditing({ ...editing, is_service: now });
+              // Work has no count, and a figure left behind in the box would
+              // be written back the next time somebody saved the price.
+              if (now) setOnHandText('0');
+            }}
+          >
+            <option value="goods">Goods — a thing on a shelf</option>
+            <option value="service">Work — alterations, sewing, a repair</option>
+          </Select>
+        </Field>
+        {/*
           The shelf figure, and the one control on this form that is not simply
           a fact about the product.
 
@@ -225,6 +269,9 @@ export function ConsignmentFields({
           in MenuItems and shelf-approval for the rule. Here that shows up as a
           box that says what is waiting, rather than one that quietly refuses.
         */}
+        {/* Nothing at all for work. A count box on a service is a question
+            with no answer, and a greyed-out one still invites a number. */}
+        {!service && (
         <Field
           label="How many on the shelf"
           hint={
@@ -243,15 +290,21 @@ export function ConsignmentFields({
             disabled={variants.length > 0 || !!heldHere}
           />
         </Field>
+        )}
       </div>
+      {serviceError && <Notice tone="warn">{serviceError}</Notice>}
 
-      <Field>
-        <Toggle
-          checked={editing.is_one_off ?? false}
-          onChange={(v) => { setEditing({ ...editing, is_one_off: v }); if (v) setOnHandText('1'); }}
-          label="A one-off piece; there is only ever one of these"
-        />
-      </Field>
+      {/* A one-off is a statement about how many exist, which is not a thing
+          that can be said about work. */}
+      {!service && (
+        <Field>
+          <Toggle
+            checked={editing.is_one_off ?? false}
+            onChange={(v) => { setEditing({ ...editing, is_one_off: v }); if (v) setOnHandText('1'); }}
+            label="A one-off piece; there is only ever one of these"
+          />
+        </Field>
+      )}
 
       <Field label="The card beside it" hint="A line about the maker or the making. Shown to customers.">
         <Textarea
@@ -385,7 +438,10 @@ export function ConsignmentFields({
                 recipe — the measure comes out of the bottle — so a count here
                 would be a number nothing reads and nothing keeps true.
               */}
-              {consigned && (
+              {/* Sizes of a service are prices, not shelves. "Simple hem" and
+                  "full alteration" are two rates for work, and neither of them
+                  is a number of things standing anywhere. */}
+              {consigned && !service && (
                 <label className="variant-cell">
                   <span>On the shelf</span>
                   <Input

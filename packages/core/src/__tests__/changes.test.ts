@@ -79,3 +79,30 @@ test('an ordinary change is stored whole, not mangled', () => {
   const packed = fitForLog([{ field: 'price', label: 'Price', from: 4000, to: 4500 }]);
   assert.deepEqual(JSON.parse(packed), [{ field: 'price', label: 'Price', from: 4000, to: 4500 }]);
 });
+
+test('a list of the same people is not a change', () => {
+  /**
+   * These arrive as two separately built arrays on every save, so compared by
+   * identity they are never equal — and a product opened and saved with
+   * nothing changed would log "Who may change this price: Ama, Kofi to Ama,
+   * Kofi" every single time. A log that fills up with changes that are not
+   * changes is one nobody reads, including the lines that matter.
+   */
+  const watch = { price_editors: 'Who may change this price' };
+  assert.deepEqual(
+    diffFields({ price_editors: ['a', 'b'] }, { price_editors: ['a', 'b'] }, watch),
+    [],
+  );
+  // Ticking two people in the other order is not a different permission.
+  assert.deepEqual(
+    diffFields({ price_editors: ['b', 'a'] }, { price_editors: ['a', 'b'] }, watch),
+    [],
+  );
+  // Nothing and an empty list are the same absence.
+  assert.deepEqual(diffFields({}, { price_editors: [] }, watch), []);
+  assert.deepEqual(diffFields({ price_editors: [] }, { price_editors: [] }, watch), []);
+
+  // A real change is still a change.
+  assert.equal(diffFields({ price_editors: ['a'] }, { price_editors: ['a', 'b'] }, watch).length, 1);
+  assert.equal(diffFields({ price_editors: ['a'] }, { price_editors: [] }, watch).length, 1);
+});

@@ -177,6 +177,20 @@ async function depleteShelf({ db, DB_ID, order, lines, log }) {
     */
     if ((item?.module ?? 'kitchen') !== 'craft') continue;
 
+    /*
+      Work, not goods.
+
+      Alterations and sewing are rung up at the same counter into the same
+      takings, and they have no shelf. Depleting one takes a piece off a count
+      that does not exist: it starts at nothing, goes to minus one, and keeps
+      going, because nobody counts alterations and so nobody ever sees it.
+
+      The maker is still credited — that runs off the sale, in the ledger
+      below, not off the shelf — so a seamstress on a commission is paid for
+      her work exactly as a basket-maker is paid for a basket.
+    */
+    if (item?.is_service === true) continue;
+
     await db.createDocument(DB_ID, 'product_moves', 'unique()', {
       venue_id: order.venue_id,
       menu_item_id: line.menu_item_id,

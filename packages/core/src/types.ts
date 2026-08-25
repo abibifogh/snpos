@@ -195,6 +195,21 @@ export interface MenuItem extends Doc {
   on_hand?: number;
   is_one_off?: boolean;
   maker_note?: string;
+  /**
+   * Work the shop does, rather than a thing the shop sells.
+   *
+   * Alterations, sewing, a repair. No shelf, so nothing comes off when it
+   * sells, it is never counted and it never runs out. See craft-services.
+   */
+  is_service?: boolean;
+  /**
+   * People who may change this product's price at the till.
+   *
+   * Named individually, so a counter that haggles over display pieces can be
+   * allowed to drop the price of those without being handed the whole board.
+   * See canRepriceLine.
+   */
+  price_editors?: string[];
 }
 
 export interface FeatureFlag extends Doc {

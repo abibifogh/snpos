@@ -9,7 +9,7 @@ import {
   loadRecipes, loadIngredients, pourList, showsRecipe,
   park, unpark, parkProblem, parkKey, describeParked, autoLabel, isStale,
   cartKey, cartWorthHolding, restorableCart, restoredWords,
-  chipColour, showsPicture, inkOn, downloadUrl,
+  chipColour, showsPicture, inkOn, downloadUrl, isService, canRepriceLine,
 } from '@snpos/core';
 import type {
   CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, Settings, DiscountRow,
@@ -483,10 +483,24 @@ export function OrderView({
     });
   };
 
-  // Never inferred from the role. An admin who does not want their weekend
-  // cashier discounting stock by hand should be able to say so, and a role is
-  // too blunt an instrument for that.
-  const canChangePrice = !!ctx.profile?.can_change_line_price;
+  /**
+   * May the person at the till change the price of THIS line?
+   *
+   * Never inferred from the role. An admin who does not want their weekend
+   * cashier discounting stock by hand should be able to say so, and a role is
+   * too blunt an instrument for that.
+   *
+   * Asked per line rather than once for the whole till, because a shop can now
+   * name people on a particular product: the display baskets get haggled over,
+   * so the counter that sells them may drop a basket's price and nothing
+   * else's. See canRepriceLine.
+   *
+   * The person is whoever entered a PIN, not whichever account this device was
+   * signed in with months ago — ctx.profile is swapped when the till is
+   * unlocked, so the permission follows the person standing there.
+   */
+  const canChangePrice = (line: { menu_item_id: string }) =>
+    canRepriceLine(ctx.profile, ctx.menu.byId[line.menu_item_id]?.item);
 
   const newTotals = computeTotals({ lines: cart, settings: ctx.settings });
 
@@ -887,7 +901,7 @@ export function OrderView({
                       </button>
                     </div>
 
-                    {canChangePrice ? (
+                    {canChangePrice(l) ? (
                       <button
                         type="button"
                         className="line-price editable"
@@ -1029,9 +1043,20 @@ export function OrderView({
       {pickingSize && (() => {
         const entry = ctx.menu.byId[pickingSize];
         const sizes = (entry?.variants ?? []).filter((v) => v.active);
+        /*
+          Work does not run out.
+
+          A size of a service is a rate — "simple hem", "full alteration" —
+          and its count is a number nothing keeps true. Reading it here would
+          grey out the second alteration of the day and leave the counter
+          unable to sell something the shop is perfectly able to do.
+        */
+        const work = isService(entry?.item);
         return (
           <Modal title={entry?.item.name ?? 'Which one?'} onClose={() => setPickingSize(null)}>
-            <p className="small dim" style={{ marginTop: 0 }}>Which one is the customer buying?</p>
+            <p className="small dim" style={{ marginTop: 0 }}>
+              {work ? 'Which one is it?' : 'Which one is the customer buying?'}
+            </p>
             <div className="menu-grid">
               {sizes.map((v) => (
                 <button
@@ -1040,13 +1065,13 @@ export function OrderView({
                   // Sold out rather than hidden: a customer asking for the
                   // large should be told there is none, not left wondering why
                   // it is missing from a list they can see over the counter.
-                  disabled={v.on_hand <= 0}
+                  disabled={!work && v.on_hand <= 0}
                   onClick={() => addItem(pickingSize, v.$id)}
                 >
                   <div className="n">{v.label}</div>
                   <div className="p">
                     {formatMoney(v.price, ctx.settings)}
-                    {v.on_hand <= 0 ? ' · none left' : v.on_hand <= 2 ? ` · ${v.on_hand} left` : ''}
+                    {work ? '' : v.on_hand <= 0 ? ' · none left' : v.on_hand <= 2 ? ` · ${v.on_hand} left` : ''}
                   </div>
                 </button>
               ))}

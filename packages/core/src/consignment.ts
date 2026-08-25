@@ -5,6 +5,7 @@ import type { Doc, Settings, MenuItem } from './types';
 import { differencesIn, summariseCount, MOVE_FOR_REASON } from './stocktake';
 import type { CountLine, PendingCount, PendingCountLine } from './stocktake';
 import type { WaitingChange } from './shelf-approval';
+import { hasShelf } from './craft-services';
 import type { ImportMaker } from './maker-import';
 
 /**
@@ -571,7 +572,14 @@ export async function shelfLines(): Promise<CountLine[]> {
     listAll<{ $id: string; name: string }>('categories').catch(() => []),
   ]);
 
-  const craft = items.filter((i) => (i.module ?? 'kitchen') === 'craft' && i.active !== false);
+  /*
+    The shop's own goods, and only the goods.
+
+    A service has no shelf — see craft-services. Asking somebody with a
+    clipboard how many alterations are standing on the shelf has no answer, so
+    they write nothing or they write a number, and both are wrong.
+  */
+  const craft = items.filter((i) => hasShelf(i) && i.active !== false);
   const nameOf = new Map(consignors.map((c) => [c.$id, c.name]));
   // The first category a piece is in. A product can sit in several; for
   // deciding which shelf somebody walks to, the first is as good an answer as

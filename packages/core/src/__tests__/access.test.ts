@@ -4,6 +4,7 @@ import { shiftPrefix } from '../shift-rules.ts';
 import {
   modulesOf, modulesForStaff, parseAccess, canOpen, inTrade, sectionsFor,
   canEditCatalogue, selfOrderModule, ADMIN_SECTIONS, DEFAULT_ACCESS, areasOf, sidesOf, legacySide,
+  canRepriceLine,
 } from '../access.ts';
 import type { Settings, StaffProfile } from '../types.ts';
 
@@ -364,4 +365,52 @@ test('the single-value column is written as the nearest thing that is true', () 
   assert.equal(legacySide(['bar']), 'bar');
   assert.equal(legacySide(['kitchen', 'bar']), 'both');
   assert.equal(legacySide([]), 'both');
+});
+
+test('a person named on one product may change that price and no other', () => {
+  /**
+   * The request this exists for is narrow and specific: the display baskets
+   * get haggled over, so the two people on that counter should be able to drop
+   * the price of a basket — and nothing else.
+   *
+   * The alternative on offer was the blanket grant, which covers any price on
+   * any item on any sale. Shops turn that on to allow the narrow thing, and
+   * then stop looking at repriced lines because there are too many of them.
+   */
+  const ama = staff({ $id: 'p-ama', role: 'cashier' });
+  const basket = { price_editors: ['p-ama'] };
+  const jollof = { price_editors: [] as string[] };
+
+  assert.equal(canRepriceLine(ama, basket), true);
+  assert.equal(canRepriceLine(ama, jollof), false, 'and nothing else');
+  assert.equal(canRepriceLine(ama, undefined), false);
+});
+
+test('the blanket grant and the per-product one are not a hierarchy', () => {
+  // Either is enough. A named person does not also need the whole board, and
+  // somebody with the whole board does not need naming.
+  const kofi = staff({ $id: 'p-kofi', role: 'cashier', can_change_line_price: true });
+  assert.equal(canRepriceLine(kofi, { price_editors: [] }), true);
+  assert.equal(canRepriceLine(kofi, undefined), true);
+
+  const plain = staff({ $id: 'p-yaa', role: 'cashier' });
+  assert.equal(canRepriceLine(plain, { price_editors: [] }), false);
+});
+
+test('an admin may change any price, and nobody signed in may change none', () => {
+  assert.equal(canRepriceLine(staff({ role: 'admin' }), { price_editors: [] }), true);
+  assert.equal(canRepriceLine(null, { price_editors: ['p-ama'] }), false);
+});
+
+test('a person is matched by their staff record or by the account behind it', () => {
+  /**
+   * A staff record is referred to by its own id in some places and by the
+   * account behind it in others. A permission that worked only for whichever
+   * one the picker happened to store would fail silently for half the shop —
+   * and silently, because a button that is simply not drawn explains nothing.
+   */
+  const byAccount = staff({ $id: 'p-ama', user_id: 'u-ama', role: 'cashier' });
+  assert.equal(canRepriceLine(byAccount, { price_editors: ['u-ama'] }), true);
+  assert.equal(canRepriceLine(byAccount, { price_editors: ['p-ama'] }), true);
+  assert.equal(canRepriceLine(byAccount, { price_editors: ['someone-else'] }), false);
 });
