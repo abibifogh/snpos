@@ -1,14 +1,24 @@
 import { useEffect, useState } from 'react';
 import { Badge, Button, Empty, Field, FormError, Input, Modal, Spinner } from './components';
 import {
-  Query, formatMoney, listAll, displayOrderNo, requestReceipt, soldInShift, soldTotals,
+  Query, formatMoney, listAll, listByIds, displayOrderNo, requestReceipt, soldInShift, soldTotals,
   receiptForOrder, buildReceiptHtml, openPrintable, ordersForShift, fromTakings,
   loadPaymentMethods, isLivePayment, changePaymentMethod, logPaymentMethodChange,
+  missingOrderIds, looseTakings, listedTotal, looseWords,
 } from '@snpos/core';
 import type {
   Order, OrderItem, Settings, Shift, Doc, Venue, StaffProfile, PaidToKind, Module,
   PaymentMethod,
 } from '@snpos/core';
+
+/** A sale looked up because it was not on this shift's list. */
+interface LooseOrder extends Doc {
+  order_no?: string;
+  status?: string;
+  module?: string;
+  shift_id?: string;
+  total?: number;
+}
 
 /** A payment as this screen needs it: how much, in tips, and by what means. */
 interface PaymentRow extends Doc {
@@ -77,6 +87,13 @@ export function ShiftHistory({
   const [tab, setTab] = useState<'orders' | 'sold' | 'spend'>('orders');
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [items, setItems] = useState<Record<string, OrderItem[]>>({});
+  /**
+   * Sales this shift took money for that are counted somewhere else.
+   *
+   * Fetched only when there are any, which on almost every shift is none. See
+   * the reconciliation below, and shift-reconcile for why they exist at all.
+   */
+  const [elsewhere, setElsewhere] = useState<Map<string, LooseOrder>>(new Map());
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
   /**
    * What came in, and by what means.
@@ -232,6 +249,32 @@ export function ShiftHistory({
       setPayments(pays);
       setMethods(meths);
 
+      /*
+        MAKING THE TWO FIGURES ADD UP.
+
+        The money at the top and the orders underneath are read from two
+        different places, and nothing checked that they described the same
+        thing — so when they disagreed, they disagreed silently. A craft shift
+        showed GH₵1,260 in over two orders totalling GH₵1,004, with nowhere on
+        the screen to find the difference.
+
+        They are ALLOWED to differ: a bill settled at one counter for a sale
+        rung up at another puts the money in this drawer and the sale on the
+        other trade. What is not allowed is the difference being invisible, so
+        the sales behind any unmatched money are fetched and named.
+
+        Only the ones actually missing, so an ordinary shift — where every
+        payment matches a listed sale — reads nothing extra at all.
+      */
+      const missing = missingOrderIds(pays.filter(isLivePayment), sorted);
+      if (missing.length > 0) {
+        const rows = await listByIds<LooseOrder>('orders', '$id', missing)
+          .catch(() => [] as LooseOrder[]);
+        setElsewhere(new Map(rows.map((o) => [o.$id, o])));
+      } else {
+        setElsewhere(new Map());
+      }
+
       if (sorted.length) {
         const lines = await listAll<OrderItem>('order_items', [
           Query.equal('order_id', sorted.slice(0, 100).map((x) => x.$id)),
@@ -278,6 +321,23 @@ export function ShiftHistory({
   const takings = live.reduce((s, p) => s + (p.amount ?? 0) + (p.tip ?? 0), 0);
   const tipsTotal = live.reduce((s, p) => s + (p.tip ?? 0), 0);
   const spent = expenses.reduce((s, e) => s + e.amount, 0);
+
+  /**
+   * Money in this drawer for sales that are not on the list below.
+   *
+   * Real and legitimate most of the time — a bar bill settled at the shop
+   * counter puts the cash here and leaves the sale on the bar — but it used to
+   * be invisible, so the top of this panel and the list under it simply did
+   * not add up and there was nothing anywhere to say why. See shift-reconcile.
+   */
+  const loose = looseTakings({
+    payments,
+    orders: orders ?? [],
+    found: elsewhere,
+    shift,
+    live: isLivePayment,
+  });
+  const sales = listedTotal(orders ?? []);
 
   const time = (iso: string) =>
     new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -341,6 +401,34 @@ export function ShiftHistory({
             <div className="figure">{money(takings)}</div>
             {tipsTotal > 0 && <div className="small dim">incl. {money(tipsTotal)} tips</div>}
           </div>
+        </div>
+      )}
+
+      {/*
+        WHY THE TOP AND THE LIST DO NOT ADD UP.
+
+        Shown whenever they do not, rather than left for somebody to work out
+        with a calculator while holding a drawer full of cash. Every line names
+        the sale, what it was worth and what happened to it, because the
+        reasons are not interchangeable: a bar bill settled here is simply
+        true and needs nothing doing, while a cancelled sale whose money never
+        went back is somebody's mistake to put right today.
+      */}
+      {loose.rows.length > 0 && (
+        <div className="notice notice-warn" style={{ marginBottom: '0.9rem' }}>
+          <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>
+            {looseWords(sales, loose.amount, money)}
+          </div>
+          <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
+            {loose.rows.map((r) => (
+              <li key={r.payment.$id} className="small">
+                <strong>{money(r.amount)}</strong>
+                {r.order?.order_no ? ` · ${displayOrderNo(r.order.order_no)}` : ''}
+                {' — '}
+                {r.why}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

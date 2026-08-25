@@ -594,6 +594,9 @@ export function SettleModal({
         venueId,
         order,
         shiftId: shift.$id,
+        // Which side's drawer this is. See shiftStampForPayment: settling a
+        // bill must not move the sale onto another trade's shift.
+        shiftModule: shift.module ?? 'kitchen',
         methodId,
         methodKind: method?.kind ?? 'other',
         amount: paying,

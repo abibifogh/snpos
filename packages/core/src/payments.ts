@@ -4,6 +4,9 @@ import type { Doc } from './types';
 import type { Order } from './orders';
 // Pure, so the same rule can be checked without a database in front of it.
 import { isLivePayment } from './shift-rules';
+// Which shift a settled sale is filed under, which is not always the one that
+// took the money. Pure, for the same reason.
+import { shiftStampForPayment } from './shift-move';
 
 export { isLivePayment };
 
@@ -45,8 +48,16 @@ export async function amountOutstanding(order: Pick<Order, '$id' | 'total'>): Pr
  */
 export interface RecordPaymentInput {
   venueId: string;
-  order: Pick<Order, '$id' | 'total' | 'customer_email'>;
+  order: Pick<Order, '$id' | 'total' | 'customer_email' | 'shift_id' | 'module'>;
   shiftId: string;
+  /**
+   * Which side's till is taking the money.
+   *
+   * Read only to decide whether settling should move the SALE onto this shift
+   * as well as the money. Within one side it should; across two it must not —
+   * see shiftStampForPayment for what that cost.
+   */
+  shiftModule?: string;
   methodId: string;
   methodKind: string;
   /** What this order's share of the tender was, in minor units. */
@@ -73,6 +84,11 @@ export interface RecordPaymentInput {
  */
 export async function recordPayment(input: RecordPaymentInput): Promise<number> {
   const now = new Date().toISOString();
+  const stamp = shiftStampForPayment({
+    order: input.order,
+    shiftId: input.shiftId,
+    shiftModule: input.shiftModule,
+  });
 
   await createOrQueue('payments', ID.unique(), {
     venue_id: input.venueId,
@@ -108,7 +124,14 @@ export async function recordPayment(input: RecordPaymentInput): Promise<number> 
           ...(input.orderStatus === 'SERVED' ? { served_at: now } : {}),
         }
       : {}),
-    shift_id: input.shiftId,
+    /*
+      Settling files the sale under the shift that took the money — within one
+      side. Across two it must not: a bar bill settled at the craft counter was
+      being restamped onto the shop's shift, which put the sale on no shift's
+      list at all while its money stayed in the shop's takings. See
+      shiftStampForPayment.
+    */
+    ...(stamp ? { shift_id: stamp } : {}),
     customer_email: input.customerEmail?.trim() || input.order.customer_email || '',
   });
 

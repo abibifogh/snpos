@@ -1435,6 +1435,9 @@ function CounterPaymentModal({
             venueId: ctx.venue.$id,
             order,
             shiftId: ctx.shift.$id,
+            // Which side's drawer this is. Settling a bar bill at the craft
+            // counter must not move the bar's sale into the shop's books.
+            shiftModule: ctx.module,
             methodId: m.$id,
             methodKind: m.kind,
             amount: share,
@@ -1640,6 +1643,8 @@ function PaymentModal({
           venueId: ctx.venue.$id,
           order,
           shiftId: ctx.shift.$id,
+          // Which side's drawer this is. See shiftStampForPayment.
+          shiftModule: ctx.module,
           methodId,
           methodKind: method?.kind ?? 'cash',
           amount: share,

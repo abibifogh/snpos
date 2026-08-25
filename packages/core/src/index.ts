@@ -44,6 +44,7 @@ export * from './stocktake';
 export * from './shelf-approval';
 export * from './till-refresh';
 export * from './craft-services';
+export * from './shift-reconcile';
 export * from './maker-import';
 export * from './bar-count';
 export * from './drink-import';

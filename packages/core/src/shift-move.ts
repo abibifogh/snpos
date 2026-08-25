@@ -208,6 +208,51 @@ export function belongsToShift(
 }
 
 
+/**
+ * Which shift an order should be filed under once it has been paid for.
+ *
+ * Settling a bill files the sale under the shift whose drawer took the money.
+ * That is right, and it is why an order rung up before a handover and paid
+ * after it counts on the shift that actually holds the cash.
+ *
+ * It is right ONLY WITHIN ONE SIDE. A bar bill settled at the craft counter —
+ * which happens whenever one tablet is switched between the two — was being
+ * restamped onto the craft shop's shift, and that orphaned the sale outright:
+ * `belongsToShift` refuses it on the craft shift because it is a bar sale, and
+ * refuses it on the bar shift because a stamp wins over the clock and the
+ * stamp now says craft. The order appeared on neither shift's list, while its
+ * money sat in the craft shop's takings — so the shop's "money in" was larger
+ * than the orders under it by exactly that bill, with nothing anywhere saying
+ * why.
+ *
+ * The money still belongs to the drawer it was put in; the payment keeps the
+ * shift it was taken on, and the panel reconciles the two and says so. What
+ * must not happen is the SALE moving to another trade's books.
+ *
+ * Returns the shift to stamp, or null to leave the order's own stamp alone.
+ */
+export function shiftStampForPayment(opts: {
+  order: { shift_id?: string; module?: string };
+  shiftId: string;
+  /** The side whose till is taking the money. Unknown leaves it to the order. */
+  shiftModule?: string;
+}): string | null {
+  const { order, shiftId } = opts;
+  if (!shiftId) return null;
+  // Nothing to lose. A guest order, or one taken before shifts were stamped,
+  // is filed under whichever shift settled it — which is the only shift that
+  // has any claim on it at all.
+  if (!order.shift_id) return shiftId;
+  if (order.shift_id === shiftId) return null;
+
+  // Unknown side is treated as the same side, which is what it was before
+  // this existed. A caller that does not say cannot have its handovers
+  // silently stop working.
+  const side = opts.shiftModule ?? order.module ?? 'kitchen';
+  return side === (order.module ?? 'kitchen') ? shiftId : null;
+}
+
+
 /* ---------------------------------------------- moving an order by date */
 
 /**
