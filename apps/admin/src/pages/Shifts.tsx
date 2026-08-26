@@ -10,7 +10,7 @@ import {
   changeOpeningFloat, floatProblem, describeFloatChange, parseMoney, toInput,
   requestSummaryResend, resendPending,
   listCreatedBetween, listByIds, setShiftSealed, isSealed, describeSeal, lockedProblem,
-  rangeTotals, kindsWorthShowing, KIND_LABELS, canOpen, floatOrigin,
+  rangeTotals, kindsWorthShowing, KIND_LABELS, MODULE_LABELS, canOpen, floatOrigin,
   kindOf, countedParts, partLines, partsWords, unexplained,
 } from '@snpos/core';
 import type { Module, Doc, CashHandover, MoneyKind, CountedParts, Settings } from '@snpos/core';
@@ -648,10 +648,21 @@ export function ShiftsPage() {
                           <Badge>Closed</Badge>
                         )}
                       </td>
-                      {/* Named only when both are on screen together. A column
-                          that always says the same word is a column of noise. */}
+                      {/*
+                        Named only when both are on screen together. A column
+                        that always says the same word is a column of noise.
+
+                        The word itself comes from MODULE_LABELS, the one list
+                        that knows every side. This was a two-way question —
+                        craft, or else the kitchen — written when there were
+                        two sides and read by a third: a bar shift fell into
+                        the "or else" and was labelled Kitchen. The code beside
+                        it said BAR and its takings were the bar's; the only
+                        thing wrong was the word, which is its own kind of bad,
+                        because the column exists to be trusted at a glance.
+                      */}
                       {side === 'all' && (
-                        <td className="dim small">{(s.module ?? 'kitchen') === 'craft' ? 'Craft shop' : 'Kitchen'}</td>
+                        <td className="dim small">{MODULE_LABELS[s.module ?? 'kitchen']}</td>
                       )}
                       <td className="num">
                         {/* An admin's, and only once the night has finished

@@ -4,9 +4,10 @@ import { shiftPrefix } from '../shift-rules.ts';
 import {
   modulesOf, modulesForStaff, parseAccess, canOpen, inTrade, sectionsFor,
   canEditCatalogue, selfOrderModule, ADMIN_SECTIONS, DEFAULT_ACCESS, areasOf, sidesOf, legacySide,
-  canRepriceLine,
+  canRepriceLine, MODULE_LABELS,
 } from '../access.ts';
 import type { Settings, StaffProfile } from '../types.ts';
+import type { Module } from '../access.ts';
 
 const settings = (over: Partial<Settings> = {}) => ({ ...over }) as Settings;
 const staff = (over: Partial<StaffProfile> = {}) =>
@@ -413,4 +414,27 @@ test('a person is matched by their staff record or by the account behind it', ()
   assert.equal(canRepriceLine(byAccount, { price_editors: ['u-ama'] }), true);
   assert.equal(canRepriceLine(byAccount, { price_editors: ['p-ama'] }), true);
   assert.equal(canRepriceLine(byAccount, { price_editors: ['someone-else'] }), false);
+});
+
+test('every side has a name, and no screen has to invent one', () => {
+  /**
+   * A bar shift was labelled "Kitchen" on the shifts list for weeks. The data
+   * was right — the code beside it said BAR and its takings were the bar's —
+   * but the column was written as a two-way question, craft or else the
+   * kitchen, back when there were two sides. The third fell into the "or
+   * else".
+   *
+   * A column that exists to be trusted at a glance is worse than useless when
+   * it is confidently wrong, so the words live in one list. This asserts the
+   * list is complete: a fourth trade added to Module without a label here
+   * fails the build rather than arriving on screen as somebody else's.
+   */
+  const sides: Module[] = ['kitchen', 'craft', 'bar'];
+  for (const m of sides) {
+    assert.equal(typeof MODULE_LABELS[m], 'string');
+    assert.ok(MODULE_LABELS[m].length > 0, `${m} has no name`);
+  }
+  // And no two sides answer to the same word, which is the way a mislabel
+  // survives a test that only checks for non-empty strings.
+  assert.equal(new Set(sides.map((m) => MODULE_LABELS[m])).size, sides.length);
 });
