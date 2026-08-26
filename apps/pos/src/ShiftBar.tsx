@@ -8,7 +8,7 @@ import {
   formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift as createShift, shiftBlockers, expectedTakings, closeShift,
   openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, HANDOVER_ENABLED,
-  countsAtBothEnds, hasOpeningCount, shiftCountPhases, ownFigure, floatOrigin, floatMethods,
+  countsAtBothEnds, askForOpeningCount, hasOpeningCount, shiftCountPhases, ownFigure, floatOrigin, floatMethods,
 } from '@snpos/core';
 import type { PaymentMethod, Shift, FloatSource } from '@snpos/core';
 import type { PosContext } from './App';
@@ -158,8 +158,12 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
     inherited mid-evening. Without it, "cannot be skipped" would mean only
     "cannot be skipped in the ten seconds after tapping Open shift".
   */
+  // A day is the limit. See shift-rules. Read before the count effect below,
+  // which needs to know whether this shift can still sell anything.
+  const age = shiftAgeOf(ctx.shift);
+
   useEffect(() => {
-    if (!mustCount || countedIn !== false || pushed) return;
+    if (!askForOpeningCount({ countsIn: mustCount, counted: countedIn, canStillSell: !age.over }) || pushed) return;
     /*
       Once, not on a loop.
 
@@ -171,10 +175,8 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
     */
     setPushed(true);
     setBarCount('open');
-  }, [mustCount, countedIn, pushed]);
+  }, [mustCount, countedIn, age.over, pushed]);
 
-  // A day is the limit. See shift-rules.
-  const age = shiftAgeOf(ctx.shift);
   // Which question the restaurant has chosen to ask, and what the answers come
   // to. Worked out here rather than in the form so the close button and the
   // boxes on screen can never be judging different things.
@@ -523,7 +525,18 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           Left on screen rather than shown once and dismissed, because the cost
           of skipping it does not land tonight — it lands on whoever counts out,
           measured against a figure nobody checked. */}
-      {ctx.shift && countsShelves && countedIn === false && (
+      {/*
+        And not on a shift that is already finished.
+
+        A shift open past its limit cannot sell anything, so counting in what
+        it started with measures a handover that is not going to happen. The
+        morning this was added, a craft shift left open overnight put a
+        168-piece count sheet in front of the first person to touch the till —
+        a bartender, whose shift it was not, and whose only useful action was
+        to close it. The overdue notice below already says that; two demands
+        at once, one of them pointless, is how people learn to ignore both.
+      */}
+      {ctx.shift && askForOpeningCount({ countsIn: countsShelves, counted: countedIn, canStillSell: !age.over }) && (
         <div style={{ padding: '0.5rem 1rem 0' }}>
           <Notice tone="warn">
             <strong>{shopCounts ? 'The shop' : 'The bar'} has not been counted in.</strong>

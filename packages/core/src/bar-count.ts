@@ -140,6 +140,39 @@ export const newShelfCadence = (existing: { count_each_shift?: boolean }[]): boo
 export const countsAtBothEnds = (module?: string): boolean =>
   (module ?? 'kitchen') === 'bar' || (module ?? 'kitchen') === 'craft';
 
+/**
+ * Should somebody be asked to count this shift IN?
+ *
+ * Three conditions, and the third is the one that was missing.
+ *
+ * It has to be a side that counts in at all, and it has to not have been
+ * counted already — both obvious. The third is that the shift must still be
+ * able to sell something.
+ *
+ * A shift open past its limit is finished whether or not anybody has closed
+ * it: nothing new can be rung up on it, so counting in what it started with
+ * measures a handover that is not going to happen. The morning this was
+ * written, a craft shift left open overnight put a 168-piece count sheet in
+ * front of the first person to touch the till — who was a bartender, whose
+ * shift it was not, and whose only useful action was to close it. A task that
+ * cannot help is worse than none: it teaches people that the sheet is
+ * something to get past.
+ *
+ * `counted` is deliberately allowed to be undefined, meaning "not looked yet".
+ * Reading that as "nobody counted" would accuse somebody for the second it
+ * takes to find out.
+ */
+export function askForOpeningCount(opts: {
+  countsIn: boolean;
+  counted: boolean | undefined;
+  /** Whether the shift can still take new business. See shiftAgeOf. */
+  canStillSell: boolean;
+}): boolean {
+  if (!opts.countsIn) return false;
+  if (opts.counted !== false) return false;
+  return opts.canStillSell;
+}
+
 export interface BarCountLine {
   ingredientId: string;
   name: string;

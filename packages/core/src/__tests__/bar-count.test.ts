@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   byUnit, wasCountedBar, variancesIn, summariseBarCount, readyToClose, unitLabel,
   BAR_VARIANCE_TOLERANCE, type BarCountLine,
-  shiftCounted, hasShiftCountChoice, countsAtBothEnds, readyToAccept, countGate,
+  shiftCounted, hasShiftCountChoice, countsAtBothEnds, askForOpeningCount, readyToAccept, countGate,
   countable, filedCounts, undoDeltas, undoProblem, soldInShift, soldTotals, newShelfCadence,
   type FiledCheck,
 } from '../bar-count.ts';
@@ -473,4 +473,36 @@ test('a bar that has chosen keeps its choice, and the new shelf joins it', () =>
 
   const after = [...chosen, { count_each_shift: newShelfCadence(chosen) }];
   assert.deepEqual(shiftCounted(after).map((r) => r.count_each_shift), [true, true]);
+});
+
+test('a shift that can no longer sell is not asked to count itself in', () => {
+  /**
+   * The morning this was written, a craft shift left open overnight put a
+   * 168-piece count sheet in front of the first person to touch the till — a
+   * bartender, whose shift it was not, and whose only useful action was to
+   * close it.
+   *
+   * Counting IN measures what somebody is accepting responsibility for at the
+   * start of a handover. A shift past its limit cannot ring anything up, so
+   * there is no handover to measure, and the task cannot help. A task that
+   * cannot help is worse than none: it teaches people that the sheet is
+   * something to get past.
+   */
+  const asked = { countsIn: true, counted: false as boolean | undefined, canStillSell: true };
+  assert.equal(askForOpeningCount(asked), true);
+  assert.equal(askForOpeningCount({ ...asked, canStillSell: false }), false);
+});
+
+test('nothing is asked of a side that does not count in, or one already counted', () => {
+  assert.equal(askForOpeningCount({ countsIn: false, counted: false, canStillSell: true }), false);
+  assert.equal(askForOpeningCount({ countsIn: true, counted: true, canStillSell: true }), false);
+});
+
+test('not having looked yet is not an accusation', () => {
+  /*
+    `counted` starts undefined rather than false. Reading "we have not found
+    out" as "nobody counted" would put the warning up, and the sheet in
+    somebody's face, for the second it takes to read the answer.
+  */
+  assert.equal(askForOpeningCount({ countsIn: true, counted: undefined, canStillSell: true }), false);
 });

@@ -402,7 +402,7 @@ export function StaffPage() {
           <div className="table-wrap">
             <table className="data">
               <thead>
-                <tr><th>Name</th><th>Role</th><th>Discount limit</th><th>Status</th><th /></tr>
+                <tr><th>Name</th><th>Role</th><th>Works on</th><th>Discount limit</th><th>Status</th><th /></tr>
               </thead>
               <tbody>
                 {rows.map((p) => (
@@ -411,7 +411,36 @@ export function StaffPage() {
                       <div style={{ fontWeight: 550 }}>{p.display_name}</div>
                       <div className="small dim">{p.email || (p.pin_hash ? 'PIN only, no login' : 'no PIN set')}</div>
                     </td>
+                    {/*
+                      WHICH SIDES THIS PERSON WORKS, on the list.
+
+                      It was only visible by opening each person one at a time,
+                      and the default is generous: a record that has never had
+                      its sides set works EVERYWHERE the business trades. So
+                      somebody described as "a cashier with access to the bar"
+                      could be on the craft till all morning with nothing on any
+                      screen to say why, and the owner had no way to spot it
+                      short of opening thirty records.
+
+                      The unset case is called out rather than printed as three
+                      ticks, because "everywhere, because nobody said" and
+                      "everywhere, on purpose" are different answers and only
+                      one of them wants looking at.
+                    */}
                     <td className="dim">{p.role}</td>
+                    <td className="small">
+                      {(() => {
+                        const sides = sidesOf(p).filter((m) => runningSides.includes(m));
+                        if (sides.length === 0 || sides.length === runningSides.length) {
+                          return runningSides.length > 1
+                            ? <Badge tone="warn">Everywhere · not set</Badge>
+                            : <span className="dim">{MODULE_LABELS[runningSides[0] ?? 'kitchen']}</span>;
+                        }
+                        return (
+                          <span className="dim">{sides.map((m) => MODULE_LABELS[m]).join(', ')}</span>
+                        );
+                      })()}
+                    </td>
                     <td className="dim small">
                       {p.can_discount_up_to_bp ? `up to ${(p.can_discount_up_to_bp / 100).toFixed(0)}%` : 'none'}
                     </td>
