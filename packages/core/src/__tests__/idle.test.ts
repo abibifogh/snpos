@@ -4,6 +4,7 @@ import {
   shouldSleep, msUntilSleep, clockFace, wakeLabel,
   IDLE_MINUTES_DEFAULT, IDLE_MINUTES_MIN, wakesScreen, latestMovement,
   screenShouldReset, SCREEN_RESET_MS,
+  shouldLock, LOCK_AFTER_ASLEEP_MS,
 } from '../idle.ts';
 
 const MIN = 60_000;
@@ -158,4 +159,52 @@ test('the wait is long enough to read a label by', () => {
   // Not a screensaver: this throws away work. A customer looking up from an
   // allergen list to find their order gone is the failure worth avoiding.
   assert.ok(SCREEN_RESET_MS >= 90_000);
+});
+
+test('a till asleep long enough stops being anybody\'s', () => {
+  /**
+   * The hole a shared counter actually has. The till asked who was there at a
+   * page load and whenever somebody pressed Lock — and a tablet that lives on
+   * a counter is rebooted about never and locked by hand rarely.
+   *
+   * So it slept at the end of an evening still signed in as whoever had used
+   * it, woke on the first touch the next morning, and handed the whole till to
+   * that person: the last one's name on their orders, the last one's
+   * permissions, and the side the last one left it on. A bar-only cashier
+   * ended up looking at the craft shop's count sheet.
+   */
+  const asleepAt = 1_000_000;
+  const yes = { asleepSince: asleepAt, anyoneCanUnlock: true };
+  assert.equal(shouldLock(yes, asleepAt + LOCK_AFTER_ASLEEP_MS), true);
+  assert.equal(shouldLock(yes, asleepAt + LOCK_AFTER_ASLEEP_MS + 60_000), true);
+});
+
+test('stepping away for a moment is not somebody leaving', () => {
+  /*
+    Sleeping is about the screen and locking is about whose till this is, and
+    they want different answers. Carrying plates out and coming back must not
+    cost a PIN every time, or the PIN becomes a thing people work around.
+  */
+  const asleepAt = 1_000_000;
+  assert.equal(shouldLock({ asleepSince: asleepAt, anyoneCanUnlock: true }, asleepAt + 30_000), false);
+  assert.ok(LOCK_AFTER_ASLEEP_MS >= 5 * 60_000, 'long enough not to nag');
+});
+
+test('a till nobody could unlock never locks itself', () => {
+  /**
+   * The same rule the lock at boot follows. Asking a question nothing on the
+   * device can answer is not a secure till, it is a dead one — and a shop
+   * whose staff have no PINs set would find its counter bricked overnight.
+   */
+  const asleepAt = 1_000_000;
+  assert.equal(
+    shouldLock({ asleepSince: asleepAt, anyoneCanUnlock: false }, asleepAt + LOCK_AFTER_ASLEEP_MS * 10),
+    false,
+  );
+});
+
+test('a till that is awake is not counted as having slept', () => {
+  // asleepSince is 0 while the screen is up. Reading that as "asleep since the
+  // epoch" would lock a till that is being used.
+  assert.equal(shouldLock({ asleepSince: 0, anyoneCanUnlock: true }, Date.now()), false);
 });

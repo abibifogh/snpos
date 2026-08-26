@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  clockFace, shouldSleep, msUntilSleep, wakeLabel, IDLE_MINUTES_MIN, downloadUrl,
+  clockFace, shouldSleep, msUntilSleep, shouldLock, wakeLabel, IDLE_MINUTES_MIN, downloadUrl,
   verifyPin, unlockers, pushDigit, dropDigit, worthChecking, waitAfter, lockMessage,
 } from '@snpos/core';
 import type { Settings, Unlocker } from '@snpos/core';
@@ -31,6 +31,7 @@ export function IdleScreen({
   staff,
   firstUse,
   onUnlock,
+  onLock,
 }: {
   settings?: Settings | null;
   /** Minutes of quiet before it appears. 0 turns it off. */
@@ -78,8 +79,18 @@ export function IdleScreen({
    * of what a PIN is for.
    */
   onUnlock?: (who?: Unlocker) => void;
+  /**
+   * The till belongs to nobody again, because it has been asleep a long time.
+   *
+   * Raised rather than handled here: this screen knows how long it has been
+   * dark, and only the app knows what "nobody" means for the person, the side
+   * and the name on an order. See shouldLock.
+   */
+  onLock?: () => void;
 }) {
   const [asleep, setAsleep] = useState(false);
+  /** When the screen went dark, so a long sleep can become a lock. */
+  const asleepSince = useRef(0);
   const [now, setNow] = useState(() => new Date());
   const lastActive = useRef(Date.now());
 
@@ -140,7 +151,11 @@ export function IdleScreen({
     let timer: ReturnType<typeof setTimeout>;
     const check = () => {
       const state = { lastActiveAt: lastActive.current, afterMinutes, busy };
-      if (shouldSleep(state, Date.now())) { setAsleep(true); return; }
+      if (shouldSleep(state, Date.now())) {
+        asleepSince.current = Date.now();
+        setAsleep(true);
+        return;
+      }
       // Being busy has no deadline of its own, so look again shortly rather
       // than sleeping the moment a payment sheet closes an hour from now.
       timer = setTimeout(check, Math.max(1_000, Math.min(msUntilSleep(state, Date.now()), 60_000)));
@@ -155,6 +170,25 @@ export function IdleScreen({
     const tick = setInterval(() => setNow(new Date()), 1_000);
     return () => clearInterval(tick);
   }, [asleep, locked]);
+
+  /*
+    A LONG SLEEP MEANS THE PERSON HAS GONE.
+
+    Sleeping is about the screen; locking is about whose till this is, and they
+    want different answers. A minute of quiet should dim a screen and must not
+    demand a PIN. An hour of quiet means whoever was standing here has left,
+    and the next person to touch it is somebody else — who, until now, was
+    handed the whole till: the last person's name on their orders, the last
+    person's permissions, and the side the last person left it on.
+
+    Checked on the same clock that is already ticking, so this costs nothing.
+  */
+  useEffect(() => {
+    if (!asleep || locked || !onLock) return;
+    if (shouldLock({ asleepSince: asleepSince.current, anyoneCanUnlock: unlockers(staff ?? []).length > 0 }, Date.now())) {
+      onLock();
+    }
+  }, [now, asleep, locked, onLock, staff]);
 
   /*
     The pad is cleared when the door closes, not when it opens.

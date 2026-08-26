@@ -274,6 +274,18 @@ export function App() {
       what somebody may WORK is a different question living on the same row.
     */
     const person = who ? staff.find((p) => p.$id === who.$id) ?? null : null;
+    /*
+      Said in the ref BEFORE anything reads it, not only in state.
+
+      setModule checks what the person at the till may work, and it reads that
+      person from `whoIsHere` — which an effect fills in after the render that
+      state change causes. Called from here, the switch below would be judged
+      against WHOEVER WAS HERE BEFORE: refused outright if they worked one side
+      and the new person works another, so a bartender unlocking a craft till
+      would be told, by name, that somebody who has gone home is not set to
+      work the bar.
+    */
+    whoIsHere.current = person;
     setWorking(person);
     /*
       If this till is showing a side they do not work, it moves.
@@ -708,6 +720,17 @@ export function App() {
         // Nobody has said who they are on this device yet, so the pad asks
         // rather than announcing that something is locked.
         firstUse={!identified.current}
+        /*
+          A till asleep for long enough stops being anybody's.
+
+          The only two ways this till ever asked who was there were a page
+          load and somebody pressing Lock — and a tablet on a counter is
+          rebooted about never and locked by hand rarely. So it slept at the
+          end of an evening still signed in as whoever had used it, and handed
+          the whole till to the first person to touch it in the morning. See
+          shouldLock.
+        */
+        onLock={lock}
         onUnlock={unlock}
       />
       <OfflineBar queued={queued} onRetry={() => void flushQueue()} />

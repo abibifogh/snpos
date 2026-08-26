@@ -48,6 +48,57 @@ export function msUntilSleep(state: IdleState, now: number): number {
   return Math.max(0, state.lastActiveAt + state.afterMinutes * 60_000 - now);
 }
 
+/**
+ * How long a till may sit asleep before it stops being anybody's.
+ *
+ * Ten minutes. Short enough that a till left at the end of a shift belongs to
+ * nobody by the time the next person reaches it, long enough that stepping
+ * away to carry plates and coming back is not a PIN every time.
+ *
+ * The gap this closes is the one a shared counter actually has. The till asked
+ * who was there at boot and whenever somebody pressed Lock — and a tablet that
+ * lives on a counter is rebooted about never and locked by hand rarely. So it
+ * went to sleep at the end of the evening still signed in as whoever had used
+ * it, woke on the first touch the next morning, and handed the whole till to
+ * whoever that was: their name off the orders, their permissions ignored, and
+ * the till still on the side the last person left it on.
+ *
+ * That is how a bar-only cashier ended up looking at the craft shop's count
+ * sheet with a shift that was not his.
+ */
+export const LOCK_AFTER_ASLEEP_MS = 10 * 60_000;
+
+export interface SleepingState {
+  /** When the screen went to sleep, or 0 if it is awake. */
+  asleepSince: number;
+  /**
+   * Whether anybody could actually get back in.
+   *
+   * A till where nobody holds a PIN must never lock itself. Asking a question
+   * nothing on the device can answer is not a secure till, it is a dead one —
+   * the same rule the lock at boot follows.
+   */
+  anyoneCanUnlock: boolean;
+}
+
+/**
+ * Should a sleeping till lock itself?
+ *
+ * Separate from sleeping on purpose. Sleeping is about the screen; locking is
+ * about who the till belongs to, and they want different answers. A minute of
+ * quiet should dim a screen and must not demand a PIN; an hour of quiet means
+ * the person who was standing here has gone.
+ */
+export function shouldLock(
+  state: SleepingState,
+  now: number,
+  after: number = LOCK_AFTER_ASLEEP_MS,
+): boolean {
+  if (!state.anyoneCanUnlock) return false;
+  if (!state.asleepSince) return false;
+  return now - state.asleepSince >= after;
+}
+
 export interface ClockFace {
   /** 04:23:55 PM — seconds included, because a stopped clock has to look stopped. */
   time: string;
