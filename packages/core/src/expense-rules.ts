@@ -148,3 +148,91 @@ export function canSeePrivateExpenses(
   if (!profile) return false;
   return profile.role === 'admin' || profile.can_see_private_expenses === true;
 }
+
+/* ------------------------------------------ recording one from the office */
+
+/**
+ * Where an expense is being written down.
+ *
+ * The two are not the same form asked in two places, and treating them as one
+ * is what put a cash-only dropdown and a shift's drawer in front of an owner
+ * paying a supplier by bank transfer three days later.
+ *
+ * AT THE TILL, money physically leaves a drawer somebody is going to count in
+ * a few hours. That is why it is cash only and why it comes off the shift: a
+ * wrong entry meets a physical count the same night, which is the whole
+ * safeguard.
+ *
+ * IN THE OFFICE, none of that is true. The spend already happened, it may
+ * never have touched a drawer at all, and there is no count tonight that would
+ * catch a mistake. Offering the drawer as the default there quietly makes some
+ * shift short by an amount its cashier never handled.
+ */
+export type ExpenseDesk = 'till' | 'office';
+
+/**
+ * Which payment methods this desk may record an expense against.
+ *
+ * The cash-only rule is the TILL's, and it is a good one — see expenseMethods.
+ * It was being applied in the office too, where the honest answer is often
+ * "the bank", and where forcing that to be filed as cash puts money against a
+ * drawer that never held it.
+ */
+export function expenseMethodsFor<T extends { $id: string; kind?: string }>(
+  methods: T[],
+  settings: { expense_paid_from?: 'cash_only' | 'any' } | undefined,
+  desk: ExpenseDesk,
+): T[] {
+  return desk === 'office' ? methods : expenseMethods(methods, settings);
+}
+
+/**
+ * May this desk say the money came off a shift's takings?
+ *
+ * The till, always: that is exactly what is happening. The office, only when
+ * CORRECTING a row that already says so — which is the reason the question is
+ * on that screen at all, since a cook can get it wrong in either direction and
+ * somebody has to be able to put it right.
+ *
+ * What the office must not do is offer it on something new. An expense typed
+ * up on Thursday for a Tuesday market run is not coming out of any drawer
+ * being counted, and filing it against one makes that shift short by money its
+ * cashier never handled.
+ */
+export function mayComeFromShift(desk: ExpenseDesk, existing: boolean): boolean {
+  return desk === 'till' || existing;
+}
+
+/**
+ * Which sides an expense may be filed under.
+ *
+ * Every trade the business runs, from one list, in a fixed order. This was
+ * written as two hard-coded options back when there were two sides, so a bar
+ * expense could not be filed as the bar's at all — it went down as the
+ * kitchen's, which is where it stayed in the books.
+ */
+export function expenseSides<T extends string>(
+  running: Record<T, boolean>,
+  order: T[],
+): T[] {
+  return order.filter((m) => running[m]);
+}
+
+/**
+ * Which side a new expense should start on.
+ *
+ * Whatever the list behind the form is filtered to. Somebody who has narrowed
+ * the page to the bar and pressed Record expense has already said which side
+ * they mean, and asking again is asking a question they have answered — which
+ * is how a bar expense gets saved as the kitchen's by nobody's decision.
+ *
+ * "All" is not an answer, so it falls through to the only side that runs, or
+ * to the first of several. A business with one trade never sees the question.
+ */
+export function defaultExpenseSide<T extends string>(
+  filter: T | 'all' | undefined,
+  sides: T[],
+): T | undefined {
+  if (filter && filter !== 'all' && sides.includes(filter as T)) return filter as T;
+  return sides[0];
+}

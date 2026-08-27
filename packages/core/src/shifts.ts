@@ -48,6 +48,8 @@ export interface PaymentMethod extends Doc {
   kind: string;
   enabled: boolean;
   counted_at_close: boolean;
+  /** Money only ever goes out this way. Kept off the payment screen. */
+  payouts_only?: boolean;
   venue_id: string;
   /** Card machines and mobile money leave a number; without it the payment
       cannot be matched against the provider's statement. */
@@ -62,8 +64,32 @@ export interface ShiftPayment extends Doc {
   status?: string;
 }
 
+/**
+ * The ways this venue TAKES money.
+ *
+ * Payouts-only methods are left out. A bank account has to exist so a supplier
+ * paid by transfer can be recorded as such, and it must never appear on the
+ * payment screen beside Cash and Card, where it would only ever be the wrong
+ * answer — and where choosing it would put a sale's money against a drawer
+ * that nobody counts.
+ *
+ * Everything that takes money at a counter also gets counted at a close, which
+ * is why this one predicate serves both.
+ */
 export const loadPaymentMethods = async (venueId: string): Promise<PaymentMethod[]> =>
-  (await listAll<PaymentMethod>('payment_methods', [Query.equal('venue_id', venueId)])).filter((m) => m.enabled);
+  (await listAll<PaymentMethod>('payment_methods', [Query.equal('venue_id', venueId)]))
+    .filter((m) => m.enabled)
+    .filter((m) => (m as { payouts_only?: boolean }).payouts_only !== true);
+
+/**
+ * The ways money can go OUT, which is a longer list than the ways it comes in.
+ *
+ * The same rows plus the payouts-only ones. Read by the expense screens; see
+ * expenseMethodsFor, which then narrows it again for the till.
+ */
+export const loadSpendMethods = async (venueId: string): Promise<PaymentMethod[]> =>
+  (await listAll<PaymentMethod>('payment_methods', [Query.equal('venue_id', venueId)]))
+    .filter((m) => m.enabled);
 
 /**
  * What the shift row records about where its opening figure came from.

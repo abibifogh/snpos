@@ -456,12 +456,26 @@ export const COLLECTIONS = [
     perms: { read: ALL_STAFF, create: ADMIN, update: ADMIN, delete: ADMIN },
     attributes: [
       ['name', 's', 40, true],
-      ['kind', 'e', ['cash', 'card', 'mobile_money', 'voucher', 'on_account'], true],
+      ['kind', 'e', ['cash', 'card', 'mobile_money', 'voucher', 'on_account', 'bank'], true],
       ['enabled', 'b', null, true, true],
       ['sort', 'i', null, true, 0],
       ['opens_cash_drawer', 'b', null, true, false],
       ['requires_reference', 'b', null, true, false],
       ['counted_at_close', 'b', null, true, true],
+      /**
+       * Money only ever goes OUT this way, never in.
+       *
+       * A bank account is the case. A supplier is paid by transfer and it has
+       * to be sayable on an expense — but nobody settles a bar bill by
+       * transfer at the counter, so offering it beside Cash and Card on the
+       * payment screen is offering an answer that is always wrong.
+       *
+       * The alternative was leaving it disabled, which hides it from the
+       * expense form too, and the one after that was letting people file bank
+       * transfers as cash — which puts money against a drawer that never held
+       * it and turns up as a shortage somebody has to account for.
+       */
+      ['payouts_only', 'b', null, false, false],
       ['gateway', 'e', ['none', 'paystack', 'stripe'], true, 'none'],
       ['surcharge_bp', 'i', null, true, 0],
     ],
@@ -3917,4 +3931,23 @@ export const SEED_INGREDIENT_CATEGORIES = [
 export const SEED_PAYMENT_METHODS = [
   { name: 'Cash', kind: 'cash', sort: 1, opens_cash_drawer: true, counted_at_close: true },
   { name: 'Card', kind: 'card', sort: 2, requires_reference: true, counted_at_close: true },
+  /*
+    For paying suppliers, not for taking money.
+
+    Seeded because there is no screen for adding a payment method, so without
+    it "paid by bank transfer" has no way of being said and gets filed as cash
+    — against a drawer that never held the money, which turns up at the end of
+    the night as a shortage with somebody's name against it.
+
+    Not counted at close, because nobody counts a bank account in a drawer, and
+    payouts only, so it never appears on the payment screen beside Cash and
+    Card where it would only ever be the wrong answer.
+  */
+  {
+    name: 'Bank transfer',
+    kind: 'bank',
+    sort: 3,
+    counted_at_close: false,
+    payouts_only: true,
+  },
 ];

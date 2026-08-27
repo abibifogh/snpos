@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { categoriesForSide, canSeePrivateExpenses, CATEGORY_SIDES } from '../expense-rules.ts';
+import {
+  categoriesForSide, canSeePrivateExpenses, CATEGORY_SIDES,
+  expenseMethodsFor, mayComeFromShift, expenseSides, defaultExpenseSide,
+} from '../expense-rules.ts';
 
 const rows = [
   { key: 'transport', module: 'general' },
@@ -82,4 +85,139 @@ test('admins always see them; everybody else only when granted', () => {
   // Nobody signed in is nobody allowed.
   assert.equal(canSeePrivateExpenses(null), false);
   assert.equal(canSeePrivateExpenses(undefined), false);
+});
+
+
+test('the office may pay by any means; the till may not', () => {
+  /**
+   * The cash-only rule belongs to the till, and it is a good rule there: money
+   * physically leaves a drawer somebody counts the same night, and that count
+   * is what makes a wrong entry visible within hours.
+   *
+   * None of it is true in the office. The spend already happened, it may never
+   * have touched a drawer, and there is no count tonight to catch anything —
+   * so the restriction only forced an owner paying a supplier by transfer to
+   * file it as cash against a drawer that never held it.
+   */
+  const methods = [
+    { $id: 'm-cash', kind: 'cash' },
+    { $id: 'm-bank', kind: 'bank' },
+    { $id: 'm-momo', kind: 'mobile_money' },
+  ];
+  const cashOnly = { expense_paid_from: 'cash_only' as const };
+
+  assert.deepEqual(expenseMethodsFor(methods, cashOnly, 'till').map((m) => m.$id), ['m-cash']);
+  assert.deepEqual(expenseMethodsFor(methods, cashOnly, 'office').map((m) => m.$id),
+    ['m-cash', 'm-bank', 'm-momo']);
+
+  // And the setting still frees the till where a house genuinely pays that way.
+  assert.equal(expenseMethodsFor(methods, { expense_paid_from: 'any' }, 'till').length, 3);
+});
+
+test('a drawer is only offered where a drawer is involved', () => {
+  /**
+   * An expense typed up in the office on Thursday for a Tuesday market run
+   * comes out of no drawer being counted tonight. Filing it against one makes
+   * that shift short by money its cashier never handled — a shortage the
+   * system invented, with somebody's name against it.
+   */
+  assert.equal(mayComeFromShift('office', false), false);
+  assert.equal(mayComeFromShift('till', false), true, 'at the till it always is');
+});
+
+test('correcting a shift expense keeps the option that makes it correctable', () => {
+  /*
+    The reason the field is on the admin screen at all: a cook can get it wrong
+    in either direction, and somebody has to be able to put it right. Taking
+    the option away from a correction would make the mistake permanent.
+  */
+  assert.equal(mayComeFromShift('office', true), true);
+});
+
+test('an expense can be filed under every side the business runs', () => {
+  /**
+   * This was two hard-coded options from when there were two sides, so a bar
+   * expense could not be filed as the bar's at all — it went into the books as
+   * the kitchen's and stayed there. Which also hid every bar-only category,
+   * because the categories follow the side.
+   */
+  const order = ['kitchen', 'craft', 'bar'];
+  assert.deepEqual(
+    expenseSides({ kitchen: true, craft: true, bar: true }, order),
+    ['kitchen', 'craft', 'bar'],
+  );
+  assert.deepEqual(expenseSides({ kitchen: true, craft: false, bar: true }, order), ['kitchen', 'bar']);
+  assert.deepEqual(expenseSides({ kitchen: true, craft: false, bar: false }, order), ['kitchen']);
+});
+
+test('a new expense starts on the side the list is filtered to', () => {
+  /**
+   * Somebody who has narrowed the page to the bar and pressed Record expense
+   * has already said which side they mean. Asking again is asking a question
+   * they have answered, and what gets left in place is whichever side happened
+   * to be first — which is how a bar expense lands in the kitchen's books by
+   * nobody's decision.
+   */
+  const sides = ['kitchen', 'craft', 'bar'];
+  assert.equal(defaultExpenseSide('bar', sides), 'bar');
+  assert.equal(defaultExpenseSide('craft', sides), 'craft');
+
+  // "All" is not an answer, so it falls through to the first side that runs.
+  assert.equal(defaultExpenseSide('all', sides), 'kitchen');
+  assert.equal(defaultExpenseSide(undefined, sides), 'kitchen');
+
+  // A filter naming a side the business does not run is not an answer either.
+  assert.equal(defaultExpenseSide('bar', ['kitchen']), 'kitchen');
+  assert.equal(defaultExpenseSide('bar', []), undefined);
+});
+
+test('the side decides which categories are on offer, so it has to be set', () => {
+  /**
+   * The categories always honoured their "Shown on" setting. What went wrong is
+   * that a new expense had no side on it, so the form read it as the kitchen —
+   * and every bar-only and shop-only category was invisible on every new
+   * expense, on a page where the bar could not be chosen anyway.
+   */
+  const cats = [
+    { key: 'transport', module: 'general' },
+    { key: 'bar_stock', module: 'bar' },
+    { key: 'craft_stock', module: 'craft' },
+  ];
+  assert.deepEqual(
+    categoriesForSide(cats, 'bar').map((c) => c.key),
+    ['transport', 'bar_stock'],
+  );
+  assert.deepEqual(
+    categoriesForSide(cats, 'kitchen').map((c) => c.key),
+    ['transport'],
+    'which is all a bar expense could ever see while the form said kitchen',
+  );
+});
+
+
+test('a bank account is for paying out, never for taking money', () => {
+  /**
+   * A supplier is paid by transfer and that has to be sayable on an expense.
+   * Nobody settles a bar bill by transfer at the counter, so the same row must
+   * not appear on the payment screen beside Cash and Card, where it would only
+   * ever be the wrong answer — and where choosing it would put a sale's money
+   * against a drawer nobody counts.
+   *
+   * The alternative was leaving it disabled, which hides it from the expense
+   * form too; and the one after that was letting people file transfers as
+   * cash, which is a shortage somebody has to account for at midnight.
+   */
+  const methods = [
+    { $id: 'm-cash', kind: 'cash', enabled: true },
+    { $id: 'm-bank', kind: 'bank', enabled: true, payouts_only: true },
+  ];
+  const takingMoney = methods.filter((m) => m.enabled && m.payouts_only !== true);
+  assert.deepEqual(takingMoney.map((m) => m.$id), ['m-cash']);
+
+  // And it IS on the office's list of ways money goes out.
+  assert.deepEqual(
+    expenseMethodsFor(methods.filter((m) => m.enabled), { expense_paid_from: 'cash_only' }, 'office')
+      .map((m) => m.$id),
+    ['m-cash', 'm-bank'],
+  );
 });

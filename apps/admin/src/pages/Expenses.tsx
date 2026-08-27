@@ -4,7 +4,8 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, uploadFile, downloadUrl, deleteFile, receiveStock, Query,
   PAID_TO_KINDS, payeeLabel as sharedPayeeLabel, legacyExpenseCategory as legacyFor,
-  isPostableExpenseAccount, expenseMethods, modulesOf, recomputeClosedShift,
+  isPostableExpenseAccount, expenseMethodsFor, mayComeFromShift, expenseSides,
+  defaultExpenseSide, MODULE_LABELS, modulesOf, recomputeClosedShift,
   repostExpense, accountForExpense,
   balancesFor, accountFor, settleBoxSpend, boxesFor, boxOverdrawn,
   buyOptions, convertPurchase, describePurchase, hasPack, categoriesForSide, canSeePrivateExpenses,
@@ -123,6 +124,13 @@ export function ExpensesPage() {
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [side, setSide] = useState<Side>('all');
   const mods = modulesOf(settings);
+  /**
+   * The sides an expense may be filed under: every trade the business runs.
+   *
+   * From one list rather than written out at the dropdown, which is how the
+   * bar came to be missing from it entirely.
+   */
+  const sides = expenseSides(mods, ['kitchen', 'craft', 'bar'] as Module[]);
   const [venues, setVenues] = useState<VenueRow[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -177,10 +185,19 @@ export function ExpensesPage() {
       listAll<ImprestFloatDoc>('imprest_floats').catch(() => [] as ImprestFloatDoc[]),
     ]);
     setRows(e.sort((a2, b) => b.$createdAt.localeCompare(a2.$createdAt)));
-    // The same restriction the kitchen form obeys. An admin recording a shop
-    // run after the fact is recording the same event, and a rule that only
-    // holds on one of the two screens is not a rule.
-    setMethods(expenseMethods(m.filter((x) => x.enabled), settings ?? undefined));
+    /*
+      Every method, because this is the office.
+
+      This used to obey the till's cash-only rule, on the reasoning that a rule
+      holding on one of two screens is not a rule. That was the wrong reading:
+      the two screens are not recording the same event. At the till, money is
+      leaving a drawer that gets counted the same night, and the count is what
+      makes a wrong entry visible — which is exactly why cash only belongs
+      there. Here the spend already happened and may never have touched a
+      drawer, so the restriction only forced a bank transfer to be filed as
+      cash against a drawer that never held it. See expenseMethodsFor.
+    */
+    setMethods(expenseMethodsFor(m.filter((x) => x.enabled), settings ?? undefined, 'office'));
     setVenues(v);
     setSuppliers(s.filter((x) => x.active !== false).sort((a2, b) => a2.name.localeCompare(b.name)));
     setStaff(p.filter((x) => x.active !== false).sort((a2, b) => a2.display_name.localeCompare(b.display_name)));
@@ -224,6 +241,24 @@ export function ExpensesPage() {
         note: '',
         paid_from_method_id: methods[0]?.$id ?? '',
         approval_status: 'pending',
+        /*
+          The side the list is already filtered to.
+
+          Somebody who has narrowed the page to the bar and pressed Record
+          expense has said which side they mean. Asking again is asking a
+          question they have answered, and the answer that gets left in place
+          is whichever one happened to be first — which is how a bar expense
+          ends up in the kitchen's books by nobody's decision.
+        */
+        module: defaultExpenseSide(narrowSide(side, profile, settings), sides),
+        /*
+          And not off a shift's drawer, because none is involved.
+
+          An expense typed up here on Thursday for a Tuesday market run comes
+          out of no drawer being counted tonight. Defaulting to the shift made
+          some cashier short by money they never handled.
+        */
+        from_takings: false,
       },
     );
     // Blank for a new expense, not "0.00". A pre-filled zero has to be cleared
@@ -703,26 +738,6 @@ export function ExpensesPage() {
                 )}
               </Select>
             </Field>
-            {/*
-              Typed only when there is nothing to add up.
-
-              The same rule the kitchen screen follows. Once the lines are
-              listed the total is their sum, and offering a box beside them
-              invites two different answers to one question — the figure the
-              books use and the figure the items come to, differing by a typo
-              nobody notices until a month-end.
-            */}
-            <Field
-              label={`Amount (${settings?.currency_symbol ?? ''})`}
-              hidden={lineCount > 0}
-            >
-              <Input value={amountText} inputMode="decimal" autoFocus onChange={(e) => setAmountText(e.target.value)} />
-            </Field>
-            {lineCount > 0 && (
-              <Field label={`Amount (${settings?.currency_symbol ?? ''})`} hint="Added up from the items below.">
-                <Input value={toInput(draftTotal, decimals)} disabled />
-              </Field>
-            )}
             <Field label="Paid to" hint="Not every purchase has a supplier behind it.">
               <Select
                 value={editing.paid_to_kind ?? 'supplier'}
@@ -731,25 +746,74 @@ export function ExpensesPage() {
                 {PAID_TO_KINDS.map((k) => <option key={k.v} value={k.v}>{k.l}</option>)}
               </Select>
             </Field>
-            {mods.kitchen && mods.craft && (
+            {/*
+              EVERY SIDE THE BUSINESS RUNS, from the one list that names them.
+
+              This offered two options, hard-coded, from when there were two
+              sides — so a bar expense could not be filed as the bar's at all.
+              It went into the books as the kitchen's, and stayed there.
+
+              Shown only where there is a choice: a business running one trade
+              has one answer, and a dropdown that cannot change anything is a
+              control people learn to scroll past.
+            */}
+            {sides.length > 1 && (
               <Field label="Which side" hint="Whose books this comes out of.">
                 <Select
-                  value={editing.module ?? 'kitchen'}
-                  onChange={(e) => setEditing({ ...editing, module: e.target.value as Module })}
+                  value={editing.module ?? sides[0]}
+                  onChange={(e) => {
+                    const to = e.target.value as Module;
+                    /*
+                      The category follows the side.
+
+                      Categories already say which side they are shown on, and
+                      the list honours it — but the chosen one was left behind
+                      when the side changed, so an expense filed to the bar
+                      could sit under a bistro-only heading. The list below it
+                      then showed a category the dropdown said was another
+                      side's, which is a form arguing with itself.
+
+                      Only moved when it has to be. Anything marked
+                      "Everywhere" is valid on every side and stays exactly
+                      where somebody put it.
+                    */
+                    const stillFits = myCategories(to).some((c) => c.key === editing.category_key);
+                    setEditing({
+                      ...editing,
+                      module: to,
+                      category_key: stillFits
+                        ? editing.category_key
+                        : myCategories(to).find((c) => c.active !== false)?.key ?? editing.category_key,
+                    });
+                  }}
                 >
-                  <option value="kitchen">Kitchen</option>
-                  <option value="craft">Craft shop</option>
+                  {sides.map((m) => <option key={m} value={m}>{MODULE_LABELS[m]}</option>)}
                 </Select>
               </Field>
             )}
+            {/*
+              Every method, because this is the office and not the till.
+
+              The cash-only rule belongs to the till, where money physically
+              leaves a drawer somebody counts the same night — that count is
+              the safeguard, and it is a good rule there. None of it is true
+              here: the spend already happened, it may never have touched a
+              drawer, and an owner paying a supplier by transfer was being made
+              to file it as cash against a drawer that never held it.
+
+              A bank account is a payment method with "counted at close" turned
+              off, set up once under Setup. See expenseMethodsFor.
+            */}
             <Field
               label="Paid from"
-              hint={methods.length === 1 ? 'Expenses are set to cash only under Settings.' : undefined}
+              hint={methods.length <= 1
+                ? 'Add more ways of paying — a bank account, mobile money — under Setup, payment methods.'
+                : undefined}
             >
               <Select
                 value={editing.paid_from_method_id ?? ''}
                 onChange={(e) => setEditing({ ...editing, paid_from_method_id: e.target.value })}
-                disabled={methods.length === 1}
+                disabled={methods.length <= 1}
               >
                 {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
               </Select>
@@ -787,7 +851,24 @@ export function ExpensesPage() {
                   });
                 }}
               >
-                <option value="shift">The shift</option>
+                {/*
+                  A DRAWER IS ONLY OFFERED WHERE A DRAWER IS ACTUALLY INVOLVED.
+
+                  At the till it always is. Here it is not: an expense typed up
+                  on Thursday for a Tuesday market run comes out of no drawer
+                  being counted tonight, and filing it against one makes that
+                  shift short by money its cashier never handled — a shortage
+                  the system invented, with somebody's name against it.
+
+                  Kept when EDITING a row that already says the shift paid,
+                  because that is the reason this field is on this screen at
+                  all: a cook can get it wrong in either direction, and an
+                  admin has to be able to put it right. Taking the option away
+                  from a correction would make the mistake permanent.
+                */}
+                {mayComeFromShift('office', editing.from_takings !== false) && (
+                  <option value="shift">The shift</option>
+                )}
                 <option value="petty">Petty cash</option>
               </Select>
             </Field>
@@ -902,6 +983,36 @@ export function ExpensesPage() {
             paidTotal={parseMoney(amountText, decimals) ?? 0}
             money={(n) => (settings ? formatMoney(n, settings) : String(n))}
           />
+
+          {/*
+              WHAT IT CAME TO, ASKED AFTER WHAT WAS BOUGHT.
+
+              It used to sit at the top, so a form filled in the order it reads
+              asked for a total before anything it could be a total of — and
+              then quietly turned into a sum once the items went in underneath.
+              Somebody who typed a figure first watched their own number be
+              replaced, which reads as the form losing it.
+
+              So it comes last, where the answer is already known. Typed only
+              when there is nothing to add up: a taxi fare and a month's rent
+              have no lines behind them and still have to be recordable. Once
+              lines exist the total is their sum, because offering a box beside
+              them invites two answers to one question, differing by a typo
+              nobody notices until a month-end.
+            */}
+            {lineCount > 0 ? (
+              <Field label={`Amount (${settings?.currency_symbol ?? ''})`} hint="Added up from the items above.">
+                <Input value={toInput(draftTotal, decimals)} disabled />
+              </Field>
+            ) : (
+              <Field
+                label={`Amount (${settings?.currency_symbol ?? ''})`}
+                hint="Nothing listed above, so say what it came to."
+              >
+                <Input value={amountText} inputMode="decimal" onChange={(e) => setAmountText(e.target.value)} />
+              </Field>
+            )}
+
 
           <Field label="Note">
             <Textarea value={editing.note ?? ''} onChange={(e) => setEditing({ ...editing, note: e.target.value })} />
