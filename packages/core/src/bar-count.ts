@@ -606,3 +606,69 @@ export const soldTotals = (sold: SoldLine[]): { items: number; worth: number } =
   items: sold.reduce((n, l) => n + l.qty, 0),
   worth: sold.reduce((n, l) => n + l.worth, 0),
 });
+
+/* ------------------------------------------- who is allowed to count what */
+
+/**
+ * Something only a manager may count.
+ *
+ * The bar's twice-a-shift sheet is a bartender's: bottled drinks leave whole,
+ * they are quick to see, and counting them is a handover. Spirits are not that
+ * — forty open bottles judged by eye at two in the morning produce numbers
+ * nobody believes — so they already sit off that sheet and wait for a proper
+ * stocktake.
+ *
+ * What was missing is WHO does the stocktake. "Off the shift sheet" and "only
+ * a manager may touch it" were one setting, so anything kept back from the
+ * nightly count was equally open to anybody who opened the stocktake screen.
+ * For the expensive end of a bar's stock that is the wrong way round: the
+ * whole reason it is counted rarely is that the count is worth trusting, and a
+ * count is worth trusting because of who made it.
+ *
+ * Absent is no. Every bottle on file was countable by whoever was doing the
+ * counting, and reading silence as a restriction would empty the stocktake
+ * sheet for every manager who is not an admin on the day this shipped.
+ */
+export const managerCountOnly = (row: { manager_count_only?: boolean }): boolean =>
+  row.manager_count_only === true;
+
+/**
+ * The lines this person may actually put a number against.
+ *
+ * Applied after `countable`, never instead of it: "never counted" says there
+ * is no shelf at all, which is true whoever is asking.
+ *
+ * A manager sees everything. Anybody else sees everything that is not held
+ * back — and the held-back rows are left OFF their sheet rather than shown
+ * greyed, because a sheet with rows nobody can fill is a sheet that reports
+ * itself unfinished for ever and can never be sent.
+ */
+export function countableBy<T extends { manager_count_only?: boolean }>(
+  rows: T[],
+  isManager: boolean,
+): T[] {
+  return isManager ? rows : rows.filter((r) => !managerCountOnly(r));
+}
+
+/**
+ * May this person count the bar itself with no shift open?
+ *
+ * A bar count is normally a handover — what one person accepted and what they
+ * handed over — which is why it belongs to a shift and why the screen asked
+ * for one. That reasoning holds for a bartender and not for a manager: a spot
+ * check outside service is a stocktake, not a handover, and refusing it meant
+ * the only way to check the bar was to open a shift nobody was going to trade
+ * on, which puts a false shift in the books to answer a question about stock.
+ *
+ * A store room never needed a shift and still does not; it belongs to no
+ * evening in the first place.
+ */
+export function mayCountWithoutShift(opts: {
+  isStore: boolean;
+  isManager: boolean;
+  hasShift: boolean;
+}): boolean {
+  if (opts.isStore) return true;
+  if (opts.hasShift) return true;
+  return opts.isManager;
+}

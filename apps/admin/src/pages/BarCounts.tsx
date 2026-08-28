@@ -3,7 +3,7 @@ import { Badge, Button, Card, Empty, Field, Input, Notice, Select, Spinner, useT
 import { humanError } from '../lib';
 import {
   barCountSheet, saveBarCount, hasOpeningCount, byUnit, summariseBarCount, readyToClose,
-  formatMoney, listAll, Query, loadOpenShifts, loadLocations, saleLocation,
+  formatMoney, listAll, Query, loadOpenShifts, loadLocations, saleLocation, mayCountWithoutShift,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
   filedCounts, undoProblem, undoBarCount, pourMissedSales,
 } from '@snpos/core';
@@ -94,7 +94,22 @@ export function BarCountsPage() {
   const [roomsFailed, setRoomsFailed] = useState(false);
   const room = places.find((p2) => p2.$id === placeId) ?? null;
   const isStore = room?.kind === 'store';
-  const canCount = isStore || !!shift;
+  /**
+   * A manager may spot-check the bar with no shift open.
+   *
+   * A bar count is normally a handover — what one person accepted and what
+   * they handed over — which is why it belongs to a shift. That holds for a
+   * bartender and not for a manager: a check outside service is a stocktake,
+   * not a handover. Refusing it meant the only way to look at the bar was to
+   * open a shift nobody was going to trade on, which puts a false evening in
+   * the books to answer a question about stock.
+   *
+   * What it is recorded AS still follows the shift, not the person — see
+   * saveBarCount, which writes a shift's claim only where there is a shift to
+   * make the claim about.
+   */
+  const isManager = profile?.role === 'admin' || profile?.role === 'manager';
+  const canCount = mayCountWithoutShift({ isStore, isManager, hasShift: !!shift });
   const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
 
   const load = async () => {
@@ -117,7 +132,7 @@ export function BarCountsPage() {
       setPlaces(bar);
       const here = placeId || saleLocation(bar, 'bar')?.$id || '';
       if (!placeId) setPlaceId(here);
-      setLines(await barCountSheet('main', here || undefined));
+      setLines(await barCountSheet('main', here || undefined, isManager));
       if (current) {
         const done = await hasOpeningCount(current.$id);
         setOpeningDone(done);
@@ -370,6 +385,8 @@ export function BarCountsPage() {
             <Empty title="No bar shift is open">
               Counting the bar is part of a shift — it is what one person accepted and what they handed over.
               Open the bar from the till, then count it in. A store room does not need a shift; pick one above.
+              {' '}A manager can also spot-check the bar itself without one, which is recorded as a stocktake
+              rather than as anybody&rsquo;s handover.
             </Empty>
           )}
         </Card>

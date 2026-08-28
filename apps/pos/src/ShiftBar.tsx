@@ -645,6 +645,10 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           phase={barCount}
           userId={ctx.userId}
           settings={ctx.settings}
+          /* Whoever is actually at the till, which after a PIN unlock is not
+             the account the device was signed in with. Spirits stay off a
+             bartender's sheet and wait for a manager. */
+          isManager={ctx.profile?.role === 'admin' || ctx.profile?.role === 'manager'}
           dismissLabel={barCount === 'close' ? 'Close without counting' : 'Not now'}
           // Nothing set up to count, so nothing to be warned about.
           onEmpty={() => { setCountedIn(true); setCountedOut(true); }}

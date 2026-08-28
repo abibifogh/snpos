@@ -2,7 +2,7 @@ import { db, DB_ID, ID, Query, listAll, listByIds, tryWrite } from './client';
 import type { PurchaseRow } from './price-history';
 import type { Module } from './access';
 import {
-  variancesIn, wasCountedBar, shiftCounted, countable, filedCounts, undoDeltas, undoProblem,
+  variancesIn, wasCountedBar, shiftCounted, countable, countableBy, filedCounts, undoDeltas, undoProblem,
 } from './bar-count';
 import type { FiledCheck } from './bar-count';
 import { levelFor, transferQty, transferMovements, purchaseLocation, saleLocation } from './locations';
@@ -43,6 +43,8 @@ export interface Ingredient extends Doc {
    * with nothing on a shelf to walk over and look at.
    */
   counted_at_close?: boolean;
+  /** Only a manager may put a number against this. See managerCountOnly. */
+  manager_count_only?: boolean;
   /**
    * How many counting units come in one pack, and what the pack is called.
    *
@@ -540,7 +542,17 @@ export async function purchasesFor(ingredientId: string, limit = 200): Promise<P
  * delivery nobody booked in — and a sheet that only lists what it expects can
  * never report it.
  */
-export async function barCountSheet(venueId: string, locationId?: string): Promise<BarCountLine[]> {
+export async function barCountSheet(
+  venueId: string,
+  locationId?: string,
+  /**
+   * Whether the person counting may see the manager-only rows.
+   *
+   * Defaults to true, so every existing caller keeps the sheet it had. The
+   * screens that know who is holding the clipboard say so.
+   */
+  isManager = true,
+): Promise<BarCountLine[]> {
   const [ingredients, locations] = await Promise.all([loadIngredients(venueId), loadLocations(venueId)]);
   /*
     ONE PLACE is counted, not the business.
@@ -578,8 +590,15 @@ export async function barCountSheet(venueId: string, locationId?: string): Promi
   */
   const onShelf = countable(ingredients.filter((i) => i.active && (i.module ?? 'kitchen') === 'bar'));
   const rows = counter?.kind === 'store' ? onShelf : shiftCounted(onShelf);
+  /*
+    And then who is holding the clipboard.
 
-  return rows
+    After the cadence, never instead of it: "never counted" says there is no
+    shelf, which is true whoever is asking. Held-back rows are left OFF a
+    bartender's sheet rather than shown greyed — a sheet with rows nobody can
+    fill reports itself unfinished for ever and can never be sent.
+  */
+  return countableBy(rows, isManager)
     .map((i) => ({
       ingredientId: i.$id,
       name: i.name,

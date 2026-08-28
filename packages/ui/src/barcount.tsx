@@ -27,6 +27,13 @@ export interface BarCountModalProps {
   shiftId: string;
   phase: 'open' | 'close';
   userId: string;
+  /**
+   * Whether the person at this till may count the held-back rows.
+   *
+   * A bartender counts what leaves the bar whole. Spirits wait for a manager,
+   * and that is the whole reason they are kept off this sheet.
+   */
+  isManager?: boolean;
   settings: Settings;
   /** Dismissed without finishing. The count is not saved; nothing is written. */
   /**
@@ -62,7 +69,7 @@ export interface BarCountModalProps {
 type Sheet = { lines: BarCountLine[]; failed: boolean } | null;
 
 export function BarCountModal({
-  venueId, shiftId, phase, userId, settings, onClose, dismissLabel, onEmpty, onDone,
+  venueId, shiftId, phase, userId, settings, isManager, onClose, dismissLabel, onEmpty, onDone,
 }: BarCountModalProps) {
   const [sheet, setSheet] = useState<Sheet>(null);
   const lines = sheet?.lines ?? null;
@@ -106,7 +113,14 @@ export function BarCountModal({
         const where = await loadLocations(venueId).catch(() => [] as StockLocation[]);
         const bar = where.filter((l) => (l.module ?? 'kitchen') === 'bar' && l.active !== false);
         setPlaces(bar);
-        const rows = await barCountSheet(venueId, saleLocation(bar, 'bar')?.$id);
+        /*
+          A bartender's sheet, so the manager-only rows are not on it.
+
+          Left off rather than shown greyed: a sheet with rows nobody at this
+          till can fill reports itself unfinished for ever and can never be
+          sent, which would block every close on the bar.
+        */
+        const rows = await barCountSheet(venueId, saleLocation(bar, 'bar')?.$id, isManager === true);
         /*
           WHAT WAS ALREADY TYPED, PUT BACK.
 

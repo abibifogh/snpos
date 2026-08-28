@@ -43,10 +43,26 @@ const UNITS = ['g', 'kg', 'ml', 'l', 'each', 'pack', 'bottle', 'case', 'shot', '
  * screen, because they are the same question asked at two frequencies and two
  * toggles left nobody sure which won.
  */
-type Cadence = 'shift' | 'close' | 'never';
+/**
+ * A fourth answer, and it is about WHO rather than how often.
+ *
+ * Which reads like a different question and is not, on this screen. What
+ * somebody setting up a bottle of gin is deciding is how it gets counted, and
+ * "by a manager, at a stocktake" is one of the real answers to that — the
+ * spirits are kept off the nightly sheet precisely so a manager can count them
+ * properly, and those two halves were never separable in practice.
+ *
+ * So it is one dropdown with four answers rather than a dropdown and a
+ * checkbox nobody pairs correctly. Underneath it is the "at stocktake"
+ * cadence plus a flag; see managerCountOnly.
+ */
+type Cadence = 'shift' | 'close' | 'manager' | 'never';
 
-const countCadence = (i: { counted_at_close?: boolean; count_each_shift?: boolean }): Cadence => {
+const countCadence = (
+  i: { counted_at_close?: boolean; count_each_shift?: boolean; manager_count_only?: boolean },
+): Cadence => {
   if (i.counted_at_close === false) return 'never';
+  if (i.manager_count_only) return 'manager';
   return i.count_each_shift ? 'shift' : 'close';
 };
 
@@ -58,7 +74,12 @@ const countCadence = (i: { counted_at_close?: boolean; count_each_shift?: boolea
  */
 const CADENCE_WORDS: Record<Cadence, { label: string; tone: 'ok' | 'default' | 'warn'; detail: string }> = {
   shift: { label: 'Every shift', tone: 'ok', detail: 'Counted in at the start and out at the end' },
-  close: { label: 'At close', tone: 'default', detail: 'Counted once, when the shift ends' },
+  close: { label: 'At stocktake', tone: 'default', detail: 'Off the shift sheet; counted when somebody does a stocktake' },
+  manager: {
+    label: 'Managers only',
+    tone: 'default',
+    detail: 'Off the shift sheet, and only a manager may put a number against it',
+  },
   never: { label: 'Never counted', tone: 'warn', detail: 'No shelf to walk — used up in the buying' },
 };
 
@@ -66,6 +87,9 @@ const cadenceFields = (c: Cadence) => ({
   counted_at_close: c !== 'never',
   // Never means there is no shelf, so it cannot also be counted every shift.
   count_each_shift: c === 'shift',
+  // Held back from the nightly sheet AND from anybody who is not a manager.
+  // Written on every branch so moving off it actually releases the item.
+  manager_count_only: c === 'manager',
 });
 
 /** The pack's name for a label, before anybody has given it one. */
@@ -1082,7 +1106,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
           <Field
             label="How often is this counted?"
             hint={module === 'bar'
-              ? 'Bottled drinks leave whole and are quick to see, so they are counted in and out every shift. "At stocktake" means exactly that and nothing else — spirits stay off the twice-daily sheet, because forty open bottles judged by eye at two in the morning produce numbers nobody believes.'
+              ? 'Bottled drinks leave whole and are quick to see, so they are counted in and out every shift. "At stocktake" keeps a thing off the twice-daily sheet — spirits belong there, because forty open bottles judged by eye at two in the morning produce numbers nobody believes. Add "managers only" where the count is worth trusting because of who made it.'
               : 'Choose Never for things with nothing on a shelf: transport, delivery fees, repairs. They can still be entered on an expense.'}
           >
             <Select
@@ -1091,6 +1115,11 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
             >
               {module === 'bar' && <option value="shift">Every shift, in and out</option>}
               <option value="close">At stocktake</option>
+              {/* Held back from the nightly sheet AND from anybody who is not
+                  a manager. The whole reason spirits are counted rarely is
+                  that the count is meant to be worth trusting, and a count is
+                  worth trusting because of who made it. */}
+              <option value="manager">At stocktake, managers only</option>
               <option value="never">Never</option>
             </Select>
           </Field>

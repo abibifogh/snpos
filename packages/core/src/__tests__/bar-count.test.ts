@@ -4,6 +4,7 @@ import {
   byUnit, wasCountedBar, variancesIn, summariseBarCount, readyToClose, unitLabel,
   BAR_VARIANCE_TOLERANCE, type BarCountLine,
   shiftCounted, hasShiftCountChoice, countsAtBothEnds, askForOpeningCount, readyToAccept, countGate,
+  countableBy, managerCountOnly, mayCountWithoutShift,
   countable, filedCounts, undoDeltas, undoProblem, soldInShift, soldTotals, newShelfCadence,
   type FiledCheck,
 } from '../bar-count.ts';
@@ -505,4 +506,53 @@ test('not having looked yet is not an accusation', () => {
     somebody's face, for the second it takes to read the answer.
   */
   assert.equal(askForOpeningCount({ countsIn: true, counted: undefined, canStillSell: true }), false);
+});
+
+
+test('spirits held back from the nightly sheet are held back from bartenders too', () => {
+  /**
+   * "Off the shift sheet" and "only a manager may touch it" were one setting,
+   * so the expensive end of a bar's stock was equally open to anybody who
+   * opened the stocktake screen. That is the wrong way round: the whole reason
+   * a thing is counted rarely is that the count is meant to be worth trusting,
+   * and a count is worth trusting because of who made it.
+   */
+  const rows = [
+    { $id: 'club', name: 'Club' },
+    { $id: 'gin', name: 'Gin', manager_count_only: true },
+  ];
+  assert.deepEqual(countableBy(rows, false).map((r) => r.$id), ['club']);
+  assert.deepEqual(countableBy(rows, true).map((r) => r.$id), ['club', 'gin']);
+});
+
+test('a bottle on file before this existed is countable by anybody', () => {
+  /*
+    Reading silence as a restriction would empty the sheet for every manager
+    who is not an admin — and for every bartender — on the day it shipped.
+  */
+  assert.equal(managerCountOnly({}), false);
+  assert.equal(managerCountOnly({ manager_count_only: false }), false);
+  assert.equal(managerCountOnly({ manager_count_only: true }), true);
+  assert.deepEqual(countableBy([{ $id: 'a', manager_count_only: undefined }], false).map((r) => r.$id), ['a']);
+});
+
+test('a manager may spot-check the bar with no shift open', () => {
+  /**
+   * A bar count is normally a handover — what one person accepted and what
+   * they handed over — which is why it belongs to a shift. That reasoning
+   * holds for a bartender and not for a manager: a check outside service is a
+   * stocktake, not a handover.
+   *
+   * Refusing it meant the only way to look at the bar was to open a shift
+   * nobody was going to trade on, which puts a false evening in the books to
+   * answer a question about stock.
+   */
+  assert.equal(mayCountWithoutShift({ isStore: false, isManager: true, hasShift: false }), true);
+  assert.equal(mayCountWithoutShift({ isStore: false, isManager: false, hasShift: false }), false);
+
+  // With a shift open, anybody counting the bar is doing the handover.
+  assert.equal(mayCountWithoutShift({ isStore: false, isManager: false, hasShift: true }), true);
+
+  // A store room belongs to no evening in the first place and never needed one.
+  assert.equal(mayCountWithoutShift({ isStore: true, isManager: false, hasShift: false }), true);
 });

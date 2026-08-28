@@ -1626,6 +1626,21 @@ export const COLLECTIONS = [
        * cannot silently switch the count off.
        */
       ['count_each_shift', 'b', null, false, false],
+      /**
+       * Only a manager may put a number against this.
+       *
+       * The bar's twice-a-shift sheet is a bartender's job. Spirits already sit
+       * off it — forty open bottles judged by eye at two in the morning produce
+       * numbers nobody believes — and what was missing is who does the
+       * stocktake instead. "Off the nightly sheet" and "only a manager may
+       * touch it" were the same setting, so the expensive end of a bar's stock
+       * was equally open to anybody who opened the stocktake screen.
+       *
+       * Optional, and absent means no. Reading silence as a restriction would
+       * empty the sheet for every manager who is not an admin on the day this
+       * shipped. See managerCountOnly.
+       */
+      ['manager_count_only', 'b', null, false, false],
       // The sentence a cook reads at the end of a shift, in the restaurant's
       // own words: "OK = 10pcs or more . Low = under 10pcs".
       //
