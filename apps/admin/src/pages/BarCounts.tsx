@@ -90,6 +90,8 @@ export function BarCountsPage() {
    * somebody wants to know what is in there, and it must be countable whether
    * or not the bar happens to be trading.
    */
+  /** The rooms could not be read at all, which is not the same as having none. */
+  const [roomsFailed, setRoomsFailed] = useState(false);
   const room = places.find((p2) => p2.$id === placeId) ?? null;
   const isStore = room?.kind === 'store';
   const canCount = isStore || !!shift;
@@ -100,8 +102,18 @@ export function BarCountsPage() {
       const open = await loadOpenShifts('main', 'bar').catch(() => [] as Shift[]);
       const current = open[0] ?? null;
       setShift(current);
-      const where = await loadLocations('main').catch(() => [] as StockLocation[]);
-      const bar = where.filter((l) => (l.module ?? 'kitchen') === 'bar' && l.active !== false);
+      /*
+        A read that failed is not a bar with no rooms in it.
+
+        Swallowed into an empty list, the two are the same thing to every line
+        below — and they need opposite answers. "Nothing could be read, try
+        again" and "nobody has set up a store room yet" send somebody to
+        completely different places, and offering the second when the first is
+        true sends them to build something that already exists.
+      */
+      const where = await loadLocations('main').catch(() => null);
+      setRoomsFailed(where === null);
+      const bar = (where ?? []).filter((l) => (l.module ?? 'kitchen') === 'bar' && l.active !== false);
       setPlaces(bar);
       const here = placeId || saleLocation(bar, 'bar')?.$id || '';
       if (!placeId) setPlaceId(here);
@@ -321,17 +333,45 @@ export function BarCountsPage() {
 
       {!canCount ? (
         <Card title="Which room">
-          {places.length > 1 && (
+          {/*
+            Shown whenever there is anything to pick, not only when there are
+            two. With one room the picker was hidden and the words below still
+            said "pick one above", which is a screen asking for something it
+            has not put on the page.
+          */}
+          {places.length > 0 && (
             <Field label="Which room" hint="A store room can be counted at any time. The bar is counted against a shift.">
               <Select value={placeId} onChange={(e) => setPlaceId(e.target.value)}>
                 {places.map((l) => <option key={l.$id} value={l.$id}>{l.name}</option>)}
               </Select>
             </Field>
           )}
-          <Empty title="No bar shift is open">
-            Counting the bar is part of a shift — it is what one person accepted and what they handed over. Open
-            the bar from the till, then count it in. A store room does not need a shift; pick one above.
-          </Empty>
+          {/*
+            THREE DIFFERENT SITUATIONS, and they were all showing one message.
+
+            An empty list stood in for a failed read, so a page that could not
+            reach the database told somebody there was no shift open and to
+            pick a room from a box with nothing in it. Every instruction on it
+            was impossible to follow.
+          */}
+          {roomsFailed ? (
+            <Empty title="The rooms could not be read">
+              Nothing is wrong with the bar — this page could not reach the database just now, so it has no
+              list of rooms to offer. The message above says what to check. Nothing was saved; reload when it
+              is back.
+            </Empty>
+          ) : places.length === 0 ? (
+            <Empty title="The bar has no rooms set up">
+              A bar keeps stock in two places: behind the counter, and in a store. Set them up under
+              {' '}<strong>Bar → Where stock sits</strong>, and deliveries will land in the store and counts
+              will know which one they are counting.
+            </Empty>
+          ) : (
+            <Empty title="No bar shift is open">
+              Counting the bar is part of a shift — it is what one person accepted and what they handed over.
+              Open the bar from the till, then count it in. A store room does not need a shift; pick one above.
+            </Empty>
+          )}
         </Card>
       ) : (
         <>

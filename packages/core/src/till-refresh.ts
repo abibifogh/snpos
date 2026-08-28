@@ -66,11 +66,24 @@ export const SETTLE_MS = 2_500;
 /**
  * How often to ask whether anything changed, when nothing has said so.
  *
- * Three minutes. This is the safety net for a dead websocket, not the primary
- * path, and it costs one small read — see the note at the top about what the
- * expensive version of this would cost.
+ * Ten minutes, and the number was three until a shop started seeing "could
+ * not reach Appwrite" on and off through a day. Whether that was the cause is
+ * not established — a paused project or a plan limit reached by everything
+ * else the business does are likelier — but this is the one part of it under
+ * this system's control, and buying insurance against it costs nothing worth
+ * having.
+ *
+ * Nothing is lost by the change. THE LIVE CONNECTION IS THE FAST PATH: a price
+ * put up in the office reaches the counter in seconds through it, and always
+ * did. This look exists only for the case where that connection has quietly
+ * died, which is rare, and ten minutes of being out of date in that rare case
+ * is a far better trade than four reads every three minutes on every till in
+ * the building, all day, to be told nothing has happened.
+ *
+ * The tab coming back to the front still looks immediately, which covers the
+ * moment somebody actually picks the till up.
  */
-export const LOOK_EVERY_MS = 180_000;
+export const LOOK_EVERY_MS = 600_000;
 
 /**
  * The newest change stamp in a set of rows.
