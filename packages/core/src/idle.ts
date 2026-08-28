@@ -268,6 +268,28 @@ export interface ScreenClaim {
   declared: boolean;
   /** An address explicitly turning screen mode off again. */
   turnedOff: boolean;
+  /**
+   * Opened from an icon rather than in a browser — no address bar, no tabs.
+   *
+   * The same reasoning as the declaration, arrived at without needing the
+   * address to say anything at all, which is what makes it worth having: an
+   * icon made BEFORE any of this existed still points at the plain menu, and
+   * would otherwise have to be deleted and made again on every counter.
+   *
+   * A customer scans a sticker, orders their lunch, and never opens the thing
+   * again. Nobody installs a restaurant's menu onto their own home screen. The
+   * one who does is the restaurant, standing a tablet on its counter.
+   */
+  installed: boolean;
+  /**
+   * The address belongs to one particular guest — a table's QR code, a walk-in
+   * link, a group's link.
+   *
+   * The exception to the rule above, and the reason it is safe. A guest who
+   * did install their table's QR link is asking for THEIR table, and handing
+   * them a counter screen would take away the receipt they installed it for.
+   */
+  guestToken: boolean;
 }
 
 export interface ScreenVerdict {
@@ -285,5 +307,7 @@ export function screenClaim(claim: ScreenClaim): ScreenVerdict {
   if (claim.turnedOff) return { screen: false, rememberVenue: false };
   if (claim.tokenMatched) return { screen: true, rememberVenue: true };
   if (claim.declared) return { screen: true, rememberVenue: false };
+  // Last, and only where the address is not somebody's own. See `installed`.
+  if (claim.installed && !claim.guestToken) return { screen: true, rememberVenue: false };
   return { screen: null, rememberVenue: false };
 }

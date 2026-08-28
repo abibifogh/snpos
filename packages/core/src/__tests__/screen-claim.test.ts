@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { screenClaim } from '../idle.ts';
 
-const none = { tokenMatched: false, declared: false, turnedOff: false };
+const none = { tokenMatched: false, declared: false, turnedOff: false, installed: false, guestToken: false };
 
 test('the home-screen icon is enough to be a screen', () => {
   /**
@@ -42,6 +42,37 @@ test('an address with nothing to say leaves the device as it was', () => {
 test('turning it off wins over everything claiming it on', () => {
   // A way out that can be outvoted is not a way out. This is the only route
   // back for a tablet that has been told it is a screen.
-  assert.equal(screenClaim({ tokenMatched: true, declared: true, turnedOff: true }).screen, false);
-  assert.equal(screenClaim({ tokenMatched: true, declared: true, turnedOff: true }).rememberVenue, false);
+  assert.equal(screenClaim({ ...none, tokenMatched: true, declared: true, installed: true, turnedOff: true }).screen, false);
+  assert.equal(screenClaim({ ...none, tokenMatched: true, declared: true, installed: true, turnedOff: true }).rememberVenue, false);
+});
+
+test('an icon made before any of this existed still opens as a screen', () => {
+  /**
+   * The address on an already-made shortcut cannot be changed from here — it
+   * was baked in when somebody tapped "add to home screen", and it says
+   * nothing. Without this, every counter in the business would have to have
+   * its icon deleted and made again before the fix reached it.
+   *
+   * So being opened from an icon at all is the claim. Nobody installs a
+   * restaurant's menu onto their own phone; the one who does is the
+   * restaurant, standing a tablet on its counter.
+   */
+  assert.equal(screenClaim({ ...none, installed: true }).screen, true);
+  // In a browser tab it says nothing, because that IS how a customer reads a
+  // menu and it must leave their phone alone.
+  assert.equal(screenClaim({ ...none, installed: false }).screen, null);
+});
+
+test('a guest who installed their own table link keeps their own order', () => {
+  /*
+    The exception that makes the rule above safe. Somebody who added their
+    table's QR link is asking for THEIR table, and turning that into a counter
+    screen would take away the receipt they installed it for.
+  */
+  assert.equal(screenClaim({ ...none, installed: true, guestToken: true }).screen, null);
+});
+
+test('an installed icon still never says which counter it is', () => {
+  // It carries no token, so there is nothing in it that could know.
+  assert.equal(screenClaim({ ...none, installed: true }).rememberVenue, false);
 });

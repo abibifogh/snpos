@@ -241,6 +241,30 @@ export function App() {
    * saying WHICH counter this is.
    */
   const screenDeclared = params.get('screen') === '1';
+  /**
+   * Opened from an icon rather than in a browser tab.
+   *
+   * The declaration above only reaches an icon made AFTER it existed, because
+   * the address on a shortcut is baked in the moment somebody taps "add to
+   * home screen" and cannot be changed from here. Without this, every counter
+   * would have to have its icon deleted and made again.
+   *
+   * Both questions are asked because browsers disagree about which one they
+   * answer: `display-mode` is the standard and `navigator.standalone` is what
+   * iOS has always used.
+   */
+  const installed = (() => {
+    try {
+      const standalone = ['fullscreen', 'standalone', 'minimal-ui'].some(
+        (mode) => window.matchMedia(`(display-mode: ${mode})`).matches,
+      );
+      const ios = (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+      return standalone || ios;
+    } catch {
+      // An old browser that cannot answer is left alone rather than guessed at.
+      return false;
+    }
+  })();
 
   useEffect(() => {
     (async () => {
@@ -317,6 +341,10 @@ export function App() {
           tokenMatched: !!screenToken && venue.screen_token === screenToken,
           declared: screenDeclared,
           turnedOff: params.get('screenMode') === 'off',
+          installed,
+          // A table's QR code, a walk-in link, a group's link: an address that
+          // belongs to one particular guest, who must keep their own order.
+          guestToken: !!token || !!walkInToken || !!groupToken,
         });
         if (verdict.screen !== null) {
           setScreenMode(verdict.screen);
