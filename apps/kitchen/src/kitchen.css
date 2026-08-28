@@ -189,3 +189,21 @@ body { background: var(--bg); color: var(--text); }
 .kds-coming-go { opacity: 0.6; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .kds-coming-item:hover .kds-coming-go { opacity: 1; color: var(--brand); }
 .kds-86 { width: auto; padding: 0 0.55rem; border-radius: 999px; letter-spacing: 0.03em; }
+
+/* Bills that went out unpaid.
+
+   The same strip as "booked for later", in the warning colour rather than the
+   brand one. Both are lists of orders that are not on the pass, and a cook
+   glancing up has to be able to tell "a party at seven" from "somebody has
+   eaten and not paid" without reading either — one is a plan and the other is
+   money leaving the building. */
+.kds-owing {
+  background: color-mix(in srgb, var(--warn, #b45309) 12%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--warn, #b45309) 35%, transparent);
+}
+.kds-owing .kds-coming-item:hover { border-color: var(--warn, #b45309); }
+.kds-owing .kds-coming-item:hover .kds-coming-go { color: var(--warn, #b45309); }
+/* Somebody who may not take payment still sees what is owed — the list is the
+   point — but is not offered a button that would refuse them. */
+.kds-owing .kds-coming-item:disabled { cursor: default; opacity: 0.75; }
+.kds-owing .kds-coming-item:disabled:hover { border-color: var(--border); }

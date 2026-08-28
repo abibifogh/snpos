@@ -11,6 +11,7 @@ import {
   itemsAvailableNow, dueMinutes, ticketLines, linesComplete, isOverdue, minutesOver, seatFor, amountOutstanding,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, addonNames, addonsUnreadable,
   formatWait, giveTheMoneyBack, wakesScreen, latestMovement,
+  billsToSettle, settleableTotal, billsToSettleLabel,
 } from '@snpos/core';
 import type {
   Order, OrderItem, Settings, Venue, StaffProfile, StaffSession, HelpRole, MenuItem, Doc, FeatureMap,
@@ -404,6 +405,26 @@ export function App() {
   );
 
   const pending = visible.filter((o) => o.status === 'PENDING');
+
+  /**
+   * Food that has gone out and has not been paid for.
+   *
+   * The board above stops at READY, so an order is off this screen for good
+   * the moment somebody presses Collected — and an order that becomes unpaid
+   * AFTERWARDS had nowhere left to appear. A payment recorded against the
+   * wrong method and voided so it can be redone, a card declined after the
+   * plates went out, a table served course by course and settling at the end:
+   * in every one the money is real, owed, and invisible until the till is
+   * counted.
+   *
+   * Deliberately NOT mixed into the lanes above. A cook reading the board
+   * wants what is cooking, and a served ticket sitting among them is noise
+   * that gets learnt and then ignored. See billsToSettle.
+   *
+   * Never filtered by station: money is not one station's business, and a
+   * pass set to Cold would otherwise hide a bill nobody else is looking for.
+   */
+  const owing = useMemo(() => billsToSettle(orders), [orders]);
 
   /**
    * What is still owed on a part-paid order.
@@ -934,6 +955,46 @@ export function App() {
               <span>{displayOrderNo(o.order_no)}</span>
               <span className="dim">{(items[o.$id] ?? []).reduce((a, i) => a + i.qty, 0) || '·'} items</span>
               <span className="kds-coming-go">Cook now</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/*
+        Bills that went out unpaid, in a strip of their own.
+
+        Only where this pass takes payment at all — combined mode — because on
+        a screen that cannot settle anything this would be a list of problems
+        with no button on it, which is a way of telling a cook off.
+
+        Above the board rather than below it. It is short, it is money, and a
+        section under a full grid of tickets is a section nobody scrolls to.
+      */}
+      {combined && owing.length > 0 && (
+        <div className="kds-coming kds-owing">
+          <span className="kds-coming-label">
+            {billsToSettleLabel(owing.length)}
+            {settings ? ` · ${formatMoney(settleableTotal(owing), settings)}` : ''}
+          </span>
+          {owing.map((o) => (
+            <button
+              key={o.$id}
+              className="kds-coming-item"
+              onClick={() => setSettling(o)}
+              disabled={!(who?.can_mark_paid ?? false)}
+              title={
+                (who?.can_mark_paid ?? false)
+                  ? 'Record how this one was paid'
+                  : 'Only somebody who may take payment can settle this'
+              }
+            >
+              <b>{displayOrderNo(o.order_no)}</b>
+              <span>{seatFor(o, seating)}</span>
+              <span className="dim">{settings ? formatMoney(o.total, settings) : ''}</span>
+              {/* Said plainly, because "partial" on its own reads as done. */}
+              <span className="kds-coming-go">
+                {o.payment_status === 'partial' ? 'Part paid · settle' : 'Take payment'}
+              </span>
             </button>
           ))}
         </div>
