@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react';
 import { Button, Card, Field, Input, Notice, Logo } from '@snpos/ui';
 import { useSession } from '../session';
 import { account, humanError } from '../lib';
-import { signOutCompletely } from '@snpos/core';
+import {
+  signOutCompletely,
+  probeAppwrite, appwriteHost, diagnose, reachWords, reachLabel, isOursToFix,
+} from '@snpos/core';
+import type { Reach } from '@snpos/core';
 
 /**
  * Where the "set a password" email should land people.
@@ -42,6 +46,24 @@ export function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  /**
+   * What a connection check found, once somebody asks for one.
+   *
+   * Null until then: running it unasked would put a second opinion on screen
+   * every time a password is mistyped.
+   */
+  const [reach, setReach] = useState<Reach | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  const runCheck = async () => {
+    setChecking(true);
+    try {
+      const answered = await probeAppwrite();
+      setReach(diagnose({ online: navigator.onLine !== false, answered }));
+    } finally {
+      setChecking(false);
+    }
+  };
   const [done, setDone] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -296,7 +318,31 @@ export function Login() {
           onChange={(e) => setPassword(e.target.value)}
         />
       </Field>
-      {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
+      {error && (
+        <div style={{ marginBottom: '1rem' }}>
+          <Notice>{error}</Notice>
+          {/*
+            WHICH OF THE THREE IT IS, rather than all three.
+
+            A failed request cannot tell a dead wifi from a paused project, so
+            the message above has to name every cause. This asks a different
+            question — is there a network, and is anything answering at
+            Appwrite's address — and those two pin it down. See reachability.
+          */}
+          <div style={{ marginTop: '0.5rem' }}>
+            <Button size="sm" onClick={() => void runCheck()} loading={checking}>
+              Check the connection
+            </Button>
+          </div>
+          {reach && (
+            <div style={{ marginTop: '0.6rem' }}>
+              <Notice tone={isOursToFix(reach) ? 'warn' : 'info'}>
+                <strong>{reachLabel(reach)}.</strong>{' '}{reachWords(reach, appwriteHost())}
+              </Notice>
+            </div>
+          )}
+        </div>
+      )}
       <Button type="submit" variant="primary" loading={busy} style={{ width: '100%' }}>
         Sign in
       </Button>

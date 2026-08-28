@@ -12,9 +12,11 @@ import {
   onQueueChange, startOfflineSync, flushQueue,
   lockKey, lockProblem, unlockers, subscribeCollection, wakesScreen, latestMovement,
   catalogueStamp, catalogueMoved, worthLooking, CATALOGUE_COLLECTIONS, SETTLE_MS, LOOK_EVERY_MS,
+  probeAppwrite, appwriteHost, diagnose, reachWords, reachLabel, isOursToFix,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc, Module, Unlocker, Order,
+  Reach,
 } from '@snpos/core';
 import { TablesView } from './TablesView';
 import { OrderView } from './OrderView';
@@ -628,6 +630,25 @@ export function App() {
     })();
   }, [boot]);
 
+  /**
+   * What a connection check found, once somebody has asked for one.
+   *
+   * Null until then. Running it unasked would put a second opinion on screen
+   * every time a password was mistyped.
+   */
+  const [reach, setReach] = useState<Reach | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  const runCheck = async () => {
+    setChecking(true);
+    try {
+      const answered = await probeAppwrite();
+      setReach(diagnose({ online: navigator.onLine !== false, answered }));
+    } finally {
+      setChecking(false);
+    }
+  };
+
   const signIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -660,7 +681,34 @@ export function App() {
               <Field label="Password">
                 <Input type="password" value={password} required onChange={(e) => setPassword(e.target.value)} />
               </Field>
-              {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
+              {error && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <Notice>{error}</Notice>
+                  {/*
+                    WHICH OF THE THREE IT IS, rather than all three.
+
+                    The message above has to name every cause, because a failed
+                    request cannot tell them apart. This asks a different
+                    question — is there a network, and is anything answering at
+                    Appwrite's address — and those two pin it down. It matters
+                    most for the case where nothing about the shop's equipment
+                    is wrong at all, because that is where the minutes spent
+                    restarting a router are entirely wasted.
+                  */}
+                  <div style={{ marginTop: '0.5rem' }}>
+                    <Button size="sm" onClick={() => void runCheck()} loading={checking}>
+                      Check the connection
+                    </Button>
+                  </div>
+                  {reach && (
+                    <div style={{ marginTop: '0.6rem' }}>
+                      <Notice tone={isOursToFix(reach) ? 'warn' : 'info'}>
+                        <strong>{reachLabel(reach)}.</strong>{' '}{reachWords(reach, appwriteHost())}
+                      </Notice>
+                    </div>
+                  )}
+                </div>
+              )}
               <Button type="submit" variant="primary" loading={busy} style={{ width: '100%' }}>Sign in</Button>
             </form>
           </Card>

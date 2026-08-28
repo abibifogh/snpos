@@ -23,6 +23,61 @@ if (!endpoint || !project) {
 
 export const DB_ID = import.meta.env.VITE_DB_ID || 'snpos';
 
+/**
+ * Where Appwrite lives, so a screen can say which host it could not reach.
+ *
+ * Public by design — it identifies the project and grants nothing.
+ */
+export const APPWRITE_ENDPOINT: string = endpoint;
+
+/** Just the host, for a sentence somebody reads. */
+export const appwriteHost = (): string => {
+  try {
+    return new URL(endpoint).host;
+  } catch {
+    return endpoint;
+  }
+};
+
+/**
+ * Is there a server at Appwrite's address at all?
+ *
+ * THE PLAINEST QUESTION AVAILABLE, and deliberately so. Not a query, not a
+ * login, not a health check that needs a key — just whether a request to that
+ * host completes. A login can fail for a dozen reasons that say nothing about
+ * the wire, and reporting any of them as an outage would send somebody to
+ * restart a router over a paused project.
+ *
+ * `no-cors` because the answer is not read. The response is opaque and
+ * useless, which is fine: it RESOLVING means bytes went there and came back,
+ * and it THROWING means they did not. That is the whole question, and asking
+ * it this way needs no permissions and no cooperation from the other end.
+ *
+ * Timed out rather than left hanging. A request that never returns is the same
+ * outcome as a refused one for the person waiting, and a check with no
+ * deadline is a spinner somebody watches instead of an answer.
+ */
+export async function probeAppwrite(timeoutMs = 8_000): Promise<boolean | null> {
+  if (typeof fetch !== 'function') return null;
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), timeoutMs);
+  try {
+    await fetch(endpoint, { mode: 'no-cors', cache: 'no-store', signal: stop.signal });
+    return true;
+  } catch {
+    /*
+      Not told apart from an abort on purpose.
+
+      A timeout and a refusal both mean nothing usable came back, and inventing
+      a third answer here would only put another branch in front of somebody
+      who wants to know whether to check the wifi.
+    */
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export const client = new Client().setEndpoint(endpoint).setProject(project);
 export const account = new Account(client);
 export const storage = new Storage(client);
