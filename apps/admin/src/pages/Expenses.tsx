@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast, ViewTabs} from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, uploadFile, downloadUrl, deleteFile, receiveStock, Query,
   PAID_TO_KINDS, payeeLabel as sharedPayeeLabel, legacyExpenseCategory as legacyFor,
   isPostableExpenseAccount, expenseMethodsFor, mayComeFromShift, expenseSides, asksMoneySource,
+  ingredientsForSide,
   defaultExpenseSide, MODULE_LABELS, modulesOf, recomputeClosedShift,
   repostExpense, accountForExpense,
   balancesFor, accountFor, settleBoxSpend, boxesFor, boxOverdrawn,
@@ -344,6 +345,27 @@ export function ExpensesPage() {
   const chosenBox = fromBox
     ? boxesOnOffer.find((b) => b.$id === editing?.imprest_float_id) ?? null
     : null;
+
+  /**
+   * The stock this expense may be itemised into: this side's only.
+   *
+   * Every ingredient in the business was on offer whichever side was chosen,
+   * so a bar purchase listed rice beside the gin. Picking the wrong one is not
+   * a tidy-up matter — it raises that side's stock and puts the delivery in
+   * that side's store room, because a purchase lands wherever the ingredient's
+   * own side keeps things. See ingredientsForSide.
+   *
+   * Anything already listed stays on offer whatever side it is from, so a line
+   * somebody typed never goes blank underneath them.
+   */
+  const sideIngredients = useMemo(
+    () => ingredientsForSide(
+      ingredients,
+      editing?.module,
+      [...draftItems.map((d) => d.ingredient_id), ...savedItems.map((i) => i.ingredient_id)],
+    ),
+    [ingredients, editing?.module, draftItems, savedItems],
+  );
 
   const impliedCategory = (() => {
     const keys = draftItems
@@ -1009,7 +1031,11 @@ export function ExpensesPage() {
           )}
 
           <StockLines
-            ingredients={ingredients}
+            ingredients={sideIngredients}
+            sideWord={
+              (editing.module ?? 'kitchen') === 'bar' ? 'bar'
+                : (editing.module ?? 'kitchen') === 'craft' ? 'shop' : 'kitchen'
+            }
             saved={savedItems}
             draft={draftItems}
             setDraft={setDraftItems}
@@ -1108,6 +1134,7 @@ export function ExpensesPage() {
  */
 function StockLines({
   ingredients,
+  sideWord,
   saved,
   draft,
   setDraft,
@@ -1118,6 +1145,8 @@ function StockLines({
   money,
 }: {
   ingredients: Ingredient[];
+  /** What this side calls itself, so an empty list says where to go. */
+  sideWord: string;
   saved: { $id: string; name_snapshot: string; qty: number; line_total: number }[];
   draft: DraftItem[];
   setDraft: (f: (d: DraftItem[]) => DraftItem[]) => void;
@@ -1138,7 +1167,7 @@ function StockLines({
       label="Stock bought"
       hint={
         ingredients.length === 0
-          ? 'No ingredients set up yet. Add them under Stock, and you will be able to list them here.'
+          ? `Nothing set up for the ${sideWord} yet. Add it under ${sideWord === 'bar' ? 'Bar → Bottles & mixers' : sideWord === 'shop' ? 'Craft shop → Supplies' : 'Kitchen → Ingredients'}, and it will be listed here.`
           : 'Optional. Anything you list is added to stock straight away, so you do not have to enter it twice.'
       }
     >

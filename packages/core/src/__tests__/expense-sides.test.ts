@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   categoriesForSide, canSeePrivateExpenses, CATEGORY_SIDES,
   expenseMethodsFor, mayComeFromShift, expenseSides, defaultExpenseSide, asksMoneySource,
+  ingredientsForSide,
 } from '../expense-rules.ts';
 
 const rows = [
@@ -242,4 +243,44 @@ test('a method that is itself the answer is not asked the question again', () =>
   assert.equal(asksMoneySource({}), true, 'absent means an ordinary method');
   assert.equal(asksMoneySource(undefined), true, 'nothing chosen yet still asks');
   assert.equal(asksMoneySource(null), true);
+});
+
+
+test('an expense can only be itemised into its own side\'s stock', () => {
+  /**
+   * The admin form offered every ingredient the business owns whichever side
+   * was chosen, so a bar purchase listed rice beside the gin.
+   *
+   * Not a tidy-up matter. Picking the wrong side's ingredient raises THAT
+   * side's stock and lands the delivery in THAT side's store room, because a
+   * purchase goes wherever the ingredient's own side keeps things — so the
+   * bar's money would buy gin onto the kitchen's shelf, and the bar's count
+   * would come up short of a bottle nobody could account for.
+   */
+  const rows = [
+    { $id: 'gin', module: 'bar' },
+    { $id: 'rice', module: 'kitchen' },
+    { $id: 'beads', module: 'craft' },
+    { $id: 'salt' },
+  ];
+
+  assert.deepEqual(ingredientsForSide(rows, 'bar').map((i) => i.$id), ['gin']);
+  assert.deepEqual(ingredientsForSide(rows, 'craft').map((i) => i.$id), ['beads']);
+  // Rows written before sides existed are the kitchen's, which is what they
+  // were — the same fallback the rest of the system uses.
+  assert.deepEqual(ingredientsForSide(rows, 'kitchen').map((i) => i.$id), ['rice', 'salt']);
+  assert.deepEqual(ingredientsForSide(rows, undefined).map((i) => i.$id), ['rice', 'salt']);
+});
+
+test('a line somebody already typed never goes blank underneath them', () => {
+  /**
+   * Filtering a chosen ingredient out of its own dropdown makes that row show
+   * empty, and the next save writes whatever the blank resolves to — a screen
+   * quietly changing an answer it was given. Older expenses recorded before
+   * the sides were tidied are exactly where this happens.
+   */
+  const rows = [{ $id: 'gin', module: 'bar' }, { $id: 'rice', module: 'kitchen' }];
+  assert.deepEqual(ingredientsForSide(rows, 'bar', ['rice']).map((i) => i.$id), ['gin', 'rice']);
+  // Nothing chosen, nothing kept.
+  assert.deepEqual(ingredientsForSide(rows, 'bar', [undefined, '']).map((i) => i.$id), ['gin']);
 });

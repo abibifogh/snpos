@@ -260,3 +260,33 @@ export function defaultExpenseSide<T extends string>(
 export function asksMoneySource(method?: { payouts_only?: boolean } | null): boolean {
   return method?.payouts_only !== true;
 }
+
+/**
+ * The stock an expense on this side may be itemised into.
+ *
+ * The admin form offered every ingredient the business owns, whichever side
+ * the expense was being filed under — so recording a bar purchase put rice and
+ * tomatoes on the list beside the gin, and a kitchen one offered the spirits.
+ *
+ * Not merely untidy. Picking the wrong side's ingredient raises THAT side's
+ * stock and lands the delivery in THAT side's store room, because a purchase
+ * goes wherever the ingredient's own side keeps things. The bar's money would
+ * buy the kitchen's gin, on the kitchen's shelf, and the bar's count would
+ * come up short of a bottle nobody could account for.
+ *
+ * Anything already chosen is kept on the list whatever side it belongs to.
+ * Filtering a line somebody has already typed out of its own dropdown makes it
+ * appear blank, and the next save writes whatever the blank resolves to — a
+ * screen quietly changing an answer it was given.
+ *
+ * Rows written before sides existed are the kitchen's, which is what they were.
+ */
+export function ingredientsForSide<T extends { $id: string; module?: string }>(
+  rows: T[],
+  module: string | undefined,
+  keep: (string | undefined)[] = [],
+): T[] {
+  const side = module ?? 'kitchen';
+  const kept = new Set(keep.filter(Boolean) as string[]);
+  return rows.filter((i) => (i.module ?? 'kitchen') === side || kept.has(i.$id));
+}
