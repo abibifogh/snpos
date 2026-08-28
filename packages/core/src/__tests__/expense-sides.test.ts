@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   categoriesForSide, canSeePrivateExpenses, CATEGORY_SIDES,
-  expenseMethodsFor, mayComeFromShift, expenseSides, defaultExpenseSide,
+  expenseMethodsFor, mayComeFromShift, expenseSides, defaultExpenseSide, asksMoneySource,
 } from '../expense-rules.ts';
 
 const rows = [
@@ -220,4 +220,26 @@ test('a bank account is for paying out, never for taking money', () => {
       .map((m) => m.$id),
     ['m-cash', 'm-bank'],
   );
+});
+
+
+test('a method that is itself the answer is not asked the question again', () => {
+  /**
+   * "Paid from: Bank transfer" says where the money came from — the bank. The
+   * form then asked again, offering a shift's drawer and a petty cash tin, and
+   * both are wrong: a transfer never came off a drawer and never came out of a
+   * tin. Whichever was left in place was false, and the screen went on to warn
+   * that no tin was set up for a spend no tin should ever be lighter for.
+   *
+   * The distinction is not the word "bank". It is whether money only ever goes
+   * OUT this way — an account rather than a drawer.
+   */
+  assert.equal(asksMoneySource({ payouts_only: true }), false);
+
+  // Cash and mobile money genuinely could be either the shift's takings or a
+  // tin, and which one decides whether a drawer is counted short tonight.
+  assert.equal(asksMoneySource({ payouts_only: false }), true);
+  assert.equal(asksMoneySource({}), true, 'absent means an ordinary method');
+  assert.equal(asksMoneySource(undefined), true, 'nothing chosen yet still asks');
+  assert.equal(asksMoneySource(null), true);
 });

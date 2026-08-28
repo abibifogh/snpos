@@ -236,3 +236,27 @@ export function defaultExpenseSide<T extends string>(
   if (filter && filter !== 'all' && sides.includes(filter as T)) return filter as T;
   return sides[0];
 }
+
+/**
+ * Does this expense still need asking where the money came from?
+ *
+ * No, once the method already answers it. "Paid from: Bank transfer" says
+ * where the money came from — the bank — and then asking again, with a drawer
+ * and a petty cash tin as the only options, is a form asking a question it has
+ * just been told the answer to. Whichever answer gets left in place is wrong:
+ * a bank transfer never came off a shift's drawer, and it did not come out of
+ * a tin either, so the screen went on to warn that no tin was set up for a
+ * spend no tin should ever be lighter for.
+ *
+ * The distinction is not "bank" specifically. It is whether the method is one
+ * money goes OUT of and never into — an account rather than a drawer. Those
+ * are never counted at a close and never charged to a box; the payment method
+ * is the whole answer.
+ *
+ * A cash or mobile-money expense still has to be asked, because those genuinely
+ * could have come out of either the shift's takings or a petty cash tin, and
+ * which one decides whether a drawer is counted short tonight.
+ */
+export function asksMoneySource(method?: { payouts_only?: boolean } | null): boolean {
+  return method?.payouts_only !== true;
+}

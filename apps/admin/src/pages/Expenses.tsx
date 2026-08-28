@@ -4,7 +4,7 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, uploadFile, downloadUrl, deleteFile, receiveStock, Query,
   PAID_TO_KINDS, payeeLabel as sharedPayeeLabel, legacyExpenseCategory as legacyFor,
-  isPostableExpenseAccount, expenseMethodsFor, mayComeFromShift, expenseSides,
+  isPostableExpenseAccount, expenseMethodsFor, mayComeFromShift, expenseSides, asksMoneySource,
   defaultExpenseSide, MODULE_LABELS, modulesOf, recomputeClosedShift,
   repostExpense, accountForExpense,
   balancesFor, accountFor, settleBoxSpend, boxesFor, boxOverdrawn,
@@ -51,7 +51,14 @@ interface ExpenseItem extends Doc {
   stocked: boolean;
 }
 
-interface PaymentMethod extends Doc { name: string; kind: string; enabled: boolean; venue_id: string }
+interface PaymentMethod extends Doc {
+  name: string;
+  kind: string;
+  enabled: boolean;
+  venue_id: string;
+  /** Money only ever goes out this way — an account, not a drawer. */
+  payouts_only?: boolean;
+}
 interface VenueRow extends Doc { name: string }
 interface Supplier extends Doc { name: string; active: boolean }
 interface Staff extends Doc { display_name: string; active: boolean }
@@ -321,7 +328,19 @@ export function ExpensesPage() {
     ? boxes.filter((b) => b.venue_id === (editing.venue_id ?? 'main')
       && (!b.module || b.module === (editing.module ?? 'kitchen')))
     : [];
-  const fromBox = !!editing && editing.from_takings === false;
+  /**
+   * The method already says where the money came from.
+   *
+   * A bank account is one money only ever goes out of. "Paid from: Bank
+   * transfer" IS the answer, so asking again — with a drawer and a petty cash
+   * tin as the only options — is the form asking a question it has just been
+   * told. Whichever answer got left in place was wrong, and the screen went on
+   * to warn that no tin was set up for a spend no tin should be lighter for.
+   */
+  const saysItsOwnSource = !asksMoneySource(
+    methods.find((m) => m.$id === editing?.paid_from_method_id),
+  );
+  const fromBox = !!editing && editing.from_takings === false && !saysItsOwnSource;
   const chosenBox = fromBox
     ? boxesOnOffer.find((b) => b.$id === editing?.imprest_float_id) ?? null
     : null;
@@ -812,7 +831,18 @@ export function ExpensesPage() {
             >
               <Select
                 value={editing.paid_from_method_id ?? ''}
-                onChange={(e) => setEditing({ ...editing, paid_from_method_id: e.target.value })}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  const outOnly = !asksMoneySource(methods.find((m) => m.$id === id));
+                  setEditing({
+                    ...editing,
+                    paid_from_method_id: id,
+                    // An account is not a drawer and not a tin. Leaving a box
+                    // named would make that box lighter for money that never
+                    // came out of it, and the tin would fail its next count.
+                    ...(outOnly ? { from_takings: false, imprest_float_id: '' } : {}),
+                  });
+                }}
                 disabled={methods.length <= 1}
               >
                 {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
@@ -830,7 +860,12 @@ export function ExpensesPage() {
               its expected figures and its over-or-short are worked out again
               from the rows as they now stand — see recomputeClosedShift. What
               was physically counted that night is never touched.
+
+              Not asked at all when the method has already answered it. See
+              asksMoneySource: "Paid from: Bank transfer" says where the money
+              came from, and a drawer and a tin are both wrong answers to it.
             */}
+            {!saysItsOwnSource && (
             <Field
               label="Where the money came from"
               hint={editing.from_takings !== false
@@ -872,6 +907,7 @@ export function ExpensesPage() {
                 <option value="petty">Petty cash</option>
               </Select>
             </Field>
+            )}
             {/*
               Which tin, and not just "petty cash".
 
