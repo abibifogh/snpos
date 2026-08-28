@@ -234,3 +234,56 @@ export function screenShouldReset(
   if (state.sending) return false;
   return now - state.lastTouchedAt >= after;
 }
+
+/**
+ * What a device is when the address is asked, and what it may write down.
+ *
+ * A counter screen is set up by opening the screen link and adding it to the
+ * home screen, and the address in the bar at that moment is the last time the
+ * token is ever seen: every browser starts an installed app at the manifest's
+ * `start_url` and throws the query string away. So the icon on the counter
+ * opened the ordinary walk-in menu — no invitation between customers, no
+ * staying awake, and a "Your orders" list collecting one stranger's order
+ * after another. On an iPad it could not even be worked around by remembering
+ * the token, because a home-screen web app there gets its own storage and
+ * cannot see what the browser learnt.
+ *
+ * Three ways in, and they are not equal:
+ *
+ *   A MATCHED TOKEN says which counter this is. It is the only one that may
+ *   write down a venue.
+ *   A DECLARATION (`screen=1`, which is what the home-screen icon opens) says
+ *   only THAT this is a screen. It grants nothing — screen mode takes things
+ *   away, the order history and the receipts, and holds the display awake — so
+ *   there is nothing here to protect, and it must never overwrite the answer a
+ *   token gave.
+ *   NEITHER leaves the device as whatever it already was. Most addresses have
+ *   nothing to say on the subject, and an address with nothing to say must not
+ *   turn a counter screen back into a phone menu.
+ */
+export interface ScreenClaim {
+  /** A screen token that matched this venue. */
+  tokenMatched: boolean;
+  /** An address declaring this device a screen, with nothing to prove it. */
+  declared: boolean;
+  /** An address explicitly turning screen mode off again. */
+  turnedOff: boolean;
+}
+
+export interface ScreenVerdict {
+  /** What this device is now, or null to leave it as it was. */
+  screen: boolean | null;
+  /** Whether the venue may be written down. Only a token knows it. */
+  rememberVenue: boolean;
+}
+
+export function screenClaim(claim: ScreenClaim): ScreenVerdict {
+  /*
+    Off wins. It is the only way back for a device that has been told it is a
+    screen, and a way out that can be outvoted is not a way out.
+  */
+  if (claim.turnedOff) return { screen: false, rememberVenue: false };
+  if (claim.tokenMatched) return { screen: true, rememberVenue: true };
+  if (claim.declared) return { screen: true, rememberVenue: false };
+  return { screen: null, rememberVenue: false };
+}

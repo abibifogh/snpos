@@ -119,7 +119,31 @@ for (const app of building) {
     description: meta.description,
     // Where it opens. Relative to this file, which is why the manifest has to
     // be generated with the base rather than checked in.
-    start_url: base,
+    /*
+      THE QUERY STRING IS NOT CARRIED OVER BY "ADD TO HOME SCREEN".
+
+      A counter screen is set up by opening the screen address — the menu with
+      a screen token on the end of it — and adding that to the home screen. The
+      address in the bar at that moment has the token in it; the shortcut does
+      not. Every browser starts an installed app at `start_url` and throws the
+      rest away, so the icon on the counter opened the ORDINARY walk-in menu:
+      no invitation between customers, no staying awake, and a "Your orders"
+      list quietly collecting one stranger's order after another.
+
+      Nothing announced it, and on an iPad it could not even be worked around
+      by remembering the token, because a home-screen web app there is given
+      its own storage and cannot see what the browser learnt.
+
+      So the menu opens as a screen when it is opened from an icon. That reads
+      like a large assumption and is not: a customer scans a sticker, orders,
+      and never sees this app again. The only person who installs a
+      restaurant's menu onto a device's home screen is the restaurant, putting
+      a tablet on its counter. See `screen=1` in the menu app — an address
+      saying so is a declaration, not a token, and it grants nothing: screen
+      mode only takes things away, the order history and the receipts, and
+      holds the display awake.
+    */
+    start_url: app === 'menu' ? `${base}?screen=1` : base,
     scope: base,
     id: base,
     /**

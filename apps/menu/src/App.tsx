@@ -6,7 +6,7 @@ import {
   formatMoney, isAvailable, parseWindows, nextAvailable, describeWindows, loadFeatures, isEnabled,
   articlesFor, HELP_AREAS,
   featureConfig, previewUrl, humanError,
-  onQueueChange, startOfflineSync, flushQueue, loadWithFallback, screenShouldReset,
+  onQueueChange, startOfflineSync, flushQueue, loadWithFallback, screenShouldReset, screenClaim,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc,
@@ -37,6 +37,17 @@ interface TableRow extends Doc {
  * Per browser, not per address. See the note where it is read.
  */
 const SCREEN_DEVICE_KEY = 'snpos-screen';
+
+/**
+ * Which venue's counter this screen is standing on.
+ *
+ * Kept beside the flag above because the two are learnt at the same moment and
+ * lost at the same moment. A screen launched from its home-screen icon arrives
+ * with no token — see the note on `start_url` in sync-sw.mjs — and a business
+ * with more than one venue would otherwise land its counter screen on
+ * whichever venue happened to be first in the list.
+ */
+const SCREEN_VENUE_KEY = 'snpos-screen-venue';
 
 /** Everything the menu needs before it can render a single dish. */
 interface Boot {
@@ -215,6 +226,21 @@ export function App() {
    * prices and the ordering are the walk-in's, unchanged.
    */
   const screenToken = params.get('s');
+  /**
+   * An address saying outright that this device is a counter screen.
+   *
+   * This is what the home-screen icon opens, because "add to home screen"
+   * throws the token away and starts the app at the manifest's address
+   * instead. See the note on `start_url` in sync-sw.mjs for why an installed
+   * menu is a counter screen by definition.
+   *
+   * A declaration, not a token, and it deliberately proves nothing. There is
+   * nothing here to protect: screen mode only takes things away — the order
+   * history, the receipts, the way back to somebody's bill — and holds the
+   * display awake. The token still exists and still does its job, which is
+   * saying WHICH counter this is.
+   */
+  const screenDeclared = params.get('screen') === '1';
 
   useEffect(() => {
     (async () => {
@@ -254,11 +280,26 @@ export function App() {
           const found = await db.listDocuments(DB_ID, 'tables', [Query.equal('qr_token', token), Query.limit(1)]);
           table = (found.documents[0] as unknown as TableRow) ?? null;
         }
+        /*
+          The counter this screen was set up on, when the address no longer
+          says. A home-screen icon opens with no token at all, so without this
+          a two-venue business would find its counter screen quietly serving
+          the other branch's menu.
+        */
+        let rememberedVenue: string | null = null;
+        try {
+          rememberedVenue = window.localStorage.getItem(SCREEN_VENUE_KEY);
+        } catch {
+          // A browser refusing storage falls through to the first venue, which
+          // is right for the single-venue business that is nearly everybody.
+        }
+
         const venue =
           venues.find((v) => v.$id === table?.venue_id) ??
           (walkInToken ? venues.find((v) => v.walkin_token === walkInToken) : undefined) ??
           (screenToken ? venues.find((v) => v.screen_token === screenToken) : undefined) ??
           (groupToken ? venues.find((v) => v.group_token === groupToken) : undefined) ??
+          (rememberedVenue ? venues.find((v) => v.$id === rememberedVenue) : undefined) ??
           venues[0];
         if (!venue) throw new Error('This restaurant has no venue set up yet.');
 
@@ -272,12 +313,21 @@ export function App() {
           most importantly an address with no token at all — leaves whatever
           this device already is, which is the whole point of remembering.
         */
-        const matched = !!screenToken && venue.screen_token === screenToken;
-        if (matched || params.get('screenMode') === 'off') {
-          setScreenMode(matched);
+        const verdict = screenClaim({
+          tokenMatched: !!screenToken && venue.screen_token === screenToken,
+          declared: screenDeclared,
+          turnedOff: params.get('screenMode') === 'off',
+        });
+        if (verdict.screen !== null) {
+          setScreenMode(verdict.screen);
           try {
-            if (matched) window.localStorage.setItem(SCREEN_DEVICE_KEY, '1');
-            else window.localStorage.removeItem(SCREEN_DEVICE_KEY);
+            if (verdict.screen) {
+              window.localStorage.setItem(SCREEN_DEVICE_KEY, '1');
+              if (verdict.rememberVenue) window.localStorage.setItem(SCREEN_VENUE_KEY, venue.$id);
+            } else {
+              window.localStorage.removeItem(SCREEN_DEVICE_KEY);
+              window.localStorage.removeItem(SCREEN_VENUE_KEY);
+            }
           } catch {
             // A browser refusing storage means the address has to carry the
             // token every time, which is how this worked before.
