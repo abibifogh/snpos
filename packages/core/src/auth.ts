@@ -1,4 +1,6 @@
 import { account, db, teams, DB_ID, Query } from './client';
+// So a till that has worked before can open while the network is away.
+import { isOffline, recall, remember } from './offline';
 import type { StaffProfile } from './types';
 
 /**
@@ -95,22 +97,69 @@ export class NotStaffError extends Error {
  * signed in" and "signed in, but as a customer", which look identical from
  * the outside and need completely different answers.
  */
+/**
+ * Where the last confirmed answer is kept, so a till can open with no network.
+ *
+ * The signed-in session already lives on the device; this is a note of WHO it
+ * belongs to, which is the part that needed the server to ask.
+ */
+const STAFF_SESSION_KEY = 'staff-session';
+
 export async function requireStaff(): Promise<StaffSession> {
   let me;
   try {
     me = await account.get();
-  } catch {
+  } catch (e) {
+    /*
+      A TILL THAT CANNOT ASK IS NOT A TILL NOBODY IS SIGNED INTO.
+
+      These were the same answer, and the difference is a shop that can trade
+      through an outage and one that cannot. "Who is signed in here" is a
+      question for the server, so the moment the network went the till fell
+      through to the sign-in screen — and the sign-in screen needs the network
+      too. Everything underneath was ready: orders queue, payments queue, the
+      order number waits for a real one. The door was the only thing shut.
+
+      So a session confirmed before is trusted while there is no way to
+      confirm it again. The account itself is already on this device; this is
+      only the note of whose it is.
+
+      NOT trusted when the server answers and says no — that is a real
+      refusal and it must stand. Only when there is nothing to answer with.
+
+      It goes stale on its own (see recall), so a tablet that leaves and never
+      reconnects stops opening rather than trusting a months-old answer. And
+      the PIN lock is untouched: this says which ACCOUNT the till is signed in
+      as, never who is standing at it.
+    */
+    if (isOffline(e)) {
+      const kept = recall<StaffSession>(STAFF_SESSION_KEY);
+      if (kept) return kept;
+    }
     throw new NotStaffError('Sign in on this device first.');
   }
 
-  const mine = await myStaffTeams();
+  let mine: StaffTeam[];
+  try {
+    mine = await myStaffTeams();
+  } catch (e) {
+    // The account answered and the teams did not, which is one read failing
+    // rather than an unknown person. The remembered answer stands, and only
+    // for the same account.
+    const kept = recall<StaffSession>(STAFF_SESSION_KEY);
+    if (isOffline(e) && kept && kept.userId === me.$id) return kept;
+    throw e;
+  }
+
   if (mine.length === 0) {
     throw new NotStaffError(
       'This device is signed in as a customer, not as staff. Sign out and sign in with a staff account.',
     );
   }
 
-  return { userId: me.$id, email: me.email, name: me.name, teams: mine };
+  const session: StaffSession = { userId: me.$id, email: me.email, name: me.name, teams: mine };
+  remember(STAFF_SESSION_KEY, session);
+  return session;
 }
 
 /**

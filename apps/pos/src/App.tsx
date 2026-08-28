@@ -9,7 +9,8 @@ import {
   articlesFor, featureConfig, HELP_AREAS,
   markUnavailable, markAvailable, isUnavailable, loadMenu as reloadMenu, itemsAvailableNow,
   requireStaff, signOutCompletely, staffProfileFor, loadOpenShifts, modulesForStaff, MODULE_LABELS,
-  onQueueChange, startOfflineSync, flushQueue,
+  onQueueChange, startOfflineSync, flushQueue, loadWithFallback, isOffline, recall, remember,
+  trustRememberedShift, offlineBootWords,
   lockKey, lockProblem, unlockers, subscribeCollection, wakesScreen, latestMovement,
   catalogueStamp, catalogueMoved, worthLooking, CATALOGUE_COLLECTIONS, SETTLE_MS, LOOK_EVERY_MS,
   probeAppwrite, appwriteHost, diagnose, reachWords, reachLabel, isOursToFix,
@@ -498,31 +499,99 @@ export function App() {
   const queued = useOfflineQueue(onQueueChange, startOfflineSync);
   const [tab, setTab] = useState<'tables' | 'takeaway' | 'kitchen' | 'counter'>('tables');
   const [helpOpen, setHelpOpen] = useState(false);
+  /**
+   * Set when the till is running on what it remembers rather than on what the
+   * server says, so nobody reads a shift total as the shop's.
+   */
+  const [onMemory, setOnMemory] = useState<string | null>(null);
   const [offOpen, setOffOpen] = useState(false);
   const [offBusy, setOffBusy] = useState<string | null>(null);
 
-  // Each side of the business has its own open shift, so this asks for one
-  // rather than for whichever happened to be first.
+  /**
+   * Which shift is open on this side, asking the server first and this
+   * device's memory only when the server cannot be reached.
+   *
+   * Each side of the business has its own open shift, so this asks for one
+   * rather than for whichever happened to be first.
+   *
+   * The remembered answer is trusted on a clock, and it is the only read on
+   * the till that is. See offline-shift: everything else on this screen goes
+   * stale harmlessly, and this one goes stale by filing money under a shift
+   * that was closed and counted hours ago.
+   */
   const loadShift = useCallback(
-    (venueId: string, module: Module = 'kitchen') => loadOpenShifts(venueId, module),
+    async (venueId: string, module: Module = 'kitchen'): Promise<Shift[]> => {
+      const key = `shift:${venueId}:${module}`;
+      try {
+        const open = await loadOpenShifts(venueId, module);
+        remember(key, { seenAt: Date.now(), wasOpen: open.length > 0, shifts: open });
+        setOnMemory(null);
+        return open;
+      } catch (e) {
+        if (!isOffline(e)) throw e;
+        const kept = recall<{ seenAt: number; wasOpen: boolean; shifts: Shift[] }>(key);
+        const trusted = trustRememberedShift(kept, Date.now());
+        setOnMemory(offlineBootWords(trusted));
+        return trusted && kept ? kept.shifts : [];
+      }
+    },
     [],
   );
 
+  /**
+   * Ask the server again, as soon as there is a server to ask.
+   *
+   * A till running on memory is running on a guess with a clock on it, and the
+   * guess should last exactly as long as it has to. The moment the network is
+   * back, the real shift is read, the notice above clears, and anything rung
+   * up meanwhile goes out of the queue on its own.
+   */
+  const reloadShift = ctx?.reloadShift;
+  useEffect(() => {
+    if (!onMemory || !reloadShift) return;
+    const again = () => void reloadShift();
+    window.addEventListener('online', again);
+    // The browser's `online` fires for any network, including one with no way
+    // out, so a slow timer does the asking that the event cannot be trusted to.
+    const timer = window.setInterval(again, 30_000);
+    return () => {
+      window.removeEventListener('online', again);
+      window.clearInterval(timer);
+    };
+  }, [onMemory, reloadShift]);
+
   const boot = useCallback(async () => {
+    /*
+      EVERY READ HERE SURVIVES A DEAD NETWORK.
+
+      Writes have always queued, so a sale rung up during an outage was never
+      lost. What was lost was the ability to ring one up at all: the till could
+      not START without the server, so a reload during an outage — or simply
+      arriving in the morning to a shop whose line is down — put a sign-in
+      screen on the tablet, and a sign-in screen needs the network too.
+
+      So each read the till cannot open without is remembered on the device and
+      read back when the server cannot be reached. Nothing here is invented: a
+      till that has never opened on this device still cannot, and says so.
+    */
     // A customer session is not a staff session. The menu signs guests in
     // anonymously, so "signed in" on its own means nothing here.
     const me = await requireStaff();
-    const settings = (await db.getDocument(DB_ID, 'settings', 'main')) as unknown as Settings;
+    const settings = await loadWithFallback('settings', async () =>
+      (await db.getDocument(DB_ID, 'settings', 'main')) as unknown as Settings,
+    );
     applyTheme(settings);
 
-    const venues = await listAll<Venue>('venues', [Query.equal('active', true)]);
+    const venues = await loadWithFallback('venues', () =>
+      listAll<Venue>('venues', [Query.equal('active', true)]),
+    );
     const venue = venues[0];
     if (!venue) throw new Error('No venue is set up yet. Add one in the admin app.');
 
     const [menu, features, profile] = await Promise.all([
-      loadMenu(venue.$id),
-      loadFeatures(venue.$id),
-      staffProfileFor(me),
+      loadWithFallback(`menu:${venue.$id}`, () => loadMenu(venue.$id)),
+      loadWithFallback(`features:${venue.$id}`, () => loadFeatures(venue.$id)),
+      loadWithFallback(`profile:${me.userId}`, () => staffProfileFor(me)),
     ]);
 
     /**
@@ -782,6 +851,14 @@ export function App() {
         onUnlock={unlock}
       />
       <OfflineBar queued={queued} onRetry={() => void flushQueue()} />
+      {/* Sitting above the till rather than inside a shift panel, because it
+          is a statement about everything on the screen and not about one
+          number on it. */}
+      {onMemory && (
+        <div style={{ padding: '0 12px' }}>
+          <Notice tone="warn">{onMemory}</Notice>
+        </div>
+      )}
       <div className="pos-top">
         <div className="row pos-whoami">
           <Logo size={26} />
