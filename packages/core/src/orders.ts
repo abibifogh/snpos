@@ -1,4 +1,4 @@
-import { db, DB_ID, ID, Query, Permission, Role, account, listAll } from './client';
+import { db, DB_ID, ID, Query, Permission, Role, account, listAll, anyExists } from './client';
 import { cookMinutes, estimateMinutes, fireTimeFor, queueMinutes, waitIncludingOpening } from './orders-time';
 import { parseWindows, minutesUntilOpen } from './availability';
 import { lockedProblem } from './shift-lock';
@@ -943,4 +943,164 @@ export async function moveOrderToShift(opts: {
   }).catch(() => undefined);
 
   return { payments: moved, stranded };
+}
+
+/* --------------------------------------- correcting what was actually sold */
+
+/**
+ * Which of these lines a maker has already been paid for.
+ *
+ * Asked before a correction is offered, not after it is attempted. A credit is
+ * money that has already been told to somebody, and the honest thing is to say
+ * up front that this bill is not the place to change it.
+ */
+export async function creditedLineIds(lineIds: string[]): Promise<string[]> {
+  if (lineIds.length === 0) return [];
+  const rows = await listAll<{ order_item_id?: string }>('consignor_ledger', [
+    Query.equal('order_item_id', lineIds),
+  ]).catch(() => []);
+  return rows.map((r) => r.order_item_id ?? '').filter(Boolean);
+}
+
+/**
+ * Put a quantity right, and everything that hangs off it.
+ *
+ * The order of these matters, and every step is deliberate:
+ *
+ *   1. THE LINES, because they are the record of what happened and everything
+ *      else is derived from them.
+ *   2. THE SHELF, but only where a piece has ALREADY come off it. Stock is
+ *      taken at the moment a shop sale is fully paid, so a bill that has not
+ *      been settled has moved nothing and needs nothing put back — and writing
+ *      a movement against it here would make the real depletion, when it
+ *      comes, think it had already run and skip. The correction is written as
+ *      its own movement rather than by editing the first one: a count that
+ *      changes with no line saying why is a count nobody trusts.
+ *   3. THE TOTALS, through the same recompute a stale order already uses, so
+ *      a corrected bill and a fresh one can never work a total out differently.
+ *   4. THE PAYMENT STATUS, because a bill corrected downwards past what was
+ *      taken is now fully paid and must stop appearing as owing.
+ *   5. THE AUDIT LOG, last, and carrying every line that moved. An order whose
+ *      quantities were changed by hand is exactly the one somebody will ask
+ *      about in a fortnight.
+ */
+export async function applyQuantityCorrection(input: {
+  order: Pick<Order, '$id' | 'venue_id' | 'order_no' | 'subtotal' | 'total' | 'discount_total' | 'shift_id'>;
+  lines: OrderItem[];
+  /** New quantity per line id. A line not named here is left alone. */
+  quantities: Record<string, number>;
+  settings: Settings;
+  actor: { id: string; role: string };
+  reason: string;
+  /** What has been taken against this bill, so the status can follow. */
+  taken: number;
+}): Promise<{ from: number; to: number } | null> {
+  const moved = input.lines.filter(
+    (l) => l.status !== 'void' && input.quantities[l.$id] !== undefined && input.quantities[l.$id] !== l.qty,
+  );
+  if (moved.length === 0) return null;
+
+  const before = moved.map((l) => ({ id: l.$id, name: l.name_snapshot, qty: l.qty }));
+
+  for (const line of moved) {
+    const qty = input.quantities[line.$id];
+    // The price this line was actually sold at, add-ons and all, rather than
+    // today's menu price. A correction is not a re-pricing.
+    const unit = line.qty > 0 ? Math.round(line.line_total / line.qty) : lineUnitPrice({
+      key: line.$id,
+      menu_item_id: line.menu_item_id,
+      name: line.name_snapshot,
+      unit_price: line.unit_price,
+      qty: 1,
+      addons: [],
+    });
+    await db.updateDocument(DB_ID, 'order_items', line.$id, { qty, line_total: unit * qty });
+    await correctShelfFor(line, qty - line.qty, input.order, input.actor.id);
+  }
+
+  const totals = await recomputeOrderTotals(input.order, input.settings);
+
+  if (input.taken > 0) {
+    const to = totals?.to ?? input.order.total;
+    await db
+      .updateDocument(DB_ID, 'orders', input.order.$id, {
+        payment_status: input.taken >= to ? 'paid' : 'partial',
+      })
+      .catch(() => undefined);
+  }
+
+  await db
+    .createDocument(DB_ID, 'audit_log', ID.unique(), {
+      venue_id: input.order.venue_id,
+      actor_id: input.actor.id,
+      actor_role: input.actor.role,
+      action: 'order_quantity_corrected',
+      entity_type: 'orders',
+      entity_id: input.order.$id,
+      before: JSON.stringify({ lines: before, total: input.order.total }),
+      after: JSON.stringify({
+        lines: moved.map((l) => ({ id: l.$id, name: l.name_snapshot, qty: input.quantities[l.$id] })),
+        total: totals?.to ?? input.order.total,
+      }),
+      reason: input.reason,
+    })
+    .catch(() => undefined);
+
+  return totals;
+}
+
+/**
+ * Put back — or take — the difference, where this piece already left the shelf.
+ *
+ * Silent when nothing has moved yet, which is the ordinary case: the shelf is
+ * only touched when a shop sale is fully paid, and a restaurant's dishes never
+ * touch it at all.
+ */
+async function correctShelfFor(
+  line: OrderItem,
+  delta: number,
+  order: Pick<Order, 'venue_id' | 'shift_id'>,
+  actorId: string,
+): Promise<void> {
+  if (delta === 0) return;
+
+  // A yes-or-no question, asked as one. Reading every movement for the line to
+  // look at its length is how a screen ends up loading a year of history.
+  const sold = await anyExists('product_moves', [
+    Query.equal('ref_type', 'order_item'),
+    Query.equal('ref_id', line.$id),
+    Query.equal('type', 'sale'),
+  ]).catch(() => ({ any: false, total: 0 }));
+  // Nothing has come off yet, so there is nothing to put back. Writing a
+  // movement here would also make the real depletion think it had already run.
+  if (!sold.any) return;
+
+  await db
+    .createDocument(DB_ID, 'product_moves', ID.unique(), {
+      venue_id: order.venue_id,
+      menu_item_id: line.menu_item_id,
+      variant_id: line.variant_id || '',
+      consignor_id: line.consignor_id || '',
+      type: 'adjustment',
+      // The sale took the old quantity off. Only the new one should be off, so
+      // this is the difference, in the opposite direction.
+      qty_delta: -delta,
+      unit_price: line.unit_price || 0,
+      ref_type: 'order_item',
+      ref_id: line.$id,
+      shift_id: order.shift_id || '',
+      note: `Quantity corrected on the bill: ${line.qty} to ${line.qty + delta}`,
+      created_by: actorId,
+    })
+    .catch(() => undefined);
+
+  const collection = line.variant_id ? 'product_variants' : 'menu_items';
+  const id = line.variant_id || line.menu_item_id;
+  const current = await db.getDocument(DB_ID, collection, id).catch(() => null);
+  if (!current) return;
+  await db
+    .updateDocument(DB_ID, collection, id, {
+      on_hand: ((current as unknown as { on_hand?: number }).on_hand || 0) - delta,
+    })
+    .catch(() => undefined);
 }

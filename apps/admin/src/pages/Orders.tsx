@@ -12,6 +12,8 @@ import {
   listByIds, listCreatedBetween, moveOrderToShift, shiftChoices, moveProblem, moveEffects, describeMove,
   shiftDay, shiftsOnDay, dayMoveProblem, openShiftForDay,
   repostShiftAccounts,
+  quantityEditProblem, lineIsEditable, quantityProblem, quantityChanges, moneyEffect,
+  retotalOrder, applyQuantityCorrection, creditedLineIds, isLivePayment as paymentCounts,
 } from '@snpos/core';
 import type {
   Order, OrderItem, StaffProfile, Doc, Venue, Module, GroupChoice, SortChoice, MovableShift,
@@ -72,6 +74,23 @@ const daysAgoStr = (n: number) => new Date(Date.now() - n * 86400_000).toLocaleD
 
 export function OrdersPage() {
   const { settings, profile, user } = useSession();
+  /**
+   * Correcting what was actually ordered.
+   *
+   * A till mis-rings — three coffees typed where two were made, a plate sent
+   * back — and until now the only way to fix it was to reject the whole order
+   * and ring it again, which loses the number, the times and the record of who
+   * took it. So in practice nobody did, and the figures carried the error.
+   *
+   * Null when nobody is correcting anything. Keyed by line id, and only the
+   * lines somebody has actually touched are in it.
+   */
+  const [qtyEdit, setQtyEdit] = useState<Record<string, string> | null>(null);
+  const [qtyReason, setQtyReason] = useState('');
+  const [qtyBusy, setQtyBusy] = useState(false);
+  const [qtyError, setQtyError] = useState<string | null>(null);
+  /** Lines a maker has already been credited for. Read when the order opens. */
+  const [credited, setCredited] = useState<string[]>([]);
   const toast = useToast();
 
   /*
@@ -664,9 +683,70 @@ export function OrdersPage() {
 
   const openOrder = async (o: Order) => {
     setOpen(o);
-    if (!items[o.$id]) {
-      const rows = await listAll<OrderItem>('order_items', [Query.equal('order_id', o.$id)]).catch(() => []);
-      setItems((m) => ({ ...m, [o.$id]: rows }));
+    setQtyEdit(null);
+    setQtyError(null);
+    setCredited([]);
+    let rows = items[o.$id];
+    if (!rows) {
+      rows = await listAll<OrderItem>('order_items', [Query.equal('order_id', o.$id)]).catch(() => []);
+      setItems((m) => ({ ...m, [o.$id]: rows ?? [] }));
+    }
+    // Asked before the correction is offered rather than after it is tried. A
+    // maker's credit is money already told to somebody, and finding that out
+    // only once somebody has typed a new quantity and pressed save is finding
+    // it out too late to be useful.
+    setCredited(await creditedLineIds((rows ?? []).map((r) => r.$id)));
+  };
+
+  /** What has actually been taken against the order on screen. */
+  const takenOn = (orderId: string) =>
+    payments
+      .filter((p) => p.order_id === orderId && paymentCounts(p))
+      .reduce((sum, p) => sum + p.amount, 0);
+
+  const saveQuantities = async () => {
+    if (!open || !qtyEdit || !settings) return;
+    const lines = items[open.$id] ?? [];
+    for (const [id, value] of Object.entries(qtyEdit)) {
+      const problem = quantityProblem(value);
+      if (problem) {
+        setQtyError(`${lines.find((l) => l.$id === id)?.name_snapshot ?? 'A line'}: ${problem}`);
+        return;
+      }
+    }
+    if (!qtyReason.trim()) {
+      setQtyError('Say why the quantity was wrong. This is the only record of the correction.');
+      return;
+    }
+    setQtyBusy(true);
+    setQtyError(null);
+    try {
+      const moved = await applyQuantityCorrection({
+        order: open,
+        lines,
+        quantities: Object.fromEntries(Object.entries(qtyEdit).map(([id, v]) => [id, Number(v)])),
+        settings,
+        actor: { id: profile?.user_id ?? profile?.$id ?? user?.$id ?? '', role: profile?.role ?? '' },
+        reason: qtyReason.trim(),
+        taken: takenOn(open.$id),
+      });
+      setQtyEdit(null);
+      setQtyReason('');
+      setOpen(null);
+      // The lines are stale now, so they are dropped rather than patched: the
+      // next opening reads them back, and a half-updated copy on screen is how
+      // somebody corrects the same line twice.
+      setItems((m) => {
+        const next = { ...m };
+        delete next[open.$id];
+        return next;
+      });
+      await load();
+      toast(moved ? `${open.order_no} corrected` : `Nothing changed on ${open.order_no}`);
+    } catch (e) {
+      setQtyError(humanError(e));
+    } finally {
+      setQtyBusy(false);
     }
   };
 
@@ -1024,21 +1104,139 @@ export function OrdersPage() {
             </table>
           </div>
 
-          <h3 style={{ margin: '1.2rem 0 0.4rem' }}>What was ordered</h3>
-          <div className="table-wrap">
-            <table className="data">
-              <tbody>
-                {(items[open.$id] ?? []).map((i) => (
-                  <tr key={i.$id}>
-                    <td><strong>{i.qty}×</strong> {i.name_snapshot}
-                      {i.notes && <div className="small dim">“{i.notes}”</div>}</td>
-                    <td className="num">{money(i.line_total)}</td>
-                  </tr>
-                ))}
-                <tr><td style={{ fontWeight: 650 }}>Total</td><td className="num" style={{ fontWeight: 650 }}>{money(open.total)}</td></tr>
-              </tbody>
-            </table>
-          </div>
+          {(() => {
+            const lines = items[open.$id] ?? [];
+            const problem = quantityEditProblem(open, { creditedLineIds: credited });
+            const editing = qtyEdit !== null;
+            const quantities = Object.fromEntries(
+              Object.entries(qtyEdit ?? {}).map(([id, v]) => [id, /^\d+$/.test(v.trim()) ? Number(v.trim()) : NaN]),
+            );
+            const usable = Object.fromEntries(
+              Object.entries(quantities).filter(([, n]) => Number.isFinite(n)),
+            ) as Record<string, number>;
+            // The preview goes through the same arithmetic as a real sale, so
+            // the number on screen is the number that will be saved — tax and
+            // service charge included, which are exactly the parts nobody can
+            // work out in their head.
+            const preview = editing && settings
+              ? retotalOrder({
+                lines, quantities: usable, discount: open.discount_total ?? 0, settings,
+              })
+              : null;
+            const changes = editing ? quantityChanges(lines, usable) : [];
+            const taken = takenOn(open.$id);
+            const effect = preview ? moneyEffect(taken, preview.total, money) : null;
+
+            return (
+              <>
+                <div className="row" style={{ alignItems: 'baseline', justifyContent: 'space-between', margin: '1.2rem 0 0.4rem' }}>
+                  <h3 style={{ margin: 0 }}>What was ordered</h3>
+                  {!editing && !problem && lines.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setQtyEdit(Object.fromEntries(lines.filter(lineIsEditable).map((l) => [l.$id, String(l.qty)])));
+                        setQtyReason('');
+                        setQtyError(null);
+                      }}
+                    >
+                      Correct quantities
+                    </Button>
+                  )}
+                </div>
+
+                {/* Said as a reason rather than a missing button. A screen that
+                    refuses without explaining sends somebody to ask a question
+                    the screen already knew the answer to. */}
+                {!editing && problem && (
+                  <p className="small dim" style={{ marginTop: 0 }}>{problem}</p>
+                )}
+
+                <div className="table-wrap">
+                  <table className="data">
+                    <tbody>
+                      {lines.map((i) => (
+                        <tr key={i.$id}>
+                          <td>
+                            {editing && lineIsEditable(i) ? (
+                              <span className="row" style={{ alignItems: 'center', gap: '0.5rem' }}>
+                                <Input
+                                  value={qtyEdit?.[i.$id] ?? String(i.qty)}
+                                  inputMode="numeric"
+                                  style={{ width: '4.5rem' }}
+                                  aria-label={`Quantity of ${i.name_snapshot}`}
+                                  onChange={(e) => setQtyEdit((q) => ({ ...(q ?? {}), [i.$id]: e.target.value }))}
+                                />
+                                <span>{i.name_snapshot}</span>
+                              </span>
+                            ) : (
+                              <>
+                                <strong>{i.qty}×</strong> {i.name_snapshot}
+                                {/* A voided line stays visible and stays out of
+                                    reach: putting a number back on it would be
+                                    un-voiding it by the back door. */}
+                                {!lineIsEditable(i) && <span className="small dim"> · voided</span>}
+                              </>
+                            )}
+                            {i.notes && <div className="small dim">“{i.notes}”</div>}
+                          </td>
+                          <td className="num">
+                            {editing && lineIsEditable(i) && Number.isFinite(quantities[i.$id])
+                              ? money(Math.round(i.qty > 0 ? (i.line_total / i.qty) * quantities[i.$id] : 0))
+                              : money(i.line_total)}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr>
+                        <td style={{ fontWeight: 650 }}>Total</td>
+                        <td className="num" style={{ fontWeight: 650 }}>
+                          {preview ? (
+                            <>
+                              {preview.total !== open.total && (
+                                <span className="dim" style={{ textDecoration: 'line-through', marginRight: '0.5rem', fontWeight: 400 }}>
+                                  {money(open.total)}
+                                </span>
+                              )}
+                              {money(preview.total)}
+                            </>
+                          ) : money(open.total)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {editing && (
+                  <div style={{ marginTop: '0.8rem' }}>
+                    {qtyError && <div style={{ marginBottom: '0.8rem' }}><Notice>{qtyError}</Notice></div>}
+                    <Field label="Why" hint="Recorded against your name in the audit log.">
+                      <Input
+                        value={qtyReason}
+                        autoFocus
+                        placeholder="Rang up three, only two were made"
+                        onChange={(e) => setQtyReason(e.target.value)}
+                      />
+                    </Field>
+                    {/* Never left unsaid. A bill quietly left overpaid is a
+                        customer owed a refund that nobody knows about. */}
+                    {effect && <div style={{ margin: '0.6rem 0' }}><Notice tone="warn">{effect}</Notice></div>}
+                    <div className="row" style={{ gap: '0.5rem' }}>
+                      <Button
+                        variant="primary"
+                        loading={qtyBusy}
+                        disabled={changes.length === 0}
+                        onClick={saveQuantities}
+                      >
+                        {changes.length === 0 ? 'Nothing changed yet' : `Save ${changes.length === 1 ? 'the correction' : `${changes.length} corrections`}`}
+                      </Button>
+                      <Button variant="ghost" onClick={() => { setQtyEdit(null); setQtyError(null); }}>Cancel</Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
           {/*
             For orders whose stored total is already wrong.
 
