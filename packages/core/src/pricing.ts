@@ -119,3 +119,58 @@ export function splitEvenly(total: number, ways: number): number[] {
   const remainder = total - base * ways;
   return Array.from({ length: ways }, (_, i) => base + (i < remainder ? 1 : 0));
 }
+
+/**
+ * What an order comes to once its quantities have been corrected.
+ *
+ * Here rather than beside the correction screen, and deliberately. A total
+ * worked out in two places is two places that disagree the first time somebody
+ * changes the service charge — so a corrected bill goes through exactly the
+ * same arithmetic as a fresh one, in the same order, with the same rounding.
+ *
+ * Voided lines stay out, exactly as they were when the order was rung up, so a
+ * correction cannot quietly bring a voided dish back into the total. A line
+ * corrected to nothing drops out for the same reason it would never have been
+ * added: nought of something costs nothing.
+ */
+export function retotalOrder({
+  lines, quantities, discount = 0, deliveryFee = 0, settings,
+}: {
+  lines: {
+    $id: string;
+    unit_price: number;
+    qty: number;
+    /** JSON, exactly as stored on the order line. */
+    addons?: string;
+    status?: string;
+  }[];
+  /** New quantity per line id. A line not named here keeps the one it has. */
+  quantities: Record<string, number>;
+  discount?: number;
+  deliveryFee?: number;
+  settings: Pick<Settings, 'tax_rate_bp' | 'tax_inclusive' | 'service_charge_bp'>;
+}): OrderTotals {
+  const cart: CartLine[] = lines
+    .filter((l) => l.status !== 'void')
+    .map((l) => ({
+      // The identity fields are never read by computeTotals — it prices lines,
+      // it does not care which dish they are — and inventing plausible ones
+      // here would be a second, quietly wrong copy of the order.
+      key: l.$id,
+      menu_item_id: '',
+      name: '',
+      unit_price: l.unit_price,
+      qty: quantities[l.$id] ?? l.qty,
+      addons: (() => {
+        try {
+          return JSON.parse(l.addons || '[]') as CartLine['addons'];
+        } catch {
+          // A line whose add-ons cannot be read is priced on the item alone
+          // rather than refusing the whole correction.
+          return [];
+        }
+      })(),
+    }));
+
+  return computeTotals({ lines: cart.filter((l) => l.qty > 0), discount, deliveryFee, settings });
+}
