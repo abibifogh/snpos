@@ -13,9 +13,10 @@ import {
   rangeTotals, kindsWorthShowing, KIND_LABELS, MODULE_LABELS, canOpen, floatOrigin,
   kindOf, countedParts, partLines, partsWords, unexplained,
   shiftCountEntries, pairCounts, countsSummary, countsGapWords,
+  tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS,
 } from '@snpos/core';
 import type {
-  Module, Doc, CashHandover, MoneyKind, CountedParts, Settings, CountPair,
+  Module, Doc, CashHandover, MoneyKind, CountedParts, Settings, CountPair, TabOrder,
 } from '@snpos/core';
 import { useSession } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
@@ -346,6 +347,31 @@ export function ShiftsPage() {
    * "what was the closing figure" without also meaning "against what".
    */
   const [detailCounts, setDetailCounts] = useState<CountPair[] | null>(null);
+  /**
+   * Issuing an admin's say-so that a shift may close over money on a tab.
+   *
+   * The digits are shown once and never stored — only their hash goes to the
+   * database, the same way a PIN does — so an admin who loses the number
+   * issues another rather than looking the old one up.
+   */
+  const [releasing, setReleasing] = useState<Shift | null>(null);
+  const [exposure, setExposure] = useState<{ orders: TabOrder[]; value: number } | null>(null);
+  const [issued, setIssued] = useState<string | null>(null);
+  const [releaseBusy, setReleaseBusy] = useState(false);
+  const [releaseError, setReleaseError] = useState<string | null>(null);
+
+  const openRelease = async (shift: Shift) => {
+    setReleasing(shift);
+    setIssued(null);
+    setExposure(null);
+    setReleaseError(null);
+    try {
+      setExposure(await tabExposure(shift.$id, shift.module ?? 'kitchen', shift.venue_id ?? 'main'));
+    } catch (e) {
+      setReleaseError(humanError(e));
+      setExposure({ orders: [], value: 0 });
+    }
+  };
   const [openMethod, setOpenMethod] = useState<string | null>(null);
 
   const [sealing, setSealing] = useState<Shift | null>(null);
@@ -699,6 +725,15 @@ export function ShiftsPage() {
                           </Button>
                         )}
                         <Button size="sm" variant="ghost" onClick={() => void openDetail(s)}>Details</Button>
+                        {/* Only on a shift still running. A code releases a
+                            close that has not happened yet; offering one on a
+                            shift already closed would be a control with
+                            nothing left to control. */}
+                        {!s.closed_at && (
+                          <Button size="sm" variant="ghost" onClick={() => void openRelease(s)}>
+                            Release code
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -758,6 +793,97 @@ export function ShiftsPage() {
           <Field label="Why" hint="Optional, and worth it. Kept on the record with your name against it.">
             <Textarea rows={2} value={sealReason} onChange={(e) => setSealReason(e.target.value)} />
           </Field>
+        </Modal>
+      )}
+
+      {releasing && (
+        <Modal
+          title={`Release ${releasing.code ?? 'this shift'}`}
+          onClose={() => setReleasing(null)}
+          footer={<Button onClick={() => setReleasing(null)}>Close</Button>}
+        >
+          {releaseError && <div style={{ marginBottom: '1rem' }}><Notice>{releaseError}</Notice></div>}
+          {!exposure ? <Spinner /> : exposure.orders.length === 0 ? (
+            /* Nothing to release. Handing out a code anyway would teach an
+               admin that the code is a formality, which is the one thing it
+               must never become. */
+            <p className="small dim" style={{ marginTop: 0 }}>
+              Nothing on this shift went onto a tab, so it can be closed without a code. There is nothing here
+              for you to approve.
+            </p>
+          ) : (
+            <>
+              {/* The figure, said out loud, before the button. This is the only
+                  moment somebody who can see the whole business is looking at
+                  what is going home unpaid while the person who let it happen
+                  is still standing there. */}
+              <Notice tone="warn">{releaseWords(exposure.orders, (n) => (settings ? formatMoney(n, settings) : String(n)))}</Notice>
+
+              <div className="table-wrap">
+                <table className="data">
+                  <thead><tr><th>Order</th><th>When</th><th className="num">Total</th></tr></thead>
+                  <tbody>
+                    {exposure.orders.map((o) => (
+                      <tr key={o.$id}>
+                        <td style={{ fontWeight: 550 }}>{displayOrderNo(o.order_no)}</td>
+                        <td className="small dim">{new Date(o.$createdAt).toLocaleString()}</td>
+                        <td className="num">{settings ? formatMoney(o.total, settings) : o.total}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {issued ? (
+                <>
+                  {/* Shown once. Only the hash is stored, the same way a PIN
+                      is, so an admin who loses this issues another rather than
+                      looking it up. */}
+                  <p className="small dim" style={{ margin: '1rem 0 0.2rem' }}>
+                    Read this to the cashier. It works once, on this shift only, for the next
+                    {' '}{Math.round(CLOSE_CODE_GOOD_FOR_MS / 60_000)} minutes.
+                  </p>
+                  <div
+                    style={{
+                      fontSize: '2.4rem', fontWeight: 700, letterSpacing: '0.35rem',
+                      fontFamily: 'ui-monospace, monospace', userSelect: 'all', textAlign: 'center',
+                      padding: '0.6rem 0',
+                    }}
+                  >
+                    {issued}
+                  </div>
+                  <p className="small dim" style={{ margin: 0 }}>
+                    It will not be shown again. If it is lost, issue another.
+                  </p>
+                </>
+              ) : (
+                <Button
+                  variant="primary"
+                  loading={releaseBusy}
+                  style={{ marginTop: '1rem' }}
+                  onClick={async () => {
+                    setReleaseBusy(true);
+                    setReleaseError(null);
+                    try {
+                      setIssued(await issueCloseCode({
+                        shiftId: releasing.$id,
+                        module: releasing.module ?? 'kitchen',
+                        by: profile?.user_id ?? profile?.$id ?? '',
+                        tabOrders: exposure.orders.length,
+                        tabValue: exposure.value,
+                      }));
+                    } catch (e) {
+                      setReleaseError(humanError(e));
+                    } finally {
+                      setReleaseBusy(false);
+                    }
+                  }}
+                >
+                  Issue a code
+                </Button>
+              )}
+            </>
+          )}
         </Modal>
       )}
 

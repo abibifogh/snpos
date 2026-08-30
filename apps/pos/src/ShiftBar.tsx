@@ -7,10 +7,11 @@ import type { BlockerRow, CountRow, StockRow, ShiftFlow } from '@snpos/ui';
 import {
   formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift as createShift, shiftBlockers, expectedTakings, closeShift,
+  tabOrdersOnShift, releaseWords, closeCodeProblem, spendCloseCode, humanError, listAll, Query,
   openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, HANDOVER_ENABLED,
   countsAtBothEnds, askForOpeningCount, hasOpeningCount, shiftCountPhases, ownFigure, floatOrigin, floatMethods,
 } from '@snpos/core';
-import type { PaymentMethod, Shift, FloatSource } from '@snpos/core';
+import type { PaymentMethod, Shift, FloatSource, TabOrder, Order } from '@snpos/core';
 import type { PosContext } from './App';
 
 export type { Shift } from '@snpos/core';
@@ -29,6 +30,15 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   const [rows, setRows] = useState<CountRow[]>([]);
   const [blockers, setBlockers] = useState<BlockerRow[]>([]);
   const [note, setNote] = useState('');
+  /**
+   * What this shift put on a tab, and the code that releases it.
+   *
+   * A tab order is a debt somebody decided on, so it does not hold the shift
+   * open the way an ordinary unpaid bill does — see blockerFor. It does not
+   * pass unnoticed either: an admin looks at the figure and reads out a code.
+   */
+  const [onTab, setOnTab] = useState<TabOrder[]>([]);
+  const [code, setCode] = useState('');
   const [levels, setLevels] = useState<Record<string, 'OK' | 'LOW' | 'OUT'>>({});
   const [stockList, setStockList] = useState<StockRow[]>([]);
   // Typed amounts, kept as text so a half-finished "0." is not read as zero.
@@ -339,6 +349,16 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       setLevels(Object.fromEntries(list.map((i) => [i.$id, 'OK' as const])));
       setStockCounts({});
       setNote('');
+      setCode('');
+      /*
+        Read while the close sheet is being prepared, so the cashier sees the
+        figure and the words "ask an admin for the code" at the same moment
+        they open the sheet — not after they have counted the drawer.
+      */
+      const all = await listAll<Order>('orders', [Query.equal('venue_id', ctx.venue.$id)]).catch(() => []);
+      setOnTab(tabOrdersOnShift(
+        all as unknown as TabOrder[], (ctx.shift as Shift).$id, ctx.module,
+      ));
       setClosing(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not prepare the close.');
@@ -391,6 +411,31 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
     if (anythingOff() && !note.trim()) {
       setError('Something is over or short. Say what happened before closing; that answer is gone by tomorrow.');
       return;
+    }
+
+    /*
+      MONEY GOING HOME ON A TAB NEEDS AN ADMIN'S SAY-SO.
+
+      Last of the checks, and after the count, because it is the one that needs
+      somebody else on a phone. Sending a cashier to find an admin before they
+      have finished counting is how a code goes stale between being read out
+      and being typed.
+
+      Checked here rather than only drawn, and spent as part of accepting it:
+      a close can fail for a dozen reasons afterwards, and a code left unspent
+      by one of them is a code that works twice.
+    */
+    if (onTab.length > 0) {
+      const shape = closeCodeProblem(code);
+      if (shape) { setError(shape); return; }
+      setBusy(true);
+      const why = await spendCloseCode({
+        entered: code,
+        shiftId: (ctx.shift as Shift).$id,
+        module: ctx.module,
+        by: ctx.userId,
+      }).catch((e) => humanError(e));
+      if (why) { setError(why); setBusy(false); return; }
     }
 
     setBusy(true);
@@ -793,6 +838,32 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
             flow={flow}
             shelving={shelving}
           />
+
+          {/*
+            AFTER the count, and on purpose.
+
+            This is the one check that needs somebody else on a phone. Putting
+            it above the drawer would send a cashier off to find an admin
+            before they had finished counting, and a code read out then is a
+            code that has gone stale by the time it is typed.
+          */}
+          {onTab.length > 0 && (
+            <div style={{ marginTop: '1rem' }}>
+              <Notice tone="warn">{releaseWords(onTab, money)}</Notice>
+              <Field
+                label="Release code"
+                hint="Six digits. Works once, on this shift, and expires."
+              >
+                <Input
+                  value={code}
+                  inputMode="numeric"
+                  placeholder="——————"
+                  style={{ letterSpacing: '0.3rem', fontFamily: 'ui-monospace, monospace' }}
+                  onChange={(e) => { setCode(e.target.value); setError(null); }}
+                />
+              </Field>
+            </div>
+          )}
         </Modal>
       )}
     </>

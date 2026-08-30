@@ -29,6 +29,7 @@ import { OrdersPage } from './pages/Orders';
 import { PurgePage } from './pages/Purge';
 import { VouchersPage } from './pages/Vouchers';
 import { ConsignorsPage } from './pages/Consignors';
+import { TabsPage } from './pages/Tabs';
 import { IntakePage } from './pages/Intake';
 import { StocktakePage } from './pages/Stocktake';
 import { BarCountsPage } from './pages/BarCounts';
@@ -84,6 +85,7 @@ export function App() {
         <Route path="/accounting" element={guard('accounting', <AccountingPage />)} />
         <Route path="/vouchers" element={guard('vouchers', <VouchersPage />)} />
         <Route path="/consignors" element={guard('consignors', <ConsignorsPage />)} />
+        <Route path="/tabs" element={guard('tabs', <TabsPage />)} />
         <Route path="/intake" element={guard('intake', <IntakePage />)} />
         <Route path="/stocktake" element={guard('stocktake', <StocktakePage />)} />
         {/* The bar reuses the kitchen's screens for its catalogue and its

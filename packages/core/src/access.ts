@@ -168,6 +168,13 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'bar_counts', label: 'Counts & variances', path: '/bar/counts', group: 'Bar', module: 'bar' },
   { key: 'locations', label: 'Where stock sits', path: '/locations', group: 'Bar', module: 'bar' },
   { key: 'payouts', label: 'Payouts', path: '/payouts', group: 'Craft shop', module: 'craft' },
+  /*
+    Under Money, not under a side of the business. A tab spans all three — a
+    guest who has a drink at the bar, lunch from the kitchen and a basket from
+    the shop has one account — so filing it under any one of them would hide it
+    from the other two.
+  */
+  { key: 'tabs', label: 'Tabs', path: '/tabs', group: 'Money' },
   { key: 'shifts', label: 'Shifts', path: '/shifts', group: 'Money' },
   { key: 'expenses', label: 'Expenses', path: '/expenses', group: 'Money' },
   /*
@@ -221,7 +228,10 @@ export type GrantableRole = (typeof GRANTABLE_ROLES)[number];
  */
 export const DEFAULT_ACCESS: Record<string, string[]> = {
   manager: [
-    'dashboard', 'orders', 'reports', 'shifts', 'expenses', 'vouchers',
+    // A manager opens tabs. It is the job: deciding who is good for credit is
+    // a floor decision made while somebody is standing there, and an owner who
+    // has to be rung at eleven at night to open one is an owner who gets rung.
+    'dashboard', 'orders', 'reports', 'shifts', 'expenses', 'vouchers', 'tabs',
     'menu_items', 'stock', 'waste', 'stations',
     // A shop manager runs the intake desk and needs to see who is owed what.
     'shop_categories', 'shop_items', 'consignors', 'intake', 'stocktake', 'payouts',

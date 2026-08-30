@@ -10,11 +10,12 @@ import {
   park, unpark, parkProblem, parkKey, describeParked, autoLabel, isStale,
   cartKey, cartWorthHolding, restorableCart, restoredWords,
   chipColour, showsPicture, inkOn, downloadUrl, isService, canRepriceLine,
-  amountDueOn, unrungProblem,
+  amountDueOn, unrungProblem, displayOrderNo, humanError,
+  loadOpenTabs, postOrderToTab, postProblem, tabOwing, ordersOnTab, paidOnOrders,
 } from '@snpos/core';
 import type {
   CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, Settings, DiscountRow,
-  Recipe, Ingredient, MenuItem, TakenPayment,
+  Recipe, Ingredient, MenuItem, TakenPayment, Tab,
 } from '@snpos/core';
 import { OptionSheet } from './OptionSheet';
 import { COUNTER_TABLE_ID, BAR_COUNTER_TABLE_ID } from './App';
@@ -191,6 +192,32 @@ export function OrderView({
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [paying, setPaying] = useState(false);
+  /**
+   * Putting the bill on a running account.
+   *
+   * Kept entirely apart from `paying`, and deliberately: this takes no money.
+   * The order stays unpaid and the tab carries it, so the shift does not count
+   * takings it never took — see tabs.ts.
+   */
+  const [openTabs, setOpenTabs] = useState<Tab[]>([]);
+  const [onAccount, setOnAccount] = useState(false);
+  const [chosenTab, setChosenTab] = useState('');
+  const [tabError, setTabError] = useState<string | null>(null);
+  const [tabBusy, setTabBusy] = useState(false);
+
+  /*
+    Read once. A list of open accounts changes when a manager opens one, which
+    is not something that happens while somebody is holding a card machine.
+  */
+  useEffect(() => {
+    let alive = true;
+    loadOpenTabs(ctx.venue.$id)
+      .then((rows) => { if (alive) setOpenTabs(rows); })
+      // A business with no tabs, or a database that has not been provisioned
+      // for them yet, simply never sees the button.
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [ctx.venue.$id]);
   const [discount, setDiscount] = useState(0);
   const [discountLabel, setDiscountLabel] = useState('');
   /** Which code it came from, so the sale can be counted against that offer. */
@@ -701,6 +728,28 @@ export function OrderView({
               Take payment · {formatMoney(Math.max(0, dueNow - discount), ctx.settings)}
             </Button>
           )}
+          {/*
+            ON THE ACCOUNT, which is not payment.
+
+            Beside Take payment and never instead of it, because the two are
+            different things and a till that blurs them is a till whose takings
+            include money nobody handed over. The order stays unpaid, the tab
+            carries it, and an admin has to release the shift before it can
+            close over one.
+
+            Only where a tab is actually open, so a business that does not do
+            credit never sees the button.
+          */}
+          {existing.length > 0 && openTabs.length > 0 && dueNow > 0 && (
+            <Button
+              variant="ghost"
+              onClick={() => { setOnAccount(true); setTabError(null); }}
+              disabled={!ctx.shift}
+              title="Put this bill on a running account to be settled later"
+            >
+              {existing.some((o) => o.tab_id) ? 'Change the tab' : 'Put on a tab'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1174,6 +1223,93 @@ export function OrderView({
           />
         );
       })()}
+
+      {/*
+        Putting the bill on an account, which takes no money.
+
+        The limit is enforced here rather than only drawn: postProblem is the
+        same check the admin screen describes, so the counter is refused for
+        the same reason in the same words instead of being warned and allowed.
+      */}
+      {onAccount && existing.length > 0 && (
+        <Modal
+          title="Put on a tab"
+          onClose={() => setOnAccount(false)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setOnAccount(false)}>Cancel</Button>
+              <Button
+                variant="primary"
+                loading={tabBusy}
+                onClick={async () => {
+                  const tab = openTabs.find((t) => t.$id === chosenTab) ?? null;
+                  setTabBusy(true);
+                  try {
+                    /*
+                      What the tab already owes is read at the moment of
+                      posting, not when the list was loaded. A limit checked
+                      against a figure from twenty minutes ago is a limit two
+                      counters can walk past at the same time.
+                    */
+                    let owing = 0;
+                    if (tab) {
+                      const rows = await ordersOnTab(tab.$id);
+                      const paid = await paidOnOrders(rows.map((o) => o.$id));
+                      owing = tabOwing(rows, (id) => paid[id] ?? 0);
+                    }
+                    const problem = postProblem(
+                      tab, owing, dueNow, (n) => formatMoney(n, ctx.settings),
+                    );
+                    if (problem) { setTabError(problem); return; }
+                    /*
+                      THE WHOLE BILL, not one order on it.
+
+                      A table can carry several orders and the customer owes
+                      the lot. Putting one on the account and leaving the rest
+                      is how a shift closes over the remainder — the exact
+                      failure the gate exists to catch, arriving through the
+                      gate's own door.
+                    */
+                    const owed = existing.filter((o) => o.payment_status !== 'paid');
+                    for (const o of owed) await postOrderToTab(o.$id, tab!.$id);
+                    setOnAccount(false);
+                    onToast(
+                      owed.length === 1
+                        ? `${displayOrderNo(owed[0].order_no)} is on ${tab!.name}`
+                        : `${owed.length} orders are on ${tab!.name}`,
+                    );
+                    onBack();
+                  } catch (e) {
+                    setTabError(humanError(e));
+                  } finally {
+                    setTabBusy(false);
+                  }
+                }}
+              >
+                Put it on
+              </Button>
+            </>
+          }
+        >
+          {tabError && <div style={{ marginBottom: '1rem' }}><Notice>{tabError}</Notice></div>}
+          {/* Said before the button, because it is the thing people get wrong
+              about tabs and the thing that decides whether the drawer adds up. */}
+          <Notice tone="info">
+            This is not payment. {formatMoney(dueNow, ctx.settings)} stays owed and goes onto the account to be
+            settled later. An admin has to release this shift before it can be closed.
+          </Notice>
+          <Field label="Which tab">
+            <Select value={chosenTab} onChange={(e) => { setChosenTab(e.target.value); setTabError(null); }}>
+              <option value="">Choose an account…</option>
+              {openTabs.map((t) => (
+                <option key={t.$id} value={t.$id}>
+                  {t.name}{t.reference ? ` · ${t.reference}` : ''}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </Modal>
+      )}
 
       {paying && (() => {
         /* A shop counter splits one basket between a note and a card far more

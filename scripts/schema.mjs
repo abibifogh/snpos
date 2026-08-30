@@ -824,6 +824,16 @@ export const COLLECTIONS = [
       // to a shift never closing over an open order, and deliberately narrow.
       ['shelved_at', 'd', null, false],
       ['shelved_from_shift', 's', 64, false],
+      /**
+       * The running account this order went onto, where it did.
+       *
+       * Blank on almost every order. Set means the money has NOT arrived and
+       * the tab carries it — see tabs.ts: a tab is credit, not payment, so the
+       * order stays unpaid and the shift does not count takings it never took.
+       * It is also what lets the close gate tell a deliberate debt from an
+       * ordinary unpaid bill somebody forgot to settle.
+       */
+      ['tab_id', 's', 64, false],
       // SCHEDULED = a pre-order waiting for its fire time. It is not shown to
       // the kitchen and does not alarm until then.
       ['status', 'e', ['SCHEDULED', 'PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED', 'CLOSED', 'REJECTED', 'CANCELLED'], true, 'PENDING'],
@@ -1788,6 +1798,83 @@ export const COLLECTIONS = [
       ['note', 's', 300, false],
     ],
     indexes: [['ingredient_created', 'key', ['ingredient_id', '$createdAt']], ['shift', 'key', ['shift_id']], ['location', 'key', ['location_id']]],
+  },
+  {
+    /**
+     * A running account somebody settles later.
+     *
+     * Opened and closed by management only, and deliberately: a tab is the
+     * business lending money, and a cashier who can open one can decide on
+     * their own who is good for it. Anyone on the floor may PUT an order on an
+     * open tab, which is the part that happens at a counter with a customer
+     * waiting.
+     *
+     * One tab spans all three sides. A guest who has a drink at the bar, lunch
+     * from the kitchen and a basket from the shop has one account, not three,
+     * and asking them to settle three is how one of them gets forgotten.
+     */
+    id: 'tabs',
+    name: 'Tabs',
+    perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, false],
+      ['name', 's', 160, true],
+      // A room number, a company, a table — whatever it is called out loud.
+      ['reference', 's', 80, false],
+      ['contact_name', 's', 160, false],
+      ['contact_phone', 's', 40, false],
+      ['note', 's', 500, false],
+      ['status', 'e', ['open', 'settled', 'void'], true, 'open'],
+      /**
+       * What it may reach before it stops accepting orders, in minor units.
+       *
+       * Zero is no limit, which is what most of them are. A limit that is only
+       * drawn and not enforced is not a limit, so it is checked where an order
+       * is posted rather than only shown on this row.
+       */
+      ['limit_amount', 'i', null, false, 0],
+      ['opened_by', 's', 64, false],
+      ['opened_at', 'd', null, false],
+      ['closed_by', 's', 64, false],
+      ['closed_at', 'd', null, false],
+      ['close_note', 's', 500, false],
+    ],
+    indexes: [
+      ['venue_status', 'key', ['venue_id', 'status']],
+      ['status_name', 'key', ['status', 'name']],
+    ],
+  },
+  {
+    /**
+     * An admin's say-so that a shift may close with money owed on a tab.
+     *
+     * A row per issue rather than a flag on the shift, so the record survives:
+     * who released which shift, when, and whether the code was ever used. A
+     * flag would say only that somebody did, once, and lose every attempt that
+     * came before it.
+     *
+     * Created by management — issuing it is the whole point of the control —
+     * and updatable by staff only so the till can stamp `used_at`. The code
+     * itself is stored as `salt$hash`, the same way a PIN is: it is a short
+     * secret read down a phone, and the same reasoning applies to both.
+     */
+    id: 'shift_close_codes',
+    name: 'Shift closing codes',
+    perms: { read: ALL_STAFF, create: MGMT, update: ALL_STAFF, delete: ADMIN },
+    attributes: [
+      ['shift_id', 's', 64, true],
+      ['module', 's', 20, false],
+      ['code_hash', 's', 200, true],
+      ['issued_by', 's', 64, false],
+      ['issued_at', 'd', null, true],
+      ['used_at', 'd', null, false],
+      ['used_by', 's', 64, false],
+      // What the admin was looking at when they issued it, kept so the record
+      // still means something after the orders have been settled.
+      ['tab_orders', 'i', null, false, 0],
+      ['tab_value', 'i', null, false, 0],
+    ],
+    indexes: [['shift_issued', 'key', ['shift_id', 'issued_at']]],
   },
   {
     /**

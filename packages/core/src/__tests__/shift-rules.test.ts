@@ -546,3 +546,30 @@ test('a business with two cash drawers is asked about both', () => {
   const methods = [{ $id: 'a', kind: 'cash' }, { $id: 'b', kind: 'cash' }, { $id: 'c', kind: 'card' }];
   assert.equal(floatMethods(methods).length, 2);
 });
+
+test('an order on a tab does not hold the shift open as unpaid', () => {
+  /**
+   * The gate catches money about to walk out UNNOTICED, and a tab is the
+   * opposite of unnoticed: a manager opened the account, the customer is on it
+   * by name, and an admin has to release the shift before it can close over
+   * one.
+   *
+   * Holding it here as well would leave the cashier a warning they cannot act
+   * on — the customer has gone and the money is not due yet — and a warning
+   * that cannot be acted on is one staff learn to close over.
+   */
+  assert.equal(
+    blockerFor({ status: 'SERVED', payment_status: 'unpaid', total: 9000, tab_id: 't1' }),
+    null,
+  );
+  // Without the tab it is exactly what it always was.
+  assert.equal(blockerFor({ status: 'SERVED', payment_status: 'unpaid', total: 9000 }), 'unpaid');
+});
+
+test('a tab order still on the pass is still on the pass', () => {
+  // Nobody's account settles the question of whether the food went out.
+  assert.equal(
+    blockerFor({ status: 'PREPARING', payment_status: 'unpaid', total: 9000, tab_id: 't1' }),
+    'uncollected',
+  );
+});

@@ -313,9 +313,26 @@ export function blockerFor(order: {
   status: string;
   payment_status?: string;
   total?: number;
+  /** Set where this went onto a running account. See below. */
+  tab_id?: string;
 }): 'unpaid' | 'uncollected' | null {
   const owesNothing = (order.total ?? 0) <= 0;
-  if (!owesNothing && order.payment_status !== 'paid') return 'unpaid';
+  /*
+    A TAB IS A DEBT SOMEBODY DECIDED ON, not a bill anybody forgot.
+
+    This gate exists to catch money about to walk out unnoticed, and an order
+    on a tab is the opposite of unnoticed: a manager opened the account, the
+    customer is on it by name, and an admin has to release the shift before it
+    can close over one. Holding the shift open here as well would leave the
+    cashier with a warning they cannot act on — the customer has gone and the
+    money is not due yet — and a warning that cannot be acted on is one staff
+    learn to close over, which is the one thing this must never become.
+
+    The food is still checked. A tab order still on the pass is still on the
+    pass, and nobody's account settles that.
+  */
+  const onTab = !!order.tab_id;
+  if (!owesNothing && !onTab && order.payment_status !== 'paid') return 'unpaid';
   if (order.status !== 'SERVED') return 'uncollected';
   return null;
 }

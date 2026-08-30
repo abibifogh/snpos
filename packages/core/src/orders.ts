@@ -45,6 +45,16 @@ export interface Order extends Doc {
    */
   shelved_at?: string | null;
   shelved_from_shift?: string;
+  /**
+   * The running account this went onto, where it did.
+   *
+   * Blank on almost every order. Set means the money has NOT arrived and the
+   * tab carries it — a tab is credit, not payment, so the order stays unpaid
+   * and the shift does not count takings it never took. It is also what lets
+   * the close gate tell a deliberate debt from a bill somebody forgot to
+   * settle. See tabs.ts.
+   */
+  tab_id?: string;
   status: OrderStatus;
   alert_level: number;
   accepted_at?: string;
