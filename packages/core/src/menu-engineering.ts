@@ -31,12 +31,17 @@
 /**
  * One dish's trade over the period, already summed.
  *
+ * Named for what it is rather than for the line it came from: a shift's
+ * counter tally is also a list of things sold — see soldByItem in bar-count —
+ * and two exports called the same thing made both of them ambiguous, which
+ * takes out every screen that reads either.
+ *
  * `revenue` is what was actually taken, not list price × quantity. The till
  * lets a manager change a line price, and a dish sold at 40 instead of 55 is
  * exactly the case this report exists to surface — reading list price here
  * would hide it behind an average that looks fine.
  */
-export interface SoldLine {
+export interface DishTrade {
   menuItemId: string;
   name: string;
   qty: number;
@@ -180,7 +185,7 @@ const bpOf = (part: number, whole: number) => (whole > 0 ? Math.round((part / wh
  * is worse than no report.
  */
 export function menuEngineering(
-  sold: SoldLine[],
+  sold: DishTrade[],
   costs: CostedItem[],
   opts: { popularityRuleBp?: number; minItems?: number; minPlates?: number } = {},
 ): MenuEngineering {
@@ -194,7 +199,7 @@ export function menuEngineering(
   // divide by zero on the way to a unit price.
   const traded = sold.filter((s) => s.qty > 0);
 
-  const build = (s: SoldLine, unitCost: number): Omit<MenuRow, 'popularityBp' | 'popular' | 'profitable' | 'quadrant' | 'upside'> => {
+  const build = (s: DishTrade, unitCost: number): Omit<MenuRow, 'popularityBp' | 'popular' | 'profitable' | 'quadrant' | 'upside'> => {
     const unitPrice = Math.round(s.revenue / s.qty);
     const contribution = unitPrice - unitCost;
     return {
@@ -217,7 +222,7 @@ export function menuEngineering(
   // put it in the top-right corner of the grid, and drag the benchmark up so
   // that properly costed dishes were reported as failing against it. The whole
   // report would be wrong in the direction that flatters.
-  const costed: SoldLine[] = [];
+  const costed: DishTrade[] = [];
   const uncostedRows: MenuRow[] = [];
   for (const s of traded) {
     const c = costBy.get(s.menuItemId);

@@ -3,7 +3,7 @@ import { Button, Card, MenuGrid } from '@snpos/ui';
 import {
   listAll, marginOf, menuEngineering, whatToActOn, soldAtALoss,
   QUADRANT_MEANING, quadrantLabel,
-  type MenuRow, type SoldLine, type CostedItem,
+  type MenuRow, type DishTrade, type CostedItem,
 } from '@snpos/core';
 
 /**
@@ -30,7 +30,7 @@ export function MenuEngineeringPanel({
   side,
 }: {
   /** Aggregated paid, non-void lines for the visible period. */
-  sold: SoldLine[];
+  sold: DishTrade[];
   money: (n: number) => string;
   side: string;
 }) {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   menuEngineering, whatToActOn, soldAtALoss, quadrantLabel,
   MIN_ITEMS, MIN_PLATES, POPULARITY_RULE_BP,
-  type SoldLine, type CostedItem,
+  type DishTrade, type CostedItem,
 } from '../menu-engineering.ts';
 
 /**
@@ -23,7 +23,7 @@ import {
  * Each has a test below.
  */
 
-const sold = (menuItemId: string, name: string, qty: number, revenue: number): SoldLine =>
+const sold = (menuItemId: string, name: string, qty: number, revenue: number): DishTrade =>
   ({ menuItemId, name, qty, revenue });
 const cost = (menuItemId: string, unitCost: number): CostedItem =>
   ({ menuItemId, unitCost, unknown: false });
