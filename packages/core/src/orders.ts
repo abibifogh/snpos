@@ -1,4 +1,4 @@
-import { db, DB_ID, ID, Query, Permission, Role, account, listAll, anyExists } from './client';
+import { db, DB_ID, ID, Query, Permission, Role, account, listAll, listByIds, anyExists } from './client';
 import { cookMinutes, estimateMinutes, fireTimeFor, queueMinutes, waitIncludingOpening } from './orders-time';
 import { parseWindows, minutesUntilOpen } from './availability';
 import { lockedProblem } from './shift-lock';
@@ -1103,4 +1103,83 @@ async function correctShelfFor(
       on_hand: ((current as unknown as { on_hand?: number }).on_hand || 0) - delta,
     })
     .catch(() => undefined);
+}
+
+/* ------------------------------------------------ where one thing went */
+
+/** Everything needed to draw an item's sales history over a period. */
+export interface ItemSales {
+  lines: OrderItem[];
+  orders: Order[];
+  /**
+   * Set where this is an INGREDIENT rather than something on the menu: the
+   * drinks that consumed it, so the screen can say what it went into.
+   */
+  throughItems?: string[];
+}
+
+/**
+ * What was sold of one menu item between two moments.
+ *
+ * The lines are found by the item, and the bills are then fetched by the ids
+ * those lines carry — rather than reading every order in the window and
+ * throwing away the ones that do not mention it, which is a month of trading
+ * pulled down to answer a question about one dish.
+ *
+ * The window is applied to the BILLS, not to the lines. A line carries its own
+ * created time and it is within a second of its order's, but "sold on the 28th"
+ * means the order was rung up on the 28th, and a line written either side of
+ * midnight must not land on a different day from the bill it is on.
+ */
+export async function loadItemSales(
+  menuItemId: string,
+  fromIso: string,
+  toIso: string,
+): Promise<ItemSales> {
+  const lines = await listAll<OrderItem>('order_items', [Query.equal('menu_item_id', menuItemId)]);
+  if (lines.length === 0) return { lines: [], orders: [] };
+
+  const orders = await listByIds<Order>('orders', '$id', lines.map((l) => l.order_id));
+  const inWindow = orders.filter((o) => o.$createdAt >= fromIso && o.$createdAt <= toIso);
+  const keep = new Set(inWindow.map((o) => o.$id));
+  return { lines: lines.filter((l) => keep.has(l.order_id)), orders: inWindow };
+}
+
+/**
+ * What was sold of one INGREDIENT between two moments.
+ *
+ * An ingredient is never rung up. A bottle of tonic leaves the shelf because
+ * somebody sold a gin and tonic, so its history is the history of the drinks
+ * that consume it — which is also the only honest way to answer "where did it
+ * go", since the answer is a list of other things.
+ *
+ * Read from the recipes rather than from the stock movements on purpose. A
+ * movement only exists where the pour actually ran, so a drink with no recipe,
+ * or one not set to the bar, would show a history of nothing at all — and
+ * "nothing sold" is precisely the wrong answer to give about a bottle that has
+ * been emptying all month. See pour-check, which names that fault rather than
+ * hiding it here.
+ */
+export async function loadIngredientSales(
+  ingredientId: string,
+  fromIso: string,
+  toIso: string,
+): Promise<ItemSales> {
+  const recipes = await listAll<{ menu_item_id?: string; ingredient_id: string }>('recipes', [
+    Query.equal('ingredient_id', ingredientId),
+  ]).catch(() => []);
+  const itemIds = [...new Set(recipes.map((r) => r.menu_item_id).filter(Boolean))] as string[];
+  if (itemIds.length === 0) return { lines: [], orders: [], throughItems: [] };
+
+  const lines = await listByIds<OrderItem>('order_items', 'menu_item_id', itemIds);
+  if (lines.length === 0) return { lines: [], orders: [], throughItems: itemIds };
+
+  const orders = await listByIds<Order>('orders', '$id', lines.map((l) => l.order_id));
+  const inWindow = orders.filter((o) => o.$createdAt >= fromIso && o.$createdAt <= toIso);
+  const keep = new Set(inWindow.map((o) => o.$id));
+  return {
+    lines: lines.filter((l) => keep.has(l.order_id)),
+    orders: inWindow,
+    throughItems: itemIds,
+  };
 }

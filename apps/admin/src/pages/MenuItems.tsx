@@ -18,6 +18,7 @@ import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Con
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
 import { ReassignSupplier } from '../components/ReassignSupplier';
 import { KeyedListManager } from '../components/KeyedList';
+import { SalesHistory } from '../components/SalesHistory';
 import { ImageField } from '../components/ImageField';
 import { RecipeEditor, draftFrom, type DraftRecipe } from '../components/RecipeEditor';
 import { StationPicker, useStations, legacyStationFor } from '../components/StationPicker';
@@ -116,6 +117,14 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   const [uploading, setUploading] = useState(false);
   const [uploadingDrinks, setUploadingDrinks] = useState(false);
   const [editing, setEditing] = useState<Partial<MenuItem> | null>(null);
+  /**
+   * Which row's sales history is open.
+   *
+   * The name is carried alongside the id so the panel can head itself without
+   * looking the row up again — and so it still says what it is about after the
+   * list behind it has been filtered or reloaded.
+   */
+  const [historyFor, setHistoryFor] = useState<{ id: string; name: string } | null>(null);
   const [priceText, setPriceText] = useState('');
   /**
    * Kept as text, like every other number on a form here.
@@ -1236,6 +1245,17 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
                       <Button size="sm" variant="ghost" onClick={() => open(i)}>
                         {mayEdit ? 'Edit' : 'View'}
                       </Button>
+                      {/* Beside Edit rather than inside it, because "how many
+                          of these have we actually sold" is a question asked
+                          about a row on this list, not about a form. */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setHistoryFor({ id: i.$id, name: i.name })}
+                        title="Every sale of this, over a period you choose"
+                      >
+                        History
+                      </Button>
                       {mayEdit && (
                         <>
                           <Button size="sm" variant="ghost" onClick={() => open(i, true)} title={`Copy this ${W.one}, options and all`}>
@@ -1533,6 +1553,16 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
         </Modal>
       )}
       </>
+      )}
+
+      {historyFor && (
+        <SalesHistory
+          kind="item"
+          id={historyFor.id}
+          name={historyFor.name}
+          settings={settings}
+          onClose={() => setHistoryFor(null)}
+        />
       )}
     </>
   );

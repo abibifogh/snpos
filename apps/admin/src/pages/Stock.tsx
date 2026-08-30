@@ -10,6 +10,7 @@ import {
   matches, sortStock, stockState, STOCK_SORTS, STOCK_STATES,
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, normaliseName,
 } from '@snpos/core';
+import { SalesHistory } from '../components/SalesHistory';
 import type {
   StockSort, StockState, Module, Ingredient, Recipe, MenuItem, Doc, Settings, PurchaseRow,
   GroupChoice, SortChoice,
@@ -185,6 +186,14 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
       : { title: 'Stock', add: 'Add ingredient' };
   /** The ingredient whose purchase history is being read. */
   const [historyFor, setHistoryFor] = useState<Ingredient | null>(null);
+  /**
+   * Which ingredient's SALES history is open, as against its price history.
+   *
+   * Two different questions about the same row: what it has been costing to
+   * buy, and what has been going out. The name is carried alongside the id so
+   * the panel still says what it is about after the list behind it reloads.
+   */
+  const [salesFor, setSalesFor] = useState<{ id: string; name: string } | null>(null);
 
   const load = async () => {
     const [i, s, r, d] = await Promise.all([
@@ -775,6 +784,18 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
                               me" is a question somebody has while looking at
                               the row, not one they go to another screen for. */}
                           <Button size="sm" variant="ghost" onClick={() => setHistoryFor(i)}>Prices</Button>
+                          {/* And the other half of the same question: what has
+                              been going OUT. An ingredient is never rung up
+                              itself, so this is the sales of everything that
+                              uses it — see loadIngredientSales. */}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setSalesFor({ id: i.$id, name: i.name })}
+                            title="Every sale that used this, over a period you choose"
+                          >
+                            Sales
+                          </Button>
                           <Button size="sm" variant="ghost" onClick={() => open(i)}>Edit</Button>
                           <Button size="sm" variant="ghost" onClick={() => archiveIngredient(i, !i.active)}>
                             {i.active ? 'Archive' : 'Use again'}
@@ -816,6 +837,16 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
           ingredient={historyFor}
           settings={settings}
           onClose={() => setHistoryFor(null)}
+        />
+      )}
+
+      {salesFor && (
+        <SalesHistory
+          kind="ingredient"
+          id={salesFor.id}
+          name={salesFor.name}
+          settings={settings}
+          onClose={() => setSalesFor(null)}
         />
       )}
 
