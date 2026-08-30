@@ -12,8 +12,11 @@ import {
   listCreatedBetween, listByIds, setShiftSealed, isSealed, describeSeal, lockedProblem,
   rangeTotals, kindsWorthShowing, KIND_LABELS, MODULE_LABELS, canOpen, floatOrigin,
   kindOf, countedParts, partLines, partsWords, unexplained,
+  shiftCountEntries, pairCounts, countsSummary, countsGapWords,
 } from '@snpos/core';
-import type { Module, Doc, CashHandover, MoneyKind, CountedParts, Settings } from '@snpos/core';
+import type {
+  Module, Doc, CashHandover, MoneyKind, CountedParts, Settings, CountPair,
+} from '@snpos/core';
 import { useSession } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 
@@ -334,6 +337,15 @@ export function ShiftsPage() {
    * month of payments is a large read to do for a list nobody has clicked.
    */
   const [detailPayments, setDetailPayments] = useState<ShiftPaymentRow[] | null>(null);
+  /**
+   * What this shift counted in and what it counted out.
+   *
+   * Both were already recorded and neither was readable once the shift closed
+   * — the count sheet only ever shows the end being counted now. See
+   * pairCounts: the two ends belong on one row, because nobody has ever asked
+   * "what was the closing figure" without also meaning "against what".
+   */
+  const [detailCounts, setDetailCounts] = useState<CountPair[] | null>(null);
   const [openMethod, setOpenMethod] = useState<string | null>(null);
 
   const [sealing, setSealing] = useState<Shift | null>(null);
@@ -395,6 +407,16 @@ export function ShiftsPage() {
     setDetail(shift);
     setOpenMethod(null);
     setDetailPayments(null);
+    setDetailCounts(null);
+
+    /*
+      Alongside the payments rather than after them, and allowed to fail on its
+      own. A kitchen shift counts nothing, so this is empty far more often than
+      not, and a failure here must not take the money figures down with it.
+    */
+    shiftCountEntries(shift.$id, (shift.module ?? 'kitchen') as Module)
+      .then((entries) => setDetailCounts(pairCounts(entries)))
+      .catch(() => setDetailCounts([]));
     try {
       const rows = await listAll<ShiftPaymentRow>('payments', [Query.equal('shift_id', shift.$id)]);
       const orders = await listByIds<Doc & { order_no?: string }>(
@@ -973,6 +995,94 @@ export function ShiftsPage() {
               bad count is a mistake; the same person repeatedly short is a pattern worth looking at.
             </Notice>
           )}
+
+          {/*
+            THE SHELF, beside the drawer.
+
+            The money above is only half of what a shift hands over. The bar
+            counts its bottles in and out and the shop counts its shelf the
+            same way, and until now neither was readable once the shift closed
+            — the count sheet only ever shows the end being counted NOW. So the
+            one question worth asking afterwards, what did they take on against
+            what did they hand over, could not be asked at all.
+
+            Absent on a kitchen shift, which counts nothing, and absent on a
+            bar or craft shift that was never counted — an empty heading on
+            most of the panels would be a heading nobody reads on the ones that
+            have something under it.
+          */}
+          {detailCounts && detailCounts.length > 0 && (() => {
+            const summary = countsSummary(detailCounts);
+            const gap = countsGapWords(summary);
+            return (
+              <>
+                <h3 style={{ margin: '1.4rem 0 0.4rem' }}>
+                  What was on the shelf
+                  <span className="small dim" style={{ fontWeight: 400, marginLeft: '0.5rem' }}>
+                    {summary.items} counted
+                    {summary.short > 0 && `, ${summary.short} short`}
+                    {summary.shortValue > 0 && ` (${settings ? formatMoney(summary.shortValue, settings) : summary.shortValue})`}
+                    {summary.over > 0 && `, ${summary.over} over`}
+                  </span>
+                </h3>
+
+                {/* A missing end is said rather than left to be inferred from a
+                    column of dashes, because what it does to the OTHER end's
+                    figures is the thing worth knowing. */}
+                {gap && <Notice tone="warn">{gap}</Notice>}
+
+                <div className="table-wrap">
+                  <table className="data">
+                    <thead>
+                      <tr>
+                        <th>What</th>
+                        <th className="num">Counted in</th>
+                        <th className="num">Counted out</th>
+                        {/* Not "sold". Opening minus closing is everything that
+                            left for any reason, which is exactly why it is
+                            worth reading beside what the tills say. */}
+                        <th className="num">Went</th>
+                        <th className="num">Difference</th>
+                        <th className="num">Worth</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detailCounts.map((c) => (
+                        <tr key={c.itemId} style={c.undone ? { opacity: 0.55 } : undefined}>
+                          <td>
+                            {c.name}
+                            {/* Kept and marked rather than hidden: somebody
+                                stood at the shelf and wrote a number, and the
+                                shelf moved because of it. */}
+                            {c.undone && <Badge tone="warn">Taken back</Badge>}
+                          </td>
+                          {/* A blank is a blank. Nobody who failed to count a
+                              shelf has said it is empty. */}
+                          <td className="num dim">{c.opened ?? <span className="dim">{'\u2014'}</span>}</td>
+                          <td className="num dim">{c.closed ?? <span className="dim">{'\u2014'}</span>}</td>
+                          <td className="num">{c.went ?? <span className="dim">{'\u2014'}</span>}</td>
+                          <td className="num">
+                            {c.varianceQty === 0
+                              ? <span className="dim">{'\u2014'}</span>
+                              : (
+                                <Badge tone={c.varianceQty < 0 ? 'danger' : 'warn'}>
+                                  {c.varianceQty > 0 ? `+${c.varianceQty}` : c.varianceQty}
+                                </Badge>
+                              )}
+                          </td>
+                          <td className="num dim">
+                            {c.varianceQty === 0
+                              ? ''
+                              : settings ? formatMoney(Math.abs(c.varianceValue), settings) : Math.abs(c.varianceValue)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            );
+          })()}
 
           {/* Who ended with what.
               The reconciliation above is about the drawer; this is about

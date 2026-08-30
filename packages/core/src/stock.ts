@@ -1,4 +1,6 @@
 import { db, DB_ID, ID, Query, listAll, listByIds, tryWrite } from './client';
+// Type-only, erased at compile time. The pairing itself is pure; see shift-counts.
+import type { CountEntry } from './shift-counts';
 import type { PurchaseRow } from './price-history';
 import type { Module } from './access';
 import {
@@ -1258,4 +1260,85 @@ export async function pourMissedSales(opts: {
   }
 
   return { poured, lines: touched, failed };
+}
+
+/* ----------------------------------------- both ends of a shift's count */
+
+/**
+ * What a shift counted in and what it counted out.
+ *
+ * One call for both trades, because the question is the same one and the
+ * screen asking it should not have to know which collection answers it. The
+ * bar counts ingredients into `shift_stock_checks`; the shop counts products
+ * into `stock_counts` with their lines beside them. Neither knows about the
+ * other, and a caller wanting "this shift's counts" wants them merged.
+ *
+ * Empty rather than throwing where a shift has none. Most shifts are the
+ * kitchen's and never counted anything, and an error on those would put a
+ * failure on every second Details panel.
+ */
+export async function shiftCountEntries(
+  shiftId: string,
+  module: Module = 'kitchen',
+): Promise<CountEntry[]> {
+  if (!shiftId) return [];
+
+  if (module === 'craft') {
+    const heads = await listAll<{
+      $id: string; phase?: string; status?: string;
+    }>('stock_counts', [Query.equal('shift_id', shiftId)]).catch(() => []);
+    if (heads.length === 0) return [];
+
+    const lines = await listByIds<{
+      count_id: string; menu_item_id: string; variant_id?: string;
+      name_snapshot: string; variant_label?: string;
+      expected: number; counted: number; unit_price: number;
+    }>('stock_count_lines', 'count_id', heads.map((h) => h.$id)).catch(() => []);
+
+    const phaseOf = new Map<string, 'open' | 'close'>(
+      heads.map((h) => [h.$id, h.phase === 'open' ? 'open' : 'close']),
+    );
+    // A count that was rejected is not evidence of the shelf. It was looked at
+    // and disagreed with, and the row stays in its own screen rather than
+    // being read here as though it had been accepted.
+    const rejected = new Set(heads.filter((h) => h.status === 'rejected').map((h) => h.$id));
+
+    return lines
+      .filter((l) => !rejected.has(l.count_id))
+      .map((l) => ({
+        // The size is its own thing on the shelf, so it is its own row here.
+        itemId: l.variant_id || l.menu_item_id,
+        name: l.variant_label ? `${l.name_snapshot} · ${l.variant_label}` : l.name_snapshot,
+        phase: phaseOf.get(l.count_id) ?? 'close',
+        counted: l.counted,
+        expected: l.expected,
+        varianceQty: l.counted - l.expected,
+        varianceValue: (l.counted - l.expected) * (l.unit_price ?? 0),
+      }));
+  }
+
+  const checks = await listAll<{
+    ingredient_id: string; phase?: string; counted_qty?: number; theoretical_qty: number;
+    variance_qty: number; variance_value: number; undone_at?: string;
+  }>('shift_stock_checks', [Query.equal('shift_id', shiftId)]).catch(() => []);
+  if (checks.length === 0) return [];
+
+  const names = await listByIds<{ $id: string; name: string; unit?: string }>(
+    'ingredients', '$id', checks.map((c) => c.ingredient_id),
+  ).catch(() => []);
+  const nameOf = new Map(names.map((n) => [n.$id, n.name]));
+
+  return checks.map((c) => ({
+    itemId: c.ingredient_id,
+    // An ingredient deleted since still has a row here. Naming it by its id is
+    // useless, so it says what it is instead of pretending to know.
+    name: nameOf.get(c.ingredient_id) ?? 'Item no longer in the list',
+    phase: (c.phase === 'open' ? 'open' : 'close') as 'open' | 'close',
+    // Not counted is not nought. See pairCounts.
+    counted: typeof c.counted_qty === 'number' ? c.counted_qty : null,
+    expected: c.theoretical_qty,
+    varianceQty: c.variance_qty,
+    varianceValue: c.variance_value,
+    undone: !!c.undone_at,
+  }));
 }
