@@ -71,6 +71,7 @@ export * from './reachability';
 export * from './offline-shift';
 export * from './to-settle';
 export * from './order-edit';
+export * from './pour-check';
 export * from './due';
 export * from './purchase-flags';
 export * from './purchase-alerts';

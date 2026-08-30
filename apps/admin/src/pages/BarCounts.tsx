@@ -6,8 +6,11 @@ import {
   formatMoney, listAll, Query, loadOpenShifts, loadLocations, saleLocation, mayCountWithoutShift,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
   filedCounts, undoProblem, undoBarCount, pourMissedSales,
+  loadRecipes, pourState, pourLabel, pourWords, unexplainedByWiring,
 } from '@snpos/core';
-import type { BarCountLine, Shift, Doc, StockLocation, FiledCheck, FiledCount } from '@snpos/core';
+import type {
+  BarCountLine, Shift, Doc, StockLocation, FiledCheck, FiledCount, PourRow, PourItem, PourState,
+} from '@snpos/core';
 import { useSession } from '../session';
 
 interface CheckRow extends Doc {
@@ -92,6 +95,16 @@ export function BarCountsPage() {
    */
   /** The rooms could not be read at all, which is not the same as having none. */
   const [roomsFailed, setRoomsFailed] = useState(false);
+  /**
+   * What actually takes each bottle off the shelf when a drink is sold.
+   *
+   * Read so the sheet can say WHY a line is short. A shortage because nothing
+   * is set up to deduct it looks exactly like a shortage from over-pouring or
+   * from theft, and the difference is the difference between ten minutes in
+   * the admin screen and a conversation with a bartender. See pour-check.
+   */
+  const [recipes, setRecipes] = useState<PourRow[]>([]);
+  const [drinks, setDrinks] = useState<PourItem[]>([]);
   const room = places.find((p2) => p2.$id === placeId) ?? null;
   const isStore = room?.kind === 'store';
   /**
@@ -133,6 +146,14 @@ export function BarCountsPage() {
       const here = placeId || saleLocation(bar, 'bar')?.$id || '';
       if (!placeId) setPlaceId(here);
       setLines(await barCountSheet('main', here || undefined, isManager));
+      // Best effort. A sheet that cannot answer "is this wired up" is still a
+      // usable sheet; one that refuses to load over it is not.
+      const [rec, items] = await Promise.all([
+        loadRecipes().catch(() => [] as PourRow[]),
+        listAll<PourItem>('menu_items').catch(() => [] as PourItem[]),
+      ]);
+      setRecipes(rec as unknown as PourRow[]);
+      setDrinks(items);
       if (current) {
         const done = await hasOpeningCount(current.$id);
         setOpeningDone(done);
@@ -197,6 +218,35 @@ export function BarCountsPage() {
   }, [lines, filter]);
 
   const groups = useMemo(() => byUnit(shown), [shown]);
+
+  /**
+   * Whether a sale ever moves this shelf, worked out once for the whole sheet.
+   *
+   * Memoised because it is asked for every row on a page that re-renders on
+   * every keystroke somebody types into a count box.
+   */
+  const pourFor = useMemo(() => {
+    const cache = new Map<string, PourState>();
+    return (ingredientId: string): PourState => {
+      const known = cache.get(ingredientId);
+      if (known) return known;
+      const state = pourState(ingredientId, recipes, drinks);
+      cache.set(ingredientId, state);
+      return state;
+    };
+  }, [recipes, drinks]);
+
+  /*
+    How much of the shortage is only wiring.
+
+    The number worth putting at the top. A sheet reporting a big shortage is
+    alarming; the same sheet saying most of it is drinks nobody finished
+    setting up is a job, not an incident.
+  */
+  const wiring = useMemo(
+    () => unexplainedByWiring(lines ?? [], pourFor),
+    [lines, pourFor],
+  );
   const summary = useMemo(() => summariseBarCount(lines ?? []), [lines]);
   const check = useMemo(() => readyToClose(lines ?? []), [lines]);
 
@@ -446,6 +496,26 @@ export function BarCountsPage() {
                  explain now than tomorrow when everybody has gone home. */
               <Notice tone={check.missing > 0 ? 'warn' : 'err'}>{check.reason}</Notice>
             )}
+            {/*
+              How much of the shortage is only wiring.
+
+              Ahead of any conversation about what happened to the stock,
+              because this part did not happen to the stock at all: nothing is
+              set up to take these off the shelf, so the sheet is reporting
+              everything that was sold as though it had gone missing. Reading
+              it as a loss is how a bartender gets asked about a shortage that
+              is a setting.
+            */}
+            {wiring.lines > 0 && (
+              <Notice tone="warn">
+                {wiring.lines === 1 ? 'One line on this sheet is' : `${wiring.lines} lines on this sheet are`}
+                {' '}short {money(wiring.value)} between {wiring.lines === 1 ? 'it' : 'them'}, and nothing on the
+                menu is set up to take {wiring.lines === 1 ? 'it' : 'them'} off the shelf when a drink is sold.
+                That is not stock going missing — it is every sale of {wiring.lines === 1 ? 'it' : 'them'} being
+                reported as a shortage, and it will happen again every night until the drink says how much it
+                uses. The lines are marked below.
+              </Notice>
+            )}
           </Card>
 
           <Card>
@@ -514,7 +584,22 @@ export function BarCountsPage() {
                           : Math.round((counted - l.expected) * 1000) / 1000;
                         return (
                           <tr key={l.ingredientId}>
-                            <td style={{ fontWeight: 550 }}>{l.name}</td>
+                            <td style={{ fontWeight: 550 }}>
+                              {l.name}
+                              {/* Said on the row rather than only in the total,
+                                  because the person reading it is looking at
+                                  one line and asking what happened to it. */}
+                              {(() => {
+                                const state = pourFor(l.ingredientId);
+                                const label = pourLabel(state);
+                                if (!label) return null;
+                                return (
+                                  <div style={{ marginTop: '0.15rem' }} title={pourWords(state, l.name) ?? ''}>
+                                    <Badge tone="warn">{label}</Badge>
+                                  </div>
+                                );
+                              })()}
+                            </td>
                             <td className="num dim">{l.expected}</td>
                             <td>
                               <Input
