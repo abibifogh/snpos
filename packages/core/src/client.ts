@@ -402,7 +402,20 @@ export function humanError(e: unknown): string {
     } catch {
       // Not in a browser. The message still reads correctly without a name.
     }
-    return unreachableMessage(host, everReached);
+    /*
+      Asked here rather than inside the message, so the sentence stays pure and
+      testable. Free and instant: no probe, no waiting, and it settles the
+      commonest cause outright — see unreachableMessage, which trusts a false
+      and never a true.
+    */
+    let online: boolean | undefined;
+    try {
+      online = window.navigator.onLine;
+    } catch {
+      // Not in a browser, or a browser that will not say. Left undefined, and
+      // the message goes back to naming the possibilities in order.
+    }
+    return unreachableMessage(host, everReached, online);
   }
 
   return msg;

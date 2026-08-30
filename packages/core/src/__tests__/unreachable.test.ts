@@ -36,22 +36,26 @@ test('a till that has worked before is never sent to register its address', () =
   // would send them.
   assert.doesNotMatch(words, /it needs registering/);
   assert.doesNotMatch(words, /Settings → Platforms/);
-  assert.match(words, /nothing needs registering/);
+  assert.match(words, /nothing to register/);
   assert.match(words, /pos\.niceoperation\.com/);
 });
 
-test('the causes are named in the order somebody should work down them', () => {
+test('the connection is named before the service, wherever both are possible', () => {
   /**
    * The order IS the usefulness. A person at a dead till starts at the top,
-   * and a tablet loses wifi far more often than a project gets suspended,
-   * which happens far more often than Appwrite has an outage.
+   * and a tablet's own connection fails far more often than the service does —
+   * so a message that leads with an outage sends somebody to check the one
+   * thing they cannot do anything about.
+   *
+   * Where the browser knows there is no network the question does not arise at
+   * all: that branch names one cause and stops. This is the other branch, the
+   * one where the device believes it is online and may well be wrong.
    */
-  const words = unreachableMessage('pos.niceoperation.com', true);
-  const online = words.indexOf('online');
-  const limits = words.indexOf('plan');
-  const outage = words.indexOf('Appwrite itself');
-  assert.ok(online > 0 && online < limits, 'is the device online comes first');
-  assert.ok(limits < outage, 'then the project, then Appwrite itself');
+  const words = unreachableMessage('pos.niceoperation.com', true, true);
+  const connection = words.indexOf('connection is not');
+  const service = words.indexOf('service itself');
+  assert.ok(connection > 0, 'the connection is questioned at all');
+  assert.ok(connection < service, 'and before the service is blamed');
 });
 
 test('an address that has never answered is told the likeliest thing first', () => {
@@ -76,11 +80,80 @@ test('the message reads as a sentence with no hostname to put in it', () => {
   }
 });
 
-test('it always says nothing was lost', () => {
+test('it always answers "has my sale gone?"', () => {
   /*
-    The question somebody actually has at a dead till is whether the sale they
-    were halfway through has gone. A message about platform registration that
-    does not answer it leaves them retyping a bill to be safe.
+    The question somebody actually has at a dead till. A message about platform
+    registration that does not answer it leaves them retyping a bill to be
+    safe — and now that writes really are queued and replayed, the answer is
+    better than it was: the sale is kept and sends itself.
   */
-  assert.match(unreachableMessage('pos.niceoperation.com', true), /safe to try again/);
+  for (const online of [false, true]) {
+    assert.match(
+      unreachableMessage('pos.niceoperation.com', true, online),
+      /kept here and sends itself/,
+      `no answer about the sale when online is ${online}`,
+    );
+  }
+});
+
+test('a device with no network is told that, and nothing else', () => {
+  /**
+   * The commonest cause by a long way, and the one that used to be third on a
+   * list of three. Somebody stood at a working till read about Appwrite plan
+   * limits and outages while the router was rebooting downstairs.
+   *
+   * The browser knows this for free, at the moment the failure is caught. So
+   * there is no list any more: one cause, named, with the three places to look.
+   */
+  const words = unreachableMessage('pos.niceoperation.com', true, false);
+  assert.match(words, /internet is down on this device/i);
+  assert.match(words, /wifi/);
+
+  // Nothing that cannot possibly be wrong. Every extra sentence here is one
+  // more thing for somebody to go and check for no reason.
+  assert.doesNotMatch(words, /Appwrite/);
+  assert.doesNotMatch(words, /paused/);
+  assert.doesNotMatch(words, /plan limits/);
+  assert.doesNotMatch(words, /register/i);
+});
+
+test('an offline till is told to carry on, because it can', () => {
+  /*
+    True since the queue was built and never said here. A sale rung up with the
+    line down is kept and sent on its own, so the right instruction is "carry
+    on serving" — not the old "nothing was saved", which reads as "stop".
+  */
+  const words = unreachableMessage('pos.niceoperation.com', true, false);
+  assert.match(words, /sends\s+itself/);
+  assert.match(words, /carry on serving/);
+  assert.doesNotMatch(words, /Nothing was saved/);
+});
+
+test('a browser claiming to be online is not taken as proof', () => {
+  /**
+   * Browsers report true for any network at all — a wifi with no route out, a
+   * guest network waiting to be signed into. So a true only narrows things
+   * down, and the message must not announce a service outage on the strength
+   * of it.
+   */
+  const words = unreachableMessage('pos.niceoperation.com', true, true);
+  assert.match(words, /thinks it is online/);
+  assert.match(words, /wifi with no internet behind it/);
+  // Still says the address is fine, which is the one thing genuinely known.
+  assert.match(words, /nothing to register/);
+});
+
+test('with nothing known about the network, the old ordering stands', () => {
+  // Not in a browser, or a browser that will not say. Guessing would be worse
+  // than naming the possibilities in the order they actually go wrong.
+  const words = unreachableMessage('pos.niceoperation.com', true, undefined);
+  assert.match(words, /Cannot reach the system/);
+});
+
+test('an address that has never worked still leads with registering it', () => {
+  // Unchanged, and deliberately: on a new setup the address not being
+  // registered is the likeliest cause by a long way, and being offline does
+  // not stop that from also being true.
+  const words = unreachableMessage('pos.niceoperation.com', false);
+  assert.match(words, /Settings → Platforms/);
 });

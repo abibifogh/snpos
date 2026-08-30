@@ -32,8 +32,43 @@
 export const looksUnreachable = (message: string): boolean =>
   /Network|fetch failed|Failed to fetch|Load failed|NetworkError/i.test(message);
 
-export function unreachableMessage(hostname: string, everReached: boolean): string {
+/**
+ * What to say, given what is actually known.
+ *
+ * `online` is the browser's own answer and it is FREE — no probe, no waiting,
+ * available at the moment the failure is caught. It is also trustworthy in one
+ * direction only: a browser saying it has no network at all is certain, while
+ * a browser saying it has one only means it is attached to something, which
+ * may be a wifi with no route out or a guest network waiting to be signed
+ * into. So a false is an answer and a true is not.
+ *
+ * That one bit removes almost every reading of this message in practice. A
+ * tablet losing its wifi is far and away the commonest cause, and it was being
+ * handed a list of three possibilities headed by an Appwrite project and an
+ * outage — so somebody stood at a working till reading about plan limits when
+ * the router had rebooted.
+ */
+export function unreachableMessage(
+  hostname: string,
+  everReached: boolean,
+  online?: boolean,
+): string {
   const where = hostname || 'this address';
+
+  /*
+    KNOWN, so say it and say nothing else.
+
+    No list, no ordering, no mention of Appwrite: none of it is relevant when
+    the device is not on a network, and every extra sentence is one more thing
+    for somebody to go and check that cannot possibly be wrong.
+  */
+  if (online === false) {
+    return (
+      'The internet is down on this device. Nothing is wrong with the till or with the system — check the '
+      + 'wifi, the router, or the data on this tablet. Anything already rung up is kept here and sends '
+      + 'itself the moment the connection is back, so carry on serving.'
+    );
+  }
 
   if (everReached) {
     /*
@@ -42,11 +77,17 @@ export function unreachableMessage(hostname: string, everReached: boolean): stri
       actually goes wrong: a tablet loses wifi far more often than a project
       gets suspended, and both far more often than Appwrite has an outage.
     */
+    /*
+      The device believes it is on a network, so the wifi is named first but
+      not as a certainty — a network with no route out reports itself as
+      perfectly online, and that is the likeliest thing on this branch.
+    */
     return (
-      `Could not reach Appwrite. It has answered this device from ${where} before, so the address is set up `
-      + 'correctly and nothing needs registering — something has changed since. In the order worth checking: '
-      + 'is this device online, is the Appwrite project paused or over its plan limits, and is Appwrite itself '
-      + 'having trouble. Nothing was saved, so it is safe to try again.'
+      'Cannot reach the system just now. This device thinks it is online, so either the connection is not '
+      + 'really working — a wifi with no internet behind it, or one waiting to be signed into — or the '
+      + `service itself is having trouble. It has answered this device from ${where} before, so nothing is `
+      + 'set up wrongly and there is nothing to register. Anything already rung up is kept here and sends '
+      + 'itself when the connection comes back.'
     );
   }
 
