@@ -12,6 +12,7 @@ import type { Order, OrderItem, Doc, TrialBalanceRow } from '@snpos/core';
 import { useSession } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 import { Insights } from '../components/Insights';
+import { MenuEngineeringPanel } from '../components/MenuEngineering';
 
 interface Payment extends Doc { order_id: string; method_id: string; method_kind_snapshot: string; amount: number; tip: number; shift_id: string; status?: string }
 interface PaymentMethod extends Doc { name: string }
@@ -156,6 +157,28 @@ export function ReportsPage() {
       acc.set(i.name_snapshot, row);
     }
     return [...acc.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+  }, [items, paid]);
+
+  /**
+   * The same lines as `topItems`, kept by menu item id rather than by name.
+   *
+   * `topItems` groups by `name_snapshot` because it is a best-seller list and
+   * a name is what somebody reads. This one cannot: it is joined to recipes,
+   * and two dishes that were both once called "Rice" would be costed as one.
+   */
+  const soldByItem = useMemo(() => {
+    const paidIds = new Set(paid.map((o) => o.$id));
+    const acc = new Map<string, { menuItemId: string; name: string; qty: number; revenue: number }>();
+    for (const i of items) {
+      if (!paidIds.has(i.order_id) || i.status === 'void') continue;
+      if (!i.menu_item_id) continue;   // a one-off line has nothing to cost against
+      const row = acc.get(i.menu_item_id)
+        ?? { menuItemId: i.menu_item_id, name: i.name_snapshot, qty: 0, revenue: 0 };
+      row.qty += i.qty;
+      row.revenue += i.line_total;
+      acc.set(i.menu_item_id, row);
+    }
+    return [...acc.values()];
   }, [items, paid]);
 
   const byMethod = useMemo(() => {
@@ -402,6 +425,16 @@ export function ReportsPage() {
             money={money}
             tickMoney={tickMoney}
           />
+
+          {/*
+            Then the menu itself, dish by dish.
+
+            After the trend and before the plumbing: the trend says whether the
+            month was good, this says which dishes made it so and which are
+            being carried. It is the only thing on this page that names
+            something to change rather than something that happened.
+          */}
+          <MenuEngineeringPanel sold={soldByItem} money={money} side={side} />
 
           {/*
             What Costs is made of, next to the figure it explains.

@@ -17,6 +17,7 @@ export * from './ErrorBoundary';
 export * from './OfflineBar';
 export * from './useOfflineQueue';
 export * from './trend';
+export * from './menugrid';
 export * from './filters';
 export * from './idlescreen';
 export * from './themebutton';
