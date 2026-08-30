@@ -56,19 +56,14 @@ export function unreachableMessage(
   const where = hostname || 'this address';
 
   /*
-    KNOWN, so say it and say nothing else.
+    KNOWN, so say it and say nothing else. One sentence, at the owner's asking.
 
-    No list, no ordering, no mention of Appwrite: none of it is relevant when
-    the device is not on a network, and every extra sentence is one more thing
-    for somebody to go and check that cannot possibly be wrong.
+    Everything a longer version could add is either already obvious to whoever
+    is standing there — check the wifi — or is about something that cannot be
+    the cause. A person who reads "the internet is down" has the whole answer,
+    and a paragraph after it only invites them to look for a second one.
   */
-  if (online === false) {
-    return (
-      'The internet is down on this device. Nothing is wrong with the till or with the system — check the '
-      + 'wifi, the router, or the data on this tablet. Anything already rung up is kept here and sends '
-      + 'itself the moment the connection is back, so carry on serving.'
-    );
-  }
+  if (online === false) return 'The internet is down on this device.';
 
   if (everReached) {
     /*

@@ -87,13 +87,15 @@ test('it always answers "has my sale gone?"', () => {
     safe — and now that writes really are queued and replayed, the answer is
     better than it was: the sale is kept and sends itself.
   */
-  for (const online of [false, true]) {
-    assert.match(
-      unreachableMessage('pos.niceoperation.com', true, online),
-      /kept here and sends itself/,
-      `no answer about the sale when online is ${online}`,
-    );
-  }
+  assert.match(unreachableMessage('pos.niceoperation.com', true, true), /kept here and sends itself/);
+
+  /*
+    Not on the offline branch, and on purpose: that message is one sentence at
+    the owner's asking. The till says the same thing more usefully anyway — the
+    strip across the top counts what is waiting to send, which is a live number
+    rather than a promise in an error box.
+  */
+  assert.equal(unreachableMessage('pos.niceoperation.com', true, false), 'The internet is down on this device.');
 });
 
 test('a device with no network is told that, and nothing else', () => {
@@ -102,31 +104,25 @@ test('a device with no network is told that, and nothing else', () => {
    * list of three. Somebody stood at a working till read about Appwrite plan
    * limits and outages while the router was rebooting downstairs.
    *
-   * The browser knows this for free, at the moment the failure is caught. So
-   * there is no list any more: one cause, named, with the three places to look.
+   * The browser knows this for free, at the moment the failure is caught, so
+   * the whole message is now the answer — one sentence, at the owner's asking.
+   * Anything after it is either obvious to whoever is standing there or is
+   * about something that cannot be the cause.
    */
   const words = unreachableMessage('pos.niceoperation.com', true, false);
-  assert.match(words, /internet is down on this device/i);
-  assert.match(words, /wifi/);
-
-  // Nothing that cannot possibly be wrong. Every extra sentence here is one
-  // more thing for somebody to go and check for no reason.
-  assert.doesNotMatch(words, /Appwrite/);
-  assert.doesNotMatch(words, /paused/);
-  assert.doesNotMatch(words, /plan limits/);
-  assert.doesNotMatch(words, /register/i);
+  assert.equal(words, 'The internet is down on this device.');
 });
 
-test('an offline till is told to carry on, because it can', () => {
+test('nothing that cannot possibly be wrong is mentioned to an offline device', () => {
   /*
-    True since the queue was built and never said here. A sale rung up with the
-    line down is kept and sent on its own, so the right instruction is "carry
-    on serving" — not the old "nothing was saved", which reads as "stop".
+    Every extra name here is one more thing for somebody to go and check for no
+    reason. A tablet off the wifi has nothing to do with an address, a project
+    or a plan.
   */
   const words = unreachableMessage('pos.niceoperation.com', true, false);
-  assert.match(words, /sends\s+itself/);
-  assert.match(words, /carry on serving/);
-  assert.doesNotMatch(words, /Nothing was saved/);
+  for (const wrong of [/Appwrite/, /paused/, /plan limits/, /register/i, /pos\.niceoperation/]) {
+    assert.doesNotMatch(words, wrong);
+  }
 });
 
 test('a browser claiming to be online is not taken as proof', () => {
