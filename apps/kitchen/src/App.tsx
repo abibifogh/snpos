@@ -361,7 +361,19 @@ export function App() {
       }
     };
 
-    const timer = window.setInterval(reconcile, 60_000);
+    /*
+      TWENTY SECONDS, not sixty.
+
+      This is the safety net under the live connection, and how long it takes
+      to notice is how late a ticket arrives on the nights the live connection
+      is not working — which is the failure it exists for. A minute is a long
+      time at a pass: an order placed by the pool can be a minute old before a
+      cook has seen it, and by then the customer is already wondering.
+
+      It costs one small read every twenty seconds, and nothing at all while
+      the tab is hidden — see the guard at the top of reconcile.
+    */
+    const timer = window.setInterval(reconcile, 20_000);
     const wake = () => void reconcile();
     document.addEventListener('visibilitychange', wake);
     window.addEventListener('online', wake);

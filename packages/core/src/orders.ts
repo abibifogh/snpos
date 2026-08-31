@@ -486,31 +486,38 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
   // created with no connection still have its items attached to it.
   const orderId = ID.unique();
 
-  let order: Order;
-  try {
-    order = await createOrQueue<Order>('orders', orderId, payload, mine);
-  } catch (e) {
-    // Two terminals took the same number in the same instant; take the next one.
-    const msg = e instanceof Error ? e.message : '';
-    if (/already exists|unique/i.test(msg) && attempt < 5) {
-      /*
-        The attempt number is carried into the number itself.
+  /*
+    THE LINES GO FIRST, AND THE ORDER LAST.
 
-        It was not, and that is what turned one collision into five identical
-        failures: each retry worked the next number out from the same rows,
-        got the same answer, and was refused for the same reason. The message
-        that reached the bar was about a unique attribute constraint.
-      */
-      return createOrder(input, attempt + 1);
-    }
-    throw e;
-  }
+    Two writes, and one of them can land without the other. Which way round
+    that happens decides what a failure looks like on a kitchen screen.
 
+    Order first, lines second — as it was — leaves an order the kitchen can
+    see with nothing on it. The commonest way that happens is a phone on a
+    weak wifi: the order reaches the server, the connection drops, and the
+    LINES go into a queue on the customer's phone, where they stay until that
+    tab is opened again. It never is. The customer has walked away, and the
+    pass is left holding a ticket with a price on it, no dishes, and nobody to
+    ask — which is exactly what was on the screen: seven of them, all placed
+    from phones by the pool.
+
+    Lines first turns the same failure into orphaned rows: an order_id nothing
+    points at, invisible to every screen, harmless. Nothing in the system reads
+    a line except through its order, so an order that never arrives takes its
+    lines out of sight with it.
+
+    The ids make it possible. `orderId` is decided here rather than by the
+    server, so the lines can name the order they belong to before it exists.
+    A retry after a number collision writes its lines again under a new id and
+    leaves the first set orphaned, which is the same harmless nothing.
+  */
   const items = await Promise.all(
     lines.map((line) =>
       createOrQueue<OrderItem>('order_items', ID.unique(), {
         venue_id: venueId,
-        order_id: order.$id,
+        // The id decided above, not `order.$id` — the order does not exist
+        // yet, and that is the whole point. See the note by `orderId`.
+        order_id: orderId,
         menu_item_id: line.menu_item_id,
         // Snapshot the name and price: a later menu edit must not rewrite what
         // this customer ordered or what they were charged.
@@ -548,6 +555,26 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
       }, mine),
     ),
   );
+
+  let order: Order;
+  try {
+    order = await createOrQueue<Order>('orders', orderId, payload, mine);
+  } catch (e) {
+    // Two terminals took the same number in the same instant; take the next one.
+    const msg = e instanceof Error ? e.message : '';
+    if (/already exists|unique/i.test(msg) && attempt < 5) {
+      /*
+        The attempt number is carried into the number itself.
+
+        It was not, and that is what turned one collision into five identical
+        failures: each retry worked the next number out from the same rows,
+        got the same answer, and was refused for the same reason. The message
+        that reached the bar was about a unique attribute constraint.
+      */
+      return createOrder(input, attempt + 1);
+    }
+    throw e;
+  }
 
   return { order, items: items as unknown as OrderItem[] };
 }
