@@ -12,11 +12,12 @@ import {
   listCreatedBetween, listByIds, setShiftSealed, isSealed, describeSeal, lockedProblem,
   rangeTotals, kindsWorthShowing, KIND_LABELS, MODULE_LABELS, canOpen, floatOrigin,
   kindOf, countedParts, partLines, partsWords, unexplained,
-  shiftCountEntries, pairCounts, countsSummary, countsGapWords,
+  shiftCountEntries, countsByPhase, phaseSummary, bothEndsWords, countsGapWords,
+  buildReportHtml, openPrintable,
   tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS,
 } from '@snpos/core';
 import type {
-  Module, Doc, CashHandover, MoneyKind, CountedParts, Settings, CountPair, TabOrder,
+  Module, Doc, CashHandover, MoneyKind, CountedParts, Settings, CountRow, CountEntry, TabOrder,
 } from '@snpos/core';
 import { useSession } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
@@ -343,10 +344,10 @@ export function ShiftsPage() {
    *
    * Both were already recorded and neither was readable once the shift closed
    * — the count sheet only ever shows the end being counted now. See
-   * pairCounts: the two ends belong on one row, because nobody has ever asked
-   * "what was the closing figure" without also meaning "against what".
+   * countsByPhase: each end is set against the expected figure IT was measured
+   * against — what the shift before left, then that less everything sold.
    */
-  const [detailCounts, setDetailCounts] = useState<CountPair[] | null>(null);
+  const [detailCounts, setDetailCounts] = useState<CountEntry[] | null>(null);
   /**
    * Issuing an admin's say-so that a shift may close over money on a tab.
    *
@@ -359,6 +360,70 @@ export function ShiftsPage() {
   const [issued, setIssued] = useState<string | null>(null);
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [releaseError, setReleaseError] = useState<string | null>(null);
+
+  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+
+  /**
+   * The two counts as a document somebody can hand over.
+   *
+   * Built from the same figures rather than by printing the screen: a modal is
+   * laid out for a modal, and a stock argument that has reached the point of
+   * needing paper needs an A4 page with both ends on it, not a screenshot.
+   *
+   * The browser turns it into a PDF, which is why there is no PDF library
+   * here. See buildReportHtml.
+   */
+  const printCounts = (
+    shift: Shift,
+    opened: CountRow[],
+    closed: CountRow[],
+    openSum: ReturnType<typeof phaseSummary>,
+    closeSum: ReturnType<typeof phaseSummary>,
+    verdict: string | null,
+    gap: string | null,
+  ) => {
+    const table = (title: string, rows: CountRow[]) => ({
+      title,
+      headers: ['What', 'Counted', 'Expected', 'Variance', 'Worth'],
+      // Everything but the name, so the figures line up down the page.
+      numeric: [1, 2, 3, 4],
+      rows: rows.map((c) => [
+        c.undone ? `${c.name} (count taken back)` : c.name,
+        c.counted === null ? '—' : String(c.counted),
+        String(c.expected),
+        c.varianceQty === 0 ? '—' : c.varianceQty > 0 ? `+${c.varianceQty}` : String(c.varianceQty),
+        c.varianceQty === 0 ? '' : money(Math.abs(c.varianceValue)),
+      ]),
+    });
+
+    const tables = [];
+    if (opened.length) tables.push(table('Counted in, against what the last shift left', opened));
+    if (closed.length) tables.push(table('Counted out, against what should have been left', closed));
+
+    openPrintable(
+      buildReportHtml({
+        title: 'Stock counts and variances',
+        restaurantName: settings?.restaurant_name ?? '',
+        period: `${shift.code ?? 'Shift'} · ${MODULE_LABELS[shift.module ?? 'kitchen']} · `
+          + `${new Date(shift.opened_at).toLocaleString()}`
+          + `${shift.closed_at ? ` to ${new Date(shift.closed_at).toLocaleString()}` : ' (still open)'}`,
+        generatedAt: new Date(),
+        generatedBy: profile?.display_name ?? '',
+        brandColor: settings?.primary_color,
+        stats: [
+          { label: 'Opened', value: money(openSum.netValue), note: `${openSum.counted} of ${openSum.items} counted` },
+          { label: 'Closed', value: money(closeSum.netValue), note: `${closeSum.counted} of ${closeSum.items} counted` },
+          { label: 'Short at close', value: money(closeSum.shortValue), note: `${closeSum.short} lines` },
+          { label: 'Over at close', value: money(closeSum.overValue), note: `${closeSum.over} lines` },
+        ],
+        tables,
+        // The sentences go on the paper too. A page of figures with the
+        // reading left off is a page that gets read the wrong way.
+        note: [gap, verdict].filter(Boolean).join(' '),
+      }),
+      `counts-${shift.code ?? shift.$id}`,
+    );
+  };
 
   const openRelease = async (shift: Shift) => {
     setReleasing(shift);
@@ -441,7 +506,7 @@ export function ShiftsPage() {
       not, and a failure here must not take the money figures down with it.
     */
     shiftCountEntries(shift.$id, (shift.module ?? 'kitchen') as Module)
-      .then((entries) => setDetailCounts(pairCounts(entries)))
+      .then((entries) => setDetailCounts(entries))
       .catch(() => setDetailCounts([]));
     try {
       const rows = await listAll<ShiftPaymentRow>('payments', [Query.equal('shift_id', shift.$id)]);
@@ -1138,74 +1203,96 @@ export function ShiftsPage() {
             have something under it.
           */}
           {detailCounts && detailCounts.length > 0 && (() => {
-            const summary = countsSummary(detailCounts);
-            const gap = countsGapWords(summary);
+            const { open: opened, close: closed } = countsByPhase(detailCounts);
+            const openSum = phaseSummary(opened);
+            const closeSum = phaseSummary(closed);
+            const gap = countsGapWords(opened, closed);
+            const verdict = bothEndsWords(openSum, closeSum, money);
+
+            const phaseTable = (title: string, rows: CountRow[], sum: typeof openSum) => (
+              rows.length === 0 ? null : (
+                <>
+                  <h4 style={{ margin: '1rem 0 0.3rem' }}>
+                    {title}
+                    <span className="small dim" style={{ fontWeight: 400, marginLeft: '0.5rem' }}>
+                      {sum.counted} of {sum.items} counted
+                      {sum.short > 0 && `, ${sum.short} short ${money(sum.shortValue)}`}
+                      {sum.over > 0 && `, ${sum.over} over ${money(sum.overValue)}`}
+                    </span>
+                  </h4>
+                  <div className="table-wrap">
+                    <table className="data">
+                      <thead>
+                        <tr>
+                          <th>What</th>
+                          {/* What was actually on the shelf, and what the books
+                              said should be there AT THAT MOMENT — which is a
+                              different figure at each end. */}
+                          <th className="num">Counted</th>
+                          <th className="num">Expected</th>
+                          <th className="num">Variance</th>
+                          <th className="num">Worth</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((c) => (
+                          <tr key={c.itemId} style={c.undone ? { opacity: 0.55 } : undefined}>
+                            <td>
+                              {c.name}
+                              {/* Kept and marked rather than hidden: somebody
+                                  stood at the shelf and wrote a number, and the
+                                  shelf moved because of it. */}
+                              {c.undone && <Badge tone="warn">Taken back</Badge>}
+                            </td>
+                            {/* A blank is a blank. Nobody who failed to count a
+                                shelf has said it is empty. */}
+                            <td className="num">{c.counted ?? <span className="dim">{'\u2014'}</span>}</td>
+                            <td className="num dim">{c.expected}</td>
+                            <td className="num">
+                              {c.varianceQty === 0
+                                ? <span className="dim">{'\u2014'}</span>
+                                : (
+                                  <Badge tone={c.varianceQty < 0 ? 'danger' : 'warn'}>
+                                    {c.varianceQty > 0 ? `+${c.varianceQty}` : c.varianceQty}
+                                  </Badge>
+                                )}
+                            </td>
+                            <td className="num dim">
+                              {c.varianceQty === 0 ? '' : money(Math.abs(c.varianceValue))}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )
+            );
+
             return (
               <>
-                <h3 style={{ margin: '1.4rem 0 0.4rem' }}>
-                  What was on the shelf
-                  <span className="small dim" style={{ fontWeight: 400, marginLeft: '0.5rem' }}>
-                    {summary.items} counted
-                    {summary.short > 0 && `, ${summary.short} short`}
-                    {summary.shortValue > 0 && ` (${settings ? formatMoney(summary.shortValue, settings) : summary.shortValue})`}
-                    {summary.over > 0 && `, ${summary.over} over`}
-                  </span>
-                </h3>
+                <div className="row" style={{ alignItems: 'baseline', justifyContent: 'space-between', margin: '1.4rem 0 0.2rem' }}>
+                  <h3 style={{ margin: 0 }}>What was on the shelf</h3>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => printCounts(detail, opened, closed, openSum, closeSum, verdict, gap)}
+                  >
+                    Export as PDF
+                  </Button>
+                </div>
 
-                {/* A missing end is said rather than left to be inferred from a
-                    column of dashes, because what it does to the OTHER end's
+                {/* A missing end is said rather than left to be inferred from an
+                    absent table, because what it does to the OTHER end's
                     figures is the thing worth knowing. */}
                 {gap && <Notice tone="warn">{gap}</Notice>}
+                {/* Read alone a closing shortage accuses whoever worked the
+                    shift; read against the opening one it may be something they
+                    walked into. */}
+                {verdict && <Notice tone={closeSum.netValue > 0 ? 'warn' : 'info'}>{verdict}</Notice>}
 
-                <div className="table-wrap">
-                  <table className="data">
-                    <thead>
-                      <tr>
-                        <th>What</th>
-                        <th className="num">Counted in</th>
-                        <th className="num">Counted out</th>
-                        {/* Not "sold". Opening minus closing is everything that
-                            left for any reason, which is exactly why it is
-                            worth reading beside what the tills say. */}
-                        <th className="num">Went</th>
-                        <th className="num">Difference</th>
-                        <th className="num">Worth</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detailCounts.map((c) => (
-                        <tr key={c.itemId} style={c.undone ? { opacity: 0.55 } : undefined}>
-                          <td>
-                            {c.name}
-                            {/* Kept and marked rather than hidden: somebody
-                                stood at the shelf and wrote a number, and the
-                                shelf moved because of it. */}
-                            {c.undone && <Badge tone="warn">Taken back</Badge>}
-                          </td>
-                          {/* A blank is a blank. Nobody who failed to count a
-                              shelf has said it is empty. */}
-                          <td className="num dim">{c.opened ?? <span className="dim">{'\u2014'}</span>}</td>
-                          <td className="num dim">{c.closed ?? <span className="dim">{'\u2014'}</span>}</td>
-                          <td className="num">{c.went ?? <span className="dim">{'\u2014'}</span>}</td>
-                          <td className="num">
-                            {c.varianceQty === 0
-                              ? <span className="dim">{'\u2014'}</span>
-                              : (
-                                <Badge tone={c.varianceQty < 0 ? 'danger' : 'warn'}>
-                                  {c.varianceQty > 0 ? `+${c.varianceQty}` : c.varianceQty}
-                                </Badge>
-                              )}
-                          </td>
-                          <td className="num dim">
-                            {c.varianceQty === 0
-                              ? ''
-                              : settings ? formatMoney(Math.abs(c.varianceValue), settings) : Math.abs(c.varianceValue)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                {phaseTable('Counted in, against what the last shift left', opened, openSum)}
+                {phaseTable('Counted out, against what should have been left', closed, closeSum)}
               </>
             );
           })()}

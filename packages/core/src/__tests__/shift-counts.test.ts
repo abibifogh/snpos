@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pairCounts, countsSummary, countsGapWords } from '../shift-counts.ts';
+import {
+  countsForPhase, countsByPhase, phaseSummary, bothEndsWords, countsGapWords,
+} from '../shift-counts.ts';
+
+const cash = (n: number) => `GH₵${(n / 100).toFixed(2)}`;
 
 const entry = (over: Record<string, unknown> = {}) => ({
   itemId: 'i1',
@@ -11,142 +15,139 @@ const entry = (over: Record<string, unknown> = {}) => ({
   varianceQty: 0,
   varianceValue: 0,
   ...over,
-}) as Parameters<typeof pairCounts>[0][number];
+}) as Parameters<typeof countsForPhase>[0][number];
 
-test('both ends of the shift land on one row', () => {
+test('each count is set against its own expected figure, not against the other count', () => {
   /**
-   * The whole point. Both counts were already recorded and only ever readable
-   * one at a time, so the question people actually ask afterwards — what did
-   * they take on, what did they hand over — meant reading two lists and
-   * subtracting in your head.
+   * The question a count answers is "does what is on the shelf match what
+   * should be there" — asked twice, with two different answers to "should be".
+   * At the open it is what the shift before left; at the close it is that
+   * opening figure less everything the tills sold.
+   *
+   * Setting the opening count against the CLOSING count answers a different
+   * and less useful question: what left the shelf, without saying whether that
+   * was right.
    */
-  const [pair] = pairCounts([
-    entry({ phase: 'open', counted: 12 }),
-    entry({ phase: 'close', counted: 5 }),
+  const { open, close } = countsByPhase([
+    entry({ phase: 'open', counted: 12, expected: 14, varianceQty: -2, varianceValue: -600 }),
+    entry({ phase: 'close', counted: 5, expected: 6, varianceQty: -1, varianceValue: -300 }),
   ]);
-  assert.equal(pair.opened, 12);
-  assert.equal(pair.closed, 5);
-  assert.equal(pair.went, 7);
+
+  assert.deepEqual(
+    [open[0].counted, open[0].expected, open[0].varianceQty],
+    [12, 14, -2],
+  );
+  assert.deepEqual(
+    [close[0].counted, close[0].expected, close[0].varianceQty],
+    [5, 6, -1],
+  );
 });
 
-test('what left the shelf is not called sold', () => {
-  /*
-    Opening minus closing is everything that went for any reason — sold,
-    spilt, broken, taken — which is exactly why it is worth putting beside
-    what the tills say was sold rather than being labelled as though it
-    already agreed with them.
-  */
-  const [pair] = pairCounts([
-    entry({ phase: 'open', counted: 10 }),
-    entry({ phase: 'close', counted: 3 }),
-  ]);
-  assert.equal(pair.went, 7);
-  assert.ok(!('sold' in pair), 'nothing here claims to be a sales figure');
-});
-
-test('one end counted still shows, and never reads as zero at the other', () => {
-  /**
-   * Half a record is a great deal better than none, but a missing count is
-   * missing — treating it as nought would invent a shelf that emptied
-   * completely or one that started empty.
-   */
-  const [opened] = pairCounts([entry({ phase: 'open', counted: 12 })]);
-  assert.equal(opened.opened, 12);
-  assert.equal(opened.closed, null);
-  assert.equal(opened.went, null, 'nothing can be worked out from one end');
-
-  const [closed] = pairCounts([entry({ phase: 'close', counted: 5 })]);
-  assert.equal(closed.opened, null);
-  assert.equal(closed.went, null);
+test('one end counted is still shown, and the other is empty rather than nought', () => {
+  // Half a record is a great deal better than none, but a missing count is
+  // missing — treating it as zero would invent a shelf that emptied.
+  const { open, close } = countsByPhase([entry({ phase: 'open', counted: 12 })]);
+  assert.equal(open.length, 1);
+  assert.equal(close.length, 0);
 });
 
 test('a line left blank is blank, not nought', () => {
   // Somebody who did not count a shelf has not said it is empty.
-  const [pair] = pairCounts([
-    entry({ phase: 'open', counted: null }),
-    entry({ phase: 'close', counted: 4 }),
-  ]);
-  assert.equal(pair.opened, null);
-  assert.equal(pair.went, null);
+  const [row] = countsForPhase([entry({ counted: null })], 'close');
+  assert.equal(row.counted, null);
 });
 
-test('only the close carries a variance', () => {
-  /*
-    An opening count SETS the shelf rather than disagreeing with it, so a
-    variance recorded against one would be a disagreement with the shift
-    before — somebody else's argument, on this shift's row.
-  */
-  const [pair] = pairCounts([
-    entry({ phase: 'open', counted: 12, varianceQty: -3, varianceValue: 900 }),
-    entry({ phase: 'close', counted: 5, varianceQty: -1, varianceValue: 300 }),
-  ]);
-  assert.equal(pair.varianceQty, -1);
-  assert.equal(pair.varianceValue, 300);
+test('a thing counted twice at one end takes the correction', () => {
+  const [row] = countsForPhase([
+    entry({ counted: 5, varianceQty: -1 }),
+    entry({ counted: 6, varianceQty: 0 }),
+  ], 'close');
+  assert.equal(row.counted, 6);
+  assert.equal(row.varianceQty, 0);
 });
 
 test('worst first, because a page sorted by name buries the one that matters', () => {
-  const pairs = pairCounts([
+  const rows = countsForPhase([
     entry({ itemId: 'a', name: 'Amarula', varianceQty: 0, varianceValue: 0 }),
-    entry({ itemId: 'z', name: 'Zonin', varianceQty: -9, varianceValue: 4300 }),
-    entry({ itemId: 'm', name: 'Malt', varianceQty: -1, varianceValue: 500 }),
-  ]);
-  assert.deepEqual(pairs.map((p) => p.name), ['Zonin', 'Malt', 'Amarula']);
+    entry({ itemId: 'z', name: 'Zonin', varianceQty: -9, varianceValue: -4300 }),
+    entry({ itemId: 'm', name: 'Malt', varianceQty: -1, varianceValue: -500 }),
+  ], 'close');
+  assert.deepEqual(rows.map((r) => r.name), ['Zonin', 'Malt', 'Amarula']);
 });
 
-test('a thing renamed since keeps the name somebody will recognise', () => {
-  const [pair] = pairCounts([
-    entry({ phase: 'open', name: 'Club small' }),
-    entry({ phase: 'close', name: 'Club 330ml' }),
-  ]);
-  assert.equal(pair.name, 'Club 330ml');
-});
-
-test('the summary separates short from over, and prices only the shortage', () => {
-  const pairs = pairCounts([
+test('the summary separates short from over and nets them', () => {
+  const rows = countsForPhase([
     entry({ itemId: 'a', name: 'A', varianceQty: -3, varianceValue: -900 }),
     entry({ itemId: 'b', name: 'B', varianceQty: 2, varianceValue: 600 }),
     entry({ itemId: 'c', name: 'C', varianceQty: 0, varianceValue: 0 }),
-  ]);
-  const s = countsSummary(pairs);
+  ], 'close');
+  const s = phaseSummary(rows);
   assert.equal(s.short, 1);
   // Positive, because it is a loss and a negative loss reads backwards.
   assert.equal(s.shortValue, 900);
   assert.equal(s.over, 1);
-  assert.equal(s.items, 3);
+  assert.equal(s.overValue, 600);
+  // So a sheet that balances out reads as balanced rather than as two problems.
+  assert.equal(s.netValue, 300);
+  assert.equal(s.counted, 3);
 });
 
-test('a count an admin took back is not counted as a shortage', () => {
+test('a count an admin took back is not totalled as a shortage', () => {
+  const rows = countsForPhase([
+    entry({ varianceQty: -9, varianceValue: -4300, undone: true }),
+  ], 'close');
+  assert.equal(rows[0].undone, true, 'still shown, and marked');
+  assert.equal(phaseSummary(rows).short, 0);
+  assert.equal(phaseSummary(rows).shortValue, 0);
+});
+
+test('a shift that opened short inherited the problem, and is told so', () => {
   /**
-   * It happened — somebody stood at the shelf and wrote a number, and the
-   * shelf moved because of it — so the row stays. But the figure has been
-   * withdrawn, and adding it to a shortage would total a number that is no
-   * longer claimed by anybody.
+   * The reason both ends are reported rather than only the close. Read alone a
+   * closing shortage accuses whoever worked the shift; read against the
+   * opening one it may be something they walked into.
    */
-  const pairs = pairCounts([
-    entry({ itemId: 'a', name: 'A', varianceQty: -9, varianceValue: -4300, undone: true }),
-  ]);
-  assert.equal(pairs[0].undone, true, 'still shown, and marked');
-  assert.equal(countsSummary(pairs).short, 0);
-  assert.equal(countsSummary(pairs).shortValue, 0);
+  const open = phaseSummary(countsForPhase([entry({ phase: 'open', varianceQty: -3, varianceValue: -900 })], 'open'));
+  const closed = phaseSummary(countsForPhase([entry({ phase: 'close' })], 'close'));
+  const words = String(bothEndsWords(open, closed, cash));
+  assert.match(words, /opened GH₵9\.00 short/);
+  assert.match(words, /before this shift started/);
+});
+
+test('a shift that opened square and closed short made the problem', () => {
+  const open = phaseSummary(countsForPhase([entry({ phase: 'open' })], 'open'));
+  const closed = phaseSummary(countsForPhase([entry({ varianceQty: -3, varianceValue: -900 })], 'close'));
+  const words = String(bothEndsWords(open, closed, cash));
+  assert.match(words, /closed GH₵9\.00 short/);
+  assert.match(words, /happened on this shift/);
+});
+
+test('both ends off says to read one against the other', () => {
+  const open = phaseSummary(countsForPhase([entry({ phase: 'open', varianceQty: -2, varianceValue: -600 })], 'open'));
+  const closed = phaseSummary(countsForPhase([entry({ varianceQty: -3, varianceValue: -900 })], 'close'));
+  const words = String(bothEndsWords(open, closed, cash));
+  assert.match(words, /opened GH₵6\.00 short and closed GH₵9\.00 short/);
+  assert.match(words, /rather than on its own/);
+});
+
+test('a night where both ends agreed says nothing', () => {
+  // A notice on a shift that did everything right is a notice people learn to
+  // scroll past on the one that did not.
+  const clean = phaseSummary(countsForPhase([entry()], 'close'));
+  assert.equal(bothEndsWords(clean, clean, cash), null);
+});
+
+test('over is named as over, not as a shortage', () => {
+  const open = phaseSummary(countsForPhase([entry({ phase: 'open' })], 'open'));
+  const closed = phaseSummary(countsForPhase([entry({ varianceQty: 4, varianceValue: 1200 })], 'close'));
+  assert.match(String(bothEndsWords(open, closed, cash)), /closed GH₵12\.00 over/);
 });
 
 test('a missing end of the shift is said, not left to be inferred', () => {
-  const inOnly = countsSummary(pairCounts([entry({ phase: 'open', counted: 12 })]));
-  assert.match(String(countsGapWords(inOnly)), /never counted out/);
-
-  const outOnly = countsSummary(pairCounts([entry({ phase: 'close', counted: 5 })]));
-  assert.match(String(countsGapWords(outOnly)), /never counted in/);
-  // And why it matters: the closing figures are measured against the wrong
-  // thing, which is the argument this sentence exists to prevent.
-  assert.match(String(countsGapWords(outOnly)), /the shift before it left behind/);
-});
-
-test('a complete pair, or nothing counted at all, says nothing', () => {
-  // A notice on a shift that did everything right is a notice people learn to
-  // scroll past on the one that did not.
-  const both = countsSummary(pairCounts([
-    entry({ phase: 'open', counted: 12 }), entry({ phase: 'close', counted: 5 }),
-  ]));
-  assert.equal(countsGapWords(both), null);
-  assert.equal(countsGapWords(countsSummary([])), null);
+  const rows = countsForPhase([entry()], 'close');
+  assert.match(String(countsGapWords([], rows)), /never counted in/);
+  assert.match(String(countsGapWords([], rows)), /the shift before it left behind/);
+  assert.match(String(countsGapWords(rows, [])), /never counted out/);
+  assert.equal(countsGapWords(rows, rows), null);
+  assert.equal(countsGapWords([], []), null);
 });
