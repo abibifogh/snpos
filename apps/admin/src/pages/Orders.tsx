@@ -1791,6 +1791,26 @@ export function OrdersPage() {
                       amount: saying.amount,
                       takenBy: profile?.user_id ?? profile?.$id ?? user?.$id ?? '',
                     });
+                    /*
+                      A CLOSED SHIFT DOES NOT WORK ITSELF OUT AGAIN.
+
+                      An open one is read from its rows every time it is
+                      looked at, so a new payment simply appears in it. A
+                      closed one stored what it expected at the moment it
+                      closed, and that stored figure never moves on its own —
+                      so without this the payment would be written, the order
+                      would read correctly, and the night's cash and card
+                      totals would carry on saying what they said before.
+                      Which is the entire point of recording it.
+
+                      The variance corrects itself as a side effect, and in
+                      the right direction: the money was already in the drawer
+                      when it was counted, so the shift has been reading OVER
+                      by exactly this much ever since.
+
+                      A no-op on an open shift, so it is not special-cased.
+                    */
+                    await recomputeClosedShift(shiftId).catch(() => null);
                     setSaying(null);
                     setOpen(null);
                     await load();
