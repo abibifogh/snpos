@@ -77,6 +77,7 @@ export * from './item-history';
 export * from './shift-counts';
 export * from './tabs';
 export * from './tab-store';
+export * from './paid-by-hand';
 export * from './due';
 export * from './purchase-flags';
 export * from './purchase-alerts';

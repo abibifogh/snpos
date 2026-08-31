@@ -8,6 +8,7 @@ import {
   formatMoney, Query, toCsv, downloadCsv, buildReceiptHtml, openPrintable, receiptForOrder,
   settleOrderNumbers, recomputeOrderTotals, cancelOrder, removeOrder, recomputeClosedShift,
   voidPayment, isLivePayment, changePaymentMethod, logPaymentMethodChange,
+  unrecordedPaid, unrecordedWords, recordPayment,
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, flatten, MODULE_LABELS,
   listByIds, listCreatedBetween, moveOrderToShift, shiftChoices, moveProblem, moveEffects, describeMove,
   shiftDay, shiftsOnDay, dayMoveProblem, openShiftForDay,
@@ -91,6 +92,16 @@ export function OrdersPage() {
   const [qtyError, setQtyError] = useState<string | null>(null);
   /** Lines a maker has already been credited for. Read when the order opens. */
   const [credited, setCredited] = useState<string[]>([]);
+  /**
+   * Filling in how a bill marked paid by hand was actually paid.
+   *
+   * Not a cosmetic edit. It writes the payment that was never written, which
+   * is what puts the money into a method and a shift and gets it counted.
+   */
+  const [saying, setSaying] = useState<{ order: Order; amount: number } | null>(null);
+  const [sayMethod, setSayMethod] = useState('');
+  const [sayBusy, setSayBusy] = useState(false);
+  const [sayError, setSayError] = useState<string | null>(null);
   const toast = useToast();
 
   /*
@@ -1316,6 +1327,48 @@ export function OrdersPage() {
           )}
 
           <h3 style={{ margin: '1.2rem 0 0.4rem' }}>Payment</h3>
+
+          {/*
+            MARKED PAID, WITH NOTHING BEHIND IT.
+
+            Setting an order's payment to "paid" on the Change screen writes one
+            word and no payment row — and a row is what the rest of the system
+            runs on. It carries the method, so a shift knows whether the money
+            is in a drawer or on a card machine, and the shift, so the night can
+            be counted.
+
+            Without one the money is nowhere: no method to change, no shift to
+            count it in, missing from the cash and card totals, and the drawer
+            that actually holds it reads as over. Meanwhile the order says
+            "paid" from every angle except the one that matters.
+
+            So the gap is named and fillable. See paid-by-hand.
+          */}
+          {(() => {
+            const mine = payments.filter((p) => p.order_id === open.$id);
+            const missing = unrecordedPaid(open, mine);
+            if (missing <= 0) return null;
+            return (
+              <div style={{ marginBottom: '0.8rem' }}>
+                <Notice tone="warn">
+                  {unrecordedWords(missing, money)}
+                </Notice>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  style={{ marginTop: '0.5rem' }}
+                  onClick={() => {
+                    setSaying({ order: open, amount: missing });
+                    setSayMethod(methods[0]?.$id ?? '');
+                    setSayError(null);
+                  }}
+                >
+                  Say how it was paid
+                </Button>
+              </div>
+            );
+          })()}
+
           {payments.filter((p) => p.order_id === open.$id).length === 0 ? (
             <p className="small dim" style={{ margin: 0 }}>Nothing recorded against this order.</p>
           ) : (
@@ -1693,6 +1746,87 @@ export function OrdersPage() {
         </Modal>
       )}
 
+      {saying && (
+        <Modal
+          title={`How was ${saying.order.order_no} paid?`}
+          onClose={() => setSaying(null)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setSaying(null)}>Cancel</Button>
+              <Button
+                variant="primary"
+                loading={sayBusy}
+                onClick={async () => {
+                  const method = methods.find((m) => m.$id === sayMethod);
+                  if (!method) { setSayError('Choose how it was paid.'); return; }
+                  setSayBusy(true);
+                  setSayError(null);
+                  try {
+                    /*
+                      THE SHIFT THE SALE BELONGS TO, not today's.
+
+                      The money arrived on the night the order was rung up, and
+                      putting it into whichever shift happens to be open now
+                      would make tonight's drawer read over and that night's
+                      still read short — two wrong figures where there was one.
+
+                      An order with no shift at all is the one case with nowhere
+                      honest to put it, and it is refused rather than guessed.
+                    */
+                    const shiftId = saying.order.shift_id ?? '';
+                    if (!shiftId) {
+                      setSayError(
+                        'This order is not on any shift, so there is no night to count the money in. '
+                        + 'Move it onto a shift first, then say how it was paid.',
+                      );
+                      return;
+                    }
+                    await recordPayment({
+                      venueId: saying.order.venue_id,
+                      order: saying.order,
+                      shiftId,
+                      shiftModule: saying.order.module ?? 'kitchen',
+                      methodId: method.$id,
+                      methodKind: method.kind ?? '',
+                      amount: saying.amount,
+                      takenBy: profile?.user_id ?? profile?.$id ?? user?.$id ?? '',
+                    });
+                    setSaying(null);
+                    setOpen(null);
+                    await load();
+                    toast(`${saying.order.order_no} recorded as ${method.name}`);
+                  } catch (e) {
+                    setSayError(humanError(e));
+                  } finally {
+                    setSayBusy(false);
+                  }
+                }}
+              >
+                Record it
+              </Button>
+            </>
+          }
+        >
+          {sayError && <div style={{ marginBottom: '1rem' }}><Notice>{sayError}</Notice></div>}
+          <p className="small dim" style={{ marginTop: 0 }}>
+            This writes the payment that was never written, for {money(saying.amount)}. It goes into the shift
+            this order was sold on — not today's — so the night it belongs to is the night that counts it.
+          </p>
+          <Field label="How it was paid">
+            <Select value={sayMethod} onChange={(e) => { setSayMethod(e.target.value); setSayError(null); }}>
+              <option value="">Choose a method…</option>
+              {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
+            </Select>
+          </Field>
+          {/* Once it is a real payment it behaves like every other one: the
+              method can be changed again, and it can be voided. */}
+          <p className="small dim" style={{ marginBottom: 0 }}>
+            After this it is an ordinary payment — you can change the method again or void it from the list
+            above.
+          </p>
+        </Modal>
+      )}
+
       {editing && (
         <Modal
           title={`Change ${editing.order_no}`}
@@ -1738,6 +1872,22 @@ export function OrdersPage() {
             unpaid with money it never received still sitting in the takings.
             Now the step exists, and this says where it is.
           */}
+          {/*
+            Said where the gap is MADE, not only where it is found.
+
+            Setting this to paid writes one word and no payment row, and a row
+            is what carries the method and the shift. Nothing stops an admin
+            doing it — sometimes it is the only honest option, and the money
+            really did arrive — but they should know a second step is waiting
+            rather than discover it when a drawer reads over.
+          */}
+          {newPayment === 'paid' && editing.payment_status !== 'paid' && (
+            <Notice tone="warn">
+              Marking it paid does not record HOW it was paid. Until you say, the money is in no method and no
+              shift, so it never reaches the cash or card totals. Open this order afterwards and use
+              &ldquo;Say how it was paid&rdquo;.
+            </Notice>
+          )}
           {newPayment !== 'paid' && editing.payment_status === 'paid' && (
             <Notice tone="warn">
               This order has payment records against it. Changing the status here does not touch them, so the money
