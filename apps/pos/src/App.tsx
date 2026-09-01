@@ -236,12 +236,44 @@ export function App() {
     }
   }, [lockStore]);
 
+  /**
+   * Who could open this till, read again rather than only at boot.
+   *
+   * A till stays on the same page for days. Read once, its list of who has a
+   * PIN is as old as the last time somebody reloaded — so a PIN set this
+   * afternoon is unknown to the tablet that was switched on this morning, and
+   * the person standing at it is told their PIN is wrong while the same PIN
+   * works on any device that has loaded the page since.
+   */
+  const loadStaff = useCallback(async (): Promise<StaffProfile[] | null> => {
+    const rows = await listAll<StaffProfile & Doc>('staff_profiles').catch(() => null);
+    if (rows) setStaff(rows);
+    return rows;
+  }, []);
+
   useEffect(() => {
     if (!ctx) return;
-    void listAll<StaffProfile & Doc>('staff_profiles')
-      .then((rows) => setStaff(rows))
-      .catch(() => setStaff([]));
-  }, [ctx?.venue.$id]);
+    void loadStaff().then((rows) => { if (!rows) setStaff([]); });
+  }, [ctx?.venue.$id, loadStaff]);
+
+  /*
+    And again while the till is locked, which is exactly when it matters.
+
+    Somebody is about to type a PIN into it. A minute is often enough for the
+    list to be fresh before they even reach the pad, so the fallback inside the
+    lock screen stays the last resort rather than the usual path.
+  */
+  useEffect(() => {
+    if (!locked || !ctx) return undefined;
+    const timer = window.setInterval(() => void loadStaff(), 60_000);
+    const now = () => void loadStaff();
+    window.addEventListener('online', now);
+    void loadStaff();
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('online', now);
+    };
+  }, [locked, ctx?.venue.$id, loadStaff]);
 
   const lock = () => {
     /*
@@ -849,6 +881,9 @@ export function App() {
         */
         onLock={lock}
         onUnlock={unlock}
+        // The last resort: a PIN nobody on the cached list matched asks the
+        // server once before it is refused.
+        refreshStaff={loadStaff}
       />
       <OfflineBar queued={queued} onRetry={() => void flushQueue()} />
       {/* Sitting above the till rather than inside a shift panel, because it

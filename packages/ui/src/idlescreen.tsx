@@ -32,6 +32,7 @@ export function IdleScreen({
   firstUse,
   onUnlock,
   onLock,
+  refreshStaff,
 }: {
   settings?: Settings | null;
   /** Minutes of quiet before it appears. 0 turns it off. */
@@ -49,6 +50,14 @@ export function IdleScreen({
    */
   wakeSignal?: number;
   onWake?: () => void;
+  /**
+   * Fetch the staff list again, for a PIN nobody on the cached one matched.
+   *
+   * Optional: a screen that does not supply it behaves exactly as before. See
+   * the note in tryUnlock for why a till that has been open all day cannot be
+   * trusted to know who has a PIN.
+   */
+  refreshStaff?: () => Promise<Unlocker[] | null>;
   /**
    * Locked on purpose, rather than asleep from disuse.
    *
@@ -229,6 +238,39 @@ export function IdleScreen({
           return;
         }
       }
+
+      /*
+        NOBODY HERE MATCHED, SO ASK AGAIN BEFORE SAYING NO.
+
+        The staff list is read when the app starts and a till stays on the same
+        page for days. So a PIN set this afternoon is not on the tablet that
+        was switched on this morning, and the person standing there is told
+        their PIN is wrong — while the same PIN works on any device that has
+        loaded the page since.
+
+        Nothing about that announces itself. It looks like a forgotten PIN, and
+        the answer everybody reaches for is to set a new one, which does not
+        work either.
+
+        So a failure asks the server once, and only once: a wrong PIN must
+        still cost a wrong PIN's worth of waiting rather than a round trip per
+        digit, and the refusal below is what makes guessing expensive.
+      */
+      if (refreshStaff) {
+        const fresh = await refreshStaff().catch(() => null);
+        // Only rows the cached list did not already have. Re-checking the same
+        // people would be doing the loop above twice for nothing.
+        const known = new Set((staff ?? []).map((p) => p.$id));
+        for (const person of unlockers(fresh ?? []).filter((p) => !known.has(p.$id))) {
+          if (await verifyPin(pin, person.pin_hash)) {
+            setEntry('');
+            setWrong(0);
+            onUnlock?.(person);
+            return;
+          }
+        }
+      }
+
       const tries = wrong + 1;
       setWrong(tries);
       setEntry('');

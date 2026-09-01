@@ -750,15 +750,44 @@ export function App() {
                         if (k === 'clear') return setPinEntry('');
                         if (k !== 'ok') return setPinEntry((p) => (p.length < 6 ? p + k : p));
 
+                        const accept = (person: StaffProfile) => {
+                          setWho(person);
+                          setPinEntry('');
+                          setSwitching(false);
+                          setReady(true);
+                        };
+
                         for (const person of staff) {
-                          if (await verifyPin(pinEntry, person.pin_hash)) {
-                            setWho(person);
-                            setPinEntry('');
-                            setSwitching(false);
-                            setReady(true);
-                            return;
+                          if (await verifyPin(pinEntry, person.pin_hash)) return accept(person);
+                        }
+
+                        /*
+                          NOBODY HERE MATCHED, SO ASK AGAIN BEFORE SAYING NO.
+
+                          The staff list is read when this screen starts, and a
+                          pass display stays on the same page for days. A PIN
+                          set this afternoon is therefore unknown to it, and
+                          the cook standing there is told their PIN is not
+                          recognised — while the same PIN works on any device
+                          that has loaded the page since.
+
+                          Nothing about that announces itself. It reads as a
+                          forgotten PIN, and the answer everybody reaches for
+                          is to set a new one, which does not work either.
+
+                          Once, and only on a failure: a wrong PIN should still
+                          cost a wrong PIN rather than a round trip per go.
+                        */
+                        const fresh = await listAll<StaffProfile>('staff_profiles').catch(() => null);
+                        if (fresh) {
+                          const usable = fresh.filter((p) => p.active && p.pin_hash);
+                          setStaff(usable);
+                          const known = new Set(staff.map((p) => p.$id));
+                          for (const person of usable.filter((p) => !known.has(p.$id))) {
+                            if (await verifyPin(pinEntry, person.pin_hash)) return accept(person);
                           }
                         }
+
                         setPinError('PIN not recognised.');
                         setPinEntry('');
                       }}
