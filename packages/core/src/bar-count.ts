@@ -460,7 +460,54 @@ export interface FiledCheck {
   variance_value?: number;
   checked_by?: string;
   undone_at?: string | null;
+  undone_by?: string | null;
+  /**
+   * Whether this line has moved the shelf. False while it waits for an admin.
+   * Absent on rows from before approval existed, which had already moved it.
+   */
+  applied?: boolean | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  rejected_by?: string | null;
+  rejected_at?: string | null;
 }
+
+/* ------------------------------------------------- held until agreed */
+
+/**
+ * Whether a counted line may move the shelf on its own.
+ *
+ * A count that found exactly what was expected changes nothing, and holding
+ * it would be a queue of approvals that approve nothing. A count that found a
+ * difference is a claim that stock is missing or has appeared, and that claim
+ * moves real figures — so it waits for somebody who can see the whole
+ * business to agree with it.
+ */
+export const movesOnItsOwn = (variance: number): boolean => variance === 0;
+
+/** Still waiting for an admin. */
+export const isPending = (line: Pick<FiledCheck, 'applied' | 'rejected_at'>): boolean =>
+  line.applied === false && !line.rejected_at;
+
+/** Looked at and refused. The shelf was never moved. */
+export const isRejected = (line: Pick<FiledCheck, 'rejected_at'>): boolean => !!line.rejected_at;
+
+/**
+ * Has this line actually moved the shelf?
+ *
+ * Absent is yes: every row written before approval existed moved the shelf
+ * the moment it was filed, and reading those as unapplied would offer to
+ * apply a year of old counts a second time.
+ */
+export const hasMoved = (line: Pick<FiledCheck, 'applied' | 'rejected_at'>): boolean =>
+  line.applied !== false && !line.rejected_at;
+
+export type CountState = 'pending' | 'applied' | 'rejected' | 'undone' | 'unchanged';
+
+/** A prefix that marks a store-room count, which belongs to no shift. */
+export const STORE_COUNT_PREFIX = 'store:';
+export const storeCountId = (locationId: string): string => `${STORE_COUNT_PREFIX}${locationId}`;
+export const isStoreCount = (shiftId: string): boolean => shiftId.startsWith(STORE_COUNT_PREFIX);
 
 export interface FiledCount {
   /** What identifies this count: one shift, one end of it. */
@@ -469,12 +516,42 @@ export interface FiledCount {
   /** When it was filed, taken from the earliest row in it. */
   at: string;
   lines: FiledCheck[];
-  /** How far the shelf moved because of it, in money. */
+  /** What the differences in it are worth, in money. */
   worth: number;
   /** Lines whose number differed from what was expected. */
   changed: number;
+  /** Lines still waiting for an admin before they move anything. */
+  pending: number;
   undoneAt?: string;
+  undoneBy?: string;
+  countedBy?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectedBy?: string;
+  rejectedAt?: string;
 }
+
+/**
+ * Where a count stands, as one word.
+ *
+ * The order of the checks is the order of what matters: a count taken back
+ * was applied first, and a count refused never moved anything, whatever else
+ * is on its rows.
+ */
+export function countState(count: FiledCount): CountState {
+  if (count.undoneAt) return 'undone';
+  if (count.rejectedAt) return 'rejected';
+  if (count.pending > 0) return 'pending';
+  if (count.changed === 0) return 'unchanged';
+  return 'applied';
+}
+
+export const countStateLabel = (state: CountState): string =>
+  state === 'pending' ? 'Waiting for approval'
+    : state === 'applied' ? 'Applied'
+      : state === 'rejected' ? 'Refused'
+        : state === 'undone' ? 'Taken back'
+          : 'Nothing to apply';
 
 /**
  * The counts already filed, newest first.
@@ -502,18 +579,24 @@ export function filedCounts(rows: FiledCheck[]): FiledCount[] {
       lines: [],
       worth: 0,
       changed: 0,
+      pending: 0,
       undoneAt: r.undone_at ?? undefined,
+      countedBy: r.checked_by ?? undefined,
     };
     group.lines.push(r);
     if ((r.variance_qty ?? 0) !== 0) {
       group.changed += 1;
       group.worth += Math.abs(r.variance_value ?? 0);
     }
+    if (isPending(r)) group.pending += 1;
     // The earliest row is when the count was filed; they are written in a loop
     // and the last one is only when the loop finished.
     if (at && (!group.at || at < group.at)) group.at = at;
     // One line taken back takes the count with it — they are undone together.
-    if (r.undone_at) group.undoneAt = r.undone_at;
+    if (r.undone_at) { group.undoneAt = r.undone_at; group.undoneBy = r.undone_by ?? group.undoneBy; }
+    if (r.approved_at) { group.approvedAt = r.approved_at; group.approvedBy = r.approved_by ?? group.approvedBy; }
+    if (r.rejected_at) { group.rejectedAt = r.rejected_at; group.rejectedBy = r.rejected_by ?? group.rejectedBy; }
+    if (!group.countedBy && r.checked_by) group.countedBy = r.checked_by;
     groups.set(key, group);
   }
 
@@ -537,12 +620,41 @@ export function filedCounts(rows: FiledCheck[]): FiledCount[] {
  */
 export function undoDeltas(count: FiledCount): { ingredientId: string; delta: number }[] {
   return count.lines
-    .filter((l) => (l.variance_qty ?? 0) !== 0)
+    // Only what actually moved the shelf. A line still waiting, or one that
+    // was refused, moved nothing and there is nothing to put back.
+    .filter((l) => (l.variance_qty ?? 0) !== 0 && hasMoved(l))
     .map((l) => ({ ingredientId: l.ingredient_id, delta: -(l.variance_qty ?? 0) }));
+}
+
+/**
+ * What approving a count does to each shelf.
+ *
+ * THE DELTA, never the counted figure. The count was taken hours ago and the
+ * shelf has been sold from since; setting it to the counted number now would
+ * erase every sale in between. Applying the difference the count found leaves
+ * those sales exactly where they are. The same reasoning as undoDeltas, in the
+ * other direction.
+ */
+export function approveDeltas(count: FiledCount): { checkId: string; ingredientId: string; delta: number }[] {
+  return count.lines
+    .filter((l) => isPending(l) && (l.variance_qty ?? 0) !== 0)
+    .map((l) => ({ checkId: l.$id, ingredientId: l.ingredient_id, delta: l.variance_qty ?? 0 }));
+}
+
+/** What to tell whoever just filed a count that is now waiting. */
+export function heldWords(pending: number, format: (n: number) => string, worth: number): string | null {
+  if (pending <= 0) return null;
+  return `${pending} ${pending === 1 ? 'line' : 'lines'} found a difference (${format(worth)}) and ${pending === 1 ? 'is' : 'are'} `
+    + 'waiting for an admin to agree before the stock figures move. Everything that matched has been recorded '
+    + 'as counted.';
 }
 
 /** Why this count cannot be taken back, or nothing. */
 export function undoProblem(count: FiledCount | null | undefined): string | null {
+  if (count && count.pending > 0) {
+    return 'This count is still waiting for approval, so it has not moved anything yet. Refuse it instead.';
+  }
+  if (count && count.rejectedAt) return 'This count was refused, so it never moved the shelf.';
   if (!count) return 'That count could not be found.';
   if (count.undoneAt) return 'That count has already been taken back.';
   if (count.changed === 0) return 'That count found exactly what was expected, so there is nothing to put back.';

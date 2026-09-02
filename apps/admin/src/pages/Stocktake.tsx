@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Badge, useToast, ViewTabs} from '@snpos/ui';
 import { humanError } from '../lib';
 import {
-  shelfLines, submitCount, pendingCounts, countLines, approveCount, rejectCount,
+  shelfLines, submitCount, pendingCounts, countLines, approveCount, rejectCount, decidedCounts,
   summariseCount, countWarnings, groupLines, COUNT_REASONS, isSelfApproval, formatMoney,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
   pendingShelfLines, frozenPieces, frozenBy,
@@ -13,6 +13,7 @@ import type {
 import { listAll } from '@snpos/core';
 import { CountUpload } from '../components/CountUpload';
 import { useSession } from '../session';
+import { CountHistory, type HistoryCount } from '../components/CountHistory';
 
 /** Where a half-finished count lives while somebody serves a customer. */
 const DRAFT_KEY = (userId: string) => expenseDraftKey('main', 'stocktake', userId);
@@ -54,6 +55,14 @@ export function StocktakePage() {
   const [owners, setOwners] = useState<{ $id: string; name: string }[]>([]);
   const [shelves, setShelves] = useState<{ $id: string; name: string }[]>([]);
   const [queue, setQueue] = useState<PendingCount[] | null>(null);
+  /**
+   * Every count decided on in the last ninety days, for the record.
+   *
+   * The shop's counts always waited for an admin; what was missing was any
+   * way to look back at them. See CountHistory: what each count claimed,
+   * what it was worth, and whose decision moved the shelf.
+   */
+  const [past, setPast] = useState<HistoryCount[] | null>(null);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   /**
    * Pieces that already have a change waiting, so they cannot be counted into
@@ -79,6 +88,27 @@ export function StocktakePage() {
     Promise.all([
       pendingCounts().then(setQueue).catch(() => setQueue([])),
       pendingShelfLines().then(setWaiting).catch(() => setWaiting([])),
+      decidedCounts(Date.now() - 90 * 86_400_000)
+        .then((rows) => setPast(rows.map((c) => ({
+          id: c.$id,
+          title: c.note ? c.note.slice(0, 40) : 'Shelf count',
+          at: c.counted_at,
+          countedBy: c.counted_by,
+          state: c.status === 'rejected' ? 'rejected' : (c.missing_pieces + c.surplus_pieces) > 0 ? 'applied' : 'unchanged',
+          decidedBy: c.reviewed_by,
+          decidedAt: c.reviewed_at,
+          changed: c.missing_pieces + c.surplus_pieces,
+          worth: c.missing_value,
+          lines: () => countLines(c.$id).then((ls) => ls.map((l) => ({
+            name: l.variant_label ? `${l.name_snapshot} · ${l.variant_label}` : l.name_snapshot,
+            counted: l.counted,
+            expected: l.expected,
+            variance: l.delta,
+            worth: l.delta * l.unit_price,
+            note: l.reason === 'counted' ? '' : l.reason,
+          }))),
+        }))))
+        .catch(() => setPast([])),
     ]).then(() => undefined);
 
   useEffect(() => {
@@ -246,15 +276,25 @@ export function StocktakePage() {
       {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
 
       {tab === 'approve' ? (
-        <Approvals
-          queue={queue}
-          isAdmin={isAdmin}
-          reviewerId={userId}
-          money={money}
-          nameOf={nameOf}
-          onDone={async () => { await loadQueue(); await loadShelf(); }}
-          onToast={toast}
-        />
+        <>
+          <Approvals
+            queue={queue}
+            isAdmin={isAdmin}
+            reviewerId={userId}
+            money={money}
+            nameOf={nameOf}
+            onDone={async () => { await loadQueue(); await loadShelf(); }}
+            onToast={toast}
+          />
+          <div style={{ marginTop: '1rem' }}>
+            <CountHistory
+              title="Every count decided on, last 90 days"
+              counts={past}
+              money={money}
+              emptyWords="Counts appear here once an admin has agreed to them or refused them."
+            />
+          </div>
+        </>
       ) : (
         <>
           {restored && (

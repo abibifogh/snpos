@@ -765,6 +765,29 @@ export const pendingCounts = () =>
   );
 
 /**
+ * Counts that have been decided on, newest first, for the history.
+ *
+ * Approved and refused both, because "we looked at it and said no" is as much
+ * a part of the record as "we applied it" — more, on the day somebody asks
+ * why a shelf figure was not corrected.
+ */
+/** A count once somebody has decided on it. The review fields are on the row; the pending shape never needed them. */
+export type DecidedCount = PendingCount & Doc & {
+  status?: 'approved' | 'rejected' | 'pending';
+  reviewed_by?: string;
+  reviewed_at?: string;
+  review_note?: string;
+};
+
+export const decidedCounts = (sinceMs: number): Promise<DecidedCount[]> =>
+  listAll<DecidedCount>('stock_counts', [
+    Query.equal('status', ['approved', 'rejected']),
+    Query.greaterThanEqual('$createdAt', new Date(sinceMs).toISOString()),
+  ]).then((rows) =>
+    rows.sort((a, b) => (b.reviewed_at ?? b.counted_at ?? '').localeCompare(a.reviewed_at ?? a.counted_at ?? '')),
+  );
+
+/**
  * One shelf figure, changed on the products page, sent to be approved.
  *
  * A thin wrapper over `submitCount` rather than a second way of writing the

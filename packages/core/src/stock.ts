@@ -5,6 +5,7 @@ import type { PurchaseRow } from './price-history';
 import type { Module } from './access';
 import {
   variancesIn, wasCountedBar, shiftCounted, countable, countableBy, filedCounts, undoDeltas, undoProblem,
+  movesOnItsOwn, storeCountId, isStoreCount, STORE_COUNT_PREFIX, isPending, approveDeltas,
 } from './bar-count';
 import type { FiledCheck } from './bar-count';
 import { levelFor, transferQty, transferMovements, purchaseLocation, saleLocation } from './locations';
@@ -643,12 +644,14 @@ export async function saveBarCount(opts: {
   phase: 'open' | 'close';
   lines: BarCountLine[];
   userId: string;
-}): Promise<{ written: number; shortValue: number; failed: number }> {
+}): Promise<{ written: number; shortValue: number; failed: number; pending: number }> {
   const places = await loadLocations(opts.venueId);
   const counter = places.find((l) => l.$id === opts.locationId) ?? saleLocation(places, 'bar');
   const variances = variancesIn(opts.lines);
   const shortValue = variances.filter((v) => v.delta < 0).reduce((s, v) => s + v.value, 0);
   let written = 0;
+  /** Lines that found a difference and are now waiting for an admin. */
+  let pending = 0;
   /*
     Counted, not swallowed.
 
@@ -665,11 +668,27 @@ export async function saveBarCount(opts: {
     const counted = Number((line.countedText ?? '').trim());
     const variance = Number((counted - line.expected).toFixed(4));
 
-    // Only where there is a shift to make the claim about. A store room's
-    // count is not a statement about anybody's evening.
-    if (opts.shiftId) await db.createDocument(DB_ID, 'shift_stock_checks', ID.unique(), {
+    /*
+      HELD UNTIL AGREED.
+
+      A count that found what was expected changes nothing and is recorded as
+      counted. A count that found a DIFFERENCE is a claim that stock is missing
+      or has appeared, and that claim used to move the real figures the moment
+      it was typed — by whoever was holding the clipboard. It now waits for an
+      admin to agree, and nothing below that touches the shelf runs until they
+      do. See approveBarCount, which is the same movement and the same level
+      change, made later by somebody who can see the whole business.
+
+      A store room's count is recorded too, under a name that says which room
+      rather than which shift — see storeCountId — so that it can be held and
+      approved the same way. It used to be written to nothing at all and
+      applied at once.
+    */
+    const held = !movesOnItsOwn(variance);
+    const recordAs = opts.shiftId ?? storeCountId(counter?.$id ?? 'store');
+    const wrote = await tryWrite(db.createDocument(DB_ID, 'shift_stock_checks', ID.unique(), {
       venue_id: opts.venueId,
-      shift_id: opts.shiftId,
+      shift_id: recordAs,
       ingredient_id: line.ingredientId,
       phase: opts.phase,
       opening_qty: line.expected,
@@ -681,7 +700,10 @@ export async function saveBarCount(opts: {
       variance_value: Math.round(Math.abs(variance) * line.unitCost),
       checked_by: opts.userId,
       note: line.note ?? '',
-    }).catch(() => { failed += 1; });
+      applied: !held,
+    }));
+    if (!wrote) { failed += 1; continue; }
+    if (held) { pending += 1; written += 1; continue; }
 
     /*
       A movement for the difference, not just a note about it.
@@ -734,7 +756,124 @@ export async function saveBarCount(opts: {
     written += 1;
   }
 
-  return { written, shortValue, failed };
+  return { written, shortValue, failed, pending };
+}
+
+/* ------------------------------------------- agreeing to a held count */
+
+/** Every line still waiting for an admin, across every shift and store room. */
+export const pendingBarChecks = (): Promise<FiledCheck[]> =>
+  listAll<FiledCheck & Doc>('shift_stock_checks', [Query.equal('applied', false)])
+    .then((rows) => rows.filter(isPending))
+    .catch(() => [] as (FiledCheck & Doc)[]);
+
+/**
+ * Every count filed in a window, for the history.
+ *
+ * Bounded, because a bar counted twice a day writes forty rows a time, and a
+ * history page that reads a year of that on every open is a page that stops
+ * being opened.
+ */
+export const barCountHistory = (sinceMs: number): Promise<FiledCheck[]> =>
+  listAll<FiledCheck & Doc>('shift_stock_checks', [
+    Query.greaterThanEqual('$createdAt', new Date(sinceMs).toISOString()),
+  ]).catch(() => [] as (FiledCheck & Doc)[]);
+
+/**
+ * Apply a held count to the shelf.
+ *
+ * The same movement and the same level change that saveBarCount used to make
+ * at once — made now, by an admin, by the DIFFERENCE the count found rather
+ * than the figure it wrote. The count was taken hours ago and the shelf has
+ * been sold from since; writing the counted number over it now would erase
+ * every sale in between. See approveDeltas.
+ */
+export async function approveBarCount(opts: {
+  venueId: string;
+  shiftId: string;
+  phase: 'open' | 'close';
+  userId: string;
+  locationId?: string;
+}): Promise<{ applied: number; failed: number }> {
+  const all = await countsForShift(opts.shiftId);
+  const count = filedCounts(all).find((c) => c.phase === opts.phase);
+  if (!count) throw new Error('That count could not be found.');
+  if (count.pending === 0) throw new Error('Nothing on that count is waiting to be applied.');
+
+  const places = await loadLocations(opts.venueId);
+  // A store room's count names its room in the id; a shift's count is the bar.
+  const roomId = isStoreCount(opts.shiftId) ? opts.shiftId.slice(STORE_COUNT_PREFIX.length) : opts.locationId;
+  const counter = places.find((l) => l.$id === roomId) ?? saleLocation(places, 'bar');
+  const when = new Date().toISOString();
+
+  let applied = 0;
+  let failed = 0;
+
+  for (const { checkId, ingredientId, delta } of approveDeltas(count)) {
+    const ing = await db.getDocument(DB_ID, 'ingredients', ingredientId).catch(() => null) as
+      { base_unit_cost?: number } | null;
+
+    const wrote = await tryWrite(db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
+      venue_id: opts.venueId,
+      ingredient_id: ingredientId,
+      type: 'count_correction',
+      qty_delta: delta,
+      unit_cost: ing?.base_unit_cost ?? 0,
+      location_id: counter?.$id ?? '',
+      ref_type: isStoreCount(opts.shiftId) ? 'stocktake' : 'shift',
+      ref_id: isStoreCount(opts.shiftId) ? (counter?.$id ?? '') : opts.shiftId,
+      shift_id: isStoreCount(opts.shiftId) ? '' : opts.shiftId,
+      created_by: opts.userId,
+      note: `Count approved (${opts.phase === 'open' ? 'counted in' : 'counted out'})`,
+    }));
+    if (!wrote) { failed += 1; continue; }
+
+    if (counter) {
+      await adjustLevel({ ingredientId, locationId: counter.$id, delta });
+    } else {
+      const now = await db.getDocument(DB_ID, 'ingredients', ingredientId).catch(() => null) as
+        { current_qty?: number } | null;
+      await tryWrite(db.updateDocument(DB_ID, 'ingredients', ingredientId, {
+        current_qty: Number(((now?.current_qty ?? 0) + delta).toFixed(4)),
+      }));
+    }
+
+    await tryWrite(db.updateDocument(DB_ID, 'shift_stock_checks', checkId, {
+      applied: true,
+      approved_by: opts.userId,
+      approved_at: when,
+    }));
+    applied += 1;
+  }
+
+  return { applied, failed };
+}
+
+/**
+ * Refuse a held count. The shelf is left exactly as it was.
+ *
+ * The rows stay, marked. Somebody stood at the shelf and wrote a number down,
+ * and a count that was looked at and disagreed with is a more useful record
+ * than a gap where it used to be.
+ */
+export async function rejectBarCount(opts: {
+  shiftId: string;
+  phase: 'open' | 'close';
+  userId: string;
+}): Promise<number> {
+  const all = await countsForShift(opts.shiftId);
+  const count = filedCounts(all).find((c) => c.phase === opts.phase);
+  if (!count) throw new Error('That count could not be found.');
+  const when = new Date().toISOString();
+  let marked = 0;
+  for (const line of count.lines.filter(isPending)) {
+    const ok = await tryWrite(db.updateDocument(DB_ID, 'shift_stock_checks', line.$id, {
+      rejected_by: opts.userId,
+      rejected_at: when,
+    }));
+    if (ok) marked += 1;
+  }
+  return marked;
 }
 
 /** Whether this shift has already been counted in on the way in. */

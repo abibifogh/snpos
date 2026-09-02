@@ -1546,6 +1546,24 @@ export const COLLECTIONS = [
        * they were.
        */
       ['phase', 'e', ['open', 'close'], false, 'close'],
+      /**
+       * Whether this line has actually moved the shelf.
+       *
+       * A count is a claim about the shelf, and a claim with a difference in
+       * it is now held until an admin agrees — see saveBarCount. False while
+       * it waits; true once applied, or where there was nothing to apply.
+       * Absent on every row written before this existed, all of which had
+       * already moved the shelf when they were filed, so absent reads as
+       * applied.
+       */
+      ['applied', 'b', null, false],
+      ['approved_by', 's', 64, false],
+      ['approved_at', 'd', null, false],
+      // Refused rather than approved. The row stays: somebody stood at the
+      // shelf and wrote a number, and the record of it being disagreed with
+      // is worth more than the tidiness of deleting it.
+      ['rejected_by', 's', 64, false],
+      ['rejected_at', 'd', null, false],
       ['opening_qty', 'f', null, true, 0],
       ['theoretical_qty', 'f', null, true, 0],
       ['counted_qty', 'f', null, false],
@@ -1570,7 +1588,14 @@ export const COLLECTIONS = [
       ['undone_at', 'd', null, false],
       ['undone_by', 's', 64, false],
     ],
-    indexes: [['shift_ing', 'key', ['shift_id', 'ingredient_id']], ['shift_phase', 'key', ['shift_id', 'phase']]],
+    indexes: [
+      ['shift_ing', 'key', ['shift_id', 'ingredient_id']],
+      ['shift_phase', 'key', ['shift_id', 'phase']],
+      // "What is waiting for an admin" is asked by the counts page on every
+      // load, so it is answered by the database rather than by reading every
+      // count ever filed.
+      ['pending', 'key', ['applied']],
+    ],
   },
 
   // --------------------------------------------------------------- inventory

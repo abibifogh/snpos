@@ -556,3 +556,110 @@ test('a manager may spot-check the bar with no shift open', () => {
   // A store room belongs to no evening in the first place and never needed one.
   assert.equal(mayCountWithoutShift({ isStore: true, isManager: false, hasShift: false }), true);
 });
+
+/* ------------------------------------------- held until agreed */
+
+import {
+  movesOnItsOwn, isPending, hasMoved, countState, countStateLabel, approveDeltas, heldWords,
+  storeCountId, isStoreCount,
+} from '../bar-count.ts';
+
+const line = (over: Record<string, unknown> = {}): FiledCheck => ({
+  $id: 'c1', $createdAt: '2026-09-01T20:00:00.000Z', shift_id: 's1', ingredient_id: 'ing1',
+  phase: 'close' as const, counted_qty: 5, theoretical_qty: 6, variance_qty: -1, variance_value: 300,
+  checked_by: 'u1', ...over,
+});
+
+test('a count that matched moves on its own; a difference waits', () => {
+  /**
+   * The rule the owner asked for. A count that found exactly what was
+   * expected changes nothing, and holding it would be a queue of approvals
+   * that approve nothing. A difference is a claim that stock is missing or
+   * has appeared, and that claim moves real figures — so it waits for somebody
+   * who can see the whole business.
+   */
+  assert.equal(movesOnItsOwn(0), true);
+  assert.equal(movesOnItsOwn(-1), false);
+  assert.equal(movesOnItsOwn(2), false);
+});
+
+test('rows from before approval existed read as already applied', () => {
+  /*
+    Every one of them moved the shelf the moment it was filed. Reading them as
+    unapplied would offer to apply a year of old counts a second time.
+  */
+  assert.equal(hasMoved(line({ applied: undefined })), true);
+  assert.equal(hasMoved(line({ applied: null })), true);
+  assert.equal(hasMoved(line({ applied: false })), false);
+  assert.equal(isPending(line({ applied: undefined })), false);
+  assert.equal(isPending(line({ applied: false })), true);
+});
+
+test('a refused line is neither pending nor moved', () => {
+  const refused = line({ applied: false, rejected_at: '2026-09-01T21:00:00.000Z' });
+  assert.equal(isPending(refused), false);
+  assert.equal(hasMoved(refused), false);
+});
+
+test('approving applies the difference, never the counted figure', () => {
+  /**
+   * The count was taken hours ago and the shelf has been sold from since.
+   * Setting it to the counted number now would erase every sale in between.
+   */
+  const [count] = filedCounts([
+    line({ $id: 'a', applied: false, variance_qty: -3 }),
+    line({ $id: 'b', ingredient_id: 'ing2', applied: false, variance_qty: 0 }),
+    line({ $id: 'c', ingredient_id: 'ing3', applied: true, variance_qty: -9 }),
+  ]);
+  assert.deepEqual(approveDeltas(count), [{ checkId: 'a', ingredientId: 'ing1', delta: -3 }]);
+});
+
+test('taking back a count only reverses what actually moved', () => {
+  const [count] = filedCounts([
+    line({ $id: 'a', applied: true, variance_qty: -3 }),
+    line({ $id: 'b', ingredient_id: 'ing2', applied: false, variance_qty: -4 }),
+  ]);
+  assert.deepEqual(undoDeltas(count), [{ ingredientId: 'ing1', delta: 3 }]);
+});
+
+test('a count still waiting cannot be taken back, and says why', () => {
+  const [count] = filedCounts([line({ applied: false })]);
+  assert.equal(count.pending, 1);
+  assert.match(String(undoProblem(count)), /waiting for approval/);
+  assert.match(String(undoProblem(count)), /Refuse it instead/);
+});
+
+test('each count says where it stands, in one word', () => {
+  const state = (rows: ReturnType<typeof line>[]) => countState(filedCounts(rows)[0]);
+  assert.equal(state([line({ applied: false })]), 'pending');
+  assert.equal(state([line({ applied: true, approved_at: '2026-09-01T21:00:00.000Z' })]), 'applied');
+  assert.equal(state([line({ applied: false, rejected_at: '2026-09-01T21:00:00.000Z' })]), 'rejected');
+  assert.equal(state([line({ applied: true, undone_at: '2026-09-02T09:00:00.000Z' })]), 'undone');
+  assert.equal(state([line({ variance_qty: 0, variance_value: 0 })]), 'unchanged');
+  // And every word is different, so a list can be scanned.
+  const all = ['pending', 'applied', 'rejected', 'undone', 'unchanged'] as const;
+  assert.equal(new Set(all.map(countStateLabel)).size, all.length);
+});
+
+test('the count carries who counted, who agreed, who refused, who took it back', () => {
+  const [count] = filedCounts([
+    line({ checked_by: 'regina', applied: true, approved_by: 'boss', approved_at: '2026-09-01T21:00:00.000Z' }),
+  ]);
+  assert.equal(count.countedBy, 'regina');
+  assert.equal(count.approvedBy, 'boss');
+});
+
+test('whoever filed a held count is told what is waiting and what is not', () => {
+  const words = String(heldWords(3, (n) => `GH₵${(n / 100).toFixed(2)}`, 4500));
+  assert.match(words, /3 lines found a difference \(GH₵45\.00\)/);
+  assert.match(words, /waiting for an admin/);
+  // The part that stops somebody counting the whole bar again.
+  assert.match(words, /Everything that matched has been recorded/);
+  assert.equal(heldWords(0, String, 0), null);
+});
+
+test('a store room count is named by its room and told apart from a shift', () => {
+  assert.equal(storeCountId('room1'), 'store:room1');
+  assert.equal(isStoreCount('store:room1'), true);
+  assert.equal(isStoreCount('BAR20260901-abcd'), false);
+});

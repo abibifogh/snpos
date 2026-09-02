@@ -7,7 +7,10 @@ import {
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
   filedCounts, undoProblem, undoBarCount, pourMissedSales,
   loadRecipes, pourState, pourLabel, pourWords, unexplainedByWiring, drinksToMoveToBar,
+  heldWords, pendingBarChecks, barCountHistory, approveBarCount, rejectBarCount, countState,
+  isStoreCount, STORE_COUNT_PREFIX,
 } from '@snpos/core';
+import { CountHistory, type HistoryCount } from '../components/CountHistory';
 import type {
   BarCountLine, Shift, Doc, StockLocation, FiledCheck, FiledCount, PourRow, PourItem, PourState,
 } from '@snpos/core';
@@ -105,6 +108,18 @@ export function BarCountsPage() {
    */
   const [recipes, setRecipes] = useState<PourRow[]>([]);
   const [drinks, setDrinks] = useState<PourItem[]>([]);
+  /**
+   * Counts waiting for an admin, and every count filed in the last ninety days.
+   *
+   * Two lists from one collection. A count that found a difference no longer
+   * moves the shelf when it is typed — it waits here for somebody who can see
+   * the whole business to agree — and once decided it stays, so a month later
+   * "why did the tonic figure change on a Tuesday" has an answer with a name
+   * on it.
+   */
+  const [pending, setPending] = useState<HistoryCount[] | null>(null);
+  const [past, setPast] = useState<HistoryCount[] | null>(null);
+  const [shiftNames, setShiftNames] = useState<Record<string, string>>({});
   const room = places.find((p2) => p2.$id === placeId) ?? null;
   const isStore = room?.kind === 'store';
   /**
@@ -124,6 +139,56 @@ export function BarCountsPage() {
   const isManager = profile?.role === 'admin' || profile?.role === 'manager';
   const canCount = mayCountWithoutShift({ isStore, isManager, hasShift: !!shift });
   const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+
+  /**
+   * One shape for the history component, whichever collection a count came
+   * from. The bar's rows are forty per count, named by shift and end; the
+   * shop's are a header and its lines. See CountHistory.
+   */
+  const asHistory = (rows: FiledCheck[]): HistoryCount[] =>
+    filedCounts(rows).map((c) => {
+      const state = countState(c);
+      const room = isStoreCount(c.shiftId)
+        ? places.find((p) => p.$id === c.shiftId.slice(STORE_COUNT_PREFIX.length))?.name ?? 'Store room'
+        : shiftNames[c.shiftId] ?? c.shiftId;
+      return {
+        id: `${c.shiftId}|${c.phase}`,
+        title: room,
+        phase: isStoreCount(c.shiftId) ? undefined : c.phase,
+        at: c.at,
+        countedBy: c.countedBy,
+        state,
+        decidedBy: c.undoneBy ?? c.rejectedBy ?? c.approvedBy,
+        decidedAt: c.undoneAt ?? c.rejectedAt ?? c.approvedAt,
+        changed: c.changed,
+        worth: c.worth,
+        lines: async () => c.lines.map((l) => ({
+          name: (lines ?? []).find((x) => x.ingredientId === l.ingredient_id)?.name ?? l.ingredient_id,
+          counted: typeof l.counted_qty === 'number' ? l.counted_qty : null,
+          expected: l.theoretical_qty ?? 0,
+          variance: l.variance_qty ?? 0,
+          worth: l.variance_value ?? 0,
+        })),
+        // The two ids the approval needs, carried on the row.
+        shiftId: c.shiftId,
+        phaseKey: c.phase,
+      } as HistoryCount & { shiftId: string; phaseKey: 'open' | 'close' };
+    });
+
+  const loadDecisions = async () => {
+    const [waiting, filed] = await Promise.all([
+      pendingBarChecks(),
+      barCountHistory(Date.now() - 90 * 86_400_000),
+    ]);
+    // Shift codes for the titles, read once for every shift the rows mention.
+    const ids = [...new Set([...waiting, ...filed].map((r) => r.shift_id ?? '').filter((id) => id && !isStoreCount(id)))];
+    if (ids.length) {
+      const rows = await listAll<Shift>('shifts', [Query.equal('$id', ids)]).catch(() => [] as Shift[]);
+      setShiftNames(Object.fromEntries(rows.map((r) => [r.$id, r.code ?? r.$id])));
+    }
+    setPending(asHistory(waiting));
+    setPast(asHistory(filed.filter((r) => r.applied !== false || r.rejected_at)));
+  };
 
   const load = async () => {
     try {
@@ -154,6 +219,9 @@ export function BarCountsPage() {
       ]);
       setRecipes(rec as unknown as PourRow[]);
       setDrinks(items);
+      // Best effort, and after the sheet: an approval list that will not load
+      // must not stop anybody counting.
+      void loadDecisions().catch(() => { setPending([]); setPast([]); });
       if (current) {
         const done = await hasOpeningCount(current.$id);
         setOpeningDone(done);
@@ -256,7 +324,7 @@ export function BarCountsPage() {
     setBusy(true);
     setError(null);
     try {
-      const { written, shortValue, failed } = await saveBarCount({
+      const { written, shortValue, failed, pending: held } = await saveBarCount({
         venueId: 'main',
         // Left off for a store room, on purpose: stamping it with whichever
         // shift happened to be open would put a month of drift on one
@@ -285,17 +353,22 @@ export function BarCountsPage() {
           + 'happening the database is refusing something and an admin should be told.',
         );
       }
+      /*
+        Said plainly, once: what has been recorded, and what is waiting.
+
+        The old message said "the shelves now say what you found", and that
+        is no longer true for a line with a difference on it — those wait for
+        an admin. Telling somebody the shelf has moved when it has not is how
+        a bar gets counted twice.
+      */
+      const heldNote = heldWords(held, money, shortValue);
       toast(
-        isStore
-          // A stocktake reports what it found. It is nobody's handover, so
-          // "short" would be the wrong word and the wrong accusation.
-          ? `${written} line${written === 1 ? '' : 's'} counted in ${room?.name ?? 'the store'}. `
-            + 'The shelves now say what you found.'
-          : phase === 'open'
-            ? `${written} line${written === 1 ? '' : 's'} counted in. The bar is yours.`
-            : shortValue > 0
-              ? `Counted out. ${money(shortValue)} short — an admin can see it under Variances.`
-              : 'Counted out, and it balances.',
+        heldNote
+          ?? (isStore
+            ? `${written} line${written === 1 ? '' : 's'} counted in ${room?.name ?? 'the store'}, and it matched.`
+            : phase === 'open'
+              ? `${written} line${written === 1 ? '' : 's'} counted in. The bar is yours.`
+              : 'Counted out, and it balances.'),
         failed > 0 ? 'err' : undefined,
       );
     } catch (e) {
@@ -714,6 +787,55 @@ export function BarCountsPage() {
             Bring the shelves up to date with this shift
           </Button>
         </Card>
+      )}
+
+      {/*
+        HELD COUNTS, AND THE RECORD.
+
+        A count with a difference on it waits here until an admin agrees.
+        Agreeing applies the difference the count found — not the figure it
+        wrote, because the shelf has been sold from since — and stamps who
+        agreed and when. Refusing leaves the shelf exactly as it was and keeps
+        the count, marked, because a count that was disagreed with is a better
+        record than a gap.
+      */}
+      {isManager && (
+        <CountHistory
+          title="Counts waiting for an admin"
+          counts={pending}
+          money={money}
+          emptyWords="A count that finds a difference waits here until an admin agrees. Nothing is waiting."
+          onApprove={isAdmin ? async (c) => {
+            const row = c as HistoryCount & { shiftId: string; phaseKey: 'open' | 'close' };
+            try {
+              const { applied, failed } = await approveBarCount({
+                venueId: 'main', shiftId: row.shiftId, phase: row.phaseKey, userId: user?.$id ?? '',
+                locationId: placeId || undefined,
+              });
+              toast(failed > 0
+                ? `${applied} applied, ${failed} could not be. The count stays here until they are.`
+                : `${applied} difference${applied === 1 ? '' : 's'} applied to the shelf`, failed > 0 ? 'err' : undefined);
+              await load();
+            } catch (e) { setError(humanError(e)); }
+          } : undefined}
+          onReject={isAdmin ? async (c) => {
+            const row = c as HistoryCount & { shiftId: string; phaseKey: 'open' | 'close' };
+            try {
+              await rejectBarCount({ shiftId: row.shiftId, phase: row.phaseKey, userId: user?.$id ?? '' });
+              toast('Count refused. The shelf is unchanged.');
+              await load();
+            } catch (e) { setError(humanError(e)); }
+          } : undefined}
+        />
+      )}
+
+      {isManager && (
+        <CountHistory
+          title="Every count filed, last 90 days"
+          counts={past}
+          money={money}
+          emptyWords="Counts appear here once they have been filed and decided on."
+        />
       )}
 
       {isAdmin && filed.length > 0 && (
