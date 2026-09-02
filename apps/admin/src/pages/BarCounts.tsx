@@ -8,10 +8,11 @@ import {
   filedCounts, undoProblem, undoBarCount, pourMissedSales,
   loadRecipes, pourState, pourLabel, pourWords, unexplainedByWiring, drinksToMoveToBar,
   heldWords, pendingBarChecks, barCountHistory, approveBarCount, rejectBarCount, countState,
-  isStoreCount, STORE_COUNT_PREFIX,
+  isStoreCount, STORE_COUNT_PREFIX, unpouredForShift, unpouredWords, unpouredSummary,
 } from '@snpos/core';
 import { CountHistory, type HistoryCount } from '../components/CountHistory';
 import type {
+  Unpoured,
   BarCountLine, Shift, Doc, StockLocation, FiledCheck, FiledCount, PourRow, PourItem, PourState,
 } from '@snpos/core';
 import { useSession } from '../session';
@@ -120,6 +121,15 @@ export function BarCountsPage() {
   const [pending, setPending] = useState<HistoryCount[] | null>(null);
   const [past, setPast] = useState<HistoryCount[] | null>(null);
   const [shiftNames, setShiftNames] = useState<Record<string, string>>({});
+  /**
+   * What this shift sold that took nothing off a shelf.
+   *
+   * The badge beside each line asks whether the CATALOGUE is wired up, and it
+   * can say yes while the shelf still never moves — a size whose recipe names
+   * a size that was replaced looks perfectly set up. This asks the sales
+   * instead, with the same rule the server pours by. See unpouredSales.
+   */
+  const [unpoured, setUnpoured] = useState<Unpoured[] | null>(null);
   const room = places.find((p2) => p2.$id === placeId) ?? null;
   const isStore = room?.kind === 'store';
   /**
@@ -222,6 +232,13 @@ export function BarCountsPage() {
       // Best effort, and after the sheet: an approval list that will not load
       // must not stop anybody counting.
       void loadDecisions().catch(() => { setPending([]); setPast([]); });
+      if (current) {
+        void unpouredForShift('main', current.$id, 'bar')
+          .then(setUnpoured)
+          .catch(() => setUnpoured([]));
+      } else {
+        setUnpoured([]);
+      }
       if (current) {
         const done = await hasOpeningCount(current.$id);
         setOpeningDone(done);
@@ -786,6 +803,48 @@ export function BarCountsPage() {
           <Button loading={pouring} onClick={() => void catchUp()}>
             Bring the shelves up to date with this shift
           </Button>
+        </Card>
+      )}
+
+      {/*
+        SALES THAT MOVED NO SHELF, from the sales themselves.
+
+        The badge on each line above asks whether the catalogue looks wired up.
+        This asks what actually happened, with the rule the server pours by —
+        and it is the one that catches a size whose recipe names a size that
+        was replaced, which looks correct from every other angle.
+
+        Above the count sheet's own totals on purpose. A bar reading a
+        difference of minus eight assumes eight bottles are missing; this says
+        eight were sold and nothing recorded it, which is a different
+        conversation with a different person.
+      */}
+      {unpoured && unpoured.length > 0 && (
+        <Card title="Sold, but nothing came off a shelf">
+          <Notice tone="warn">{unpouredSummary(unpoured)}</Notice>
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr><th>What sold</th><th className="num">How many</th><th>Why nothing moved</th></tr>
+              </thead>
+              <tbody>
+                {unpoured.map((u) => (
+                  <tr key={`${u.menuItemId}|${u.variantId ?? ''}`}>
+                    <td style={{ fontWeight: 550 }}>{u.name}</td>
+                    <td className="num"><Badge tone="danger">{u.qty}</Badge></td>
+                    <td className="small dim">{unpouredWords(u.reason, u.name)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* The repair that fixes the commonest cause, where it is named. */}
+          {isAdmin && unpoured.some((u) => u.reason === 'size-has-no-recipe') && (
+            <p className="small dim" style={{ marginBottom: 0 }}>
+              Sizes are fixed by &ldquo;Give every size its own shelf&rdquo; on Drinks &amp; cocktails, or by
+              opening the drink and saving it.
+            </p>
+          )}
         </Card>
       )}
 

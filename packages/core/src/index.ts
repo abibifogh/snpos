@@ -73,6 +73,7 @@ export * from './offline-shift';
 export * from './to-settle';
 export * from './order-edit';
 export * from './pour-check';
+export * from './unpoured';
 export * from './item-history';
 export * from './shift-counts';
 export * from './tabs';

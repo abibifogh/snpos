@@ -700,8 +700,23 @@ export function soldInShift<T extends {
 
   for (const l of lines) {
     if (l.status === 'void') continue;
+    /*
+      Drink and size as one name, without saying the size twice.
+
+      A drink already called "Club · Large" with a size called "Large" read as
+      "Club · Large · Large". The size is in the name because somebody typed it
+      there, and repeating it is the kind of small wrongness that makes a
+      screen look untrustworthy on the day it reports something true.
+
+      The same rule is in soldName, in unpoured.ts. Both files are pure and
+      neither may import the other at runtime — see the note at the top — so it
+      is written twice and a parity test fails the build if the two ever
+      disagree.
+    */
     const base = (l.name_snapshot ?? '').trim() || 'Something no longer named';
-    const name = l.variant_label?.trim() ? `${base} · ${l.variant_label.trim()}` : base;
+    const label = l.variant_label?.trim();
+    const suffix = label ? ` · ${label}` : '';
+    const name = !label || base.endsWith(suffix) || base === label ? base : `${base}${suffix}`;
     const at = byName.get(name) ?? { name, qty: 0, worth: 0 };
     at.qty += l.qty ?? 0;
     at.worth += l.line_total ?? 0;

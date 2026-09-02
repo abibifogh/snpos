@@ -3,6 +3,8 @@ import { db, DB_ID, ID, Query, listAll, listByIds, tryWrite } from './client';
 import type { CountEntry } from './shift-counts';
 import type { PurchaseRow } from './price-history';
 import type { Module } from './access';
+import { unpouredSales } from './unpoured';
+import type { Unpoured, SoldRow, SoldItem, PourRule } from './unpoured';
 import {
   variancesIn, wasCountedBar, shiftCounted, countable, countableBy, filedCounts, undoDeltas, undoProblem,
   movesOnItsOwn, storeCountId, isStoreCount, STORE_COUNT_PREFIX, isPending, approveDeltas,
@@ -874,6 +876,36 @@ export async function rejectBarCount(opts: {
     if (ok) marked += 1;
   }
   return marked;
+}
+
+/**
+ * What this shift sold that took nothing off a shelf.
+ *
+ * Ground truth, against the sales rather than against the catalogue: the same
+ * rule the server uses to decide what to pour, run over what actually went out.
+ * See unpouredSales — the catalogue check next door says "something names this
+ * bottle" and can be satisfied by a recipe the server will never match.
+ */
+export async function unpouredForShift(
+  venueId: string,
+  shiftId: string,
+  module: Module = 'bar',
+): Promise<Unpoured[]> {
+  const orders = await listAll<{ $id: string; module?: string; status?: string }>('orders', [
+    Query.equal('shift_id', shiftId),
+  ]).catch(() => []);
+  const mine = orders.filter(
+    (o) => (o.module ?? 'kitchen') === module && !['CANCELLED', 'REJECTED'].includes(o.status ?? ''),
+  );
+  if (mine.length === 0) return [];
+
+  const [lines, recipes, items] = await Promise.all([
+    listByIds<SoldRow>('order_items', 'order_id', mine.map((o) => o.$id)).catch(() => [] as SoldRow[]),
+    loadRecipes().catch(() => [] as RecipeRow[]),
+    listAll<SoldItem>('menu_items', [Query.equal('venue_id', venueId)]).catch(() => [] as SoldItem[]),
+  ]);
+
+  return unpouredSales(lines, recipes as unknown as PourRule[], items);
 }
 
 /** Whether this shift has already been counted in on the way in. */
