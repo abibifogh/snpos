@@ -138,3 +138,26 @@ export function unexplainedByWiring(
   }
   return { lines, value: Math.round(value) };
 }
+
+/**
+ * The drinks that name this ingredient but are not on the bar's side.
+ *
+ * The other half of 'not-on-the-bar': the badge says what is wrong, and this
+ * says which rows to fix, so the fix can be one press rather than a search
+ * through Drinks & cocktails for whatever happens to use tonic.
+ */
+export function drinksToMoveToBar(
+  ingredientId: string,
+  recipes: PourRow[],
+  items: PourItem[],
+): PourItem[] {
+  const byId = new Map(items.map((i) => [i.$id, i]));
+  const ids = new Set(
+    recipes
+      .filter((r) => r.ingredient_id === ingredientId && r.menu_item_id && (r.qty_per_unit ?? 0) > 0)
+      .map((r) => r.menu_item_id as string),
+  );
+  return [...ids]
+    .map((id) => byId.get(id))
+    .filter((i): i is PourItem => !!i && i.active !== false && i.module !== 'bar');
+}

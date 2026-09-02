@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Card, Empty, Field, Input, Notice, Select, Spinner, useToast } from '@snpos/ui';
-import { humanError } from '../lib';
+import { db, DB_ID, humanError } from '../lib';
 import {
   barCountSheet, saveBarCount, hasOpeningCount, byUnit, summariseBarCount, readyToClose,
   formatMoney, listAll, Query, loadOpenShifts, loadLocations, saleLocation, mayCountWithoutShift,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
   filedCounts, undoProblem, undoBarCount, pourMissedSales,
-  loadRecipes, pourState, pourLabel, pourWords, unexplainedByWiring,
+  loadRecipes, pourState, pourLabel, pourWords, unexplainedByWiring, drinksToMoveToBar,
 } from '@snpos/core';
 import type {
   BarCountLine, Shift, Doc, StockLocation, FiledCheck, FiledCount, PourRow, PourItem, PourState,
@@ -593,9 +593,41 @@ export function BarCountsPage() {
                                 const state = pourFor(l.ingredientId);
                                 const label = pourLabel(state);
                                 if (!label) return null;
+                                const toMove = state === 'not-on-the-bar'
+                                  ? drinksToMoveToBar(l.ingredientId, recipes, drinks) : [];
                                 return (
-                                  <div style={{ marginTop: '0.15rem' }} title={pourWords(state, l.name) ?? ''}>
+                                  <div
+                                    className="row"
+                                    style={{ marginTop: '0.15rem', gap: '0.4rem', alignItems: 'center' }}
+                                    title={pourWords(state, l.name) ?? ''}
+                                  >
                                     <Badge tone="warn">{label}</Badge>
+                                    {/* The fix in one press, where the fault is
+                                        shown. Only where the fix is a setting:
+                                        a drink with no recipe at all needs a
+                                        recipe written, which is a form, not a
+                                        button. */}
+                                    {toMove.length > 0 && isManager && (
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={async () => {
+                                          try {
+                                            for (const d of toMove) {
+                                              await db.updateDocument(DB_ID, 'menu_items', d.$id, { module: 'bar' });
+                                            }
+                                            setDrinks((all) => all.map((d) => (
+                                              toMove.some((m) => m.$id === d.$id) ? { ...d, module: 'bar' } : d
+                                            )));
+                                            toast(`${toMove.map((d) => d.name).join(', ')} set to the bar`);
+                                          } catch (e) {
+                                            setError(humanError(e));
+                                          }
+                                        }}
+                                      >
+                                        Set {toMove.length === 1 ? toMove[0].name : `${toMove.length} drinks`} to the bar
+                                      </Button>
+                                    )}
                                   </div>
                                 );
                               })()}

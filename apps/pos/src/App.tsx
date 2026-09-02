@@ -23,6 +23,7 @@ import { TablesView } from './TablesView';
 import { OrderView } from './OrderView';
 import { ShiftBar, type Shift } from './ShiftBar';
 import { KitchenPanel } from './KitchenPanel';
+import { SettleTab } from './SettleTab';
 
 export interface TableRow extends Doc {
   venue_id: string;
@@ -531,6 +532,8 @@ export function App() {
   const queued = useOfflineQueue(onQueueChange, startOfflineSync);
   const [tab, setTab] = useState<'tables' | 'takeaway' | 'kitchen' | 'counter'>('tables');
   const [helpOpen, setHelpOpen] = useState(false);
+  /** Settling every bill on a running account in one go. See SettleTab. */
+  const [settlingTab, setSettlingTab] = useState(false);
   /**
    * Set when the till is running on what it remembers rather than on what the
    * server says, so nobody reads a shift total as the shop's.
@@ -972,6 +975,13 @@ export function App() {
               {ctx.module === 'craft' ? 'Sold out' : 'Run out'}
             </Button>
           )}
+          {/* Only with a shift open: the money has to land in one. Without a
+              shift there is nothing to press, so nothing is drawn. */}
+          {ctx.shift && ctx.profile?.can_mark_paid && (
+            <Button size="sm" variant="ghost" onClick={() => setSettlingTab(true)} title="Settle a running account">
+              Settle a tab
+            </Button>
+          )}
           {isEnabled(ctx.features, 'help') && (
             <Button size="sm" variant="ghost" onClick={() => setHelpOpen(true)} title="How this works">
               Help
@@ -1058,6 +1068,10 @@ export function App() {
             }
           }}
         />
+      )}
+
+      {settlingTab && (
+        <SettleTab ctx={ctx} onClose={() => setSettlingTab(false)} onToast={toast} />
       )}
 
       {helpOpen && (

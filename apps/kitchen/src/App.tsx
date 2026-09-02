@@ -687,6 +687,35 @@ export function App() {
     setRejectNote('');
   };
 
+  /**
+   * Every ticket with nothing on it, turned away in one go.
+   *
+   * Seven arrived at once from phones by the pool, each with a price and no
+   * dishes — see the note in createOrder about which write lands first. That
+   * cause is fixed, but the tickets it left had to be rejected one at a time,
+   * each with its own reason dialog, on a pass that had other things to do.
+   *
+   * Only tickets the screen has already decided are blank, which means the
+   * grace period has passed and a retry has been made. A ticket that is still
+   * loading is not blank, it is new.
+   */
+  const blank = visible.filter((o) => ticketLines(o, items[o.$id]) === 'missing');
+  const rejectBlank = async () => {
+    for (const o of blank) {
+      await patch(o, {
+        status: 'REJECTED',
+        rejected_at: new Date().toISOString(),
+        reject_reason_code: 'other',
+        reject_reason_note: 'Nothing was listed on the ticket',
+        alert_level: 0,
+      });
+      // Same rule as a single rejection: an order turned away keeps none of
+      // its money. Most of these were never paid, and then this does nothing.
+      await giveTheMoneyBack(o, { reason: 'blank ticket', userId: who?.$id ?? '' }).catch(() => undefined);
+    }
+    setToast(`${blank.length} blank ${blank.length === 1 ? 'ticket' : 'tickets'} turned away`);
+  };
+
   if (error && !settings) {
     return (
       <div className="kds-empty">
@@ -966,6 +995,18 @@ export function App() {
           <span>Cooking <b>{visible.filter((o) => o.status === 'PREPARING').length}</b></span>
           <span>Ready <b>{visible.filter((o) => o.status === 'READY').length}</b></span>
           {overdue.length > 0 && <span style={{ color: '#ff6b5e' }}>Late <b>{overdue.length}</b></span>}
+          {/* Only once there is more than one. A single blank ticket has its
+              own Reject button and deserves its own reason. */}
+          {blank.length > 1 && (
+            <button
+              className="kds-help"
+              style={{ width: 'auto', padding: '0 0.7rem', color: 'var(--warn)' }}
+              title="Turn away every ticket that has nothing listed on it"
+              onClick={() => void rejectBlank()}
+            >
+              Reject {blank.length} blank
+            </button>
+          )}
           {/* The name was here already, saying who is answerable for what
               gets accepted. It is now also the way to change that: a cook
               going home had no way to hand the screen over except reloading

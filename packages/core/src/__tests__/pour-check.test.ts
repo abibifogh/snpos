@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pourState, pourLabel, pourWords, unexplainedByWiring } from '../pour-check.ts';
+import { pourState, pourLabel, pourWords, unexplainedByWiring, drinksToMoveToBar } from '../pour-check.ts';
 
 const drink = (over: Record<string, unknown> = {}) => ({
   $id: 'm1', name: 'Smirnoff Ice', module: 'bar', active: true, ...over,
@@ -95,4 +95,25 @@ test('how much of a frightening total is only wiring', () => {
   ];
   const state = (id: string) => (id === 'live' ? 'pours' as const : 'nothing-sells-it' as const);
   assert.deepEqual(unexplainedByWiring(rows, state), { lines: 1, value: 6000 });
+});
+
+test('the drinks to move to the bar are exactly the ones the badge is about', () => {
+  /**
+   * The fix should be one press. So this names the rows: drinks that use the
+   * bottle, are still sold, and are not on the bar's side — and nothing else,
+   * because a "fix" that also moved a kitchen dish would be a new fault.
+   */
+  const rows = [
+    { menu_item_id: 'gt', ingredient_id: 'tonic', qty_per_unit: 1 },
+    { menu_item_id: 'old', ingredient_id: 'tonic', qty_per_unit: 1 },
+    { menu_item_id: 'fine', ingredient_id: 'tonic', qty_per_unit: 1 },
+    { menu_item_id: 'dish', ingredient_id: 'salt', qty_per_unit: 1 },
+  ];
+  const items = [
+    drink({ $id: 'gt', name: 'G&T', module: 'kitchen' }),
+    drink({ $id: 'old', name: 'Retired', module: 'kitchen', active: false }),
+    drink({ $id: 'fine', name: 'Already bar', module: 'bar' }),
+    drink({ $id: 'dish', name: 'Chips', module: 'kitchen' }),
+  ];
+  assert.deepEqual(drinksToMoveToBar('tonic', rows, items).map((i) => i.$id), ['gt']);
 });
