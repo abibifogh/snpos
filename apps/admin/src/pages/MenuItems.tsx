@@ -16,6 +16,8 @@ import {
 } from '@snpos/core';
 import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice, WaitingChange, StaffProfile } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
+// Which sizes this drink still sells, and what makes two of them a clash.
+import { liveSizes, sizeProblem, retiredWords } from '@snpos/core';
 import { ReassignSupplier } from '../components/ReassignSupplier';
 import { KeyedListManager } from '../components/KeyedList';
 import { SalesHistory } from '../components/SalesHistory';
@@ -157,6 +159,8 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   const [tab, setTab] = useState<'items' | 'types'>('items');
   const [variants, setVariants] = useState<DraftVariant[]>([]);
   const [removedVariantIds, setRemovedVariantIds] = useState<string[]>([]);
+  /** Sizes kept only because sales already went through them. See liveSizes. */
+  const [retiredCount, setRetiredCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -388,6 +392,25 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     setVariantWas({});
     if (hasSizes && item?.$id) {
       void loadVariants(item.$id)
+        .then((all) => {
+          /*
+            ONLY THE SIZES THIS DRINK STILL SELLS.
+
+            A size that has already sold something is switched off rather than
+            deleted — its id is on order lines and stock movements — and this
+            form asked for every size the drink had ever had and drew them all
+            the same way. A retired Large beside the Large that replaced it
+            showed as two Larges with nothing to tell them apart, which is
+            exactly what got reported as a duplicate.
+
+            The retired ones are left alone rather than hidden and forgotten:
+            the count is said under the list, because somebody who finds no
+            trace of a size they retired assumes it was lost and adds it again.
+          */
+          const rows = liveSizes(all);
+          setRetiredCount(all.length - rows.length);
+          return rows;
+        })
         .then((rows) => {
           // A copy is a new product with new sizes, so none of these figures
           // is a previous figure to disagree with.
@@ -650,6 +673,16 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     if (badSize) { setError(`"${badSize.label}" needs a price.`); return; }
     const price = parseMoney(priceText, decimals);
     if (price === null || price < 0) { setError('Enter a valid price, for example 25.00'); return; }
+    /*
+      Two sizes with one name is not a naming preference.
+
+      The till draws a button per size, so the customer gets two identical
+      ones — and only one of the two is bound to a shelf, which makes the
+      other a drink that sells and pours nothing. Refused rather than warned
+      about, because there is no version of this somebody meant.
+    */
+    const sizeClash = sizeProblem(variants.filter((v) => v.label.trim()));
+    if (sizeClash) { setError(sizeClash); return; }
 
     /*
       The shelf figure, which is not simply a field on this form.
@@ -1481,6 +1514,12 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
               frozen={frozen}
               whoChanged={whoChanged}
             />
+          )}
+
+          {/* Said rather than silently missing: somebody who finds no trace of
+              a size they retired assumes it was lost, and adds it again. */}
+          {retiredCount > 0 && (
+            <p className="small dim" style={{ margin: '0.4rem 0 0' }}>{retiredWords(retiredCount)}</p>
           )}
 
           {/*

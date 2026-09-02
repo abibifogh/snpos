@@ -1346,20 +1346,33 @@ export async function pourMissedSales(opts: {
   shiftId: string;
   module?: Module;
   userId: string;
-}): Promise<{ poured: number; lines: number; failed: number }> {
-  const [orders, recipes, places] = await Promise.all([
+}): Promise<{ poured: number; lines: number; failed: number; retired: number }> {
+  const [orders, recipes, places, variants] = await Promise.all([
     listAll<{ $id: string; status?: string; module?: string }>('orders', [
       Query.equal('venue_id', opts.venueId),
       Query.equal('shift_id', opts.shiftId),
     ]).catch(() => []),
     loadRecipes(),
     loadLocations(opts.venueId),
+    listAll<{ $id: string; active?: boolean }>('product_variants').catch(() => []),
   ]);
+
+  /*
+    Sizes that are no longer sold.
+
+    The till will not sell one — see loadMenu, which leaves them off — so this
+    only ever meets them on OLD lines, sold before the size was retired. Their
+    shelf is not counted any more and nothing is bought onto it, so pouring
+    into it now would drive a dead figure negative and leave the shelf the
+    bottle actually came from just as overstated as before. Skipped and
+    counted, so the screen can say it rather than reporting a clean run.
+  */
+  const retiredSizeIds = new Set(variants.filter((v) => v.active === false).map((v) => v.$id));
 
   const counter = saleLocation(places, opts.module ?? 'bar');
   const mine = orders.filter((o) => (o.module ?? 'kitchen') === (opts.module ?? 'bar')
     && !['CANCELLED', 'REJECTED'].includes(o.status ?? ''));
-  if (mine.length === 0) return { poured: 0, lines: 0, failed: 0 };
+  if (mine.length === 0) return { poured: 0, lines: 0, failed: 0, retired: 0 };
 
   const lines = await listByIds<{
     $id: string; order_id: string; menu_item_id: string; variant_id?: string;
@@ -1370,8 +1383,11 @@ export async function pourMissedSales(opts: {
   let touched = 0;
   let failed = 0;
 
+  let retired = 0;
   for (const line of lines) {
     if (line.status === 'void') continue;
+    // A sale on a size that has since been retired. See retiredSizeIds.
+    if (line.variant_id && retiredSizeIds.has(line.variant_id)) { retired += 1; continue; }
 
     /*
       Already poured? Then leave it alone.
@@ -1430,7 +1446,7 @@ export async function pourMissedSales(opts: {
     }
   }
 
-  return { poured, lines: touched, failed };
+  return { poured, lines: touched, failed, retired };
 }
 
 /* ----------------------------------------- both ends of a shift's count */

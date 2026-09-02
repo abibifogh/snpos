@@ -444,18 +444,30 @@ export function BarCountsPage() {
     setPouring(true);
     setError(null);
     try {
-      const { poured, lines, failed } = await pourMissedSales({
+      const { poured, lines, failed, retired } = await pourMissedSales({
         venueId: 'main',
         shiftId: shift.$id,
         module: 'bar',
         userId: user?.$id ?? '',
       });
       await load();
+      /*
+        A sale on a size that has since been retired is left alone and SAID.
+
+        Its shelf is no longer counted and nothing is bought onto it, so
+        pouring into it now would drive a dead figure negative while the shelf
+        the bottle actually came from stays just as overstated. Reporting a
+        clean run would be the worse answer: somebody would press this, see
+        nothing change, and press it again.
+      */
+      const retiredNote = retired > 0
+        ? ` ${retired} sale${retired === 1 ? '' : 's'} on a size that has since been retired ${retired === 1 ? 'was' : 'were'} left alone.`
+        : '';
       toast(
-        lines === 0
+        (lines === 0
           ? 'Nothing was missed — every sale on this shift has already come off a shelf.'
           : `${lines} sale${lines === 1 ? '' : 's'} put through, moving ${poured} shel${poured === 1 ? 'f' : 'ves'}`
-            + `${failed > 0 ? `, and ${failed} could not be` : ''}.`,
+            + `${failed > 0 ? `, and ${failed} could not be` : ''}.`) + retiredNote,
         failed > 0 ? 'err' : undefined,
       );
     } catch (e) {

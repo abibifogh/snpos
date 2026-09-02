@@ -74,6 +74,7 @@ export * from './to-settle';
 export * from './order-edit';
 export * from './pour-check';
 export * from './unpoured';
+export * from './sizes';
 export * from './item-history';
 export * from './shift-counts';
 export * from './tabs';
