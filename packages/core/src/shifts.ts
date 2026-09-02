@@ -2,6 +2,7 @@ import { db, DB_ID, ID, Query, listAll, saveDropping } from './client';
 import type { Doc, Settings } from './types';
 import type { Order, OrderItem } from './orders';
 import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from './stock';
+import { liveOrders } from './orders';
 import { countable } from './bar-count';
 import { postShift, reverseEntry, shiftCloseEntries, lockedThroughFor, isLocked } from './ledger';
 import { isLivePayment } from './payments';
@@ -435,7 +436,10 @@ export async function shiftBlockers(
   // menu does not know one is open, so `shift_id` is blank and a query by
   // shift never saw it. The question is not "which orders belong to this
   // shift", it is "is anything still owed or still on the pass".
-  const orders = await listAll<Order>('orders', [Query.equal('venue_id', venueId)]);
+  // Live states only, and no older than the window — see liveOrders. A bill
+  // older than that still unpaid is the admin's to find, not a reason to read
+  // a year of history every time somebody presses Close.
+  const orders = await liveOrders(venueId);
   const blockers: ShiftBlocker[] = [];
   for (const o of orders) {
     // Only this side's. A craft shop cannot be held open by an unpaid plate of
@@ -585,9 +589,9 @@ export async function shelvePastLimit(
   shift: Pick<Shift, '$id' | 'opened_at' | 'module'>,
 ): Promise<Order[]> {
   const module = shift.module ?? 'kitchen';
-  const orders = await listAll<Order>('orders', [Query.equal('venue_id', venueId)]).catch(
-    () => [] as Order[],
-  );
+  // Only what could still be shelved: a closed or cancelled order has
+  // nowhere to go, and one older than the window is history, not a night.
+  const orders = await liveOrders(venueId).catch(() => [] as Order[]);
 
   const shelved: Order[] = [];
   for (const o of orders) {
@@ -704,12 +708,41 @@ export async function closeShift(opts: {
     Object.keys(counted).map((k) => [k, (counted[k] ?? 0) - (takings.byMethod[k] ?? 0)]),
   );
 
-  const shiftOrders = (await listAll<Order>('orders', [Query.equal('shift_id', shift.$id)])).filter(
-    (o) => o.payment_status === 'paid',
-  );
+  const onShift = await listAll<Order>('orders', [Query.equal('shift_id', shift.$id)]);
+  /*
+    WHAT LEFT THE BUILDING, paid for or not.
+
+    This used to count only paid orders, which meant a plate served on a tab
+    or unpaid at the close never came off the kitchen's stock — not then, and
+    not later, because the next shift only looks at its own orders. The food
+    went out; the books said it did not, and the count at the end of the week
+    reported the difference as a shortage nobody could explain.
+
+    Stock is a question about the shelf, not about the drawer. By the time a
+    shift can close, everything on it has either been served or called off —
+    an order still on the pass holds the close open — so "served or closed"
+    is exactly the set of plates that went out.
+  */
+  const shiftOrders = onShift.filter((o) => o.status === 'SERVED' || o.status === 'CLOSED');
   const soldItems = shiftOrders.length
     ? await listAll<OrderItem>('order_items', [Query.equal('order_id', shiftOrders.map((o) => o.$id))])
     : [];
+
+  /*
+    FINISHED ORDERS STOP BEING LIVE.
+
+    The bar and the shop mark an order CLOSED when it is paid; the pass marks
+    it SERVED when the food goes out and never moves it on, so every kitchen
+    order ever taken was still "live" as far as every screen was concerned.
+    A served order that has also been paid is finished, and closing the shift
+    is the moment to say so. Anything unpaid stays SERVED, which is what keeps
+    it on the "bills still to pay" strip where it belongs.
+  */
+  for (const o of onShift) {
+    if (o.status === 'SERVED' && o.payment_status === 'paid') {
+      await db.updateDocument(DB_ID, 'orders', o.$id, { status: 'CLOSED' }).catch(() => undefined);
+    }
+  }
 
   let cogs = 0;
   let stockNote = '';

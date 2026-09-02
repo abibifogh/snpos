@@ -7,11 +7,11 @@ import type { BlockerRow, CountRow, StockRow, ShiftFlow } from '@snpos/ui';
 import {
   formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift as createShift, shiftBlockers, expectedTakings, closeShift,
-  tabOrdersOnShift, releaseWords, closeCodeProblem, spendCloseCode, humanError, listAll, Query,
+  tabOrdersOnShift, releaseWords, closeCodeProblem, spendCloseCode, humanError, liveOrders,
   openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, HANDOVER_ENABLED,
   countsAtBothEnds, askForOpeningCount, hasOpeningCount, shiftCountPhases, ownFigure, floatOrigin, floatMethods,
 } from '@snpos/core';
-import type { PaymentMethod, Shift, FloatSource, TabOrder, Order } from '@snpos/core';
+import type { PaymentMethod, Shift, FloatSource, TabOrder } from '@snpos/core';
 import type { PosContext } from './App';
 
 export type { Shift } from '@snpos/core';
@@ -355,7 +355,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         figure and the words "ask an admin for the code" at the same moment
         they open the sheet — not after they have counted the drawer.
       */
-      const all = await listAll<Order>('orders', [Query.equal('venue_id', ctx.venue.$id)]).catch(() => []);
+      const all = await liveOrders(ctx.venue.$id).catch(() => []);
       setOnTab(tabOrdersOnShift(
         all as unknown as TabOrder[], (ctx.shift as Shift).$id, ctx.module,
       ));

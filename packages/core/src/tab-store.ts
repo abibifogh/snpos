@@ -9,6 +9,7 @@ import { db, DB_ID, ID, Query, listAll, listByIds } from './client';
 import { encodePin, verifyPin } from './pin';
 import { makeCloseCode, codeUsable, tabOrdersOnShift } from './tabs';
 import type { TabRow, TabOrder, IssuedCode } from './tabs';
+import { liveOrders } from './orders';
 import type { Order } from './orders';
 
 export interface Tab extends TabRow {
@@ -125,7 +126,7 @@ export async function tabExposure(
   module: string,
   venueId: string,
 ): Promise<{ orders: TabOrder[]; value: number }> {
-  const all = await listAll<Order>('orders', [Query.equal('venue_id', venueId)]).catch(() => []);
+  const all = await liveOrders(venueId).catch(() => []);
   const orders = tabOrdersOnShift(all as unknown as TabOrder[], shiftId, module);
   return { orders, value: orders.reduce((sum, o) => sum + o.total, 0) };
 }

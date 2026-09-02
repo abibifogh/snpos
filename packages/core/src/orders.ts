@@ -619,11 +619,45 @@ export async function requestCancellation(order: Pick<Order, '$id' | 'venue_id'>
  * shop existed, and a default that changes behaviour silently is worse than a
  * default that keeps it.
  */
+/** The states in which an order is still somebody's business tonight. */
+export const LIVE_STATUSES: OrderStatus[] = ['PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED'];
+
+/**
+ * How far back "still live" reaches.
+ *
+ * Thirty days is not a claim about how long a bill may stay unpaid. It is the
+ * point past which an order still sitting in a live state is a piece of
+ * history somebody forgot rather than a night still in progress, and it
+ * belongs to the admin's Orders page, which can see everything, rather than to
+ * a kitchen screen that has to redraw every twenty seconds.
+ */
+export const LIVE_WINDOW_MS = 30 * 86_400_000;
+
+/**
+ * Every order that could still matter to a till or a pass, and only those.
+ *
+ * THE READ THAT WAS QUIETLY GROWING. Five places asked for every order the
+ * venue had ever taken and filtered the answer in memory — the kitchen screen
+ * did it every twenty seconds. At a few hundred orders that is invisible; at
+ * a few thousand it is a pause on every refresh, and it never stops growing,
+ * because nothing ever stopped being "every order".
+ *
+ * So the database is asked the real question: live states only, this venue,
+ * and no older than the window. All three are indexed, and the answer is a
+ * night's worth of rows however long the business has been trading.
+ */
+export async function liveOrders(venueId: string, since = Date.now() - LIVE_WINDOW_MS): Promise<Order[]> {
+  return listAll<Order>('orders', [
+    Query.equal('venue_id', venueId),
+    Query.equal('status', LIVE_STATUSES),
+    Query.greaterThanEqual('$createdAt', new Date(since).toISOString()),
+  ]);
+}
+
 export async function loadOpenOrders(venueId: string, module: Module = 'kitchen'): Promise<Order[]> {
-  const rows = await listAll<Order>('orders', [Query.equal('venue_id', venueId)]);
-  const live: OrderStatus[] = ['PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'SERVED'];
+  const rows = await liveOrders(venueId);
   return rows
-    .filter((o) => live.includes(o.status) && (o.module ?? 'kitchen') === module)
+    .filter((o) => (o.module ?? 'kitchen') === module)
     .sort((a, b) => a.$createdAt.localeCompare(b.$createdAt));
 }
 

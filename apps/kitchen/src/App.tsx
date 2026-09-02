@@ -5,7 +5,7 @@ import {
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
-  db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, isCreate,
+  db, DB_ID, Query, listAll, listByIds, loadOpenOrders, subscribeCollection, isCreate,
   verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
   itemsAvailableNow, dueMinutes, ticketLines, linesComplete, isOverdue, minutesOver, seatFor, amountOutstanding,
@@ -114,8 +114,18 @@ export function App() {
 
   const loadItemsFor = useCallback(async (orderIds: string[]) => {
     if (orderIds.length === 0) return;
-    const rows = await loadWithFallback(`items:${orderIds.slice(0, 100).join(',').slice(0, 120)}`, () =>
-      listAll<OrderItem>('order_items', [Query.equal('order_id', orderIds.slice(0, 100))]),
+    /*
+      The whole list in the key, and the whole list in the query.
+
+      The key used to be cut at 120 characters — about six ids — so two
+      different batches of tickets shared one slot in the offline cache, and
+      on a dead network the second could be handed the first one's lines. The
+      query used to stop at a hundred ids with nothing chunking it; listByIds
+      splits at the limit the database actually has.
+    */
+    const ids = [...new Set(orderIds)].sort();
+    const rows = await loadWithFallback(`items:${ids.join(',')}`, () =>
+      listByIds<OrderItem>('order_items', 'order_id', ids),
     );
     /**
      * Only what was actually found is recorded.
