@@ -11,14 +11,7 @@ export const probeAppwrite = async () => true;
 export const noteReachable = () => undefined;
 export const everReachedAppwrite = () => true;
 
-/*
-  Fixed width, because a real Appwrite id is and because sorting matters: with
-  "gen9" and "gen10", a lexicographic tie-break puts the tenth request before
-  the ninth, and the stand-in would disagree with production about who asked
-  first.
-*/
-const nextId = () => `gen${String(++seq).padStart(12, '0')}`;
-export const ID = { unique: nextId };
+export const ID = { unique: () => `gen${++seq}` };
 
 type Q =
   | { op: 'equal' | 'notEqual'; f: string; v: any }
@@ -114,7 +107,7 @@ export const db = {
     for (const field of unknownFields.get(c) ?? []) {
       if (field in data) throw new Error(`Invalid document structure: Unknown attribute: "${field}"`);
     }
-    const realId = id === 'unique()' ? nextId() : id;
+    const realId = id === 'unique()' ? `gen${++seq}` : id;
     const doc = { $id: realId, $createdAt: new Date().toISOString(), ...copy(data) };
     coll(c).set(realId, doc);
     return copy(doc);

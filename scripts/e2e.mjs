@@ -38,7 +38,6 @@ try {
   // The database, replaced by one that lives in memory.
   await cp(join(here, 'e2e/fake-appwrite.ts'), join(work, 'core/client.ts'));
   await cp(join(here, 'e2e/shelves.ts'), join(work, 'shelves.ts'));
-  await cp(join(here, 'e2e/leave.ts'), join(work, 'leave.ts'));
 
   /*
     `from './menu'` is what Vite resolves and what node does not. Rewritten on
@@ -55,19 +54,14 @@ try {
       .replace(/\.ts\.ts'/g, ".ts'"));
   }
 
-  let code = 0;
-  for (const suite of ['shelves.ts', 'leave.ts']) {
-    // eslint-disable-next-line no-await-in-loop
-    const one = await new Promise((resolve) => {
-      const child = spawn(
-        process.execPath,
-        ['--experimental-strip-types', '--no-warnings', join(work, suite)],
-        { stdio: 'inherit' },
-      );
-      child.on('close', resolve);
-    });
-    if (one !== 0) code = one;
-  }
+  const code = await new Promise((resolve) => {
+    const child = spawn(
+      process.execPath,
+      ['--experimental-strip-types', '--no-warnings', join(work, 'shelves.ts')],
+      { stdio: 'inherit' },
+    );
+    child.on('close', resolve);
+  });
 
   if (code !== 0) {
     console.error('\nEnd-to-end checks failed.');

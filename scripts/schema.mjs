@@ -200,15 +200,6 @@ export const COLLECTIONS = [
     perms: { read: ['any'], create: [], update: ADMIN, delete: [] },
     attributes: [
       ['restaurant_name', 's', 120, true],
-      /**
-       * How many people may be off on the same day.
-       *
-       * Three by default, which is what was asked for and is a starting point
-       * rather than a rule about hospitality. Absent reads as the default and
-       * never as "no limit" — see leaveCap, where a missing setting meaning
-       * unlimited would be the failure that looks like the feature working.
-       */
-      ['leave_max_per_day', 'i', null, false, 3],
       ['timezone', 's', 64, true, 'Africa/Accra'],
       ['currency_code', 's', 3, true, 'GHS'],
       ['currency_symbol', 's', 8, true, 'GH₵'],
@@ -1876,65 +1867,6 @@ export const COLLECTIONS = [
     indexes: [
       ['venue_status', 'key', ['venue_id', 'status']],
       ['status_name', 'key', ['status', 'name']],
-    ],
-  },
-  {
-    /**
-     * Time off, one row per person per day.
-     *
-     * A DAY AT A TIME rather than a range, and that is the whole design. The
-     * only rule a rota actually has is "no more than N people off on the same
-     * day", and a range would mean expanding it to answer that question every
-     * time anybody asks. One row per day makes the question a count, makes a
-     * week where only Friday is full still bookable on the other four days,
-     * and makes the refusal name the day rather than the whole request.
-     *
-     * The days somebody asked for in one go still read as one request,
-     * through request_id.
-     *
-     * Every member of staff may create their own and read all of them: the
-     * screen has to be able to say "that day is full", and it cannot answer
-     * that without seeing the rows. Who is off is not a secret from the people
-     * working alongside them; what the screen SHOWS a colleague is narrower
-     * than what it reads, and that is decided in leave.ts.
-     */
-    id: 'staff_leave',
-    name: 'Time off',
-    perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: ADMIN },
-    attributes: [
-      ['venue_id', 's', 64, true],
-      ['staff_id', 's', 64, true],
-      // Snapshotted, so a leaver still reads as a name on last year's rota.
-      ['staff_name', 's', 120, false],
-      ['request_id', 's', 64, false],
-      /*
-        YYYY-MM-DD, as a string.
-
-        A rota is local and a day is a day. Storing an instant would make "the
-        twelfth" depend on where it is read, and a bar in Accra reading a
-        booking as the eleventh because a server is in another timezone is a
-        person turning up on the wrong day.
-      */
-      ['day', 's', 10, true],
-      ['kind', 'e', ['leave', 'unavailable'], true, 'leave'],
-      ['status', 'e', ['requested', 'approved', 'refused', 'withdrawn'], true, 'requested'],
-      ['reason', 's', 300, false],
-      /*
-        When it was asked for, so first asked is first held.
-
-        Fixed at the moment of writing and the same for everybody reading,
-        which is what lets two devices settle a tie the same way without
-        talking to each other. See requestLeave.
-      */
-      ['asked_at', 'd', null, false],
-      ['decided_by', 's', 64, false],
-      ['decided_at', 'd', null, false],
-      ['decided_note', 's', 300, false],
-    ],
-    indexes: [
-      ['day', 'key', ['day']],
-      ['staff_day', 'key', ['staff_id', 'day']],
-      ['request', 'key', ['request_id']],
     ],
   },
   {

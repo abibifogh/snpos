@@ -210,13 +210,6 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'venues', label: 'Venues', path: '/venues', group: 'Setup' },
   { key: 'tables', label: 'Tables & QR', path: '/tables', group: 'Setup' },
   { key: 'staff', label: 'Staff', path: '/staff', group: 'Setup' },
-  /*
-    Time off, beside Staff rather than under Money.
-
-    It is a rota question, not a takings one: the thing it decides is whether
-    the floor is covered on the fourteenth.
-  */
-  { key: 'leave', label: 'Time off', path: '/leave', group: 'Setup' },
   { key: 'features', label: 'Features', path: '/features', group: 'Setup' },
   { key: 'settings', label: 'Settings', path: '/settings', group: 'Setup', ownerOnly: true },
   { key: 'erase', label: 'Erase records', path: '/erase', group: 'Setup', ownerOnly: true },
@@ -239,9 +232,6 @@ export const DEFAULT_ACCESS: Record<string, string[]> = {
     // a floor decision made while somebody is standing there, and an owner who
     // has to be rung at eleven at night to open one is an owner who gets rung.
     'dashboard', 'orders', 'reports', 'shifts', 'expenses', 'vouchers', 'tabs',
-    // Deciding time off is a floor job. An owner who has to be rung to answer
-    // "can I have Saturday" is an owner who gets rung.
-    'leave',
     'menu_items', 'stock', 'waste', 'stations',
     // A shop manager runs the intake desk and needs to see who is owed what.
     'shop_categories', 'shop_items', 'consignors', 'intake', 'stocktake', 'payouts',
