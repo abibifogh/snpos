@@ -408,10 +408,42 @@ export async function giveSizeItsOwnStock(opts: {
    * to exactly this.
    */
   countEachShift?: boolean;
-}): Promise<{ ingredientId: string }> {
+}): Promise<{ ingredientId: string; reused: boolean }> {
+  const wanted = ingredientNameFor(opts.drinkName.trim(), opts.sizeLabel.trim());
+
+  /*
+    A SHELF WITH THIS NAME ALREADY EXISTS, so use it.
+
+    This used to create one unconditionally, and that is the trap at the end of
+    every repair: a bar whose "Club · Large" shelf holds forty-eight bottles
+    and is counted every night gets a SECOND "Club · Large" holding nothing,
+    the recipe binds the new one, and from then on sales come off the empty
+    shelf while the real one sits there never moving. Two identical lines on
+    the count sheet, and the one with the stock on it is the wrong one.
+
+    Matched on the name because that is what the count sheet shows and what
+    somebody walking the bar is reading off a bottle. Case and spacing are
+    ignored: "Club · Large" and "club · large " are one shelf to everybody
+    except a database.
+  */
+  const existing = (await loadIngredients(opts.venueId, 'bar').catch(() => []))
+    .find((i) => i.name.trim().toLowerCase() === wanted.trim().toLowerCase() && i.active !== false);
+
+  if (existing) {
+    await db.createDocument(DB_ID, 'recipes', ID.unique(), {
+      menu_item_id: opts.menuItemId,
+      variant_id: opts.variantId,
+      addon_option_id: '',
+      ingredient_id: existing.$id,
+      qty_per_unit: OWN_STOCK_QTY,
+      wastage_bp: 0,
+    });
+    return { ingredientId: existing.$id, reused: true };
+  }
+
   const ing = await db.createDocument(DB_ID, 'ingredients', ID.unique(), {
     venue_id: opts.venueId,
-    name: ingredientNameFor(opts.drinkName.trim(), opts.sizeLabel.trim()),
+    name: wanted,
     unit: opts.kindKey === 'crate' ? 'case' : 'bottle',
     base_unit_cost: 0,
     module: 'bar',
@@ -433,7 +465,7 @@ export async function giveSizeItsOwnStock(opts: {
     wastage_bp: 0,
   });
 
-  return { ingredientId: ing.$id };
+  return { ingredientId: ing.$id, reused: false };
 }
 
 /**

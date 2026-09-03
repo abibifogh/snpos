@@ -444,7 +444,7 @@ export function BarCountsPage() {
     setPouring(true);
     setError(null);
     try {
-      const { poured, lines, failed, retired } = await pourMissedSales({
+      const { poured, lines, failed, retired, unmatched } = await pourMissedSales({
         venueId: 'main',
         shiftId: shift.$id,
         module: 'bar',
@@ -452,23 +452,31 @@ export function BarCountsPage() {
       });
       await load();
       /*
-        A sale on a size that has since been retired is left alone and SAID.
+        WHAT WAS SKIPPED IS SAID, because silence here reads as success.
 
-        Its shelf is no longer counted and nothing is bought onto it, so
-        pouring into it now would drive a dead figure negative while the shelf
-        the bottle actually came from stays just as overstated. Reporting a
-        clean run would be the worse answer: somebody would press this, see
-        nothing change, and press it again.
+        A run that matched nothing used to report "nothing was missed", which
+        is what a perfectly up-to-date bar looks like — so somebody presses
+        this, sees no change, and presses it again. On a bar that has just been
+        set up wrongly, matching nothing is the commonest outcome there is, and
+        it is the one that needs saying most.
       */
-      const retiredNote = retired > 0
-        ? ` ${retired} sale${retired === 1 ? '' : 's'} on a size that has since been retired ${retired === 1 ? 'was' : 'were'} left alone.`
-        : '';
+      const skipped = [
+        unmatched > 0
+          ? `${unmatched} sale${unmatched === 1 ? '' : 's'} could not be matched to a shelf — see "Sold, but nothing came off a shelf" above`
+          : '',
+        retired > 0
+          ? `${retired} pour${retired === 1 ? 'ed' : 'ed'} from a shelf that has since been removed`
+          : '',
+      ].filter(Boolean).join(', and ');
+
       toast(
-        (lines === 0
+        (lines === 0 && !skipped
           ? 'Nothing was missed — every sale on this shift has already come off a shelf.'
-          : `${lines} sale${lines === 1 ? '' : 's'} put through, moving ${poured} shel${poured === 1 ? 'f' : 'ves'}`
-            + `${failed > 0 ? `, and ${failed} could not be` : ''}.`) + retiredNote,
-        failed > 0 ? 'err' : undefined,
+          : lines === 0
+            ? `Nothing was put through: ${skipped}.`
+            : `${lines} sale${lines === 1 ? '' : 's'} put through, moving ${poured} shel${poured === 1 ? 'f' : 'ves'}`
+              + `${failed > 0 ? `, and ${failed} could not be` : ''}.${skipped ? ` ${skipped[0].toUpperCase()}${skipped.slice(1)}.` : ''}`),
+        failed > 0 || unmatched > 0 ? 'err' : undefined,
       );
     } catch (e) {
       setError(humanError(e));

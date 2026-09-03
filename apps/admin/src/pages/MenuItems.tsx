@@ -508,8 +508,30 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     // deleted. Its id is on sale lines, on movements and on somebody's
     // statement, and deleting it would leave those pointing at nothing, the
     // shop would be unable to say what the customer actually bought.
+    /*
+      A SIZE THAT FAILS TO RETIRE MUST SAY SO.
+
+      This swallowed its error, and a swallowed error here is the worst kind:
+      the form closes, says it saved, and the size is still on the menu and
+      still sellable. Somebody removes it, reopens the drink, finds it there,
+      removes it again — and nothing anywhere is wrong as far as any screen is
+      concerned.
+    */
+    const notRetired: string[] = [];
     for (const id of removedVariantIds) {
-      await db.updateDocument(DB_ID, 'product_variants', id, { active: false }).catch(() => undefined);
+      const done = await db.updateDocument(DB_ID, 'product_variants', id, { active: false })
+        .then(() => true)
+        .catch(() => false);
+      if (!done) notRetired.push(id);
+    }
+    if (notRetired.length > 0) {
+      // Thrown rather than returned: this runs inside the save, and the save's
+      // own handler is what puts a message in front of somebody.
+      throw new Error(
+        `${notRetired.length} size${notRetired.length === 1 ? '' : 's'} could not be removed and ${notRetired.length === 1 ? 'is' : 'are'} `
+        + 'still on the menu. Everything else was saved. Try again, and if it keeps happening the database is '
+        + 'refusing the change and an admin should be told.',
+      );
     }
     for (const v of variants) {
       if (!v.label.trim()) continue;

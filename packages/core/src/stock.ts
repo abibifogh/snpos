@@ -1346,7 +1346,7 @@ export async function pourMissedSales(opts: {
   shiftId: string;
   module?: Module;
   userId: string;
-}): Promise<{ poured: number; lines: number; failed: number; retired: number }> {
+}): Promise<{ poured: number; lines: number; failed: number; retired: number; unmatched: number }> {
   const [orders, recipes, places, variants] = await Promise.all([
     listAll<{ $id: string; status?: string; module?: string }>('orders', [
       Query.equal('venue_id', opts.venueId),
@@ -1358,21 +1358,25 @@ export async function pourMissedSales(opts: {
   ]);
 
   /*
-    Sizes that are no longer sold.
+    RETIRING A SIZE DOES NOT UNMAKE THE SALES IT ALREADY TOOK.
 
-    The till will not sell one — see loadMenu, which leaves them off — so this
-    only ever meets them on OLD lines, sold before the size was retired. Their
-    shelf is not counted any more and nothing is bought onto it, so pouring
-    into it now would drive a dead figure negative and leave the shelf the
-    bottle actually came from just as overstated as before. Skipped and
-    counted, so the screen can say it rather than reporting a clean run.
+    An earlier version of this skipped any line whose size had since been
+    retired, on the reasoning that its shelf was dead. That was wrong, and
+    wrong in the direction that costs: retiring a SIZE does not retire the
+    SHELF. "Club · Large" goes on being counted every night, so a sale that
+    took a bottle off it must still be recorded — and skipping it leaves the
+    shelf overstated for ever, which is the exact complaint this button exists
+    to answer.
+
+    What genuinely cannot be poured into is a shelf that is gone or switched
+    off, and that is checked below where the ingredient is actually read.
   */
-  const retiredSizeIds = new Set(variants.filter((v) => v.active === false).map((v) => v.$id));
+  void variants;
 
   const counter = saleLocation(places, opts.module ?? 'bar');
   const mine = orders.filter((o) => (o.module ?? 'kitchen') === (opts.module ?? 'bar')
     && !['CANCELLED', 'REJECTED'].includes(o.status ?? ''));
-  if (mine.length === 0) return { poured: 0, lines: 0, failed: 0, retired: 0 };
+  if (mine.length === 0) return { poured: 0, lines: 0, failed: 0, retired: 0, unmatched: 0 };
 
   const lines = await listByIds<{
     $id: string; order_id: string; menu_item_id: string; variant_id?: string;
@@ -1383,11 +1387,12 @@ export async function pourMissedSales(opts: {
   let touched = 0;
   let failed = 0;
 
+  /** Sold, but nothing on the menu says what it pours. See unpouredSales. */
+  let unmatched = 0;
+  /** Sold, and the shelf it pours from is gone or switched off. */
   let retired = 0;
   for (const line of lines) {
     if (line.status === 'void') continue;
-    // A sale on a size that has since been retired. See retiredSizeIds.
-    if (line.variant_id && retiredSizeIds.has(line.variant_id)) { retired += 1; continue; }
 
     /*
       Already poured? Then leave it alone.
@@ -1404,13 +1409,23 @@ export async function pourMissedSales(opts: {
     if ((already.total ?? 1) > 0) continue;
 
     const applies = recipeFor(recipes as unknown as RecipeRow[], line.menu_item_id, line.variant_id);
-    if (applies.length === 0) continue;
+    /*
+      Counted rather than passed over in silence.
+
+      A run that matched nothing used to report "nothing was missed", which is
+      indistinguishable from a bar that is perfectly up to date — so somebody
+      presses this, sees no change, and presses it again. It is the commonest
+      real state on a bar that has just been set up wrongly.
+    */
+    if (applies.length === 0) { unmatched += 1; continue; }
 
     touched += 1;
     for (const r of applies) {
       const ing = await db.getDocument(DB_ID, 'ingredients', r.ingredient_id).catch(() => null) as
-        { base_unit_cost?: number } | null;
-      if (!ing) continue;
+        { base_unit_cost?: number; active?: boolean } | null;
+      // A shelf that is gone, or switched off, is the one thing that genuinely
+      // cannot be poured into. Counted, so the screen can say it.
+      if (!ing || ing.active === false) { retired += 1; continue; }
 
       // The kitchen's arithmetic, mirrored: a bar over-pours as a kitchen
       // trims, and a recipe ignoring wastage reports a shortage every night.
@@ -1446,7 +1461,7 @@ export async function pourMissedSales(opts: {
     }
   }
 
-  return { poured, lines: touched, failed, retired };
+  return { poured, lines: touched, failed, retired, unmatched };
 }
 
 /* ----------------------------------------- both ends of a shift's count */
