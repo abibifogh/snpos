@@ -5,6 +5,9 @@ import type { PurchaseRow } from './price-history';
 import type { Module } from './access';
 import { unpouredSales } from './unpoured';
 import type { Unpoured, SoldRow, SoldItem, PourRule } from './unpoured';
+// Which leftover shelf links can be repaired, decided away from the database.
+import { relinkPlan } from './shelf-relink';
+import type { RelinkPlan, LinkRow, LinkSize, LinkItem } from './shelf-relink';
 import {
   variancesIn, wasCountedBar, shiftCounted, countable, countableBy, filedCounts, undoDeltas, undoProblem,
   movesOnItsOwn, storeCountId, isStoreCount, STORE_COUNT_PREFIX, isPending, approveDeltas,
@@ -1341,6 +1344,44 @@ export async function restoreLevelUpload(opts: {
  * large Club's shelf and not off the drink it is a size of. See recipeFor: a
  * size's own rows win outright over the drink's rather than adding to them.
  */
+/**
+ * Put right the shelf links left pointing at sizes that are gone.
+ *
+ * The reason a drink can be perfectly set up on every screen and still pour
+ * nothing. See shelf-relink for what can be repaired without guessing and what
+ * has to be asked about — the decision is made there, in a file with no
+ * database in it, and this only writes it down.
+ *
+ * Run this BEFORE pourMissedSales, not after. The catch-up matches sales to
+ * shelves with the same rule the server uses, so until the links are right it
+ * has nothing to match and reports exactly that.
+ */
+export async function relinkShelves(venueId: string): Promise<RelinkPlan> {
+  const [recipes, sizes, items] = await Promise.all([
+    listAll<LinkRow>('recipes').catch(() => [] as LinkRow[]),
+    listAll<LinkSize>('product_variants').catch(() => [] as LinkSize[]),
+    listAll<LinkItem>('menu_items', [Query.equal('venue_id', venueId)]).catch(() => [] as LinkItem[]),
+  ]);
+
+  const plan = relinkPlan(recipes, sizes, items);
+
+  for (const r of plan.repoint) {
+    await db.updateDocument(DB_ID, 'recipes', r.recipeId, { variant_id: r.toVariantId })
+      .catch(() => undefined);
+  }
+  /*
+    Handed back to the drink by emptying the field rather than removing it.
+    A row with no size on it is what every recipe written before sizes existed
+    already is, and it is what the pour falls back to.
+  */
+  for (const r of plan.release) {
+    await db.updateDocument(DB_ID, 'recipes', r.recipeId, { variant_id: '' })
+      .catch(() => undefined);
+  }
+
+  return plan;
+}
+
 export async function pourMissedSales(opts: {
   venueId: string;
   shiftId: string;

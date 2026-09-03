@@ -42,7 +42,28 @@ test('a size whose recipe names a size that no longer exists pours NOTHING', () 
   assert.equal(row.qty, 8);
   // And the words name the cause and the fix, because the fix is not obvious.
   assert.match(unpouredWords(row.reason, row.name), /switched off and added again/);
-  assert.match(unpouredWords(row.reason, row.name), /Give every size its own shelf/);
+  assert.match(unpouredWords(row.reason, row.name), /Reconnect the shelves/);
+});
+
+test('a drink with NO sizes is not blamed for a size', () => {
+  /**
+   * Reported from the screen: "these do not have sizes, yet they are on the
+   * list of things that took nothing off a shelf". The words said the drink
+   * had sizes and one of them was unlinked, which about a plain Sprite reads
+   * as nonsense — and nonsense on a fault report is how a fault report stops
+   * being read.
+   *
+   * What is actually true: the drink used to have sizes, the sizes went, and
+   * everything saying what it pours is still tied to one of them. So a plain
+   * sale matches nothing. Different cause, different fix, different words.
+   */
+  const recipes = [{ menu_item_id: 'club', variant_id: 'long-gone', ingredient_id: 'club-bottle', qty_per_unit: 1 }];
+  const [row] = unpouredSales([sold({ qty: 7 })], recipes, [drink()]);
+  assert.equal(row.reason, 'sold-without-a-size');
+  const words = unpouredWords(row.reason, row.name);
+  assert.match(words, /has no sizes/);
+  assert.match(words, /tied to a size it used to have/);
+  assert.match(words, /Reconnect the shelves/);
 });
 
 test('a recipe with no measure on it pours nothing', () => {

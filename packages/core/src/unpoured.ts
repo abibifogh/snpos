@@ -55,6 +55,14 @@ export type UnpouredReason =
   | 'no-recipe'
   /** The drink has recipes, but every one belongs to a different size. */
   | 'size-has-no-recipe'
+  /**
+   * The drink has recipes, every one is tied to a size, and this was sold
+   * with no size at all. That is a drink that USED to have sizes: the sizes
+   * went, the links stayed, and now nothing matches. From the screen it reads
+   * as nonsense — a drink with no sizes blamed for a size — so it is its own
+   * reason with its own words. See shelf-relink.
+   */
+  | 'sold-without-a-size'
   /** The drink is not on the bar's side, so the bar's pour skips it. */
   | 'not-on-the-bar';
 
@@ -132,7 +140,11 @@ export function unpouredSales(
     );
     const reason: UnpouredReason = !onTheBar && item
       ? 'not-on-the-bar'
-      : mine.length === 0 ? 'no-recipe' : 'size-has-no-recipe';
+      : mine.length === 0
+        ? 'no-recipe'
+        // Every row it has is tied to a size. Whether that is this size's
+        // fault or the drink's depends on whether a size was sold at all.
+        : line.variant_id ? 'size-has-no-recipe' : 'sold-without-a-size';
 
     const key = `${line.menu_item_id}|${line.variant_id ?? ''}`;
     const at = out.get(key) ?? {
@@ -155,11 +167,15 @@ export function unpouredWords(reason: UnpouredReason, name: string): string {
     case 'not-on-the-bar':
       return `${name} is not set to the bar, so selling it takes nothing off any shelf. Open it in `
         + 'Drinks & cocktails and set which side of the business it belongs to.';
+    case 'sold-without-a-size':
+      return `${name} has no sizes, but everything saying what it pours is still tied to a size it used to `
+        + 'have — so a plain sale matches nothing and no bottle comes off. Press "Reconnect the shelves" '
+        + 'below, which hands the link back to the drink.';
     case 'size-has-no-recipe':
       return `${name} has sizes, and this size is not linked to a shelf — the drink's other sizes are, so `
         + 'there is nothing for it to fall back on. This happens on its own when a size is switched off and '
-        + 'added again: the link still names the size that was replaced. Open the drink and save it, or use '
-        + '"Give every size its own shelf".';
+        + 'added again: the link still names the size that was replaced. Press "Reconnect the shelves" below, '
+        + 'which points it back at the size that replaced it.';
     default:
       return `Nothing on ${name} says what it pours, so selling it takes nothing off any shelf. Open it in `
         + 'Drinks & cocktails and say how much of which bottle each one uses.';

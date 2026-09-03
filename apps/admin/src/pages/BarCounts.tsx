@@ -9,10 +9,11 @@ import {
   loadRecipes, pourState, pourLabel, pourWords, unexplainedByWiring, drinksToMoveToBar,
   heldWords, pendingBarChecks, barCountHistory, approveBarCount, rejectBarCount, countState,
   isStoreCount, STORE_COUNT_PREFIX, unpouredForShift, unpouredWords, unpouredSummary,
+  relinkShelves, relinkWords, relinkIsEmpty,
 } from '@snpos/core';
 import { CountHistory, type HistoryCount } from '../components/CountHistory';
 import type {
-  Unpoured,
+  Unpoured, Undecided,
   BarCountLine, Shift, Doc, StockLocation, FiledCheck, FiledCount, PourRow, PourItem, PourState,
 } from '@snpos/core';
 import { useSession } from '../session';
@@ -130,6 +131,9 @@ export function BarCountsPage() {
    * instead, with the same rule the server pours by. See unpouredSales.
    */
   const [unpoured, setUnpoured] = useState<Unpoured[] | null>(null);
+  /** Leftover links the repair would not guess at. Shown, never hidden. */
+  const [undecided, setUndecided] = useState<Undecided[]>([]);
+  const [relinking, setRelinking] = useState(false);
   const room = places.find((p2) => p2.$id === placeId) ?? null;
   const isStore = room?.kind === 'store';
   /**
@@ -482,6 +486,49 @@ export function BarCountsPage() {
       setError(humanError(e));
     } finally {
       setPouring(false);
+    }
+  };
+
+  /**
+   * Put the shelf links right, then put the shift through them.
+   *
+   * One press because they are one job. Repairing the links changes nothing
+   * that already happened — the sales are still sitting there unaccounted —
+   * and running the catch-up first has nothing to match. Somebody told to do
+   * both, in that order, will do one of them.
+   */
+  const reconnect = async () => {
+    if (!shift) return;
+    setRelinking(true);
+    setError(null);
+    try {
+      const plan = await relinkShelves('main');
+      setUndecided(plan.undecided);
+
+      const fixed = plan.repoint.length + plan.release.length;
+      if (fixed === 0) {
+        toast(relinkWords(plan), relinkIsEmpty(plan) ? undefined : 'err');
+        return;
+      }
+
+      // And now the sales those links were supposed to catch.
+      const { poured, lines } = await pourMissedSales({
+        venueId: 'main',
+        shiftId: shift.$id,
+        module: 'bar',
+        userId: user?.$id ?? '',
+      });
+      await load();
+      void unpouredForShift('main', shift.$id, 'bar').then(setUnpoured).catch(() => undefined);
+
+      toast(`${relinkWords(plan)} ${lines === 0
+        ? 'Nothing on this shift was waiting on them.'
+        : `${lines} sale${lines === 1 ? '' : 's'} then went through, moving ${poured} `
+          + `shel${poured === 1 ? 'f' : 'ves'}.`}`);
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setRelinking(false);
     }
   };
 
@@ -858,12 +905,46 @@ export function BarCountsPage() {
               </tbody>
             </table>
           </div>
-          {/* The repair that fixes the commonest cause, where it is named. */}
-          {isAdmin && unpoured.some((u) => u.reason === 'size-has-no-recipe') && (
-            <p className="small dim" style={{ marginBottom: 0 }}>
-              Sizes are fixed by &ldquo;Give every size its own shelf&rdquo; on Drinks &amp; cocktails, or by
-              opening the drink and saving it.
-            </p>
+          {/*
+            THE REPAIR, WHERE THE FAULT IS NAMED.
+
+            Both reasons above come from the same thing: a link written for a
+            size that is no longer there. A size switched off and added again
+            is a NEW size with a new id, and a drink whose sizes were deleted
+            outright now sells with no size on the line at all — either way
+            the link matches nothing and no bottle moves.
+
+            This points those links back at the size that replaced them, or
+            hands them to the drink where there are no sizes left, and then
+            puts the shift through. It refuses to guess: a drink with two
+            leftover links and no sizes could pour from either shelf, and
+            picking one would be a new fault nobody can see.
+          */}
+          {isAdmin && shift && unpoured.some(
+            (u) => u.reason === 'size-has-no-recipe' || u.reason === 'sold-without-a-size',
+          ) && (
+            <>
+              <Button loading={relinking} onClick={() => void reconnect()}>
+                Reconnect the shelves and put this shift through
+              </Button>
+              <p className="small dim" style={{ marginBottom: 0 }}>
+                Safe to press twice. A sale already accounted for is left alone, and a link that points at a
+                size which still exists is not touched.
+              </p>
+            </>
+          )}
+
+          {/* What it would not decide for you, said rather than left out. */}
+          {undecided.length > 0 && (
+            <>
+              <Notice tone="warn">
+                {undecided.length === 1 ? 'One drink was' : `${undecided.length} drinks were`} left alone because
+                repairing {undecided.length === 1 ? 'it' : 'them'} would mean guessing which shelf to pour from.
+              </Notice>
+              <ul className="small dim" style={{ marginBottom: 0 }}>
+                {undecided.map((u) => <li key={u.recipeId}>{u.why}</li>)}
+              </ul>
+            </>
           )}
         </Card>
       )}
