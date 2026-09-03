@@ -17,6 +17,14 @@ export interface Settings extends Doc {
   idle_minutes?: number;
   /** Margin below which an item is flagged, in basis points. Absent is 30%. */
   margin_warn_bp?: number;
+  /**
+   * How many people may be off on the same day.
+   *
+   * Absent reads as three — never as "no limit". See leaveCap, where a missing
+   * setting meaning unlimited would be the failure that looks like the feature
+   * working.
+   */
+  leave_max_per_day?: number;
   currency_code: string;
   currency_symbol: string;
   currency_decimals: number;

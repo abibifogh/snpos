@@ -21,6 +21,7 @@ import { AccountingPage } from './pages/Accounting';
 import { TablesPage } from './pages/Tables';
 import { ShiftsPage } from './pages/Shifts';
 import { StaffPage } from './pages/Staff';
+import { LeavePage } from './pages/Leave';
 import { StockPage } from './pages/Stock';
 import { WastePage } from './pages/Waste';
 import { ReportsPage } from './pages/Reports';
@@ -102,6 +103,7 @@ export function App() {
         <Route path="/tables" element={guard('tables', <TablesPage />)} />
         <Route path="/shifts" element={guard('shifts', <ShiftsPage />)} />
         <Route path="/staff" element={guard('staff', <StaffPage />)} />
+        <Route path="/leave" element={guard('leave', <LeavePage />)} />
         <Route path="/stock" element={guard('stock', <StockPage />)} />
         <Route path="/stations" element={guard('stations', <StationsPage />)} />
         <Route path="/waste" element={guard('waste', <WastePage />)} />

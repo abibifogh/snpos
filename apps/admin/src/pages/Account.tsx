@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { Button, Card, Field, Input, Notice, useToast } from '@snpos/ui';
 import { account, humanError } from '../lib';
 import { useSession } from '../session';
+import { MyLeave } from '../components/MyLeave';
 
 /** Appwrite's own minimum. Stated up front rather than discovered on submit. */
 const MIN_PASSWORD = 8;
 
 export function AccountPage() {
-  const { user, profile, refreshUser } = useSession();
+  const { user, profile, settings, refreshUser } = useSession();
   const toast = useToast();
 
   const [name, setName] = useState(user?.name ?? '');
@@ -72,6 +73,13 @@ export function AccountPage() {
   return (
     <>
       <h1>Your account</h1>
+
+      {/*
+        Asking for time off lives here because this page is always yours,
+        whatever your role. A cook has no admin pages at all and still has to
+        be able to say they are away on the fourteenth.
+      */}
+      {profile && <MyLeave profile={profile} settings={settings} />}
 
       <Card title="Password">
         <p className="small dim" style={{ marginTop: 0 }}>
