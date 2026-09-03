@@ -505,7 +505,7 @@ export function BarCountsPage() {
       const plan = await relinkShelves('main');
       setUndecided(plan.undecided);
 
-      const fixed = plan.repoint.length + plan.release.length;
+      const fixed = plan.repoint.length + plan.release.length + plan.adopt.length;
       if (fixed === 0) {
         toast(relinkWords(plan), relinkIsEmpty(plan) ? undefined : 'err');
         return;

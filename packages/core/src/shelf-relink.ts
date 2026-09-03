@@ -64,6 +64,41 @@ export interface LinkSize {
 export interface LinkItem {
   $id: string;
   name: string;
+  module?: string;
+}
+
+/** A shelf, by the only thing that can identify one across a broken link: its name. */
+export interface ShelfRow {
+  $id: string;
+  name: string;
+  module?: string;
+  active?: boolean;
+}
+
+/**
+ * A size with no link at all, and a shelf standing there with its name on it.
+ *
+ * The third shape of the fault, and the one that repointing cannot reach. A
+ * size that sold eight bottles has no link of its own — never had one, or the
+ * only link belongs to a different size that was deleted — so there is nothing
+ * to repoint. But the shelf it should pour from is not missing: it is sitting
+ * on the count sheet called "Club · Large", which is exactly the name the
+ * system gives a size's own shelf when it makes one.
+ *
+ * Matching on that name is not a guess. It is the same name the system writes
+ * — see ingredientNameFor, which shelfNameFor below mirrors — and it is taken
+ * only when exactly one shelf answers to it.
+ *
+ * Taken for RETIRED sizes too, which is the point. Retiring a size does not
+ * unmake the sales it already took, and those sales still have to come off the
+ * shelf they came off in real life.
+ */
+export interface Adopt {
+  menuItemId: string;
+  variantId: string;
+  ingredientId: string;
+  /** The shelf's name, which is also the size's. */
+  name: string;
 }
 
 /** Point it at the size that replaced the old one, or hand it back to the drink. */
@@ -90,11 +125,31 @@ export interface Undecided {
 export interface RelinkPlan {
   repoint: Relink[];
   release: Relink[];
+  adopt: Adopt[];
   undecided: Undecided[];
 }
 
 /** Two names are the same name whatever the case or spacing. */
 const norm = (s?: string): string => (s ?? '').trim().toLowerCase();
+
+/**
+ * What a size's own shelf is called.
+ *
+ * Mirrors ingredientNameFor, which is what actually names one when the system
+ * makes it. This file is pure and may not import that one at runtime, so the
+ * rule is written twice and a parity test fails the build if they drift — two
+ * spellings of one shelf name would mean a repair that silently matches
+ * nothing on exactly the drinks it exists for.
+ */
+export function shelfNameFor(drink: string, size: string, max = 120): string {
+  const label = (size ?? '').trim();
+  const name = (drink ?? '').trim();
+  if (!label) return name.slice(0, max);
+  const joiner = ' · ';
+  const room = max - joiner.length - label.length;
+  if (room < 1) return `${name} ${label}`.trim().slice(0, max);
+  return `${name.length > room ? `${name.slice(0, room - 1)}…` : name}${joiner}${label}`;
+}
 
 /**
  * What can be put right, what must be asked about, and nothing done yet.
@@ -107,16 +162,30 @@ export function relinkPlan(
   recipes: LinkRow[],
   sizes: LinkSize[],
   items: LinkItem[],
+  shelves: ShelfRow[] = [],
 ): RelinkPlan {
   const sizeById = new Map(sizes.map((v) => [v.$id, v]));
   const nameOf = new Map(items.map((i) => [i.$id, i.name]));
 
   const liveByItem = new Map<string, LinkSize[]>();
+  const allByItem = new Map<string, LinkSize[]>();
   for (const v of sizes) {
-    if (v.active === false) continue;
     const key = v.menu_item_id ?? '';
     if (!key) continue;
+    allByItem.set(key, [...(allByItem.get(key) ?? []), v]);
+    if (v.active === false) continue;
     liveByItem.set(key, [...(liveByItem.get(key) ?? []), v]);
+  }
+
+  // Shelves by name, and only the bar's live ones. A name answered by two
+  // shelves identifies neither, so it is not used at all.
+  const shelfByName = new Map<string, ShelfRow[]>();
+  for (const s of shelves) {
+    if (s.active === false) continue;
+    if (s.module && s.module !== 'bar') continue;
+    const key = norm(s.name);
+    if (!key) continue;
+    shelfByName.set(key, [...(shelfByName.get(key) ?? []), s]);
   }
 
   const rowsByItem = new Map<string, LinkRow[]>();
@@ -130,6 +199,7 @@ export function relinkPlan(
 
   const repoint: Relink[] = [];
   const release: Relink[] = [];
+  const adopt: Adopt[] = [];
   const undecided: Undecided[] = [];
 
   for (const [itemId, rows] of rowsByItem) {
@@ -187,12 +257,55 @@ export function relinkPlan(
     }
   }
 
-  return { repoint, release, undecided };
+  /*
+    A SIZE WITH NO LINK AT ALL, AND A SHELF WITH ITS NAME ON IT.
+
+    Repointing needs a link to repoint. The size that sold eight large Clubs
+    has none — the drink had two Larges, the link belonged to the one that was
+    deleted, and deleting it took the link with it. Nothing above can reach
+    that, and it is the case that started all of this.
+
+    But the shelf is not missing. It is on the count sheet, called "Club ·
+    Large", which is the name the system itself gives a size's own shelf. So a
+    size with no link of its own, whose name matches exactly one live bar
+    shelf, is given that shelf.
+
+    Retired sizes included, deliberately. Retiring a size does not unmake the
+    sales it already took, and those bottles came off a real shelf in real
+    life whatever the catalogue says now.
+  */
+  for (const item of items) {
+    if (item.module && item.module !== 'bar') continue;
+    const rows = rowsByItem.get(item.$id) ?? [];
+    for (const v of allByItem.get(item.$id) ?? []) {
+      if (rows.some((r) => r.variant_id === v.$id)) continue;
+      // Already being pointed at by a link repaired above.
+      if (repoint.some((r) => r.menuItemId === item.$id && r.toVariantId === v.$id)) continue;
+
+      const label = (v.label ?? '').trim();
+      if (!label) continue;
+      const shelfName = shelfNameFor(item.name, label);
+      const hits = shelfByName.get(norm(shelfName)) ?? [];
+      // Exactly one, or nothing. Two shelves of one name identify neither.
+      if (hits.length !== 1) continue;
+
+      adopt.push({ menuItemId: item.$id, variantId: v.$id, ingredientId: hits[0].$id, name: shelfName });
+    }
+  }
+
+  /*
+    A drink that got a shelf out of the step above is no longer waiting on
+    somebody. Leaving it on the "left alone" list beside a repair that just
+    worked is the kind of contradiction that makes a screen unreadable.
+  */
+  const helped = new Set(adopt.map((a) => a.menuItemId));
+  return { repoint, release, adopt, undecided: undecided.filter((u) => !helped.has(u.menuItemId)) };
 }
 
 /** Is there anything here to do? */
 export const relinkIsEmpty = (plan: RelinkPlan): boolean =>
-  plan.repoint.length === 0 && plan.release.length === 0 && plan.undecided.length === 0;
+  plan.repoint.length === 0 && plan.release.length === 0
+  && plan.adopt.length === 0 && plan.undecided.length === 0;
 
 /**
  * What the repair did, in the words of whoever pressed it.
@@ -201,26 +314,31 @@ export const relinkIsEmpty = (plan: RelinkPlan): boolean =>
  * only its successes is one that quietly leaves a drink pouring nothing.
  */
 export function relinkWords(plan: RelinkPlan): string {
-  const fixed = plan.repoint.length + plan.release.length;
+  const fixed = plan.repoint.length + plan.release.length + plan.adopt.length;
   const parts: string[] = [];
 
   if (plan.repoint.length > 0) {
-    parts.push(`${plan.repoint.length} ${plan.repoint.length === 1 ? 'was' : 'were'} pointed back at the size `
-      + 'that replaced the old one');
+    parts.push(`${plan.repoint.length} ${plan.repoint.length === 1 ? 'link was' : 'links were'} pointed back at `
+      + 'the size that replaced the old one');
   }
   if (plan.release.length > 0) {
     parts.push(`${plan.release.length} ${plan.release.length === 1 ? 'was' : 'were'} handed back to the drink, `
       + 'which no longer has sizes');
   }
+  if (plan.adopt.length > 0) {
+    parts.push(`${plan.adopt.length} ${plan.adopt.length === 1 ? 'size was' : 'sizes were'} joined to the shelf `
+      + `already carrying ${plan.adopt.length === 1 ? 'its' : 'their'} name `
+      + `(${plan.adopt.slice(0, 3).map((a) => a.name).join(', ')}${plan.adopt.length > 3 ? ', and more' : ''})`);
+  }
 
   if (fixed === 0) {
     return plan.undecided.length === 0
-      ? 'Every shelf link points at a size that still exists. Nothing needed changing.'
+      ? 'Every size is joined to a shelf that still exists. Nothing needed changing.'
       : `${plan.undecided.length} shelf ${plan.undecided.length === 1 ? 'link points' : 'links point'} at a size `
         + 'that is gone, and none of them can be repaired without guessing. They are listed below.';
   }
 
-  const head = `${fixed} shelf ${fixed === 1 ? 'link' : 'links'} pointed at a size that is gone: ${parts.join(', and ')}.`;
+  const head = `${fixed} shelf ${fixed === 1 ? 'link' : 'links'} put right: ${parts.join('; ')}.`;
   return plan.undecided.length > 0
     ? `${head} ${plan.undecided.length} ${plan.undecided.length === 1 ? 'was' : 'were'} left alone — see below.`
     : head;

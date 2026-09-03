@@ -7,7 +7,7 @@ import { unpouredSales } from './unpoured';
 import type { Unpoured, SoldRow, SoldItem, PourRule } from './unpoured';
 // Which leftover shelf links can be repaired, decided away from the database.
 import { relinkPlan } from './shelf-relink';
-import type { RelinkPlan, LinkRow, LinkSize, LinkItem } from './shelf-relink';
+import type { RelinkPlan, LinkRow, LinkSize, LinkItem, ShelfRow } from './shelf-relink';
 import {
   variancesIn, wasCountedBar, shiftCounted, countable, countableBy, filedCounts, undoDeltas, undoProblem,
   movesOnItsOwn, storeCountId, isStoreCount, STORE_COUNT_PREFIX, isPending, approveDeltas,
@@ -15,7 +15,7 @@ import {
 import type { FiledCheck } from './bar-count';
 import { levelFor, transferQty, transferMovements, purchaseLocation, saleLocation } from './locations';
 // What a sale actually pours from: a size's own rows win over the drink's.
-import { recipeFor } from './variant-recipes';
+import { recipeFor, OWN_STOCK_QTY } from './variant-recipes';
 import type { RecipeRow } from './recipe-card';
 import {
   levelPayload, readLevelPayload, rowsFromPayload, restoreProblem, LEVEL_PAYLOAD_MAX,
@@ -1357,13 +1357,14 @@ export async function restoreLevelUpload(opts: {
  * has nothing to match and reports exactly that.
  */
 export async function relinkShelves(venueId: string): Promise<RelinkPlan> {
-  const [recipes, sizes, items] = await Promise.all([
+  const [recipes, sizes, items, shelves] = await Promise.all([
     listAll<LinkRow>('recipes').catch(() => [] as LinkRow[]),
     listAll<LinkSize>('product_variants').catch(() => [] as LinkSize[]),
     listAll<LinkItem>('menu_items', [Query.equal('venue_id', venueId)]).catch(() => [] as LinkItem[]),
+    listAll<ShelfRow>('ingredients', [Query.equal('venue_id', venueId)]).catch(() => [] as ShelfRow[]),
   ]);
 
-  const plan = relinkPlan(recipes, sizes, items);
+  const plan = relinkPlan(recipes, sizes, items, shelves);
 
   for (const r of plan.repoint) {
     await db.updateDocument(DB_ID, 'recipes', r.recipeId, { variant_id: r.toVariantId })
@@ -1377,6 +1378,26 @@ export async function relinkShelves(venueId: string): Promise<RelinkPlan> {
   for (const r of plan.release) {
     await db.updateDocument(DB_ID, 'recipes', r.recipeId, { variant_id: '' })
       .catch(() => undefined);
+  }
+
+  /*
+    A size joined to the shelf already carrying its name.
+
+    One for one, because that is what a size which is its own thing on the
+    shelf consumes — a large Club takes a large Club. See OWN_STOCK_QTY, which
+    is the same figure the toggle on the drink writes.
+  */
+  for (const a of plan.adopt) {
+    await db.createDocument(DB_ID, 'recipes', ID.unique(), {
+      menu_item_id: a.menuItemId,
+      variant_id: a.variantId,
+      addon_option_id: '',
+      ingredient_id: a.ingredientId,
+      qty_per_unit: OWN_STOCK_QTY,
+      // No allowance. A bottle handed over is not over-poured, and the same
+      // nought is what the toggle on the drink writes.
+      wastage_bp: 0,
+    }).catch(() => undefined);
   }
 
   return plan;

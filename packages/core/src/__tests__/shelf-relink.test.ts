@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { relinkPlan, relinkWords, relinkIsEmpty } from '../shelf-relink.ts';
+import { relinkPlan, relinkWords, relinkIsEmpty, shelfNameFor } from '../shelf-relink.ts';
 import { poursSomething } from '../unpoured.ts';
+import { ingredientNameFor } from '../variant-recipes.ts';
 
-const items = [{ $id: 'club', name: 'Club' }, { $id: 'sprite', name: 'Sprite' }];
+const items = [
+  { $id: 'club', name: 'Club', module: 'bar' },
+  { $id: 'sprite', name: 'Sprite', module: 'bar' },
+];
 
 test('a size switched off and added again gets its link pointed at the new one', () => {
   /**
@@ -134,6 +138,122 @@ test("an add-on's link is never a leftover, because it names no size", () => {
     items,
   );
   assert.equal(relinkIsEmpty(plan), true);
+});
+
+test('a size with NO link is joined to the shelf already carrying its name', () => {
+  /**
+   * The case that repointing cannot reach, and the one that started all of
+   * this. Club had two Larges; the link belonged to the one that was deleted,
+   * and deleting it took the link with it. The size that actually sold eight
+   * bottles has no link at all, so there is nothing to repoint — but the shelf
+   * is not missing. It is on the count sheet, called "Club · Large".
+   */
+  const plan = relinkPlan(
+    [],
+    [{ $id: 'large', menu_item_id: 'club', label: 'Large' }],
+    items,
+    [{ $id: 'club-large', name: 'Club · Large', module: 'bar' }],
+  );
+  assert.deepEqual(
+    plan.adopt.map((a) => [a.variantId, a.ingredientId]),
+    [['large', 'club-large']],
+  );
+  assert.match(relinkWords(plan), /joined to the shelf already carrying its name/);
+});
+
+test('a RETIRED size is joined too, because its sales still happened', () => {
+  /*
+    Retiring a size does not retire the shelf and does not unmake the eight
+    bottles that left. Skipping retired sizes here would leave the shelf
+    overstated for ever, which is the exact complaint this exists to answer.
+  */
+  const plan = relinkPlan(
+    [],
+    [{ $id: 'large', menu_item_id: 'club', label: 'Large', active: false }],
+    items,
+    [{ $id: 'club-large', name: 'Club · Large', module: 'bar' }],
+  );
+  assert.deepEqual(plan.adopt.map((a) => a.variantId), ['large']);
+});
+
+test('a size that already has a link is left exactly as it is', () => {
+  const plan = relinkPlan(
+    [{ $id: 'r1', menu_item_id: 'club', variant_id: 'large', ingredient_id: 'somewhere-else' }],
+    [{ $id: 'large', menu_item_id: 'club', label: 'Large' }],
+    items,
+    [{ $id: 'club-large', name: 'Club · Large', module: 'bar' }],
+  );
+  assert.equal(plan.adopt.length, 0);
+});
+
+test('no shelf of that name, or two of them, and nothing is joined', () => {
+  /*
+    A drink whose sizes share the drink's own bottle — a gin's single and
+    double — has no "Gin · Double" shelf, and inventing a link to some other
+    shelf would pour the wrong bottle every night. Two shelves of one name
+    identify neither.
+  */
+  const sizes = [{ $id: 'large', menu_item_id: 'club', label: 'Large' }];
+  assert.equal(relinkPlan([], sizes, items, [{ $id: 'x', name: 'Something else' }]).adopt.length, 0);
+  assert.equal(relinkPlan([], sizes, items, [
+    { $id: 'a', name: 'Club · Large' },
+    { $id: 'b', name: 'club · large' },
+  ]).adopt.length, 0);
+});
+
+test('a shelf that is switched off, or is the kitchen’s, is not joined to', () => {
+  const sizes = [{ $id: 'large', menu_item_id: 'club', label: 'Large' }];
+  assert.equal(relinkPlan([], sizes, items, [
+    { $id: 'club-large', name: 'Club · Large', module: 'bar', active: false },
+  ]).adopt.length, 0);
+  assert.equal(relinkPlan([], sizes, items, [
+    { $id: 'club-large', name: 'Club · Large', module: 'kitchen' },
+  ]).adopt.length, 0);
+});
+
+test('a drink that was helped is not also listed as left alone', () => {
+  /*
+    Club, exactly as reported: a leftover link naming a Large that is gone,
+    a live Small that is not it, and the sold Large sitting there with no link
+    at all. The leftover cannot be repaired — but the sold size can, and saying
+    both at once would be a screen contradicting itself.
+  */
+  const plan = relinkPlan(
+    [{ $id: 'r1', menu_item_id: 'club', variant_id: 'deleted-large', ingredient_id: 'club-large' }],
+    [
+      { $id: 'small', menu_item_id: 'club', label: 'Small' },
+      { $id: 'sold-large', menu_item_id: 'club', label: 'Large', active: false },
+    ],
+    items,
+    [{ $id: 'club-large', name: 'Club · Large', module: 'bar' }],
+  );
+  assert.deepEqual(plan.adopt.map((a) => a.variantId), ['sold-large']);
+  assert.equal(plan.undecided.length, 0);
+});
+
+test('shelfNameFor and ingredientNameFor agree on every shape, and are kept that way', () => {
+  /**
+   * Both files are pure and neither may import the other at runtime, so the
+   * rule for naming a size's own shelf is written twice. This is what stops
+   * the two drifting: a repair that spells the shelf name differently from
+   * the code that CREATED the shelf would match nothing, silently, on exactly
+   * the drinks it exists for.
+   */
+  const shapes: [string, string][] = [
+    ['Club', 'Large'],
+    ['Club', ''],
+    ['', 'Large'],
+    ['  Club  ', '  Large  '],
+    ['Club Beer Original Lager From The Accra Brewery Company Limited And Its Many Friends', 'Large'],
+    ['Short', 'A size name so long that nothing whatever is left over for the drink it belongs to, at all'],
+  ];
+  for (const [drink, size] of shapes) {
+    assert.equal(
+      shelfNameFor(drink, size),
+      ingredientNameFor(drink, size),
+      `disagreed on ${JSON.stringify([drink, size])}`,
+    );
+  }
 });
 
 test('a name is the same name whatever the case or spacing', () => {
