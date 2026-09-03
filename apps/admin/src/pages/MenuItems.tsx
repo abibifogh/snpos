@@ -14,10 +14,10 @@ import {
   pendingShelfLines, submitShelfChange, frozenPieces, frozenBy, needsApproval, shelfChangeProblem, sentWords,
   isService, SERVICE_LABEL,
 } from '@snpos/core';
-import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice, WaitingChange, StaffProfile } from '@snpos/core';
+import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice, WaitingChange, StaffProfile, ProductVariant } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
 // Which sizes this drink still sells, and what makes two of them a clash.
-import { liveSizes, sizeProblem, retiredWords } from '@snpos/core';
+import { liveSizes, retiredSizes, sizeProblem, retiredWords } from '@snpos/core';
 import { ReassignSupplier } from '../components/ReassignSupplier';
 import { KeyedListManager } from '../components/KeyedList';
 import { SalesHistory } from '../components/SalesHistory';
@@ -159,8 +159,16 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   const [tab, setTab] = useState<'items' | 'types'>('items');
   const [variants, setVariants] = useState<DraftVariant[]>([]);
   const [removedVariantIds, setRemovedVariantIds] = useState<string[]>([]);
-  /** Sizes kept only because sales already went through them. See liveSizes. */
-  const [retiredCount, setRetiredCount] = useState(0);
+  /**
+   * Sizes kept only because sales already went through them.
+   *
+   * Held whole rather than counted, so one can be put back. Retiring a size is
+   * one press and undoing it was nothing at all — somebody who removes the
+   * wrong one of two identical rows is left rebuilding it by hand, which makes
+   * a new size with a new id and starts the whole tangle again.
+   */
+  const [retired, setRetired] = useState<ProductVariant[]>([]);
+  const [restoring, setRestoring] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -408,7 +416,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
             trace of a size they retired assumes it was lost and adds it again.
           */
           const rows = liveSizes(all);
-          setRetiredCount(all.length - rows.length);
+          setRetired(retiredSizes(all));
           return rows;
         })
         .then((rows) => {
@@ -1538,10 +1546,53 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
             />
           )}
 
-          {/* Said rather than silently missing: somebody who finds no trace of
-              a size they retired assumes it was lost, and adds it again. */}
-          {retiredCount > 0 && (
-            <p className="small dim" style={{ margin: '0.4rem 0 0' }}>{retiredWords(retiredCount)}</p>
+          {/*
+            Said rather than silently missing, and undoable.
+
+            Somebody who finds no trace of a size they retired assumes it was
+            lost and adds it again — which makes a new size with a new id, no
+            recipe, and the same tangle over. Putting the original back keeps
+            its id, so the sales already made on it and the shelf it pours from
+            stay attached.
+          */}
+          {retired.length > 0 && (
+            <div style={{ margin: '0.6rem 0 0' }}>
+              <p className="small dim" style={{ margin: 0 }}>{retiredWords(retired.length)}</p>
+              <div className="row" style={{ gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
+                {retired.map((v) => (
+                  <Button
+                    key={v.$id}
+                    size="sm"
+                    variant="ghost"
+                    loading={restoring === v.$id}
+                    title="Put this size back on the menu, with everything it was already linked to"
+                    onClick={async () => {
+                      setRestoring(v.$id);
+                      try {
+                        await db.updateDocument(DB_ID, 'product_variants', v.$id, { active: true });
+                        setRetired((rows) => rows.filter((r) => r.$id !== v.$id));
+                        setVariants((rows) => [
+                          ...rows,
+                          ...draftVariantsFrom([{ ...v, active: true }], decimals).map((d) => ({
+                            ...d,
+                            // Whether it already has a shelf of its own decides
+                            // the toggle, exactly as it does on load.
+                            ownStock: hasOwnRecipe(recipes, editing?.$id ?? '', v.$id),
+                          })),
+                        ]);
+                        toast(`${v.label} put back`);
+                      } catch (e) {
+                        setError(humanError(e));
+                      } finally {
+                        setRestoring(null);
+                      }
+                    }}
+                  >
+                    Put back &ldquo;{v.label}&rdquo;
+                  </Button>
+                ))}
+              </div>
+            </div>
           )}
 
           {/*
