@@ -383,10 +383,28 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     setPickedAddons(item ? itemAddons.filter((a) => a.menu_item_id === item.$id).map((a) => a.group_id) : []);
     // A copy takes the recipe with it but none of the row ids, so saving writes
     // a second recipe rather than moving the original's.
+    /*
+      THE DRINK'S OWN, NOT ITS SIZES'.
+
+      This asked for every recipe row on the drink, which includes the row
+      behind each size's own shelf — the one "Counted separately" writes. So a
+      bottled beer with four sizes showed four ingredients nobody added, all
+      called after the drink, and the only way to tell them apart was to know
+      they were there.
+
+      Somebody reasonably reads that as duplicates and deletes them, and the
+      screen lets them: the rows are deleted on save, the sizes lose the shelf
+      they pour from, and from that night on every bottle sold takes nothing
+      off anything. That is what happened here, and nothing anywhere said so.
+
+      A size's shelf is the size's. It is set by the toggle beside the size and
+      shown in the sizes list, and it has no business in the list of what a
+      portion of the drink itself uses.
+    */
     setDraftRecipes(
       item
         ? recipes
-            .filter((r) => r.menu_item_id === item.$id)
+            .filter((r) => r.menu_item_id === item.$id && !r.variant_id)
             .map(draftFrom)
             .map((d) => (copy ? { ...d, $id: undefined } : d))
         : [],
@@ -491,6 +509,13 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     ]);
 
     for (const id of removedRecipeIds) {
+      /*
+        A size's shelf link is never deleted from here, whatever the form
+        thinks it is holding. The list above no longer offers them, and this
+        is the second lock: losing one of these is silent, it is permanent as
+        far as any screen can tell, and it stops a drink pouring for everybody.
+      */
+      if (recipes.some((r) => r.$id === id && r.variant_id)) continue;
       await db.deleteDocument(DB_ID, 'recipes', id).catch(() => undefined);
     }
     await Promise.all(

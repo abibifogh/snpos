@@ -502,7 +502,7 @@ export function BarCountsPage() {
     setRelinking(true);
     setError(null);
     try {
-      const plan = await relinkShelves('main');
+      const plan = await relinkShelves('main', shift.$id);
       setUndecided(plan.undecided);
 
       const fixed = plan.repoint.length + plan.release.length + plan.adopt.length;

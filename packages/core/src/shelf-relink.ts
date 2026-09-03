@@ -133,6 +133,29 @@ export interface RelinkPlan {
 const norm = (s?: string): string => (s ?? '').trim().toLowerCase();
 
 /**
+ * The same name again, with the punctuation taken out.
+ *
+ * "Club · Large" is what the system writes. A shelf somebody typed themselves
+ * is "Club - Large", or "Club Large", or "Club (Large)", and refusing to see
+ * those means the repair silently does nothing on exactly the bars where
+ * somebody set the shelves up by hand — which is most of them.
+ *
+ * Still exact about the WORDS. Only spacing and punctuation are ignored, so
+ * "Club Large" and "Club Larger" remain two different shelves.
+ */
+const loose = (s?: string): string =>
+  (s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+/** A sold line, for repairing from what actually left rather than the catalogue. */
+export interface SoldLink {
+  menu_item_id: string;
+  variant_id?: string;
+  name_snapshot?: string;
+  variant_label?: string;
+  status?: string;
+}
+
+/**
  * What a size's own shelf is called.
  *
  * Mirrors ingredientNameFor, which is what actually names one when the system
@@ -163,6 +186,8 @@ export function relinkPlan(
   sizes: LinkSize[],
   items: LinkItem[],
   shelves: ShelfRow[] = [],
+  /** What actually sold, for sizes the catalogue no longer has a row for. */
+  sold: SoldLink[] = [],
 ): RelinkPlan {
   const sizeById = new Map(sizes.map((v) => [v.$id, v]));
   const nameOf = new Map(items.map((i) => [i.$id, i.name]));
@@ -183,10 +208,21 @@ export function relinkPlan(
   for (const s of shelves) {
     if (s.active === false) continue;
     if (s.module && s.module !== 'bar') continue;
-    const key = norm(s.name);
+    const key = loose(s.name);
     if (!key) continue;
     shelfByName.set(key, [...(shelfByName.get(key) ?? []), s]);
   }
+
+  /** The one shelf answering to this name, or nothing. Never a choice of two. */
+  const shelfNamed = (...candidates: string[]): ShelfRow | null => {
+    for (const c of candidates) {
+      const key = loose(c);
+      if (!key) continue;
+      const hits = shelfByName.get(key) ?? [];
+      if (hits.length === 1) return hits[0];
+    }
+    return null;
+  };
 
   const rowsByItem = new Map<string, LinkRow[]>();
   for (const r of recipes) {
@@ -274,8 +310,25 @@ export function relinkPlan(
     sales it already took, and those bottles came off a real shelf in real
     life whatever the catalogue says now.
   */
+  /*
+    A DRINK THAT ALREADY POURS IS NOT TOUCHED.
+
+    A gin's single and double come out of the same bottle: the drink has a
+    recipe of its own, every size falls back to it, and nothing is broken. Give
+    one of those sizes a shelf of its own and the fallback stops applying —
+    that size would pour some other shelf instead of the gin, quietly, from a
+    repair that was supposed to be safe.
+
+    So the only drinks reached here are the ones with nothing to fall back on,
+    which are exactly the ones reported as pouring nothing.
+  */
+  const pours = (itemId: string): boolean =>
+    (rowsByItem.get(itemId) ?? []).some((r) => !r.variant_id)
+    || release.some((r) => r.menuItemId === itemId);
+
   for (const item of items) {
     if (item.module && item.module !== 'bar') continue;
+    if (pours(item.$id)) continue;
     const rows = rowsByItem.get(item.$id) ?? [];
     for (const v of allByItem.get(item.$id) ?? []) {
       if (rows.some((r) => r.variant_id === v.$id)) continue;
@@ -284,13 +337,61 @@ export function relinkPlan(
 
       const label = (v.label ?? '').trim();
       if (!label) continue;
-      const shelfName = shelfNameFor(item.name, label);
-      const hits = shelfByName.get(norm(shelfName)) ?? [];
-      // Exactly one, or nothing. Two shelves of one name identify neither.
-      if (hits.length !== 1) continue;
+      const shelf = shelfNamed(shelfNameFor(item.name, label));
+      if (!shelf) continue;
 
-      adopt.push({ menuItemId: item.$id, variantId: v.$id, ingredientId: hits[0].$id, name: shelfName });
+      adopt.push({ menuItemId: item.$id, variantId: v.$id, ingredientId: shelf.$id, name: shelf.name });
     }
+  }
+
+  /*
+    AND FROM WHAT ACTUALLY SOLD, when the catalogue has nothing left to go on.
+
+    Everything above reads the catalogue: a size has to still be there, even
+    switched off, for its shelf to be found. A size deleted outright leaves no
+    row at all — and the sale still names it, still happened, and still took a
+    bottle off a real shelf.
+
+    The sale line carries the drink and the size as they read on the receipt,
+    which is the same pair the shelf is named after. So a sold size with no
+    link and no size row is matched the same way: by name, one shelf or none.
+  */
+  const linked = new Set<string>([
+    ...recipes.filter((r) => r.variant_id && !r.addon_option_id).map((r) => `${r.menu_item_id}|${r.variant_id}`),
+    ...adopt.map((a) => `${a.menuItemId}|${a.variantId}`),
+    ...repoint.filter((r) => r.toVariantId).map((r) => `${r.menuItemId}|${r.toVariantId}`),
+  ]);
+
+  for (const line of sold) {
+    if (line.status === 'void') continue;
+    if (!line.variant_id) continue;
+    // Same guard as above: a drink with something to fall back on is pouring
+    // already, and giving one of its sizes a shelf would stop that.
+    if (pours(line.menu_item_id)) continue;
+    const key = `${line.menu_item_id}|${line.variant_id}`;
+    if (linked.has(key)) continue;
+
+    const base = (line.name_snapshot ?? '').trim();
+    const label = (line.variant_label ?? '').trim();
+    if (!base && !label) continue;
+
+    /*
+      Two spellings tried, in order. A drink called "Club" with a size called
+      "Large" is on a shelf called "Club · Large"; a drink somebody already
+      named "Club · Large" is on a shelf called that, and asking for
+      "Club · Large · Large" would find nothing. Trying both is how the
+      doubled-up name is handled without writing that rule out a third time.
+    */
+    const shelf = label ? shelfNamed(shelfNameFor(base, label), base) : shelfNamed(base);
+    if (!shelf) continue;
+
+    linked.add(key);
+    adopt.push({
+      menuItemId: line.menu_item_id,
+      variantId: line.variant_id,
+      ingredientId: shelf.$id,
+      name: shelf.name,
+    });
   }
 
   /*

@@ -7,7 +7,7 @@ import { unpouredSales } from './unpoured';
 import type { Unpoured, SoldRow, SoldItem, PourRule } from './unpoured';
 // Which leftover shelf links can be repaired, decided away from the database.
 import { relinkPlan } from './shelf-relink';
-import type { RelinkPlan, LinkRow, LinkSize, LinkItem, ShelfRow } from './shelf-relink';
+import type { RelinkPlan, LinkRow, LinkSize, LinkItem, ShelfRow, SoldLink } from './shelf-relink';
 import {
   variancesIn, wasCountedBar, shiftCounted, countable, countableBy, filedCounts, undoDeltas, undoProblem,
   movesOnItsOwn, storeCountId, isStoreCount, STORE_COUNT_PREFIX, isPending, approveDeltas,
@@ -1356,7 +1356,7 @@ export async function restoreLevelUpload(opts: {
  * shelves with the same rule the server uses, so until the links are right it
  * has nothing to match and reports exactly that.
  */
-export async function relinkShelves(venueId: string): Promise<RelinkPlan> {
+export async function relinkShelves(venueId: string, shiftId?: string): Promise<RelinkPlan> {
   const [recipes, sizes, items, shelves] = await Promise.all([
     listAll<LinkRow>('recipes').catch(() => [] as LinkRow[]),
     listAll<LinkSize>('product_variants').catch(() => [] as LinkSize[]),
@@ -1364,7 +1364,24 @@ export async function relinkShelves(venueId: string): Promise<RelinkPlan> {
     listAll<ShelfRow>('ingredients', [Query.equal('venue_id', venueId)]).catch(() => [] as ShelfRow[]),
   ]);
 
-  const plan = relinkPlan(recipes, sizes, items, shelves);
+  /*
+    What sold on this shift, so a size the catalogue no longer has a row for
+    can still be matched to its shelf. A size deleted outright leaves nothing
+    behind except the sales that went through it.
+  */
+  let sold: SoldLink[] = [];
+  if (shiftId) {
+    const orders = await listAll<{ $id: string; module?: string; status?: string }>('orders', [
+      Query.equal('venue_id', venueId), Query.equal('shift_id', shiftId),
+    ]).catch(() => []);
+    const mine = orders.filter(
+      (o) => (o.module ?? 'kitchen') === 'bar' && !['CANCELLED', 'REJECTED'].includes(o.status ?? ''),
+    );
+    sold = await listByIds<SoldLink>('order_items', 'order_id', mine.map((o) => o.$id))
+      .catch(() => [] as SoldLink[]);
+  }
+
+  const plan = relinkPlan(recipes, sizes, items, shelves, sold);
 
   for (const r of plan.repoint) {
     await db.updateDocument(DB_ID, 'recipes', r.recipeId, { variant_id: r.toVariantId })

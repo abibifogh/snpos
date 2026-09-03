@@ -231,6 +231,107 @@ test('a drink that was helped is not also listed as left alone', () => {
   assert.equal(plan.undecided.length, 0);
 });
 
+test('a shelf somebody named by hand is still recognised', () => {
+  /*
+    "Club · Large" is what the system writes. A shelf typed by a person is
+    "Club - Large", or "Club Large", or "Club (Large)" — and refusing to see
+    those means the repair silently does nothing on exactly the bars where the
+    shelves were set up by hand, which is most of them.
+  */
+  for (const shelf of ['Club - Large', 'Club Large', 'CLUB  (LARGE)', 'club·large']) {
+    const plan = relinkPlan(
+      [],
+      [{ $id: 'large', menu_item_id: 'club', label: 'Large' }],
+      items,
+      [{ $id: 'club-large', name: shelf, module: 'bar' }],
+    );
+    assert.deepEqual(plan.adopt.map((a) => a.ingredientId), ['club-large'], `missed "${shelf}"`);
+  }
+});
+
+test('the words still have to match, not just the letters', () => {
+  // Ignoring punctuation must not turn into ignoring the name.
+  const plan = relinkPlan(
+    [],
+    [{ $id: 'large', menu_item_id: 'club', label: 'Large' }],
+    items,
+    [{ $id: 'x', name: 'Club Larger', module: 'bar' }],
+  );
+  assert.equal(plan.adopt.length, 0);
+});
+
+test('a size the catalogue no longer has at all is found from what it sold', () => {
+  /**
+   * A size deleted outright leaves no row anywhere — nothing to repoint,
+   * nothing to adopt from the catalogue, and a sale still naming it. But the
+   * sale line carries the drink and the size as they read on the receipt,
+   * which is the same pair the shelf is named after.
+   */
+  const plan = relinkPlan(
+    [],
+    [],
+    items,
+    [{ $id: 'club-large', name: 'Club · Large', module: 'bar' }],
+    [{ menu_item_id: 'club', variant_id: 'deleted', name_snapshot: 'Club', variant_label: 'Large' }],
+  );
+  assert.deepEqual(plan.adopt.map((a) => [a.variantId, a.ingredientId]), [['deleted', 'club-large']]);
+});
+
+test('a drink already named after its size is not asked for twice', () => {
+  // "Club · Large" with a size called "Large" would look for a shelf called
+  // "Club · Large · Large". The plain name is tried as well.
+  const plan = relinkPlan(
+    [],
+    [],
+    items,
+    [{ $id: 'club-large', name: 'Club · Large', module: 'bar' }],
+    [{ menu_item_id: 'club', variant_id: 'v', name_snapshot: 'Club · Large', variant_label: 'Large' }],
+  );
+  assert.deepEqual(plan.adopt.map((a) => a.ingredientId), ['club-large']);
+});
+
+test('a voided sale, and a sale with no size, are not repaired from', () => {
+  const shelves = [{ $id: 'club-large', name: 'Club · Large', module: 'bar' }];
+  assert.equal(relinkPlan([], [], items, shelves, [
+    { menu_item_id: 'club', variant_id: 'v', name_snapshot: 'Club', variant_label: 'Large', status: 'void' },
+  ]).adopt.length, 0);
+  // No size on the line is the drink's own business — see release.
+  assert.equal(relinkPlan([], [], items, shelves, [
+    { menu_item_id: 'club', name_snapshot: 'Club' },
+  ]).adopt.length, 0);
+});
+
+test('a drink that already pours is never given a size shelf', () => {
+  /**
+   * A gin's single and double come out of the same bottle. The drink has a
+   * recipe, every size falls back to it, and nothing is broken — so giving one
+   * of those sizes a shelf of its own would stop the fallback applying and
+   * pour some other shelf instead of the gin, quietly, from a repair that was
+   * supposed to be safe.
+   */
+  const plan = relinkPlan(
+    [{ $id: 'r1', menu_item_id: 'club', ingredient_id: 'club-bottle' }],
+    [{ $id: 'large', menu_item_id: 'club', label: 'Large' }],
+    items,
+    [{ $id: 'club-large', name: 'Club · Large', module: 'bar' }],
+    [{ menu_item_id: 'club', variant_id: 'large', name_snapshot: 'Club', variant_label: 'Large' }],
+  );
+  assert.equal(plan.adopt.length, 0);
+});
+
+test('a drink handed its link back is not also given size shelves', () => {
+  // Both would leave one drink pouring two different ways depending on which
+  // button the till happened to show.
+  const plan = relinkPlan(
+    [{ $id: 'r1', menu_item_id: 'club', variant_id: 'gone', ingredient_id: 'club-bottle' }],
+    [{ $id: 'old', menu_item_id: 'club', label: 'Large', active: false }],
+    items,
+    [{ $id: 'club-large', name: 'Club · Large', module: 'bar' }],
+  );
+  assert.deepEqual(plan.release.map((r) => r.recipeId), ['r1']);
+  assert.equal(plan.adopt.length, 0);
+});
+
 test('shelfNameFor and ingredientNameFor agree on every shape, and are kept that way', () => {
   /**
    * Both files are pure and neither may import the other at runtime, so the

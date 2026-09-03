@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Restaurant POS on Appwrite \u2014 QR ordering, kitchen display, shift control, accounting",
+  "description": "Restaurant POS on Appwrite — QR ordering, kitchen display, shift control, accounting",
   "scripts": {
     "provision": "node scripts/provision.mjs",
     "seed:admin": "node scripts/seed-admin.mjs",
@@ -25,7 +25,8 @@
     "check:writes": "node scripts/check-writes.mjs",
     "test": "node --experimental-strip-types --test \"packages/core/src/__tests__/*.test.ts\"",
     "typecheck:tests": "npx -y tsc --noEmit -p packages/core/tsconfig.test.json",
-    "verify": "npm run typecheck && npm run typecheck:tests && npm run test && npm run check:writes && npm run build"
+    "verify": "npm run typecheck && npm run typecheck:tests && npm run test && npm run test:e2e && npm run check:writes && npm run build",
+    "test:e2e": "node scripts/e2e.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
