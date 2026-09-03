@@ -47,6 +47,14 @@ const coll = (c: string) => {
   return store.get(c) as Map<string, Doc>;
 };
 
+/*
+  Reads and writes cross a wire in the real thing, so nothing here hands back
+  the object it is storing. A stand-in that returns live references lets code
+  read a field it has just written and see the new value — which hides exactly
+  the class of bug where a difference is worked out after the row has moved.
+*/
+const copy = <T>(doc: T): T => JSON.parse(JSON.stringify(doc)) as T;
+
 const matches = (doc: Doc, q: Q): boolean => {
   const any = q as any;
   const val = doc[any.f];
@@ -81,12 +89,12 @@ export const db = {
     if (desc) docs.sort((a, b) => (a[desc.f] < b[desc.f] ? 1 : -1));
     const offset = queries.find((q: any) => q?.op === 'offset')?.n ?? 0;
     const limit = queries.find((q: any) => q?.op === 'limit')?.n ?? 25;
-    return { total, documents: docs.slice(offset, offset + limit) };
+    return { total, documents: docs.slice(offset, offset + limit).map(copy) };
   },
   getDocument: async (_d: string, c: string, id: string) => {
     const doc = coll(c).get(id);
     if (!doc) throw new Error(`no ${c}/${id}`);
-    return doc;
+    return copy(doc);
   },
   createDocument: async (_d: string, c: string, id: string, data: Doc) => {
     /*
@@ -100,15 +108,15 @@ export const db = {
       if (field in data) throw new Error(`Invalid document structure: Unknown attribute: "${field}"`);
     }
     const realId = id === 'unique()' ? `gen${++seq}` : id;
-    const doc = { $id: realId, $createdAt: new Date().toISOString(), ...data };
+    const doc = { $id: realId, $createdAt: new Date().toISOString(), ...copy(data) };
     coll(c).set(realId, doc);
-    return doc;
+    return copy(doc);
   },
   updateDocument: async (_d: string, c: string, id: string, data: Doc = {}) => {
     const doc = coll(c).get(id);
     if (!doc) throw new Error(`no ${c}/${id}`);
-    Object.assign(doc, data);
-    return doc;
+    Object.assign(doc, copy(data));
+    return copy(doc);
   },
   deleteDocument: async (_d: string, c: string, id: string) => {
     coll(c).delete(id);
@@ -180,7 +188,7 @@ const unknownFields = new Map<string, string[]>();
 export const __missingColumns = (c: string, fields: string[]) => unknownFields.set(c, fields);
 
 export const __seed = (c: string, docs: Doc[]) => {
-  for (const d of docs) coll(c).set(d.$id, { $createdAt: new Date().toISOString(), ...d });
+  for (const d of docs) coll(c).set(d.$id, { $createdAt: new Date().toISOString(), ...copy(d) });
 };
-export const __all = (c: string) => [...coll(c).values()];
+export const __all = (c: string) => [...coll(c).values()].map(copy);
 export const __reset = () => { store.clear(); unknownFields.clear(); };

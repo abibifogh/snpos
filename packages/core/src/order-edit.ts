@@ -61,15 +61,29 @@ export interface EditableOrder {
  */
 export function quantityEditProblem(
   order: EditableOrder,
-  opts: { creditedLineIds?: string[] } = {},
+  opts: { creditedLineIds?: string[]; lines?: EditableLine[] } = {},
 ): string | null {
   if (order.status === 'CANCELLED' || order.status === 'REJECTED') {
     return 'This order was cancelled, so there is nothing on it to correct. It is already worth nothing.';
   }
-  if ((opts.creditedLineIds ?? []).length > 0) {
-    return 'A maker has already been credited for something on this bill. Changing what was sold would leave '
-      + 'their statement saying one thing and the sale another, and their money is not something to rewrite from '
-      + 'this screen. Adjust it on the consignor instead.';
+  /*
+    A CREDITED MAKER NO LONGER LOCKS THE WHOLE BILL.
+
+    One credited piece on a bill of six used to refuse the lot, so the way to
+    take a mis-rung jollof off a table that also sold a basket was to cancel
+    the entire order and ring it again. Nobody does that, so the figures kept
+    the error — which is the exact reasoning this file opens with, applied to
+    the wrong thing.
+
+    The maker's money is still not rewritten from a screen. That refusal
+    belongs to the LINE it is about; see lineEditProblem. This only stops here
+    when there is nothing left on the bill it could apply to.
+  */
+  const credited = new Set(opts.creditedLineIds ?? []);
+  const lines = opts.lines ?? [];
+  if (credited.size > 0 && lines.length > 0 && lines.every((l) => !lineIsEditable(l, credited))) {
+    return 'Everything on this bill is either already voided or has a maker credited against it, so there is '
+      + 'nothing here that can be changed from this screen. A maker’s money is adjusted on the consignor.';
   }
   return null;
 }
@@ -80,8 +94,61 @@ export function quantityEditProblem(
  * A voided line is already at nothing and putting a number back on it would be
  * un-voiding it by the back door, which is a different decision with a
  * different reason attached.
+ *
+ * A credited line is somebody's money. Not refused because it is difficult —
+ * refused because the maker has been told what they earned, and a screen that
+ * quietly restates that is worse than one that will not.
  */
-export const lineIsEditable = (line: EditableLine): boolean => line.status !== 'void';
+export const lineIsEditable = (line: EditableLine, credited?: Set<string>): boolean =>
+  line.status !== 'void' && !(credited?.has(line.$id) ?? false);
+
+/** Why this one line cannot be changed, in the words of whoever is looking at it. */
+export function lineEditProblem(line: EditableLine, credited?: Set<string>): string | null {
+  if (line.status === 'void') return 'Already voided, so it is on the bill at nothing.';
+  if (credited?.has(line.$id)) {
+    return 'The maker has been credited for this. Changing it here would leave their statement saying one '
+      + 'thing and the sale another, so adjust it on the consignor instead.';
+  }
+  return null;
+}
+
+/**
+ * What taking a line off actually does, said before it is done.
+ *
+ * Every one of these is a real consequence somebody has been surprised by, and
+ * the surprise always arrives later — at a count, at a close, or in the books
+ * a month on. Saying them once, here, is cheaper than any of that.
+ */
+export function removalEffects(opts: {
+  /** Lines being removed outright, by name. */
+  removed: string[];
+  /** What the bill will come to afterwards. */
+  newTotal: number;
+  taken: number;
+  shiftClosed: boolean;
+  format: (amount: number) => string;
+}): string[] {
+  if (opts.removed.length === 0) return [];
+  const what = opts.removed.length === 1
+    ? opts.removed[0]
+    : `${opts.removed.length} lines`;
+  const out = [
+    `${what} comes off the bill, which will then come to ${opts.format(opts.newTotal)}.`,
+    'Anything this line took off a shelf goes back — a bottle, a dish’s ingredients, a piece from the shop '
+      + '— so the next count agrees with the bill.',
+  ];
+  out.push(opts.shiftClosed
+    ? 'The shift this belongs to has already closed, so what it expected and what its accounts say are both '
+      + 'worked out again.'
+    : 'The shift it belongs to expects less money by the same amount.');
+  if (opts.taken > opts.newTotal) {
+    out.push(`${opts.format(opts.taken - opts.newTotal)} has been taken against this bill and is now owed back. `
+      + 'Recording that refund is a separate step.');
+  }
+  out.push('The line stays on the bill at nothing rather than disappearing, because the fact that it was rung '
+    + 'up is the thing somebody will come asking about.');
+  return out;
+}
 
 /** Unit price including its add-ons, read back out of what was stored. */
 export function storedUnitPrice(line: EditableLine): number {
@@ -113,9 +180,10 @@ export interface QuantityChange {
 export function quantityChanges(
   lines: EditableLine[],
   quantities: Record<string, number>,
+  credited?: Set<string>,
 ): QuantityChange[] {
   return lines
-    .filter(lineIsEditable)
+    .filter((l) => lineIsEditable(l, credited))
     .map((l) => ({
       lineId: l.$id,
       name: l.name_snapshot,

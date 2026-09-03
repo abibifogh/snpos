@@ -13,7 +13,8 @@ import {
   listByIds, listCreatedBetween, moveOrderToShift, shiftChoices, moveProblem, moveEffects, describeMove,
   shiftDay, shiftsOnDay, dayMoveProblem, openShiftForDay,
   repostShiftAccounts,
-  quantityEditProblem, lineIsEditable, quantityProblem, quantityChanges, moneyEffect,
+  quantityEditProblem, lineIsEditable, lineEditProblem, quantityProblem, quantityChanges, moneyEffect,
+  removalEffects,
   retotalOrder, applyQuantityCorrection, creditedLineIds, isLivePayment as paymentCounts,
 } from '@snpos/core';
 import type {
@@ -87,6 +88,8 @@ export function OrdersPage() {
    * lines somebody has actually touched are in it.
    */
   const [qtyEdit, setQtyEdit] = useState<Record<string, string> | null>(null);
+  /** Has the open order's shift already closed? See openOrder. */
+  const [openShiftClosed, setOpenShiftClosed] = useState(false);
   const [qtyReason, setQtyReason] = useState('');
   const [qtyBusy, setQtyBusy] = useState(false);
   const [qtyError, setQtyError] = useState<string | null>(null);
@@ -707,6 +710,16 @@ export function OrdersPage() {
     // only once somebody has typed a new quantity and pressed save is finding
     // it out too late to be useful.
     setCredited(await creditedLineIds((rows ?? []).map((r) => r.$id)));
+    /*
+      Whether the shift has closed, because it changes what a correction has
+      to put right. An open shift works its figures out from the rows and
+      follows on its own; a closed one stored what it expected and what it
+      posted to the books, and neither moves unless something moves it.
+    */
+    const sh = o.shift_id
+      ? await db.getDocument(DB_ID, 'shifts', o.shift_id).catch(() => null) as { status?: string } | null
+      : null;
+    setOpenShiftClosed(sh?.status === 'closed');
   };
 
   /** What has actually been taken against the order on screen. */
@@ -740,7 +753,36 @@ export function OrdersPage() {
         actor: { id: profile?.user_id ?? profile?.$id ?? user?.$id ?? '', role: profile?.role ?? '' },
         reason: qtyReason.trim(),
         taken: takenOn(open.$id),
+        module: open.module,
       });
+      /*
+        AND THE TWO SETS OF FIGURES THAT DO NOT FOLLOW ON THEIR OWN.
+
+        The same pair the move already puts right, and for the same reason:
+        an OPEN shift works itself out from the rows, so both are no-ops
+        there; a CLOSED one stored what it expected at the moment it closed
+        and posted what it made to the books, and neither moves unless
+        something moves it.
+
+        Taking a drink off a bill on a closed shift used to leave that shift
+        expecting money nobody took — which reads as a drawer short, with a
+        person's name against it — and the books crediting revenue on a sale
+        that never happened.
+
+        Best effort, and said out loud. The correction itself has happened and
+        is right; a period locked off, or a posting that will not go, must not
+        be reported as a failed correction.
+      */
+      const notes: string[] = [];
+      if (moved && open.shift_id) {
+        await recomputeClosedShift(open.shift_id).catch(() => null);
+        const done = await repostShiftAccounts({
+          shiftId: open.shift_id,
+          userId: user?.$id ?? '',
+          reason: qtyReason.trim(),
+        }).catch((e) => ({ changed: false, note: humanError(e) }));
+        if (done.note) notes.push(done.note);
+      }
       setQtyEdit(null);
       setQtyReason('');
       setOpen(null);
@@ -754,6 +796,9 @@ export function OrdersPage() {
       });
       await load();
       toast(moved ? `${open.order_no} corrected` : `Nothing changed on ${open.order_no}`);
+      // What happened to the books is a separate fact from what happened to
+      // the order, and the one somebody may have to act on.
+      for (const n of notes) toast(n);
     } catch (e) {
       setQtyError(humanError(e));
     } finally {
@@ -1117,7 +1162,8 @@ export function OrdersPage() {
 
           {(() => {
             const lines = items[open.$id] ?? [];
-            const problem = quantityEditProblem(open, { creditedLineIds: credited });
+            const creditedSet = new Set(credited);
+            const problem = quantityEditProblem(open, { creditedLineIds: credited, lines });
             const editing = qtyEdit !== null;
             const quantities = Object.fromEntries(
               Object.entries(qtyEdit ?? {}).map(([id, v]) => [id, /^\d+$/.test(v.trim()) ? Number(v.trim()) : NaN]),
@@ -1134,9 +1180,22 @@ export function OrdersPage() {
                 lines, quantities: usable, discount: open.discount_total ?? 0, settings,
               })
               : null;
-            const changes = editing ? quantityChanges(lines, usable) : [];
+            const changes = editing ? quantityChanges(lines, usable, creditedSet) : [];
             const taken = takenOn(open.$id);
             const effect = preview ? moneyEffect(taken, preview.total, money) : null;
+            /*
+              Taking a line off is not a smaller version of changing a number,
+              and the screen should not pretend it is. Every consequence below
+              is one somebody has been surprised by later — at a count, at a
+              close, or in the books a month on.
+            */
+            const removals = removalEffects({
+              removed: changes.filter((c) => c.to === 0).map((c) => c.name),
+              newTotal: preview?.total ?? open.total,
+              taken,
+              shiftClosed: openShiftClosed,
+              format: money,
+            });
 
             return (
               <>
@@ -1147,12 +1206,14 @@ export function OrdersPage() {
                       size="sm"
                       variant="ghost"
                       onClick={() => {
-                        setQtyEdit(Object.fromEntries(lines.filter(lineIsEditable).map((l) => [l.$id, String(l.qty)])));
+                        setQtyEdit(Object.fromEntries(
+                          lines.filter((l) => lineIsEditable(l, creditedSet)).map((l) => [l.$id, String(l.qty)]),
+                        ));
                         setQtyReason('');
                         setQtyError(null);
                       }}
                     >
-                      Correct quantities
+                      Change or remove items
                     </Button>
                   )}
                 </div>
@@ -1170,7 +1231,7 @@ export function OrdersPage() {
                       {lines.map((i) => (
                         <tr key={i.$id}>
                           <td>
-                            {editing && lineIsEditable(i) ? (
+                            {editing && lineIsEditable(i, creditedSet) ? (
                               <span className="row" style={{ alignItems: 'center', gap: '0.5rem' }}>
                                 <Input
                                   value={qtyEdit?.[i.$id] ?? String(i.qty)}
@@ -1180,20 +1241,51 @@ export function OrdersPage() {
                                   onChange={(e) => setQtyEdit((q) => ({ ...(q ?? {}), [i.$id]: e.target.value }))}
                                 />
                                 <span>{i.name_snapshot}</span>
+                                {/*
+                                  Taking a whole line off is what people
+                                  actually come here to do — a duplicate, a
+                                  dish sent back, a drink rung on the wrong
+                                  table — and asking them to work out that
+                                  the way to do it is to type a nought is a
+                                  step where mistakes get made.
+                                */}
+                                {(qtyEdit?.[i.$id] ?? String(i.qty)) !== '0' ? (
+                                  <button
+                                    type="button"
+                                    className="linky"
+                                    onClick={() => setQtyEdit((q) => ({ ...(q ?? {}), [i.$id]: '0' }))}
+                                  >
+                                    Remove
+                                  </button>
+                                ) : (
+                                  <span className="small dim">
+                                    coming off{' '}
+                                    <button
+                                      type="button"
+                                      className="linky"
+                                      onClick={() => setQtyEdit((q) => ({ ...(q ?? {}), [i.$id]: String(i.qty) }))}
+                                    >
+                                      undo
+                                    </button>
+                                  </span>
+                                )}
                               </span>
                             ) : (
                               <>
                                 <strong>{i.qty}×</strong> {i.name_snapshot}
                                 {/* A voided line stays visible and stays out of
                                     reach: putting a number back on it would be
-                                    un-voiding it by the back door. */}
-                                {!lineIsEditable(i) && <span className="small dim"> · voided</span>}
+                                    un-voiding it by the back door. A credited
+                                    one is somebody's money and says so. */}
+                                {lineEditProblem(i, creditedSet) && (
+                                  <div className="small dim">{lineEditProblem(i, creditedSet)}</div>
+                                )}
                               </>
                             )}
                             {i.notes && <div className="small dim">“{i.notes}”</div>}
                           </td>
                           <td className="num">
-                            {editing && lineIsEditable(i) && Number.isFinite(quantities[i.$id])
+                            {editing && lineIsEditable(i, creditedSet) && Number.isFinite(quantities[i.$id])
                               ? money(Math.round(i.qty > 0 ? (i.line_total / i.qty) * quantities[i.$id] : 0))
                               : money(i.line_total)}
                           </td>
@@ -1229,6 +1321,23 @@ export function OrdersPage() {
                         onChange={(e) => setQtyReason(e.target.value)}
                       />
                     </Field>
+                    {/*
+                      WHAT TAKING A LINE OFF ACTUALLY DOES, before it is done.
+
+                      Every one of these is a real consequence somebody has
+                      been surprised by, and the surprise always arrives later
+                      — at a count, at a close, or in the books a month on.
+                      Saying them once, here, is cheaper than any of that.
+                    */}
+                    {removals.length > 0 && (
+                      <div style={{ margin: '0.6rem 0' }}>
+                        <Notice tone="warn">
+                          <ul style={{ margin: 0, paddingLeft: '1.1rem' }}>
+                            {removals.map((r) => <li key={r}>{r}</li>)}
+                          </ul>
+                        </Notice>
+                      </div>
+                    )}
                     {/* Never left unsaid. A bill quietly left overpaid is a
                         customer owed a refund that nobody knows about. */}
                     {effect && <div style={{ margin: '0.6rem 0' }}><Notice tone="warn">{effect}</Notice></div>}

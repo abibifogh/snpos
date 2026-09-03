@@ -7,6 +7,7 @@
  */
 import { __seed, __reset, __all, __missingColumns } from './core/client.ts';
 import { barCountSheet, relinkShelves, pourMissedSales, unpouredForShift, saveBarCount } from './core/stock.ts';
+import { applyQuantityCorrection } from './core/orders.ts';
 import { unheldWords } from './core/bar-count.ts';
 
 const ok = (label: string, got: unknown, want: unknown) => {
@@ -351,6 +352,124 @@ console.log('\n=== J — the same count once the database has the column ===');
     'club level',
     (await barCountSheet('main')).find((r) => r.ingredientId === 'club-large')?.expected,
     48,
+  )]);
+}
+
+/* ---------------------------------- taking a line off a bill that has poured */
+
+console.log('\n=== K — a drink taken off a bill puts the bottle back ===');
+{
+  __reset();
+  __seed('stock_locations', [
+    { $id: 'counter', venue_id: 'main', name: 'Bar counter', kind: 'counter', module: 'bar', active: true },
+  ]);
+  __seed('ingredients', shelves);
+  __seed('stock_levels', shelves.map((i, n) => ({
+    $id: `lvl${n}`, ingredient_id: i.$id, location_id: 'counter', qty: i.current_qty,
+  })));
+  __seed('menu_items', [{ $id: 'club', venue_id: 'main', name: 'Club', module: 'bar', active: true }]);
+  __seed('product_variants', [{ $id: 'large', menu_item_id: 'club', label: 'Large', active: true }]);
+  __seed('recipes', [{
+    $id: 'r1', menu_item_id: 'club', variant_id: 'large', addon_option_id: '',
+    ingredient_id: 'club-large', qty_per_unit: 1, wastage_bp: 0,
+  }]);
+  __seed('shifts', [{ $id: 'sh1', venue_id: 'main', module: 'bar', status: 'OPEN' }]);
+  __seed('orders', [{
+    $id: 'o1', venue_id: 'main', shift_id: 'sh1', module: 'bar', status: 'PAID', order_no: 'ORD0543',
+    subtotal: 8000, total: 8000, discount_total: 0,
+  }]);
+  __seed('order_items', [{
+    $id: 'li1', order_id: 'o1', venue_id: 'main', menu_item_id: 'club', variant_id: 'large',
+    name_snapshot: 'Club', variant_label: 'Large', qty: 8, unit_price: 1000, line_total: 8000,
+    status: 'served',
+  }]);
+
+  // The sale actually poured, which is the only case a put-back applies to.
+  await pourMissedSales({ venueId: 'main', shiftId: 'sh1', module: 'bar', userId: 'u1' });
+  const afterSale = await barCountSheet('main');
+  results.push(['K the sale took eight bottles off', ok(
+    'club level', afterSale.find((r) => r.ingredientId === 'club-large')?.expected, 40,
+  )]);
+
+  // And now an admin takes the line off the bill entirely.
+  const order = (__all('orders')[0]) as any;
+  const lines = __all('order_items') as any[];
+  await applyQuantityCorrection({
+    order,
+    lines,
+    quantities: { li1: 0 },
+    settings: { tax_bp: 0, service_charge_bp: 0, currency_code: 'GHS', currency_decimals: 2 } as any,
+    actor: { id: 'admin', role: 'admin' },
+    reason: 'Rung up on the wrong table',
+    taken: 0,
+    module: 'bar',
+  });
+
+  const afterRemoval = await barCountSheet('main');
+  results.push(['K removing the line puts all eight back', ok(
+    'club level', afterRemoval.find((r) => r.ingredientId === 'club-large')?.expected, 48,
+  )]);
+  results.push(['K and the bill is worth nothing', ok(
+    'line + order total',
+    [(__all('order_items')[0] as any).line_total, (__all('orders')[0] as any).total],
+    [0, 0],
+  )]);
+  results.push(['K the correction is on the record', ok(
+    'audit action',
+    (__all('audit_log')[0] as any)?.action,
+    'order_quantity_corrected',
+  )]);
+}
+
+console.log('\n=== L — a line that never poured is not put back twice ===');
+{
+  __reset();
+  __seed('stock_locations', [
+    { $id: 'counter', venue_id: 'main', name: 'Bar counter', kind: 'counter', module: 'bar', active: true },
+  ]);
+  __seed('ingredients', shelves);
+  __seed('stock_levels', shelves.map((i, n) => ({
+    $id: `lvl${n}`, ingredient_id: i.$id, location_id: 'counter', qty: i.current_qty,
+  })));
+  __seed('menu_items', [{ $id: 'club', venue_id: 'main', name: 'Club', module: 'bar', active: true }]);
+  __seed('product_variants', [{ $id: 'large', menu_item_id: 'club', label: 'Large', active: true }]);
+  __seed('recipes', [{
+    $id: 'r1', menu_item_id: 'club', variant_id: 'large', addon_option_id: '',
+    ingredient_id: 'club-large', qty_per_unit: 1, wastage_bp: 0,
+  }]);
+  __seed('shifts', [{ $id: 'sh1', venue_id: 'main', module: 'bar', status: 'OPEN' }]);
+  __seed('orders', [{
+    $id: 'o1', venue_id: 'main', shift_id: 'sh1', module: 'bar', status: 'ACCEPTED', order_no: 'ORD0544',
+    subtotal: 8000, total: 8000, discount_total: 0,
+  }]);
+  __seed('order_items', [{
+    $id: 'li1', order_id: 'o1', venue_id: 'main', menu_item_id: 'club', variant_id: 'large',
+    name_snapshot: 'Club', variant_label: 'Large', qty: 8, unit_price: 1000, line_total: 8000,
+    status: 'queued',
+  }]);
+
+  /*
+    Nothing has come off a bill that was never paid. Putting stock back here
+    would credit a shelf that never lost it — and would leave the real pour,
+    when it runs, thinking it had already happened.
+  */
+  await applyQuantityCorrection({
+    order: __all('orders')[0] as any,
+    lines: __all('order_items') as any[],
+    quantities: { li1: 0 },
+    settings: { tax_bp: 0, service_charge_bp: 0, currency_code: 'GHS', currency_decimals: 2 } as any,
+    actor: { id: 'admin', role: 'admin' },
+    reason: 'Duplicate',
+    taken: 0,
+    module: 'bar',
+  });
+
+  const sheet = await barCountSheet('main');
+  results.push(['L a shelf that never moved is not credited', ok(
+    'club level', sheet.find((r) => r.ingredientId === 'club-large')?.expected, 48,
+  )]);
+  results.push(['L and no movement was invented', ok(
+    'movements', __all('stock_movements').length, 0,
   )]);
 }
 

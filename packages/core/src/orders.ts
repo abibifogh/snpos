@@ -23,6 +23,12 @@ import { nextInRun, formatOrderNo, prefixFor } from './order-numbers';
 // Pure, and the same rule the shift close reads. A payment that is not live is
 // not money in a drawer, wherever the question is asked from.
 import { isLivePayment } from './shift-rules';
+/*
+  A bar's and a kitchen's stock leaves through the recipe, not off the item
+  itself, so putting it back needs the same machinery the pour used. Runtime
+  import, and safe: stock.ts only takes a TYPE from here, which is erased.
+*/
+import { correctPourFor } from './stock';
 import type { CartLine } from './pricing';
 import type { Settings, Doc } from './types';
 import type { Module } from './access';
@@ -1065,6 +1071,8 @@ export async function applyQuantityCorrection(input: {
   reason: string;
   /** What has been taken against this bill, so the status can follow. */
   taken: number;
+  /** Which side of the business, so a put-back goes to the right counter. */
+  module?: Module;
 }): Promise<{ from: number; to: number } | null> {
   const moved = input.lines.filter(
     (l) => l.status !== 'void' && input.quantities[l.$id] !== undefined && input.quantities[l.$id] !== l.qty,
@@ -1075,9 +1083,19 @@ export async function applyQuantityCorrection(input: {
 
   for (const line of moved) {
     const qty = input.quantities[line.$id];
+    /*
+      What it WAS, read before anything is written.
+
+      Everything downstream is worked out from the difference, and the row
+      being written to is the row this was read from. Taking the old quantity
+      off the line after the update reads the new one, the difference comes out
+      as nought, and the shelf is never put back — silently, on exactly the
+      correction that needed it most.
+    */
+    const was = line.qty;
     // The price this line was actually sold at, add-ons and all, rather than
     // today's menu price. A correction is not a re-pricing.
-    const unit = line.qty > 0 ? Math.round(line.line_total / line.qty) : lineUnitPrice({
+    const unit = was > 0 ? Math.round(line.line_total / was) : lineUnitPrice({
       key: line.$id,
       menu_item_id: line.menu_item_id,
       name: line.name_snapshot,
@@ -1086,7 +1104,23 @@ export async function applyQuantityCorrection(input: {
       addons: [],
     });
     await db.updateDocument(DB_ID, 'order_items', line.$id, { qty, line_total: unit * qty });
-    await correctShelfFor(line, qty - line.qty, input.order, input.actor.id);
+    // The shop's shelf, where a piece leaves as itself.
+    await correctShelfFor({ ...line, qty: was }, qty - was, input.order, input.actor.id);
+    /*
+      And the bar's and the kitchen's, where what leaves is whatever the
+      recipe names. This was missing entirely: taking a drink off a bill put
+      the money back and left the bottle gone, so the next count read one
+      short with no sale left on the bill to explain it. See correctPourFor.
+    */
+    await correctPourFor({
+      venueId: input.order.venue_id,
+      shiftId: input.order.shift_id,
+      module: input.module,
+      line,
+      delta: qty - was,
+      userId: input.actor.id,
+      reason: input.reason,
+    }).catch(() => 0);
   }
 
   const totals = await recomputeOrderTotals(input.order, input.settings);

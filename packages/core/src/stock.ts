@@ -1,4 +1,4 @@
-import { db, DB_ID, ID, Query, listAll, listByIds, tryWrite, saveDropping } from './client';
+import { db, DB_ID, ID, Query, listAll, listByIds, tryWrite, saveDropping, anyExists } from './client';
 // Type-only, erased at compile time. The pairing itself is pure; see shift-counts.
 import type { CountEntry } from './shift-counts';
 import type { PurchaseRow } from './price-history';
@@ -1393,6 +1393,111 @@ export async function restoreLevelUpload(opts: {
  * large Club's shelf and not off the drink it is a size of. See recipeFor: a
  * size's own rows win outright over the drink's rather than adding to them.
  */
+/**
+ * Put a bottle back when a line is corrected or taken off a bill.
+ *
+ * The other half of correctShelfFor, and the half nobody wrote. That one
+ * handles the SHOP, where a piece leaves a shelf as itself. A bar and a
+ * kitchen do not work that way: what leaves is whatever the recipe names, and
+ * it leaves through stock_movements — a large Club takes a large Club off its
+ * shelf, a jollof takes rice and oil and stock off theirs.
+ *
+ * So taking a drink off a bill put the money back and left the bottle gone.
+ * The next count reads one short, with the sale it came from no longer on the
+ * bill to explain it, which is the exact shape of a shortage somebody gets
+ * blamed for.
+ *
+ * Only where the line ACTUALLY poured. Nothing has come off a bill that was
+ * never paid or a shift that has not closed, and inventing a movement there
+ * would put stock on a shelf that never lost it — and would make the real
+ * depletion, when it runs, think it had already happened.
+ *
+ * Mirrors recipeFor exactly, as everything that pours does.
+ */
+export async function correctPourFor(opts: {
+  venueId: string;
+  shiftId?: string;
+  module?: Module;
+  line: {
+    $id: string;
+    menu_item_id: string;
+    variant_id?: string;
+    name_snapshot?: string;
+  };
+  /** The change in quantity. Negative where the bill shrank. */
+  delta: number;
+  userId: string;
+  reason?: string;
+}): Promise<number> {
+  if (!opts.delta) return 0;
+
+  // Did this line pour at all? One question, asked as one — reading every
+  // movement to look at the length is how a screen reads a year of history.
+  const poured = await anyExists('stock_movements', [
+    Query.equal('ref_type', 'order_item'),
+    Query.equal('ref_id', opts.line.$id),
+    Query.equal('type', 'sale_depletion'),
+  ]).catch(() => ({ any: false, total: 0 }));
+  if (!poured.any) return 0;
+
+  const [recipes, places] = await Promise.all([loadRecipes(), loadLocations(opts.venueId)]);
+  const applies = recipeFor(
+    recipes as unknown as RecipeRow[],
+    opts.line.menu_item_id,
+    opts.line.variant_id,
+  );
+  if (applies.length === 0) return 0;
+
+  const counter = saleLocation(places, opts.module ?? 'bar');
+  let moved = 0;
+
+  for (const r of applies) {
+    const ing = await db.getDocument(DB_ID, 'ingredients', r.ingredient_id).catch(() => null) as
+      { base_unit_cost?: number } | null;
+    if (!ing) continue;
+
+    // The same arithmetic the sale used, wastage and all. A put-back that
+    // ignored the allowance would return less than was taken, every time, and
+    // the shelf would drift down by the difference on every correction.
+    const perUnit = (r.qty_per_unit ?? 0) * (1 + (r.wastage_bp ?? 0) / 10000);
+    const back = -(perUnit * opts.delta);
+    if (!back) continue;
+
+    const wrote = await tryWrite(db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
+      venue_id: opts.venueId,
+      ingredient_id: r.ingredient_id,
+      type: 'adjustment',
+      qty_delta: Number(back.toFixed(4)),
+      unit_cost: ing.base_unit_cost ?? 0,
+      location_id: counter?.$id ?? '',
+      /*
+        Stamped with the line, like the sale it corrects. The movement that
+        took it off carries the same reference, so the two read as one story
+        rather than as a mystery addition on a Tuesday.
+      */
+      ref_type: 'order_item',
+      ref_id: opts.line.$id,
+      shift_id: opts.shiftId ?? '',
+      created_by: opts.userId,
+      note: `${opts.line.name_snapshot ?? 'A line'} corrected on the bill${opts.reason ? `: ${opts.reason}` : ''}`,
+    }));
+    if (!wrote) continue;
+
+    if (counter) {
+      await adjustLevel({ ingredientId: r.ingredient_id, locationId: counter.$id, delta: back });
+    } else {
+      const now = await db.getDocument(DB_ID, 'ingredients', r.ingredient_id).catch(() => null) as
+        { current_qty?: number } | null;
+      await tryWrite(db.updateDocument(DB_ID, 'ingredients', r.ingredient_id, {
+        current_qty: Number(((now?.current_qty ?? 0) + back).toFixed(4)),
+      }));
+    }
+    moved += 1;
+  }
+
+  return moved;
+}
+
 /**
  * Put right the shelf links left pointing at sizes that are gone.
  *

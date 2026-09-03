@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  quantityEditProblem, lineIsEditable, storedUnitPrice, newLineTotal,
+  quantityEditProblem, lineIsEditable, lineEditProblem, removalEffects, storedUnitPrice, newLineTotal,
   quantityChanges, quantityProblem, moneyEffect, paymentStatusAfter,
 } from '../order-edit.ts';
 import { retotalOrder } from '../pricing.ts';
@@ -98,12 +98,80 @@ test('a maker already credited is not rewritten from a screen', () => {
    * underneath it would leave their statement and the till disagreeing with
    * nobody told.
    */
+  const credited = new Set(['l1']);
+  const line = { $id: 'l1', name_snapshot: 'Basket', unit_price: 100, qty: 1, status: 'queued' };
+  assert.equal(lineIsEditable(line, credited), false);
+  const problem = String(lineEditProblem(line, credited));
+  assert.match(problem, /credited/);
+  assert.match(problem, /consignor/);
+});
+
+test('but one credited piece no longer locks the whole bill', () => {
+  /**
+   * The reported gap. One basket on a bill of six refused the lot, so the way
+   * to take a mis-rung jollof off that table was to cancel the whole order and
+   * ring it again — which nobody does, so the figures kept the error. That is
+   * the reasoning this file opens with, applied to the wrong thing.
+   */
   const order = { status: 'SERVED', payment_status: 'paid' };
-  const problem = quantityEditProblem(order, { creditedLineIds: ['l1'] });
-  assert.match(String(problem), /credited/);
-  assert.match(String(problem), /consignor/);
-  // And an ordinary bill is not caught by it.
-  assert.equal(quantityEditProblem(order), null);
+  const lines = [
+    { $id: 'l1', name_snapshot: 'Basket', unit_price: 100, qty: 1, status: 'queued' },
+    { $id: 'l2', name_snapshot: 'Jollof rice', unit_price: 8000, qty: 1, status: 'queued' },
+  ];
+  assert.equal(quantityEditProblem(order, { creditedLineIds: ['l1'], lines }), null);
+  // And the credited line is still out of reach, on its own.
+  const credited = new Set(['l1']);
+  assert.deepEqual(
+    quantityChanges(lines, { l1: 0, l2: 0 }, credited).map((c) => c.lineId),
+    ['l2'],
+  );
+});
+
+test('a bill with nothing changeable left says so once', () => {
+  // Rather than offering an editor where every row refuses.
+  const order = { status: 'SERVED', payment_status: 'paid' };
+  const lines = [
+    { $id: 'l1', name_snapshot: 'Basket', unit_price: 100, qty: 1, status: 'queued' },
+    { $id: 'l2', name_snapshot: 'Bowl', unit_price: 100, qty: 1, status: 'void' },
+  ];
+  assert.match(
+    String(quantityEditProblem(order, { creditedLineIds: ['l1'], lines })),
+    /nothing here that can be changed/,
+  );
+});
+
+test('taking a line off says what it does before it does it', () => {
+  /**
+   * Every one of these is a consequence somebody has been surprised by, and
+   * the surprise always arrives later — at a count, at a close, or in the
+   * books a month on.
+   */
+  const said = removalEffects({
+    removed: ['Jollof rice'],
+    newTotal: 7000,
+    taken: 15000,
+    shiftClosed: true,
+    format: (n) => `GHS ${(n / 100).toFixed(2)}`,
+  }).join(' ');
+  assert.match(said, /Jollof rice comes off the bill/);
+  assert.match(said, /goes back/);
+  assert.match(said, /already closed/);
+  assert.match(said, /GHS 80.00 has been taken against this bill and is now owed back/);
+  assert.match(said, /stays on the bill at nothing/);
+});
+
+test('on an open shift it says the shift expects less, not that it was reposted', () => {
+  const said = removalEffects({
+    removed: ['Club'], newTotal: 0, taken: 0, shiftClosed: false, format: (n) => String(n),
+  }).join(' ');
+  assert.match(said, /expects less money/);
+  assert.doesNotMatch(said, /owed back/);
+});
+
+test('changing a quantity without removing anything says none of that', () => {
+  assert.deepEqual(removalEffects({
+    removed: [], newTotal: 100, taken: 100, shiftClosed: true, format: String,
+  }), []);
 });
 
 test('a cancelled order has nothing to correct', () => {
