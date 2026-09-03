@@ -4,7 +4,7 @@ import { humanError } from '../lib';
 import {
   shelfLines, submitCount, pendingCounts, countLines, approveCount, rejectCount, decidedCounts,
   summariseCount, countWarnings, groupLines, COUNT_REASONS, isSelfApproval, formatMoney,
-  expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
+  expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft, clearAllWarning,
   pendingShelfLines, frozenPieces, frozenBy,
 } from '@snpos/core';
 import type {
@@ -133,15 +133,24 @@ export function StocktakePage() {
     if (!lines || restored || !userId) return;
     const draft = readExpenseDraft(store, DRAFT_KEY(userId));
     const saved = (draft as { lines?: { ingredientId: string; qtyText: string; totalText: string }[] })?.lines;
-    if (!saved?.length) return;
-    // Keyed by product and variant, so a piece that has since been archived
-    // simply does not match rather than landing on the wrong row.
-    const byKey = new Map(saved.map((l) => [l.ingredientId, l]));
-    setLines((rows) => (rows ?? []).map((r) => {
-      const hit = byKey.get(`${r.menuItemId}:${r.variantId ?? ''}`);
-      return hit ? { ...r, countedText: hit.qtyText, reason: (hit.totalText || 'counted') as CountReason } : r;
-    }));
-    setNote((draft as { noteText?: string }).noteText ?? '');
+    if (saved?.length) {
+      // Keyed by product and variant, so a piece that has since been archived
+      // simply does not match rather than landing on the wrong row.
+      const byKey = new Map(saved.map((l) => [l.ingredientId, l]));
+      setLines((rows) => (rows ?? []).map((r) => {
+        const hit = byKey.get(`${r.menuItemId}:${r.variantId ?? ''}`);
+        return hit ? { ...r, countedText: hit.qtyText, reason: (hit.totalText || 'counted') as CountReason } : r;
+      }));
+      setNote((draft as { noteText?: string }).noteText ?? '');
+    }
+    /*
+      Marked as read whether or not there was anything to read.
+
+      This used to give up before saying so when the draft was empty, which
+      left the flag false for ever — and the guard below, which exists to stop
+      a blank sheet overwriting a kept count before it has been put back, would
+      then have blocked every save on a fresh count instead.
+    */
     setRestored(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lines, userId]);
@@ -154,7 +163,15 @@ export function StocktakePage() {
    * afternoon.
    */
   useEffect(() => {
-    if (!lines || !userId) return;
+    /*
+      Never before the kept copy has been put back.
+
+      Both effects fire on the render where the sheet first arrives, and this
+      one ran with the sheet as loaded — blank — which deletes the stored count
+      a moment before the other one restores it. It came back on the next
+      keystroke, and anybody who reloaded in between lost the lot.
+    */
+    if (!lines || !userId || !restored) return;
     const typed = lines
       .filter((l) => (l.countedText ?? '').trim() !== '')
       .map((l) => ({
@@ -164,7 +181,25 @@ export function StocktakePage() {
       }));
     saveExpenseDraft(store, DRAFT_KEY(userId), { lines: typed, noteText: note });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lines, note, userId]);
+  }, [lines, note, userId, restored]);
+
+  /** How many pieces have a figure typed against them. */
+  const typedCount = (lines ?? []).filter((l) => (l.countedText ?? '').trim() !== '').length;
+
+  /**
+   * Wipe the sheet and start again.
+   *
+   * Asked first, and the question says exactly what goes. Typing over four
+   * hundred boxes one at a time is what people do instead, and the box that
+   * gets missed is the one that files a wrong number against a shelf.
+   */
+  const clearAll = () => {
+    if (typedCount === 0) return;
+    if (!window.confirm(clearAllWarning(typedCount))) return;
+    clearExpenseDraft(store, DRAFT_KEY(userId));
+    setNote('');
+    setLines((rows) => (rows ?? []).map((r) => ({ ...r, countedText: '' })));
+  };
 
   const setLine = (i: number, patch: Partial<CountLine>) =>
     setLines((rows) => (rows ?? []).map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -297,25 +332,16 @@ export function StocktakePage() {
         </>
       ) : (
         <>
-          {restored && (
+          {/* Only where there is something to have picked up. A sheet nobody
+              has typed on is not recovered work, and saying so would teach
+              somebody the message means nothing. */}
+          {typedCount > 0 && (
             <div style={{ marginBottom: '0.8rem' }}>
               <Notice tone="info">
-                Picked up where you left off.{' '}
-                <button
-                  type="button"
-                  onClick={() => {
-                    clearExpenseDraft(store, DRAFT_KEY(userId));
-                    setRestored(false);
-                    setNote('');
-                    void loadShelf();
-                  }}
-                  style={{
-                    background: 'none', border: 'none', padding: 0, font: 'inherit',
-                    color: 'inherit', textDecoration: 'underline', cursor: 'pointer',
-                  }}
-                >
-                  Start again
-                </button>
+                Kept on this device as you type: {typedCount}{' '}
+                {typedCount === 1 ? 'piece' : 'pieces'} so far. Close this page or lose the tablet and they will
+                still be here. Check they match the shelf before sending, or press &ldquo;Clear all&rdquo; to
+                start again.
               </Notice>
             </div>
           )}
@@ -324,6 +350,12 @@ export function StocktakePage() {
             <p className="dim" style={{ maxWidth: '46rem' }}>
               Walk the shop and type what is actually on the shelf. Leave a line blank and it is left exactly as it
               is — blank is not nought. Nothing moves until an admin approves it.
+              {typedCount > 0 && (
+                <>
+                  {' '}
+                  <button type="button" className="linky" onClick={clearAll}>Clear all</button>
+                </>
+              )}
             </p>
             {/* For a shop that counts on paper and types it up afterwards. It
                 fills this sheet rather than writing to the shelf, so the

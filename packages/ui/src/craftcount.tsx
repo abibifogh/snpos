@@ -4,6 +4,7 @@ import {
   shelfLines, submitCount, pendingShelfLines, frozenPieces, frozenBy, pieceKey,
   summariseCount, groupLines, COUNT_REASONS, formatMoney,
   countDraftKey, readCountDraft, saveCountDraft, clearCountDraft,
+  countRestoredWords, clearAllWarning,
   type DraftStore,
 } from '@snpos/core';
 import type { CountLine, CountReason, CountGrouping, Settings, WaitingChange } from '@snpos/core';
@@ -59,7 +60,7 @@ export function CraftCountModal({
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const [groupBy, setGroupBy] = useState<CountGrouping>('maker');
-  const [recovered, setRecovered] = useState(false);
+  const [recovered, setRecovered] = useState<string | null>(null);
   const draftKey = countDraftKey(shiftId, phase);
 
   /**
@@ -106,7 +107,7 @@ export function CraftCountModal({
         const kept = readCountDraft(draftStore(), draftKey);
         setSheet({
           lines: rows.map((r) => {
-            const hit = kept?.[pieceKey(r.menuItemId, r.variantId)];
+            const hit = kept?.lines[pieceKey(r.menuItemId, r.variantId)];
             if (!hit) return r;
             // The reason travels in `note`: a shortage explained as breakage
             // yesterday afternoon must not come back as a plain miscount.
@@ -118,7 +119,7 @@ export function CraftCountModal({
           }),
           failed: false,
         });
-        if (kept && Object.keys(kept).length > 0) setRecovered(true);
+        setRecovered(countRestoredWords(kept));
         if (rows.length === 0) onEmpty?.();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not load the count sheet.');
@@ -143,16 +144,37 @@ export function CraftCountModal({
         is not a count, and filing one would put a number against a shelf
         nobody has finished walking.
       */
-      saveCountDraft(draftStore(), draftKey, Object.fromEntries(
-        next
-          .filter((l) => (l.countedText ?? '').trim() !== '')
-          .map((l) => [
-            pieceKey(l.menuItemId, l.variantId),
-            { countedText: l.countedText, note: l.reason ?? 'counted' },
-          ]),
-      ));
+      saveCountDraft(draftStore(), draftKey, {
+        savedAt: Date.now(),
+        lines: Object.fromEntries(
+          next
+            .filter((l) => (l.countedText ?? '').trim() !== '')
+            .map((l) => [
+              pieceKey(l.menuItemId, l.variantId),
+              { countedText: l.countedText, note: l.reason ?? 'counted' },
+            ]),
+        ),
+      });
       return { ...s, lines: next };
     });
+
+  /** How many pieces have a figure typed against them. */
+  const typedCount = (lines ?? []).filter((l) => (l.countedText ?? '').trim() !== '').length;
+
+  /**
+   * Wipe the sheet and start again.
+   *
+   * Asked first, and the question says exactly what goes. Typing over a
+   * hundred boxes one at a time is what people do instead, and the box that
+   * gets missed is the one that files a wrong number against a shelf.
+   */
+  const clearAll = () => {
+    if (typedCount === 0) return;
+    if (!window.confirm(clearAllWarning(typedCount))) return;
+    clearCountDraft(draftStore(), draftKey);
+    setSheet((s) => (s ? { ...s, lines: s.lines.map((l) => ({ ...l, countedText: '' })) } : s));
+    setRecovered(null);
+  };
 
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -255,6 +277,9 @@ export function CraftCountModal({
               ? (dismissLabel ?? (phase === 'open' ? 'Not now' : 'Cancel'))
               : 'Back — count later'}
           </Button>
+          {/* Only where there is something to clear, so it is not a button
+              somebody presses to find out what it does. */}
+          {typedCount > 0 && <Button variant="ghost" onClick={clearAll}>Clear all</Button>}
           <Button variant="primary" onClick={() => void save()} loading={busy} disabled={!maySave}>
             {left > 0 ? `${left} still to count` : title}
           </Button>
@@ -266,22 +291,7 @@ export function CraftCountModal({
       {/* Numbers already on a sheet that was expected to be blank are either a
           relief or a warning, and which one depends on knowing they are yours
           from earlier rather than somebody else's guess. */}
-      {recovered && (
-        <Notice tone="info">
-          Picked up where you left off. What you typed before is still here.{' '}
-          <button
-            type="button"
-            className="linky"
-            onClick={() => {
-              clearCountDraft(draftStore(), draftKey);
-              setSheet((s) => (s ? { ...s, lines: s.lines.map((l) => ({ ...l, countedText: '' })) } : s));
-              setRecovered(false);
-            }}
-          >
-            Start again
-          </button>
-        </Notice>
-      )}
+      {recovered && <Notice tone="info">{recovered}</Notice>}
 
       {sheet === null ? (
         <Spinner />

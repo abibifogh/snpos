@@ -4,7 +4,8 @@ import { db, DB_ID, humanError } from '../lib';
 import {
   barCountSheet, saveBarCount, hasOpeningCount, byUnit, summariseBarCount, readyToClose,
   formatMoney, listAll, Query, loadOpenShifts, loadLocations, saleLocation, mayCountWithoutShift,
-  expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
+  countDraftKey, readCountDraft, saveCountDraft, clearCountDraft,
+  restoreCount, draftFromCount, countRestoredWords, countDraftLines, clearAllWarning,
   filedCounts, undoProblem, undoBarCount, pourMissedSales,
   loadRecipes, pourState, pourLabel, pourWords, unexplainedByWiring, drinksToMoveToBar,
   heldWords, unheldWords, pendingBarChecks, barCountHistory, approveBarCount, rejectBarCount, countState,
@@ -58,7 +59,8 @@ export function BarCountsPage() {
    */
   const [places, setPlaces] = useState<StockLocation[]>([]);
   const [restored, setRestored] = useState(false);
-  const userId = user?.$id ?? '';
+  /** What was already on this sheet when it loaded, and when it was typed. */
+  const [recovered, setRecovered] = useState<string | null>(null);
   const store = typeof window === 'undefined' ? null : window.localStorage;
   const [placeId, setPlaceId] = useState('');
   const [lines, setLines] = useState<BarCountLine[] | null>(null);
@@ -78,15 +80,22 @@ export function BarCountsPage() {
    * spirits, serves a customer, comes back — and a browser that had thrown
    * away the first twenty minutes makes this a screen people stop starting.
    *
-   * Keyed by ROOM as well as by person: switching rooms mid-count must not
-   * carry the store's numbers onto the bar's sheet, which would be a count of
-   * the wrong shelf saved under the right name.
-   *
    * Kept on the device rather than in the database. An unfinished count is not
    * a record, and half of one sitting in the variances would be worse than
    * none.
+   *
+   * By SHIFT, PHASE and ROOM, not by person. This used to be keyed by whoever
+   * was logged in and by the room alone, which was wrong twice over: counting
+   * in and counting out shared one draft, so an opening count came back onto a
+   * closing sheet, and a bartender who handed over half way through found a
+   * blank sheet while their numbers sat under somebody else's name.
+   *
+   * A count belongs to the bar. That is the whole point of counting in and out
+   * — one person hands over to the next — and the same key is what the till's
+   * own count sheet uses, so the two cannot restore each other's numbers or
+   * fail to find them.
    */
-  const draftKey = (uid: string, place: string) => expenseDraftKey('main', `barcount:${place}`, uid);
+  const draftKey = () => countDraftKey(isStore ? '' : (shift?.$id ?? ''), phase, placeId);
 
   const isAdmin = profile?.role === 'admin';
 
@@ -260,19 +269,15 @@ export function BarCountsPage() {
 
   // Put back whatever was typed, once the sheet for this room has loaded.
   useEffect(() => {
-    if (!lines || restored || !userId || !placeId) return;
-    const draft = readExpenseDraft(store, draftKey(userId, placeId));
-    const saved = (draft as { lines?: { ingredientId: string; qtyText: string; totalText: string }[] })?.lines;
-    if (saved?.length) {
-      const byId = new Map(saved.map((l) => [l.ingredientId, l]));
-      setLines((rows) => (rows ?? []).map((r) => {
-        const hit = byId.get(r.ingredientId);
-        return hit ? { ...r, countedText: hit.qtyText, note: hit.totalText } : r;
-      }));
-    }
+    if (!lines || restored) return;
+    const draft = readCountDraft(store, draftKey());
+    // The SHEET decides what is on it and the draft only what was typed, so a
+    // bottle added this morning still appears and one taken off is still gone.
+    if (draft) setLines((rows) => restoreCount(rows ?? [], draft));
+    setRecovered(countRestoredWords(draft));
     setRestored(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lines, userId, placeId]);
+  }, [lines, placeId, phase, shift?.$id]);
 
   /**
    * Written as it is typed, not on the way out.
@@ -282,24 +287,47 @@ export function BarCountsPage() {
    * evening.
    */
   useEffect(() => {
-    if (!lines || !userId || !placeId || !restored) return;
-    saveExpenseDraft(store, draftKey(userId, placeId), {
-      lines: lines
-        .filter((l) => (l.countedText ?? '').trim() !== '' || (l.note ?? '').trim() !== '')
-        .map((l) => ({ ingredientId: l.ingredientId, qtyText: l.countedText ?? '', totalText: l.note ?? '' })),
-      noteText: '',
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lines, userId, placeId, restored]);
+    /*
+      No longer gated on there being a room chosen.
 
-  // A different room is a different sheet, so its own draft is loaded.
-  useEffect(() => { setRestored(false); }, [placeId]);
+      It was, and on a bar with no rooms set up `placeId` is empty for ever —
+      so nothing was ever kept, on exactly the sites that have not been through
+      the location setup. The count sheet works without a room; so does keeping
+      what was typed on it.
+    */
+    if (!lines || !restored) return;
+    saveCountDraft(store, draftKey(), draftFromCount(lines));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, placeId, phase, shift?.$id, restored]);
+
+  // A different room, or the other end of the shift, is a different sheet.
+  useEffect(() => { setRestored(false); }, [placeId, phase]);
   // Changing room reloads the sheet: what is expected is that room's level,
   // not the business total.
   useEffect(() => { if (placeId) void load(); /* eslint-disable-next-line */ }, [placeId]);
 
   const setLine = (id: string, patch: Partial<BarCountLine>) =>
     setLines((rows) => (rows ?? []).map((r) => (r.ingredientId === id ? { ...r, ...patch } : r)));
+
+  /** How many shelves have something typed against them. */
+  const typedCount = countDraftLines(draftFromCount(lines ?? []));
+
+  /**
+   * Wipe the sheet and start again.
+   *
+   * Offered because the alternative people actually use is worse: a sheet
+   * carrying yesterday's figures gets fixed by typing over forty boxes one at
+   * a time, and the box that gets missed files a wrong number against a shelf.
+   *
+   * Asked first, and the question says exactly what goes.
+   */
+  const clearAll = () => {
+    if (typedCount === 0) return;
+    if (!window.confirm(clearAllWarning(typedCount))) return;
+    clearCountDraft(store, draftKey());
+    setRecovered(null);
+    setLines((rows) => (rows ?? []).map((r) => ({ ...r, countedText: '', note: '' })));
+  };
 
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -357,9 +385,22 @@ export function BarCountsPage() {
         userId: user?.$id ?? '',
       });
       await load();
-      setLines((rows) => (rows ?? []).map((r) => ({ ...r, countedText: '', note: '' })));
-      // Saved for real, so the unfinished copy has nothing left to protect.
-      if (userId && placeId) clearExpenseDraft(store, draftKey(userId, placeId));
+      /*
+        THE SHEET AND THE DRAFT BOTH SURVIVE A COUNT THAT DID NOT FILE.
+
+        Both were thrown away before the result was looked at: the boxes were
+        blanked on screen and the kept copy deleted. So a count that failed
+        left a message saying "count again" beside an empty sheet, with the
+        figures somebody had walked the room for gone from both places at once.
+
+        Neither goes until the count is actually filed. That is the whole
+        promise of keeping it.
+      */
+      if (failed === 0) {
+        setLines((rows) => (rows ?? []).map((r) => ({ ...r, countedText: '', note: '' })));
+        clearCountDraft(store, draftKey());
+        setRecovered(null);
+      }
       /*
         A count that half saved says which half.
 
@@ -631,7 +672,22 @@ export function BarCountsPage() {
                   </div>
                 </div>
               )}
+              {/* Only where there is something to clear, so it is not a button
+                  somebody presses to find out what it does. */}
+              {typedCount > 0 && (
+                <Button variant="ghost" onClick={clearAll}>Clear all</Button>
+              )}
             </div>
+
+            {/*
+              What was already typed, said rather than left to be noticed.
+
+              Numbers on a sheet that was expected to be blank are either a
+              relief or a warning, and which one depends on knowing whose they
+              are and how old. Four minutes is the count you were taking;
+              yesterday morning is a shelf that has been sold from since.
+            */}
+            {recovered && <Notice tone="info">{recovered}</Notice>}
 
             {/* The opening count is not a formality and the screen says so
                 once, where somebody starting a shift will read it. */}

@@ -3,6 +3,7 @@ import { Badge, Button, Field, Input, Modal, Notice, Spinner } from './component
 import {
   barCountSheet, saveBarCount, byUnit, summariseBarCount, countGate,
   countDraftKey, readCountDraft, saveCountDraft, restoreCount, draftFromCount, clearCountDraft,
+  countRestoredWords, countDraftLines, clearAllWarning,
   type DraftStore,
   formatMoney, loadLocations, saleLocation,
 } from '@snpos/core';
@@ -77,8 +78,8 @@ export function BarCountModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
-  /** Numbers were already on this sheet when it opened. Said, not assumed. */
-  const [recovered, setRecovered] = useState(false);
+  /** What was already on this sheet when it opened, and when it was typed. */
+  const [recovered, setRecovered] = useState<string | null>(null);
   /** Which room this sheet is for, so two shelves cannot restore each other. */
   const [draftKey, setDraftKey] = useState(() => countDraftKey(shiftId, phase));
 
@@ -137,7 +138,7 @@ export function BarCountModal({
         setDraftKey(key);
         const kept = readCountDraft(draftStore(), key);
         setSheet({ lines: restoreCount(rows, kept), failed: false });
-        if (kept) setRecovered(true);
+        setRecovered(countRestoredWords(kept));
         if (rows.length === 0) onEmpty?.();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not load the count sheet.');
@@ -165,6 +166,28 @@ export function BarCountModal({
       saveCountDraft(draftStore(), draftKey, draftFromCount(lines));
       return { ...s, lines };
     });
+
+  /**
+   * Wipe the sheet and start again.
+   *
+   * Offered because the alternative people actually use is worse: a sheet with
+   * yesterday's figures on it, or somebody else's, gets fixed by typing over
+   * forty boxes one at a time — and the box that gets missed is the one that
+   * files a wrong number against a shelf.
+   *
+   * Asked first, and the question says exactly what goes. This is the only
+   * button on the screen that destroys work.
+   */
+  const clearAll = () => {
+    const typed = countDraftLines(draftFromCount(lines ?? []));
+    if (typed === 0) return;
+    if (!window.confirm(clearAllWarning(typed))) return;
+    clearCountDraft(draftStore(), draftKey);
+    setRecovered(null);
+    setSheet((s) => (s ? { ...s, lines: s.lines.map((l) => ({ ...l, countedText: '', note: '' })) } : s));
+  };
+
+  const typedCount = useMemo(() => countDraftLines(draftFromCount(lines ?? [])), [lines]);
 
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -209,15 +232,28 @@ export function BarCountModal({
         it. So the sheet stays open and says so, which is the one moment
         somebody can still put it right.
       */
-      // Filed, so the half-finished copy has nothing left to protect.
-      clearCountDraft(draftStore(), draftKey);
       if (failed > 0) {
+        /*
+          THE DRAFT SURVIVES A COUNT THAT DID NOT FILE.
+
+          This used to be thrown away before the result was even looked at, so
+          a count that failed to save left the sheet open, said try again — and
+          the moment anybody reloaded the page, every figure they had walked
+          the room for was gone. Somebody counting forty bottles was told to
+          count them again by the same screen that had just discarded them.
+
+          It is kept until the count is actually filed. That is the entire
+          promise of keeping it.
+        */
         setError(
-          `${failed} line${failed === 1 ? '' : 's'} did not save. Nothing else has been touched — try the `
-          + 'count again. If it keeps happening, tell an admin before closing the shift.',
+          `${failed} line${failed === 1 ? '' : 's'} did not save. Nothing else has been touched — what you `
+          + 'typed is still here, so try the count again. If it keeps happening, tell an admin before closing '
+          + 'the shift.',
         );
         return;
       }
+      // Filed, so the half-finished copy has nothing left to protect.
+      clearCountDraft(draftStore(), draftKey);
       onDone(
         phase === 'open'
           ? `${written} line${written === 1 ? '' : 's'} counted in. The bar is yours.`
@@ -263,6 +299,11 @@ export function BarCountModal({
               // means: the count is still owed on the other side of this.
               : 'Back — count later'}
           </Button>
+          {/* Only where there is something to clear, so it is not a button
+              somebody presses to find out what it does. */}
+          {typedCount > 0 && (
+            <Button variant="ghost" onClick={clearAll}>Clear all</Button>
+          )}
           <Button
             variant="primary"
             onClick={() => void save()}
@@ -280,12 +321,7 @@ export function BarCountModal({
           expected to be blank are either a relief or a warning, and which one
           depends on knowing they are yours from earlier rather than somebody
           else's guess. */}
-      {recovered && (
-        <Notice tone="info">
-          Picking up where this sheet was left. What was already typed is still here — check it still matches
-          the shelf before filing the count.
-        </Notice>
-      )}
+      {recovered && <Notice tone="info">{recovered}</Notice>}
 
       <p className="small dim" style={{ marginTop: 0 }}>
         {phase === 'open'

@@ -4,6 +4,7 @@ import {
   expenseDraftKey, draftWorthKeeping, saveExpenseDraft, readExpenseDraft, clearExpenseDraft,
   type DraftStore, type ExpenseDraft,
   countDraftKey, saveCountDraft, readCountDraft, restoreCount, draftFromCount,
+  countRestoredWords, countDraftLines, clearAllWarning, sinceWords, COUNT_DRAFT_GOOD_FOR_MS,
 } from '../expense-draft.ts';
 
 /** A store that behaves, and one that does not. */
@@ -141,7 +142,7 @@ test('what was typed survives leaving the sheet', () => {
   ]));
   // No `note` key at all: JSON drops undefined, and the round trip is what
   // the sheet actually gets back.
-  assert.deepEqual(readCountDraft(store, key), { gin: { countedText: '12' } });
+  assert.deepEqual(readCountDraft(store, key)?.lines, { gin: { countedText: '12' } });
 });
 
 test('an empty sheet is not a draft', () => {
@@ -161,7 +162,7 @@ test('the sheet decides what is on it, the draft only what was typed', () => {
   */
   const restored = restoreCount(
     [{ ingredientId: 'gin', countedText: '' }, { ingredientId: 'tonic', countedText: '' }],
-    { gin: { countedText: '12' }, vodka: { countedText: '9' } },
+    { lines: { gin: { countedText: '12' }, vodka: { countedText: '9' } } },
   );
   assert.deepEqual(restored.map((r) => r.ingredientId), ['gin', 'tonic']);
   assert.equal(restored[0].countedText, '12');
@@ -174,5 +175,72 @@ test('a count of nought is kept, because nought is an answer', () => {
   const store = memory();
   const key = countDraftKey('shift1', 'close');
   saveCountDraft(store, key, draftFromCount([{ ingredientId: 'gin', countedText: '0' }]));
-  assert.deepEqual(readCountDraft(store, key), { gin: { countedText: '0' } });
+  assert.deepEqual(readCountDraft(store, key)?.lines, { gin: { countedText: '0' } });
+});
+
+test('a kept count says how many lines and how long ago', () => {
+  /**
+   * The whole point of the message. Numbers on a sheet expected to be blank
+   * are either a relief or a warning, and which one depends on knowing how
+   * old they are — four minutes is the count you were taking, yesterday
+   * morning is a shelf that has been sold from since.
+   */
+  const now = 1_700_000_000_000;
+  const draft = draftFromCount(
+    [{ ingredientId: 'gin', countedText: '12' }, { ingredientId: 'rum', countedText: '4' }],
+    now - 20 * 60_000,
+  );
+  const words = String(countRestoredWords(draft, now));
+  assert.match(words, /2 lines typed 20 minutes ago/);
+  assert.match(words, /Clear all/);
+  assert.equal(countDraftLines(draft), 2);
+});
+
+test('nothing typed is nothing to announce', () => {
+  assert.equal(countRestoredWords(draftFromCount([])), null);
+  assert.equal(countRestoredWords(null), null);
+  assert.equal(countDraftLines(null), 0);
+});
+
+test('how long ago, in the words somebody would use', () => {
+  assert.equal(sinceWords(5_000), 'a moment ago');
+  assert.equal(sinceWords(20 * 60_000), '20 minutes ago');
+  assert.equal(sinceWords(60 * 60_000), '1 hour ago');
+  assert.equal(sinceWords(5 * 60 * 60_000), '5 hours ago');
+  assert.equal(sinceWords(50 * 60 * 60_000), '2 days ago');
+});
+
+test('a draft older than a few days is not offered back', () => {
+  /*
+    A bar's draft is keyed by shift and could not leak anyway. A store room's
+    belongs to no shift, and one from last month sits beside a shelf that has
+    been sold from a hundred times since — filing it would be worse than
+    starting again.
+  */
+  const store = memory();
+  const key = countDraftKey('', 'close', 'store');
+  const now = 1_700_000_000_000;
+  saveCountDraft(store, key, draftFromCount([{ ingredientId: 'gin', countedText: '12' }], now));
+  assert.equal(readCountDraft(store, key, now + 60_000)?.lines.gin.countedText, '12');
+  assert.equal(readCountDraft(store, key, now + COUNT_DRAFT_GOOD_FOR_MS + 1), null);
+});
+
+test('a draft written before the shape had a date on it is still read', () => {
+  /**
+   * The version that added the date must not throw away the sheet of whoever
+   * happened to be half way through a count when it deployed — which is the
+   * exact fault the whole feature exists to prevent.
+   */
+  const store = memory();
+  const key = countDraftKey('shift1', 'open');
+  store.setItem(key, JSON.stringify({ gin: { countedText: '12' } }));
+  assert.deepEqual(readCountDraft(store, key)?.lines, { gin: { countedText: '12' } });
+});
+
+test('clearing all says exactly what goes, and what does not', () => {
+  // The only button on a count screen that destroys work.
+  const words = clearAllWarning(23);
+  assert.match(words, /Clear all 23 figures/);
+  assert.match(words, /already been filed is affected/);
+  assert.match(clearAllWarning(1), /1 figure typed/);
 });

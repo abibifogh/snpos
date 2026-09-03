@@ -138,20 +138,56 @@ export function clearExpenseDraft(store: DraftStore | null | undefined, key: str
 export const countDraftKey = (shiftId: string, phase: string, locationId = ''): string =>
   `snpos.count.${shiftId || 'none'}.${phase}.${locationId}`;
 
+/** What was typed against one shelf. */
+export interface CountDraftLine {
+  countedText?: string;
+  note?: string;
+}
+
 /**
  * What was typed, by stock item.
  *
  * Text, not numbers, and deliberately: a half-typed "0." is not nought, and
  * turning it into one while somebody is still typing is how a shelf holding
  * twelve gets recorded as empty.
+ *
+ * Stamped with the time it was last touched, so the sheet can say what it is
+ * offering back. "There are numbers here already" is a different message from
+ * "these are the numbers you typed four minutes ago", and only one of them
+ * tells somebody whether to trust them.
  */
-export type CountDraft = Record<string, { countedText?: string; note?: string }>;
+export interface CountDraft {
+  savedAt?: number;
+  lines: Record<string, CountDraftLine>;
+}
+
+/**
+ * How long a kept count is still the count somebody was taking.
+ *
+ * Three days. Long enough that no single walk of a store room outlives it —
+ * they are done across an afternoon, not a fortnight — and short enough that a
+ * draft nobody ever filed does not surface weeks later next to a shelf that
+ * has been sold from a hundred times since.
+ *
+ * A bar's draft is keyed by shift and could not leak anyway. A store room's is
+ * not, because a stocktake belongs to no shift, and that is the one this
+ * protects.
+ */
+export const COUNT_DRAFT_GOOD_FOR_MS = 3 * 24 * 60 * 60 * 1000;
 
 /** Anything typed at all. An empty draft is not worth keeping or announcing. */
 export function countWorthKeeping(draft: CountDraft | null | undefined): boolean {
-  if (!draft) return false;
-  return Object.values(draft).some((l) => (l?.countedText ?? '').trim() !== '' || (l?.note ?? '').trim() !== '');
+  if (!draft?.lines) return false;
+  return Object.values(draft.lines).some(
+    (l) => (l?.countedText ?? '').trim() !== '' || (l?.note ?? '').trim() !== '',
+  );
 }
+
+/** How many shelves have something typed against them. */
+export const countDraftLines = (draft: CountDraft | null | undefined): number =>
+  Object.values(draft?.lines ?? {}).filter(
+    (l) => (l?.countedText ?? '').trim() !== '' || (l?.note ?? '').trim() !== '',
+  ).length;
 
 export function saveCountDraft(store: DraftStore | null | undefined, key: string, draft: CountDraft): void {
   if (!store) return;
@@ -164,18 +200,73 @@ export function saveCountDraft(store: DraftStore | null | undefined, key: string
   }
 }
 
-export function readCountDraft(store: DraftStore | null | undefined, key: string): CountDraft | null {
+export function readCountDraft(
+  store: DraftStore | null | undefined,
+  key: string,
+  now = Date.now(),
+): CountDraft | null {
   if (!store) return null;
   try {
     const raw = store.getItem(key);
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    const draft = parsed as CountDraft;
-    return countWorthKeeping(draft) ? draft : null;
+
+    /*
+      A draft written before the shape had a date on it is still somebody's
+      count. Read rather than discarded: the version that introduced this could
+      otherwise throw away the sheet of whoever happened to be half way through
+      a count when it deployed, which is the exact fault it exists to prevent.
+    */
+    const record = parsed as Record<string, unknown>;
+    const draft: CountDraft = Array.isArray(record.lines) || typeof record.lines !== 'object' || !record.lines
+      ? { lines: record as Record<string, CountDraftLine> }
+      : { savedAt: typeof record.savedAt === 'number' ? record.savedAt : undefined,
+        lines: record.lines as Record<string, CountDraftLine> };
+
+    if (!countWorthKeeping(draft)) return null;
+    if (draft.savedAt && now - draft.savedAt > COUNT_DRAFT_GOOD_FOR_MS) return null;
+    return draft;
   } catch {
     return null;
   }
+}
+
+/** "four minutes ago", for a sentence about work somebody left behind. */
+export function sinceWords(ms: number): string {
+  if (ms < 90_000) return 'a moment ago';
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+}
+
+/**
+ * What to say about numbers already on a sheet that was expected to be blank.
+ *
+ * They are either a relief or a warning, and which one depends on knowing whose
+ * they are and how old. A count from four minutes ago is the one you were
+ * taking; a count from yesterday morning is a shelf that has been sold from
+ * since, and filing it unchecked would be worse than starting again.
+ */
+export function countRestoredWords(
+  draft: CountDraft | null | undefined,
+  now = Date.now(),
+): string | null {
+  const typed = countDraftLines(draft);
+  if (typed === 0) return null;
+  const when = draft?.savedAt ? ` ${sinceWords(now - draft.savedAt)}` : '';
+  return `Picking up where this sheet was left: ${typed} ${typed === 1 ? 'line' : 'lines'} typed${when} `
+    + 'and kept on this device. Check they still match the shelf before filing, or press "Clear all" to '
+    + 'start again.';
+}
+
+/** Asked before wiping somebody's work, and it says exactly what goes. */
+export function clearAllWarning(typed: number): string {
+  return `Clear all ${typed} ${typed === 1 ? 'figure' : 'figures'} typed on this sheet and start again? `
+    + 'Nothing that has already been filed is affected.';
 }
 
 /**
@@ -189,9 +280,9 @@ export function restoreCount<T extends { ingredientId: string; countedText?: str
   lines: T[],
   draft: CountDraft | null | undefined,
 ): T[] {
-  if (!draft) return lines;
+  if (!draft?.lines) return lines;
   return lines.map((l) => {
-    const kept = draft[l.ingredientId];
+    const kept = draft.lines[l.ingredientId];
     if (!kept) return l;
     return {
       ...l,
@@ -204,11 +295,12 @@ export function restoreCount<T extends { ingredientId: string; countedText?: str
 /** The typing on a sheet, ready to be kept. */
 export function draftFromCount(
   lines: { ingredientId: string; countedText?: string; note?: string }[],
+  now = Date.now(),
 ): CountDraft {
-  const out: CountDraft = {};
+  const out: CountDraft = { savedAt: now, lines: {} };
   for (const l of lines) {
     if ((l.countedText ?? '').trim() === '' && (l.note ?? '').trim() === '') continue;
-    out[l.ingredientId] = { countedText: l.countedText, note: l.note };
+    out.lines[l.ingredientId] = { countedText: l.countedText, note: l.note };
   }
   return out;
 }
