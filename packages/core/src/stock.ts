@@ -1,4 +1,4 @@
-import { db, DB_ID, ID, Query, listAll, listByIds, tryWrite } from './client';
+import { db, DB_ID, ID, Query, listAll, listByIds, tryWrite, saveDropping } from './client';
 // Type-only, erased at compile time. The pairing itself is pure; see shift-counts.
 import type { CountEntry } from './shift-counts';
 import type { PurchaseRow } from './price-history';
@@ -649,7 +649,11 @@ export async function saveBarCount(opts: {
   phase: 'open' | 'close';
   lines: BarCountLine[];
   userId: string;
-}): Promise<{ written: number; shortValue: number; failed: number; pending: number }> {
+}): Promise<{
+  written: number; shortValue: number; failed: number; pending: number;
+  /** Counts that applied at once because the approval column is not there yet. */
+  unheld: number;
+}> {
   const places = await loadLocations(opts.venueId);
   const counter = places.find((l) => l.$id === opts.locationId) ?? saleLocation(places, 'bar');
   const variances = variancesIn(opts.lines);
@@ -657,6 +661,15 @@ export async function saveBarCount(opts: {
   let written = 0;
   /** Lines that found a difference and are now waiting for an admin. */
   let pending = 0;
+  /**
+   * Lines that SHOULD have waited for an admin and could not.
+   *
+   * The database has not been given the column the hold is recorded in, so
+   * those counts applied straight away. Counted and said out loud, because
+   * "your differences are waiting for approval" would be false and the person
+   * relying on it would never look.
+   */
+  let unheld = 0;
   /*
     Counted, not swallowed.
 
@@ -689,25 +702,61 @@ export async function saveBarCount(opts: {
       approved the same way. It used to be written to nothing at all and
       applied at once.
     */
-    const held = !movesOnItsOwn(variance);
+    let held = !movesOnItsOwn(variance);
     const recordAs = opts.shiftId ?? storeCountId(counter?.$id ?? 'store');
-    const wrote = await tryWrite(db.createDocument(DB_ID, 'shift_stock_checks', ID.unique(), {
-      venue_id: opts.venueId,
-      shift_id: recordAs,
-      ingredient_id: line.ingredientId,
-      phase: opts.phase,
-      opening_qty: line.expected,
-      theoretical_qty: line.expected,
-      counted_qty: counted,
-      status: counted <= 0 ? 'OUT' : 'OK',
-      status_source: 'manual_override',
-      variance_qty: variance,
-      variance_value: Math.round(Math.abs(variance) * line.unitCost),
-      checked_by: opts.userId,
-      note: line.note ?? '',
-      applied: !held,
-    }));
+    /*
+      A COUNT OF TWENTY-THREE BOTTLES IS NOT LOST OVER ONE FIELD.
+
+      The approval hold needs a column the database only grows when an admin
+      provisions it, and Appwrite refuses a whole document for one attribute it
+      has never heard of. So every line of every count failed, on a screen that
+      could only say "23 lines did not save" — a bar that has counted the room
+      is told to count it again, and counting it again fails in exactly the
+      same way.
+
+      saveDropping sheds what the database does not know and saves the rest,
+      and says what it shed. See it for why this is the house rule rather than
+      a special case: a field added in this release must not take down a save
+      that has nothing to do with it.
+    */
+    let dropped: string[] = [];
+    let wrote = true;
+    try {
+      ({ dropped } = await saveDropping('shift_stock_checks', null, {
+        venue_id: opts.venueId,
+        shift_id: recordAs,
+        ingredient_id: line.ingredientId,
+        phase: opts.phase,
+        opening_qty: line.expected,
+        theoretical_qty: line.expected,
+        counted_qty: counted,
+        status: counted <= 0 ? 'OUT' : 'OK',
+        status_source: 'manual_override',
+        variance_qty: variance,
+        variance_value: Math.round(Math.abs(variance) * line.unitCost),
+        checked_by: opts.userId,
+        note: line.note ?? '',
+        applied: !held,
+      }));
+    } catch {
+      wrote = false;
+    }
     if (!wrote) { failed += 1; continue; }
+
+    /*
+      AND IF THE HOLD ITSELF COULD NOT BE RECORDED, THE COUNT IS NOT HELD.
+
+      A row saved without `applied` reads as already applied — that is what an
+      absent value has always meant, and it has to, because every row written
+      before the column existed was applied. So holding this line would leave
+      the record saying the shelf moved while the shelf did not, and no admin
+      would ever see it waiting. The two must agree, so the count applies now,
+      the way it did before the hold existed, and the screen says so.
+    */
+    if (held && dropped.includes('applied')) {
+      held = false;
+      unheld += 1;
+    }
     if (held) { pending += 1; written += 1; continue; }
 
     /*
@@ -761,7 +810,7 @@ export async function saveBarCount(opts: {
     written += 1;
   }
 
-  return { written, shortValue, failed, pending };
+  return { written, shortValue, failed, pending, unheld };
 }
 
 /* ------------------------------------------- agreeing to a held count */

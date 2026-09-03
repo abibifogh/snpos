@@ -89,6 +89,16 @@ export const db = {
     return doc;
   },
   createDocument: async (_d: string, c: string, id: string, data: Doc) => {
+    /*
+      Appwrite refuses a whole document for one attribute it has never heard
+      of, and says which. That is the behaviour that took down every line of a
+      count of twenty-three bottles, so the fake has to do it too — a stand-in
+      that accepts anything cannot test what happens when the real one does
+      not.
+    */
+    for (const field of unknownFields.get(c) ?? []) {
+      if (field in data) throw new Error(`Invalid document structure: Unknown attribute: "${field}"`);
+    }
     const realId = id === 'unique()' ? `gen${++seq}` : id;
     const doc = { $id: realId, $createdAt: new Date().toISOString(), ...data };
     coll(c).set(realId, doc);
@@ -137,11 +147,27 @@ export async function listSince<T>(c: string, sinceIso: string, extra: any[] = [
   return listAll<T>(c, [...extra, Query.greaterThanEqual('$createdAt', sinceIso)]);
 }
 
+/* The real one, copied rather than simplified: a stand-in that never drops
+   anything cannot test the code that depends on it dropping something. */
 export async function saveDropping(c: string, id: string | null, payload: Doc) {
-  const doc = id
-    ? await db.updateDocument(DB_ID, c, id, payload)
-    : await db.createDocument(DB_ID, c, ID.unique(), payload);
-  return { id: (doc as Doc).$id, dropped: [] as string[] };
+  const body = { ...payload };
+  const dropped: string[] = [];
+
+  for (let attempt = 0; attempt < 16; attempt++) {
+    try {
+      const doc = id
+        ? await db.updateDocument(DB_ID, c, id, body)
+        : await db.createDocument(DB_ID, c, ID.unique(), body);
+      return { id: (doc as Doc).$id, dropped };
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e);
+      const unknown = /unknown attribute:?\s*"?([A-Za-z0-9_]+)"?/i.exec(raw);
+      if (!unknown || !(unknown[1] in body)) throw e;
+      dropped.push(unknown[1]);
+      delete body[unknown[1]];
+    }
+  }
+  throw new Error(`Could not save to ${c}.`);
 }
 
 export async function tryWrite(work: Promise<unknown>): Promise<boolean> {
@@ -149,8 +175,12 @@ export async function tryWrite(work: Promise<unknown>): Promise<boolean> {
 }
 
 /* Test helpers, not part of the real client. */
+/** Columns this database has never been given, by collection. */
+const unknownFields = new Map<string, string[]>();
+export const __missingColumns = (c: string, fields: string[]) => unknownFields.set(c, fields);
+
 export const __seed = (c: string, docs: Doc[]) => {
   for (const d of docs) coll(c).set(d.$id, { $createdAt: new Date().toISOString(), ...d });
 };
 export const __all = (c: string) => [...coll(c).values()];
-export const __reset = () => store.clear();
+export const __reset = () => { store.clear(); unknownFields.clear(); };

@@ -649,6 +649,25 @@ export function heldWords(pending: number, format: (n: number) => string, worth:
     + 'as counted.';
 }
 
+/**
+ * What to say when the approval step could not be recorded.
+ *
+ * The count SAVED — that is the important half, and it is the half that was
+ * failing. But the differences went straight onto the shelf instead of waiting
+ * for an admin, and saying nothing would leave somebody expecting an approval
+ * screen that will never show anything.
+ *
+ * Named as a database that needs updating rather than as an error, because
+ * that is what it is and there is exactly one person who can act on it.
+ */
+export function unheldWords(unheld: number): string | null {
+  if (unheld <= 0) return null;
+  return `${unheld} ${unheld === 1 ? 'difference was' : 'differences were'} applied to the stock figures `
+    + 'straight away instead of waiting for approval, because this database does not yet have the column the '
+    + 'approval step is recorded in. The count itself is saved. An admin can turn the approval step on by '
+    + 'running "Provision Appwrite".';
+}
+
 /** Why this count cannot be taken back, or nothing. */
 export function undoProblem(count: FiledCount | null | undefined): string | null {
   if (count && count.pending > 0) {

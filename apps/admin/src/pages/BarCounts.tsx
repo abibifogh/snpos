@@ -7,7 +7,7 @@ import {
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
   filedCounts, undoProblem, undoBarCount, pourMissedSales,
   loadRecipes, pourState, pourLabel, pourWords, unexplainedByWiring, drinksToMoveToBar,
-  heldWords, pendingBarChecks, barCountHistory, approveBarCount, rejectBarCount, countState,
+  heldWords, unheldWords, pendingBarChecks, barCountHistory, approveBarCount, rejectBarCount, countState,
   isStoreCount, STORE_COUNT_PREFIX, unpouredForShift, unpouredWords, unpouredSummary,
   relinkShelves, relinkWords, relinkIsEmpty,
 } from '@snpos/core';
@@ -345,7 +345,7 @@ export function BarCountsPage() {
     setBusy(true);
     setError(null);
     try {
-      const { written, shortValue, failed, pending: held } = await saveBarCount({
+      const { written, shortValue, failed, pending: held, unheld } = await saveBarCount({
         venueId: 'main',
         // Left off for a store room, on purpose: stamping it with whichever
         // shift happened to be open would put a month of drift on one
@@ -383,6 +383,13 @@ export function BarCountsPage() {
         a bar gets counted twice.
       */
       const heldNote = heldWords(held, money, shortValue);
+      /*
+        The approval step could not be recorded, so the differences went
+        straight onto the shelf. Said rather than left for somebody to notice
+        by watching an approval screen that will never show anything.
+      */
+      const unheldNote = unheldWords(unheld);
+      if (unheldNote) setError(unheldNote);
       toast(
         heldNote
           ?? (isStore

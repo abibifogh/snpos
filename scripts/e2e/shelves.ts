@@ -5,8 +5,9 @@
  * presses the catch-up, and reads the sheet again. Nothing is stubbed except
  * Appwrite itself.
  */
-import { __seed, __reset, __all } from './core/client.ts';
-import { barCountSheet, relinkShelves, pourMissedSales, unpouredForShift } from './core/stock.ts';
+import { __seed, __reset, __all, __missingColumns } from './core/client.ts';
+import { barCountSheet, relinkShelves, pourMissedSales, unpouredForShift, saveBarCount } from './core/stock.ts';
+import { unheldWords } from './core/bar-count.ts';
 
 const ok = (label: string, got: unknown, want: unknown) => {
   const pass = JSON.stringify(got) === JSON.stringify(want);
@@ -266,6 +267,90 @@ console.log('\n=== H — Sprite: sizes gone, the link left behind, sold plain ==
   )]);
   results.push(['H and a plain sale now pours by itself', ok(
     'still unpoured', (await unpouredForShift('main', 'sh1', 'bar')).length, 0,
+  )]);
+}
+
+/* ------------------- filing a count against a database missing a column */
+
+console.log('\n=== I — the count itself, on a database without the approval column ===');
+{
+  __reset();
+  /*
+    Exactly what was on the screen: "23 lines did not save. Nothing else has
+    been touched — try the count again." Every line of a completed count was
+    refused because the approval hold needs a column an admin has to provision,
+    and Appwrite refuses a whole document for one attribute it does not know.
+  */
+  __missingColumns('shift_stock_checks', ['applied', 'approved_by', 'approved_at']);
+  __seed('stock_locations', [
+    { $id: 'counter', venue_id: 'main', name: 'Bar counter', kind: 'counter', module: 'bar', active: true },
+  ]);
+  __seed('ingredients', shelves);
+  __seed('stock_levels', shelves.map((i, n) => ({
+    $id: `lvl${n}`, ingredient_id: i.$id, location_id: 'counter', qty: i.current_qty,
+  })));
+  __seed('shifts', [{ $id: 'sh1', venue_id: 'main', module: 'bar', status: 'OPEN' }]);
+
+  const sheet = await barCountSheet('main');
+  const out = await saveBarCount({
+    venueId: 'main',
+    shiftId: 'sh1',
+    phase: 'open',
+    userId: 'u1',
+    lines: sheet.map((r) => ({
+      ...r,
+      // One line matches, one is three short — so both paths are exercised.
+      countedText: r.ingredientId === 'club-large' ? String(r.expected - 3) : String(r.expected),
+    })),
+  });
+  console.log(`   saved: ${JSON.stringify(out)}`);
+
+  results.push(['I the count saves instead of being refused wholesale', ok(
+    'written / failed', [out.written, out.failed], [2, 0],
+  )]);
+  results.push(['I the difference is applied rather than silently held', ok(
+    'unheld', out.unheld, 1,
+  )]);
+  results.push(['I and the shelf agrees with the record', ok(
+    'club level',
+    (await barCountSheet('main')).find((r) => r.ingredientId === 'club-large')?.expected,
+    45,
+  )]);
+  results.push(['I the person is told the approval step is off', ok(
+    'words mention provisioning', /Provision Appwrite/.test(String(unheldWords(out.unheld))), true,
+  )]);
+}
+
+console.log('\n=== J — the same count once the database has the column ===');
+{
+  __reset();
+  __seed('stock_locations', [
+    { $id: 'counter', venue_id: 'main', name: 'Bar counter', kind: 'counter', module: 'bar', active: true },
+  ]);
+  __seed('ingredients', shelves);
+  __seed('stock_levels', shelves.map((i, n) => ({
+    $id: `lvl${n}`, ingredient_id: i.$id, location_id: 'counter', qty: i.current_qty,
+  })));
+  __seed('shifts', [{ $id: 'sh1', venue_id: 'main', module: 'bar', status: 'OPEN' }]);
+
+  const sheet = await barCountSheet('main');
+  const out = await saveBarCount({
+    venueId: 'main',
+    shiftId: 'sh1',
+    phase: 'open',
+    userId: 'u1',
+    lines: sheet.map((r) => ({
+      ...r,
+      countedText: r.ingredientId === 'club-large' ? String(r.expected - 3) : String(r.expected),
+    })),
+  });
+  results.push(['J the difference waits for an admin', ok(
+    'pending / unheld', [out.pending, out.unheld], [1, 0],
+  )]);
+  results.push(['J and the shelf has not moved yet', ok(
+    'club level',
+    (await barCountSheet('main')).find((r) => r.ingredientId === 'club-large')?.expected,
+    48,
   )]);
 }
 
