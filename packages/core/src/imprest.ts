@@ -1,8 +1,10 @@
-import { db, DB_ID, ID, Query, listAll } from './client';
+import { db, DB_ID, ID, Query, listAll, listByIds } from './client';
 import type { Doc } from './types';
 import { ACCOUNTS, postEntry } from './ledger';
 import { boxBalance, countBox, coversFrom, spendCorrections } from './imprest-rules';
 import type { ImprestMovement, ImprestKind } from './imprest-rules';
+// Shaping a movement into a panel is pure and lives next door.
+import type { DetailExpense, DetailNames } from './imprest-detail';
 
 /**
  * Petty cash boxes, and the two sets of books they have to agree with.
@@ -424,4 +426,72 @@ export async function reconcileFloat(opts: {
   });
 
   return { variance: result.variance, toppedUp, countId: count.$id };
+}
+
+/* ------------------------------------------- what one line in a box actually was */
+
+/**
+ * Everything behind one movement, ready for a panel.
+ *
+ * Read on demand rather than loaded with the list. A box has hundreds of
+ * movements and one of them is being looked at; fetching every expense, every
+ * supplier and every shift to draw a table that shows none of them is how a
+ * screen that opens instantly becomes one people wait for.
+ *
+ * Names are looked up by id rather than snapshotted here, so the panel shows a
+ * supplier's current name. The shaping is in imprest-detail, which has no
+ * database in it.
+ */
+export async function loadMovementDetail(
+  movement: Pick<ImprestMovementDoc, '$id' | 'kind' | 'ref_id' | 'created_by'>,
+): Promise<{ expense: DetailExpense | null; names: DetailNames }> {
+  const names: DetailNames = { people: {}, suppliers: {}, categories: {}, shifts: {} };
+
+  const expense = movement.kind === 'spend' && movement.ref_id
+    ? await db.getDocument(DB_ID, 'shift_expenses', movement.ref_id)
+      .then((d) => d as unknown as DetailExpense)
+      .catch(() => null)
+    : null;
+
+  /*
+    Only the rows this panel actually names.
+
+    Reading every member of staff and every supplier to show one of each is the
+    same waste as loading the expenses with the list, and it is the reason
+    detail panels get built to show ids instead.
+  */
+  const peopleIds = [movement.created_by, expense?.created_by, expense?.approved_by, expense?.paid_to_staff_id]
+    .filter((x): x is string => !!x);
+  if (peopleIds.length > 0) {
+    const staff = await listByIds<{ $id: string; display_name?: string }>(
+      'staff_profiles', '$id', peopleIds,
+    ).catch(() => []);
+    for (const s of staff) names.people[s.$id] = s.display_name || 'Somebody with no name set';
+  }
+
+  if (expense?.supplier_id) {
+    const s = await db.getDocument(DB_ID, 'suppliers', expense.supplier_id)
+      .then((d) => d as unknown as { $id: string; name?: string })
+      .catch(() => null);
+    if (s?.name) names.suppliers[s.$id] = s.name;
+  }
+
+  if (expense?.category_key) {
+    const c = await listAll<{ $id: string; key?: string; name?: string }>('expense_categories', [
+      Query.equal('key', expense.category_key), Query.limit(1),
+    ]).catch(() => []);
+    if (c[0]?.name) names.categories[expense.category_key] = c[0].name;
+  }
+
+  if (expense?.shift_id) {
+    const sh = await db.getDocument(DB_ID, 'shifts', expense.shift_id)
+      .then((d) => d as unknown as { $id: string; code?: string; opened_at?: string })
+      .catch(() => null);
+    if (sh) {
+      names.shifts[sh.$id] = sh.code
+        || (sh.opened_at ? new Date(sh.opened_at).toLocaleDateString() : 'A shift with no name');
+    }
+  }
+
+  return { expense, names };
 }

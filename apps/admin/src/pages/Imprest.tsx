@@ -13,10 +13,12 @@ import {
   boxesFor, canFundBoxes, holdsBox, canCountBox, NO_BOX_HELD, WHY_NO_COUNT,
   needsExplaining, IMPREST_KIND_LABELS, loadPaidToOptions, loadAccounts, ACCOUNTS,
   uploadFile, downloadUrl, listByIds, saveDropping as saveRow,
+  loadMovementDetail, movementTitle, movementRows, expenseRows, amountDisagreesWords, noDetailWords,
 } from '@snpos/core';
 import type {
   ImprestFloatDoc, ImprestMovementDoc, ImprestCountDoc, StaffProfile,
   AccountRow, ImprestHealth, Module, Settings,
+  DetailExpense, DetailNames,
 } from '@snpos/core';
 import { useSession } from '../session';
 
@@ -83,6 +85,27 @@ export function ImprestPage() {
   /** Receipts already attached, by the expense they belong to. */
   const [receipts, setReceipts] = useState<Record<string, string>>({});
   const [attaching, setAttaching] = useState<string | null>(null);
+  /**
+   * The movement whose detail is open, and what was found behind it.
+   *
+   * A row in the list says how much and when, which is what a COUNT needs. It
+   * is not what somebody needs when they look at a line and do not recognise
+   * it — and "Spent · BISTRO-26/08/2026" is a note typed in a hurry. Who spent
+   * it, on what, out of which shift, and whether it reached the books at all
+   * was recorded all along and was not reachable from here.
+   */
+  const [detail, setDetail] = useState<ImprestMovementDoc | null>(null);
+  const [detailOf, setDetailOf] = useState<
+    { expense: DetailExpense | null; names: DetailNames } | null
+  >(null);
+
+  const openMovement = (m: ImprestMovementDoc) => {
+    setDetail(m);
+    setDetailOf(null);
+    void loadMovementDetail(m).then(setDetailOf).catch(() => setDetailOf({
+      expense: null, names: { people: {}, suppliers: {}, categories: {}, shifts: {} },
+    }));
+  };
 
   const decimals = settings?.currency_decimals ?? 2;
   const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
@@ -501,7 +524,20 @@ export function ImprestPage() {
                 </thead>
                 <tbody>
                   {live.map((m) => (
-                    <tr key={m.$id}>
+                    /*
+                      THE ROW OPENS WHAT IT WAS.
+
+                      Not the receipt cell, which already has an Attach control
+                      and a View link on it: a click there means the receipt,
+                      and swallowing it into the panel would take away the one
+                      thing the column exists for.
+                    */
+                    <tr
+                      key={m.$id}
+                      onClick={() => openMovement(m)}
+                      style={{ cursor: 'pointer' }}
+                      title="See what this was"
+                    >
                       <td className="dim small">
                         {new Date(m.occurred_at ?? m.$createdAt).toLocaleDateString()}
                       </td>
@@ -509,7 +545,7 @@ export function ImprestPage() {
                       <td className="small dim">{m.note || '—'}</td>
                       <td className="num">{m.amount > 0 ? money(m.amount) : ''}</td>
                       <td className="num">{m.amount < 0 ? money(-m.amount) : ''}</td>
-                      <td className="small">
+                      <td className="small" onClick={(e) => e.stopPropagation()}>
                         {/* Only a spend has one to show. A top-up is a
                             transfer between two places the business already
                             owns; there is no third party to have issued a
@@ -636,7 +672,12 @@ export function ImprestPage() {
                                     </thead>
                                     <tbody>
                                       {covered.map((m) => (
-                                        <tr key={m.$id}>
+                                        <tr
+                                          key={m.$id}
+                                          onClick={() => openMovement(m)}
+                                          style={{ cursor: 'pointer' }}
+                                          title="See what this was"
+                                        >
                                           <td className="dim small">
                                             {new Date(m.occurred_at ?? m.$createdAt).toLocaleDateString()}
                                           </td>
@@ -879,6 +920,97 @@ export function ImprestPage() {
           )}
         </Modal>
       )}
+
+      {/*
+        WHAT ONE LINE ACTUALLY WAS.
+
+        The list answers "how much and when", which is the question a count
+        asks. It is not the question anybody has when they look at a row and do
+        not recognise it — and a note reading "BISTRO-26/08/2026" is something
+        somebody typed in a hurry. Everything below was already recorded and
+        none of it was reachable from the screen it belongs on.
+
+        A movement and its expense are shown as two different records, because
+        they are: an expense corrected weeks later leaves the original movement
+        written and a correcting one beside it, and a panel that merged them
+        would quietly show one figure where there are two.
+      */}
+      {detail && (
+        <Modal
+          title={movementTitle(detail, IMPREST_KIND_LABELS[detail.kind] ?? detail.kind)}
+          onClose={() => { setDetail(null); setDetailOf(null); }}
+        >
+          <h3 style={{ marginTop: 0 }}>The movement</h3>
+          <DetailList
+            rows={movementRows({
+              movement: detail,
+              kindLabel: IMPREST_KIND_LABELS[detail.kind] ?? detail.kind,
+              names: detailOf?.names,
+              money,
+            })}
+          />
+
+          {detailOf === null ? <Spinner /> : (
+            <>
+              {/* Different reasons, four different sentences. "No detail" on a
+                  top-up is unremarkable; on a spend it means a record has gone
+                  missing, and the two must not read the same. */}
+              {noDetailWords(detail, !!detailOf.expense) && (
+                <Notice tone="info">{noDetailWords(detail, !!detailOf.expense)}</Notice>
+              )}
+
+              {detailOf.expense && (
+                <>
+                  {amountDisagreesWords(detail, detailOf.expense, money) && (
+                    <Notice tone="warn">{amountDisagreesWords(detail, detailOf.expense, money)}</Notice>
+                  )}
+                  <h3>The expense behind it</h3>
+                  <DetailList
+                    rows={expenseRows({ expense: detailOf.expense, names: detailOf.names, money })}
+                  />
+                  <p className="small" style={{ marginBottom: 0 }}>
+                    {detailOf.expense.receipt_file_id ? (
+                      <a
+                        href={downloadUrl(detailOf.expense.receipt_file_id, 'receipt', settings)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        See the receipt
+                      </a>
+                    ) : (
+                      <span className="dim">
+                        No receipt is attached. The count tells you the money is gone; only the receipt says
+                        what for.
+                      </span>
+                    )}
+                  </p>
+                </>
+              )}
+            </>
+          )}
+        </Modal>
+      )}
     </>
+  );
+}
+
+/** A panel's worth of labelled facts, laid out the same way every time. */
+function DetailList({ rows }: { rows: { label: string; value: string; hint?: string }[] }) {
+  return (
+    <div className="table-wrap">
+      <table className="data">
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.label}>
+              <td className="dim small" style={{ whiteSpace: 'nowrap' }}>{r.label}</td>
+              <td>
+                {r.value}
+                {r.hint && <div className="small dim">{r.hint}</div>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
