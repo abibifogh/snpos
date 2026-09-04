@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useState, useMemo } from 'react';
 import {
   Card, Empty, Notice, Spinner, Badge, Modal, Button, Field, Input, Textarea, useToast,
   FilterBar, FilterField,
@@ -10,6 +10,7 @@ import {
   changeOpeningFloat, floatProblem, describeFloatChange, parseMoney, toInput,
   requestSummaryResend, resendPending,
   listCreatedBetween, listByIds, setShiftSealed, isSealed, describeSeal, lockedProblem,
+  settlementBacklog, backlogSummary, stateWords, needsSettling, agedWords,
   rangeTotals, kindsWorthShowing, KIND_LABELS, MODULE_LABELS, canOpen, floatOrigin,
   kindOf, countedParts, partLines, partsWords, unexplained,
   shiftCountEntries, countsByPhase, phaseSummary, bothEndsWords, countsGapWords,
@@ -561,6 +562,25 @@ export function ShiftsPage() {
   const mine = narrowSide(side, profile, settings);
   const shown = (rows ?? []).filter((s) => onSide(s, mine));
 
+  /**
+   * Nights closed and never settled.
+   *
+   * Closing says what was counted. SETTLING says somebody has looked at that
+   * and agreed to it, and it is the point at which a night stops being
+   * editable. Nothing on this list said which was which: every closed row
+   * looked like every other closed row, so the only way to find one nobody had
+   * checked was to remember.
+   *
+   * Worked out from the whole range rather than from what is on screen, so a
+   * side filter cannot hide a backlog. See shift-backlog for why this is not
+   * the "settled either side" rule that was suggested — that one is silent on
+   * a backlog that is simply growing, which is the commonest kind there is.
+   */
+  const backlog = useMemo(
+    () => settlementBacklog(shown).filter((r) => needsSettling(r.state)),
+    [shown],
+  );
+
   const totalVariance = (s: Shift) =>
     Object.values(parseMap(s.variance)).reduce((a, b) => a + b, 0);
 
@@ -703,6 +723,64 @@ export function ShiftsPage() {
         </Card>
       )}
 
+      {/*
+        AT THE TOP, IN RED, BEFORE THE LIST.
+
+        A row buried thirty deep in date order is one nobody scrolls to. These
+        are lifted out and shown worst first: passed over, then merely old.
+
+        Shifts closed in the last day and a half are NOT here. A shift closed
+        at midnight is not a problem at nine the next morning, and a banner
+        that appears every single day is one nobody reads on the day it means
+        something.
+      */}
+      {backlog.length > 0 && (
+        <Card title="Waiting to be settled">
+          <Notice tone="warn">{backlogSummary(backlog)}</Notice>
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>Shift</th><th>Closed</th><th>Waiting</th><th>Why it is here</th><th />
+                </tr>
+              </thead>
+              <tbody>
+                {backlog.map((r) => (
+                  <tr key={r.shift.$id} style={{ background: 'var(--danger-bg, #fef2f2)' }}>
+                    <td style={{ fontWeight: 550 }}>
+                      {r.shift.code}
+                      {side === 'all' && (
+                        <div className="dim small">{MODULE_LABELS[(r.shift.module ?? 'kitchen') as Module]}</div>
+                      )}
+                    </td>
+                    <td className="dim small">
+                      {r.shift.closed_at ? new Date(r.shift.closed_at).toLocaleString() : '-'}
+                    </td>
+                    <td>
+                      <Badge tone="danger">{agedWords(r.ageMs)}</Badge>
+                    </td>
+                    <td className="small dim">{stateWords(r)}</td>
+                    <td className="num">
+                      {isAdmin && (
+                        <Button
+                          size="sm"
+                          onClick={() => { setSealReason(''); setSealing(r.shift); }}
+                        >
+                          Settle
+                        </Button>
+                      )}
+                      <Button size="sm" variant="ghost" onClick={() => void openDetail(r.shift)}>
+                        Details
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
       <Card pad={false}>
         {!rows ? (
           <div className="card-pad"><Spinner /></div>
@@ -757,6 +835,12 @@ export function ShiftsPage() {
                           /* Settled is a stronger statement than closed, and
                              the two were being shown as one word. */
                           <Badge tone="ok">Settled</Badge>
+                        ) : backlog.some((r) => r.shift.$id === s.$id) ? (
+                          /* The same fact as the section above, said again
+                             where somebody scrolling the list will meet it.
+                             Two screens that disagree about whether a night is
+                             a problem are two screens nobody trusts. */
+                          <Badge tone="danger">Not settled</Badge>
                         ) : (
                           <Badge>Closed</Badge>
                         )}
