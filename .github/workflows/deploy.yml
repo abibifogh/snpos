@@ -8,9 +8,18 @@ name: Deploy
 #   /menu/       customer QR menu
 #   /kitchen/    kitchen display
 #   /pos/        terminal
+# Only the default branch, because only the default branch is allowed to.
+#
+# Pages permits deployments to the github-pages environment from the default
+# branch alone. While a working branch was listed here as well, every push to
+# it built the whole site correctly and was then refused at the deploy step in
+# under a second, with no log to say why — a red cross on work that was fine.
+#
+# So the flow is the ordinary one: work happens on a branch, the Check workflow
+# runs on every push, and merging into main is what publishes.
 on:
   push:
-    branches: [main, master, claude/restaurant-pos-system-442yd7]
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:

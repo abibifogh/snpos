@@ -59,6 +59,15 @@ jobs:
       - name: Run the logic tests
         run: npm test
 
+      # The whole path, not the rules on their own.
+      #
+      # Every other test here is of a pure module, which is the right shape for
+      # a rule and no use at all for "does pressing the button change the
+      # number on the screen". Four separate repairs went out for one stock
+      # fault before anything ran end to end. See scripts/e2e.mjs.
+      - name: Run the end-to-end checks
+        run: npm run test:e2e
+
       - name: Build every app
         run: npm run build
         env:
