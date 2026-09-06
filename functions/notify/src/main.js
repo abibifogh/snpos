@@ -6,6 +6,9 @@ import { dailyDigest, nightlyBackup, deliveryFrom } from './daily.js';
 import { ensureLogin, revokeLogin } from './staff.js';
 import { handleReports } from './reports.js';
 import { handleSso } from './sso.js';
+import {
+  fromBarChecks, fromShopCounts, fromExpenses, worthSending, approvalSubject, approvalBody,
+} from './approvals.js';
 
 /**
  * Everything that sends an email.
@@ -26,6 +29,7 @@ import { handleSso } from './sso.js';
  * Schedule, hourly (no document arrives):
  *   dishes still off the menu past the configured wait
  *   shifts left open longer than a day
+ *   counts and spending waiting for an admin to agree to them
  *
  * The hourly sweep lives here rather than in a function of its own because
  * Appwrite's free plan allows four functions and this project has four. It
@@ -186,6 +190,113 @@ async function sweepUnavailable({ db, DB_ID, settings, transport, from, log, err
   }
   log(`Alerted about ${open.total} dishes off over ${hours}h.`);
   return { alerted: open.total };
+}
+
+/**
+ * Things waiting for an admin to agree to them.
+ *
+ * The system grew several of these one at a time, and each is right on its
+ * own: a count that found a difference does not move the shelf until somebody
+ * who can see the whole business agrees, because the person holding the
+ * clipboard should not also sign it off. What none of them had was a way of
+ * telling that admin. Each queue is a screen you have to remember to open, and
+ * the failure is silent in the worst direction — a shelf that has not been
+ * corrected reads as a shelf that is fine.
+ *
+ * One email, gathered, rather than one per row: a count of forty bottles with
+ * six differences writes six rows in the same second. See approvals.js, where
+ * that reasoning and the wording live and are tested.
+ *
+ * Said once. Each row is stamped when it has been mentioned; an admin who has
+ * been told will act or decide not to, and repeating it hourly is how a
+ * warning becomes noise that gets filtered.
+ */
+async function sweepApprovals({ db, DB_ID, settings, transport, from, log, error }) {
+  const [checks, shopCounts, expenses] = await Promise.all([
+    db.listDocuments(DB_ID, 'shift_stock_checks', [
+      Query.equal('applied', false), Query.isNull('alerted_at'), Query.limit(200),
+    ]).catch(() => ({ documents: [] })),
+    db.listDocuments(DB_ID, 'stock_counts', [
+      Query.equal('status', 'pending'), Query.isNull('alerted_at'), Query.limit(50),
+    ]).catch(() => ({ documents: [] })),
+    db.listDocuments(DB_ID, 'shift_expenses', [
+      Query.equal('approval_status', 'pending'), Query.isNull('alerted_at'), Query.limit(50),
+    ]).catch(() => ({ documents: [] })),
+  ]);
+
+  const raw = [...checks.documents, ...shopCounts.documents, ...expenses.documents];
+  if (raw.length === 0) return { nothing: true };
+
+  /*
+    Names, so the email says who counted rather than an id.
+
+    Read once for everybody mentioned rather than per row. A raw id in an email
+    is worse than no name at all: it looks like data, so somebody tries to make
+    sense of it.
+  */
+  const ids = [...new Set(raw.map((r) => r.checked_by || r.counted_by || r.created_by).filter(Boolean))];
+  const names = {};
+  if (ids.length > 0) {
+    const staff = await db.listDocuments(DB_ID, 'staff_profiles', [
+      Query.equal('$id', ids), Query.limit(100),
+    ]).catch(() => ({ documents: [] }));
+    for (const p of staff.documents) names[p.$id] = p.display_name || '';
+  }
+
+  const items = worthSending([
+    ...fromBarChecks(checks.documents, names),
+    ...fromShopCounts(shopCounts.documents, names),
+    ...fromExpenses(expenses.documents, names),
+  ]);
+  if (items.length === 0) return { waiting: raw.length, tooFresh: true };
+
+  const to = await alertRecipients({ db, DB_ID, configured: '' });
+  if (!transport || to.length === 0) {
+    error(`${items.length} things are waiting for approval but ${
+      !transport ? 'SMTP is not configured' : 'no recipients are set'}.`);
+    return { ok: false, error: 'cannot send' };
+  }
+
+  await transport.sendMail({
+    from,
+    to: to.join(','),
+    subject: approvalSubject(items),
+    html: shell(
+      'Waiting for your approval',
+      approvalBody(items, (n) => money(n, settings)),
+      settings.primary_color || '#0f766e',
+    ),
+  });
+
+  /*
+    Stamped only after it has actually gone.
+
+    The other order marks everything and then fails to send, which loses the
+    one message this exists to deliver and loses it silently — the rows now
+    look like rows somebody has already been told about.
+  */
+  const now = new Date().toISOString();
+  let marked = 0;
+  for (const [collection, rows] of [
+    ['shift_stock_checks', checks.documents],
+    ['stock_counts', shopCounts.documents],
+    ['shift_expenses', expenses.documents],
+  ]) {
+    for (const r of rows) {
+      const ok = await db.updateDocument(DB_ID, collection, r.$id, { alerted_at: now })
+        .then(() => true)
+        .catch(() => false);
+      if (ok) marked += 1;
+    }
+  }
+  if (marked < raw.length) {
+    // Loud, because the consequence is an email every hour about the same
+    // things until somebody notices. Almost always an un-provisioned database.
+    error(`Told about ${items.length} approvals but could only mark ${marked} of ${raw.length} rows. `
+      + 'Run Provision Appwrite so alerted_at exists, or this will repeat every hour.');
+  }
+  log(`Told ${to.length} recipient(s) about ${items.length} things waiting for approval.`);
+  return { alerted: items.length };
 }
 
 /**
@@ -461,6 +572,7 @@ export default async ({ req, res, log, error }) => {
     for (const [name, job] of [
       ['availability', () => sweepUnavailable({ db, DB_ID, settings, transport, from, log, error })],
       ['stale_shifts', () => sweepStaleShifts({ db, DB_ID, settings, transport, from, shell, log, error })],
+      ['approvals', () => sweepApprovals({ db, DB_ID, settings, transport, from, log, error })],
       ['daily', () => dailyDigest({ db, DB_ID, settings, transport, from, shell, row, money, log, error })],
       ['backup', () => nightlyBackup({ db, DB_ID, settings, transport, from, shell, log, error })],
     ]) {

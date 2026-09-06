@@ -1249,6 +1249,15 @@ export const COLLECTIONS = [
       ['created_by', 's', 64, true],
       ['approved_by', 's', 64, false],
       ['approval_status', 'e', ['not_required', 'pending', 'approved', 'rejected'], true, 'not_required'],
+      /*
+        When an admin was told this was waiting.
+
+        Set by the notify sweep once it has actually sent. It is what stops the
+        same thing being emailed every hour: somebody who has been told will
+        act or decide not to, and repeating it until they do is how a warning
+        becomes noise that gets filtered.
+      */
+      ['alerted_at', 'd', null, false],
     ],
     indexes: [['shift', 'key', ['shift_id']], ['supplier', 'key', ['supplier_id']]],
   },
@@ -1563,6 +1572,15 @@ export const COLLECTIONS = [
       // shelf and wrote a number, and the record of it being disagreed with
       // is worth more than the tidiness of deleting it.
       ['rejected_by', 's', 64, false],
+      /*
+        When an admin was told this was waiting.
+
+        Set by the notify sweep once it has actually sent. It is what stops the
+        same thing being emailed every hour: somebody who has been told will
+        act or decide not to, and repeating it until they do is how a warning
+        becomes noise that gets filtered.
+      */
+      ['alerted_at', 'd', null, false],
       ['rejected_at', 'd', null, false],
       ['opening_qty', 'f', null, true, 0],
       ['theoretical_qty', 'f', null, true, 0],
@@ -1930,6 +1948,15 @@ export const COLLECTIONS = [
       ['reviewed_by', 's', 64, false],
       ['reviewed_at', 'd', null, false],
       ['review_note', 's', 300, false],
+      /*
+        When an admin was told this was waiting.
+
+        Set by the notify sweep once it has actually sent. It is what stops the
+        same thing being emailed every hour: somebody who has been told will
+        act or decide not to, and repeating it until they do is how a warning
+        becomes noise that gets filtered.
+      */
+      ['alerted_at', 'd', null, false],
       // Totals as counted, so the list of pending counts reads without
       // fetching every line of every one of them.
       ['line_count', 'i', null, true, 0],
