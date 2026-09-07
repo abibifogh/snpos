@@ -987,6 +987,13 @@ table.data th .sort-order {
 .lock-dots span.on { background: currentColor; opacity: 1; }
 
 .lock-note { font-size: 0.9rem; opacity: 0.85; min-height: 1.2em; }
+/* Not a wrong PIN, so not shown like one: this is a fault with the device and
+   no amount of retyping fixes it. Wider and left-aligned because it is a
+   sentence to read rather than a word to glance at. */
+.lock-broken {
+  max-width: min(28rem, 86vw); text-align: left; line-height: 1.45;
+  opacity: 1; font-weight: 550;
+}
 
 /* Keys big enough to hit without looking. Somebody unlocking a till is
    holding something in the other hand more often than not. */
