@@ -12,8 +12,40 @@
  * here at all".
  */
 
+/**
+ * Can this device check a PIN at all?
+ *
+ * `crypto.subtle` exists only in a SECURE CONTEXT: https, or localhost. On a
+ * page served over plain http it is simply not there, and every PIN check on
+ * that device throws before it compares anything.
+ *
+ * That failure is invisible in the worst way. The pad takes the digits, the
+ * throw escapes into a promise nobody is awaiting, and the screen does
+ * nothing at all — no unlock, no "not recognised", nothing. It looks exactly
+ * like a PIN that has stopped working, and the same PIN works on any device
+ * that opens the same site over https.
+ *
+ * So it is asked as a question rather than discovered as a crash.
+ */
+export const pinChecksWork = (): boolean =>
+  typeof crypto !== 'undefined' && !!crypto.subtle && typeof crypto.subtle.digest === 'function';
+
+/**
+ * Why this device cannot check PINs, in words somebody can act on.
+ *
+ * Names the cause and the fix. "Something went wrong" sends somebody to reset
+ * a PIN that was never the problem, which is the first thing anybody tries and
+ * does not work either.
+ */
+export function pinUnavailableWords(host?: string): string {
+  return 'This device cannot check PINs, because the till is open on an insecure address. '
+    + `Open it on its https address${host ? ` (https://${host})` : ''} and try again. `
+    + 'Nothing is wrong with the PIN itself — it will work here as soon as the page is secure.';
+}
+
 /** SHA-256 of the PIN with a per-person salt, so identical PINs differ. */
 export async function hashPin(pin: string, salt: string): Promise<string> {
+  if (!pinChecksWork()) throw new Error('PIN_CHECKS_UNAVAILABLE');
   const data = new TextEncoder().encode(`${salt}:${pin}`);
   const digest = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');

@@ -6,7 +6,7 @@ import {
 import { applyTheme } from '@snpos/ui';
 import {
   db, DB_ID, Query, listAll, listByIds, loadOpenOrders, subscribeCollection, isCreate,
-  verifyPin, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
+  verifyPin, pinChecksWork, pinUnavailableWords, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
   itemsAvailableNow, dueMinutes, ticketLines, linesComplete, isOverdue, minutesOver, seatFor, amountOutstanding,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, addonNames, addonsUnreadable,
@@ -795,6 +795,21 @@ export function App() {
                           setSwitching(false);
                           setReady(true);
                         };
+
+                        /*
+                          The same silent failure as the till's lock screen.
+
+                          `crypto.subtle` exists only on a secure page, so on a
+                          pass display opened over plain http every check throws
+                          before it compares anything — and the throw escaped
+                          into a promise nobody awaited, leaving the screen
+                          doing nothing at all. See pinChecksWork.
+                        */
+                        if (!pinChecksWork()) {
+                          setPinError(pinUnavailableWords(window.location.hostname));
+                          setPinEntry('');
+                          return;
+                        }
 
                         for (const person of staff) {
                           if (await verifyPin(pinEntry, person.pin_hash)) return accept(person);

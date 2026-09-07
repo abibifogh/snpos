@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   clockFace, shouldSleep, msUntilSleep, shouldLock, wakeLabel, IDLE_MINUTES_MIN, downloadUrl,
-  verifyPin, unlockers, pushDigit, dropDigit, worthChecking, isFinalAttempt, waitAfter, lockMessage,
+  verifyPin, pinChecksWork, pinUnavailableWords,
+  unlockers, pushDigit, dropDigit, worthChecking, isFinalAttempt, waitAfter, lockMessage,
 } from '@snpos/core';
 import type { Settings, Unlocker } from '@snpos/core';
 import { Logo } from './logo';
@@ -110,6 +111,15 @@ export function IdleScreen({
   const [checking, setChecking] = useState(false);
   /** What was typed while a check was in flight. See tryUnlock. */
   const queued = useRef<{ pin: string; final: boolean } | null>(null);
+  /** Whether the server has already been asked about THIS attempt. */
+  const refreshed = useRef(false);
+  /**
+   * Something stopped the pad answering at all, said out loud.
+   *
+   * Separate from a wrong PIN, because it is not one: the person standing
+   * there has done nothing wrong and no amount of retyping will help.
+   */
+  const [broken, setBroken] = useState<string | null>(null);
 
   /*
     Mirrored in a ref so waking can read it without going stale.
@@ -253,6 +263,25 @@ export function IdleScreen({
     setChecking(true);
     try {
       /*
+        CAN THIS DEVICE CHECK A PIN AT ALL?
+
+        Asked first, because the answer is no more often than anybody expects
+        and the failure is silent in the worst way. `crypto.subtle` exists only
+        on a secure page — https, or localhost — and on a till opened over
+        plain http every check throws before it compares anything. The throw
+        escaped into a promise nobody awaited, so the pad took the digits and
+        did NOTHING: no unlock, no "not recognised", no error. Indistinguishable
+        from a PIN that has stopped working, and the same PIN works on any
+        device that opens the same site over https.
+      */
+      if (!pinChecksWork()) {
+        setBroken(pinUnavailableWords(
+          typeof window === 'undefined' ? undefined : window.location.hostname,
+        ));
+        setEntry('');
+        return;
+      }
+      /*
         Against everybody who has a PIN, not against one person.
 
         A till is a place. Whoever comes back to it is often the next one on,
@@ -263,6 +292,7 @@ export function IdleScreen({
         if (await verifyPin(pin, person.pin_hash)) {
           setEntry('');
           setWrong(0);
+          refreshed.current = false;
           onUnlock?.(person);
           return;
         }
@@ -286,13 +316,21 @@ export function IdleScreen({
         digit, and the refusal below is what makes guessing expensive.
       */
       /*
-        And only once the answer is FINAL.
+        ONCE PER ATTEMPT — not once per digit, and NOT only when final.
 
-        Asking the server about every prefix of a six-digit PIN is three round
-        trips to answer one question, and the first two are about entries
-        nobody has finished typing.
+        Tying this to `final` was wrong and it broke the commonest case there
+        is. Most PINs are four digits, and four is never final while six is
+        allowed — so a four-digit PIN belonging to somebody the tablet had not
+        heard of stopped asking the server altogether, and the pad simply did
+        nothing at all. That is the very fault this block was written for,
+        reintroduced and made quieter.
+
+        Once per attempt is the honest bound: a six-digit PIN still costs one
+        round trip rather than three, and a four-digit one gets the answer the
+        moment it is typed.
       */
-      if (final && refreshStaff) {
+      if (refreshStaff && !refreshed.current) {
+        refreshed.current = true;
         const fresh = await refreshStaff().catch(() => null);
         // Only rows the cached list did not already have. Re-checking the same
         // people would be doing the loop above twice for nothing.
@@ -301,6 +339,7 @@ export function IdleScreen({
           if (await verifyPin(pin, person.pin_hash)) {
             setEntry('');
             setWrong(0);
+            refreshed.current = false;
             onUnlock?.(person);
             return;
           }
@@ -317,8 +356,23 @@ export function IdleScreen({
       const tries = wrong + 1;
       setWrong(tries);
       setEntry('');
+      // A new attempt starts here, so the server may be asked again.
+      refreshed.current = false;
       const wait = waitAfter(tries);
       if (wait > 0) setWaitUntil(Date.now() + wait);
+    } catch (e) {
+      /*
+        And nothing else may fail in silence either.
+
+        Every path through this either unlocks, refuses, or waits — so a throw
+        that lands here means something the pad cannot answer, and the one
+        outcome that must never happen is the screen sitting there as though
+        nobody had pressed anything.
+      */
+      setBroken(e instanceof Error && e.message === 'PIN_CHECKS_UNAVAILABLE'
+        ? pinUnavailableWords(typeof window === 'undefined' ? undefined : window.location.hostname)
+        : 'This till could not check that PIN. Tell an admin what this screen says, and try again.');
+      setEntry('');
     } finally {
       setChecking(false);
       // Whatever was typed while this was running, checked now.
@@ -330,6 +384,7 @@ export function IdleScreen({
 
   const type = (digit: string) => {
     if (waitingMs > 0) return;
+    setBroken(null);
     const next = pushDigit(entry, digit);
     setEntry(next);
     /*
@@ -382,13 +437,22 @@ export function IdleScreen({
             ))}
           </div>
 
-          {note && <div className="lock-note">{note}</div>}
+          {/* Before the wrong-PIN note, because it explains why there is no
+              wrong-PIN note to give. */}
+          {broken && <div className="lock-note lock-broken">{broken}</div>}
+          {!broken && note && <div className="lock-note">{note}</div>}
 
           <div className="lock-keys">
             {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => (
               <button key={d} type="button" onClick={() => type(d)} disabled={waitingMs > 0}>{d}</button>
             ))}
-            <button type="button" onClick={() => setEntry('')} disabled={waitingMs > 0}>Clear</button>
+            <button
+              type="button"
+              onClick={() => { setEntry(''); refreshed.current = false; }}
+              disabled={waitingMs > 0}
+            >
+              Clear
+            </button>
             <button type="button" onClick={() => type('0')} disabled={waitingMs > 0}>0</button>
             <button
               type="button"
