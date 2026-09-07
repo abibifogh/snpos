@@ -6,7 +6,7 @@ import {
   formatMoney, listAll, Query, loadOpenShifts, loadLocations, saleLocation, mayCountWithoutShift,
   countDraftKey, readCountDraft, saveCountDraft, clearCountDraft,
   restoreCount, draftFromCount, countRestoredWords, countDraftLines, clearAllWarning,
-  filedCounts, undoProblem, undoBarCount, pourMissedSales,
+  filedCounts, undoProblem, undoBarCount, pourMissedSales, loadIngredients,
   loadRecipes, pourState, pourLabel, pourWords, unexplainedByWiring, drinksToMoveToBar,
   heldWords, unheldWords, pendingBarChecks, barCountHistory, approveBarCount, rejectBarCount, countState,
   isStoreCount, STORE_COUNT_PREFIX, unpouredForShift, unpouredWords, unpouredSummary,
@@ -130,7 +130,6 @@ export function BarCountsPage() {
    */
   const [pending, setPending] = useState<HistoryCount[] | null>(null);
   const [past, setPast] = useState<HistoryCount[] | null>(null);
-  const [shiftNames, setShiftNames] = useState<Record<string, string>>({});
   /**
    * What this shift sold that took nothing off a shelf.
    *
@@ -168,12 +167,27 @@ export function BarCountsPage() {
    * from. The bar's rows are forty per count, named by shift and end; the
    * shop's are a header and its lines. See CountHistory.
    */
-  const asHistory = (rows: FiledCheck[]): HistoryCount[] =>
+  const asHistory = (
+    rows: FiledCheck[],
+    /*
+      THE NAMES ARE PASSED IN, NOT READ OFF STATE.
+
+      This read `shiftNames` and the current count sheet out of the component,
+      in the same tick as the setState that filled them — so the first time the
+      page loaded, both were still empty and every row fell back to the id it
+      could not resolve. That is what put a column of hex on the screen.
+
+      Handed in directly, there is nothing to be stale.
+    */
+    names: { shifts: Record<string, string>; shelves: Record<string, string> },
+  ): HistoryCount[] =>
     filedCounts(rows).map((c) => {
       const state = countState(c);
       const room = isStoreCount(c.shiftId)
         ? places.find((p) => p.$id === c.shiftId.slice(STORE_COUNT_PREFIX.length))?.name ?? 'Store room'
-        : shiftNames[c.shiftId] ?? c.shiftId;
+        // Never the id. A raw id on a screen is worse than nothing: it looks
+        // like data, so somebody tries to make sense of it.
+        : names.shifts[c.shiftId] ?? 'A shift no longer listed';
       return {
         id: `${c.shiftId}|${c.phase}`,
         title: room,
@@ -186,7 +200,15 @@ export function BarCountsPage() {
         changed: c.changed,
         worth: c.worth,
         lines: async () => c.lines.map((l) => ({
-          name: (lines ?? []).find((x) => x.ingredientId === l.ingredient_id)?.name ?? l.ingredient_id,
+          /*
+            From the shelves, not from the count sheet on screen.
+
+            The sheet is one room, one end of one shift, and only what is
+            ticked to be counted. This history is ninety days and every room,
+            so most of what it names was never going to be on it — which is
+            why the fallback fired, and the fallback was an id.
+          */
+          name: names.shelves[l.ingredient_id] ?? 'A shelf no longer on the list',
           counted: typeof l.counted_qty === 'number' ? l.counted_qty : null,
           expected: l.theoretical_qty ?? 0,
           variance: l.variance_qty ?? 0,
@@ -205,12 +227,25 @@ export function BarCountsPage() {
     ]);
     // Shift codes for the titles, read once for every shift the rows mention.
     const ids = [...new Set([...waiting, ...filed].map((r) => r.shift_id ?? '').filter((id) => id && !isStoreCount(id)))];
-    if (ids.length) {
-      const rows = await listAll<Shift>('shifts', [Query.equal('$id', ids)]).catch(() => [] as Shift[]);
-      setShiftNames(Object.fromEntries(rows.map((r) => [r.$id, r.code ?? r.$id])));
-    }
-    setPending(asHistory(waiting));
-    setPast(asHistory(filed.filter((r) => r.applied !== false || r.rejected_at)));
+    const shiftRows = ids.length
+      ? await listAll<Shift>('shifts', [Query.equal('$id', ids)]).catch(() => [] as Shift[])
+      : [];
+    /*
+      And the shelves, from the shelves.
+
+      Every count in this history names one, and the ones it names are spread
+      across every room and the last ninety days — so reading them off the
+      sheet currently on screen was never going to work for more than the
+      handful that happened to be on it.
+    */
+    const shelfRows = await loadIngredients('main').catch(() => []);
+    const names = {
+      shifts: Object.fromEntries(shiftRows.map((r) => [r.$id, r.code || 'A shift with no code'])),
+      shelves: Object.fromEntries(shelfRows.map((r) => [r.$id, r.name || 'A shelf with no name'])),
+    };
+
+    setPending(asHistory(waiting, names));
+    setPast(asHistory(filed.filter((r) => r.applied !== false || r.rejected_at), names));
   };
 
   const load = async () => {
