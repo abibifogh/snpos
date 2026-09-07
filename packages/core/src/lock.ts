@@ -84,6 +84,33 @@ export const PIN_MIN = 4;
 export const worthChecking = (entry: string): boolean => entry.length >= PIN_MIN;
 
 /**
+ * Could another digit still be coming?
+ *
+ * The question the pad got wrong, and it locked out everybody whose PIN is
+ * longer than four digits. A PIN is four to SIX — see pinProblem — and the pad
+ * checked at four, found no match, and cleared the box. So a five-digit PIN
+ * lost its first four digits the instant they were typed, the fifth started a
+ * fresh entry, and after three of those the pad began refusing outright.
+ *
+ * From the counter it looked exactly like a PIN that had stopped working, and
+ * it worked perfectly well anywhere it was typed into a form with an Enter
+ * key.
+ */
+export const couldGrow = (entry: string): boolean => entry.length < PIN_MAX;
+
+/**
+ * Is a failure here a final answer, or somebody mid-way through typing?
+ *
+ * Only at the longest a PIN can be, where nothing more can be added. Below
+ * that a failed check says nothing at all: it is a guess about an entry that
+ * is not finished, and treating it as a refusal is what broke the pad.
+ *
+ * Somebody with a shorter PIN who mistypes it says so with the Enter key,
+ * which is why the pad has one.
+ */
+export const isFinalAttempt = (entry: string): boolean => !couldGrow(entry);
+
+/**
  * How long to make somebody wait after wrong guesses.
  *
  * A four-digit PIN is ten thousand combinations, which a person cannot work

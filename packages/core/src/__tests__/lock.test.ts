@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   lockKey, unlockers, lockProblem, pushDigit, dropDigit, worthChecking,
+  couldGrow, isFinalAttempt,
   waitAfter, lockMessage, PIN_MAX, PIN_MIN,
   type Unlocker,
 } from '../lock.ts';
@@ -101,4 +102,50 @@ test('the bar and the shop lock separately', () => {
   // Two tills in one building are two doors. Locking the bar must not shut
   // the shop counter.
   assert.notEqual(lockKey('main', 'bar'), lockKey('main', 'craft'));
+});
+
+test('a PIN longer than four digits could still be growing, and is not refused', () => {
+  /**
+   * The reported fault, and it locked out everybody whose PIN is longer than
+   * four digits — which the staff form allows, since a PIN is four to six.
+   *
+   * The pad checked at four, found no match, counted a wrong try and CLEARED
+   * THE BOX. So the first four digits of a five-digit PIN vanished the instant
+   * they were typed, the fifth started a fresh entry, and three of those began
+   * the backoff. From the counter it looked exactly like a PIN that had
+   * stopped working — and the same PIN worked anywhere it was typed into a
+   * form with an Enter key.
+   */
+  assert.equal(couldGrow('1234'), true);
+  assert.equal(couldGrow('12345'), true);
+  assert.equal(couldGrow('123456'), false);
+
+  // A failure only counts against somebody once nothing more can be added.
+  assert.equal(isFinalAttempt('1234'), false);
+  assert.equal(isFinalAttempt('12345'), false);
+  assert.equal(isFinalAttempt('123456'), true);
+});
+
+test('every length a PIN may be is worth checking, not only the shortest', () => {
+  /*
+    The pad cannot know how long this person's PIN is, so it tries at each
+    length from the minimum up. A correct PIN of any allowed length opens the
+    till on its last digit, with nobody needing to press anything.
+  */
+  for (const entry of ['1234', '12345', '123456']) {
+    assert.equal(worthChecking(entry), true, `should check ${entry}`);
+  }
+  assert.equal(worthChecking('123'), false);
+});
+
+test('the walk from four digits to six refuses nobody along the way', () => {
+  /*
+    Typed one digit at a time, which is how it actually happens. Only the last
+    of these is an answer; the two before it are guesses about an entry that is
+    not finished.
+  */
+  const typed = ['1', '12', '123', '1234', '12345', '123456'];
+  const checked = typed.filter(worthChecking);
+  assert.deepEqual(checked, ['1234', '12345', '123456']);
+  assert.deepEqual(checked.map(isFinalAttempt), [false, false, true]);
 });

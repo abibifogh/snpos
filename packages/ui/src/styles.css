@@ -1004,6 +1004,20 @@ table.data th .sort-order {
 .lock-keys button:disabled { opacity: 0.35; cursor: default; }
 .lock-keys button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 
+/* Under the pad rather than in it: the grid is three across and a fourth key
+   on the bottom row would move Clear and the delete key, which people find by
+   position rather than by reading. */
+.lock-enter {
+  font: inherit; font-size: 1.15rem; font-weight: 650;
+  width: min(17rem, 78vw); padding: 0.7rem 0; margin-top: 0.55rem;
+  border-radius: 0.7rem; border: 1px solid currentColor;
+  background: currentColor; color: var(--idle-bg, #fff);
+  cursor: pointer;
+}
+.lock-enter:active { transform: translateY(1px); }
+.lock-enter:disabled { opacity: 0.35; cursor: default; background: transparent; color: inherit; }
+.lock-enter:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
 /* ---- a phone -------------------------------------------------------------
    The admin app is read standing up as often as it is sat down at, and the
    two complaints about it were the same complaint: nothing stays where it was

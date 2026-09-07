@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   clockFace, shouldSleep, msUntilSleep, shouldLock, wakeLabel, IDLE_MINUTES_MIN, downloadUrl,
-  verifyPin, unlockers, pushDigit, dropDigit, worthChecking, waitAfter, lockMessage,
+  verifyPin, unlockers, pushDigit, dropDigit, worthChecking, isFinalAttempt, waitAfter, lockMessage,
 } from '@snpos/core';
 import type { Settings, Unlocker } from '@snpos/core';
 import { Logo } from './logo';
@@ -108,6 +108,8 @@ export function IdleScreen({
   const [wrong, setWrong] = useState(0);
   const [waitUntil, setWaitUntil] = useState(0);
   const [checking, setChecking] = useState(false);
+  /** What was typed while a check was in flight. See tryUnlock. */
+  const queued = useRef<{ pin: string; final: boolean } | null>(null);
 
   /*
     Mirrored in a ref so waking can read it without going stale.
@@ -219,8 +221,35 @@ export function IdleScreen({
 
   const waitingMs = Math.max(0, waitUntil - now.getTime());
 
-  const tryUnlock = async (pin: string) => {
-    if (waitingMs > 0 || checking) return;
+  /**
+   * Try this entry, and say no only when it cannot grow any further.
+   *
+   * `final` is the whole fix. A PIN is four to six digits, and this pad
+   * checked at four, found no match, counted a wrong try and CLEARED THE BOX —
+   * so a five-digit PIN lost its first four digits the moment they were typed
+   * and could never be entered at all. Three of those and the pad started
+   * refusing outright. From the counter it looked like a PIN that had stopped
+   * working, and it worked anywhere with an Enter key.
+   *
+   * So a failure below the maximum length says nothing and changes nothing:
+   * it is a guess about an entry somebody is still typing. Enter, and the
+   * sixth digit, are what make an answer final.
+   */
+  const tryUnlock = async (pin: string, final: boolean) => {
+    if (waitingMs > 0) return;
+    /*
+      A CHECK IN FLIGHT MUST NOT SWALLOW THE NEXT DIGIT.
+
+      This returned outright while one was running, so on a five- or six-digit
+      PIN the last digit's check was simply dropped whenever somebody typed
+      faster than a hash — which is always, and which was the second half of
+      why longer PINs never worked. The entry to check is remembered instead,
+      and picked up the moment the one in flight finishes.
+    */
+    if (checking) {
+      queued.current = { pin, final };
+      return;
+    }
     setChecking(true);
     try {
       /*
@@ -256,7 +285,14 @@ export function IdleScreen({
         still cost a wrong PIN's worth of waiting rather than a round trip per
         digit, and the refusal below is what makes guessing expensive.
       */
-      if (refreshStaff) {
+      /*
+        And only once the answer is FINAL.
+
+        Asking the server about every prefix of a six-digit PIN is three round
+        trips to answer one question, and the first two are about entries
+        nobody has finished typing.
+      */
+      if (final && refreshStaff) {
         const fresh = await refreshStaff().catch(() => null);
         // Only rows the cached list did not already have. Re-checking the same
         // people would be doing the loop above twice for nothing.
@@ -271,6 +307,13 @@ export function IdleScreen({
         }
       }
 
+      /*
+        Nothing matched. If more digits could still be coming, that is not a
+        refusal — it is a check on an unfinished entry, and saying no to it is
+        exactly what stopped longer PINs working.
+      */
+      if (!final) return;
+
       const tries = wrong + 1;
       setWrong(tries);
       setEntry('');
@@ -278,6 +321,10 @@ export function IdleScreen({
       if (wait > 0) setWaitUntil(Date.now() + wait);
     } finally {
       setChecking(false);
+      // Whatever was typed while this was running, checked now.
+      const next = queued.current;
+      queued.current = null;
+      if (next) void tryUnlock(next.pin, next.final);
     }
   };
 
@@ -285,9 +332,19 @@ export function IdleScreen({
     if (waitingMs > 0) return;
     const next = pushDigit(entry, digit);
     setEntry(next);
-    // Checked as it reaches a length that could match, so a correct PIN opens
-    // the till without also needing somebody to find an Enter key.
-    if (worthChecking(next)) void tryUnlock(next);
+    /*
+      Checked as it reaches a length that could match, so a correct PIN opens
+      the till without anybody needing to find an Enter key — and checked again
+      at every length after it, because a PIN may be four, five or six digits
+      and the pad cannot know which this person has.
+    */
+    if (worthChecking(next)) void tryUnlock(next, isFinalAttempt(next));
+  };
+
+  /** Said out loud: this entry is finished, tell me yes or no. */
+  const submit = () => {
+    if (waitingMs > 0 || !worthChecking(entry)) return;
+    void tryUnlock(entry, true);
   };
 
   if (locked) {
@@ -342,6 +399,25 @@ export function IdleScreen({
               ⌫
             </button>
           </div>
+
+          {/*
+            AN ENTER KEY, because the pad cannot know how long this person's
+            PIN is.
+
+            A correct PIN still opens the till the moment the last digit lands,
+            so nobody with a four-digit PIN has to press anything. This is for
+            the other case: somebody whose PIN is four or five digits and who
+            has mistyped it, who would otherwise be left looking at a pad that
+            says nothing at all.
+          */}
+          <button
+            type="button"
+            className="lock-enter"
+            onClick={submit}
+            disabled={waitingMs > 0 || !worthChecking(entry)}
+          >
+            Enter
+          </button>
         </div>
 
         <div className="idle-foot">{settings?.restaurant_name ?? ''}</div>
