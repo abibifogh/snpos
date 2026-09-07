@@ -8,6 +8,7 @@ import { handleReports } from './reports.js';
 import { handleSso } from './sso.js';
 import {
   fromBarChecks, fromShopCounts, fromExpenses, worthSending, approvalSubject, approvalBody,
+  countLines, countSubject, countBody,
 } from './approvals.js';
 
 /**
@@ -25,6 +26,7 @@ import {
  *   staff_profiles.*.update  → keep their team in step, resend a link if asked
  *   staff_profiles.*.delete  → cancel that person's login
  *   item_availability.*.create → a dish has run out, tell an admin now
+ *   approval_notices.*.create  → a count found a difference, tell an admin now
  *
  * Schedule, hourly (no document arrives):
  *   dishes still off the menu past the configured wait
@@ -190,6 +192,92 @@ async function sweepUnavailable({ db, DB_ID, settings, transport, from, log, err
   }
   log(`Alerted about ${open.total} dishes off over ${hours}h.`);
   return { alerted: open.total };
+}
+
+/**
+ * A count that found a difference, told about the moment it is filed.
+ *
+ * The hourly sweep below catches everything eventually, and eventually is the
+ * wrong answer here: a bar that has come up short may be money missing, and
+ * the person who counted it is still on the premises. This is the other end of
+ * the same pair as the availability alert next door.
+ *
+ * One row arrives per COUNT rather than per line — see approval_notices for
+ * why that had to be so — which is what makes an event safe to send on at all.
+ */
+async function noticeSent({ db, DB_ID, settings, transport, from, doc, log, error }) {
+  if (doc.sent_at) return { already: true };
+  if (doc.kind !== 'bar_count') return { skipped: doc.kind };
+
+  const shiftId = doc.shift_id || doc.ref_id || '';
+  const held = await db.listDocuments(DB_ID, 'shift_stock_checks', [
+    Query.equal('shift_id', shiftId),
+    Query.equal('phase', doc.phase || 'close'),
+    Query.equal('applied', false),
+    Query.limit(100),
+  ]).catch(() => ({ documents: [] }));
+
+  /*
+    The rows decide what the email says, and the notice decides that there is
+    one. If an admin has already dealt with the count in the seconds between
+    filing and this running, there is nothing left to tell anybody about.
+  */
+  const shelfIds = [...new Set(held.documents.map((r) => r.ingredient_id).filter(Boolean))];
+  const shelves = {};
+  if (shelfIds.length > 0) {
+    const rows = await db.listDocuments(DB_ID, 'ingredients', [
+      Query.equal('$id', shelfIds), Query.limit(100),
+    ]).catch(() => ({ documents: [] }));
+    for (const r of rows.documents) shelves[r.$id] = r.name || '';
+  }
+
+  const lines = countLines(held.documents, shelves);
+  if (lines.length === 0) return { nothing: true };
+
+  let who = '';
+  if (doc.counted_by) {
+    const p = await db.getDocument(DB_ID, 'staff_profiles', doc.counted_by).catch(() => null);
+    who = p?.display_name || '';
+  }
+
+  const to = await alertRecipients({ db, DB_ID, configured: '' });
+  if (!transport || to.length === 0) {
+    const why = !transport ? 'SMTP is not configured' : 'no recipients are set';
+    error(`A bar count found ${lines.length} differences but ${why}.`);
+    await db.updateDocument(DB_ID, 'approval_notices', doc.$id, { send_error: why }).catch(() => undefined);
+    return { ok: false, error: why };
+  }
+
+  const shortValue = lines.reduce((sum, l) => sum + (l.variance < 0 ? l.value : 0), 0);
+  await transport.sendMail({
+    from,
+    to: to.join(','),
+    subject: countSubject({
+      phase: doc.phase, lines: lines.length, shortValue, money: (n) => money(n, settings),
+    }),
+    html: shell(
+      'A bar count needs your approval',
+      countBody({ lines, who, phase: doc.phase, money: (n) => money(n, settings) }),
+      settings.primary_color || '#0f766e',
+    ),
+  });
+
+  /*
+    Stamped after it has gone, and the count's own rows stamped too.
+
+    The second part is what keeps the hourly sweep quiet about a count it has
+    already been told about — two emails for one count would teach somebody to
+    ignore both.
+  */
+  const now = new Date().toISOString();
+  await db.updateDocument(DB_ID, 'approval_notices', doc.$id, { sent_at: now, send_error: '' })
+    .catch(() => undefined);
+  for (const r of held.documents) {
+    await db.updateDocument(DB_ID, 'shift_stock_checks', r.$id, { alerted_at: now }).catch(() => undefined);
+  }
+
+  log(`Told ${to.length} recipient(s) about ${lines.length} differences on a bar count.`);
+  return { alerted: lines.length };
 }
 
 /**
@@ -608,6 +696,15 @@ export default async ({ req, res, log, error }) => {
     // during service is a buying decision somebody may still be able to act on
     // within the hour, and by the time an hourly job runs, the trip to the
     // market has been missed.
+    // ------------------------------------- a count found a difference
+    // Sent the moment it is filed, for the same reason as the dish above: an
+    // hour late is the wrong answer when money may be missing and the person
+    // who counted it has not gone home yet.
+    if (events.some((e) => e.includes('collections.approval_notices'))
+      && events.some((e) => e.endsWith('.create'))) {
+      return res.json(await noticeSent({ db, DB_ID, settings, transport, from, doc, log, error }));
+    }
+
     if (events.some((e) => e.includes('collections.item_availability')) && events.some((e) => e.endsWith('.create'))) {
       const configured = await featureConfig('item_availability', 'alert_emails', '');
       if (configured === null) return res.json({ sent: false, why: 'feature off' });

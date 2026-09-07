@@ -555,7 +555,16 @@ export function ShiftsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to]);
 
-  const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? id;
+  /*
+    The method's name, never its id.
+
+    A payment method that has since been removed still has takings filed
+    against it, and printing the id put a line of hex in the middle of a
+    drawer count — which reads as data somebody should be able to interpret,
+    and cannot be.
+  */
+  const methodName = (id: string) =>
+    methods.find((m) => m.$id === id)?.name ?? 'A payment method no longer listed';
   const tolerance = settings?.cash_variance_tolerance ?? 500;
 
   // Their side, not the whole business's. See narrowSide.

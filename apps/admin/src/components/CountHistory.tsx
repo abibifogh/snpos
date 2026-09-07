@@ -93,9 +93,25 @@ export function CountHistory({
       .catch(() => undefined);
   }, []);
 
-  // A name, not an id, because the whole point is being able to ask a person.
-  // An id with no profile is shown as it is rather than as "Unknown".
-  const nameOf = (id?: string) => (id ? names.get(id) ?? id : '—');
+  /*
+    A name, because the whole point is being able to ask a person.
+
+    Never the id. It used to fall back to showing it, on the reasoning that
+    something is better than "Unknown" — but a raw id on a screen is worse than
+    nothing, because it looks like data and somebody tries to make sense of it.
+    Saying the profile is gone is the true answer and is the one somebody can
+    act on.
+
+    An empty map is not the same as a missing profile, either: the list is
+    fetched after the first paint, and telling somebody their bartender has
+    left the staff list because a read has not landed yet would be a lie that
+    corrects itself a second later, which is worse than a dash.
+  */
+  const nameOf = (id?: string) => {
+    if (!id) return '—';
+    if (names.size === 0) return '…';
+    return names.get(id) ?? 'Somebody no longer on the staff list';
+  };
 
   const open = async (c: HistoryCount) => {
     if (openId === c.id) { setOpenId(null); return; }

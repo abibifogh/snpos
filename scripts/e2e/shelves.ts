@@ -473,6 +473,68 @@ console.log('\n=== L — a line that never poured is not put back twice ===');
   )]);
 }
 
+console.log('\n=== K2 — filing a held count raises exactly one notice ===');
+{
+  __reset();
+  __seed('stock_locations', [
+    { $id: 'counter', venue_id: 'main', name: 'Bar counter', kind: 'counter', module: 'bar', active: true },
+  ]);
+  __seed('ingredients', shelves);
+  __seed('stock_levels', shelves.map((i, n) => ({
+    $id: `lvl${n}`, ingredient_id: i.$id, location_id: 'counter', qty: i.current_qty,
+  })));
+  __seed('shifts', [{ $id: 'sh1', venue_id: 'main', module: 'bar', status: 'OPEN' }]);
+
+  const sheet = await barCountSheet('main');
+  // Two shelves short, so the count is held and somebody has to be told.
+  const out = await saveBarCount({
+    venueId: 'main',
+    shiftId: 'sh1',
+    phase: 'close',
+    userId: 'regina',
+    lines: sheet.map((r) => ({ ...r, countedText: String(r.expected - 2) })),
+  });
+
+  const notices = __all('approval_notices') as any[];
+  results.push(['K2 one notice for the whole count, not one per line', ok(
+    'notices / held lines', [notices.length, out.pending], [1, 2],
+  )]);
+  results.push(['K2 it carries the totals the count actually found', ok(
+    'kind / lines / shift',
+    [notices[0]?.kind, notices[0]?.lines, notices[0]?.shift_id, notices[0]?.counted_by],
+    ['bar_count', 2, 'sh1', 'regina'],
+  )]);
+  results.push(['K2 and it has not been marked sent by the thing that wrote it', ok(
+    'sent_at', notices[0]?.sent_at ?? null, null,
+  )]);
+}
+
+console.log('\n=== K3 — a count that matched tells nobody ===');
+{
+  __reset();
+  __seed('stock_locations', [
+    { $id: 'counter', venue_id: 'main', name: 'Bar counter', kind: 'counter', module: 'bar', active: true },
+  ]);
+  __seed('ingredients', shelves);
+  __seed('stock_levels', shelves.map((i, n) => ({
+    $id: `lvl${n}`, ingredient_id: i.$id, location_id: 'counter', qty: i.current_qty,
+  })));
+  __seed('shifts', [{ $id: 'sh1', venue_id: 'main', module: 'bar', status: 'OPEN' }]);
+
+  const sheet = await barCountSheet('main');
+  await saveBarCount({
+    venueId: 'main',
+    shiftId: 'sh1',
+    phase: 'close',
+    userId: 'regina',
+    // Everything as expected. Nothing is held, so nothing needs approving.
+    lines: sheet.map((r) => ({ ...r, countedText: String(r.expected) })),
+  });
+  results.push(['K3 a count with no difference raises nothing', ok(
+    'notices', (__all('approval_notices') as any[]).length, 0,
+  )]);
+}
+
 console.log('\n=== summary ===');
 for (const [name, pass] of results) console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}`);
 if (results.some(([, p]) => !p)) process.exitCode = 1;

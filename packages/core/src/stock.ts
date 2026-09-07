@@ -810,6 +810,37 @@ export async function saveBarCount(opts: {
     written += 1;
   }
 
+  /*
+    AND TELL AN ADMIN NOW, not on the next hourly run.
+
+    A bar count that came up short may be money missing, and the person who
+    counted it is still on the premises. An hour is the wrong answer for that.
+
+    One row, written here, because HERE is the only moment the true totals are
+    known: the count is filed in a single call, whereas the rows it writes
+    arrive one at a time. Sending on each row would send six emails for one
+    count; sending on the first would send one that says "1 line" because the
+    other five do not exist yet. See approval_notices.
+
+    Best effort, and deliberately last. The count is already filed and correct;
+    a notice that will not write — an un-provisioned database, most likely —
+    must not fail a count of forty bottles that landed perfectly well. The
+    hourly sweep still finds it and says so.
+  */
+  if (pending > 0) {
+    await saveDropping('approval_notices', null, {
+      venue_id: opts.venueId,
+      kind: 'bar_count',
+      shift_id: opts.shiftId ?? '',
+      phase: opts.phase,
+      location_id: counter?.$id ?? '',
+      ref_id: opts.shiftId ?? storeCountId(counter?.$id ?? 'store'),
+      lines: pending,
+      short_value: shortValue,
+      counted_by: opts.userId,
+    }).catch(() => undefined);
+  }
+
   return { written, shortValue, failed, pending, unheld };
 }
 
