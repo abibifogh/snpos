@@ -110,6 +110,8 @@ export function IdleScreen({
   const [checking, setChecking] = useState(false);
   /** What was typed while a check was in flight. See tryUnlock. */
   const queued = useRef<{ pin: string; final: boolean } | null>(null);
+  /** Whether the server has already been asked about THIS attempt. */
+  const refreshed = useRef(false);
 
   /*
     Mirrored in a ref so waking can read it without going stale.
@@ -263,6 +265,7 @@ export function IdleScreen({
         if (await verifyPin(pin, person.pin_hash)) {
           setEntry('');
           setWrong(0);
+          refreshed.current = false;
           onUnlock?.(person);
           return;
         }
@@ -286,13 +289,21 @@ export function IdleScreen({
         digit, and the refusal below is what makes guessing expensive.
       */
       /*
-        And only once the answer is FINAL.
+        ONCE PER ATTEMPT — not once per digit, and NOT only when final.
 
-        Asking the server about every prefix of a six-digit PIN is three round
-        trips to answer one question, and the first two are about entries
-        nobody has finished typing.
+        Tying this to `final` was wrong and it broke the commonest case there
+        is. Most PINs are four digits, and four is never final while six is
+        allowed — so a four-digit PIN belonging to somebody the tablet had not
+        heard of stopped asking the server altogether, and the pad simply did
+        nothing at all. That is the very fault this block was written for,
+        reintroduced and made quieter.
+
+        Once per attempt is the honest bound: a six-digit PIN still costs one
+        round trip rather than three, and a four-digit one gets the answer the
+        moment it is typed.
       */
-      if (final && refreshStaff) {
+      if (refreshStaff && !refreshed.current) {
+        refreshed.current = true;
         const fresh = await refreshStaff().catch(() => null);
         // Only rows the cached list did not already have. Re-checking the same
         // people would be doing the loop above twice for nothing.
@@ -301,6 +312,7 @@ export function IdleScreen({
           if (await verifyPin(pin, person.pin_hash)) {
             setEntry('');
             setWrong(0);
+            refreshed.current = false;
             onUnlock?.(person);
             return;
           }
@@ -317,6 +329,8 @@ export function IdleScreen({
       const tries = wrong + 1;
       setWrong(tries);
       setEntry('');
+      // A new attempt starts here, so the server may be asked again.
+      refreshed.current = false;
       const wait = waitAfter(tries);
       if (wait > 0) setWaitUntil(Date.now() + wait);
     } finally {
@@ -388,7 +402,13 @@ export function IdleScreen({
             {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => (
               <button key={d} type="button" onClick={() => type(d)} disabled={waitingMs > 0}>{d}</button>
             ))}
-            <button type="button" onClick={() => setEntry('')} disabled={waitingMs > 0}>Clear</button>
+            <button
+              type="button"
+              onClick={() => { setEntry(''); refreshed.current = false; }}
+              disabled={waitingMs > 0}
+            >
+              Clear
+            </button>
             <button type="button" onClick={() => type('0')} disabled={waitingMs > 0}>0</button>
             <button
               type="button"
