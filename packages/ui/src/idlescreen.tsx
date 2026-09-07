@@ -136,6 +136,14 @@ export function IdleScreen({
 
   const wake = () => {
     lastActive.current = Date.now();
+    /*
+      Awake means NOT asleep since anything.
+
+      This was left at the moment the screen went dark, and the lock check
+      below reads it — so a screen that woke up still looked, to that check,
+      like one that had been dark for hours. See tryUnlock for what that did.
+    */
+    asleepSince.current = 0;
     if (!asleepRef.current) return;
     asleepRef.current = false;
     setAsleep(false);
@@ -245,6 +253,35 @@ export function IdleScreen({
    * it is a guess about an entry somebody is still typing. Enter, and the
    * sixth digit, are what make an answer final.
    */
+  /**
+   * A correct PIN, and the door opens — and STAYS open.
+   *
+   * THIS WAS THE BAR TILL'S PIN FAULT, and it was invisible in every rule
+   * tested on its own. The till goes to sleep at the end of a night and locks
+   * itself ten minutes later, but nothing about locking or typing ever woke
+   * it: the pad draws over the sleeping clock, so the screen was still
+   * "asleep since 11pm" underneath. The bartender's PIN was checked, matched,
+   * and opened the lock — at which point the sleeping clock came back into
+   * view, saw it had been dark for nine hours, and locked the till again in
+   * the same instant. Unlock, lock, two milliseconds apart, and from the
+   * counter the PIN had done nothing at all.
+   *
+   * The same thing after pressing Lock by hand and coming back more than ten
+   * minutes later, which at a bar is every time. Only a till unlocked within a
+   * minute of locking ever opened, which is why it worked on a phone that had
+   * just loaded the page and on nothing else.
+   *
+   * So the person who has just proved who they are is, by definition, here:
+   * the screen wakes before the door opens.
+   */
+  const opened = (person: Unlocker) => {
+    wake();
+    setEntry('');
+    setWrong(0);
+    refreshed.current = false;
+    onUnlock?.(person);
+  };
+
   const tryUnlock = async (pin: string, final: boolean) => {
     if (waitingMs > 0) return;
     /*
@@ -290,10 +327,7 @@ export function IdleScreen({
       */
       for (const person of unlockers(staff ?? [])) {
         if (await verifyPin(pin, person.pin_hash)) {
-          setEntry('');
-          setWrong(0);
-          refreshed.current = false;
-          onUnlock?.(person);
+          opened(person);
           return;
         }
       }
@@ -337,10 +371,7 @@ export function IdleScreen({
         const known = new Set((staff ?? []).map((p) => p.$id));
         for (const person of unlockers(fresh ?? []).filter((p) => !known.has(p.$id))) {
           if (await verifyPin(pin, person.pin_hash)) {
-            setEntry('');
-            setWrong(0);
-            refreshed.current = false;
-            onUnlock?.(person);
+            opened(person);
             return;
           }
         }
