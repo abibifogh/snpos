@@ -210,3 +210,75 @@ export function approvalBody(items, money, now = Date.now()) {
     + 'be wrong. Agreeing or refusing it takes a moment; leaving it does not.'
     + '</p>';
 }
+
+/* ------------------------------- one count, told about the moment it is filed */
+
+/**
+ * The lines a single count is holding, worst first.
+ *
+ * The hourly digest says "Bar count, 6 lines, GH₵60" because it is summarising
+ * several things at once. This one is about ONE count and can afford to say
+ * what was actually short, which is the difference between an email that gets
+ * read and one that gets archived: "Club · Large, 8 short" is a conversation
+ * somebody can have with the person who counted it, tonight.
+ *
+ * @param {Array} rows  Held shift_stock_checks for one shift and phase.
+ * @param {Record<string,string>} shelves  Ingredient names by id.
+ */
+export function countLines(rows, shelves = {}) {
+  return rows
+    .filter((r) => r.applied === false && !r.approved_at && !r.rejected_at)
+    .map((r) => ({
+      name: shelves[r.ingredient_id] || 'A shelf no longer named',
+      variance: r.variance_qty || 0,
+      value: Math.abs(r.variance_value || 0),
+      counted: r.counted_qty,
+      expected: r.theoretical_qty,
+    }))
+    // Biggest loss first. A list in the order the shelves happen to be walked
+    // buries the eight missing bottles under a tonic that is one over.
+    .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+}
+
+/** What a single held count is called in a subject line. */
+export function countSubject(opts) {
+  const where = opts.phase === 'open' ? 'counting in' : 'counting out';
+  const n = opts.lines;
+  return `${n} ${n === 1 ? 'difference' : 'differences'} on the bar count (${where})`
+    + `${opts.shortValue > 0 ? `, ${opts.money(opts.shortValue)} short` : ''}`;
+}
+
+/**
+ * The body for one count.
+ *
+ * Says what is short and by how much, who counted it, and — the part that
+ * decides whether anybody acts — that the shelf has NOT moved. Somebody who
+ * thinks the figures have already been corrected has no reason to open
+ * anything.
+ */
+export function countBody(opts) {
+  const lis = opts.lines
+    .map((l) => {
+      const short = l.variance < 0;
+      const many = Math.abs(l.variance);
+      return `<li><strong>${l.name}</strong> — ${many} ${short ? 'short' : 'over'}`
+        + `${l.value > 0 ? `, ${opts.money(l.value)}` : ''}`
+        + (l.expected !== undefined && l.counted !== undefined
+          ? `<br><span style="color:#5d6b7a">Should have been ${l.expected}, counted ${l.counted}</span>`
+          : '')
+        + '</li>';
+    })
+    .join('');
+
+  return `<p style="margin:0 0 12px">${opts.who ? `${opts.who} counted the bar` : 'The bar was counted'}`
+    + `${opts.phase === 'open' ? ' in at the start of the shift' : ' out at the end of the shift'}`
+    + ' and found these differences:</p>'
+    + `<ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.7">${lis}</ul>`
+    + '<p style="margin:18px 0 0;color:#5d6b7a;font-size:13px">'
+    + '<strong>The stock figures have not moved.</strong> A count that finds a difference waits for somebody '
+    + 'who can see the whole business to agree to it, which is why this email exists. Until then the shelf '
+    + 'still says what it said before the count — so the next count, and every report built on it, is working '
+    + 'from a number this one has already found to be wrong. Agree or refuse it under Bar, Counts and '
+    + 'variances.'
+    + '</p>';
+}

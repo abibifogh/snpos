@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   APPROVAL_GRACE_MS, fromBarChecks, fromShopCounts, fromExpenses,
   waitedWords, worthSending, approvalSubject, approvalBody,
+  countLines, countSubject, countBody,
   // Plain JavaScript, deliberately importing nothing at runtime so the
   // decisions can be tested from here without a database or a mail server.
 } from '../../../../functions/notify/src/approvals.js';
@@ -165,4 +166,74 @@ test('how long it has waited, in the words somebody would use', () => {
   assert.equal(waitedWords(5 * 3_600_000), '5 hours');
   assert.equal(waitedWords(90_000), '2 minutes');
   assert.equal(waitedWords(1_000), '1 minute');
+});
+
+/* -------------------------- one count, told about the moment it is filed */
+
+const shelves = { i1: 'Club · Large', i2: 'Tonic', i3: 'Sprite' };
+const held = [
+  { $id: 'a', ingredient_id: 'i2', applied: false, variance_qty: 1, variance_value: 300, counted_qty: 13, theoretical_qty: 12 },
+  { $id: 'b', ingredient_id: 'i1', applied: false, variance_qty: -8, variance_value: 8000, counted_qty: 40, theoretical_qty: 48 },
+  { $id: 'c', ingredient_id: 'i3', applied: true, variance_qty: 0, variance_value: 0 },
+];
+
+test('the biggest loss is first, not whichever shelf was walked first', () => {
+  /*
+    A list in the order the shelves happen to be counted buries eight missing
+    bottles under a tonic that is one over.
+  */
+  const lines = countLines(held, shelves);
+  assert.deepEqual(lines.map((l) => l.name), ['Club · Large', 'Tonic']);
+  assert.equal(lines[0].variance, -8);
+  assert.equal(lines[0].value, 8000);
+});
+
+test('a line that matched is not in the email, and one already decided is not either', () => {
+  assert.equal(countLines(held, shelves).length, 2);
+  assert.deepEqual(countLines([
+    { $id: 'a', ingredient_id: 'i1', applied: false, approved_at: '2026-09-06T00:00:00Z', variance_qty: -8 },
+    { $id: 'b', ingredient_id: 'i1', applied: false, rejected_at: '2026-09-06T00:00:00Z', variance_qty: -8 },
+  ], shelves), []);
+});
+
+test('a shelf that has since been removed says so rather than showing an id', () => {
+  // A raw id in an email looks like data, so somebody tries to make sense of it.
+  const [line] = countLines([{ $id: 'a', ingredient_id: 'gone', applied: false, variance_qty: -1 }], shelves);
+  assert.equal(line.name, 'A shelf no longer named');
+});
+
+test('the subject says how many, which end of the shift, and how much is short', () => {
+  assert.equal(
+    countSubject({ phase: 'close', lines: 2, shortValue: 8000, money }),
+    '2 differences on the bar count (counting out), GH¢80.00 short',
+  );
+  assert.equal(
+    countSubject({ phase: 'open', lines: 1, shortValue: 0, money }),
+    '1 difference on the bar count (counting in)',
+  );
+});
+
+test('the body names each shelf, what it should have been, and what was counted', () => {
+  /**
+   * The difference between an email that gets read and one that gets archived.
+   * "Club · Large, 8 short" is a conversation somebody can have with the person
+   * who counted it, tonight; "6 lines, GH₵60" is a number to look at later.
+   */
+  const html = countBody({ lines: countLines(held, shelves), who: 'Regina', phase: 'close', money });
+  assert.match(html, /Regina counted the bar out at the end of the shift/);
+  assert.match(html, /<strong>Club · Large<\/strong> — 8 short, GH¢80.00/);
+  assert.match(html, /Should have been 48, counted 40/);
+  assert.match(html, /<strong>Tonic<\/strong> — 1 over/);
+});
+
+test('the body says the shelf has NOT moved, which is the part that makes anybody act', () => {
+  /*
+    Somebody who believes the figures are already corrected has no reason to
+    open anything.
+  */
+  const html = countBody({ lines: countLines(held, shelves), who: '', phase: 'close', money });
+  assert.match(html, /<strong>The stock figures have not moved.<\/strong>/);
+  assert.match(html, /Bar, Counts and variances/);
+  // And with nobody named it still reads as a sentence.
+  assert.match(html, /The bar was counted out/);
 });

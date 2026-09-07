@@ -1889,6 +1889,54 @@ export const COLLECTIONS = [
   },
   {
     /**
+     * One row per thing that needs telling somebody about, written once.
+     *
+     * The hourly sweep next door catches everything eventually, and eventually
+     * is the wrong answer for a bar count that came up short: money may be
+     * missing and the person who counted it is still on the premises. That
+     * wants an email now.
+     *
+     * WHY A ROW AND NOT AN EVENT ON THE COUNT ITSELF. A count of forty bottles
+     * with six differences writes six rows in the same second. Sending on each
+     * would send six emails; sending on the first would send one that says
+     * "1 line" because the other five do not exist yet. Neither is what
+     * happened. The count is FILED in one call, which is the only moment the
+     * true totals are known, so that call writes one row here and the function
+     * sends on it. One count, one row, one email.
+     *
+     * The sweep is still the safety net: if this row never lands, or the mail
+     * never goes, the hourly run finds the count still waiting and says so.
+     */
+    id: 'approval_notices',
+    name: 'Approval notices',
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['kind', 'e', ['bar_count', 'shop_count', 'expense'], true, 'bar_count'],
+      // Which count, so the function can read what it actually found.
+      ['shift_id', 's', 64, false],
+      ['phase', 's', 20, false],
+      ['location_id', 's', 64, false],
+      ['ref_id', 's', 64, false],
+      // What the person who filed it saw, kept so the email can be written
+      // even if the rows are read back differently later.
+      ['lines', 'i', null, false, 0],
+      ['short_value', 'i', null, false, 0],
+      ['counted_by', 's', 64, false],
+      /*
+        Stamped after the mail has gone, never before.
+
+        Marking first and then failing to send loses the one message this row
+        exists to deliver, and loses it silently — the row then looks like one
+        somebody has already been told about.
+      */
+      ['sent_at', 'd', null, false],
+      ['send_error', 's', 300, false],
+    ],
+    indexes: [['kind_sent', 'key', ['kind', 'sent_at']], ['shift', 'key', ['shift_id']]],
+  },
+  {
+    /**
      * An admin's say-so that a shift may close with money owed on a tab.
      *
      * A row per issue rather than a flag on the shift, so the record survives:
