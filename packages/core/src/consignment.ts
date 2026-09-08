@@ -740,14 +740,22 @@ export async function submitCount(opts: {
  * Which ends of this shift the shop has already counted.
  *
  * Asked by the till to decide whether to put the sheet in front of somebody.
- * Never throws: a till that will not open a shift because it could not find
- * out whether a count exists is worse than one that asks a second time.
+ * Never throws, and never guesses either: `null` means the question could not
+ * be answered — the tablet has just been switched on and has no network yet —
+ * and that is a different thing from "nobody has counted". Reading a failed
+ * read as an empty one is what put the sheet back in front of a shop that had
+ * already counted in, every time the till was closed and reopened.
  */
-export async function shiftCountPhases(shiftId: string): Promise<Set<'open' | 'close'>> {
+export async function shiftCountPhases(shiftId: string): Promise<Set<'open' | 'close'> | null> {
   if (!shiftId) return new Set();
-  const rows = await listAll<{ phase?: string; status?: string }>('stock_counts', [
-    Query.equal('shift_id', shiftId),
-  ]).catch(() => []);
+  let rows: { phase?: string; status?: string }[];
+  try {
+    rows = await listAll<{ phase?: string; status?: string }>('stock_counts', [
+      Query.equal('shift_id', shiftId),
+    ]);
+  } catch {
+    return null;
+  }
   const done = new Set<'open' | 'close'>();
   for (const r of rows) {
     // A REJECTED count is not a count. The shelf was walked and the answer was

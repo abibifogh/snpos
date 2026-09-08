@@ -289,10 +289,12 @@ export function BarCountsPage() {
       }
       if (current) {
         const done = await hasOpeningCount(current.$id);
-        setOpeningDone(done);
+        setOpeningDone(done === true);
         // Straight to the count that has not been done yet, rather than making
-        // somebody choose between two words at the start of a shift.
-        setPhase(done ? 'close' : 'open');
+        // somebody choose between two words at the start of a shift. A read
+        // that could not say is not "not done": it lands on the closing sheet,
+        // which is the one that cannot be filed twice by mistake.
+        setPhase(done === false ? 'open' : 'close');
         setHistory(await listAll<CheckRow>('shift_stock_checks', [Query.equal('shift_id', current.$id)]));
       }
     } catch (e) {

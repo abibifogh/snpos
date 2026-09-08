@@ -140,14 +140,39 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   useEffect(() => {
     if (!countsShelves || !shiftId) { setCountedIn(undefined); return; }
     let live = true;
-    void (shopCounts
-      ? shiftCountPhases(shiftId).then((p) => p.has('open'))
-      : hasOpeningCount(shiftId))
-      .then((done) => { if (live) setCountedIn(done); })
-      // A read that fails must not invent an accusation. Silence is better
-      // than telling a bartender they skipped a count they may well have made.
-      .catch(() => { if (live) setCountedIn(true); });
-    return () => { live = false; };
+    let timer: number | undefined;
+    /*
+      ASKED UNTIL ANSWERED, NOT ONCE.
+
+      This asked once, at boot, and read a failed answer as "nobody counted".
+      Boot is exactly when a tablet that was switched off has no network yet,
+      so the bar counted in at six, closed the till at nine, reopened it at
+      ten, and was handed the count sheet again with the shift still running.
+
+      A read that fails now says nothing — the sheet is not pushed, the
+      warning is not shown — and the question is asked again the moment the
+      network says it is back, and on a slow clock in case it lies.
+    */
+    const ask = async () => {
+      const found = shopCounts
+        ? await shiftCountPhases(shiftId).then((p) => (p ? p.has('open') : null)).catch(() => null)
+        : await hasOpeningCount(shiftId).catch(() => null);
+      if (!live) return;
+      if (found === null) {
+        setCountedIn(undefined);
+        timer = window.setTimeout(() => void ask(), 30_000);
+        return;
+      }
+      setCountedIn(found);
+    };
+    const again = () => void ask();
+    window.addEventListener('online', again);
+    void ask();
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+      window.removeEventListener('online', again);
+    };
   }, [countsShelves, shopCounts, shiftId]);
 
   /**

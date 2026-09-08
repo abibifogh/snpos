@@ -5,8 +5,10 @@
  * presses the catch-up, and reads the sheet again. Nothing is stubbed except
  * Appwrite itself.
  */
-import { __seed, __reset, __all, __missingColumns } from './core/client.ts';
-import { barCountSheet, relinkShelves, pourMissedSales, unpouredForShift, saveBarCount } from './core/stock.ts';
+import { __seed, __reset, __all, __missingColumns, __unreachable } from './core/client.ts';
+import {
+  barCountSheet, relinkShelves, pourMissedSales, unpouredForShift, saveBarCount, hasOpeningCount,
+} from './core/stock.ts';
 import { applyQuantityCorrection, createOrder, loadOpenOrders, orderItemsFor } from './core/orders.ts';
 import { unheldWords } from './core/bar-count.ts';
 
@@ -533,6 +535,51 @@ console.log('\n=== K3 — a count that matched tells nobody ===');
   results.push(['K3 a count with no difference raises nothing', ok(
     'notices', (__all('approval_notices') as any[]).length, 0,
   )]);
+}
+
+/* ------------------ a till that was switched off, and whether it was counted in */
+
+console.log('\n=== N — a till reopened after a count in does not ask for it again ===');
+{
+  /*
+    What the till asks the moment it boots with a shift already running. The
+    bar counted in at six; the tablet was switched off at nine and on again at
+    ten. The answer has to be "yes, counted" — and when the tablet cannot reach
+    the server yet, which is the usual state of a tablet that has just been
+    switched on, it has to be "cannot tell", never "no".
+  */
+  __reset();
+  __seed('stock_locations', [
+    { $id: 'counter', venue_id: 'main', name: 'Bar counter', kind: 'counter', module: 'bar', active: true },
+  ]);
+  __seed('ingredients', shelves);
+  __seed('stock_levels', shelves.map((i, n) => ({
+    $id: `lvl${n}`, ingredient_id: i.$id, location_id: 'counter', qty: i.current_qty,
+  })));
+  __seed('shifts', [{ $id: 'sh1', venue_id: 'main', module: 'bar', status: 'open' }]);
+
+  results.push(['N before anybody counts, the shift is not counted in', ok(
+    'counted in', await hasOpeningCount('sh1'), false,
+  )]);
+
+  // Counted in, and everything on the shelf was exactly as expected — the
+  // commonest count there is, and one that changes no figure anywhere.
+  const sheet = await barCountSheet('main');
+  const filed = await saveBarCount({
+    venueId: 'main', shiftId: 'sh1', phase: 'open', userId: 'regina',
+    lines: sheet.map((r) => ({ ...r, countedText: String(r.expected) })),
+  });
+  results.push(['N a count that matched still files every line', ok('written', filed.written, sheet.length)]);
+  results.push(['N reopened with the server there: counted in', ok(
+    'counted in', await hasOpeningCount('sh1'), true,
+  )]);
+
+  // Switched off, switched on, no wifi yet.
+  __unreachable(true);
+  results.push(['N reopened with no network: "cannot tell", not "no"', ok(
+    'counted in', await hasOpeningCount('sh1'), null,
+  )]);
+  __unreachable(false);
 }
 
 /* ------------------------------ a group order, from the link to the pass */

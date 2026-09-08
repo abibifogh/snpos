@@ -74,8 +74,15 @@ const matches = (doc: Doc, q: Q): boolean => {
   }
 };
 
+/** The network is down. Every read and write fails the way a browser's does. */
+let unreachable = false;
+const wire = () => {
+  if (unreachable) throw Object.assign(new TypeError('Failed to fetch'), { code: 0 });
+};
+
 export const db = {
   listDocuments: async (_d: string, c: string, queries: any[] = []) => {
+    wire();
     let docs = [...coll(c).values()];
     for (const q of queries) {
       if (!q || typeof q !== 'object') continue;
@@ -97,6 +104,7 @@ export const db = {
     return copy(doc);
   },
   createDocument: async (_d: string, c: string, id: string, data: Doc) => {
+    wire();
     /*
       Appwrite refuses a whole document for one attribute it has never heard
       of, and says which. That is the behaviour that took down every line of a
@@ -188,9 +196,10 @@ export async function tryWrite(work: Promise<unknown>): Promise<boolean> {
 /** Columns this database has never been given, by collection. */
 const unknownFields = new Map<string, string[]>();
 export const __missingColumns = (c: string, fields: string[]) => unknownFields.set(c, fields);
+export const __unreachable = (on: boolean) => { unreachable = on; };
 
 export const __seed = (c: string, docs: Doc[]) => {
   for (const d of docs) coll(c).set(d.$id, { $createdAt: new Date().toISOString(), ...copy(d) });
 };
 export const __all = (c: string) => [...coll(c).values()].map(copy);
-export const __reset = () => { store.clear(); unknownFields.clear(); };
+export const __reset = () => { store.clear(); unknownFields.clear(); unreachable = false; };
