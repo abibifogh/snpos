@@ -125,7 +125,9 @@ export const db = {
 };
 
 export const client: any = {};
-export const account: any = {};
+// Nobody is signed in. A guest ordering from a QR code is exactly that, and
+// createOrder asks in order to grant the guest read on their own order.
+export const account: any = { get: async () => null };
 export const storage: any = {};
 export const teams: any = {};
 export const Permission: any = { read: () => '', write: () => '', update: () => '', delete: () => '' };
