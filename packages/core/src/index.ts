@@ -92,3 +92,4 @@ export * from './shift-move';
 export * from './shift-times';
 export * from './imprest-detail';
 export * from './shift-backlog';
+export * from './dietary';

@@ -991,14 +991,28 @@ export async function unpouredForShift(
   return unpouredSales(lines, recipes as unknown as PourRule[], items);
 }
 
-/** Whether this shift has already been counted in on the way in. */
-export async function hasOpeningCount(shiftId: string): Promise<boolean> {
-  const rows = await listAll<Doc>('shift_stock_checks', [
-    Query.equal('shift_id', shiftId),
-    Query.equal('phase', 'open'),
-    Query.limit(1),
-  ]).catch(() => []);
-  return rows.length > 0;
+/**
+ * Whether this shift has already been counted in on the way in.
+ *
+ * Three answers, not two. `null` is "could not find out", and it is the
+ * whole point: a till that has just been switched on asks this before its
+ * wifi is back, and the read fails. That failure used to come back as "no",
+ * so the bartender — who counted in at six — was put in front of the count
+ * sheet again at ten, with the shift still running, every time the tablet
+ * was closed and reopened. "Cannot tell" is not "nobody counted", and only
+ * the caller can decide to ask again once there is a server to ask.
+ */
+export async function hasOpeningCount(shiftId: string): Promise<boolean | null> {
+  try {
+    // One row is the whole answer. See anyExists.
+    const { any } = await anyExists('shift_stock_checks', [
+      Query.equal('shift_id', shiftId),
+      Query.equal('phase', 'open'),
+    ]);
+    return any;
+  } catch {
+    return null;
+  }
 }
 
 /* -------------------------------------------------- where the stock actually is */

@@ -5,9 +5,11 @@
  * presses the catch-up, and reads the sheet again. Nothing is stubbed except
  * Appwrite itself.
  */
-import { __seed, __reset, __all, __missingColumns } from './core/client.ts';
-import { barCountSheet, relinkShelves, pourMissedSales, unpouredForShift, saveBarCount } from './core/stock.ts';
-import { applyQuantityCorrection } from './core/orders.ts';
+import { __seed, __reset, __all, __missingColumns, __unreachable } from './core/client.ts';
+import {
+  barCountSheet, relinkShelves, pourMissedSales, unpouredForShift, saveBarCount, hasOpeningCount,
+} from './core/stock.ts';
+import { applyQuantityCorrection, createOrder, loadOpenOrders, orderItemsFor } from './core/orders.ts';
 import { unheldWords } from './core/bar-count.ts';
 
 const ok = (label: string, got: unknown, want: unknown) => {
@@ -533,6 +535,98 @@ console.log('\n=== K3 — a count that matched tells nobody ===');
   results.push(['K3 a count with no difference raises nothing', ok(
     'notices', (__all('approval_notices') as any[]).length, 0,
   )]);
+}
+
+/* ------------------ a till that was switched off, and whether it was counted in */
+
+console.log('\n=== N — a till reopened after a count in does not ask for it again ===');
+{
+  /*
+    What the till asks the moment it boots with a shift already running. The
+    bar counted in at six; the tablet was switched off at nine and on again at
+    ten. The answer has to be "yes, counted" — and when the tablet cannot reach
+    the server yet, which is the usual state of a tablet that has just been
+    switched on, it has to be "cannot tell", never "no".
+  */
+  __reset();
+  __seed('stock_locations', [
+    { $id: 'counter', venue_id: 'main', name: 'Bar counter', kind: 'counter', module: 'bar', active: true },
+  ]);
+  __seed('ingredients', shelves);
+  __seed('stock_levels', shelves.map((i, n) => ({
+    $id: `lvl${n}`, ingredient_id: i.$id, location_id: 'counter', qty: i.current_qty,
+  })));
+  __seed('shifts', [{ $id: 'sh1', venue_id: 'main', module: 'bar', status: 'open' }]);
+
+  results.push(['N before anybody counts, the shift is not counted in', ok(
+    'counted in', await hasOpeningCount('sh1'), false,
+  )]);
+
+  // Counted in, and everything on the shelf was exactly as expected — the
+  // commonest count there is, and one that changes no figure anywhere.
+  const sheet = await barCountSheet('main');
+  const filed = await saveBarCount({
+    venueId: 'main', shiftId: 'sh1', phase: 'open', userId: 'regina',
+    lines: sheet.map((r) => ({ ...r, countedText: String(r.expected) })),
+  });
+  results.push(['N a count that matched still files every line', ok('written', filed.written, sheet.length)]);
+  results.push(['N reopened with the server there: counted in', ok(
+    'counted in', await hasOpeningCount('sh1'), true,
+  )]);
+
+  // Switched off, switched on, no wifi yet.
+  __unreachable(true);
+  results.push(['N reopened with no network: "cannot tell", not "no"', ok(
+    'counted in', await hasOpeningCount('sh1'), null,
+  )]);
+  __unreachable(false);
+}
+
+/* ------------------------------ a group order, from the link to the pass */
+
+console.log('\n=== M — a group order placed from the link reaches the kitchen as one ===');
+{
+  /*
+    The group link is /menu/?g=<token>, and the token is the venue's. The menu
+    matches it the way apps/menu/src/App.tsx does; what is being proved here
+    is everything after that — the real createOrder, and the real read the
+    kitchen screen does — with the same rows in the same database.
+  */
+  __reset();
+  __seed('venues', [{ $id: 'main', name: 'NiceOps', group_token: 'grp-7f3a', walkin_token: 'walk-1' }]);
+  __seed('menu_items', [{ $id: 'platter', venue_id: 'main', name: 'Party platter', module: 'kitchen', active: true }]);
+
+  const venues = __all('venues') as any[];
+  const venue = venues.find((v) => v.group_token === 'grp-7f3a');
+  results.push(['M the link finds its venue, and a wrong token finds nothing', ok(
+    'venue by token', [venue?.$id, venues.find((v) => v.group_token === 'nope')?.$id ?? null], ['main', null],
+  )]);
+
+  const placed = await createOrder({
+    venueId: 'main',
+    channel: 'qr',
+    placedBy: '',
+    guest: true,
+    guestCount: 12,
+    group: { reference: 'HTL-2291', size: 12, contactName: 'Ama' },
+    settings: { tax_rate_bp: 0, tax_inclusive: true, service_charge_bp: 0, currency_code: 'GHS' } as any,
+    lines: [{
+      menu_item_id: 'platter', name: 'Party platter', unit_price: 45_000, qty: 2, addons: [], prep_minutes: 30,
+    }] as any,
+  });
+
+  // What the pass reads, exactly as apps/kitchen/src/App.tsx reads it.
+  const tickets = await loadOpenOrders('main', 'kitchen');
+  const ticket = tickets.find((o) => o.$id === placed.order.$id);
+  results.push(['M the kitchen sees the order, and sees it as a group', ok(
+    'ticket', [tickets.length, ticket?.status, ticket?.is_group, ticket?.group_size, ticket?.group_reference],
+    [1, 'PENDING', true, 12, 'HTL-2291'],
+  )]);
+  const lines = await orderItemsFor(placed.order.$id);
+  results.push(['M with the platters on it', ok(
+    'lines', lines.map((l) => [l.name_snapshot, l.qty, l.line_total]), [['Party platter', 2, 90_000]],
+  )]);
+  results.push(['M and the total the group will be billed', ok('total', placed.order.total, 90_000)]);
 }
 
 console.log('\n=== summary ===');

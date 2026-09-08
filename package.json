@@ -25,8 +25,9 @@
     "check:writes": "node scripts/check-writes.mjs",
     "test": "node --experimental-strip-types --test \"packages/core/src/__tests__/*.test.ts\"",
     "typecheck:tests": "npx -y tsc --noEmit -p packages/core/tsconfig.test.json",
-    "verify": "npm run typecheck && npm run typecheck:tests && npm run test && npm run test:e2e && npm run check:writes && npm run build",
-    "test:e2e": "node scripts/e2e.mjs"
+    "verify": "npm run typecheck && npm run typecheck:tests && npm run test && npm run test:e2e && npm run test:ui && npm run check:writes && npm run build",
+    "test:e2e": "node scripts/e2e.mjs",
+    "test:ui": "node scripts/ui-e2e.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
@@ -38,5 +39,8 @@
   "workspaces": [
     "packages/*",
     "apps/*"
-  ]
+  ],
+  "devDependencies": {
+    "playwright": "^1.56.1"
+  }
 }

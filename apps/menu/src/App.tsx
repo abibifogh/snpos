@@ -12,6 +12,7 @@ import type {
   Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc,
 } from '@snpos/core';
 import { DishSheet } from './DishSheet';
+import { DietTags } from './DietTags';
 import { CartSheet } from './CartSheet';
 import { OrderStatus } from './OrderStatus';
 import { ScreenThanks } from './ScreenThanks';
@@ -791,6 +792,9 @@ export function App() {
           key={section.category.$id}
           section={section}
           settings={settings}
+          // What each dish is safe for. On the group menu, where whoever is
+          // booking does not know their guests and has to ask on their behalf.
+          showDiet={inGroupMode}
           onPick={(id) => setOpenDish(id)}
         />
       ))}
@@ -818,6 +822,7 @@ export function App() {
         <DishSheet
           entry={dish}
           settings={settings}
+          showDiet={inGroupMode}
           onClose={() => setOpenDish(null)}
           onAdd={addLine}
         />
@@ -869,10 +874,13 @@ export function App() {
 function Section({
   section,
   settings,
+  showDiet,
   onPick,
 }: {
   section: MenuSection;
   settings: Settings;
+  /** Say what each dish is safe for: vegan, gluten free, contains nuts. */
+  showDiet?: boolean;
   onPick: (id: string) => void;
 }) {
   const windows = parseWindows(section.category.availability);
@@ -901,6 +909,7 @@ function Section({
             <div className="body">
               <div className="name">{entry.item.name}</div>
               {entry.item.description && <div className="desc">{entry.item.description}</div>}
+              {showDiet && <DietTags tags={entry.item.tags} />}
               <div className="price">
                 {formatMoney(entry.price, settings)}
                 {entry.soldOut && <span className="dim"> · sold out</span>}
