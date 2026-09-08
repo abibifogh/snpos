@@ -13,6 +13,7 @@ import {
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition,
   pendingShelfLines, submitShelfChange, frozenPieces, frozenBy, needsApproval, shelfChangeProblem, sentWords,
   isService, SERVICE_LABEL,
+  DIETARY_TAGS, toggleDietaryTag, dietarySummary,
 } from '@snpos/core';
 import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice, WaitingChange, StaffProfile, ProductVariant } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
@@ -788,6 +789,9 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       price,
       active: editing.active ?? true,
       prep_minutes: Number(editing.prep_minutes ?? 10),
+      // What the dish is safe for. Written as a list even when empty, so
+      // unticking the last box actually clears it.
+      tags: editing.tags ?? [],
       // Blank means "wherever its main category goes". `station` is the old
       // built-in enum the database still requires; `station_key` is the one the
       // kitchen screen actually reads.
@@ -1531,6 +1535,27 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
             {module === 'kitchen' && (
               <Field label="Prep time (minutes)" hint="Used to estimate waits and to time pre-orders.">
                 <Input type="number" min="0" value={editing.prep_minutes ?? 10} onChange={(e) => setEditing({ ...editing, prep_minutes: Number(e.target.value) })} />
+              </Field>
+            )}
+            {module === 'kitchen' && (
+              <Field
+                label="Dietary"
+                hint={
+                  (editing.tags ?? []).length
+                    ? `Shown on the group menu as: ${dietarySummary(editing.tags)}`
+                    : 'Shown on the group menu, so whoever is booking for a party can order for guests they do not know.'
+                }
+              >
+                <div className="row row-wrap" style={{ gap: '0.35rem 1rem', marginTop: '0.2rem' }}>
+                  {DIETARY_TAGS.map((t) => (
+                    <Toggle
+                      key={t.key}
+                      checked={(editing.tags ?? []).includes(t.key)}
+                      onChange={() => setEditing({ ...editing, tags: toggleDietaryTag(editing.tags, t.key) })}
+                      label={t.label}
+                    />
+                  ))}
+                </div>
               </Field>
             )}
             {module === 'kitchen' && (

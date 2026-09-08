@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button, Modal, Textarea, FormError } from '@snpos/ui';
 import { formatMoney, previewUrl } from '@snpos/core';
 import type { MenuEntry, Settings, CartLine, CartAddon } from '@snpos/core';
+import { DietTags } from './DietTags';
 
 /**
  * One dish, its options, and the quantity, the only screen where a customer
@@ -10,11 +11,14 @@ import type { MenuEntry, Settings, CartLine, CartAddon } from '@snpos/core';
 export function DishSheet({
   entry,
   settings,
+  showDiet,
   onClose,
   onAdd,
 }: {
   entry: MenuEntry;
   settings: Settings;
+  /** Say what this dish is safe for. See DietTags. */
+  showDiet?: boolean;
   onClose: () => void;
   onAdd: (line: CartLine) => void;
 }) {
@@ -107,6 +111,7 @@ export function DishSheet({
         />
       )}
       {entry.item.description && <p style={{ marginTop: 0 }}>{entry.item.description}</p>}
+      {showDiet && <DietTags tags={entry.item.tags} />}
 
       {entry.groups.map(({ group, options }) => (
         <div key={group.$id} style={{ marginTop: '1.2rem' }}>
