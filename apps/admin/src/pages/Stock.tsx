@@ -5,7 +5,7 @@ import {
 } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
-  formatMoney, parseMoney, toInput, levelOf, saveDropping,
+  formatMoney, parseMoney, toInput, levelOf, saveDropping, AVERAGE_COST_WORDS,
   purchasesFor, priceHistory, priceMoveNote, packProblem, hasPack, packSize,
   matches, sortStock, stockState, STOCK_SORTS, STOCK_STATES,
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, normaliseName,
@@ -899,8 +899,10 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
               </Select>
             </Field>
             <Field
-              label={`Cost per ${editing.unit ?? 'unit'} (${settings?.currency_symbol ?? ''})`}
-              hint="Used to value stock and work out what each drink or dish costs you."
+              label={`Average cost per ${editing.unit ?? 'unit'} (${settings?.currency_symbol ?? ''})`}
+              hint={`${AVERAGE_COST_WORDS}${editing.last_unit_cost && settings
+                ? ` Last delivery: ${formatMoney(editing.last_unit_cost, settings)}.`
+                : ''}`}
             >
               <Input value={costText} inputMode="decimal" onChange={(e) => setCostText(e.target.value)} />
             </Field>

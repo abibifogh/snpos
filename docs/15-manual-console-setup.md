@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **88 collections, 1188 fields and 288 indexes**. Entered by hand at a
+> This is **88 collections, 1189 fields and 288 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -1198,7 +1198,7 @@ There are 88 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
-**Attributes** (24)
+**Attributes** (25)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -1207,6 +1207,7 @@ There are 88 collections. A progress checklist is at the end of this document.
 | `name` | String | size 160 | **Yes** | ,  | No |
 | `unit` | Enum | g, kg, ml, l, each, pack, bottle, case, shot, cl | **Yes** | ,  | No |
 | `base_unit_cost` | Integer | ,  | **Yes** | ,  | No |
+| `last_unit_cost` | Integer | ,  | No | 0 | No |
 | `module` | Enum | kitchen, craft, bar | No | kitchen | No |
 | `current_qty` | Float | ,  | **Yes** | ,  | No |
 | `par_level` | Float | ,  | **Yes** | ,  | No |
@@ -3228,7 +3229,7 @@ way mistakes creep in.
 - [ ] 28. `pack_kinds` (6 fields, 2 indexes)
 - [ ] 29. `ingredient_categories` (6 fields, 2 indexes)
 - [ ] 30. `shift_stock_checks` (22 fields, 5 indexes)
-- [ ] 31. `ingredients` (24 fields, 4 indexes)
+- [ ] 31. `ingredients` (25 fields, 4 indexes)
 - [ ] 32. `recipes` (7 fields, 4 indexes)
 - [ ] 33. `suppliers` (8 fields, 2 indexes)
 - [ ] 34. `purchases` (12 fields, 3 indexes)

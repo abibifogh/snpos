@@ -13,6 +13,7 @@ import { applyQuantityCorrection, createOrder, loadOpenOrders, orderItemsFor } f
 import { unheldWords } from './core/bar-count.ts';
 import { postExpense, repostExpense, debitsForExpense, postShift, postPayout } from './core/ledger.ts';
 import { makersShareOf } from './core/consignment-math.ts';
+import { receiveStock } from './core/stock.ts';
 
 const ok = (label: string, got: unknown, want: unknown) => {
   const pass = JSON.stringify(got) === JSON.stringify(want);
@@ -667,6 +668,23 @@ console.log('\n=== P — a craft shift keeps its commission and holds the rest f
   )]);
   results.push(['P a retried payout does not pay the books down twice', ok(
     'again', await postPayout('main', { $id: 'p1', amount: 14_000, method: 'momo' }, 'micheal'), null,
+  )]);
+}
+
+/* ---------------------------------------- one dear bottle, and the shelf */
+
+console.log('\n=== Q — a dear delivery moves the shelf’s cost by one bottle’s worth ===');
+{
+  __reset();
+  __seed('ingredients', [{
+    $id: 'club-large', venue_id: 'main', name: 'Club · Large', module: 'bar', active: true,
+    unit: 'bottle', base_unit_cost: 850, current_qty: 40, count_each_shift: true,
+  }]);
+  const ing = (__all('ingredients') as any[])[0];
+  await receiveStock({ venueId: 'main', ingredient: ing, qty: 1, unitCost: 1200, refType: 'expense', refId: 'e9' });
+  const after = (__all('ingredients') as any[])[0];
+  results.push(['Q the shelf is valued at the weighted average, not the last receipt', ok(
+    'cost / last / qty', [after.base_unit_cost, after.last_unit_cost, after.current_qty], [859, 1200, 41],
   )]);
 }
 

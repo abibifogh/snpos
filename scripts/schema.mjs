@@ -1634,6 +1634,9 @@ export const COLLECTIONS = [
        */
       ['unit', 'e', ['g', 'kg', 'ml', 'l', 'each', 'pack', 'bottle', 'case', 'shot', 'cl'], true],
       ['base_unit_cost', 'i', null, true, 0],
+      // What the last delivery cost. base_unit_cost is the weighted average,
+      // which is what the shelf is valued at and what cost of sales uses.
+      ['last_unit_cost', 'i', null, false, 0],
       /**
        * Which side of the business keeps this on its shelves.
        *

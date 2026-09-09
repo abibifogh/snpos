@@ -23,6 +23,7 @@ import {
 import type { StockLocation, LocationStock, TransferLine } from './locations';
 import type { LevelRow } from './level-import';
 import type { BarCountLine } from './bar-count';
+import { weightedUnitCost } from './unit-cost';
 import type { Doc } from './types';
 import type { OrderItem } from './orders';
 
@@ -31,6 +32,8 @@ export interface Ingredient extends Doc {
   name: string;
   unit: string;
   base_unit_cost: number;
+  /** What the last delivery cost per unit. The average above is what the shelf is worth. */
+  last_unit_cost?: number;
   current_qty: number;
   par_level: number;
   low_threshold?: number;
@@ -233,21 +236,42 @@ export async function receiveStock(opts: {
     note: note ?? '',
   });
 
+  /*
+    THE SHELF IS WORTH THE AVERAGE OF WHAT WAS PAID, NOT THE LAST RECEIPT.
+
+    This used to overwrite the cost with whatever the delivery cost, so one
+    dear bottle revalued the forty already on the shelf and the night's cost
+    of sales jumped with it. See weightedUnitCost. What was last paid is kept
+    beside it, because "what did we pay last time" is still a question.
+  */
+  const costing = unitCost && unitCost > 0
+    ? {
+        base_unit_cost: weightedUnitCost({
+          onHand: ingredient.current_qty ?? 0,
+          currentCost: ingredient.base_unit_cost ?? 0,
+          boughtQty: qty,
+          boughtCost: unitCost,
+        }),
+        last_unit_cost: unitCost,
+      }
+    : {};
+
   if (where) {
     // The level moves and the total follows from it. See adjustLevel: the
     // total is the sum of the places, never a second record of the same fact.
     await adjustLevel({ ingredientId: ingredient.$id, locationId: where.$id, delta: qty });
     if (unitCost && unitCost > 0) {
-      await db.updateDocument(DB_ID, 'ingredients', ingredient.$id, { base_unit_cost: unitCost })
-        .catch(() => undefined);
+      // saveDropping: `last_unit_cost` is newer than some databases, and the
+      // average matters more than the note beside it.
+      await saveDropping('ingredients', ingredient.$id, costing).catch(() => undefined);
     }
   } else {
     // No locations set up at all, which is every venue until somebody makes
     // one. Exactly the old behaviour, so nothing has to be configured before
     // a delivery can be recorded.
-    await db.updateDocument(DB_ID, 'ingredients', ingredient.$id, {
+    await saveDropping('ingredients', ingredient.$id, {
       current_qty: Number((ingredient.current_qty + qty).toFixed(4)),
-      ...(unitCost && unitCost > 0 ? { base_unit_cost: unitCost } : {}),
+      ...costing,
     });
   }
 }
