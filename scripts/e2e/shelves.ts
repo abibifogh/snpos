@@ -20,6 +20,7 @@ import { db, DB_ID, Query } from './core/client.ts';
 // The server's side of the books: the same code the notify function runs,
 // against the same in-memory database. See functions/notify/src/books-post.js.
 import { postShiftClose, postSpend, postPayoutRow, postWasteRow, sweepBooks } from './notify/books-post.js';
+import { healthFacts, healthFindings, healthSummary } from './notify/health.js';
 
 /** What the notify function hands its books code: the database and a log. */
 const server = { db, DB_ID, Query, log: () => undefined };
@@ -927,6 +928,55 @@ console.log('\n=== W — a closed shift reaches the books from its row, once, an
   __seed('payments', [{ $id: 'pay5', shift_id: 'sh22', method_id: 'm-cash', amount: 100, tip: 0 }]);
   results.push(['W a shift inside a locked month is held, not posted', ok(
     'locked', (await postShiftClose(server, (__all('shifts') as any[]).find((x) => x.$id === 'sh22'))).skipped, 'locked',
+  )]);
+}
+
+/* ------------------------------------ the nightly check, over broken rows */
+
+console.log('\n=== X — the nightly check finds what was left half written, and the sweep fixes what it can ===');
+{
+  __reset();
+  const now = new Date('2026-09-09T02:00:00.000Z');
+  const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000).toISOString();
+  __seed('settings', [{ $id: 'main', tax_rate_bp: 0, schema_version: 'x' }]);
+  __seed('payment_methods', [{ $id: 'm-cash', venue_id: 'main', name: 'Cash', kind: 'cash', enabled: true }]);
+  __seed('shifts', [
+    // Closed last night; the function was down, so nothing posted.
+    { $id: 'sh30', venue_id: 'main', code: 'BIST-30', status: 'closed', closed_at: hoursAgo(5), closed_by: 'kofi', expected: '{}', counted: '{}', tip_total: 0, tax_total: 0, discount_total: 0, cogs_total: 0, posted_to_ledger: false },
+    // Closed a minute ago: still inside the grace, not a finding.
+    { $id: 'sh31', venue_id: 'main', code: 'BIST-31', status: 'closed', closed_at: hoursAgo(0.01), expected: '{}', counted: '{}', posted_to_ledger: false },
+    // Left open since Sunday.
+    { $id: 'sh32', venue_id: 'main', code: 'BAR-32', status: 'open', opened_at: hoursAgo(40) },
+  ]);
+  __seed('payments', [{ $id: 'p30', shift_id: 'sh30', order_id: 'o-paid', method_id: 'm-cash', amount: 3_000, tip: 0 }]);
+  __seed('orders', [
+    { $id: 'o-paid', venue_id: 'main', order_no: 'ORD-1', status: 'CLOSED', payment_status: 'paid', total: 3_000, $createdAt: hoursAgo(6) },
+    { $id: 'o-ghost', venue_id: 'main', order_no: 'ORD-2', status: 'CLOSED', payment_status: 'paid', total: 4_500, $createdAt: hoursAgo(6) },
+    { $id: 'o-empty', venue_id: 'main', order_no: 'ORD-3', status: 'SERVED', payment_status: 'unpaid', total: 0, $createdAt: hoursAgo(6) },
+  ]);
+  __seed('order_items', [{ $id: 'li-1', order_id: 'o-paid', qty: 1, line_total: 3_000 }, { $id: 'li-2', order_id: 'o-ghost', qty: 1, line_total: 4_500 }]);
+  __seed('consignor_payouts', [{ $id: 'py1', venue_id: 'main', consignor_id: 'ama', reference: 'PAY-0009', amount: 7_000, method: 'momo', paid_at: hoursAgo(30), status: 'recorded', $createdAt: hoursAgo(30) }]);
+  __seed('shift_expenses', [{ $id: 'sp1', venue_id: 'main', amount: 2_500, kind: 'stock', approval_status: 'pending', created_by: 'kofi', $createdAt: hoursAgo(100) }]);
+
+  const before = healthFindings(await healthFacts(server, 'main', now), { money: (n: number) => `GH₵${(n / 100).toFixed(2)}` });
+  const by = (xs: any[]) => Object.fromEntries(xs.map((x) => [x.key, x.level]));
+  const b = by(before);
+  results.push(['X it names the unposted shift and leaves the one just closed alone', ok(
+    'shift', [b.shifts_unposted, before.find((x: any) => x.key === 'shifts_unposted').detail.includes('BIST-30'), before.find((x: any) => x.key === 'shifts_unposted').detail.includes('BIST-31')],
+    ['block', true, false],
+  )]);
+  results.push(['X the ghost payment, the empty order, the payout, the stock spend, the stale spend and the open shift', ok(
+    'levels', [b.orders_no_payment, b.orders_no_lines, b.payouts, b.spends_no_lines, b.spends_stale, b.shifts_open, b.spends_unposted, b.job_health],
+    ['block', 'warn', 'block', 'warn', 'warn', 'warn', 'block', 'warn'],
+  )]);
+  results.push(['X and adds it up', ok('summary', healthSummary(before).words, '4 things need fixing, and 6 things are waiting on somebody.')]);
+
+  // The books sweep runs before the check at night. What it can fill, it fills.
+  await sweepBooks(server, now.getTime());
+  const after = by(healthFindings(await healthFacts(server, 'main', now), { money: (n: number) => String(n) }));
+  results.push(['X once the sweep has run, the shift, the spend and the payout are on the books; the rest still waits', ok(
+    'after', [after.shifts_unposted, after.spends_unposted, after.payouts, after.orders_no_payment],
+    ['ok', 'ok', 'block', 'block'],
   )]);
 }
 

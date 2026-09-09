@@ -2926,7 +2926,9 @@ export const COLLECTIONS = [
     perms: { read: MGMT, create: [], update: [], delete: [] },
     attributes: [
       ['venue_id', 's', 64, true],
-      ['kind', 'e', ['shift_close', 'daily_digest', 'backup'], true],
+      // 'health' is the nightly check: records that do not add up, written
+      // down whether or not anybody was emailed. See functions/notify/src/health-night.js.
+      ['kind', 'e', ['shift_close', 'daily_digest', 'backup', 'health'], true],
       ['shift_id', 's', 64, false],
       ['period_start', 'd', null, true],
       ['period_end', 'd', null, true],

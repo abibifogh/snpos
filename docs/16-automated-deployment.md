@@ -121,6 +121,14 @@ The **Actions** tab lists every run with a green tick or a red cross. Click any
 run to read what happened. A red cross on **Check** means the code did not
 compile and nothing was published.
 
+**Admin → Health** is the other place to look. Every night at two the server
+checks for records that do not add up — a shift closed but not on the books,
+an order marked paid with no payment, a payout that never reached the maker's
+ledger — and for background jobs that have gone quiet, and writes the answers
+down. The page shows the last check and checks again when you open it; each
+finding has a button to the place it is fixed. If anything needs fixing, the
+people who get the daily summary get an email that morning.
+
 ---
 
 ## 16.4 The QR codes

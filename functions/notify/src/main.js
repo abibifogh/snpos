@@ -11,6 +11,7 @@ import {
   countLines, countSubject, countBody,
 } from './approvals.js';
 import { postShiftClose, postSpend, postPayoutRow, postWasteRow, sweepBooks } from './books-post.js';
+import { nightlyReconcile } from './health-night.js';
 
 /**
  * Everything that sends an email.
@@ -38,6 +39,7 @@ import { postShiftClose, postSpend, postPayoutRow, postWasteRow, sweepBooks } fr
  *   shifts left open longer than a day
  *   counts and spending waiting for an admin to agree to them
  *   anything closed, spent, paid or written off that the books have not got
+ *   and, at two in the morning, the health check: records that do not add up
  *
  * The hourly sweep lives here rather than in a function of its own because
  * Appwrite's free plan allows four functions and this project has four. It
@@ -672,6 +674,8 @@ export default async ({ req, res, log, error }) => {
       ['approvals', () => sweepApprovals({ db, DB_ID, settings, transport, from, log, error })],
       ['daily', () => dailyDigest({ db, DB_ID, settings, transport, from, shell, row, money, log, error })],
       ['backup', () => nightlyBackup({ db, DB_ID, settings, transport, from, shell, log, error })],
+      // Last, after the books have been swept: what is still wrong once everything that can be filled has been.
+      ['health', () => nightlyReconcile({ db, DB_ID, settings, transport, from, shell, log, error })],
     ]) {
       try {
         results[name] = await job();

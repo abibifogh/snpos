@@ -221,6 +221,9 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'tables', label: 'Tables & QR', path: '/tables', group: 'Setup' },
   { key: 'staff', label: 'Staff', path: '/staff', group: 'Setup' },
   { key: 'features', label: 'Features', path: '/features', group: 'Setup' },
+  // Records that do not add up and jobs that have gone quiet, checked
+  // nightly and on opening. Owner-only: every button on it changes the books.
+  { key: 'health', label: 'Health', path: '/health', group: 'Setup', ownerOnly: true },
   { key: 'settings', label: 'Settings', path: '/settings', group: 'Setup', ownerOnly: true },
   { key: 'erase', label: 'Erase records', path: '/erase', group: 'Setup', ownerOnly: true },
 ];

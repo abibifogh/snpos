@@ -2341,7 +2341,7 @@ There are 84 collections. A progress checklist is at the end of this document.
 | --- | --- | --- | --- | --- | --- |
 | `org_id` | String | size 64 | No | ,  | No |
 | `venue_id` | String | size 64 | **Yes** | ,  | No |
-| `kind` | Enum | shift_close, daily_digest, backup | **Yes** | ,  | No |
+| `kind` | Enum | shift_close, daily_digest, backup, health | **Yes** | ,  | No |
 | `shift_id` | String | size 64 | No | ,  | No |
 | `period_start` | Datetime | ,  | **Yes** | ,  | No |
 | `period_end` | Datetime | ,  | **Yes** | ,  | No |

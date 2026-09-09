@@ -43,6 +43,7 @@ try {
   // the notify function does and read the result back.
   await cp(join(root, 'functions/notify/src/books.js'), join(work, 'notify/books.js'));
   await cp(join(root, 'functions/notify/src/books-post.js'), join(work, 'notify/books-post.js'));
+  await cp(join(root, 'functions/notify/src/health.js'), join(work, 'notify/health.js'));
 
   /*
     `from './menu'` is what Vite resolves and what node does not. Rewritten on
