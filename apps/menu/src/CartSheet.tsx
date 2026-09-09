@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Button, Modal, Input, Field, Notice, Select, FormError } from '@snpos/ui';
 import {
-  computeTotals, formatMoney, lineTotal, createOrder, parseWindows,
+  computeTotals, formatMoney, lineTotal, createOrder, parseWindows, taxWords, parseLevies,
   isEnabled, featureConfig, db, DB_ID, ID, Query, isProvisionalOrderNo,
   ensureGuestSession, humanError, selfOrderModule, seatName,
 } from '@snpos/core';
@@ -499,7 +499,7 @@ export function CartSheet({
         )}
         {totals.tax_total > 0 && (
           <div className="row-t">
-            <span className="dim">Tax {settings.tax_inclusive ? '(included)' : ''}</span>
+            <span className="dim">{taxWords(parseLevies(settings.levies), settings.currency_code)} {settings.tax_inclusive ? '(included)' : ''}</span>
             <span>{formatMoney(totals.tax_total, settings)}</span>
           </div>
         )}

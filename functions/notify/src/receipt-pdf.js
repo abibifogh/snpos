@@ -218,7 +218,7 @@ export function receiptPdf({ settings, venue, order, items, payments, methods })
   if (order.discount_total) r.pair('Discount', `-${money(order.discount_total)}`);
   if (order.service_total) r.pair('Service', money(order.service_total));
   if (order.tip_total) r.pair('Tip', money(order.tip_total));
-  if (!settings.tax_inclusive && order.tax_total) r.pair('Tax', money(order.tax_total));
+  if (!settings.tax_inclusive && order.tax_total) r.pair(settings.levies ? 'VAT and levies' : 'Tax', money(order.tax_total));
   r.gap();
   r.pair('TOTAL', money(order.total), { bold: true, size: 11 });
   r.gap();
@@ -228,7 +228,7 @@ export function receiptPdf({ settings, venue, order, items, payments, methods })
     r.pair(`Tendered ${name}`, money((p.amount || 0) + (p.tip || 0)));
     if (p.change_given) r.pair('Change', money(p.change_given));
   }
-  if (settings.tax_inclusive && order.tax_total) r.pair('Tax Total (incl)', money(order.tax_total));
+  if (settings.tax_inclusive && order.tax_total) r.pair(settings.levies ? 'VAT and levies (incl)' : 'Tax Total (incl)', money(order.tax_total));
   if (order.payment_status !== 'paid') {
     r.gap();
     r.centre('*** NOT YET PAID ***', { bold: true });

@@ -4,6 +4,7 @@ import { downloadUrl } from './files';
 import { addonNames } from './orders-time';
 import type { Settings, Venue, Doc } from './types';
 import type { Order, OrderItem } from './orders';
+import { splitTax, parseLevies, taxWords } from './pricing';
 
 /**
  * A printable receipt, in the shape people expect from a till.
@@ -68,6 +69,8 @@ export interface ReceiptData {
   tax?: string;
   taxLabel?: string;
   taxInclusive?: boolean;
+  /** Each levy and VAT on its own line, where the business charges levies. */
+  taxParts?: { label: string; amount: string }[];
   tip?: string;
   total: string;
   payments: ReceiptPayment[];
@@ -191,7 +194,11 @@ export function buildReceiptHtml(d: ReceiptData): string {
   ${d.discount ? row(d.discountLabel || 'Discount', `−${d.discount}`) : ''}
   ${d.service ? row('Service', d.service) : ''}
   ${d.tip ? row('Tip', d.tip) : ''}
-  ${!d.taxInclusive && d.tax ? row(d.taxLabel || 'Tax', d.tax) : ''}
+  ${!d.taxInclusive && d.tax
+    ? (d.taxParts && d.taxParts.length > 1
+      ? d.taxParts.map((t) => row(t.label, t.amount)).join('')
+      : row(d.taxLabel || 'Tax', d.tax))
+    : ''}
   ${row('Total', d.total, { big: true })}
   ${d.payments.map((p) => row(
     // The reference under the method, in the same row, because a line of its
@@ -200,7 +207,11 @@ export function buildReceiptHtml(d: ReceiptData): string {
     p.amount,
   )).join('')}
   ${d.payments.find((p) => p.change) ? row('Change', d.payments.find((p) => p.change)!.change!, { big: true }) : ''}
-  ${d.taxInclusive && d.tax ? row(`${d.taxLabel || 'Tax'} Total`, d.tax) : ''}
+  ${d.taxInclusive && d.tax
+    ? (d.taxParts && d.taxParts.length > 1
+      ? d.taxParts.map((t) => row(`Includes ${t.label}`, t.amount)).join('')
+      : row(`${d.taxLabel || 'Tax'} Total`, d.tax))
+    : ''}
 
   ${d.unpaid ? '<div class="unpaid">NOT YET PAID</div>' : ''}
 
@@ -340,8 +351,11 @@ export async function receiptForOrder(opts: {
     discount: order.discount_total > 0 ? money(order.discount_total) : undefined,
     service: order.service_total > 0 ? money(order.service_total) : undefined,
     tax: order.tax_total > 0 ? money(order.tax_total) : undefined,
-    taxLabel: settings.currency_code === 'GHS' ? 'VAT' : 'Tax',
+    taxLabel: taxWords(parseLevies(settings.levies), settings.currency_code),
     taxInclusive: settings.tax_inclusive,
+    // Each levy on its own line, because each is a different body's money.
+    taxParts: splitTax(order.tax_total, { vatBp: settings.tax_rate_bp, levies: parseLevies(settings.levies) })
+      .map((t) => ({ label: t.name, amount: money(t.amount) })),
     tip: order.tip_total > 0 ? money(order.tip_total) : undefined,
     total: money(order.total),
     payments: payments.map((p) => ({

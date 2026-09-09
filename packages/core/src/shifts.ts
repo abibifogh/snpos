@@ -5,6 +5,7 @@ import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from
 import { liveOrders } from './orders';
 import { countable } from './bar-count';
 import { makersShareOf } from './consignment-math';
+import { splitTax, parseLevies } from './pricing';
 import { loadConsignors } from './consignment';
 import { postShift, reverseEntry, shiftCloseEntries, lockedThroughFor, isLocked, debitsForExpense } from './ledger';
 import type { SpendDebit } from './spend-posting';
@@ -904,6 +905,11 @@ export async function closeShift(opts: {
       takings: byKind,
       tips: takings.tipsTotal,
       tax: shiftOrders.reduce((a, o) => a + o.tax_total, 0),
+      // Each levy to its own account, so each return can be filed from the
+      // books. See splitTax.
+      taxParts: splitTax(shiftOrders.reduce((a, o) => a + o.tax_total, 0), {
+        vatBp: settings.tax_rate_bp, levies: parseLevies(settings.levies),
+      }),
       discounts: shiftOrders.reduce((a, o) => a + o.discount_total, 0),
       cogs,
       cashVariance: totalOff,
@@ -1176,6 +1182,9 @@ export async function repostShiftAccounts(opts: {
     takings: byKind,
     tips: takings.tipsTotal,
     tax: paid.reduce((a, o) => a + o.tax_total, 0),
+    taxParts: splitTax(paid.reduce((a, o) => a + o.tax_total, 0), {
+      vatBp: settingsRow?.tax_rate_bp ?? 0, levies: parseLevies(settingsRow?.levies),
+    }),
     discounts: paid.reduce((a, o) => a + o.discount_total, 0),
     // Left where it is. See the note above.
     cogs: 0,

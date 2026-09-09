@@ -84,13 +84,22 @@ test('the rate chosen agrees, including the awkward cases', () => {
   }
 });
 
-test('order totals agree, inclusive and exclusive, with and without a discount', () => {
+const GHANA = JSON.stringify([
+  { key: 'nhil', name: 'NHIL', rate_bp: 250 }, { key: 'getfund', name: 'GETFund levy', rate_bp: 250 }, { key: 'tourism', name: 'Tourism levy', rate_bp: 100 },
+]);
+
+test('order totals agree, inclusive and exclusive, with and without a discount, with and without levies', () => {
   const shapes = [
     { tax_rate_bp: 0, tax_inclusive: false, service_charge_bp: 0 },
     { tax_rate_bp: 1500, tax_inclusive: false, service_charge_bp: 0 },
     { tax_rate_bp: 1500, tax_inclusive: true, service_charge_bp: 0 },
     { tax_rate_bp: 1250, tax_inclusive: false, service_charge_bp: 1000 },
     { tax_rate_bp: 1250, tax_inclusive: true, service_charge_bp: 1000 },
+    // Ghana's stack: levies on the price, VAT on the price plus the levies.
+    { tax_rate_bp: 1500, tax_inclusive: false, service_charge_bp: 0, levies: GHANA },
+    { tax_rate_bp: 1500, tax_inclusive: true, service_charge_bp: 1000, levies: GHANA },
+    { tax_rate_bp: 0, tax_inclusive: false, service_charge_bp: 0, levies: GHANA },
+    { tax_rate_bp: 1500, tax_inclusive: true, service_charge_bp: 0, levies: 'not json' },
   ];
   for (const settings of shapes) {
     for (const subtotal of [0, 1, 99, 100, 333, 1000, 12345]) {

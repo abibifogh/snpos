@@ -111,6 +111,12 @@ export interface ShiftPosting {
   takings: { cash: number; card: number; mobile_money: number; other: number };
   tips: number;
   tax: number;
+  /**
+   * The tax taken apart: each levy, then VAT, with the account each is owed
+   * to. See levies.ts. Absent, the whole figure goes to VAT payable, which
+   * is what a business with no levies has always had.
+   */
+  taxParts?: { account_code: string; amount: number; name: string }[];
   discounts: number;
   cogs: number;
   cashVariance: number;
@@ -171,7 +177,9 @@ export async function postShift(p: ShiftPosting): Promise<string[]> {
       },
       // The makers' part of a craft shift is held for them, not earned.
       { account_code: ACCOUNTS.owedToMakers, debit: 0, credit: makersShare, memo: 'Owed to makers' },
-      { account_code: ACCOUNTS.taxPayable, debit: 0, credit: p.tax, memo: 'Tax collected' },
+      ...(p.taxParts && p.taxParts.length > 0
+        ? p.taxParts.map((t) => ({ account_code: t.account_code, debit: 0, credit: t.amount, memo: `${t.name} collected` }))
+        : [{ account_code: ACCOUNTS.taxPayable, debit: 0, credit: p.tax, memo: 'Tax collected' }]),
       { account_code: ACCOUNTS.tipsPayable, debit: 0, credit: p.tips, memo: 'Tips owed to staff' },
     ].filter((l) => l.debit !== 0 || l.credit !== 0);
 
@@ -795,18 +803,33 @@ export async function correctEntry(
  */
 export async function hanging(venueId: string): Promise<{
   card: number; momo: number; tips: number; tax: number;
+  /** Each tax account with something owed, so a remittance can name its return. */
+  taxes: { account_code: string; name: string; amount: number }[];
 }> {
   const { rows } = await trialBalance(venueId);
   const bal = (code: string) => rows.find((r) => r.account_code === code)?.balance ?? 0;
+  const taxes = TAX_ACCOUNTS
+    .map((t) => ({ ...t, amount: Math.max(0, -bal(t.account_code)) }))
+    .filter((t) => t.amount > 0);
   return {
     // Assets are held as debits, so a positive balance is money waiting.
     card: Math.max(0, bal(ACCOUNTS.cardClearing)),
     momo: Math.max(0, bal(ACCOUNTS.momoClearing)),
     // Liabilities the other way round.
     tips: Math.max(0, -bal(ACCOUNTS.tipsPayable)),
-    tax: Math.max(0, -bal(ACCOUNTS.taxPayable)),
+    tax: taxes.reduce((s, t) => s + t.amount, 0),
+    taxes,
   };
 }
+
+/** Every account a tax or levy is owed from, in the order a return lists them. */
+export const TAX_ACCOUNTS: readonly { account_code: string; name: string }[] = [
+  { account_code: ACCOUNTS.taxPayable, name: 'VAT' },
+  { account_code: ACCOUNTS.nhilPayable, name: 'NHIL' },
+  { account_code: ACCOUNTS.getfundPayable, name: 'GETFund levy' },
+  { account_code: ACCOUNTS.tourismPayable, name: 'Tourism levy' },
+  { account_code: ACCOUNTS.otherLeviesPayable, name: 'Other levies' },
+];
 
 /**
  * A provider settled card or mobile-money takings into the bank.
@@ -853,15 +876,17 @@ export async function postTipsPaid(
 /** Tax remitted to the revenue authority, from the bank. */
 export async function postTaxRemitted(
   venueId: string,
-  t: { amount: number; date?: Date; reference?: string; postedBy: string },
+  t: { amount: number; date?: Date; reference?: string; postedBy: string; account?: string },
 ): Promise<string> {
+  const account = t.account || ACCOUNTS.taxPayable;
+  const name = TAX_ACCOUNTS.find((a) => a.account_code === account)?.name ?? 'Tax';
   const entry = await postEntry(venueId, {
     date: t.date,
     source: 'adjustment',
-    sourceId: t.reference ? `tax:${t.reference}` : undefined,
-    memo: `Tax remitted${t.reference ? ` · ${t.reference}` : ''}`,
+    sourceId: t.reference ? `tax:${account}:${t.reference}` : undefined,
+    memo: `${name} remitted${t.reference ? ` · ${t.reference}` : ''}`,
     postedBy: t.postedBy,
-  }, taxRemittedLines(t.amount, ACCOUNTS.taxPayable, ACCOUNTS.bank));
+  }, taxRemittedLines(t.amount, account, ACCOUNTS.bank));
   return entry.$id;
 }
 
@@ -889,8 +914,11 @@ export async function postTaxRemitted(
  * The lines are replaced rather than patched. An edit changes how many there
  * are, and matching an old line to a new one is guesswork that gets the
  * account wrong in exactly the case somebody was fixing.
+ *
+ * Reached through correctEntry, which decides whether an edit is the right
+ * shape for where the entry sits. Nothing else edits in place.
  */
-export async function editEntry(
+async function editEntry(
   entry: JournalEntry,
   next: { date?: Date; memo: string; lines: PostingLine[] },
   opts: { editedBy: string },

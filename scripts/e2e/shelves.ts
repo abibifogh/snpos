@@ -17,6 +17,8 @@ import {
 } from './core/ledger.ts';
 import { makersShareOf } from './core/consignment-math.ts';
 import { receiveStock } from './core/stock.ts';
+import { computeTotals } from './core/pricing.ts';
+import { GHANA_LEVIES, splitTax, serialiseLevies } from './core/pricing.ts';
 
 const ok = (label: string, got: unknown, want: unknown) => {
   const pass = JSON.stringify(got) === JSON.stringify(want);
@@ -701,17 +703,17 @@ console.log('\n=== R — settling up clears what the shift close left hanging ==
     takings: { cash: 10_000, card: 0, mobile_money: 12_400, other: 0 },
     tips: 1_240, tax: 3_000, discounts: 0, cogs: 0, cashVariance: 0, expenses: [],
   });
-  const before = await hanging('main');
+  const b = await hanging('main');
   results.push(['R after a close, MoMo, tips and tax are all waiting', ok(
-    'hanging', before, { card: 0, momo: 12_400, tips: 1_240, tax: 3_000 },
+    'hanging', [b.card, b.momo, b.tips, b.tax, b.taxes], [0, 12_400, 1_240, 3_000, [{ account_code: '2100', name: 'VAT', amount: 3_000 }]],
   )]);
 
   await postSettlement('main', { kind: 'momo', received: 12_276, fee: 124, reference: 'MTN-77', postedBy: 'micheal' });
   await postTipsPaid('main', { amount: 1_240, postedBy: 'micheal' });
   await postTaxRemitted('main', { amount: 3_000, reference: 'GRA-SEP', postedBy: 'micheal' });
-  const after = await hanging('main');
+  const a = await hanging('main');
   results.push(['R settled, paid and remitted, nothing is left hanging', ok(
-    'hanging', after, { card: 0, momo: 0, tips: 0, tax: 0 },
+    'hanging', [a.card, a.momo, a.tips, a.tax, a.taxes], [0, 0, 0, 0, []],
   )]);
   const lines = __all('journal_lines') as any[];
   const bank = lines.filter((l) => l.account_code === '1040').reduce((s, l) => s + l.debit - l.credit, 0);
@@ -754,6 +756,34 @@ console.log('\n=== S — a correction in a closed month is a reversal and a fres
   )]);
   const net = lines.filter((l) => l.account_code === '6010').reduce((s, l) => s + l.debit - l.credit, 0);
   results.push(['S the books net to the corrected figure', ok('transport', net, 2_500)]);
+}
+
+/* ----------------------------------------- VAT and the levies beside it */
+
+console.log('\n=== T — a bill carries each levy, and the close credits each to its own account ===');
+{
+  __reset();
+  const settings = { tax_rate_bp: 1500, tax_inclusive: false, service_charge_bp: 0, levies: serialiseLevies([...GHANA_LEVIES]) };
+  const totals = computeTotals({
+    lines: [{ key: 'k', menu_item_id: 'm', name: 'Jollof', unit_price: 10_000, qty: 1, addons: [] }],
+    settings,
+  });
+  results.push(['T a 10,000 bill carries NHIL, GETFund, tourism, then VAT on the lot', ok(
+    'parts / total', [totals.tax_parts.map((p) => [p.key, p.amount]), totals.total],
+    [[['nhil', 250], ['getfund', 250], ['tourism', 100], ['vat', 1590]], 12_190],
+  )]);
+
+  const parts = splitTax(totals.tax_total, { vatBp: 1500, levies: [...GHANA_LEVIES] });
+  const ids = await postShift({
+    venueId: 'main', shiftId: 'sh11', postedBy: 'kofi', module: 'kitchen',
+    takings: { cash: 12_190, card: 0, mobile_money: 0, other: 0 },
+    tips: 0, tax: totals.tax_total, taxParts: parts, discounts: 0, cogs: 0, cashVariance: 0, expenses: [],
+  });
+  const lines = (__all('journal_lines') as any[]).filter((l) => l.entry_id === ids[0]);
+  const by = Object.fromEntries(lines.map((l) => [l.account_code, l.debit - l.credit]));
+  results.push(['T each levy is owed on its own account', ok(
+    'lines', by, { '1000': 12_190, '4000': -10_000, '2110': -250, '2120': -250, '2130': -100, '2100': -1_590 },
+  )]);
 }
 
 /* ------------------------------ a group order, from the link to the pass */

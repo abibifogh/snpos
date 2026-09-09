@@ -5,7 +5,9 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   bpToPercent, percentToBp, toInput, parseMoney,
   ADMIN_SECTIONS, GRANTABLE_ROLES, DEFAULT_ACCESS, parseAccess, asksForTip, modulesOf, saveDropping,
+  parseLevies, serialiseLevies, GHANA_LEVIES,
 } from '@snpos/core';
+import type { Levy } from '@snpos/core';
 import type { Settings, Doc } from '@snpos/core';
 
 import { useSession } from '../session';
@@ -245,6 +247,7 @@ export function SettingsPage() {
         secondary_color: form.secondary_color,
         tax_rate_bp: Number(form.tax_rate_bp),
         tax_inclusive: form.tax_inclusive,
+        levies: form.levies ?? '',
         service_charge_bp: Number(form.service_charge_bp),
         kitchen_ack_sla_seconds: Number(form.kitchen_ack_sla_seconds),
         require_reject_reason: form.require_reject_reason,
@@ -528,6 +531,58 @@ export function SettingsPage() {
         <Field hint="Tax-inclusive means the price on the menu is what the customer pays; tax is worked out from it rather than added on top.">
           <Toggle checked={form.tax_inclusive} onChange={(v) => set('tax_inclusive', v)} label="Menu prices include tax" />
         </Field>
+
+        {/*
+          The levies beside VAT. Each is declared on its own return to a
+          different body, and the rate above is VAT, which Ghana charges on
+          the price PLUS these. A business with none switched on gets the
+          single rate it always had.
+        */}
+        <h3 style={{ marginTop: '1.6rem' }}>Levies beside VAT</h3>
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Each levy is a share of the price and is owed to its own body on its own return. The tax rate above is
+          VAT, charged on the price plus these levies, which is how Ghana stacks them. Receipts show each one,
+          and every shift close credits each to its own account.
+        </p>
+        <div className="stack" style={{ gap: '0.5rem' }}>
+          {GHANA_LEVIES.map((known) => {
+            const current = parseLevies(form.levies);
+            const mine = current.find((l) => l.key === known.key);
+            const on = !!mine;
+            const write = (next: Levy[]) => set('levies', serialiseLevies(next));
+            return (
+              <div className="row row-wrap" key={known.key} style={{ gap: '0.6rem 1rem' }}>
+                <Toggle
+                  checked={on}
+                  onChange={(v) => write(v
+                    ? [...current.filter((l) => l.key !== known.key), { ...known }]
+                    : current.filter((l) => l.key !== known.key))}
+                  label={known.name}
+                />
+                {on && (
+                  <label className="row small dim" style={{ gap: '0.4rem' }}>
+                    at
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      style={{ width: '6rem' }}
+                      value={bpToPercent(mine?.rate_bp ?? known.rate_bp)}
+                      onChange={(e) => write(current.map((l) => (l.key === known.key
+                        ? { ...l, rate_bp: percentToBp(e.target.value) }
+                        : l)))}
+                    />
+                    %
+                  </label>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <p className="small dim">
+          The rates offered are the ones in force when this was written. Check them against the current
+          notice from the revenue authority; they are yours to change.
+        </p>
       </FoldCard>
 
       <FoldCard title="Tips" summary={askOn === 'none' ? 'Never asked' : `Asked on the ${askOn === 'both' ? 'till and in the kitchen' : askOn}`}>

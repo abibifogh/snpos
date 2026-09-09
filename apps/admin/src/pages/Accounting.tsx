@@ -1567,7 +1567,11 @@ function Settle({
   onChanged: () => Promise<void>;
   toast: (m: string, t?: 'ok' | 'err') => void;
 }) {
-  const [owed, setOwed] = useState<{ card: number; momo: number; tips: number; tax: number } | null>(null);
+  const [owed, setOwed] = useState<{
+    card: number; momo: number; tips: number; tax: number;
+    taxes: { account_code: string; name: string; amount: number }[];
+  } | null>(null);
+  const [taxAccount, setTaxAccount] = useState('');
   const [kind, setKind] = useState<'momo' | 'card'>('momo');
   const [receivedText, setReceivedText] = useState('');
   const [feeText, setFeeText] = useState('');
@@ -1605,7 +1609,12 @@ function Settle({
   const tips = parseMoney(tipsText, decimals) ?? 0;
   const tipsWhy = paydownProblem(tips, owed?.tips ?? 0, 'in tips');
   const tax = parseMoney(taxText, decimals) ?? 0;
-  const taxWhy = paydownProblem(tax, owed?.tax ?? 0, 'tax');
+  // One return at a time: VAT, NHIL and the rest are owed to different
+  // bodies, and a remittance names which. The first with anything owed is
+  // the default.
+  const taxChoices = owed?.taxes ?? [];
+  const chosenTax = taxChoices.find((t) => t.account_code === taxAccount) ?? taxChoices[0];
+  const taxWhy = paydownProblem(tax, chosenTax?.amount ?? 0, 'tax');
 
   return (
     <div className="stack">
@@ -1680,10 +1689,18 @@ function Settle({
 
       <Card title="Tax remitted" pad>
         <p className="small dim" style={{ marginTop: 0 }}>
-          Tax collected on sales is owed to the revenue authority until it is paid. Owed now:
-          {' '}<strong>{money(owed?.tax ?? 0)}</strong>. Paid from the bank.
+          Tax collected on sales is owed to the revenue authority until it is paid, each levy on its own return.
+          Owed now: {taxChoices.length === 0
+            ? <strong>nothing</strong>
+            : taxChoices.map((t, i) => <span key={t.account_code}>{i > 0 ? ' · ' : ''}<strong>{money(t.amount)}</strong> {t.name}</span>)}.
+          Paid from the bank.
         </p>
         <div className="grid-2">
+          <Field label="Which return">
+            <Select value={chosenTax?.account_code ?? ''} onChange={(e) => setTaxAccount(e.target.value)}>
+              {taxChoices.map((t) => <option key={t.account_code} value={t.account_code}>{t.name} · {money(t.amount)} owed</option>)}
+            </Select>
+          </Field>
           <Field label="Remitted"><Input inputMode="decimal" value={taxText} onChange={(e) => setTaxText(e.target.value)} /></Field>
           <Field label="On"><Input type="date" value={taxDate} onChange={(e) => setTaxDate(e.target.value)} /></Field>
           <Field label="Reference" hint="The return or receipt number."><Input value={taxRef} onChange={(e) => setTaxRef(e.target.value)} /></Field>
@@ -1692,10 +1709,12 @@ function Settle({
         <div className="row" style={{ marginTop: '0.75rem' }}>
           <Button
             variant="primary"
-            disabled={!!taxWhy || busy !== null}
+            disabled={!!taxWhy || !chosenTax || busy !== null}
             loading={busy === 'tax'}
             onClick={() => run('tax', async () => {
-              await postTaxRemitted(venueId, { amount: tax, date: at(taxDate), reference: taxRef.trim(), postedBy: userId });
+              await postTaxRemitted(venueId, {
+                amount: tax, date: at(taxDate), reference: taxRef.trim(), postedBy: userId, account: chosenTax?.account_code,
+              });
               setTaxText(''); setTaxRef('');
             }, `${money(tax)} of tax remitted`)}
           >

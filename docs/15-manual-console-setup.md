@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **88 collections, 1189 fields and 288 indexes**. Entered by hand at a
+> This is **88 collections, 1190 fields and 288 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -258,7 +258,7 @@ There are 88 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: _none, server only_ · **Update**: Team: admins · **Delete**: _none, server only_
 
-**Attributes** (61)
+**Attributes** (62)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -277,6 +277,7 @@ There are 88 collections. A progress checklist is at the end of this document.
 | `favicon_id` | String | size 64 | No | ,  | No |
 | `tax_rate_bp` | Integer | ,  | **Yes** | ,  | No |
 | `tax_inclusive` | Boolean | ,  | **Yes** | ,  | No |
+| `levies` | String | size 2000 | No | ,  | No |
 | `service_charge_bp` | Integer | ,  | **Yes** | ,  | No |
 | `shift_float_policy` | Enum | zero, carry_over, fixed, prompt | **Yes** | ,  | No |
 | `shift_float_default` | Integer | ,  | **Yes** | ,  | No |
@@ -3088,7 +3089,11 @@ Auto-generated Document IDs are fine. Set `system` to `true` on all of them.
 | `1220` | Inventory - craft shop | `asset` |
 | `1500` | Equipment and fittings | `asset` |
 | `1510` | Less: accumulated depreciation | `asset` |
-| `2100` | Tax payable | `liability` |
+| `2100` | VAT payable | `liability` |
+| `2110` | NHIL payable | `liability` |
+| `2120` | GETFund levy payable | `liability` |
+| `2130` | Tourism levy payable | `liability` |
+| `2190` | Other levies payable | `liability` |
 | `2200` | Tips payable | `liability` |
 | `2400` | Owed to makers | `liability` |
 | `2300` | Accounts payable | `liability` |
@@ -3204,7 +3209,7 @@ way mistakes creep in.
 - [ ]  2. `venue_menu_items` (7 fields, 2 indexes)
 - [ ]  3. `organisations` (13 fields, 3 indexes)
 - [ ]  4. `org_requests` (10 fields, 1 indexes)
-- [ ]  5. `settings` (61 fields, 1 indexes)
+- [ ]  5. `settings` (62 fields, 1 indexes)
 - [ ]  6. `payment_methods` (12 fields, 3 indexes)
 - [ ]  7. `categories` (13 fields, 3 indexes)
 - [ ]  8. `menu_items` (33 fields, 6 indexes)

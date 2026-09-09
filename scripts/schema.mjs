@@ -213,6 +213,9 @@ export const COLLECTIONS = [
       ['favicon_id', 's', 64, false],
       ['tax_rate_bp', 'i', null, true, 0],
       ['tax_inclusive', 'b', null, true, true],
+      // The levies beside VAT, as JSON: [{key, name, rate_bp}]. VAT (the rate
+      // above) applies on top of them. Empty is the single rate as before.
+      ['levies', 's', 2000, false],
       ['service_charge_bp', 'i', null, true, 0],
       // What a shift starts with in the drawer.
       //   zero       nothing carried over; count it in each time
@@ -4023,6 +4026,8 @@ export const SYSTEM_ACCOUNT_CODES = [
   '1040', '2400',
   // A settlement posts the provider's fee here by number.
   '6070',
+  // The levies beside VAT, each credited by number at shift close.
+  '2110', '2120', '2130', '2190',
 ];
 
 export const SEED_ACCOUNTS = [
@@ -4050,7 +4055,12 @@ export const SEED_ACCOUNTS = [
   // subtracted from the cost, because "what it cost" and "how much of it has
   // been used up" are both worth being able to read.
   ['1510', 'Less: accumulated depreciation', 'asset'],
-  ['2100', 'Tax payable', 'liability'],
+  ['2100', 'VAT payable', 'liability'],
+  // Ghana's levies, each declared on its own return. See levies.ts.
+  ['2110', 'NHIL payable', 'liability'],
+  ['2120', 'GETFund levy payable', 'liability'],
+  ['2130', 'Tourism levy payable', 'liability'],
+  ['2190', 'Other levies payable', 'liability'],
   ['2200', 'Tips payable', 'liability'],
   // A consigned piece is not the shop's. When it sells, the maker's share is
   // theirs from that moment and the shop is holding it.

@@ -61,6 +61,8 @@ export interface OrderTotals {
   discount_total: number;
   service_total: number;
   tax_total: number;
+  /** What the tax is made of: each levy, then VAT. See levies.ts. */
+  tax_parts: TaxPart[];
   delivery_fee: number;
   total: number;
 }
@@ -70,7 +72,7 @@ export interface TotalsInput {
   /** Already-resolved discount amount in minor units. */
   discount?: number;
   deliveryFee?: number;
-  settings: Pick<Settings, 'tax_rate_bp' | 'tax_inclusive' | 'service_charge_bp'>;
+  settings: Pick<Settings, 'tax_rate_bp' | 'tax_inclusive' | 'service_charge_bp'> & { levies?: string };
 }
 
 /**
@@ -95,16 +97,22 @@ export function computeTotals({ lines, discount = 0, deliveryFee = 0, settings }
   const service_total = Math.round((discounted * (settings.service_charge_bp || 0)) / 10000);
   const taxableBase = discounted + service_total + deliveryFee;
 
-  const rate = settings.tax_rate_bp || 0;
-  const tax_total = settings.tax_inclusive
-    ? Math.round(taxableBase - (taxableBase * 10000) / (10000 + rate))
-    : Math.round((taxableBase * rate) / 10000);
+  // VAT and the levies beside it, part by part. See levies.ts: with no
+  // levies this is the single rate the system always had, to the rounding.
+  const tax = taxBreakdown({
+    taxable: taxableBase,
+    vatBp: settings.tax_rate_bp || 0,
+    inclusive: !!settings.tax_inclusive,
+    levies: parseLevies(settings.levies),
+  });
+  const tax_total = tax.total;
 
   return {
     subtotal,
     discount_total,
     service_total,
     tax_total,
+    tax_parts: tax.parts,
     delivery_fee: deliveryFee,
     // Inclusive tax is already inside the prices, so adding it again would
     // charge the customer twice.
@@ -148,7 +156,7 @@ export function retotalOrder({
   quantities: Record<string, number>;
   discount?: number;
   deliveryFee?: number;
-  settings: Pick<Settings, 'tax_rate_bp' | 'tax_inclusive' | 'service_charge_bp'>;
+  settings: Pick<Settings, 'tax_rate_bp' | 'tax_inclusive' | 'service_charge_bp'> & { levies?: string };
 }): OrderTotals {
   const cart: CartLine[] = lines
     .filter((l) => l.status !== 'void')
@@ -174,3 +182,182 @@ export function retotalOrder({
 
   return computeTotals({ lines: cart.filter((l) => l.qty > 0), discount, deliveryFee, settings });
 }
+
+/* ------------------------------------------------ VAT and the levies beside it */
+
+/*
+ * Tax as Ghana actually charges it: VAT, and the levies beside it.
+ *
+ * The system had one tax rate. A receipt in Accra carries several: the
+ * National Health Insurance Levy and the GETFund levy on the price, the
+ * tourism levy on the price, and VAT on the price PLUS those levies. Each is
+ * declared on its own return to a different body, and a single rate cannot
+ * produce any of them.
+ *
+ * Here rather than in a file of its own because this file imports nothing at
+ * runtime and computeTotals needs the arithmetic; a pure module cannot reach
+ * a sibling. Mirrored in functions/order-guard/src/money.js, kept the same
+ * by the parity test.
+ */
+
+
+export interface Levy {
+  /** 'nhil', 'getfund', 'tourism', or anything the business calls its own. */
+  key: string;
+  /** What the receipt says: 'NHIL', 'GETFund', 'Tourism levy'. */
+  name: string;
+  /** Basis points: 250 is 2.5%. */
+  rate_bp: number;
+}
+
+/**
+ * The levies a Ghanaian hospitality business is likely to charge, at the
+ * rates in force when this was written. Rates are the business's to set;
+ * these are only the starting point the settings page offers.
+ */
+export const GHANA_LEVIES: readonly Levy[] = [
+  { key: 'nhil', name: 'NHIL', rate_bp: 250 },
+  { key: 'getfund', name: 'GETFund levy', rate_bp: 250 },
+  { key: 'tourism', name: 'Tourism levy', rate_bp: 100 },
+];
+
+/**
+ * Where each levy is owed, by account number.
+ *
+ * A copy of what accounts.ts holds, because this file imports nothing at
+ * runtime; a parity test keeps the two the same. A levy the chart has no
+ * account for goes to "Other levies payable" rather than being folded into
+ * VAT, which would file it on the wrong return.
+ */
+export const LEVY_ACCOUNTS: Record<string, string> = {
+  vat: '2100',
+  nhil: '2110',
+  getfund: '2120',
+  tourism: '2130',
+};
+export const OTHER_LEVIES_ACCOUNT = '2190';
+export const levyAccount = (key: string): string => LEVY_ACCOUNTS[key] ?? OTHER_LEVIES_ACCOUNT;
+
+/** Settings keep the list as JSON text. Anything unreadable is no levies. */
+export function parseLevies(raw?: string | null): Levy[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((l): l is Levy => !!l && typeof l === 'object' && typeof (l as Levy).key === 'string')
+      .map((l) => ({
+        key: String(l.key).trim(),
+        name: String(l.name ?? l.key).trim(),
+        rate_bp: Math.max(0, Math.round(Number(l.rate_bp) || 0)),
+      }))
+      .filter((l) => l.key !== '' && l.rate_bp > 0);
+  } catch {
+    return [];
+  }
+}
+
+export const serialiseLevies = (levies: Levy[]): string =>
+  JSON.stringify(levies.filter((l) => l.key.trim() !== '' && l.rate_bp > 0)
+    .map((l) => ({ key: l.key.trim(), name: l.name.trim() || l.key.trim(), rate_bp: Math.round(l.rate_bp) })));
+
+export interface TaxPart {
+  key: string;
+  name: string;
+  amount: number;
+  account_code: string;
+}
+
+export interface TaxBreakdown {
+  /** Everything owed onward, minor units. */
+  total: number;
+  /** The levies in the order given, then VAT last. Only the non-zero ones. */
+  parts: TaxPart[];
+}
+
+/**
+ * The tax on a taxable amount, part by part.
+ *
+ * ADDED ON TOP: each levy is a share of the taxable amount, rounded; VAT is a
+ * share of the taxable amount plus the levies, because that is how Ghana
+ * stacks it. INCLUDED IN THE PRICE: the same stack, worked backwards from
+ * the price the customer sees; the total is the whole stack, and the parts
+ * are the levies rounded from the underlying base with VAT taking the
+ * remainder, so the parts always add up to the total.
+ *
+ * With no levies the result is exactly the single-rate arithmetic the
+ * system had, to the rounding, so nothing already priced changes.
+ */
+export function taxBreakdown(input: {
+  taxable: number;
+  vatBp: number;
+  inclusive: boolean;
+  levies: Levy[];
+}): TaxBreakdown {
+  const taxable = Math.round(input.taxable);
+  const vatBp = Math.max(0, Math.round(input.vatBp || 0));
+  const levies = input.levies.filter((l) => l.rate_bp > 0);
+  const leviesBp = levies.reduce((s, l) => s + l.rate_bp, 0);
+
+  if (taxable === 0 || (vatBp === 0 && leviesBp === 0)) return { total: 0, parts: [] };
+
+  let total: number;
+  let base: number;
+  if (input.inclusive) {
+    // Exactly the old formula when there are no levies: the price less the
+    // price divided by one plus the rate.
+    base = (taxable * 10000 * 10000) / ((10000 + leviesBp) * (10000 + vatBp));
+    total = Math.round(taxable - base);
+  } else {
+    base = taxable;
+    const leviesSum = levies.reduce((s, l) => s + Math.round((base * l.rate_bp) / 10000), 0);
+    const vat = Math.round(((base + leviesSum) * vatBp) / 10000);
+    total = leviesSum + vat;
+  }
+
+  const parts: TaxPart[] = [];
+  let given = 0;
+  for (const l of levies) {
+    const amount = Math.round((base * l.rate_bp) / 10000);
+    if (amount > 0) parts.push({ key: l.key, name: l.name, amount, account_code: levyAccount(l.key) });
+    given += amount;
+  }
+  const vat = total - given;
+  if (vat > 0 || parts.length === 0) parts.push({ key: 'vat', name: 'VAT', amount: vat, account_code: LEVY_ACCOUNTS.vat });
+  return { total, parts };
+}
+
+/**
+ * A tax total already on an order, taken apart again.
+ *
+ * Orders store one tax figure, and that is enough: with the rates known the
+ * stack is fixed, so the underlying base follows from the total and each
+ * part from the base. Used at shift close to credit each levy to its own
+ * account, and on a receipt to print the lines. Whether the price included
+ * the tax or not makes no difference here — the stack is the same stack.
+ */
+export function splitTax(taxTotal: number, input: { vatBp: number; levies: Levy[] }): TaxPart[] {
+  const total = Math.max(0, Math.round(taxTotal));
+  if (total === 0) return [];
+  const levies = input.levies.filter((l) => l.rate_bp > 0);
+  const leviesBp = levies.reduce((s, l) => s + l.rate_bp, 0);
+  const vatBp = Math.max(0, Math.round(input.vatBp || 0));
+  // total = base * (L + (1 + L) * V), all in basis points.
+  const stack = leviesBp / 10000 + (1 + leviesBp / 10000) * (vatBp / 10000);
+  if (stack === 0) return [{ key: 'vat', name: 'VAT', amount: total, account_code: LEVY_ACCOUNTS.vat }];
+  const base = total / stack;
+  const parts: TaxPart[] = [];
+  let given = 0;
+  for (const l of levies) {
+    const amount = Math.round((base * l.rate_bp) / 10000);
+    if (amount > 0) parts.push({ key: l.key, name: l.name, amount, account_code: levyAccount(l.key) });
+    given += amount;
+  }
+  const vat = total - given;
+  if (vat > 0 || parts.length === 0) parts.push({ key: 'vat', name: 'VAT', amount: vat, account_code: LEVY_ACCOUNTS.vat });
+  return parts;
+}
+
+/** "VAT and levies" where there are levies, "VAT" where there are not. */
+export const taxWords = (levies: Levy[], currencyCode?: string): string =>
+  levies.length > 0 ? 'VAT and levies' : currencyCode === 'GHS' ? 'VAT' : 'Tax';

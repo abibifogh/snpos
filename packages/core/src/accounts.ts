@@ -45,6 +45,15 @@ export const ACCOUNTS = {
   barInventory: '1210',
   craftInventory: '1220',
   taxPayable: '2100',
+  /**
+   * The levies beside VAT, each owed to a different body on a different
+   * return. See levies.ts: a single "tax" figure could not produce any of
+   * them.
+   */
+  nhilPayable: '2110',
+  getfundPayable: '2120',
+  tourismPayable: '2130',
+  otherLeviesPayable: '2190',
   tipsPayable: '2200',
   /**
    * What the craft shop holds for its makers.

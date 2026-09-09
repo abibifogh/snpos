@@ -967,7 +967,7 @@ export default async ({ req, res, log, error }) => {
       const totals =
         (doc.discount_total ? row('Discount', `−${money(doc.discount_total, settings)}`) : '') +
         (doc.service_total ? row('Service', money(doc.service_total, settings)) : '') +
-        (doc.tax_total ? row(`Tax${settings.tax_inclusive ? ' (included)' : ''}`, money(doc.tax_total, settings)) : '') +
+        (doc.tax_total ? row(`${settings.levies ? 'VAT and levies' : 'Tax'}${settings.tax_inclusive ? ' (included)' : ''}`, money(doc.tax_total, settings)) : '') +
         row('Total', money(doc.total, settings), true);
 
       const html = shell(
