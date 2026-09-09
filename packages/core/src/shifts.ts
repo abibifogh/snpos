@@ -4,6 +4,8 @@ import type { Order, OrderItem } from './orders';
 import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from './stock';
 import { liveOrders } from './orders';
 import { countable } from './bar-count';
+import { makersShareOf } from './consignment-math';
+import { loadConsignors } from './consignment';
 import { postShift, reverseEntry, shiftCloseEntries, lockedThroughFor, isLocked, debitsForExpense } from './ledger';
 import type { SpendDebit } from './spend-posting';
 import { isLivePayment } from './payments';
@@ -728,6 +730,7 @@ export async function closeShift(opts: {
   const soldItems = shiftOrders.length
     ? await listAll<OrderItem>('order_items', [Query.equal('order_id', shiftOrders.map((o) => o.$id))])
     : [];
+  const makersShare = await makersShareForShift(shift, shiftOrders, soldItems, settings);
 
   /*
     FINISHED ORDERS STOP BEING LIVE.
@@ -907,6 +910,7 @@ export async function closeShift(opts: {
       // Which books this shift's takings and costs belong in. A bar shift and
       // a kitchen shift close the same way and mean different trades.
       module: (shift.module ?? 'kitchen') as Module,
+      makersShare,
       // By id, so an expense already posted when it was recorded is not
       // posted again here. See postExpense.
       expenses: expensePostings,
@@ -1061,6 +1065,27 @@ export async function changeShiftClose(opts: {
  *     whole rather than half done, and said plainly, because the alternative
  *     is a reversal posted with no replacement behind it.
  */
+/**
+ * What a craft shift's takings hold for the makers.
+ *
+ * Worked out from the lines the close already has, with the same split the
+ * server uses to credit each maker, rather than read back from the makers'
+ * ledger — which a cashier closing a shift is not allowed to read. Zero on
+ * any side but the shop, and zero for a line with no maker.
+ */
+async function makersShareForShift(
+  shift: { module?: string },
+  _orders: unknown[],
+  lines: OrderItem[],
+  settings: { default_commission_bp?: number | null } | null | undefined,
+): Promise<number> {
+  if ((shift.module ?? 'kitchen') !== 'craft') return 0;
+  const withMaker = lines.filter((l) => !!l.consignor_id);
+  if (withMaker.length === 0) return 0;
+  const consignors = await loadConsignors().catch(() => [] as { $id: string }[]);
+  return makersShareOf(withMaker, consignors, settings);
+}
+
 export async function repostShiftAccounts(opts: {
   shiftId: string;
   userId: string;
@@ -1120,6 +1145,11 @@ export async function repostShiftAccounts(opts: {
 
   const paid = (await listAll<Order>('orders', [Query.equal('shift_id', shift.$id)]))
     .filter((o) => o.payment_status === 'paid');
+  const paidLines = paid.length
+    ? await listAll<OrderItem>('order_items', [Query.equal('order_id', paid.map((o) => o.$id))]).catch(() => [] as OrderItem[])
+    : [];
+  const settingsRow = (await db.getDocument(DB_ID, 'settings', 'main').catch(() => null)) as unknown as Settings | null;
+  const makersShare = await makersShareForShift(shift, paid, paidLines, settingsRow);
 
   const byKind = { cash: 0, card: 0, mobile_money: 0, other: 0 };
   for (const p of takings.payments) {
@@ -1151,6 +1181,7 @@ export async function repostShiftAccounts(opts: {
     cogs: 0,
     cashVariance: totalOff,
     module: (shift.module ?? 'kitchen') as Module,
+    makersShare,
     // They post themselves, by their own id, and none of them moved.
     expenses: [],
   });

@@ -6,7 +6,7 @@ import type { AccountRow, DepreciableAsset } from './ledger-math';
 import { MODULE_LABELS } from './access';
 import type { Module } from './access';
 import {
-  ACCOUNTS, salesAccount, cogsAccount, inventoryAccount, INVENTORY_ACCOUNTS,
+  ACCOUNTS, salesAccount, cogsAccount, inventoryAccount, INVENTORY_ACCOUNTS, payoutAccount,
 } from './accounts';
 import { spendDebits, spendPostingLines, sameDebits } from './spend-posting';
 import type { SpendDebit, SpendLine } from './spend-posting';
@@ -116,6 +116,14 @@ export interface ShiftPosting {
   /** Which side of the business this shift belongs to. Absent is the kitchen. */
   module?: Module;
   /**
+   * The part of the takings that belongs to the makers, on a craft shift.
+   *
+   * A consigned piece is not the shop's, so its sale is not the shop's income:
+   * the maker's share is credited to what the shop owes them, and only the
+   * commission is sales. Zero on a kitchen or bar shift. See makersShareOf.
+   */
+  makersShare?: number;
+  /**
    * When these entries belong, rather than when they are being written.
    *
    * Absent at a close, where the two are the same moment. Given when a shift's
@@ -144,6 +152,9 @@ export async function postShift(p: ShiftPosting): Promise<string[]> {
   const gross = p.takings.cash + p.takings.card + p.takings.mobile_money + p.takings.other;
   if (gross > 0 || p.discounts > 0) {
     const netRevenue = gross - p.tax - p.tips;
+    // Never more than the sales it came out of: a rounding quirk or a line
+    // refunded after its maker was credited must not turn sales negative.
+    const makersShare = Math.max(0, Math.min(p.makersShare ?? 0, netRevenue + p.discounts));
     const lines: PostingLine[] = [
       { account_code: ACCOUNTS.cash, debit: p.takings.cash, credit: 0, memo: 'Cash taken' },
       { account_code: ACCOUNTS.cardClearing, debit: p.takings.card, credit: 0, memo: 'Card taken' },
@@ -154,9 +165,11 @@ export async function postShift(p: ShiftPosting): Promise<string[]> {
       {
         account_code: salesAccount(p.module ?? 'kitchen'),
         debit: 0,
-        credit: netRevenue + p.discounts,
+        credit: netRevenue + p.discounts - makersShare,
         memo: `${MODULE_LABELS[p.module ?? 'kitchen']} sales`,
       },
+      // The makers' part of a craft shift is held for them, not earned.
+      { account_code: ACCOUNTS.owedToMakers, debit: 0, credit: makersShare, memo: 'Owed to makers' },
       { account_code: ACCOUNTS.taxPayable, debit: 0, credit: p.tax, memo: 'Tax collected' },
       { account_code: ACCOUNTS.tipsPayable, debit: 0, credit: p.tips, memo: 'Tips owed to staff' },
     ].filter((l) => l.debit !== 0 || l.credit !== 0);
@@ -665,6 +678,55 @@ export async function repostExpense(
 export async function accountForExpense(e: { category_key?: string; category?: string }): Promise<string> {
   const cats = await listAll<{ key: string; account_code?: string }>('expense_categories').catch(() => []);
   return cats.find((c) => c.key === (e.category_key || e.category))?.account_code || UNCATEGORISED;
+}
+
+/**
+ * A maker paid, on the books.
+ *
+ * The payout row is the event and the consignor's own ledger is what it does
+ * to their balance; this is what it does to the shop's. What the shop owed
+ * goes down, and the cash, the wallet or the bank goes down with it. See
+ * payoutAccount for which.
+ *
+ * Keyed by the payout, so a retry cannot pay the books down twice. `source`
+ * is 'adjustment' because the column is a fixed list the database only widens
+ * when it is provisioned; what identifies these is the source id.
+ */
+export async function postPayout(
+  venueId: string,
+  payout: { $id: string; amount: number; method?: string; paid_at?: string; reference?: string },
+  postedBy: string,
+): Promise<string | null> {
+  if (!(payout.amount > 0)) return null;
+  const key = `payout:${payout.$id}`;
+  const already = await db.listDocuments(DB_ID, 'journal_entries', [
+    Query.equal('venue_id', venueId), Query.equal('source_id', key), Query.limit(1),
+  ]).catch(() => ({ total: 0 }));
+  if (already.total > 0) return null;
+
+  const entry = await postEntry(
+    venueId,
+    {
+      date: payout.paid_at ? new Date(payout.paid_at) : undefined,
+      source: 'adjustment',
+      sourceId: key,
+      memo: `Paid a maker${payout.reference ? ` · ${payout.reference}` : ''}`,
+      postedBy,
+    },
+    [
+      { account_code: ACCOUNTS.owedToMakers, debit: payout.amount, credit: 0, memo: 'Owed to makers, paid' },
+      { account_code: payoutAccount(payout.method), debit: 0, credit: payout.amount, memo: 'Paid out' },
+    ],
+  );
+  return entry.$id;
+}
+
+/** The entry a payout made, if it made one. */
+export async function payoutEntry(venueId: string, payoutId: string): Promise<JournalEntry | null> {
+  const found = await db.listDocuments(DB_ID, 'journal_entries', [
+    Query.equal('venue_id', venueId), Query.equal('source_id', `payout:${payoutId}`), Query.limit(1),
+  ]).catch(() => ({ documents: [] as unknown[] }));
+  return ((found.documents ?? [])[0] as JournalEntry | undefined) ?? null;
 }
 
 /* --------------------------------------------------------- editing an entry */

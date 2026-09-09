@@ -11,7 +11,8 @@ import {
 } from './core/stock.ts';
 import { applyQuantityCorrection, createOrder, loadOpenOrders, orderItemsFor } from './core/orders.ts';
 import { unheldWords } from './core/bar-count.ts';
-import { postExpense, repostExpense, debitsForExpense } from './core/ledger.ts';
+import { postExpense, repostExpense, debitsForExpense, postShift, postPayout } from './core/ledger.ts';
+import { makersShareOf } from './core/consignment-math.ts';
 
 const ok = (label: string, got: unknown, want: unknown) => {
   const pass = JSON.stringify(got) === JSON.stringify(want);
@@ -626,6 +627,46 @@ console.log('\n=== O — a market run posts its bottles to stock and its taxi to
   const afterBy = Object.fromEntries(after.map((l) => [l.account_code, l.debit - l.credit]));
   results.push(['O a correction moves the books to the new figure', ok(
     'lines after', afterBy, { '1210': 27_600, '6000': 120, '1000': -27_720 },
+  )]);
+}
+
+/* ------------------------------------ the makers, in the shop's own books */
+
+console.log('\n=== P — a craft shift keeps its commission and holds the rest for the makers ===');
+{
+  /*
+    Before this, a craft sale was credited in full to Craft shop sales, no
+    cost was posted, and a payout never reached the books. The shop's profit
+    stood at the whole sale and the money paid to makers was invisible.
+  */
+  __reset();
+  const makers = [{ $id: 'ama', commission_bp: 3000 }];
+  const lines = [
+    { consignor_id: 'ama', line_total: 20_000, qty: 2 },   // two stoles, 30% to the shop
+    { consignor_id: '', line_total: 5_000, qty: 1 },       // the shop's own tote bag
+  ];
+  const share = makersShareOf(lines, makers, { default_commission_bp: 3000 });
+  results.push(['P the makers are owed their share of what sold', ok('share', share, 14_000)]);
+
+  const ids = await postShift({
+    venueId: 'main', shiftId: 'sh9', postedBy: 'betty', module: 'craft',
+    takings: { cash: 25_000, card: 0, mobile_money: 0, other: 0 },
+    tips: 0, tax: 0, discounts: 0, cogs: 0, cashVariance: 0, makersShare: share, expenses: [],
+  });
+  const sales = (__all('journal_lines') as any[]).filter((l) => l.entry_id === ids[0]);
+  const by = Object.fromEntries(sales.map((l) => [l.account_code, l.debit - l.credit]));
+  results.push(['P cash in; commission is sales; the rest is owed to makers', ok(
+    'lines', by, { '1000': 25_000, '4020': -11_000, '2400': -14_000 },
+  )]);
+
+  const entryId = await postPayout('main', { $id: 'p1', amount: 14_000, method: 'momo', reference: 'PAY-0001' }, 'micheal');
+  const paid = (__all('journal_lines') as any[]).filter((l) => l.entry_id === entryId);
+  const paidBy = Object.fromEntries(paid.map((l) => [l.account_code, l.debit - l.credit]));
+  results.push(['P paying the maker clears what was owed, from the wallet', ok(
+    'lines', paidBy, { '2400': 14_000, '1020': -14_000 },
+  )]);
+  results.push(['P a retried payout does not pay the books down twice', ok(
+    'again', await postPayout('main', { $id: 'p1', amount: 14_000, method: 'momo' }, 'micheal'), null,
   )]);
 }
 

@@ -4014,6 +4014,10 @@ export const SYSTEM_ACCOUNT_CODES = [
   // Depreciation posts to these three by number, the same way a shift close
   // posts to the ten above, so they cannot be deleted either.
   '1500', '1510', '6060',
+  // The bank, and what the craft shop holds for its makers. A craft sale
+  // credits the makers' share here and a payout debits it; a settlement moves
+  // card and mobile-money takings from clearing into the bank.
+  '1040', '2400',
 ];
 
 export const SEED_ACCOUNTS = [
@@ -4030,6 +4034,7 @@ export const SEED_ACCOUNTS = [
     neither of them can be found.
   */
   ['1030', 'Petty cash (imprest)', 'asset'],
+  ['1040', 'Bank account', 'asset'],
   ['1200', 'Inventory - kitchen', 'asset'],
   ['1210', 'Inventory - bar', 'asset'],
   ['1220', 'Inventory - craft shop', 'asset'],
@@ -4042,6 +4047,9 @@ export const SEED_ACCOUNTS = [
   ['1510', 'Less: accumulated depreciation', 'asset'],
   ['2100', 'Tax payable', 'liability'],
   ['2200', 'Tips payable', 'liability'],
+  // A consigned piece is not the shop's. When it sells, the maker's share is
+  // theirs from that moment and the shop is holding it.
+  ['2400', 'Owed to makers', 'liability'],
   ['2300', 'Accounts payable', 'liability'],
   ['3000', 'Owner equity', 'equity'],
   ['4000', 'Restaurant sales', 'revenue'],

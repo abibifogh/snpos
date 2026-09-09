@@ -24,6 +24,15 @@ export const ACCOUNTS = {
    */
   pettyCash: '1030',
   /**
+   * The business's bank account.
+   *
+   * Where card and mobile-money takings end up once the provider settles,
+   * where a maker paid by transfer is paid from, and where tax is remitted
+   * from. It did not exist, which is why the clearing accounts above only
+   * ever went up.
+   */
+  bank: '1040',
+  /**
    * Stock owned but not yet sold, one account per trade.
    *
    * Buying stock is not spending: the money turns into something the business
@@ -37,6 +46,16 @@ export const ACCOUNTS = {
   craftInventory: '1220',
   taxPayable: '2100',
   tipsPayable: '2200',
+  /**
+   * What the craft shop holds for its makers.
+   *
+   * A consigned piece is not the shop's: when it sells, the maker's share of
+   * the money is theirs from that moment and the shop is holding it. Crediting
+   * the whole sale to Craft shop sales overstated the shop's income by every
+   * maker's share and left the payouts with nowhere to go, so the money paid
+   * to makers was invisible in the books.
+   */
+  owedToMakers: '2400',
   /**
    * Sales and cost of sales, one pair per side of the business.
    *
@@ -121,6 +140,19 @@ export const COGS_ACCOUNTS: readonly string[] = [ACCOUNTS.cogs, ACCOUNTS.barCogs
 export const SALES_ACCOUNTS: readonly string[] = [ACCOUNTS.foodSales, ACCOUNTS.barSales, ACCOUNTS.craftSales];
 
 export const isSystemAccount = (code: string): boolean => SYSTEM_ACCOUNT_CODES.includes(code);
+
+/**
+ * Where the money for a maker's payout comes from.
+ *
+ * Cash is the drawer. A mobile-money payout is sent from the wallet that holds
+ * mobile-money takings, which is what the clearing account is until the
+ * provider settles it to the bank. Anything else is the bank.
+ */
+export function payoutAccount(method: 'cash' | 'momo' | 'bank' | 'other' | string | undefined): string {
+  if (method === 'cash') return ACCOUNTS.cash;
+  if (method === 'momo') return ACCOUNTS.momoClearing;
+  return ACCOUNTS.bank;
+}
 
 /**
  * Accounts an expense category may be pointed at.
