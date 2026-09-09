@@ -3107,6 +3107,7 @@ Auto-generated Document IDs are fine. Set `system` to `true` on all of them.
 | `6040` | Staff advances | `expense` |
 | `6050` | Petty cash | `expense` |
 | `6060` | Depreciation | `expense` |
+| `6070` | Payment provider fees | `expense` |
 | `6090` | Other expenses | `expense` |
 | `7000` | Cash over / short | `expense` |
 

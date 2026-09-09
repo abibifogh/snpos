@@ -4021,6 +4021,8 @@ export const SYSTEM_ACCOUNT_CODES = [
   // credits the makers' share here and a payout debits it; a settlement moves
   // card and mobile-money takings from clearing into the bank.
   '1040', '2400',
+  // A settlement posts the provider's fee here by number.
+  '6070',
 ];
 
 export const SEED_ACCOUNTS = [
@@ -4069,6 +4071,7 @@ export const SEED_ACCOUNTS = [
   ['6040', 'Staff advances', 'expense'],
   ['6050', 'Petty cash', 'expense'],
   ['6060', 'Depreciation', 'expense'],
+  ['6070', 'Payment provider fees', 'expense'],
   ['6090', 'Other expenses', 'expense'],
   ['7000', 'Cash over / short', 'expense'],
 ];

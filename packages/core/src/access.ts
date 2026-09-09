@@ -203,6 +203,9 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'accounting_trial', label: 'Trial balance', path: '/accounting', group: 'Money', parent: 'accounting' },
   { key: 'accounting_assets', label: 'Fixed assets and depreciation', path: '/accounting', group: 'Money', parent: 'accounting' },
   { key: 'accounting_bank', label: 'Reconcile against a statement', path: '/accounting', group: 'Money', parent: 'accounting' },
+  // The entries a shift close leaves hanging: card and mobile money reaching
+  // the bank, tips handed over, tax remitted. See settle.ts.
+  { key: 'accounting_settle', label: 'Settle card, mobile money, tips and tax', path: '/accounting', group: 'Money', parent: 'accounting' },
   { key: 'accounting_chart', label: 'Chart of accounts', path: '/accounting', group: 'Money', parent: 'accounting' },
   // Its own grant, and the most consequential of them: it decides what
   // everybody else is allowed to change, including the person who closed it.

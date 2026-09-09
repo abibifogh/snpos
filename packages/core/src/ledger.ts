@@ -9,6 +9,7 @@ import {
   ACCOUNTS, salesAccount, cogsAccount, inventoryAccount, INVENTORY_ACCOUNTS, payoutAccount,
 } from './accounts';
 import { spendDebits, spendPostingLines, sameDebits } from './spend-posting';
+import { settlementLines, tipsPaidLines, taxRemittedLines } from './settle';
 import type { SpendDebit, SpendLine } from './spend-posting';
 
 export interface JournalEntry extends Doc {
@@ -727,6 +728,87 @@ export async function payoutEntry(venueId: string, payoutId: string): Promise<Jo
     Query.equal('venue_id', venueId), Query.equal('source_id', `payout:${payoutId}`), Query.limit(1),
   ]).catch(() => ({ documents: [] as unknown[] }));
   return ((found.documents ?? [])[0] as JournalEntry | undefined) ?? null;
+}
+
+/* ------------------------------------------------------------- settling up */
+
+/**
+ * What a shift close has left hanging, as at now.
+ *
+ * Card and mobile money not yet settled to the bank, tips not yet handed
+ * over, tax not yet remitted. Read from the lines rather than kept as a
+ * figure, so they cannot drift.
+ */
+export async function hanging(venueId: string): Promise<{
+  card: number; momo: number; tips: number; tax: number;
+}> {
+  const { rows } = await trialBalance(venueId);
+  const bal = (code: string) => rows.find((r) => r.account_code === code)?.balance ?? 0;
+  return {
+    // Assets are held as debits, so a positive balance is money waiting.
+    card: Math.max(0, bal(ACCOUNTS.cardClearing)),
+    momo: Math.max(0, bal(ACCOUNTS.momoClearing)),
+    // Liabilities the other way round.
+    tips: Math.max(0, -bal(ACCOUNTS.tipsPayable)),
+    tax: Math.max(0, -bal(ACCOUNTS.taxPayable)),
+  };
+}
+
+/**
+ * A provider settled card or mobile-money takings into the bank.
+ *
+ * The clearing account goes down by what the customers paid; the bank goes
+ * up by what arrived and the difference is the provider's fee. See
+ * settlementLines for why the fee is part of it.
+ */
+export async function postSettlement(
+  venueId: string,
+  s: { kind: 'card' | 'momo'; received: number; fee: number; date?: Date; reference?: string; postedBy: string },
+): Promise<string> {
+  const lines = settlementLines({
+    received: s.received,
+    fee: s.fee,
+    clearingAccount: s.kind === 'card' ? ACCOUNTS.cardClearing : ACCOUNTS.momoClearing,
+    bankAccount: ACCOUNTS.bank,
+    feesAccount: ACCOUNTS.providerFees,
+  });
+  const entry = await postEntry(venueId, {
+    date: s.date,
+    source: 'adjustment',
+    sourceId: `settlement:${s.kind}:${s.reference || (s.date ?? new Date()).toISOString().slice(0, 10)}`,
+    memo: `${s.kind === 'card' ? 'Card' : 'Mobile money'} settled to the bank${s.reference ? ` · ${s.reference}` : ''}`,
+    postedBy: s.postedBy,
+  }, lines);
+  return entry.$id;
+}
+
+/** Tips handed to the staff they were left for, out of the drawer. */
+export async function postTipsPaid(
+  venueId: string,
+  t: { amount: number; date?: Date; note?: string; postedBy: string },
+): Promise<string> {
+  const entry = await postEntry(venueId, {
+    date: t.date,
+    source: 'adjustment',
+    memo: `Tips paid to staff${t.note ? ` · ${t.note}` : ''}`,
+    postedBy: t.postedBy,
+  }, tipsPaidLines(t.amount, ACCOUNTS.tipsPayable, ACCOUNTS.cash));
+  return entry.$id;
+}
+
+/** Tax remitted to the revenue authority, from the bank. */
+export async function postTaxRemitted(
+  venueId: string,
+  t: { amount: number; date?: Date; reference?: string; postedBy: string },
+): Promise<string> {
+  const entry = await postEntry(venueId, {
+    date: t.date,
+    source: 'adjustment',
+    sourceId: t.reference ? `tax:${t.reference}` : undefined,
+    memo: `Tax remitted${t.reference ? ` · ${t.reference}` : ''}`,
+    postedBy: t.postedBy,
+  }, taxRemittedLines(t.amount, ACCOUNTS.taxPayable, ACCOUNTS.bank));
+  return entry.$id;
 }
 
 /* --------------------------------------------------------- editing an entry */

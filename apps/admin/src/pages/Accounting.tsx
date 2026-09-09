@@ -9,6 +9,7 @@ import {
   matchStatement, readStatement, parseCsv, loadStatementLines, importStatementLines,
   postFromStatement, attachReceipt, downloadUrl, areasOf,
   loadLocks, lockPeriod, openAccounts,
+  hanging, postSettlement, postTipsPaid, postTaxRemitted, settlementProblem, paydownProblem,
 } from '@snpos/core';
 import type {
   AccountRow, JournalEntry, JournalLine, FixedAsset, LineRow, Doc, BankStatementLine, Settings,
@@ -31,7 +32,7 @@ import { AccountsManager } from '../components/AccountsManager';
  * sitting, and each of those is the same figures read a different way; putting
  * them behind separate navigation makes it feel like separate work.
  */
-type Tab = 'statements' | 'journal' | 'trial' | 'assets' | 'bank' | 'chart' | 'locks';
+type Tab = 'statements' | 'journal' | 'trial' | 'assets' | 'bank' | 'settle' | 'chart' | 'locks';
 
 /** A month back from today, as YYYY-MM-DD, for the default window. */
 const monthStart = (d = new Date()) => `${d.toISOString().slice(0, 7)}-01`;
@@ -165,6 +166,7 @@ export function AccountingPage() {
           ['trial', 'Trial balance'],
           ['assets', 'Fixed assets'],
           ['bank', 'Reconcile'],
+          ['settle', 'Settle up'],
           ['chart', 'Chart of accounts'],
           ['locks', 'Close a period'],
         ] as [Tab, string][]).filter(([key]) => can(key)).map(([key, label]) => (
@@ -183,7 +185,7 @@ export function AccountingPage() {
         </Notice>
       )}
 
-      {tab !== 'chart' && tab !== 'assets' && tab !== 'bank' && (
+      {tab !== 'chart' && tab !== 'assets' && tab !== 'bank' && tab !== 'settle' && (
         <Card pad>
           <div className="grid-2">
             <Field label="From" hint="The profit and loss covers these dates.">
@@ -287,6 +289,10 @@ export function AccountingPage() {
           onChanged={load}
           toast={toast}
         />
+      )}
+
+      {tab === 'settle' && can('settle') && (
+        <Settle venueId={venueId} userId={user?.$id ?? ''} money={money} decimals={decimals} onChanged={load} toast={toast} />
       )}
 
       {tab === 'chart' && can('chart') && <AccountsManager />}
@@ -1537,6 +1543,165 @@ function Reconcile({
  * accounts that can be relied on and accounts that were true on the day they
  * were printed.
  */
+/**
+ * The entries a shift close leaves hanging, cleared.
+ *
+ * Every close debits card and mobile-money takings to a clearing account,
+ * credits tips to tips owed and tax to tax collected — and nothing ever moved
+ * any of them again, so all three climbed for ever. This is where the
+ * provider's settlement, the tips handed over and the tax remitted are
+ * written down, with the balance each one is clearing shown beside the box.
+ */
+function Settle({
+  venueId, userId, money, decimals, onChanged, toast,
+}: {
+  venueId: string;
+  userId: string;
+  money: (n: number) => string;
+  decimals: number;
+  onChanged: () => Promise<void>;
+  toast: (m: string, t?: 'ok' | 'err') => void;
+}) {
+  const [owed, setOwed] = useState<{ card: number; momo: number; tips: number; tax: number } | null>(null);
+  const [kind, setKind] = useState<'momo' | 'card'>('momo');
+  const [receivedText, setReceivedText] = useState('');
+  const [feeText, setFeeText] = useState('');
+  const [settleDate, setSettleDate] = useState(today());
+  const [settleRef, setSettleRef] = useState('');
+  const [tipsText, setTipsText] = useState('');
+  const [tipsDate, setTipsDate] = useState(today());
+  const [taxText, setTaxText] = useState('');
+  const [taxDate, setTaxDate] = useState(today());
+  const [taxRef, setTaxRef] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = () => hanging(venueId).then(setOwed).catch(() => setOwed(null));
+  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [venueId]);
+
+  const at = (d: string) => new Date(`${d}T12:00:00`);
+  const run = async (what: string, work: () => Promise<void>, done: string) => {
+    setBusy(what);
+    try {
+      await work();
+      await load();
+      await onChanged();
+      toast(done);
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const outstanding = kind === 'momo' ? (owed?.momo ?? 0) : (owed?.card ?? 0);
+  const received = parseMoney(receivedText, decimals) ?? 0;
+  const fee = parseMoney(feeText, decimals) ?? 0;
+  const settleWhy = settlementProblem({ received, fee, outstanding });
+  const tips = parseMoney(tipsText, decimals) ?? 0;
+  const tipsWhy = paydownProblem(tips, owed?.tips ?? 0, 'in tips');
+  const tax = parseMoney(taxText, decimals) ?? 0;
+  const taxWhy = paydownProblem(tax, owed?.tax ?? 0, 'tax');
+
+  return (
+    <div className="stack">
+      <Card title="Card and mobile money settled to the bank" pad>
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Every close puts card and mobile-money takings into a clearing account. When the provider pays it into
+          the bank, record it here: what arrived, and what they kept. Waiting now:
+          {' '}<strong>{money(owed?.momo ?? 0)}</strong> mobile money, <strong>{money(owed?.card ?? 0)}</strong> card.
+        </p>
+        <div className="grid-2">
+          <Field label="Which provider">
+            <Select value={kind} onChange={(e) => setKind(e.target.value as 'momo' | 'card')}>
+              <option value="momo">Mobile money</option>
+              <option value="card">Card</option>
+            </Select>
+          </Field>
+          <Field label="Paid into the bank on">
+            <Input type="date" value={settleDate} onChange={(e) => setSettleDate(e.target.value)} />
+          </Field>
+          <Field label="Amount that arrived" hint="What the bank statement shows.">
+            <Input inputMode="decimal" value={receivedText} onChange={(e) => setReceivedText(e.target.value)} />
+          </Field>
+          <Field label="Fee the provider kept" hint="Zero if they charge nothing, or bill it separately.">
+            <Input inputMode="decimal" value={feeText} onChange={(e) => setFeeText(e.target.value)} />
+          </Field>
+          <Field label="Reference" hint="The settlement or batch number, so it can be found on the statement.">
+            <Input value={settleRef} onChange={(e) => setSettleRef(e.target.value)} />
+          </Field>
+        </div>
+        {receivedText && settleWhy && <Notice tone="warn">{settleWhy}</Notice>}
+        <div className="row" style={{ marginTop: '0.75rem' }}>
+          <Button
+            variant="primary"
+            disabled={!!settleWhy || busy !== null}
+            loading={busy === 'settle'}
+            onClick={() => run('settle', async () => {
+              await postSettlement(venueId, {
+                kind, received, fee, date: at(settleDate), reference: settleRef.trim(), postedBy: userId,
+              });
+              setReceivedText(''); setFeeText(''); setSettleRef('');
+            }, `${money(received + fee)} cleared, ${money(received)} into the bank`)}
+          >
+            Record the settlement
+          </Button>
+        </div>
+      </Card>
+
+      <Card title="Tips handed to staff" pad>
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Tips are held for the staff they were left for. Owed now: <strong>{money(owed?.tips ?? 0)}</strong>.
+          Recording a payout takes it out of the drawer and off the books.
+        </p>
+        <div className="grid-2">
+          <Field label="Paid out"><Input inputMode="decimal" value={tipsText} onChange={(e) => setTipsText(e.target.value)} /></Field>
+          <Field label="On"><Input type="date" value={tipsDate} onChange={(e) => setTipsDate(e.target.value)} /></Field>
+        </div>
+        {tipsText && tipsWhy && <Notice tone="warn">{tipsWhy}</Notice>}
+        <div className="row" style={{ marginTop: '0.75rem' }}>
+          <Button
+            variant="primary"
+            disabled={!!tipsWhy || busy !== null}
+            loading={busy === 'tips'}
+            onClick={() => run('tips', async () => {
+              await postTipsPaid(venueId, { amount: tips, date: at(tipsDate), postedBy: userId });
+              setTipsText('');
+            }, `${money(tips)} of tips paid out`)}
+          >
+            Record tips paid
+          </Button>
+        </div>
+      </Card>
+
+      <Card title="Tax remitted" pad>
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Tax collected on sales is owed to the revenue authority until it is paid. Owed now:
+          {' '}<strong>{money(owed?.tax ?? 0)}</strong>. Paid from the bank.
+        </p>
+        <div className="grid-2">
+          <Field label="Remitted"><Input inputMode="decimal" value={taxText} onChange={(e) => setTaxText(e.target.value)} /></Field>
+          <Field label="On"><Input type="date" value={taxDate} onChange={(e) => setTaxDate(e.target.value)} /></Field>
+          <Field label="Reference" hint="The return or receipt number."><Input value={taxRef} onChange={(e) => setTaxRef(e.target.value)} /></Field>
+        </div>
+        {taxText && taxWhy && <Notice tone="warn">{taxWhy}</Notice>}
+        <div className="row" style={{ marginTop: '0.75rem' }}>
+          <Button
+            variant="primary"
+            disabled={!!taxWhy || busy !== null}
+            loading={busy === 'tax'}
+            onClick={() => run('tax', async () => {
+              await postTaxRemitted(venueId, { amount: tax, date: at(taxDate), reference: taxRef.trim(), postedBy: userId });
+              setTaxText(''); setTaxRef('');
+            }, `${money(tax)} of tax remitted`)}
+          >
+            Record tax remitted
+          </Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function Locks({
   venueId, userId, onChanged, toast,
 }: {

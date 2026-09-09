@@ -95,3 +95,4 @@ export * from './shift-backlog';
 export * from './dietary';
 export * from './spend-posting';
 export * from './unit-cost';
+export * from './settle';

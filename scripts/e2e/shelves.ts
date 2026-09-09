@@ -11,7 +11,9 @@ import {
 } from './core/stock.ts';
 import { applyQuantityCorrection, createOrder, loadOpenOrders, orderItemsFor } from './core/orders.ts';
 import { unheldWords } from './core/bar-count.ts';
-import { postExpense, repostExpense, debitsForExpense, postShift, postPayout } from './core/ledger.ts';
+import {
+  postExpense, repostExpense, debitsForExpense, postShift, postPayout, postSettlement, postTipsPaid, postTaxRemitted, hanging,
+} from './core/ledger.ts';
 import { makersShareOf } from './core/consignment-math.ts';
 import { receiveStock } from './core/stock.ts';
 
@@ -685,6 +687,36 @@ console.log('\n=== Q — a dear delivery moves the shelf’s cost by one bottle�
   const after = (__all('ingredients') as any[])[0];
   results.push(['Q the shelf is valued at the weighted average, not the last receipt', ok(
     'cost / last / qty', [after.base_unit_cost, after.last_unit_cost, after.current_qty], [859, 1200, 41],
+  )]);
+}
+
+/* ----------------------------------- what a close leaves hanging, cleared */
+
+console.log('\n=== R — settling up clears what the shift close left hanging ===');
+{
+  __reset();
+  await postShift({
+    venueId: 'main', shiftId: 'sh10', postedBy: 'kofi', module: 'kitchen',
+    takings: { cash: 10_000, card: 0, mobile_money: 12_400, other: 0 },
+    tips: 1_240, tax: 3_000, discounts: 0, cogs: 0, cashVariance: 0, expenses: [],
+  });
+  const before = await hanging('main');
+  results.push(['R after a close, MoMo, tips and tax are all waiting', ok(
+    'hanging', before, { card: 0, momo: 12_400, tips: 1_240, tax: 3_000 },
+  )]);
+
+  await postSettlement('main', { kind: 'momo', received: 12_276, fee: 124, reference: 'MTN-77', postedBy: 'micheal' });
+  await postTipsPaid('main', { amount: 1_240, postedBy: 'micheal' });
+  await postTaxRemitted('main', { amount: 3_000, reference: 'GRA-SEP', postedBy: 'micheal' });
+  const after = await hanging('main');
+  results.push(['R settled, paid and remitted, nothing is left hanging', ok(
+    'hanging', after, { card: 0, momo: 0, tips: 0, tax: 0 },
+  )]);
+  const lines = __all('journal_lines') as any[];
+  const bank = lines.filter((l) => l.account_code === '1040').reduce((s, l) => s + l.debit - l.credit, 0);
+  const fees = lines.filter((l) => l.account_code === '6070').reduce((s, l) => s + l.debit - l.credit, 0);
+  results.push(['R the bank holds what arrived less the tax, and the fee is a cost', ok(
+    'bank / fees', [bank, fees], [12_276 - 3_000, 124],
   )]);
 }
 

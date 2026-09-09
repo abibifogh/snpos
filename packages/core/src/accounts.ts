@@ -76,6 +76,8 @@ export const ACCOUNTS = {
   barCogs: '5010',
   craftCogs: '5020',
   cashOverShort: '7000',
+  /** What the card and mobile-money providers keep when they settle. */
+  providerFees: '6070',
   // What the business owns and uses rather than sells, and how much of it has
   // been used up. Depreciation posts to these by number.
   equipment: '1500',
