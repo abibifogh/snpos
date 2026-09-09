@@ -7,7 +7,7 @@ import {
   isPostableExpenseAccount, expenseMethodsFor, mayComeFromShift, expenseSides, asksMoneySource,
   ingredientsForSide,
   defaultExpenseSide, MODULE_LABELS, modulesOf, recomputeClosedShift,
-  repostExpense, accountForExpense,
+  repostExpense, debitsForExpense, isStockCategory,
   balancesFor, accountFor, settleBoxSpend, boxesFor, boxOverdrawn,
   buyOptions, convertPurchase, describePurchase, hasPack, categoriesForSide, canSeePrivateExpenses,
 } from '@snpos/core';
@@ -373,7 +373,12 @@ export function ExpensesPage() {
       .map((d) => ingredients.find((i) => i.$id === d.ingredient_id)?.expense_category_key)
       .filter(Boolean) as string[];
     if (keys.length === 0) return null;
-    return keys.every((k) => k === keys[0]) ? keys[0] : null;
+    if (!keys.every((k) => k === keys[0])) return null;
+    // An ingredient pointing at "Kitchen stock" no longer implies anything:
+    // its lines post to inventory on their own, and the category is only
+    // asked for whatever is not on a shelf. See isStockCategory.
+    const cat = (categories ?? []).find((c) => c.key === keys[0]);
+    return cat && isStockCategory(cat) ? null : keys[0];
   })();
 
   // Follow the stock lines as they are typed. Only ever moves the category to
@@ -468,15 +473,29 @@ export function ExpensesPage() {
       const paidFromBox = payload.imprest_float_id
         ? boxes.find((b) => b.$id === payload.imprest_float_id) ?? null
         : null;
-      void accountForExpense(payload)
-        .then(async (accountCode) => {
+      /*
+        What it is charged to comes from the lines — the ones already on the
+        row and the ones being added now. Stock to this side's inventory, the
+        rest to the category. See debitsForExpense, which the till and the
+        shift close share.
+      */
+      const postingItems = [
+        ...savedItems.map((i) => ({ stocked: i.stocked !== false, line_total: i.line_total })),
+        ...filled.flatMap((d) => {
+          const ing = ingredients.find((i) => i.$id === d.ingredient_id);
+          return ing
+            ? [{ stocked: ing.counted_at_close !== false, line_total: parseMoney(d.totalText, decimals) ?? 0 }]
+            : [];
+        }),
+      ];
+      void debitsForExpense({ amount, module: payload.module, category_key: payload.category_key }, postingItems)
+        .then(async (debits) => {
           // Corrections included, unlike postExpense, which is once-only by
           // design. See repostExpense: an amount fixed a week later used to
           // leave the books on the old figure with nothing to show for it.
           const entryId = await repostExpense(payload.venue_id, {
             expenseId,
-            amount,
-            accountCode,
+            debits,
             postedBy: user?.$id ?? '',
             shiftId: payload.shift_id || undefined,
             // Credited to the tin, not to the till. Crediting cash for money

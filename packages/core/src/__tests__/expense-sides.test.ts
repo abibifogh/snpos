@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import {
   categoriesForSide, canSeePrivateExpenses, CATEGORY_SIDES,
   expenseMethodsFor, mayComeFromShift, expenseSides, defaultExpenseSide, asksMoneySource,
-  ingredientsForSide,
+  ingredientsForSide, isStockCategory, STOCK_ACCOUNT_CODES,
 } from '../expense-rules.ts';
+import { INVENTORY_ACCOUNTS } from '../accounts.ts';
 
 const rows = [
   { key: 'transport', module: 'general' },
@@ -283,4 +284,34 @@ test('a line somebody already typed never goes blank underneath them', () => {
   assert.deepEqual(ingredientsForSide(rows, 'bar', ['rice']).map((i) => i.$id), ['gin', 'rice']);
   // Nothing chosen, nothing kept.
   assert.deepEqual(ingredientsForSide(rows, 'bar', [undefined, '']).map((i) => i.$id), ['gin']);
+});
+
+/* ------------------------------------------- stock is not a category any more */
+
+test('a category pointing at the balance sheet is kept off every picker', () => {
+  /*
+    "Bar stock" was the only way a delivery could reach inventory, and picking
+    "Supplies" instead charged the same bottles twice. The lines of a spend
+    now say what went on a shelf, so the stock categories are hidden — and
+    still readable on the rows already filed under them.
+  */
+  const cats = [
+    { key: 'supplies', account_code: '6000' },
+    { key: 'bar_stock', account_code: '1210', module: 'bar' },
+    { key: 'transport', account_code: '6010' },
+  ];
+  assert.equal(isStockCategory(cats[1]), true);
+  assert.equal(isStockCategory(cats[0]), false);
+  assert.equal(isStockCategory({}), false);
+  assert.deepEqual(categoriesForSide(cats, 'bar').map((c) => c.key), ['supplies', 'transport']);
+  // The Categories admin page still lists it, so it can be archived or renamed.
+  assert.deepEqual(
+    categoriesForSide(cats, 'bar', { includeStock: true }).map((c) => c.key),
+    ['supplies', 'bar_stock', 'transport'],
+  );
+});
+
+test('the copy of the stock account codes matches the chart', () => {
+  // expense-rules imports nothing at runtime, so it carries its own list.
+  assert.deepEqual([...STOCK_ACCOUNT_CODES], [...INVENTORY_ACCOUNTS]);
 });

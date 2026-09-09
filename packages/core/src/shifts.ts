@@ -1,10 +1,11 @@
-import { db, DB_ID, ID, Query, listAll, saveDropping } from './client';
+import { db, DB_ID, ID, Query, listAll, listByIds, saveDropping } from './client';
 import type { Doc, Settings } from './types';
 import type { Order, OrderItem } from './orders';
 import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from './stock';
 import { liveOrders } from './orders';
 import { countable } from './bar-count';
-import { postShift, reverseEntry, shiftCloseEntries, lockedThroughFor, isLocked } from './ledger';
+import { postShift, reverseEntry, shiftCloseEntries, lockedThroughFor, isLocked, debitsForExpense } from './ledger';
+import type { SpendDebit } from './spend-posting';
 import { isLivePayment } from './payments';
 import { featureConfig, isEnabled, type FeatureMap } from './features';
 import { MODULE_LABELS } from './access';
@@ -846,15 +847,27 @@ export async function closeShift(opts: {
   }
 
   const totalOff = Object.values(variance).reduce((a, b) => a + b, 0);
-  const shiftExpenses = await listAll<{ $id: string; amount: number; category_key?: string; category?: string }>(
-    'shift_expenses',
-    [Query.equal('shift_id', shift.$id)],
-  );
-  const expenseCategories = await listAll<{ key: string; account_code?: string }>('expense_categories').catch(
-    () => [] as { key: string; account_code?: string }[],
-  );
-  const accountForExpense = (e: { category_key?: string; category?: string }) =>
-    expenseCategories.find((c) => c.key === (e.category_key || e.category))?.account_code || '6090';
+  const shiftExpenses = await listAll<{
+    $id: string; amount: number; module?: string; category_key?: string; category?: string;
+  }>('shift_expenses', [Query.equal('shift_id', shift.$id)]);
+  /*
+    What each spend is charged to, from its lines. See debitsForExpense: the
+    stock lines go to this side's inventory and the category answers only for
+    the rest, the same rule the till and the admin form apply when the spend is
+    recorded. This is the net under those — a spend whose own posting failed
+    still lands here, and one that landed is not counted twice.
+  */
+  const expenseItems = await listByIds<{ expense_id: string; stocked?: boolean; line_total: number }>(
+    'expense_items', 'expense_id', shiftExpenses.map((e) => e.$id),
+  ).catch(() => [] as { expense_id: string; stocked?: boolean; line_total: number }[]);
+  const expensePostings: { expenseId: string; debits: SpendDebit[] }[] = [];
+  for (const e of shiftExpenses) {
+    if (e.amount <= 0) continue;
+    expensePostings.push({
+      expenseId: e.$id,
+      debits: await debitsForExpense(e, expenseItems.filter((i) => i.expense_id === e.$id)),
+    });
+  }
 
   await db.updateDocument(DB_ID, 'shifts', shift.$id, {
     status: 'closed',
@@ -896,11 +909,7 @@ export async function closeShift(opts: {
       module: (shift.module ?? 'kitchen') as Module,
       // By id, so an expense already posted when it was recorded is not
       // posted again here. See postExpense.
-      expenses: shiftExpenses.map((e) => ({
-        expenseId: e.$id,
-        amount: e.amount,
-        accountCode: accountForExpense(e),
-      })),
+      expenses: expensePostings,
     });
     await db.updateDocument(DB_ID, 'shifts', shift.$id, { posted_to_ledger: true });
   } catch (e) {

@@ -11,6 +11,7 @@ import {
 } from './core/stock.ts';
 import { applyQuantityCorrection, createOrder, loadOpenOrders, orderItemsFor } from './core/orders.ts';
 import { unheldWords } from './core/bar-count.ts';
+import { postExpense, repostExpense, debitsForExpense } from './core/ledger.ts';
 
 const ok = (label: string, got: unknown, want: unknown) => {
   const pass = JSON.stringify(got) === JSON.stringify(want);
@@ -580,6 +581,52 @@ console.log('\n=== N — a till reopened after a count in does not ask for it ag
     'counted in', await hasOpeningCount('sh1'), null,
   )]);
   __unreachable(false);
+}
+
+/* ------------------------------------ a market run, and where it lands */
+
+console.log('\n=== O — a market run posts its bottles to stock and its taxi to transport ===');
+{
+  /*
+    The double charge this closes: filed under "Supplies", a market run used
+    to be charged to expenses on the day and again as cost of sales at close.
+    The lines now decide. Same rows, real ledger code, fake database.
+  */
+  __reset();
+  __seed('expense_categories', [
+    { $id: 'c1', key: 'supplies', name: 'Supplies', account_code: '6000' },
+    { $id: 'c2', key: 'transport', name: 'Transport', account_code: '6010' },
+  ]);
+  const items = [
+    { stocked: true, line_total: 24_000 },   // Club · Large, 24 bottles
+    { stocked: true, line_total: 3_600 },    // Tonic
+    { stocked: false, line_total: 20 },      // the taxi, an overhead line
+  ];
+  const spend = { amount: 27_620, module: 'bar', category_key: 'supplies' };
+  const debits = await debitsForExpense(spend, items);
+  results.push(['O the bottles are stock, the taxi is not', ok(
+    'debits', debits.map((d) => [d.account_code, d.amount]), [['1210', 27_600], ['6000', 20]],
+  )]);
+
+  const entryId = await postExpense('main', { expenseId: 'e1', debits, postedBy: 'regina' });
+  const lines = (__all('journal_lines') as any[]).filter((l) => l.entry_id === entryId);
+  const byAccount = Object.fromEntries(lines.map((l) => [l.account_code, l.debit - l.credit]));
+  results.push(['O the entry balances: stock and transport in, cash out', ok(
+    'lines', byAccount, { '1210': 27_600, '6000': 20, '1000': -27_620 },
+  )]);
+
+  // Posted again by the shift close: nothing doubles.
+  const again = await postExpense('main', { expenseId: 'e1', debits, postedBy: 'close' });
+  results.push(['O the close does not post it twice', ok('second posting', again, null)]);
+
+  // Corrected a week later: the taxi was 120, not 20.
+  const fixed = await debitsForExpense({ ...spend, amount: 27_720 }, [...items.slice(0, 2), { stocked: false, line_total: 120 }]);
+  await repostExpense('main', { expenseId: 'e1', debits: fixed, postedBy: 'micheal' });
+  const after = (__all('journal_lines') as any[]).filter((l) => l.entry_id === entryId);
+  const afterBy = Object.fromEntries(after.map((l) => [l.account_code, l.debit - l.credit]));
+  results.push(['O a correction moves the books to the new figure', ok(
+    'lines after', afterBy, { '1210': 27_600, '6000': 120, '1000': -27_720 },
+  )]);
 }
 
 /* ------------------------------ a group order, from the link to the pass */

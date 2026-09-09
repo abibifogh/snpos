@@ -5,6 +5,11 @@ import { uploadFile } from './files';
 import type { AccountRow, DepreciableAsset } from './ledger-math';
 import { MODULE_LABELS } from './access';
 import type { Module } from './access';
+import {
+  ACCOUNTS, salesAccount, cogsAccount, inventoryAccount, INVENTORY_ACCOUNTS,
+} from './accounts';
+import { spendDebits, spendPostingLines, sameDebits } from './spend-posting';
+import type { SpendDebit, SpendLine } from './spend-posting';
 
 export interface JournalEntry extends Doc {
   venue_id: string;
@@ -30,143 +35,7 @@ export interface JournalLine extends Doc {
   memo?: string;
 }
 
-/** Account codes seeded by provisioning. Kept here so postings read plainly. */
-export const ACCOUNTS = {
-  cash: '1000',
-  cardClearing: '1010',
-  momoClearing: '1020',
-  /**
-   * Money that has left the safe but has not yet been spent.
-   *
-   * Its own asset account rather than part of Cash on hand. A petty cash box
-   * is somebody else's responsibility and is counted on its own schedule, and
-   * folding it into the till's cash makes a shortage in the box and a shortage
-   * in the drawer the same number — which is to say neither can be found.
-   */
-  pettyCash: '1030',
-  /**
-   * Stock owned but not yet sold, one account per trade.
-   *
-   * Buying stock is not spending: the money turns into something the business
-   * still has, which is why it sits on the balance sheet until the thing is
-   * sold. One shared account answered "what stock do we own" and nothing else
-   * — and a bar's stock and a kitchen's larder move at completely different
-   * speeds, so a single figure hid whichever of them was drifting.
-   */
-  inventory: '1200',
-  barInventory: '1210',
-  craftInventory: '1220',
-  taxPayable: '2100',
-  tipsPayable: '2200',
-  /**
-   * Sales and cost of sales, one pair per side of the business.
-   *
-   * A single "Food sales" line answers what the business took and nothing
-   * else. The question an owner running three trades actually asks is which of
-   * them is making money, and that cannot be recovered afterwards from one
-   * merged figure — a restaurant, a bar and a craft shop have completely
-   * different margins, and added together they describe none of them.
-   *
-   * A shift belongs to exactly one side, so the side is known at the moment
-   * the entry is written and nothing has to be apportioned later.
-   */
-  foodSales: '4000',
-  barSales: '4010',
-  craftSales: '4020',
-  discountsGiven: '4900',
-  cogs: '5000',
-  barCogs: '5010',
-  craftCogs: '5020',
-  cashOverShort: '7000',
-  // What the business owns and uses rather than sells, and how much of it has
-  // been used up. Depreciation posts to these by number.
-  equipment: '1500',
-  accumDepreciation: '1510',
-  depreciation: '6060',
-} as const;
-
-/**
- * Accounts the system itself posts to, which therefore cannot be removed.
- *
- * Everything else in the chart is the restaurant's own and can be renamed,
- * added to or retired. These ten are named in code, a shift close writes to
- * them by number, so deleting one would not produce an error message, it
- * would produce a shift that fails to balance at eleven at night.
- *
- * Derived from ACCOUNTS rather than listed again, so the protected set cannot
- * drift away from the set actually in use.
- */
-export const SYSTEM_ACCOUNT_CODES: readonly string[] = Object.values(ACCOUNTS);
-
-/**
- * Which sales account a side of the business credits.
- *
- * Kept beside the codes rather than at the call site, because posting a shift
- * and reading the reports back must not be able to answer it differently.
- */
-export function salesAccount(module: Module): string {
-  if (module === 'bar') return ACCOUNTS.barSales;
-  if (module === 'craft') return ACCOUNTS.craftSales;
-  return ACCOUNTS.foodSales;
-}
-
-/** And which cost-of-sales account it debits. */
-export function cogsAccount(module: Module): string {
-  if (module === 'bar') return ACCOUNTS.barCogs;
-  if (module === 'craft') return ACCOUNTS.craftCogs;
-  return ACCOUNTS.cogs;
-}
-
-/**
- * Where a side's unsold stock sits.
- *
- * The pair to cogsAccount: buying debits this, selling credits it and debits
- * the cost of sales. Getting the two out of step is how inventory grows for
- * ever on one trade while another shows a cost of goods nobody bought.
- */
-export function inventoryAccount(module: Module): string {
-  if (module === 'bar') return ACCOUNTS.barInventory;
-  if (module === 'craft') return ACCOUNTS.craftInventory;
-  return ACCOUNTS.inventory;
-}
-
-/** Every stock account, for a balance sheet that lists them together. */
-export const INVENTORY_ACCOUNTS: readonly string[] = [
-  ACCOUNTS.inventory, ACCOUNTS.barInventory, ACCOUNTS.craftInventory,
-];
-
-/** Every cost-of-sales account, for the reports' Costs total. */
-export const COGS_ACCOUNTS: readonly string[] = [ACCOUNTS.cogs, ACCOUNTS.barCogs, ACCOUNTS.craftCogs];
-
-/** Every sales account, for revenue totals. */
-export const SALES_ACCOUNTS: readonly string[] = [ACCOUNTS.foodSales, ACCOUNTS.barSales, ACCOUNTS.craftSales];
-export const isSystemAccount = (code: string) => SYSTEM_ACCOUNT_CODES.includes(code);
-
-/**
- * Accounts an expense category may be pointed at.
- *
- * Expense lines only, money going out lands on an expense account, and
- * offering "Food sales" as a destination for a gas refill is offering a way to
- * make the books wrong. Cost of goods sold and cash over/short are left out
- * too: both are posted automatically at shift close from the stock count and
- * the drawer count, and an expense filed there would be double-counted.
- */
-export const isPostableExpenseAccount = (a: { code: string; type: string }) => {
-  // Cost of sales and cash over/short are filled in automatically at close, so
-  // an expense filed there would be counted twice.
-  if (COGS_ACCOUNTS.includes(a.code) || a.code === ACCOUNTS.cashOverShort) return false;
-  /*
-    Stock is the exception to "expenses go to expense accounts".
-
-    Buying a case of tonic is not spending: the money turns into something the
-    business still has, and it becomes a cost when the drink is poured. So the
-    inventory accounts are offered here even though they sit on the balance
-    sheet — without them there is no way to point a "Bar stock" category at
-    the right place, and every delivery would be written off on the day it
-    arrived.
-  */
-  return a.type === 'expense' || INVENTORY_ACCOUNTS.includes(a.code);
-};
+export * from './accounts';
 
 export interface PostingLine {
   account_code: string;
@@ -256,7 +125,7 @@ export interface ShiftPosting {
    * a month that had already been reported would change.
    */
   date?: Date;
-  expenses: { amount: number; accountCode: string; expenseId?: string }[];
+  expenses: { debits: SpendDebit[]; expenseId?: string }[];
 }
 
 /**
@@ -327,11 +196,10 @@ export async function postShift(p: ShiftPosting): Promise<string[]> {
    * expense whose own posting failed still lands, and one that landed is not
    * counted twice.
    */
-  for (const e of p.expenses.filter((x) => x.amount > 0)) {
+  for (const e of p.expenses) {
     const id = await postExpense(p.venueId, {
       expenseId: e.expenseId,
-      amount: e.amount,
-      accountCode: e.accountCode,
+      debits: e.debits,
       postedBy: p.postedBy,
       shiftId: p.shiftId,
     });
@@ -619,6 +487,33 @@ function endOfMonth(month: string): Date {
 /* ------------------------------------------------- money out, wherever it was */
 
 /**
+ * What one spend owes the books, worked out from its lines.
+ *
+ * Shared so the till, the admin form and the shift close cannot disagree
+ * about where a market run lands. The stock lines go to that side's
+ * inventory; the category answers only for what the lines do not. See
+ * spendDebits for the rule and the fault it closes.
+ */
+export async function debitsForExpense(
+  e: { amount: number; module?: string; category_key?: string; category?: string },
+  items: { stocked?: boolean; line_total: number }[],
+): Promise<SpendDebit[]> {
+  const categoryAccount = await accountForExpense(e);
+  const lines: SpendLine[] = items.map((i) => ({ stocked: i.stocked !== false, lineTotal: i.line_total }));
+  return spendDebits({
+    amount: e.amount,
+    lines,
+    stockAccount: inventoryAccount((e.module ?? 'kitchen') as Module),
+    categoryAccount,
+    fallbackAccount: UNCATEGORISED,
+    stockAccounts: INVENTORY_ACCOUNTS,
+  });
+}
+
+/** The account an expense lands on when its category names none. */
+const UNCATEGORISED = '6090';
+
+/**
  * Put one expense on the books, once.
  *
  * Expenses reached the ledger only at shift close, so one recorded outside a
@@ -639,8 +534,8 @@ export async function postExpense(
   venueId: string,
   e: {
     expenseId?: string;
-    amount: number;
-    accountCode: string;
+    /** What it is charged to. See debitsForExpense. */
+    debits: SpendDebit[];
     postedBy: string;
     shiftId?: string;
     date?: Date;
@@ -656,7 +551,8 @@ export async function postExpense(
     memo?: string;
   },
 ): Promise<string | null> {
-  if (!e.amount || e.amount <= 0) return null;
+  const lines = spendPostingLines(e.debits, e.fromAccount || ACCOUNTS.cash);
+  if (lines.length === 0) return null;
 
   const key = e.expenseId ? `expense:${e.expenseId}` : '';
   if (key) {
@@ -678,15 +574,7 @@ export async function postExpense(
       memo: e.memo || 'Money paid out',
       postedBy: e.postedBy,
     },
-    [
-      { account_code: e.accountCode, debit: e.amount, credit: 0 },
-      // Out of the drawer unless the caller names somewhere else. Every method
-      // a business may pay an expense from is cash or a cash-like float, and
-      // none of them is a card the customer holds — but a petty cash box is a
-      // float of its own with its own account, and money out of it must not be
-      // taken off a till that never held it.
-      { account_code: e.fromAccount || ACCOUNTS.cash, debit: 0, credit: e.amount },
-    ],
+    lines,
   );
   return entry.$id;
 }
@@ -715,8 +603,7 @@ export async function repostExpense(
   venueId: string,
   e: {
     expenseId: string;
-    amount: number;
-    accountCode: string;
+    debits: SpendDebit[];
     postedBy: string;
     shiftId?: string;
     /** Where the money came out of. See postExpense. */
@@ -735,16 +622,18 @@ export async function repostExpense(
   // Never posted, so this is the ordinary first posting.
   if (!entry) return postExpense(venueId, e);
 
-  const want: PostingLine[] = [
-    { account_code: e.accountCode, debit: e.amount, credit: 0 },
-    { account_code: e.fromAccount || ACCOUNTS.cash, debit: 0, credit: e.amount },
-  ];
+  const fromAccount = e.fromAccount || ACCOUNTS.cash;
+  const want = spendPostingLines(e.debits, fromAccount);
 
   const lines = await listAll<JournalLine>('journal_lines', [Query.equal('entry_id', entry.$id)])
     .catch(() => [] as JournalLine[]);
-  const same = lines.length === want.length
-    && want.every((w) => lines.some((l) => l.account_code === w.account_code
-      && l.debit === w.debit && l.credit === w.credit));
+  const haveDebits: SpendDebit[] = lines
+    .filter((l) => l.debit > 0)
+    .map((l) => ({ account_code: l.account_code, amount: l.debit, memo: l.memo ?? '' }));
+  const haveCredit = lines.find((l) => l.credit > 0);
+  const same = sameDebits(haveDebits, e.debits)
+    && haveCredit?.account_code === fromAccount
+    && lines.length === want.length;
   if (same) return entry.$id;
 
   /*
@@ -775,7 +664,7 @@ export async function repostExpense(
  */
 export async function accountForExpense(e: { category_key?: string; category?: string }): Promise<string> {
   const cats = await listAll<{ key: string; account_code?: string }>('expense_categories').catch(() => []);
-  return cats.find((c) => c.key === (e.category_key || e.category))?.account_code || '6090';
+  return cats.find((c) => c.key === (e.category_key || e.category))?.account_code || UNCATEGORISED;
 }
 
 /* --------------------------------------------------------- editing an entry */

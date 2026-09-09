@@ -4073,14 +4073,13 @@ export const SEED_ACCOUNTS = [
 export const SEED_EXPENSE_CATEGORIES = [
   { key: 'supplies', name: 'Supplies', account_code: '6000', sort: 1 },
   /*
-    Buying stock is not spending, so these point at the balance sheet rather
-    than at an expense account. The money turns into something the business
-    still has; it becomes a cost when the drink is poured, not when the bottle
-    is carried in.
+    No "Bar stock" or "Kitchen stock" here any more. Buying stock is not
+    spending, and a category was the only way a delivery used to reach the
+    balance sheet; it is now the LINES of a spend that say what went on a
+    shelf, and they post to inventory on their own. Rows already filed under
+    the old stock categories still read; the categories themselves are hidden
+    from every picker. See isStockCategory.
   */
-  { key: 'bar_stock', name: 'Bar stock', account_code: '1210', module: 'bar', sort: 8 },
-  { key: 'craft_stock', name: 'Craft stock', account_code: '1220', module: 'craft', sort: 9 },
-  { key: 'kitchen_stock', name: 'Kitchen stock', account_code: '1200', module: 'kitchen', sort: 10 },
   { key: 'transport', name: 'Transport', account_code: '6010', sort: 2 },
   { key: 'utilities', name: 'Utilities', account_code: '6020', sort: 3 },
   { key: 'repairs', name: 'Repairs & maintenance', account_code: '6030', sort: 4 },

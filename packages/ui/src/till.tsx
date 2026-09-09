@@ -5,7 +5,7 @@ import {
   PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions, receiveStock, uploadFile,
   buyOptions, convertPurchase, describePurchase, hasPack, categoriesForSide, canSeePrivateExpenses,
   expenseMethods, recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
-  fromTakings, postExpense, accountForExpense,
+  fromTakings, postExpense, debitsForExpense,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
   loadFloats, balancesFor, accountFor, recordBoxSpend, boxOverdrawn,
   checkPurchase, raiseAlerts, FLAG_WORDS,
@@ -617,12 +617,22 @@ export function ExpenseModal({
        * expense missing from the ledger is a bookkeeping job; an expense that
        * would not save is a hole in the drawer nobody can explain.
        */
-      void accountForExpense({ category_key: categoryKey })
-        .then(async (accountCode) => {
+      /*
+        What it is charged to comes from the lines. A bottle that went on the
+        shelf is stock; the taxi and the part nobody itemised are spent. See
+        debitsForExpense, which the admin form and the shift close share.
+      */
+      const postingItems = filledLines.flatMap((l) => {
+        const ing = ingredients.find((i) => i.$id === l.ingredientId);
+        return ing
+          ? [{ stocked: ing.counted_at_close !== false, line_total: parseMoney(l.totalText, decimals) ?? 0 }]
+          : [];
+      });
+      void debitsForExpense({ amount, module, category_key: categoryKey }, postingItems)
+        .then(async (debits) => {
           const entryId = await postExpense(venueId, {
             expenseId,
-            amount,
-            accountCode,
+            debits,
             postedBy: userId,
             shiftId: shiftId || undefined,
             // Out of the tin, not the till. Crediting cash for money that

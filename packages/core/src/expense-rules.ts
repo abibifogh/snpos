@@ -99,13 +99,15 @@ export const fromTakings = (e: { from_takings?: boolean }): boolean => e.from_ta
  * category that existed before this was used by all three, and narrowing them
  * to the kitchen would empty the other two lists overnight.
  */
-export function categoriesForSide<T extends { module?: string; active?: boolean }>(
+export function categoriesForSide<T extends { module?: string; active?: boolean; account_code?: string }>(
   rows: T[],
   module: string,
-  opts: { includeArchived?: boolean; canSeePrivate?: boolean } = {},
+  opts: { includeArchived?: boolean; canSeePrivate?: boolean; includeStock?: boolean } = {},
 ): T[] {
   return rows.filter((r) => {
     if (!opts.includeArchived && r.active === false) return false;
+    // Stock is no longer a category anybody picks. See isStockCategory.
+    if (!opts.includeStock && isStockCategory(r)) return false;
     const owner = r.module || 'general';
     // Rent, drawings, a legal bill: recorded like any other spending, and not
     // on a dropdown the floor reads. Sides aside, so it shows up wherever an
@@ -117,6 +119,28 @@ export function categoriesForSide<T extends { module?: string; active?: boolean 
 
 /** The "Shown on" value that means: admins, and whoever an admin has let in. */
 export const ADMIN_ONLY_SIDE = 'admin_only';
+
+/**
+ * The inventory accounts, by number.
+ *
+ * A copy of what accounts.ts holds, because this file imports nothing at
+ * runtime; a parity test keeps the two the same. They are here so a category
+ * pointing at the balance sheet can be recognised and kept off the pickers.
+ */
+export const STOCK_ACCOUNT_CODES: readonly string[] = ['1200', '1210', '1220'];
+
+/**
+ * A category that was really a way of saying "this went on the shelf".
+ *
+ * "Kitchen stock", "Bar stock" and "Craft stock" used to be the only route a
+ * delivery had onto the balance sheet, and picking "Supplies" instead of one
+ * of them charged the same bottles twice: once when bought, once as cost of
+ * sales at close. The lines of a spend now say what went on a shelf — see
+ * spendDebits — so these are hidden from every picker and kept only so the
+ * rows already filed under them still read.
+ */
+export const isStockCategory = (c: { account_code?: string }): boolean =>
+  !!c.account_code && STOCK_ACCOUNT_CODES.includes(c.account_code);
 
 /**
  * The sides a category can belong to, for the picker that sets it.
