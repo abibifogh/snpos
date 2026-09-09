@@ -1,6 +1,6 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
 import type { Doc } from './types';
-import { entryProblem, within, chargeForMonth, isLocked, lockedMessage } from './ledger-math';
+import { entryProblem, within, chargeForMonth, isLocked, lockedMessage, correctionPlan } from './ledger-math';
 import { uploadFile } from './files';
 import type { AccountRow, DepreciableAsset } from './ledger-math';
 import { MODULE_LABELS } from './access';
@@ -651,21 +651,19 @@ export async function repostExpense(
   if (same) return entry.$id;
 
   /*
-    A reversed entry is not edited, and neither is a locked period.
-
-    editEntry refuses both, and rightly — but this runs on every save of an
-    expense, including ones where nothing about the money changed, and a save
-    that fails because a month was closed six weeks ago would be the accounts
-    blocking an admin from fixing a spelling. The correction is refused, the
-    expense is not.
+    Corrected the right way for where it sits: edited in an open month,
+    reversed and re-posted into the first open day when the month has been
+    closed. See correctEntry. Best effort still: this runs on every save of an
+    expense, and a save that fails because the books could not be reached
+    would be the accounts blocking an admin from fixing a spelling.
   */
-  await editEntry(
+  const done = await correctEntry(
     entry,
     { memo: e.memo || entry.memo || 'Money paid out', lines: want },
     { editedBy: e.postedBy },
-  ).catch(() => undefined);
+  ).catch(() => null);
 
-  return entry.$id;
+  return done && done.mode === 'reversed' ? done.entryId : entry.$id;
 }
 
 /**
@@ -728,6 +726,62 @@ export async function payoutEntry(venueId: string, payoutId: string): Promise<Jo
     Query.equal('venue_id', venueId), Query.equal('source_id', `payout:${payoutId}`), Query.limit(1),
   ]).catch(() => ({ documents: [] as unknown[] }));
   return ((found.documents ?? [])[0] as JournalEntry | undefined) ?? null;
+}
+
+/**
+ * Correct an entry the right way for where it sits.
+ *
+ * In an open month, edited in place. In a closed month, the entry is left
+ * exactly as it was and two new ones go into the first open day: a reversal
+ * of what it said, and a fresh entry saying it right. See correctionPlan.
+ * Returns which happened, so a screen can say so.
+ */
+export async function correctEntry(
+  entry: JournalEntry,
+  next: { date?: Date; memo: string; lines: PostingLine[] },
+  opts: { editedBy: string },
+): Promise<{ mode: 'edited' } | { mode: 'reversed'; reversalId: string; entryId: string }> {
+  const lockedThrough = await lockedThroughFor(entry.venue_id);
+  const plan = correctionPlan({
+    entryDate: entry.date,
+    targetDate: next.date?.toISOString(),
+    lockedThrough,
+    today: new Date().toISOString().slice(0, 10),
+  });
+  if (plan.mode === 'edit') {
+    await editEntry(entry, next, opts);
+    return { mode: 'edited' };
+  }
+
+  const problem = entryProblem(next.lines);
+  if (problem) throw new Error(problem);
+  const postOn = new Date(`${plan.postOn}T12:00:00`);
+  const reversalId = await reverseEntry(entry, {
+    postedBy: opts.editedBy,
+    date: postOn,
+    memo: `Reversal of ${entry.memo || entry.source} (${entry.date.slice(0, 10)}), corrected after the month was closed`,
+  });
+  const fresh = await postEntry(
+    entry.venue_id,
+    {
+      date: postOn,
+      source: entry.source === 'shift_close' ? 'adjustment' : entry.source,
+      // Keeps the key the original carried, so a spend posted by its own id
+      // is still found by it after the correction.
+      sourceId: entry.source_id || undefined,
+      shiftId: entry.shift_id || undefined,
+      memo: `${next.memo} (corrects ${entry.date.slice(0, 10)})`,
+      postedBy: opts.editedBy,
+    },
+    next.lines.filter((l) => l.debit !== 0 || l.credit !== 0),
+  );
+  /*
+    The original no longer answers to its key: the fresh entry does. Otherwise
+    the next correction would find the reversed one first and refuse.
+  */
+  await db.updateDocument(DB_ID, 'journal_entries', entry.$id, { source_id: `${entry.source_id || 'entry'}:superseded` })
+    .catch(() => undefined);
+  return { mode: 'reversed', reversalId, entryId: fresh.$id };
 }
 
 /* ------------------------------------------------------------- settling up */

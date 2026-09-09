@@ -3,7 +3,7 @@ import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Text
 import { listAll, humanError, saveDropping } from '../lib';
 import {
   formatMoney, parseMoney, toInput, Query,
-  ledgerLines, loadAccounts, postManualEntry, reverseEntry, editEntry, deleteEntry, loadFixedAssets, postDepreciation,
+  ledgerLines, loadAccounts, postManualEntry, reverseEntry, correctEntry, deleteEntry, loadFixedAssets, postDepreciation,
   profitAndLoss, balanceSheet, totalsByAccount, naturalBalance, entryProblem, within,
   bookValue, monthOf, reconcile, db, DB_ID, ID,
   matchStatement, readStatement, parseCsv, loadStatementLines, importStatementLines,
@@ -539,12 +539,13 @@ function Journal({
     setProblem(null);
     try {
       const withNotes = asLines().map((l, i) => ({ ...l, memo: draft[i].memo }));
+      let how: 'edited' | 'reversed' = 'edited';
       if (changing) {
-        await editEntry(
+        how = (await correctEntry(
           changing,
           { date: new Date(`${date}T12:00:00`), memo: memo.trim(), lines: withNotes },
           { editedBy: userId },
-        );
+        )).mode;
       } else {
         await postManualEntry(
           venueId,
@@ -557,7 +558,9 @@ function Journal({
       setDraft([{ ...BLANK }, { ...BLANK }]);
       setMemo('');
       await onChanged();
-      toast(changing ? 'Entry changed. The old version is in the audit log.' : 'Entry posted');
+      toast(!changing ? 'Entry posted' : how === 'reversed'
+        ? 'That month is closed, so the entry was reversed and posted again in the first open day. The closed month keeps its figure.'
+        : 'Entry changed. The old version is in the audit log.');
     } catch (e) {
       setProblem(humanError(e));
     } finally {

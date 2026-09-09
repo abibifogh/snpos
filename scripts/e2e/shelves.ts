@@ -13,6 +13,7 @@ import { applyQuantityCorrection, createOrder, loadOpenOrders, orderItemsFor } f
 import { unheldWords } from './core/bar-count.ts';
 import {
   postExpense, repostExpense, debitsForExpense, postShift, postPayout, postSettlement, postTipsPaid, postTaxRemitted, hanging,
+  lockPeriod,
 } from './core/ledger.ts';
 import { makersShareOf } from './core/consignment-math.ts';
 import { receiveStock } from './core/stock.ts';
@@ -718,6 +719,41 @@ console.log('\n=== R — settling up clears what the shift close left hanging ==
   results.push(['R the bank holds what arrived less the tax, and the fee is a cost', ok(
     'bank / fees', [bank, fees], [12_276 - 3_000, 124],
   )]);
+}
+
+/* ------------------------- a spend corrected after its month was closed */
+
+console.log('\n=== S — a correction in a closed month is a reversal and a fresh entry, not an edit ===');
+{
+  __reset();
+  __seed('expense_categories', [{ $id: 'c2', key: 'transport', name: 'Transport', account_code: '6010' }]);
+  const august = new Date('2026-08-20T12:00:00Z');
+  const debits = await debitsForExpense({ amount: 2_000, module: 'kitchen', category_key: 'transport' }, []);
+  const original = await postExpense('main', { expenseId: 'e-aug', debits, postedBy: 'kofi', date: august });
+  await lockPeriod('main', '2026-08-31', { lockedBy: 'micheal' });
+
+  // A week into September somebody notices the taxi was 2,500.
+  const fixed = await debitsForExpense({ amount: 2_500, module: 'kitchen', category_key: 'transport' }, []);
+  const landed = await repostExpense('main', { expenseId: 'e-aug', debits: fixed, postedBy: 'micheal' });
+
+  const entries = __all('journal_entries') as any[];
+  const lines = __all('journal_lines') as any[];
+  const of = (id: string) => lines.filter((l) => l.entry_id === id);
+  const originalLines = of(original!);
+  results.push(['S the closed month keeps its figure untouched', ok(
+    'august lines', originalLines.map((l) => [l.account_code, l.debit, l.credit]), [['6010', 2000, 0], ['1000', 0, 2000]],
+  )]);
+  const reversal = entries.find((e) => e.reversal_of === original);
+  results.push(['S a reversal cancels it in the first open day', ok(
+    'reversal', [reversal?.date?.slice(0, 10), of(reversal?.$id).map((l) => [l.account_code, l.debit, l.credit])],
+    ['2026-09-01', [['6010', 0, 2000], ['1000', 2000, 0]]],
+  )]);
+  results.push(['S and a fresh entry says it right, keyed to the same spend', ok(
+    'fresh', [entries.find((e) => e.$id === landed)?.source_id, of(landed!).map((l) => [l.account_code, l.debit, l.credit])],
+    ['expense:e-aug', [['6010', 2500, 0], ['1000', 0, 2500]]],
+  )]);
+  const net = lines.filter((l) => l.account_code === '6010').reduce((s, l) => s + l.debit - l.credit, 0);
+  results.push(['S the books net to the corrected figure', ok('transport', net, 2_500)]);
 }
 
 /* ------------------------------ a group order, from the link to the pass */

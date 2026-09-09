@@ -587,3 +587,44 @@ export function isLocked(date: string, lockedThrough?: string): boolean {
 export const lockedMessage = (date: string, lockedThrough: string): string =>
   `The books are closed up to ${lockedThrough.slice(0, 10)}, and this is dated ${date.slice(0, 10)}. `
   + 'Post it in an open period, or reopen the books first — which is recorded.';
+
+/* ---------------------------------------- correcting inside a closed month */
+
+/**
+ * How a correction has to be made, given where the entry sits.
+ *
+ * An entry in an open month is edited in place, with the old version kept
+ * in the audit log: the owner asked for the simpler thing and the trade is
+ * theirs. An entry in a CLOSED month cannot be touched — that is what the
+ * lock is for — so the correction is posted as a pair in the first open day:
+ * a reversal of what was said, and a fresh entry saying it right. The closed
+ * month keeps its figure; the open month carries the difference. That is
+ * what an accountant expects to find, and it is the only way a reported
+ * month can stay reported.
+ *
+ * The date the correction is moving TO counts too. Editing an open entry
+ * backwards into a closed month would be the way round the rule.
+ */
+export function correctionPlan(input: {
+  entryDate: string;
+  /** Where the corrected entry is asked to sit. The same date unless moved. */
+  targetDate?: string;
+  lockedThrough?: string | null;
+  today: string;
+}): { mode: 'edit' } | { mode: 'reverse'; postOn: string } {
+  const target = input.targetDate ?? input.entryDate;
+  const through = input.lockedThrough ?? undefined;
+  const locked = isLocked(input.entryDate, through) || isLocked(target, through);
+  if (!locked) return { mode: 'edit' };
+  // The first day after the lock, or today if the lock is behind us — never
+  // a day inside the closed period, and never a day in the future.
+  const after = input.lockedThrough ? nextDay(input.lockedThrough.slice(0, 10)) : input.today;
+  return { mode: 'reverse', postOn: after > input.today ? input.today : after };
+}
+
+/** The day after a YYYY-MM-DD. */
+export function nextDay(day: string): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
