@@ -1247,6 +1247,11 @@ export const COLLECTIONS = [
        * a field that arrives after the rows do can never be required.
        */
       ['from_takings', 'b', null, false, true],
+      // What it was and where the money came from, in one word each, written
+      // when the row is saved so every screen reads the same answer. See
+      // spend-kind.ts. Absent on rows from before; those are derived.
+      ['kind', 'e', ['stock', 'overhead'], false, 'overhead'],
+      ['source', 'e', ['drawer', 'box', 'bank', 'own'], false, 'drawer'],
       ['note', 's', 500, false],
       ['receipt_file_id', 's', 64, false],
       ['created_by', 's', 64, true],
@@ -1783,37 +1788,6 @@ export const COLLECTIONS = [
       ['payment_terms', 's', 80, false],
       ['active', 'b', null, true, true],
     ],
-  },
-  {
-    id: 'purchases',
-    name: 'Purchases',
-    perms: { read: MGMT, create: MGMT, update: MGMT, delete: ADMIN },
-    attributes: [
-      ['supplier_id', 's', 64, true],
-      ['invoice_no', 's', 80, false],
-      ['purchased_at', 'd', null, true],
-      ['subtotal', 'i', null, true, 0],
-      ['tax', 'i', null, true, 0],
-      ['total', 'i', null, true, 0],
-      ['paid_from_method_id', 's', 64, false],
-      ['shift_id', 's', 64, false],
-      ['received_by', 's', 64, true],
-      ['document_file_id', 's', 64, false],
-    ],
-    indexes: [['supplier_date', 'key', ['supplier_id', 'purchased_at']]],
-  },
-  {
-    id: 'purchase_items',
-    name: 'Purchase items',
-    perms: { read: MGMT, create: MGMT, update: MGMT, delete: ADMIN },
-    attributes: [
-      ['purchase_id', 's', 64, true],
-      ['ingredient_id', 's', 64, true],
-      ['qty', 'f', null, true, 0],
-      ['unit_cost', 'i', null, true, 0],
-      ['line_total', 'i', null, true, 0],
-    ],
-    indexes: [['purchase', 'key', ['purchase_id']], ['ingredient', 'key', ['ingredient_id']]],
   },
   {
     id: 'stock_movements',
@@ -2875,50 +2849,6 @@ export const COLLECTIONS = [
   },
 
   // ---- 9. Purchase orders and receiving ---------------------------------
-  {
-    id: 'purchase_orders',
-    name: 'Purchase orders',
-    perms: { read: MGMT, create: MGMT, update: MGMT, delete: MGMT },
-    attributes: [
-      ['venue_id', 's', 64, true],
-      ['supplier_id', 's', 64, true],
-      ['po_number', 's', 40, true],
-      ['status', 'e', ['draft', 'sent', 'part_received', 'received', 'cancelled'], true, 'draft'],
-      ['expected_at', 'd', null, false],
-      ['sent_at', 'd', null, false],
-      ['subtotal', 'i', null, true, 0],
-      ['tax', 'i', null, true, 0],
-      ['total', 'i', null, true, 0],
-      ['ordered_by', 's', 64, true],
-      ['approved_by', 's', 64, false],
-      ['note', 's', 1000, false],
-      ['auto_generated', 'b', null, true, false], // raised from par levels
-    ],
-    indexes: [
-      ['venue_status', 'key', ['venue_id', 'status']],
-      ['po_number_unique', 'unique', ['venue_id', 'po_number']],
-      ['supplier', 'key', ['supplier_id']],
-    ],
-  },
-  {
-    id: 'purchase_order_items',
-    name: 'Purchase order items',
-    perms: { read: MGMT, create: MGMT, update: MGMT, delete: MGMT },
-    attributes: [
-      ['venue_id', 's', 64, true],
-      ['purchase_order_id', 's', 64, true],
-      ['ingredient_id', 's', 64, true],
-      ['qty_ordered', 'f', null, true],
-      ['qty_received', 'f', null, true, 0],
-      ['unit', 's', 20, true],
-      ['unit_cost_expected', 'i', null, true, 0],
-      ['unit_cost_actual', 'i', null, false],
-      ['line_total', 'i', null, true, 0],
-      ['discrepancy', 'e', ['none', 'short', 'over', 'price_up', 'price_down', 'quality', 'not_delivered'], true, 'none'],
-      ['discrepancy_note', 's', 500, false],
-    ],
-    indexes: [['po', 'key', ['purchase_order_id']], ['ingredient', 'key', ['ingredient_id']]],
-  },
 
   // ---- 10. Scheduled summaries ------------------------------------------
   {
@@ -3690,7 +3620,7 @@ for (const c of COLLECTIONS) {
 export const VENUE_SCOPED = [
   'tables', 'dining_sessions', 'orders', 'order_items', 'payments',
   'shifts', 'shift_expenses', 'shift_stock_checks',
-  'ingredients', 'suppliers', 'purchases', 'purchase_items',
+  'ingredients', 'suppliers',
   'stock_movements', 'stock_flags',
   'journal_entries', 'journal_lines',
   'devices', 'audit_log', 'payment_methods',
@@ -3885,12 +3815,6 @@ export const FEATURES = [
     config: { locales: ['en'], show_language_picker: true, fall_back_to_default: true },
   },
   {
-    key: 'purchase_orders',
-    label: 'Purchase orders and receiving',
-    enabled: true,
-    config: { require_approval_above: 0, auto_suggest_from_par_levels: true, flag_price_rise_bp: 1000, block_receive_without_check: true },
-  },
-  {
     key: 'shift_summary',
     label: 'Summary sent at shift close',
     enabled: true,
@@ -4028,6 +3952,8 @@ export const SYSTEM_ACCOUNT_CODES = [
   '6070',
   // The levies beside VAT, each credited by number at shift close.
   '2110', '2120', '2130', '2190',
+  // Waste is written off the shelf to here by number.
+  '6080',
 ];
 
 export const SEED_ACCOUNTS = [
@@ -4082,6 +4008,7 @@ export const SEED_ACCOUNTS = [
   ['6050', 'Petty cash', 'expense'],
   ['6060', 'Depreciation', 'expense'],
   ['6070', 'Payment provider fees', 'expense'],
+  ['6080', 'Waste and spoilage', 'expense'],
   ['6090', 'Other expenses', 'expense'],
   ['7000', 'Cash over / short', 'expense'],
 ];

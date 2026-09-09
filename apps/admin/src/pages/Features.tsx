@@ -26,7 +26,6 @@ const LABELS: Record<string, { title: string; blurb: string }> = {
   loyalty: { title: 'Loyalty / stamp card', blurb: 'Points, or buy-9-get-1-free, tracked automatically.' },
   feedback: { title: 'Feedback after paying', blurb: 'A one-tap rating linked to the order, the dishes and the server.' },
   multilingual: { title: 'Multi-language menu', blurb: 'Customers pick their language when they scan.' },
-  purchase_orders: { title: 'Purchase orders and receiving', blurb: 'Order from suppliers, then tick off what actually arrived. Catches short deliveries and quiet price rises.' },
   shift_summary: { title: 'Summary at shift close', blurb: 'Sent the moment a shift ends, with stock flagged for the first time listed separately from anything low for 3+ shifts.' },
   busy_mode: { title: 'Kitchen busy mode', blurb: 'When too many tickets are waiting, quote longer waits or hold new orders instead of drowning the kitchen.' },
   time_pricing: { title: 'Happy hour / time-based prices', blurb: 'Change the price customers see at certain times of day.' },

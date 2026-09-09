@@ -98,3 +98,4 @@ export * from './unit-cost';
 export * from './settle';
 export * from './period-close';
 export * from './close-facts';
+export * from './spend-kind';

@@ -13,7 +13,7 @@ import { applyQuantityCorrection, createOrder, loadOpenOrders, orderItemsFor } f
 import { unheldWords } from './core/bar-count.ts';
 import {
   postExpense, repostExpense, debitsForExpense, postShift, postPayout, postSettlement, postTipsPaid, postTaxRemitted, hanging,
-  lockPeriod,
+  lockPeriod, postWaste,
 } from './core/ledger.ts';
 import { makersShareOf } from './core/consignment-math.ts';
 import { receiveStock } from './core/stock.ts';
@@ -783,6 +783,20 @@ console.log('\n=== T — a bill carries each levy, and the close credits each to
   const by = Object.fromEntries(lines.map((l) => [l.account_code, l.debit - l.credit]));
   results.push(['T each levy is owed on its own account', ok(
     'lines', by, { '1000': 12_190, '4000': -10_000, '2110': -250, '2120': -250, '2130': -100, '2100': -1_590 },
+  )]);
+}
+
+/* ------------------------------------------------- waste, off the books */
+
+console.log('\n=== U — waste is written off the shelf and onto the month ===');
+{
+  __reset();
+  const id = await postWaste('main', { wasteId: 'w1', value: 1_800, module: 'kitchen', what: '3 kg chicken, spoiled', postedBy: 'kofi' });
+  const lines = (__all('journal_lines') as any[]).filter((l) => l.entry_id === id);
+  const by = Object.fromEntries(lines.map((l) => [l.account_code, l.debit - l.credit]));
+  results.push(['U spoiled chicken is a cost, and the larder is lighter', ok('lines', by, { '6080': 1_800, '1200': -1_800 })]);
+  results.push(['U written off once, however many times it is asked', ok(
+    'again', await postWaste('main', { wasteId: 'w1', value: 1_800, what: 'x', postedBy: 'kofi' }), null,
   )]);
 }
 

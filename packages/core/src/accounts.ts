@@ -87,6 +87,8 @@ export const ACCOUNTS = {
   cashOverShort: '7000',
   /** What the card and mobile-money providers keep when they settle. */
   providerFees: '6070',
+  /** Stock thrown away, spoiled or eaten by staff, written off the shelf. */
+  waste: '6080',
   // What the business owns and uses rather than sells, and how much of it has
   // been used up. Depreciation posts to these by number.
   equipment: '1500',

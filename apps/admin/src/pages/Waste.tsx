@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { formatMoney } from '@snpos/core';
+import { formatMoney, postWaste } from '@snpos/core';
 import type { Ingredient, MenuItem, Doc } from '@snpos/core';
 import { useSession } from '../session';
 
@@ -56,7 +56,7 @@ export function WastePage() {
       // Valuing waste at cost is what turns "we binned some chicken" into a
       // number that shows up next to the day's profit.
       const value = kind === 'ingredient' && ing ? Math.round(ing.base_unit_cost * editing.qty) : 0;
-      await db.createDocument(DB_ID, 'waste_log', ID.unique(), {
+      const waste = await db.createDocument(DB_ID, 'waste_log', ID.unique(), {
         venue_id: 'main',
         ingredient_id: kind === 'ingredient' ? editing.ingredient_id : '',
         menu_item_id: kind === 'dish' ? editing.menu_item_id : '',
@@ -78,6 +78,19 @@ export function WastePage() {
         }).catch(() => undefined);
         await db.updateDocument(DB_ID, 'ingredients', ing.$id, {
           current_qty: Number((ing.current_qty - Number(editing.qty)).toFixed(4)),
+        }).catch(() => undefined);
+        /*
+          And off the books. What was thrown away had been bought and sat on
+          the balance sheet as stock; this is what says it is gone, so a month
+          with a lot of waste no longer shows the same profit as one with
+          none. Best effort: the waste is recorded either way.
+        */
+        await postWaste('main', {
+          wasteId: waste.$id,
+          value,
+          module: (ing as { module?: string }).module,
+          what: `${editing.qty} ${ing.unit} ${ing.name}, ${editing.reason ?? 'spoiled'}`,
+          postedBy: user?.$id ?? '',
         }).catch(() => undefined);
       }
 

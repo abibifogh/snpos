@@ -7,7 +7,7 @@ import {
   isPostableExpenseAccount, expenseMethodsFor, mayComeFromShift, expenseSides, asksMoneySource,
   ingredientsForSide,
   defaultExpenseSide, MODULE_LABELS, modulesOf, recomputeClosedShift,
-  repostExpense, debitsForExpense, isStockCategory,
+  repostExpense, debitsForExpense, isStockCategory, spendKind, spendSource, spendWords, saveDropping,
   balancesFor, accountFor, settleBoxSpend, boxesFor, boxOverdrawn,
   buyOptions, convertPurchase, describePurchase, hasPack, categoriesForSide, canSeePrivateExpenses,
 } from '@snpos/core';
@@ -36,6 +36,8 @@ interface Expense extends Doc {
   from_takings?: boolean;
   /** Which petty cash box paid for it, when a box did. */
   imprest_float_id?: string;
+  kind?: string;
+  source?: string;
   note?: string;
   receipt_file_id?: string;
   created_by: string;
@@ -449,10 +451,24 @@ export function ExpensesPage() {
         receipt_file_id: editing.receipt_file_id ?? '',
         created_by: user?.$id ?? '',
         approval_status: editing.approval_status ?? 'pending',
+        // What it was and where the money came from, in a word each. See
+        // spend-kind.ts; the till writes the same two.
+        kind: spendKind([
+          ...savedItems.map((i) => ({ stocked: i.stocked !== false })),
+          ...filled.flatMap((d) => {
+            const ing = ingredients.find((i) => i.$id === d.ingredient_id);
+            return ing ? [{ stocked: ing.counted_at_close !== false }] : [];
+          }),
+        ]),
+        source: spendSource({
+          imprest_float_id: editing.from_takings === false ? editing.imprest_float_id ?? '' : '',
+          from_takings: editing.from_takings !== false,
+          methodKind: methods.find((m) => m.$id === editing.paid_from_method_id)?.kind ?? 'cash',
+        }),
       };
-      const expenseId = editing.$id
-        ? (await db.updateDocument(DB_ID, 'shift_expenses', editing.$id, payload)).$id
-        : (await db.createDocument(DB_ID, 'shift_expenses', ID.unique(), payload)).$id;
+      // saveDropping: `kind` and `source` are newer than some databases, and a
+      // spend must save whether or not the two words about it can be kept.
+      const { id: expenseId } = await saveDropping('shift_expenses', editing.$id ?? null, payload);
 
       /**
        * A shift that has already closed is worked out again.
@@ -718,11 +734,13 @@ export function ExpensesPage() {
                             say whether a shift is short by this or a tin is. */}
                         <td className="dim small">
                           {methodName(r.paid_from_method_id)}
-                          {r.from_takings === false && (
-                            <div className="small dim">
-                              {boxes.find((b) => b.$id === r.imprest_float_id)?.name ?? 'Petty cash'}
-                            </div>
-                          )}
+                          {/* Where the money came from, in the words every
+                              screen shares. A box is named when one paid. */}
+                          <div className="small dim">
+                            {r.imprest_float_id
+                              ? (boxes.find((b) => b.$id === r.imprest_float_id)?.name ?? 'Petty cash')
+                              : spendWords(r, [], methods.find((m) => m.$id === r.paid_from_method_id)?.kind).source}
+                          </div>
                         </td>
                         <td className="num">{settings ? formatMoney(r.amount, settings) : r.amount}</td>
                         <td>

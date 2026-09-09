@@ -5,7 +5,7 @@ import {
   PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions, receiveStock, uploadFile,
   buyOptions, convertPurchase, describePurchase, hasPack, categoriesForSide, canSeePrivateExpenses,
   expenseMethods, recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
-  fromTakings, postExpense, repostExpense, debitsForExpense, settleBoxSpend, listAll, Query,
+  fromTakings, postExpense, repostExpense, debitsForExpense, settleBoxSpend, listAll, Query, spendKind, spendSource,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
   loadFloats, balancesFor, accountFor, recordBoxSpend, boxOverdrawn,
   checkPurchase, raiseAlerts, FLAG_WORDS,
@@ -541,6 +541,17 @@ export function ExpenseModal({
             : '',
         ].filter(Boolean).join(' · ').slice(0, 500), // the column's own limit
         from_takings: chosenBox ? false : fromDrawer,
+        // What it was and where the money came from, in a word each, so no
+        // screen has to work it out again. See spend-kind.ts.
+        kind: spendKind(filledLines.flatMap((l) => {
+          const ing = ingredients.find((i) => i.$id === l.ingredientId);
+          return ing ? [{ stocked: ing.counted_at_close !== false }] : [];
+        })),
+        source: spendSource({
+          imprest_float_id: chosenBox?.$id ?? '',
+          from_takings: chosenBox ? false : fromDrawer,
+          methodKind: methods.find((m) => m.$id === methodId)?.kind ?? 'cash',
+        }),
         /*
           The tin it came out of, so the money leaves the right place.
 

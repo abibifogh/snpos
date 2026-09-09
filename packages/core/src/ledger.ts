@@ -792,6 +792,38 @@ export async function correctEntry(
   return { mode: 'reversed', reversalId, entryId: fresh.$id };
 }
 
+/**
+ * Stock written off, on the books.
+ *
+ * Waste came off the shelf and reached nothing else, so a month with a lot
+ * of it showed the same profit as a month with none. What was thrown away
+ * had been bought, and sits on the balance sheet as inventory until
+ * something says it is gone: this does. Keyed by the waste row, so it cannot
+ * be written off twice.
+ */
+export async function postWaste(
+  venueId: string,
+  w: { wasteId: string; value: number; module?: string; what: string; postedBy: string; date?: Date },
+): Promise<string | null> {
+  if (!(w.value > 0)) return null;
+  const key = `waste:${w.wasteId}`;
+  const already = await db.listDocuments(DB_ID, 'journal_entries', [
+    Query.equal('venue_id', venueId), Query.equal('source_id', key), Query.limit(1),
+  ]).catch(() => ({ total: 0 }));
+  if (already.total > 0) return null;
+  const entry = await postEntry(venueId, {
+    date: w.date,
+    source: 'adjustment',
+    sourceId: key,
+    memo: `Written off: ${w.what}`,
+    postedBy: w.postedBy,
+  }, [
+    { account_code: ACCOUNTS.waste, debit: w.value, credit: 0, memo: 'Waste and spoilage' },
+    { account_code: inventoryAccount((w.module ?? 'kitchen') as Module), debit: 0, credit: w.value, memo: 'Off the shelf' },
+  ]);
+  return entry.$id;
+}
+
 /* ------------------------------------------------------------- settling up */
 
 /**
