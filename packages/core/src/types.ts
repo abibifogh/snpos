@@ -30,6 +30,9 @@ export interface Settings extends Doc {
   tax_inclusive: boolean;
   /** The levies beside VAT, as JSON. See levies.ts. */
   levies?: string;
+  /** The schema fingerprint provisioning last applied, and when. See schema-status.ts. */
+  schema_version?: string;
+  schema_applied_at?: string;
   service_charge_bp: number;
   shift_float_policy: 'zero' | 'carry_over' | 'fixed' | 'prompt';
   allow_negative_cash?: boolean;

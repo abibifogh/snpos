@@ -2,10 +2,15 @@ name: Deploy functions
 
 # Ships the Appwrite Functions — the parts that must keep running when no
 # screen is open: releasing pre-orders at their time, escalating an order the
-# kitchen has not acknowledged, emailing receipts and shift summaries.
+# kitchen has not acknowledged, emailing receipts and shift summaries, and
+# writing the books.
 #
-# Manual, like Provision: these run against the live project.
+# Runs on every merge to main, called from the Deploy workflow after the
+# schema has been provisioned, so the functions and the apps that raise the
+# events they answer always ship together. It can still be run by hand from
+# the Actions tab, with the confirmation word.
 on:
+  workflow_call:
   workflow_dispatch:
     inputs:
       confirm:
@@ -18,7 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check the confirmation
-        if: ${{ inputs.confirm != 'deploy' }}
+        # Only when started by hand. Called from Deploy, the merge is the decision.
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm != 'deploy' }}
         run: |
           echo "Type 'deploy' in the confirmation box to run this."
           exit 1

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo, HelpModal, EightySixModal,
-  OfflineBar, useOfflineQueue, IdleScreen, ThemeButton,
+  OfflineBar, SchemaBar, useOfflineQueue, IdleScreen, ThemeButton,
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
@@ -950,6 +950,7 @@ export function App() {
       {/* Loud on purpose. Offline support nobody notices is how a service ends
           up sitting on one iPad that never got put back on the wifi. */}
       <OfflineBar queued={queued} onRetry={() => void flushQueue()} />
+      <SchemaBar settings={settings} />
 
       <div className="kds-top">
         <div className="row">

@@ -216,6 +216,17 @@ export const COLLECTIONS = [
       // The levies beside VAT, as JSON: [{key, name, rate_bp}]. VAT (the rate
       // above) applies on top of them. Empty is the single rate as before.
       ['levies', 's', 2000, false],
+      /*
+        What shape the database is, as provisioning last left it.
+
+        Written by scripts/provision.mjs at the end of a run: the fingerprint
+        of the schema it applied, and when. Each app is built knowing the
+        fingerprint its code expects, and says plainly when the row carries
+        another — see packages/core/src/schema-status.ts. Before this, the
+        first sign of a forgotten provision run was a save refused on a till.
+      */
+      ['schema_version', 's', 40, false],
+      ['schema_applied_at', 'd', null, false],
       ['service_charge_bp', 'i', null, true, 0],
       // What a shift starts with in the drawer.
       //   zero       nothing carried over; count it in each time

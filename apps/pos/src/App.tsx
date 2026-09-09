@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Button, Spinner, Card, Field, Input, Notice, useToast, Logo, HelpModal, EightySixModal,
-  OfflineBar, useOfflineQueue, IdleScreen, ThemeButton,
+  OfflineBar, SchemaBar, useOfflineQueue, IdleScreen, ThemeButton,
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
@@ -889,6 +889,7 @@ export function App() {
         refreshStaff={loadStaff}
       />
       <OfflineBar queued={queued} onRetry={() => void flushQueue()} />
+      <SchemaBar settings={ctx.settings} />
       {/* Sitting above the till rather than inside a shift panel, because it
           is a statement about everything on the screen and not about one
           number on it. */}

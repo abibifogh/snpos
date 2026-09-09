@@ -22,7 +22,8 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { COLLECTIONS, SYSTEM_ACCOUNT_CODES } from './schema.mjs';
+import { COLLECTIONS, SYSTEM_ACCOUNT_CODES, FEATURES, TEAMS, BUCKETS } from './schema.mjs';
+import { schemaFingerprint } from './schema-fingerprint.mjs';
 
 /**
  * `scripts` is here because seeding and importing write real rows too.
@@ -462,6 +463,27 @@ if (settingsFaults.length) {
   console.error('so and suggest provisioning — which will not help, because provisioning does');
   console.error('what scripts/schema.mjs says. Add them to the settings collection there.');
   process.exit(1);
+}
+
+/**
+ * The apps must know the schema's current fingerprint.
+ *
+ * packages/core/src/schema-version.ts is generated from the schema, and the
+ * apps read it to say when the database is behind. A schema change committed
+ * without regenerating it ships apps that believe an old shape is current, so
+ * the one screen built to catch a forgotten provision run would stay quiet.
+ */
+{
+  const want = schemaFingerprint({ COLLECTIONS, FEATURES, SYSTEM_ACCOUNT_CODES, TEAMS, BUCKETS });
+  let have = '';
+  try {
+    have = /SCHEMA_VERSION = '([0-9a-f]+)'/.exec(readFileSync('packages/core/src/schema-version.ts', 'utf8'))?.[1] ?? '';
+  } catch { /* missing is stale */ }
+  if (have !== want) {
+    console.error(`The schema changed (fingerprint ${want}) but packages/core/src/schema-version.ts says '${have || 'nothing'}'.`);
+    console.error('Run:  npm run gen:schema   and commit the result, so the apps can tell when the database is behind.');
+    process.exit(1);
+  }
 }
 
 if (indexFaults.length) {

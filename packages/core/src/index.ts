@@ -101,4 +101,6 @@ export * from './close-facts';
 export * from './spend-kind';
 export * from './waiting';
 export * from './books';
+export * from './schema-status';
+export * from './schema-version';
 export * from './spend-decide';

@@ -448,6 +448,9 @@ table.data th.num { text-align: right; }
 }
 @keyframes offline-pulse { 50% { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) { .offline-bar .dot { animation: none; } }
+/* The database-is-behind bar: the same shape, steady rather than pulsing, because
+   nothing is in flight — somebody has a button to press. */
+.offline-bar.schema-bar .dot { animation: none; }
 .offline-retry {
   margin-left: auto; padding: 0.3rem 0.7rem; font: inherit; font-size: 0.82rem; font-weight: 600;
   color: inherit; background: transparent; border: 1px solid currentColor;

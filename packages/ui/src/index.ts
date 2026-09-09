@@ -15,6 +15,7 @@ export * from './till';
 export * from './eightysix';
 export * from './ErrorBoundary';
 export * from './OfflineBar';
+export * from './SchemaBar';
 export * from './useOfflineQueue';
 export * from './trend';
 export * from './menugrid';

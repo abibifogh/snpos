@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { Button, Logo, THEME_MODES, themeMode, setThemeMode } from '@snpos/ui';
+import { Button, Logo, SchemaBar, THEME_MODES, themeMode, setThemeMode } from '@snpos/ui';
 import { sectionsFor, wordsFor } from '@snpos/core';
 import { useSession } from './session';
 
@@ -168,6 +168,8 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
       </aside>
       <div className="main">
+        {/* Across the top of every page, for the person who can fix it. */}
+        <SchemaBar settings={settings} owner={profile?.role === 'admin'} />
         <div className="page">{children}</div>
       </div>
     </div>

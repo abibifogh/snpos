@@ -17,6 +17,15 @@ name: Deploy
 #
 # So the flow is the ordinary one: work happens on a branch, the Check workflow
 # runs on every push, and merging into main is what publishes.
+#
+# Publishing is three things, in order, and this runs all three: the database
+# is provisioned (additive, never drops), the functions are deployed, and the
+# apps are built and put on Pages. They used to be three buttons, and the two
+# that were not this one got forgotten — apps went out that wrote to columns
+# the database did not have yet, and functions that were never redeployed
+# kept answering events the old way. If provisioning or the functions fail,
+# the apps still go out, so the workflow shows red without leaving the site
+# on old code; each app then says plainly that the database is behind.
 on:
   push:
     branches: [main, master]
@@ -33,7 +42,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The database first: everything else writes to it or answers events on it.
+  provision:
+    uses: ./.github/workflows/provision.yml
+    secrets: inherit
+
+  # Then the functions, which subscribe to collections provisioning creates.
+  functions:
+    needs: provision
+    uses: ./.github/workflows/functions.yml
+    secrets: inherit
+
   build:
+    needs: [provision, functions]
+    # Even when the two above failed: a site left on old code helps nobody, and
+    # the apps say for themselves when the database is behind. A cancelled
+    # run is the one thing that stops it.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -226,6 +251,7 @@ jobs:
 
   deploy:
     needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
