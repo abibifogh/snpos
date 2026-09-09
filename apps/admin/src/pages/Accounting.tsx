@@ -10,11 +10,13 @@ import {
   postFromStatement, attachReceipt, downloadUrl, areasOf,
   loadLocks, lockPeriod, openAccounts,
   hanging, postSettlement, postTipsPaid, postTaxRemitted, settlementProblem, paydownProblem,
+  closeFacts, closeChecklist, mayLock, closeProgress, lockOverWarningsWords,
 } from '@snpos/core';
 import type {
   AccountRow, JournalEntry, JournalLine, FixedAsset, LineRow, Doc, BankStatementLine, Settings,
-  PeriodLock,
+  PeriodLock, CloseItem,
 } from '@snpos/core';
+import { useNavigate } from 'react-router-dom';
 import { useSession } from '../session';
 import { AccountsManager } from '../components/AccountsManager';
 
@@ -298,7 +300,7 @@ export function AccountingPage() {
       {tab === 'chart' && can('chart') && <AccountsManager />}
 
       {tab === 'locks' && can('locks') && (
-        <Locks venueId={venueId} userId={user?.$id ?? ''} onChanged={load} toast={toast} />
+        <Locks venueId={venueId} userId={user?.$id ?? ''} onChanged={load} toast={toast} onGoto={setTab} />
       )}
     </>
   );
@@ -1703,17 +1705,50 @@ function Settle({
 }
 
 function Locks({
-  venueId, userId, onChanged, toast,
+  venueId, userId, onChanged, toast, onGoto,
 }: {
   venueId: string;
   userId: string;
   onChanged: () => Promise<void>;
   toast: (m: string, t?: 'ok' | 'err') => void;
+  onGoto: (tab: Tab) => void;
 }) {
+  const navigate = useNavigate();
   const [locks, setLocks] = useState<PeriodLock[]>([]);
   const [through, setThrough] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  /**
+   * The checklist for the date typed, read afresh each time it changes.
+   *
+   * A lock is a checklist, not a date: see period-close.ts. Nothing here is
+   * decided on the page; the page only shows what the rules found and keeps
+   * the button shut while anything blocks.
+   */
+  const [items, setItems] = useState<CloseItem[] | null>(null);
+  const [checking, setChecking] = useState(false);
+  useEffect(() => {
+    if (!through || !venueId) { setItems(null); return; }
+    let live = true;
+    setChecking(true);
+    closeFacts(venueId, through)
+      .then((f) => { if (live) setItems(closeChecklist(f)); })
+      .catch(() => { if (live) setItems(null); })
+      .finally(() => { if (live) setChecking(false); });
+    return () => { live = false; };
+  }, [through, venueId]);
+  const verdict = items ? mayLock(items) : null;
+
+  /** Where each unfinished item is dealt with. */
+  const go = (item: CloseItem) => {
+    if (item.goto === 'settle' || item.goto === 'journal') { onGoto(item.goto); return; }
+    if (item.goto === 'shifts') navigate('/shifts');
+    if (item.goto === 'payouts') navigate('/payouts');
+    if (item.goto === 'counts') navigate('/bar/counts');
+    // Held counts, spends and shelf changes are decided on their own pages
+    // until the one waiting list exists.
+    if (item.goto === 'waiting') navigate(item.key === 'spends' ? '/expenses' : item.key === 'shelf' ? '/stocktake' : '/bar/counts');
+  };
 
   const load = () => loadLocks(venueId).then(setLocks).catch(() => setLocks([]));
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [venueId]);
@@ -1725,6 +1760,15 @@ function Locks({
 
   const apply = async () => {
     if (!through) return;
+    // Reopening moves the line back and needs no checklist; closing does.
+    if (!reopening) {
+      if (!verdict) { toast('Still checking the month. Try again in a moment.', 'err'); return; }
+      if (!verdict.ok) {
+        toast(`Not yet: ${verdict.blocking.map((b) => b.title.toLowerCase()).join('; ')}.`, 'err');
+        return;
+      }
+      if (verdict.warnings.length > 0 && !confirm(lockOverWarningsWords(verdict.warnings, through))) return;
+    }
     setBusy(true);
     try {
       await lockPeriod(venueId, through, { lockedBy: userId, note: note.trim() });
@@ -1741,6 +1785,46 @@ function Locks({
 
   return (
     <>
+      <Card
+        title="Before the month can be locked"
+        actions={items ? <span className="dim small">{closeProgress(items)}</span> : undefined}
+        pad
+      >
+        <p className="small dim" style={{ marginTop: 0 }}>
+          A lock is a checklist, not a date. Pick the last day to close below and this fills in. Anything that
+          would still change the month's figures blocks the lock; money still in transit is named and lets it
+          through, because a settlement that lands next month belongs to next month.
+        </p>
+        {!through && <Notice tone="info">Choose the date to close up to, and the checks appear here.</Notice>}
+        {through && checking && !items && <Spinner />}
+        {items && (
+          <div className="table-wrap">
+            <table className="data">
+              <tbody>
+                {items.map((i) => (
+                  <tr key={i.key}>
+                    <td style={{ width: '2rem' }}>
+                      <span className={`badge ${i.state === 'ok' ? 'badge-ok' : i.state === 'warn' ? 'badge-warn' : 'badge-danger'}`}>
+                        {i.state === 'ok' ? 'Done' : i.state === 'warn' ? 'In transit' : 'Blocks'}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{i.title}</div>
+                      <div className="dim small">{i.detail}</div>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {i.state !== 'ok' && i.goto && (
+                        <Button size="sm" onClick={() => go(i)}>Deal with it</Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
       <Card title="Close the books to a date" pad>
         <p className="small dim" style={{ marginTop: 0 }}>
           Nothing can be posted, edited or reversed on or before the date the books are closed to — not by hand,
@@ -1773,8 +1857,13 @@ function Locks({
         )}
 
         <div className="row" style={{ justifyContent: 'flex-end' }}>
-          <Button variant={reopening ? 'danger' : 'primary'} loading={busy} disabled={!through} onClick={() => void apply()}>
-            {reopening ? 'Reopen the books' : 'Close the books'}
+          <Button
+            variant={reopening ? 'danger' : 'primary'}
+            loading={busy}
+            disabled={!through || (!reopening && (!verdict || !verdict.ok))}
+            onClick={() => void apply()}
+          >
+            {reopening ? 'Reopen the books' : verdict && !verdict.ok ? `${verdict.blocking.length} thing${verdict.blocking.length === 1 ? '' : 's'} left` : 'Close the books'}
           </Button>
         </div>
       </Card>
