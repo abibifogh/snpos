@@ -74,6 +74,11 @@
             "events": [
                 "databases.snpos.collections.orders.documents.*.update",
                 "databases.snpos.collections.shifts.documents.*.update",
+                "databases.snpos.collections.shift_expenses.documents.*.create",
+                "databases.snpos.collections.shift_expenses.documents.*.update",
+                "databases.snpos.collections.consignor_payouts.documents.*.create",
+                "databases.snpos.collections.consignor_payouts.documents.*.update",
+                "databases.snpos.collections.waste_log.documents.*.create",
                 "databases.snpos.collections.staff_profiles.documents.*.create",
                 "databases.snpos.collections.staff_profiles.documents.*.update",
                 "databases.snpos.collections.staff_profiles.documents.*.delete",

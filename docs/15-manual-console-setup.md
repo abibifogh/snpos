@@ -1738,7 +1738,7 @@ There are 84 collections. A progress checklist is at the end of this document.
 
 ### 49. `journal_entries`, Journal entries
 
-**Read**: Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: admins · **Delete**: Team: admins
+**Read**: Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: admins · **Delete**: Team: admins
 
 **Attributes** (11)
 
@@ -1770,7 +1770,7 @@ There are 84 collections. A progress checklist is at the end of this document.
 
 ### 50. `journal_lines`, Journal lines
 
-**Read**: Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: admins · **Delete**: Team: admins
+**Read**: Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: admins · **Delete**: Team: admins
 
 **Attributes** (7)
 

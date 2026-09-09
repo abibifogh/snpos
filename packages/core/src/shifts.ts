@@ -1,4 +1,4 @@
-import { db, DB_ID, ID, Query, listAll, listByIds, saveDropping } from './client';
+import { db, DB_ID, ID, Query, listAll, saveDropping } from './client';
 import type { Doc, Settings } from './types';
 import type { Order, OrderItem } from './orders';
 import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from './stock';
@@ -7,8 +7,7 @@ import { countable } from './bar-count';
 import { makersShareOf } from './consignment-math';
 import { splitTax, parseLevies } from './pricing';
 import { loadConsignors } from './consignment';
-import { postShift, reverseEntry, shiftCloseEntries, lockedThroughFor, isLocked, debitsForExpense } from './ledger';
-import type { SpendDebit } from './spend-posting';
+import { postShift, reverseEntry, shiftCloseEntries, lockedThroughFor, isLocked } from './ledger';
 import { isLivePayment } from './payments';
 import { featureConfig, isEnabled, type FeatureMap } from './features';
 import { MODULE_LABELS } from './access';
@@ -664,7 +663,6 @@ export interface CloseShiftResult {
   totalOff: number;
   cogs: number;
   stockNote: string;
-  ledgerError: string | null;
   /** Orders moved onto the next shift because this one ran past its limit. */
   shelved: Order[];
 }
@@ -731,7 +729,6 @@ export async function closeShift(opts: {
   const soldItems = shiftOrders.length
     ? await listAll<OrderItem>('order_items', [Query.equal('order_id', shiftOrders.map((o) => o.$id))])
     : [];
-  const makersShare = await makersShareForShift(shift, shiftOrders, soldItems, settings);
 
   /*
     FINISHED ORDERS STOP BEING LIVE.
@@ -851,28 +848,25 @@ export async function closeShift(opts: {
   }
 
   const totalOff = Object.values(variance).reduce((a, b) => a + b, 0);
-  const shiftExpenses = await listAll<{
-    $id: string; amount: number; module?: string; category_key?: string; category?: string;
-  }>('shift_expenses', [Query.equal('shift_id', shift.$id)]);
-  /*
-    What each spend is charged to, from its lines. See debitsForExpense: the
-    stock lines go to this side's inventory and the category answers only for
-    the rest, the same rule the till and the admin form apply when the spend is
-    recorded. This is the net under those — a spend whose own posting failed
-    still lands here, and one that landed is not counted twice.
-  */
-  const expenseItems = await listByIds<{ expense_id: string; stocked?: boolean; line_total: number }>(
-    'expense_items', 'expense_id', shiftExpenses.map((e) => e.$id),
-  ).catch(() => [] as { expense_id: string; stocked?: boolean; line_total: number }[]);
-  const expensePostings: { expenseId: string; debits: SpendDebit[] }[] = [];
-  for (const e of shiftExpenses) {
-    if (e.amount <= 0) continue;
-    expensePostings.push({
-      expenseId: e.$id,
-      debits: await debitsForExpense(e, expenseItems.filter((i) => i.expense_id === e.$id)),
-    });
-  }
+  const shiftExpenses = await listAll<{ $id: string; amount: number }>('shift_expenses', [
+    Query.equal('shift_id', shift.$id),
+  ]);
 
+  /*
+    THE BOOKS ARE WRITTEN BY THE SERVER, from this row.
+
+    The close used to post the shift's entries itself, after writing the row,
+    best effort. A till that lost its connection between the two, or a
+    cashier who shut the lid, left the month short by a night and nothing
+    said so. Now the row is the event: the notify function answers it (see
+    functions/notify/src/books-post.js), works the entries out from the
+    figures written here and the payments, and marks `posted_to_ledger` when
+    it has. The hourly sweep catches anything the event missed.
+
+    Which is why the figures below are written in full rather than derived
+    again later: the tax, the discounts, the cost of sales and the counted
+    and expected drawer are exactly what the server posts from.
+  */
   await db.updateDocument(DB_ID, 'shifts', shift.$id, {
     status: 'closed',
     closed_by: userId,
@@ -890,43 +884,7 @@ export async function closeShift(opts: {
     covers: shiftOrders.reduce((a, o) => a + (o.guest_count || 1), 0),
   });
 
-  let ledgerError: string | null = null;
-  try {
-    const byKind = { cash: 0, card: 0, mobile_money: 0, other: 0 };
-    for (const p of takings.payments) {
-      const method = methods.find((x) => x.$id === p.method_id);
-      const kind = (method?.kind ?? 'other') as keyof typeof byKind;
-      byKind[kind in byKind ? kind : 'other'] += p.amount;
-    }
-    await postShift({
-      venueId,
-      shiftId: shift.$id,
-      postedBy: userId,
-      takings: byKind,
-      tips: takings.tipsTotal,
-      tax: shiftOrders.reduce((a, o) => a + o.tax_total, 0),
-      // Each levy to its own account, so each return can be filed from the
-      // books. See splitTax.
-      taxParts: splitTax(shiftOrders.reduce((a, o) => a + o.tax_total, 0), {
-        vatBp: settings.tax_rate_bp, levies: parseLevies(settings.levies),
-      }),
-      discounts: shiftOrders.reduce((a, o) => a + o.discount_total, 0),
-      cogs,
-      cashVariance: totalOff,
-      // Which books this shift's takings and costs belong in. A bar shift and
-      // a kitchen shift close the same way and mean different trades.
-      module: (shift.module ?? 'kitchen') as Module,
-      makersShare,
-      // By id, so an expense already posted when it was recorded is not
-      // posted again here. See postExpense.
-      expenses: expensePostings,
-    });
-    await db.updateDocument(DB_ID, 'shifts', shift.$id, { posted_to_ledger: true });
-  } catch (e) {
-    ledgerError = e instanceof Error ? e.message : 'unknown';
-  }
-
-  return { variance, totalOff, cogs, stockNote, ledgerError, shelved };
+  return { variance, totalOff, cogs, stockNote, shelved };
 }
 
 /* -------------------------------------------- correcting a shift after the fact */
@@ -1191,8 +1149,6 @@ export async function repostShiftAccounts(opts: {
     cashVariance: totalOff,
     module: (shift.module ?? 'kitchen') as Module,
     makersShare,
-    // They post themselves, by their own id, and none of them moved.
-    expenses: [],
   });
 
   await db.createDocument(DB_ID, 'audit_log', ID.unique(), {

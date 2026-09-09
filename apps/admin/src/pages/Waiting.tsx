@@ -157,7 +157,7 @@ export function WaitingPage() {
         : ref.kind === 'shelf' ? 'Shelf changed' : `${applied} difference${applied === 1 ? '' : 's'} applied to the shelf`;
     }
     if (ref.kind === 'spend') {
-      await decideSpend({ venueId: 'main', expenseId: ref.expenseId, decision: 'approved', by: userId });
+      await decideSpend({ expenseId: ref.expenseId, decision: 'approved', by: userId });
       return 'Spend approved';
     }
     return '';
@@ -181,8 +181,8 @@ export function WaitingPage() {
         return ref.kind === 'shelf' ? 'Change refused. The shelf is unchanged.' : 'Count refused. The shelf is unchanged.';
       }
       if (ref.kind === 'spend') {
-        const { reversed } = await decideSpend({ venueId: 'main', expenseId: ref.expenseId, decision: 'rejected', by: userId });
-        return reversed ? 'Spend refused and taken off the books' : 'Spend refused';
+        await decideSpend({ expenseId: ref.expenseId, decision: 'rejected', by: userId });
+        return 'Spend refused. The books follow in a moment.';
       }
       return '';
     });

@@ -10,6 +10,7 @@ import {
   fromBarChecks, fromShopCounts, fromExpenses, worthSending, approvalSubject, approvalBody,
   countLines, countSubject, countBody,
 } from './approvals.js';
+import { postShiftClose, postSpend, postPayoutRow, postWasteRow, sweepBooks } from './books-post.js';
 
 /**
  * Everything that sends an email.
@@ -27,11 +28,16 @@ import {
  *   staff_profiles.*.delete  → cancel that person's login
  *   item_availability.*.create → a dish has run out, tell an admin now
  *   approval_notices.*.create  → a count found a difference, tell an admin now
+ *   shifts.*.update            → the shift's takings, costs and drawer, on the books
+ *   shift_expenses.*.create/update → the spend on the books, corrected, or reversed if refused
+ *   consignor_payouts.*.create/update → the payout on the shop's books
+ *   waste_log.*.create         → the write-off on the books
  *
  * Schedule, hourly (no document arrives):
  *   dishes still off the menu past the configured wait
  *   shifts left open longer than a day
  *   counts and spending waiting for an admin to agree to them
+ *   anything closed, spent, paid or written off that the books have not got
  *
  * The hourly sweep lives here rather than in a function of its own because
  * Appwrite's free plan allows four functions and this project has four. It
@@ -658,6 +664,9 @@ export default async ({ req, res, log, error }) => {
     // summary going out, and neither must stop the availability sweep, three
     // unrelated jobs sharing a timer because the plan allows four functions.
     for (const [name, job] of [
+      // First, because the others read what it writes: a daily digest that
+      // runs before the books are filled reports a night that is not there.
+      ['books', () => sweepBooks({ db, DB_ID, Query, log })],
       ['availability', () => sweepUnavailable({ db, DB_ID, settings, transport, from, log, error })],
       ['stale_shifts', () => sweepStaleShifts({ db, DB_ID, settings, transport, from, shell, log, error })],
       ['approvals', () => sweepApprovals({ db, DB_ID, settings, transport, from, log, error })],
@@ -686,6 +695,21 @@ export default async ({ req, res, log, error }) => {
           ? await revokeLogin({ client, db, DB_ID, doc, log, error })
           : await ensureLogin({ client, db, DB_ID, doc, settings, transport, from, shell, log, error }),
       );
+    }
+
+    // ------------------------------------------------ the books, from events
+    // A spend, a payout or a write-off is posted from its own row, the
+    // moment Appwrite says the row exists or changed. The browser that wrote
+    // the row does not write the books; see books-post.js for why.
+    const books = { db, DB_ID, Query, log };
+    if (events.some((e) => e.includes('collections.shift_expenses'))) {
+      return res.json(await postSpend(books, doc));
+    }
+    if (events.some((e) => e.includes('collections.consignor_payouts'))) {
+      return res.json(await postPayoutRow(books, doc));
+    }
+    if (events.some((e) => e.includes('collections.waste_log'))) {
+      return res.json(await postWasteRow(books, doc));
     }
 
     // -------------------------------------------------- a dish has run out
@@ -1049,6 +1073,23 @@ export default async ({ req, res, log, error }) => {
 
     // ----------------------------------------------------- shift summary
     if (events.some((e) => e.includes('collections.shifts')) && doc.status === 'closed') {
+      /*
+        THE BOOKS FIRST, then the email about them.
+
+        Keyed by the shift, so the update that marks it posted, and every
+        later touch of the row, finds the entries there and does nothing.
+        A failure here is logged and does not stop the summary: the hourly
+        sweep will try the books again, and the summary reads the rows, not
+        the books.
+      */
+      try {
+        const booked = await postShiftClose(books, doc);
+        if (booked.posted) log(`Books: shift ${doc.code} posted (${booked.posted} entries, ${booked.spends} spends).`);
+        else if (booked.skipped === 'locked') error(`Books: shift ${doc.code} not posted, period locked through ${booked.through}.`);
+      } catch (e) {
+        error(`Books: shift ${doc.code} could not be posted: ${e.message}`);
+      }
+
       /*
         Sent once, unless somebody asks for it again.
 

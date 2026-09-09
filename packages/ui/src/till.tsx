@@ -5,9 +5,9 @@ import {
   PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions, receiveStock, uploadFile,
   buyOptions, convertPurchase, describePurchase, hasPack, categoriesForSide, canSeePrivateExpenses,
   expenseMethodsFor, mayComeFromShift, recomputeClosedShift, recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
-  fromTakings, postExpense, repostExpense, debitsForExpense, settleBoxSpend, listAll, Query, spendKind, spendSource,
+  fromTakings, settleBoxSpend, listAll, Query, spendKind, spendSource,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
-  loadFloats, balancesFor, accountFor, recordBoxSpend, boxOverdrawn,
+  loadFloats, balancesFor, recordBoxSpend, boxOverdrawn,
   checkPurchase, raiseAlerts, FLAG_WORDS,
 } from '@snpos/core';
 import type {
@@ -608,40 +608,18 @@ export function ExpenseModal({
       if (editing) {
         const { dropped } = await saveDropping('shift_expenses', editing.$id, fields);
         /*
-          AND THE BOOKS FOLLOW, the same way they do from Admin.
-
-          A spend corrected here used to update the row and stop. The admin
-          form reposted; the till did not, so the same correction made in two
-          places left the accounts agreeing with one of them. The lines already
-          recorded against the spend still decide what it is charged to.
+          The books follow from the row: the server reads the corrected spend
+          and brings its entry into line. See functions/notify/src/books-post.js.
+          The tin's own record moves by the difference here, or not at all.
         */
-        const correctedId = editing.$id;
-        void listAll<{ stocked?: boolean; line_total: number }>('expense_items', [
-          Query.equal('expense_id', correctedId),
-        ])
-          .catch(() => [] as { stocked?: boolean; line_total: number }[])
-          .then((items) => debitsForExpense({ amount, module, category_key: categoryKey }, items))
-          .then(async (debits) => {
-            const entryId = await repostExpense(venueId, {
-              expenseId: correctedId,
-              debits,
-              postedBy: userId,
-              shiftId: shiftId || undefined,
-              fromAccount: chosenBox ? accountFor(chosenBox) : undefined,
-              memo: chosenBox ? `Paid from ${chosenBox.name}` : undefined,
-            });
-            // The tin's own record moves by the difference, or not at all.
-            await settleBoxSpend({
-              venueId,
-              expenseId: correctedId,
-              boxId: chosenBox?.$id ?? null,
-              amount,
-              userId,
-              note: noteText.trim() || payee,
-              entryId: entryId ?? undefined,
-            });
-          })
-          .catch(() => undefined);
+        await settleBoxSpend({
+          venueId,
+          expenseId: editing.$id,
+          boxId: chosenBox?.$id ?? null,
+          amount,
+          userId,
+          note: noteText.trim() || payee,
+        }).catch(() => undefined);
         /*
           A shift that has already closed is worked out again. Its expected
           figures were written when it closed and do not recompute
@@ -695,64 +673,25 @@ export function ExpenseModal({
         }).catch(() => undefined);
       }
 
-      /**
-       * On the books straight away, not at shift close.
-       *
-       * Expenses used to reach the ledger only when a shift closed, so one
-       * recorded outside a shift never reached it at all. Keyed by the
-       * expense's own id, so the shift close doing it again later is a no-op
-       * rather than a second charge.
-       *
-       * Best effort on purpose. The spend is recorded either way, and an
-       * expense missing from the ledger is a bookkeeping job; an expense that
-       * would not save is a hole in the drawer nobody can explain.
-       */
       /*
-        What it is charged to comes from the lines. A bottle that went on the
-        shelf is stock; the taxi and the part nobody itemised are spent. See
-        debitsForExpense, which the admin form and the shift close share.
+        The books are written by the server, from this row, the moment it is
+        saved — see functions/notify/src/books-post.js. What it is charged to
+        comes from the lines: a bottle that went on the shelf is stock; the
+        taxi and the part nobody itemised are spent.
+
+        The box's own record is written here, pointing at the spend, so the
+        tin and the books can be walked from either end.
       */
-      const postingItems = filledLines.flatMap((l) => {
-        const ing = ingredients.find((i) => i.$id === l.ingredientId);
-        return ing
-          ? [{ stocked: ing.counted_at_close !== false, line_total: parseMoney(l.totalText, decimals) ?? 0 }]
-          : [];
-      });
-      void debitsForExpense({ amount, module, category_key: categoryKey }, postingItems)
-        .then(async (debits) => {
-          const entryId = await postExpense(venueId, {
-            expenseId,
-            debits,
-            postedBy: userId,
-            shiftId: shiftId || undefined,
-            // Out of the tin, not the till. Crediting cash for money that
-            // never left the drawer is how a box quietly empties while the
-            // balance sheet says the business still has it in hand.
-            fromAccount: chosenBox ? accountFor(chosenBox) : undefined,
-            memo: chosenBox ? `Paid from ${chosenBox.name}` : undefined,
-          });
-
-          /*
-            And the box's own record.
-
-            Written after the posting, pointing at it, so the tin and the
-            books can be walked from either end. Without this the expense
-            would reach the accounts and the box would never hear about it —
-            which is exactly the hole this feature exists to close.
-          */
-          if (chosenBox) {
-            await recordBoxSpend({
-              venueId,
-              boxId: chosenBox.$id,
-              amount,
-              userId,
-              expenseId,
-              entryId: entryId ?? undefined,
-              note: noteText.trim() || payee,
-            });
-          }
-        })
-        .catch(() => undefined);
+      if (chosenBox) {
+        await recordBoxSpend({
+          venueId,
+          boxId: chosenBox.$id,
+          amount,
+          userId,
+          expenseId,
+          note: noteText.trim() || payee,
+        }).catch(() => undefined);
+      }
 
       // Each line is recorded and then delivered into stock. From where the
       // person is standing these are one action, so a line that fails to stock

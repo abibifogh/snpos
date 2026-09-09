@@ -19,7 +19,7 @@
  * so node can load the TypeScript directly. Ugly, and much less ugly than
  * threading a database handle through ninety files to make them testable.
  */
-import { cp, mkdtemp, readdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -36,8 +36,13 @@ try {
   });
 
   // The database, replaced by one that lives in memory.
+  await mkdir(join(work, 'notify'), { recursive: true });
   await cp(join(here, 'e2e/fake-appwrite.ts'), join(work, 'core/client.ts'));
   await cp(join(here, 'e2e/shelves.ts'), join(work, 'shelves.ts'));
+  // The server's side of the books, so the same run can post a shift the way
+  // the notify function does and read the result back.
+  await cp(join(root, 'functions/notify/src/books.js'), join(work, 'notify/books.js'));
+  await cp(join(root, 'functions/notify/src/books-post.js'), join(work, 'notify/books-post.js'));
 
   /*
     `from './menu'` is what Vite resolves and what node does not. Rewritten on

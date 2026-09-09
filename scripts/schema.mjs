@@ -2321,8 +2321,13 @@ export const COLLECTIONS = [
     id: 'journal_entries',
     name: 'Journal entries',
     /**
-     * Created by whoever closes the shift, which may be the cook. Edited and
-     * removed by an admin, and by nobody else.
+     * Written by the server, and by managers and admins from the accounting
+     * page. Not by the till: a shift close, a spend, a payout and a write-off
+     * are events the server answers by posting (see functions/notify), so no
+     * cashier or cook holds the right to write a journal row, and a till that
+     * loses its connection mid-close cannot leave the books short.
+     *
+     * Edited and removed by an admin, and by nobody else.
      *
      * This was append-only, on the usual argument: a wrong entry is corrected
      * by posting its opposite, never by editing history, because books that
@@ -2337,7 +2342,7 @@ export const COLLECTIONS = [
      * the erase page never clears. Quietly is the part that was worth
      * preventing, not editing.
      */
-    perms: { read: MGMT, create: ALL_STAFF, update: ADMIN, delete: ADMIN },
+    perms: { read: MGMT, create: MGMT, update: ADMIN, delete: ADMIN },
     attributes: [
       ['date', 'd', null, true],
       ['source', 'e', ['shift_close', 'purchase', 'expense', 'refund', 'adjustment', 'reversal'], true],
@@ -2369,7 +2374,7 @@ export const COLLECTIONS = [
     // An edit replaces an entry's lines rather than patching them: the number
     // of lines changes, and matching old to new is guesswork. See the note on
     // journal_entries for why this is editable at all.
-    perms: { read: MGMT, create: ALL_STAFF, update: ADMIN, delete: ADMIN },
+    perms: { read: MGMT, create: MGMT, update: ADMIN, delete: ADMIN },
     attributes: [
       ['entry_id', 's', 64, true],
       ['account_code', 's', 10, true],

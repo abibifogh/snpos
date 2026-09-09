@@ -83,9 +83,7 @@ export function taxTotalFor(input) {
 export function rateFor(line, consignor, settings) {
   const candidates = [line?.commission_bp, consignor?.commission_bp, settings?.default_commission_bp];
   for (const bp of candidates) {
-    if (typeof bp === 'number' && Number.isFinite(bp) && bp >= 0) {
-      return Math.max(0, Math.min(10000, Math.round(bp)));
-    }
+    if (typeof bp === 'number' && Number.isFinite(bp) && bp >= 0) return bp;
   }
   return 3000;
 }

@@ -6,7 +6,6 @@ import { differencesIn, summariseCount, MOVE_FOR_REASON } from './stocktake';
 import type { CountLine, PendingCount, PendingCountLine } from './stocktake';
 import type { WaitingChange } from './shelf-approval';
 import { hasShelf } from './craft-services';
-import { postPayout } from './ledger';
 import type { ImportMaker } from './maker-import';
 import { SHELF_CHANGE_NOTE } from './waiting';
 
@@ -189,7 +188,7 @@ export async function recordPayout(opts: {
   note?: string;
   userId?: string;
   at?: Date;
-}): Promise<{ payout: ConsignorPayout; postedToLedger: boolean; postedToBooks: boolean }> {
+}): Promise<{ payout: ConsignorPayout; postedToLedger: boolean }> {
   const at = (opts.at ?? new Date()).toISOString();
   if (!(opts.amount > 0)) throw new Error('A payout has to be more than nothing.');
 
@@ -209,19 +208,12 @@ export async function recordPayout(opts: {
   })) as unknown as ConsignorPayout;
 
   /*
-    And the shop's own books, straight away and best effort.
-
-    What the shop owed the maker goes down, and the drawer, the wallet or the
-    bank goes down with it. This used to happen nowhere: makers were paid and
-    the accounts never heard, so the shop's profit stood at the whole sale
-    and the money paid out was money the books could not see leaving. The
-    payout itself is the record that matters and is already written.
+    The shop's own books follow from the row. The server posts the payout —
+    what the shop owed the maker goes down, and the drawer, the wallet or the
+    bank with it — the same way it posts the maker's own ledger line. See
+    functions/notify/src/books-post.js.
   */
-  const postedToBooks = await postPayout(opts.venueId, payout, opts.userId ?? '')
-    .then((id) => id !== null)
-    .catch(() => false);
-
-  return { payout, postedToLedger: await waitForPayoutEntry(payout.$id), postedToBooks };
+  return { payout, postedToLedger: await waitForPayoutEntry(payout.$id) };
 }
 
 /**

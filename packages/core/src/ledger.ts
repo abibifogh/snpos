@@ -3,14 +3,10 @@ import type { Doc } from './types';
 import { entryProblem, within, chargeForMonth, isLocked, lockedMessage, correctionPlan } from './ledger-math';
 import { uploadFile } from './files';
 import type { AccountRow, DepreciableAsset } from './ledger-math';
-import { MODULE_LABELS } from './access';
 import type { Module } from './access';
-import {
-  ACCOUNTS, salesAccount, cogsAccount, inventoryAccount, INVENTORY_ACCOUNTS, payoutAccount,
-} from './accounts';
-import { spendDebits, spendPostingLines, sameDebits } from './spend-posting';
+import { ACCOUNTS } from './accounts';
+import { shiftEntries } from './books';
 import { settlementLines, tipsPaidLines, taxRemittedLines } from './settle';
-import type { SpendDebit, SpendLine } from './spend-posting';
 
 export interface JournalEntry extends Doc {
   venue_id: string;
@@ -140,7 +136,6 @@ export interface ShiftPosting {
    * a month that had already been reported would change.
    */
   date?: Date;
-  expenses: { debits: SpendDebit[]; expenseId?: string }[];
 }
 
 /**
@@ -154,91 +149,11 @@ export async function postShift(p: ShiftPosting): Promise<string[]> {
   const common = {
     shiftId: p.shiftId, postedBy: p.postedBy, source: 'shift_close', sourceId: p.shiftId, date: p.date,
   };
-
-  // --- sales: what came in, what it was made of, and what is owed onward
-  const gross = p.takings.cash + p.takings.card + p.takings.mobile_money + p.takings.other;
-  if (gross > 0 || p.discounts > 0) {
-    const netRevenue = gross - p.tax - p.tips;
-    // Never more than the sales it came out of: a rounding quirk or a line
-    // refunded after its maker was credited must not turn sales negative.
-    const makersShare = Math.max(0, Math.min(p.makersShare ?? 0, netRevenue + p.discounts));
-    const lines: PostingLine[] = [
-      { account_code: ACCOUNTS.cash, debit: p.takings.cash, credit: 0, memo: 'Cash taken' },
-      { account_code: ACCOUNTS.cardClearing, debit: p.takings.card, credit: 0, memo: 'Card taken' },
-      { account_code: ACCOUNTS.momoClearing, debit: p.takings.mobile_money, credit: 0, memo: 'Mobile money taken' },
-      // Discounts are recorded as a debit rather than netted off sales, so
-      // "how much did we give away" stays an answerable question.
-      { account_code: ACCOUNTS.discountsGiven, debit: p.discounts, credit: 0, memo: 'Discounts given' },
-      {
-        account_code: salesAccount(p.module ?? 'kitchen'),
-        debit: 0,
-        credit: netRevenue + p.discounts - makersShare,
-        memo: `${MODULE_LABELS[p.module ?? 'kitchen']} sales`,
-      },
-      // The makers' part of a craft shift is held for them, not earned.
-      { account_code: ACCOUNTS.owedToMakers, debit: 0, credit: makersShare, memo: 'Owed to makers' },
-      ...(p.taxParts && p.taxParts.length > 0
-        ? p.taxParts.map((t) => ({ account_code: t.account_code, debit: 0, credit: t.amount, memo: `${t.name} collected` }))
-        : [{ account_code: ACCOUNTS.taxPayable, debit: 0, credit: p.tax, memo: 'Tax collected' }]),
-      { account_code: ACCOUNTS.tipsPayable, debit: 0, credit: p.tips, memo: 'Tips owed to staff' },
-    ].filter((l) => l.debit !== 0 || l.credit !== 0);
-
-    if (p.takings.other > 0) {
-      lines.push({ account_code: ACCOUNTS.cash, debit: p.takings.other, credit: 0, memo: 'Other tender' });
-    }
-    const entry = await postEntry(p.venueId, { ...common, memo: 'Shift sales' }, lines);
+  // The lines are decided in books.ts, which the server's copy is held to.
+  for (const e of shiftEntries(p)) {
+    const entry = await postEntry(p.venueId, { ...common, memo: e.memo }, e.lines);
     posted.push(entry.$id);
   }
-
-  // --- cost of what was sold
-  if (p.cogs > 0) {
-    const entry = await postEntry(p.venueId, {
-      ...common,
-      memo: `Cost of ${MODULE_LABELS[p.module ?? 'kitchen'].toLowerCase()} goods sold`,
-    }, [
-      { account_code: cogsAccount(p.module ?? 'kitchen'), debit: p.cogs, credit: 0 },
-      // Off this side's own shelf. Crediting the shared account would write a
-      // bar's pours off against the kitchen's larder.
-      { account_code: inventoryAccount(p.module ?? 'kitchen'), debit: 0, credit: p.cogs },
-    ]);
-    posted.push(entry.$id);
-  }
-
-  /**
-   * Money paid out during the shift.
-   *
-   * Each one posted by id rather than as a batch, and skipped if it is already
-   * on the books. Expenses used to reach the ledger only here, at shift close,
-   * which meant one recorded outside a shift — from the admin form, or after
-   * the till had been closed for the night — never reached it at all. The
-   * books were short by every one of those, and nothing said so.
-   *
-   * They now post themselves the moment they are recorded, so most are already
-   * there by the time a shift closes. This stays as the net under that: an
-   * expense whose own posting failed still lands, and one that landed is not
-   * counted twice.
-   */
-  for (const e of p.expenses) {
-    const id = await postExpense(p.venueId, {
-      expenseId: e.expenseId,
-      debits: e.debits,
-      postedBy: p.postedBy,
-      shiftId: p.shiftId,
-    });
-    if (id) posted.push(id);
-  }
-
-  // --- the drawer being over or short is itself a cost, and belongs on record
-  if (p.cashVariance !== 0) {
-    const short = p.cashVariance < 0;
-    const amount = Math.abs(p.cashVariance);
-    const entry = await postEntry(p.venueId, { ...common, memo: short ? 'Cash short' : 'Cash over' }, [
-      { account_code: short ? ACCOUNTS.cashOverShort : ACCOUNTS.cash, debit: amount, credit: 0 },
-      { account_code: short ? ACCOUNTS.cash : ACCOUNTS.cashOverShort, debit: 0, credit: amount },
-    ]);
-    posted.push(entry.$id);
-  }
-
   return posted;
 }
 
@@ -509,242 +424,6 @@ function endOfMonth(month: string): Date {
 /* ------------------------------------------------- money out, wherever it was */
 
 /**
- * What one spend owes the books, worked out from its lines.
- *
- * Shared so the till, the admin form and the shift close cannot disagree
- * about where a market run lands. The stock lines go to that side's
- * inventory; the category answers only for what the lines do not. See
- * spendDebits for the rule and the fault it closes.
- */
-export async function debitsForExpense(
-  e: { amount: number; module?: string; category_key?: string; category?: string },
-  items: { stocked?: boolean; line_total: number }[],
-): Promise<SpendDebit[]> {
-  const categoryAccount = await accountForExpense(e);
-  const lines: SpendLine[] = items.map((i) => ({ stocked: i.stocked !== false, lineTotal: i.line_total }));
-  return spendDebits({
-    amount: e.amount,
-    lines,
-    stockAccount: inventoryAccount((e.module ?? 'kitchen') as Module),
-    categoryAccount,
-    fallbackAccount: UNCATEGORISED,
-    stockAccounts: INVENTORY_ACCOUNTS,
-  });
-}
-
-/** The account an expense lands on when its category names none. */
-const UNCATEGORISED = '6090';
-
-/**
- * Put one expense on the books, once.
- *
- * Expenses reached the ledger only at shift close, so one recorded outside a
- * shift — from the admin form, or after the till had been shut for the night —
- * never reached it at all. Those are real money that really left, and the
- * books were short by every one of them with nothing to say so.
- *
- * Keyed by the expense's own id, and refused if that id is already posted. The
- * key is what makes this safe to call from everywhere it should be called
- * from: the till form, the admin form, and the shift close that used to be the
- * only one. Calling it twice does nothing the second time, which is the
- * property that lets all three exist without anybody having to reason about
- * which of them got there first.
- *
- * Returns the entry id when it posted, and null when there was nothing to do.
- */
-export async function postExpense(
-  venueId: string,
-  e: {
-    expenseId?: string;
-    /** What it is charged to. See debitsForExpense. */
-    debits: SpendDebit[];
-    postedBy: string;
-    shiftId?: string;
-    date?: Date;
-    /**
-     * What the money actually came out of. The till's cash unless said.
-     *
-     * Given for anything paid from a petty cash box, where crediting the till
-     * would take money out of a drawer that never held it — leaving the box
-     * showing a balance it does not have and the drawer chased for a shortage
-     * sitting in a tin in the office.
-     */
-    fromAccount?: string;
-    memo?: string;
-  },
-): Promise<string | null> {
-  const lines = spendPostingLines(e.debits, e.fromAccount || ACCOUNTS.cash);
-  if (lines.length === 0) return null;
-
-  const key = e.expenseId ? `expense:${e.expenseId}` : '';
-  if (key) {
-    const already = await db.listDocuments(DB_ID, 'journal_entries', [
-      Query.equal('venue_id', venueId),
-      Query.equal('source_id', key),
-      Query.limit(1),
-    ]).catch(() => ({ total: 0 }));
-    if (already.total > 0) return null;
-  }
-
-  const entry = await postEntry(
-    venueId,
-    {
-      date: e.date,
-      source: 'expense',
-      sourceId: key || undefined,
-      shiftId: e.shiftId,
-      memo: e.memo || 'Money paid out',
-      postedBy: e.postedBy,
-    },
-    lines,
-  );
-  return entry.$id;
-}
-
-/**
- * Post an expense, or bring what was already posted into line with it.
- *
- * `postExpense` is deliberately once-only: it is called from three places and
- * the shift close calls it again for everything the till already booked, so a
- * second call has to be harmless. The cost of that is an expense CORRECTED
- * afterwards — a figure retyped, a category changed, a spend moved onto a
- * petty cash box — leaving the books at the old version for ever, silently.
- *
- * Nobody sees it. The expense list shows the corrected figure, the shift is
- * worked out again from the rows, the petty cash box follows; only the
- * accounts keep the number somebody already fixed, and the first sign of it is
- * a profit figure that disagrees with the expenses behind it by an amount
- * nobody can trace.
- *
- * So the entry is edited to match, with what it said before written into the
- * audit log — the house rule for a correction, see editEntry. Nothing happens
- * at all when the entry already says the right thing, which is the ordinary
- * case: most saves change a note, not a number.
- */
-export async function repostExpense(
-  venueId: string,
-  e: {
-    expenseId: string;
-    debits: SpendDebit[];
-    postedBy: string;
-    shiftId?: string;
-    /** Where the money came out of. See postExpense. */
-    fromAccount?: string;
-    memo?: string;
-  },
-): Promise<string | null> {
-  const key = `expense:${e.expenseId}`;
-  const found = await db.listDocuments(DB_ID, 'journal_entries', [
-    Query.equal('venue_id', venueId),
-    Query.equal('source_id', key),
-    Query.limit(1),
-  ]).catch(() => ({ documents: [] as unknown[] }));
-  const entry = (found.documents ?? [])[0] as JournalEntry | undefined;
-
-  // Never posted, so this is the ordinary first posting.
-  if (!entry) return postExpense(venueId, e);
-
-  const fromAccount = e.fromAccount || ACCOUNTS.cash;
-  const want = spendPostingLines(e.debits, fromAccount);
-
-  const lines = await listAll<JournalLine>('journal_lines', [Query.equal('entry_id', entry.$id)])
-    .catch(() => [] as JournalLine[]);
-  const haveDebits: SpendDebit[] = lines
-    .filter((l) => l.debit > 0)
-    .map((l) => ({ account_code: l.account_code, amount: l.debit, memo: l.memo ?? '' }));
-  const haveCredit = lines.find((l) => l.credit > 0);
-  const same = sameDebits(haveDebits, e.debits)
-    && haveCredit?.account_code === fromAccount
-    && lines.length === want.length;
-  if (same) return entry.$id;
-
-  /*
-    Corrected the right way for where it sits: edited in an open month,
-    reversed and re-posted into the first open day when the month has been
-    closed. See correctEntry. Best effort still: this runs on every save of an
-    expense, and a save that fails because the books could not be reached
-    would be the accounts blocking an admin from fixing a spelling.
-  */
-  const done = await correctEntry(
-    entry,
-    { memo: e.memo || entry.memo || 'Money paid out', lines: want },
-    { editedBy: e.postedBy },
-  ).catch(() => null);
-
-  return done && done.mode === 'reversed' ? done.entryId : entry.$id;
-}
-
-/**
- * Which account an expense's category points at.
- *
- * Shared so the till, the admin form and the shift close cannot disagree about
- * where a taxi lands. Falls back to Other expenses rather than refusing: an
- * expense filed imperfectly is a great deal better than an expense that would
- * not save.
- */
-export async function accountForExpense(e: { category_key?: string; category?: string }): Promise<string> {
-  const cats = await listAll<{ key: string; account_code?: string }>('expense_categories').catch(() => []);
-  return cats.find((c) => c.key === (e.category_key || e.category))?.account_code || UNCATEGORISED;
-}
-
-/**
- * A maker paid, on the books.
- *
- * The payout row is the event and the consignor's own ledger is what it does
- * to their balance; this is what it does to the shop's. What the shop owed
- * goes down, and the cash, the wallet or the bank goes down with it. See
- * payoutAccount for which.
- *
- * Keyed by the payout, so a retry cannot pay the books down twice. `source`
- * is 'adjustment' because the column is a fixed list the database only widens
- * when it is provisioned; what identifies these is the source id.
- */
-export async function postPayout(
-  venueId: string,
-  payout: { $id: string; amount: number; method?: string; paid_at?: string; reference?: string },
-  postedBy: string,
-): Promise<string | null> {
-  if (!(payout.amount > 0)) return null;
-  const key = `payout:${payout.$id}`;
-  const already = await db.listDocuments(DB_ID, 'journal_entries', [
-    Query.equal('venue_id', venueId), Query.equal('source_id', key), Query.limit(1),
-  ]).catch(() => ({ total: 0 }));
-  if (already.total > 0) return null;
-
-  const entry = await postEntry(
-    venueId,
-    {
-      date: payout.paid_at ? new Date(payout.paid_at) : undefined,
-      source: 'adjustment',
-      sourceId: key,
-      memo: `Paid a maker${payout.reference ? ` · ${payout.reference}` : ''}`,
-      postedBy,
-    },
-    [
-      { account_code: ACCOUNTS.owedToMakers, debit: payout.amount, credit: 0, memo: 'Owed to makers, paid' },
-      { account_code: payoutAccount(payout.method), debit: 0, credit: payout.amount, memo: 'Paid out' },
-    ],
-  );
-  return entry.$id;
-}
-
-/** The entry a spend made, if it made one: the one that still answers to its key. */
-export async function expenseEntry(venueId: string, expenseId: string): Promise<JournalEntry | null> {
-  const found = await db.listDocuments(DB_ID, 'journal_entries', [
-    Query.equal('venue_id', venueId), Query.equal('source_id', `expense:${expenseId}`), Query.limit(1),
-  ]).catch(() => ({ documents: [] as unknown[] }));
-  return ((found.documents ?? [])[0] as JournalEntry | undefined) ?? null;
-}
-
-/** The entry a payout made, if it made one. */
-export async function payoutEntry(venueId: string, payoutId: string): Promise<JournalEntry | null> {
-  const found = await db.listDocuments(DB_ID, 'journal_entries', [
-    Query.equal('venue_id', venueId), Query.equal('source_id', `payout:${payoutId}`), Query.limit(1),
-  ]).catch(() => ({ documents: [] as unknown[] }));
-  return ((found.documents ?? [])[0] as JournalEntry | undefined) ?? null;
-}
-
-/**
  * Correct an entry the right way for where it sits.
  *
  * In an open month, edited in place. In a closed month, the entry is left
@@ -798,38 +477,6 @@ export async function correctEntry(
   await db.updateDocument(DB_ID, 'journal_entries', entry.$id, { source_id: `${entry.source_id || 'entry'}:superseded` })
     .catch(() => undefined);
   return { mode: 'reversed', reversalId, entryId: fresh.$id };
-}
-
-/**
- * Stock written off, on the books.
- *
- * Waste came off the shelf and reached nothing else, so a month with a lot
- * of it showed the same profit as a month with none. What was thrown away
- * had been bought, and sits on the balance sheet as inventory until
- * something says it is gone: this does. Keyed by the waste row, so it cannot
- * be written off twice.
- */
-export async function postWaste(
-  venueId: string,
-  w: { wasteId: string; value: number; module?: string; what: string; postedBy: string; date?: Date },
-): Promise<string | null> {
-  if (!(w.value > 0)) return null;
-  const key = `waste:${w.wasteId}`;
-  const already = await db.listDocuments(DB_ID, 'journal_entries', [
-    Query.equal('venue_id', venueId), Query.equal('source_id', key), Query.limit(1),
-  ]).catch(() => ({ total: 0 }));
-  if (already.total > 0) return null;
-  const entry = await postEntry(venueId, {
-    date: w.date,
-    source: 'adjustment',
-    sourceId: key,
-    memo: `Written off: ${w.what}`,
-    postedBy: w.postedBy,
-  }, [
-    { account_code: ACCOUNTS.waste, debit: w.value, credit: 0, memo: 'Waste and spoilage' },
-    { account_code: inventoryAccount((w.module ?? 'kitchen') as Module), debit: 0, credit: w.value, memo: 'Off the shelf' },
-  ]);
-  return entry.$id;
 }
 
 /* ------------------------------------------------------------- settling up */
