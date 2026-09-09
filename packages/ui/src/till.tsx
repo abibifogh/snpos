@@ -5,7 +5,7 @@ import {
   PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions, receiveStock, uploadFile,
   buyOptions, convertPurchase, describePurchase, hasPack, categoriesForSide, canSeePrivateExpenses,
   expenseMethods, recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
-  fromTakings, postExpense, debitsForExpense,
+  fromTakings, postExpense, repostExpense, debitsForExpense, settleBoxSpend, listAll, Query,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
   loadFloats, balancesFor, accountFor, recordBoxSpend, boxOverdrawn,
   checkPurchase, raiseAlerts, FLAG_WORDS,
@@ -561,6 +561,41 @@ export function ExpenseModal({
        */
       if (editing) {
         const { dropped } = await saveDropping('shift_expenses', editing.$id, fields);
+        /*
+          AND THE BOOKS FOLLOW, the same way they do from Admin.
+
+          A spend corrected here used to update the row and stop. The admin
+          form reposted; the till did not, so the same correction made in two
+          places left the accounts agreeing with one of them. The lines already
+          recorded against the spend still decide what it is charged to.
+        */
+        const correctedId = editing.$id;
+        void listAll<{ stocked?: boolean; line_total: number }>('expense_items', [
+          Query.equal('expense_id', correctedId),
+        ])
+          .catch(() => [] as { stocked?: boolean; line_total: number }[])
+          .then((items) => debitsForExpense({ amount, module, category_key: categoryKey }, items))
+          .then(async (debits) => {
+            const entryId = await repostExpense(venueId, {
+              expenseId: correctedId,
+              debits,
+              postedBy: userId,
+              shiftId: shiftId || undefined,
+              fromAccount: chosenBox ? accountFor(chosenBox) : undefined,
+              memo: chosenBox ? `Paid from ${chosenBox.name}` : undefined,
+            });
+            // The tin's own record moves by the difference, or not at all.
+            await settleBoxSpend({
+              venueId,
+              expenseId: correctedId,
+              boxId: chosenBox?.$id ?? null,
+              amount,
+              userId,
+              note: noteText.trim() || payee,
+              entryId: entryId ?? undefined,
+            });
+          })
+          .catch(() => undefined);
         onDone(dropped.includes('from_takings') ? CANNOT_STORE_SOURCE : 'Spend corrected');
         return;
       }
