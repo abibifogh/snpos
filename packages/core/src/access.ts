@@ -174,6 +174,13 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     the shop has one account — so filing it under any one of them would hide it
     from the other two.
   */
+  /*
+    Everything held for somebody senior, on one page: bar and store counts,
+    shop stocktakes, shelf changes, spends nobody has looked at, and shifts
+    that cannot close for the tabs on them. Each used to wait on its own page.
+    See waiting.ts.
+  */
+  { key: 'waiting', label: 'Waiting for you', path: '/waiting', group: 'Money' },
   { key: 'tabs', label: 'Tabs', path: '/tabs', group: 'Money' },
   { key: 'shifts', label: 'Shifts', path: '/shifts', group: 'Money' },
   { key: 'expenses', label: 'Expenses', path: '/expenses', group: 'Money' },
@@ -234,7 +241,7 @@ export const DEFAULT_ACCESS: Record<string, string[]> = {
     // A manager opens tabs. It is the job: deciding who is good for credit is
     // a floor decision made while somebody is standing there, and an owner who
     // has to be rung at eleven at night to open one is an owner who gets rung.
-    'dashboard', 'orders', 'reports', 'shifts', 'expenses', 'vouchers', 'tabs',
+    'dashboard', 'orders', 'reports', 'shifts', 'expenses', 'vouchers', 'tabs', 'waiting',
     'menu_items', 'stock', 'waste', 'stations',
     // A shop manager runs the intake desk and needs to see who is owed what.
     'shop_categories', 'shop_items', 'consignors', 'intake', 'stocktake', 'payouts',

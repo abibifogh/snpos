@@ -728,6 +728,14 @@ export async function postPayout(
   return entry.$id;
 }
 
+/** The entry a spend made, if it made one: the one that still answers to its key. */
+export async function expenseEntry(venueId: string, expenseId: string): Promise<JournalEntry | null> {
+  const found = await db.listDocuments(DB_ID, 'journal_entries', [
+    Query.equal('venue_id', venueId), Query.equal('source_id', `expense:${expenseId}`), Query.limit(1),
+  ]).catch(() => ({ documents: [] as unknown[] }));
+  return ((found.documents ?? [])[0] as JournalEntry | undefined) ?? null;
+}
+
 /** The entry a payout made, if it made one. */
 export async function payoutEntry(venueId: string, payoutId: string): Promise<JournalEntry | null> {
   const found = await db.listDocuments(DB_ID, 'journal_entries', [

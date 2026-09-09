@@ -8,6 +8,7 @@ import type { WaitingChange } from './shelf-approval';
 import { hasShelf } from './craft-services';
 import { postPayout } from './ledger';
 import type { ImportMaker } from './maker-import';
+import { SHELF_CHANGE_NOTE } from './waiting';
 
 /**
  * The arithmetic lives next door, in a file that imports nothing.
@@ -842,7 +843,7 @@ export async function submitShelfChange(opts: {
   return submitCount({
     venueId: opts.venueId,
     userId: opts.userId,
-    note: opts.note?.trim() || 'Changed on the products page.',
+    note: opts.note?.trim() || SHELF_CHANGE_NOTE,
     lines: [{
       menuItemId: piece.menuItemId,
       variantId: piece.variantId,

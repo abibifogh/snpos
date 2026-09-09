@@ -15,6 +15,7 @@ import { AccountPage } from './pages/Account';
 import { HelpPage } from './pages/Help';
 import { AddonsPage } from './pages/Addons';
 import { ExpensesPage } from './pages/Expenses';
+import { WaitingPage } from './pages/Waiting';
 import { ImprestPage } from './pages/Imprest';
 import { CustomersPage } from './pages/Customers';
 import { AccountingPage } from './pages/Accounting';
@@ -80,6 +81,7 @@ export function App() {
         <Route path="/shop/items" element={guard('shop_items', <MenuItemsPage module="craft" />)} />
         <Route path="/menu/options" element={guard('menu_options', <AddonsPage />)} />
         <Route path="/expenses" element={guard('expenses', <ExpensesPage />)} />
+        <Route path="/waiting" element={guard('waiting', <WaitingPage />)} />
         <Route path="/imprest" element={guard('imprest', <ImprestPage />)} />
         <Route path="/customers" element={guard('customers', <CustomersPage />)} />
         <Route path="/accounting" element={guard('accounting', <AccountingPage />)} />

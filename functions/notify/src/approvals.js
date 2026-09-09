@@ -141,11 +141,17 @@ const QUEUE_NAMES = {
   expense: 'Spending',
 };
 
-/** Where in the admin an admin goes to deal with it. */
+/**
+ * Where in the admin an admin goes to deal with it.
+ *
+ * One place for all of them now: Money, Waiting for you lists every held
+ * count, spend and shelf change with the buttons to decide it, so the email
+ * sends everybody to the same page whatever is waiting.
+ */
 const QUEUE_WHERE = {
-  bar_count: 'Bar, Counts and variances',
-  shop_count: 'Craft shop, Stocktake',
-  expense: 'Money, Expenses',
+  bar_count: 'Money, Waiting for you',
+  shop_count: 'Money, Waiting for you',
+  expense: 'Money, Waiting for you',
 };
 
 /** The subject line: what, how many, and nothing else. */
@@ -278,7 +284,6 @@ export function countBody(opts) {
     + '<strong>The stock figures have not moved.</strong> A count that finds a difference waits for somebody '
     + 'who can see the whole business to agree to it, which is why this email exists. Until then the shelf '
     + 'still says what it said before the count — so the next count, and every report built on it, is working '
-    + 'from a number this one has already found to be wrong. Agree or refuse it under Bar, Counts and '
-    + 'variances.'
+    + 'from a number this one has already found to be wrong. Agree or refuse it under Money, Waiting for you.'
     + '</p>';
 }

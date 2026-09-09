@@ -16,6 +16,7 @@ import {
   lockPeriod, postWaste,
 } from './core/ledger.ts';
 import { makersShareOf } from './core/consignment-math.ts';
+import { decideSpend } from './core/spend-decide.ts';
 import { receiveStock } from './core/stock.ts';
 import { computeTotals } from './core/pricing.ts';
 import { GHANA_LEVIES, splitTax, serialiseLevies } from './core/pricing.ts';
@@ -845,6 +846,37 @@ console.log('\n=== M — a group order placed from the link reaches the kitchen 
     'lines', lines.map((l) => [l.name_snapshot, l.qty, l.line_total]), [['Party platter', 2, 90_000]],
   )]);
   results.push(['M and the total the group will be billed', ok('total', placed.order.total, 90_000)]);
+}
+
+/* ------------------------------------------- a spend looked at, and refused */
+
+console.log('\n=== V — refusing a spend takes it off the books; approving only stamps it ===');
+{
+  __reset();
+  __seed('expense_categories', [{ $id: 'c3', key: 'transport', name: 'Transport', account_code: '6010' }]);
+  __seed('shift_expenses', [
+    { $id: 'e-ok', venue_id: 'main', amount: 1_500, category_key: 'transport', created_by: 'kofi', approval_status: 'pending' },
+    { $id: 'e-no', venue_id: 'main', amount: 4_000, category_key: 'transport', created_by: 'kofi', approval_status: 'pending' },
+  ]);
+  const debits = (amount: number) => debitsForExpense({ amount, module: 'kitchen', category_key: 'transport' }, []);
+  await postExpense('main', { expenseId: 'e-ok', debits: await debits(1_500), postedBy: 'kofi' });
+  await postExpense('main', { expenseId: 'e-no', debits: await debits(4_000), postedBy: 'kofi' });
+
+  const kept = await decideSpend({ venueId: 'main', expenseId: 'e-ok', decision: 'approved', by: 'micheal' });
+  const refused = await decideSpend({ venueId: 'main', expenseId: 'e-no', decision: 'rejected', by: 'micheal' });
+  const rows = __all('shift_expenses') as any[];
+  results.push(['V both rows say who decided, and what', ok(
+    'rows', rows.map((r) => [r.$id, r.approval_status, r.approved_by]),
+    [['e-ok', 'approved', 'micheal'], ['e-no', 'rejected', 'micheal']],
+  )]);
+  results.push(['V approving posts nothing; refusing reverses', ok('reversed', [kept.reversed, refused.reversed], [false, true])]);
+  const lines = __all('journal_lines') as any[];
+  const transport = lines.filter((l) => l.account_code === '6010').reduce((s, l) => s + l.debit - l.credit, 0);
+  const cash = lines.filter((l) => l.account_code === '1000').reduce((s, l) => s + l.debit - l.credit, 0);
+  results.push(['V the month carries the approved taxi and not the refused one', ok('transport / cash', [transport, cash], [1_500, -1_500])]);
+  // Refusing again does not reverse the reversal.
+  const again = await decideSpend({ venueId: 'main', expenseId: 'e-no', decision: 'rejected', by: 'micheal' });
+  results.push(['V refused twice is refused once', ok('again', again.reversed, false)]);
 }
 
 console.log('\n=== summary ===');

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Badge, Button, Card, Empty, Field, Input, Notice, Select, Spinner, useToast } from '@snpos/ui';
 import { db, DB_ID, humanError } from '../lib';
 import {
@@ -8,7 +9,7 @@ import {
   restoreCount, draftFromCount, countRestoredWords, countDraftLines, clearAllWarning,
   filedCounts, undoProblem, undoBarCount, pourMissedSales, loadIngredients,
   loadRecipes, pourState, pourLabel, pourWords, unexplainedByWiring, drinksToMoveToBar,
-  heldWords, unheldWords, pendingBarChecks, barCountHistory, approveBarCount, rejectBarCount, countState,
+  heldWords, unheldWords, pendingBarChecks, barCountHistory, countState,
   isStoreCount, STORE_COUNT_PREFIX, unpouredForShift, unpouredWords, unpouredSummary,
   relinkShelves, relinkWords, relinkIsEmpty,
 } from '@snpos/core';
@@ -1050,43 +1051,20 @@ export function BarCountsPage() {
       )}
 
       {/*
-        HELD COUNTS, AND THE RECORD.
+        HELD COUNTS.
 
-        A count with a difference on it waits here until an admin agrees.
-        Agreeing applies the difference the count found — not the figure it
-        wrote, because the shelf has been sold from since — and stamps who
-        agreed and when. Refusing leaves the shelf exactly as it was and keeps
-        the count, marked, because a count that was disagreed with is a better
-        record than a gap.
+        A count with a difference on it waits until an admin agrees, and the
+        agreeing happens under Money, Waiting for you, beside every other held
+        thing. Here it is only named, so somebody at the bar page knows the
+        shelf has not moved yet. The held counts stay in the record below,
+        marked as waiting.
       */}
-      {isManager && (
-        <CountHistory
-          title="Counts waiting for an admin"
-          counts={pending}
-          money={money}
-          emptyWords="A count that finds a difference waits here until an admin agrees. Nothing is waiting."
-          onApprove={isAdmin ? async (c) => {
-            const row = c as HistoryCount & { shiftId: string; phaseKey: 'open' | 'close' };
-            try {
-              const { applied, failed } = await approveBarCount({
-                venueId: 'main', shiftId: row.shiftId, phase: row.phaseKey, userId: user?.$id ?? '',
-                locationId: placeId || undefined,
-              });
-              toast(failed > 0
-                ? `${applied} applied, ${failed} could not be. The count stays here until they are.`
-                : `${applied} difference${applied === 1 ? '' : 's'} applied to the shelf`, failed > 0 ? 'err' : undefined);
-              await load();
-            } catch (e) { setError(humanError(e)); }
-          } : undefined}
-          onReject={isAdmin ? async (c) => {
-            const row = c as HistoryCount & { shiftId: string; phaseKey: 'open' | 'close' };
-            try {
-              await rejectBarCount({ shiftId: row.shiftId, phase: row.phaseKey, userId: user?.$id ?? '' });
-              toast('Count refused. The shelf is unchanged.');
-              await load();
-            } catch (e) { setError(humanError(e)); }
-          } : undefined}
-        />
+      {isManager && pending && pending.length > 0 && (
+        <Notice tone="info">
+          {pending.length === 1 ? 'One count is' : `${pending.length} counts are`} waiting for an admin. The shelf
+          still says what it said before {pending.length === 1 ? 'it' : 'them'}.
+          {isAdmin && <> Decide {pending.length === 1 ? 'it' : 'them'} under <Link to="/waiting?show=count">Waiting for you</Link>.</>}
+        </Notice>
       )}
 
       {isManager && (

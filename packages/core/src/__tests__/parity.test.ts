@@ -6,7 +6,9 @@ import { estimateMinutes, queueMinutes, waitIncludingOpening } from '../orders-t
 import { minutesUntilOpen, parseWindows } from '../availability.ts';
 import * as guard from '../../../../functions/order-guard/src/money.js';
 import * as words from '../../../../functions/notify/src/words.js';
+import * as approvals from '../../../../functions/notify/src/approvals.js';
 import { tradeWords, offSubject, offCountLine } from '../words.ts';
+import { waitedWords } from '../waiting.ts';
 import type { CartLine } from '../pricing.ts';
 
 /**
@@ -229,5 +231,14 @@ test('the words for each trade agree, everywhere', () => {
     for (const n of [0, 1, 2, 17]) {
       assert.equal(offCountLine(n, module), words.offCountLine(n, module));
     }
+  }
+});
+
+test('"waiting 3 days" reads the same in the inbox and on the page', () => {
+  // The approval email and the Waiting for you page each say how long a thing
+  // has waited. The function cannot import the bundle, so there are two
+  // copies; this holds them together.
+  for (const ms of [1, 30_000, 90_000, 59 * 60_000, 3_600_000, 5 * 3_600_000, 86_400_000, 40 * 86_400_000]) {
+    assert.equal(waitedWords(ms), approvals.waitedWords(ms), `disagreed at ${ms}ms`);
   }
 });

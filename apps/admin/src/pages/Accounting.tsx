@@ -1767,9 +1767,8 @@ function Locks({
     if (item.goto === 'shifts') navigate('/shifts');
     if (item.goto === 'payouts') navigate('/payouts');
     if (item.goto === 'counts') navigate('/bar/counts');
-    // Held counts, spends and shelf changes are decided on their own pages
-    // until the one waiting list exists.
-    if (item.goto === 'waiting') navigate(item.key === 'spends' ? '/expenses' : item.key === 'shelf' ? '/stocktake' : '/bar/counts');
+    // Held counts, spends and shelf changes are all decided on the one page.
+    if (item.goto === 'waiting') navigate(item.key === 'spends' ? '/waiting?show=spend' : item.key === 'shelf' ? '/waiting?show=shelf' : '/waiting?show=count');
   };
 
   const load = () => loadLocks(venueId).then(setLocks).catch(() => setLocks([]));
