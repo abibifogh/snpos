@@ -4,6 +4,7 @@ import { shiftPrefix } from '../shift-rules.ts';
 import {
   modulesOf, modulesForStaff, parseAccess, canOpen, inTrade, sectionsFor,
   canEditCatalogue, selfOrderModule, ADMIN_SECTIONS, DEFAULT_ACCESS, areasOf, sidesOf, legacySide,
+  navFor, catalogueSides, sidebarSides,
   canRepriceLine, MODULE_LABELS,
 } from '../access.ts';
 import type { Settings, StaffProfile } from '../types.ts';
@@ -437,4 +438,53 @@ test('every side has a name, and no screen has to invent one', () => {
   // And no two sides answer to the same word, which is the way a mislabel
   // survives a test that only checks for non-empty strings.
   assert.equal(new Set(sides.map((m) => MODULE_LABELS[m])).size, sides.length);
+});
+
+/* ------------------------------------------------- the sidebar, by job */
+
+test('the sidebar is grouped by job, and the per-side pages are one link each', () => {
+  const both = settings({ kitchen_enabled: true, craft_enabled: true, bar_enabled: true });
+  const nav = navFor(staff({ role: 'admin' }), both);
+  assert.deepEqual(nav.map((g) => g.group), ['Today', 'Sell', 'Stock', 'Money', 'Books', 'People & setup']);
+  const sell = nav.find((g) => g.group === 'Sell')!;
+  assert.deepEqual(sell.links.filter((l) => l.label === 'Categories').length, 1);
+  assert.deepEqual(sell.links.find((l) => l.label === 'Categories')?.keys, ['menu_categories', 'bar_categories', 'shop_categories']);
+  assert.equal(sell.links.find((l) => l.label === 'Menu & products')?.to, '/catalogue/items');
+  const stock = nav.find((g) => g.group === 'Stock')!;
+  assert.deepEqual(stock.links.find((l) => l.label === 'Ingredients & bottles')?.keys, ['stock', 'bar_stock']);
+  // One Accounting link, not six. The tabs are reached through the page.
+  const books = nav.find((g) => g.group === 'Books')!;
+  assert.deepEqual(books.links.map((l) => l.label), ['Reports', 'Accounting']);
+});
+
+test('narrowed to one side, the sidebar keeps that side and everything with no side', () => {
+  const both = settings({ kitchen_enabled: true, craft_enabled: true, bar_enabled: true });
+  const nav = navFor(staff({ role: 'admin' }), both, 'bar');
+  const labels = nav.flatMap((g) => g.links.map((l) => l.label));
+  assert.ok(labels.includes('Bar counts'));
+  assert.ok(!labels.includes('Shop stocktake'));
+  assert.ok(!labels.includes('Waste'));
+  assert.ok(labels.includes('Shifts'), 'shifts have no side');
+  // The merged links point at the chosen side.
+  assert.equal(nav.flatMap((g) => g.links).find((l) => l.label === 'Categories')?.to, '/catalogue/categories?side=bar');
+  assert.deepEqual(nav.flatMap((g) => g.links).find((l) => l.label === 'Ingredients & bottles')?.keys, ['bar_stock']);
+});
+
+test('a merged link appears when any of its sides is granted, and offers only those sides', () => {
+  const both = settings({
+    kitchen_enabled: true, craft_enabled: true, bar_enabled: true,
+    // Decided about everything, so nothing the defaults would add back comes back.
+    role_access: JSON.stringify({ manager: ['shop_items', 'dashboard'], _known: DEFAULT_ACCESS.manager }),
+  });
+  const manager = staff({ role: 'manager' });
+  assert.deepEqual(catalogueSides('/catalogue/items', manager, both), ['craft']);
+  assert.deepEqual(catalogueSides('/catalogue/categories', manager, both), []);
+  const labels = navFor(manager, both).flatMap((g) => g.links.map((l) => l.label));
+  assert.ok(labels.includes('Menu & products'));
+  assert.ok(!labels.includes('Categories'));
+  // A side the business does not run is never offered, whatever is granted.
+  const kitchenOnly = settings({ kitchen_enabled: true, craft_enabled: false, bar_enabled: false });
+  assert.deepEqual(catalogueSides('/catalogue/items', staff({ role: 'admin' }), kitchenOnly), ['kitchen']);
+  assert.deepEqual(sidebarSides(staff({ role: 'admin' }), kitchenOnly), ['kitchen']);
+  assert.deepEqual(sidebarSides(staff({ role: 'admin' }), both), ['kitchen', 'bar', 'craft']);
 });

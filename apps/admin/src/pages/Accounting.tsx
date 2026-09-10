@@ -72,7 +72,11 @@ export function AccountingPage() {
    */
   const allowed = useMemo(() => areasOf('accounting', profile, settings), [profile, settings]);
   const can = (area: Tab) => allowed.includes(`accounting_${area}`);
-  const [tab, setTab] = useState<Tab>('statements');
+  // A link may name the tab: /accounting?tab=locks from the health page, say.
+  const [tab, setTab] = useState<Tab>(() => {
+    const asked = new URLSearchParams(window.location.hash.split('?')[1] ?? window.location.search).get('tab');
+    return (['statements', 'journal', 'trial', 'assets', 'bank', 'settle', 'chart', 'locks'].includes(asked ?? '') ? asked : 'statements') as Tab;
+  });
   useEffect(() => {
     // Land on something they can see. Opening on a tab they were not given
     // shows an empty page that reads as a fault rather than as a permission.

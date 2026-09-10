@@ -218,8 +218,8 @@ not just what to press.
 | E11 | The closed shift after E10 | Takings and over/short worked out again |
 | E12 | Open Orders as a manager | **No Cancel, no Delete.** Admins only |
 | E1 | Sign in as a cashier, open Products | Can look. **No Add, no Save, no Delete** |
-| E2 | Staff set to "Craft shop only" | No kitchen pages, no stations, no waste |
-| E3 | Staff set to "Both" | Both groups in the sidebar |
+| E2 | Staff set to "Craft shop only" | No bistro pages, no stations, no waste; no side filter in the sidebar |
+| E3 | Staff set to "Both" | Both sides' pages in the sidebar, grouped by job, with an All / Bistro / Shop filter at the top; Categories and Menu & products are one link each with a side switch on the page |
 | E4 | Manager after Settings was last saved | **Craft pages visible** |
 | E13 | Untick a manager's Orders, save, reload | **Stays unticked.** It does not come back |
 | E14 | Untick a page no other role has | Same. It was the case that silently failed |

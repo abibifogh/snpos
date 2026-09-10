@@ -20,6 +20,9 @@
   gap: 0.6rem;
 }
 .sidebar nav { padding: 0.6rem; overflow-y: auto; flex: 1; }
+.sidebar .side-pick { padding: 0.2rem 0.3rem 0.4rem; }
+.sidebar .side-pick .segmented { width: 100%; display: flex; }
+.sidebar .side-pick .segmented button { flex: 1; }
 .sidebar .group {
   font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--text-dim); padding: 0.9rem 0.65rem 0.35rem; font-weight: 600;

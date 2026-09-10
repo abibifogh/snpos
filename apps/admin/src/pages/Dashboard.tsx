@@ -83,10 +83,10 @@ export function Dashboard() {
             <Link to="/venues">Venues</Link>, set your opening hours. Pre-ordering needs these.
           </li>
           <li>
-            <Link to="/menu/categories">Categories</Link>, Starters, Mains, Drinks.
+            <Link to="/catalogue/categories">Categories</Link>, Starters, Mains, Drinks.
           </li>
           <li>
-            <Link to="/menu/items">Dishes &amp; drinks</Link>, the menu itself, with prices.
+            <Link to="/catalogue/items">Menu &amp; products</Link>, the menu itself, with prices.
           </li>
           <li>
             <Link to="/features">Features</Link>, switch off anything you do not want yet.
