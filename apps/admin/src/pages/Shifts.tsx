@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState, useMemo } from 'react';
 import {
   Card, Empty, Notice, Spinner, Badge, Modal, Button, Field, Input, Textarea, useToast,
-  FilterBar, FilterField,
+  FilterBar, FilterField, ShiftHistory,
 } from '@snpos/ui';
 import { listAll, humanError, Query } from '../lib';
 import {
@@ -15,12 +15,12 @@ import {
   kindOf, countedParts, partLines, partsWords, unexplained,
   shiftCountEntries, countsByPhase, phaseSummary, bothEndsWords, countsGapWords,
   buildReportHtml, openPrintable,
-  tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS,
-} from '@snpos/core';
+  tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS, dateWords, timeWords, dateTimeWords } from '@snpos/core';
 import type {
   Module, Doc, CashHandover, MoneyKind, CountedParts, Settings, CountRow, CountEntry, TabOrder,
+  Shift as CoreShift, Venue,
 } from '@snpos/core';
-import { useSession } from '../session';
+import { useSession, useMoney } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 
 interface Shift extends Doc {
@@ -182,6 +182,8 @@ export function ShiftsPage() {
   const [floatBusy, setFloatBusy] = useState(false);
   /** Which shift's closing report is being asked for again. */
   const [resendBusy, setResendBusy] = useState<string | null>(null);
+  /** The shift's own list of what it sold and spent: the till's screen, opened from here. */
+  const [history, setHistory] = useState<Shift | null>(null);
   const [closeEdit, setCloseEdit] = useState<Shift | null>(null);
   const [closeAt, setCloseAt] = useState('');
   const [closeReason, setCloseReason] = useState('');
@@ -362,7 +364,7 @@ export function ShiftsPage() {
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [releaseError, setReleaseError] = useState<string | null>(null);
 
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
 
   /**
    * The two counts as a document somebody can hand over.
@@ -406,8 +408,8 @@ export function ShiftsPage() {
         title: 'Stock counts and variances',
         restaurantName: settings?.restaurant_name ?? '',
         period: `${shift.code ?? 'Shift'} · ${MODULE_LABELS[shift.module ?? 'kitchen']} · `
-          + `${new Date(shift.opened_at).toLocaleString()}`
-          + `${shift.closed_at ? ` to ${new Date(shift.closed_at).toLocaleString()}` : ' (still open)'}`,
+          + `${dateTimeWords(shift.opened_at)}`
+          + `${shift.closed_at ? ` to ${dateTimeWords(shift.closed_at)}` : ' (still open)'}`,
         generatedAt: new Date(),
         generatedBy: profile?.display_name ?? '',
         brandColor: settings?.primary_color,
@@ -763,7 +765,7 @@ export function ShiftsPage() {
                       )}
                     </td>
                     <td className="dim small">
-                      {r.shift.closed_at ? new Date(r.shift.closed_at).toLocaleString() : '-'}
+                      {r.shift.closed_at ? dateTimeWords(r.shift.closed_at) : '-'}
                     </td>
                     <td>
                       <Badge tone="danger">{agedWords(r.ageMs)}</Badge>
@@ -820,8 +822,8 @@ export function ShiftsPage() {
                   return (
                     <tr key={s.$id}>
                       <td style={{ fontWeight: 550 }}>{s.code}</td>
-                      <td className="dim small">{new Date(s.opened_at).toLocaleString()}</td>
-                      <td className="dim small">{s.closed_at ? new Date(s.closed_at).toLocaleString() : '-'}</td>
+                      <td className="dim small">{dateTimeWords(s.opened_at)}</td>
+                      <td className="dim small">{s.closed_at ? dateTimeWords(s.closed_at) : '-'}</td>
                       <td className="num">{settings ? formatMoney(s.sales_total, settings) : s.sales_total}</td>
                       <td className="num">
                         {s.status === 'closed' ? (
@@ -922,7 +924,7 @@ export function ShiftsPage() {
           {isSealed(sealing) ? (
             <>
               <p className="small dim" style={{ marginTop: 0 }}>
-                This night was settled{sealing.locked_at ? ` on ${new Date(sealing.locked_at).toLocaleDateString()}` : ''}.
+                This night was settled{sealing.locked_at ? ` on ${dateWords(sealing.locked_at)}` : ''}.
                 Reopening it lets its close time, its orders, its payments and its spending be changed again.
               </p>
               <Notice tone="warn">
@@ -984,7 +986,7 @@ export function ShiftsPage() {
                     {exposure.orders.map((o) => (
                       <tr key={o.$id}>
                         <td style={{ fontWeight: 550 }}>{displayOrderNo(o.order_no)}</td>
-                        <td className="small dim">{new Date(o.$createdAt).toLocaleString()}</td>
+                        <td className="small dim">{dateTimeWords(o.$createdAt)}</td>
                         <td className="num">{settings ? formatMoney(o.total, settings) : o.total}</td>
                       </tr>
                     ))}
@@ -1045,17 +1047,28 @@ export function ShiftsPage() {
         </Modal>
       )}
 
+      {history && settings && (
+        <ShiftHistory
+          shift={history as unknown as CoreShift}
+          venue={{ $id: history.venue_id } as Venue}
+          settings={settings}
+          who={profile}
+          onClose={() => setHistory(null)}
+          onToast={toast}
+        />
+      )}
+
       {detail && (
         <Modal title={`Shift ${detail.code}`} onClose={() => setDetail(null)}>
           <div className="grid-2">
             <div>
               <h3>Opened</h3>
-              <p className="small dim">{new Date(detail.opened_at).toLocaleString()}</p>
+              <p className="small dim">{dateTimeWords(detail.opened_at)}</p>
             </div>
             <div>
               <h3>Closed</h3>
               <p className="small dim" style={{ marginBottom: '0.35rem' }}>
-                {detail.closed_at ? new Date(detail.closed_at).toLocaleString() : 'Still open'}
+                {detail.closed_at ? dateTimeWords(detail.closed_at) : 'Still open'}
                 {detail.closed_at && (
                   <> · {hoursBetween(detail.opened_at, detail.closed_at)} hours</>
                 )}
@@ -1101,6 +1114,14 @@ export function ShiftsPage() {
               )}
             </div>
           </div>
+
+          {/* The same screen the till shows for "what have I done today",
+              so the office and the counter read one list, not two. */}
+          {settings && (
+            <div style={{ marginTop: '0.6rem' }}>
+              <Button size="sm" onClick={() => setHistory(detail)}>What happened on this shift</Button>
+            </div>
+          )}
 
           <div className="spread" style={{ marginTop: '1rem', alignItems: 'baseline' }}>
             <h3 style={{ margin: 0 }}>Cash reconciliation</h3>
@@ -1426,7 +1447,7 @@ export function ShiftsPage() {
                       <td className="small dim">
                         {line.entries
                           .filter((e) => e.status !== 'corrected')
-                          .map((e) => new Date(e.handed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+                          .map((e) => timeWords(e.handed_at))
                           .join(', ')}
                       </td>
                     </tr>
@@ -1571,7 +1592,7 @@ export function ShiftsPage() {
           >
             <p className="small dim" style={{ marginTop: 0 }}>
               For a till nobody got back to: a bar that stopped serving at one and was closed on the system at
-              eleven the next morning. Opened {new Date(closeEdit.opened_at).toLocaleString()}.
+              eleven the next morning. Opened {dateTimeWords(closeEdit.opened_at)}.
             </p>
             {/* Said early and plainly, because it is the question an admin
                 actually has and the answer is reassuring. */}
@@ -1722,7 +1743,7 @@ export function ShiftsPage() {
  * that quietly falls short of its own total is worse than no list.
  */
 function TotalsBreakdown({
-  kind, parts, payments, settings, methodName,
+  kind, parts, payments, methodName,
 }: {
   kind: MoneyKind;
   parts: CountedParts;
@@ -1731,7 +1752,7 @@ function TotalsBreakdown({
   settings: Settings | null;
   methodName: (id: string) => string;
 }) {
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
   // Voided and refunded are money that came back out, so they are shown struck
   // through rather than dropped: a payment reversed is a thing that happened,
   // and a list it vanishes from cannot explain why a total moved.

@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Card, Field, Input, Modal, Notice, Spinner } from '@snpos/ui';
 import {
   formatMoney, listAll, loadItemSales, loadIngredientSales, toCsv, downloadCsv,
-  historyRows, historyTotals, byDay, byPerson, emptyHistoryWords, daysBetween,
-} from '@snpos/core';
+  historyRows, historyTotals, byDay, byPerson, emptyHistoryWords, daysBetween, dateWords, dateTimeWords } from '@snpos/core';
 import type { Settings, StaffProfile, HistoryRow } from '@snpos/core';
 import { humanError } from '../lib';
 
@@ -100,7 +99,7 @@ export function SalesHistory({
     const csv = toCsv(
       ['When', 'Order', 'What', 'Quantity', 'Value', 'Sold by', 'Order status', 'Payment', 'Voided'],
       (rows ?? []).map((r) => [
-        new Date(r.at).toLocaleString(),
+        dateTimeWords(r.at),
         r.orderNo,
         r.name,
         r.qty,
@@ -206,7 +205,7 @@ export function SalesHistory({
               <Card>
                 <div className="small dim">Best day</div>
                 <div style={{ fontSize: '1.4rem', fontWeight: 650 }}>{busiest.qty}</div>
-                <div className="small dim">{new Date(`${busiest.day}T12:00:00`).toLocaleDateString()}</div>
+                <div className="small dim">{dateWords(`${busiest.day}T12:00:00`)}</div>
               </Card>
             )}
           </div>
@@ -248,7 +247,7 @@ export function SalesHistory({
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.lineId} style={r.voided ? { opacity: 0.55 } : undefined}>
-                    <td className="small">{new Date(r.at).toLocaleString()}</td>
+                    <td className="small">{dateTimeWords(r.at)}</td>
                     <td style={{ fontWeight: 550 }}>{r.orderNo}</td>
                     <td className="small">
                       {r.name}

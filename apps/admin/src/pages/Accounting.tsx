@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, useToast } from '@snpos/ui';
 import { listAll, humanError, saveDropping } from '../lib';
 import {
-  formatMoney, parseMoney, toInput, Query,
+  parseMoney, toInput, Query,
   ledgerLines, loadAccounts, postManualEntry, reverseEntry, correctEntry, deleteEntry, loadFixedAssets, postDepreciation,
   profitAndLoss, balanceSheet, totalsByAccount, naturalBalance, entryProblem, within,
   bookValue, monthOf, reconcile, db, DB_ID, ID,
@@ -10,14 +10,13 @@ import {
   postFromStatement, attachReceipt, downloadUrl, areasOf,
   loadLocks, lockPeriod, openAccounts,
   hanging, postSettlement, postTipsPaid, postTaxRemitted, settlementProblem, paydownProblem,
-  closeFacts, closeChecklist, mayLock, closeProgress, lockOverWarningsWords,
-} from '@snpos/core';
+  closeFacts, closeChecklist, mayLock, closeProgress, lockOverWarningsWords, bpWords } from '@snpos/core';
 import type {
   AccountRow, JournalEntry, JournalLine, FixedAsset, LineRow, Doc, BankStatementLine, Settings,
   PeriodLock, CloseItem,
 } from '@snpos/core';
 import { useNavigate } from 'react-router-dom';
-import { useSession } from '../session';
+import { useSession, useMoney } from '../session';
 import { AccountsManager } from '../components/AccountsManager';
 
 /**
@@ -101,7 +100,7 @@ export function AccountingPage() {
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(today());
 
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
   const decimals = settings?.currency_decimals ?? 2;
 
   const load = async () => {
@@ -940,7 +939,7 @@ function Assets({
                     <td className="num">{money(a.cost)}</td>
                     <td className="dim small">
                       {a.method === 'reducing_balance'
-                        ? `${((a.rate_bp ?? 0) / 100).toFixed(0)}% a year, reducing`
+                        ? `${bpWords(a.rate_bp ?? 0)} a year, reducing`
                         : `over ${a.life_months} months`}
                     </td>
                     {/* What it is carried at today: the cost less everything

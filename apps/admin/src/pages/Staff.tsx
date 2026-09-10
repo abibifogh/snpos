@@ -3,8 +3,7 @@ import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Togg
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   encodePin, pinProblem, modulesOf, sidesOf, legacySide, MODULE_LABELS,
-  inviteState, inviteWords, stuckInvites, meanwhile, INVITE_CHECKS,
-} from '@snpos/core';
+  inviteState, inviteWords, stuckInvites, meanwhile, INVITE_CHECKS, bpWords } from '@snpos/core';
 import type { StaffProfile, Module } from '@snpos/core';
 import type { Doc } from '@snpos/core';
 import { useSession } from '../session';
@@ -442,7 +441,7 @@ export function StaffPage() {
                       })()}
                     </td>
                     <td className="dim small">
-                      {p.can_discount_up_to_bp ? `up to ${(p.can_discount_up_to_bp / 100).toFixed(0)}%` : 'none'}
+                      {p.can_discount_up_to_bp ? `up to ${bpWords(p.can_discount_up_to_bp)}` : 'none'}
                     </td>
                     <td>
                       {/*

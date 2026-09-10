@@ -5,7 +5,7 @@ import {
 } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
-  formatMoney, parseMoney, toInput, saveDropping,
+  parseMoney, toInput, saveDropping,
   loadFloats, loadMovements, loadCounts, balancesFor, accountFor,
   topUpFloat, returnFromFloat, reconcileFloat,
   boxBalance, countBox, healthOf, topUpNeeded, overBy, countProblem, withoutReceipt,
@@ -13,14 +13,14 @@ import {
   boxesFor, canFundBoxes, holdsBox, canCountBox, NO_BOX_HELD, WHY_NO_COUNT,
   needsExplaining, IMPREST_KIND_LABELS, loadPaidToOptions, loadAccounts, ACCOUNTS,
   uploadFile, downloadUrl, listByIds, saveDropping as saveRow,
-  loadMovementDetail, movementTitle, movementRows, expenseRows, amountDisagreesWords, noDetailWords,
-} from '@snpos/core';
+  loadMovementDetail, movementTitle, movementRows, expenseRows, amountDisagreesWords, noDetailWords, dateWords, dateTimeWords,
+  nameBook, nameFrom } from '@snpos/core';
 import type {
   ImprestFloatDoc, ImprestMovementDoc, ImprestCountDoc, StaffProfile,
   AccountRow, ImprestHealth, Module, Settings,
   DetailExpense, DetailNames,
 } from '@snpos/core';
-import { useSession } from '../session';
+import { useSession, useMoney } from '../session';
 
 /**
  * Petty cash, run properly.
@@ -108,7 +108,7 @@ export function ImprestPage() {
   };
 
   const decimals = settings?.currency_decimals ?? 2;
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
 
   const load = async () => {
     try {
@@ -199,7 +199,8 @@ export function ImprestPage() {
     [movements, openBox, balances],
   );
 
-  const nameOf = (id?: string) => staff.find((s) => s.$id === id || s.user_id === id)?.display_name ?? '';
+  const names = useMemo(() => nameBook(staff), [staff]);
+  const nameOf = (id?: string) => (names.size ? nameFrom(names, id, '') : '');
 
   /* ------------------------------------------------------------ the box itself */
 
@@ -444,7 +445,7 @@ export function ImprestPage() {
 
           {counts[0] && (
             <p className="small dim" style={{ marginTop: '0.8rem' }}>
-              Last counted {new Date(counts[0].counted_at ?? counts[0].$createdAt).toLocaleDateString()}
+              Last counted {dateWords(counts[0].counted_at ?? counts[0].$createdAt)}
               {counts[0].variance === 0
                 ? ' and it balanced.'
                 : counts[0].variance < 0
@@ -500,7 +501,7 @@ export function ImprestPage() {
           <h3>{lastCount ? 'Since the last count' : 'Everything that has moved'}</h3>
           {lastCount && (
             <p className="small dim" style={{ marginTop: 0 }}>
-              Counted {new Date(lastCount.counted_at ?? lastCount.$createdAt).toLocaleString()}.
+              Counted {dateTimeWords(lastCount.counted_at ?? lastCount.$createdAt)}.
               Everything before that is filed under its count below.
             </p>
           )}
@@ -539,7 +540,7 @@ export function ImprestPage() {
                       title="See what this was"
                     >
                       <td className="dim small">
-                        {new Date(m.occurred_at ?? m.$createdAt).toLocaleDateString()}
+                        {dateWords(m.occurred_at ?? m.$createdAt)}
                       </td>
                       <td>{IMPREST_KIND_LABELS[m.kind] ?? m.kind}</td>
                       <td className="small dim">{m.note || '—'}</td>
@@ -629,7 +630,7 @@ export function ImprestPage() {
                         <Fragment key={c.$id}>
                           <tr>
                             <td className="small">
-                              {new Date(c.counted_at ?? c.$createdAt).toLocaleString()}
+                              {dateTimeWords(c.counted_at ?? c.$createdAt)}
                               {c.note && <div className="small dim">{c.note}</div>}
                             </td>
                             <td className="dim small">{nameOf(c.counted_by) || '—'}</td>
@@ -679,7 +680,7 @@ export function ImprestPage() {
                                           title="See what this was"
                                         >
                                           <td className="dim small">
-                                            {new Date(m.occurred_at ?? m.$createdAt).toLocaleDateString()}
+                                            {dateWords(m.occurred_at ?? m.$createdAt)}
                                           </td>
                                           <td>{IMPREST_KIND_LABELS[m.kind] ?? m.kind}</td>
                                           <td className="small dim">{m.note || '—'}</td>

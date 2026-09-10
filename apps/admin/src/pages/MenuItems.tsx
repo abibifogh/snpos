@@ -14,6 +14,7 @@ import {
   pendingShelfLines, submitShelfChange, frozenPieces, frozenBy, needsApproval, shelfChangeProblem, sentWords,
   isService, SERVICE_LABEL,
   DIETARY_TAGS, toggleDietaryTag, dietarySummary,
+  nameBook, nameFrom,
 } from '@snpos/core';
 import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice, WaitingChange, StaffProfile, ProductVariant } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
@@ -193,8 +194,8 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
    */
   const [variantWas, setVariantWas] = useState<Record<string, number>>({});
   const frozen = useMemo(() => frozenPieces(waiting), [waiting]);
-  const whoChanged = (id: string) =>
-    staff.find((s) => s.user_id === id || s.$id === id)?.display_name ?? 'Somebody';
+  const names = useMemo(() => nameBook(staff), [staff]);
+  const whoChanged = (id: string) => (names.size ? nameFrom(names, id, 'Somebody') : 'Somebody');
   /**
    * How many of a product's sizes are held.
    *

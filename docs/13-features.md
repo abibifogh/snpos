@@ -16,9 +16,9 @@ switchboard works and what each feature does.
 - Turning a feature off **hides it, it does not delete it**. The waste log you
   recorded last year is still there if you turn waste logging back on. No
   migration, no data loss, no rebuild.
-- Some features depend on others. Loyalty needs customer profiles, so the
-  loyalty toggle is greyed out with a note explaining why until customers is on.
-  The UI tells you rather than failing quietly.
+- Some features depend on others. A dependent toggle is greyed out with a
+  note explaining why until the feature it needs is on. The UI tells you
+  rather than failing quietly.
 - Every toggle change is written to the audit log with who did it and when.
 
 Technically: rows in the `feature_flags` collection keyed by feature name, with
@@ -33,11 +33,7 @@ accordingly. Defaults live in `FEATURES` in `scripts/schema.mjs`.
 | `preorders` | Order ahead / order while closed | On | Kitchen stays silent until fire time, see 13.6 |
 | `takeaway` | Takeaway and delivery | On | Multiple pickup points, see 13.4 |
 | `waste_log` | Waste log | On | Makes the stock alerts trustworthy |
-| `time_clock` | Staff clock in / out | On | Adds labour cost to reports |
 | `customers` | Customer profiles | On | Everything about it is optional for the guest |
-| `loyalty` | Loyalty / stamp card | On | Requires `customers` |
-| `feedback` | Feedback after paying | On | Alerts a manager on a rating below 3 |
-| `multilingual` | Multi-language menu | On | Add languages under Admin → Menu → Languages |
 | `purchase_orders` | Purchase orders and receiving | On | Flags short deliveries and price rises |
 | `shift_summary` | Summary at shift close | On | Sent on close, see 13.5 |
 | `busy_mode` | Kitchen busy mode | On | Trips automatically at a ticket threshold |
@@ -188,16 +184,8 @@ list on the terminal showing what's due in the next few hours.
 - **Waste log**, staff record spoiled, dropped or binned food as it happens,
   with an optional photo and a cost. Kept separate from stock movements so
   "we threw it away" is never confused with "it went missing".
-- **Clock in / out**, PIN-based, ties hours to shifts, and turns into staff
-  cost as a percentage of sales.
 - **Customer profiles**, built from a phone number or email given at ordering.
   Always optional for the guest.
-- **Loyalty**, points or a "buy 9 get 1 free" stamp card, tracked
-  automatically and shown on the receipt.
-- **Feedback**, a one-tap rating after paying, linked to the order, the items
-  and the server. Anything below 3 stars alerts a manager the same shift.
-- **Multi-language**, a language picker on the customer menu; translations are
-  stored per field so you translate only what you want to.
 - **Purchase orders**, raise an order to a supplier, then tick off what
   actually arrived. Short deliveries and quiet price rises get flagged.
 - **Busy mode**, when tickets waiting pass a threshold, customer orders are

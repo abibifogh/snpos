@@ -5,8 +5,7 @@ import {
   loadLocations, loadLevels, loadIngredients, transferSheet, transferStock,
   openIn, purchaseLocation, saleLocation, transferProblem, overdrawn, transferQty,
   LOCATION_KINDS, MODULE_LABELS, modulesOf,
-  loadLevelUploads, restoreLevelUpload,
-} from '@snpos/core';
+  loadLevelUploads, restoreLevelUpload, dateTimeWords } from '@snpos/core';
 import type {
   StockLocation, LocationStock, TransferLine, Module, Doc, LevelUploadDoc,
 } from '@snpos/core';
@@ -69,7 +68,7 @@ export function LocationsPage() {
    * nobody should meet it as a surprise.
    */
   const putBack = async (u: LevelUploadDoc) => {
-    const when = new Date(u.uploaded_at ?? u.$createdAt).toLocaleString();
+    const when = dateTimeWords(u.uploaded_at ?? u.$createdAt);
     // eslint-disable-next-line no-alert
     if (!window.confirm(
       `Set ${u.lines} bottle${u.lines === 1 ? '' : 's'} back to what the upload of ${when} said?\n\n`
@@ -280,7 +279,7 @@ export function LocationsPage() {
               <tbody>
                 {uploads.map((u) => (
                   <tr key={u.$id}>
-                    <td className="small dim">{new Date(u.uploaded_at ?? u.$createdAt).toLocaleString()}</td>
+                    <td className="small dim">{dateTimeWords(u.uploaded_at ?? u.$createdAt)}</td>
                     <td className="small">
                       {u.note || 'Opening levels'}
                       {u.restored_from && <> <Badge>a restore</Badge></>}

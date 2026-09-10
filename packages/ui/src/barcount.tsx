@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Field, Input, Modal, Notice, Spinner } from './components';
+import { BarCountTable } from './countsheet';
 import {
   barCountSheet, saveBarCount, byUnit, summariseBarCount, countGate,
   countDraftKey, readCountDraft, saveCountDraft, restoreCount, draftFromCount, clearCountDraft,
@@ -390,66 +391,9 @@ export function BarCountModal({
                   {group.counted} of {group.total}
                 </Badge>
               </div>
-              <div className="table-wrap">
-                <table className="data">
-                  <thead>
-                    <tr>
-                      <th>What</th>
-                      <th className="num">Should be</th>
-                      <th style={{ width: '7rem' }}>Actually</th>
-                      <th className="num">Difference</th>
-                      <th style={{ width: '11rem' }}>Note</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {group.lines.map((l) => {
-                      const typed = (l.countedText ?? '').trim();
-                      const counted = typed === '' ? null : Number(typed);
-                      const delta = counted === null || !Number.isFinite(counted)
-                        ? null
-                        : Math.round((counted - l.expected) * 1000) / 1000;
-                      return (
-                        <tr key={l.ingredientId}>
-                          <td style={{ fontWeight: 550 }}>{l.name}</td>
-                          <td className="num dim">{l.expected}</td>
-                          <td>
-                            <Input
-                              type="number"
-                              step="any"
-                              min="0"
-                              placeholder="—"
-                              value={l.countedText ?? ''}
-                              onChange={(e) => setLine(l.ingredientId, { countedText: e.target.value })}
-                            />
-                          </td>
-                          <td className="num">
-                            {delta === null || delta === 0
-                              ? <span className="dim">—</span>
-                              : (
-                                <Badge tone={delta < 0 ? 'danger' : 'warn'}>
-                                  {delta > 0 ? `+${delta}` : delta}
-                                </Badge>
-                              )}
-                          </td>
-                          <td>
-                            {/* Only where there is something to explain. A note
-                                box on every line is forty boxes nobody fills. */}
-                            {delta !== null && delta !== 0 ? (
-                              <Input
-                                value={l.note ?? ''}
-                                placeholder="Breakage, a taste…"
-                                onChange={(e) => setLine(l.ingredientId, { note: e.target.value })}
-                              />
-                            ) : (
-                              <span className="dim small">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              {/* The till keeps the sheet narrow: what a difference is worth
+                  is the admin's question, not the bartender's. */}
+              <BarCountTable lines={group.lines} onChange={setLine} />
             </div>
           ))}
         </>

@@ -1,19 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Badge, useToast, ViewTabs} from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Badge, useToast, ViewTabs, ShopCountTable } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
   shelfLines, submitCount, pendingCounts, countLines, decidedCounts,
-  summariseCount, countWarnings, groupLines, COUNT_REASONS, formatMoney,
+  summariseCount, countWarnings, groupLines, COUNT_REASONS, 
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft, clearAllWarning,
-  pendingShelfLines, frozenPieces, frozenBy,
-} from '@snpos/core';
+  pendingShelfLines, frozenPieces, frozenBy, dateTimeWords, loadStaffNames, nameFrom } from '@snpos/core';
 import type {
-  CountLine, CountReason, CountGrouping, PendingCount, PendingCountLine, StaffProfile, WaitingChange,
+  CountLine, CountReason, CountGrouping, PendingCount, PendingCountLine, WaitingChange,
 } from '@snpos/core';
 import { listAll } from '@snpos/core';
 import { CountUpload } from '../components/CountUpload';
-import { useSession } from '../session';
+import { useSession, useMoney } from '../session';
 import { CountHistory, type HistoryCount } from '../components/CountHistory';
 
 /** Where a half-finished count lives while somebody serves a customer. */
@@ -64,7 +63,7 @@ export function StocktakePage() {
    * what it was worth, and whose decision moved the shelf.
    */
   const [past, setPast] = useState<HistoryCount[] | null>(null);
-  const [staff, setStaff] = useState<StaffProfile[]>([]);
+  const [names, setNames] = useState<Map<string, string> | null>(null);
   /**
    * Pieces that already have a change waiting, so they cannot be counted into
    * a second one. See shelf-approval: two pending differences on one shelf are
@@ -78,7 +77,7 @@ export function StocktakePage() {
   const userId = user?.$id ?? '';
   const store = typeof window === 'undefined' ? null : window.localStorage;
 
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
 
   const loadShelf = () =>
     shelfLines()
@@ -115,7 +114,7 @@ export function StocktakePage() {
   useEffect(() => {
     void loadShelf();
     void loadQueue();
-    listAll<StaffProfile>('staff_profiles').then(setStaff).catch(() => undefined);
+    loadStaffNames().then(setNames).catch(() => undefined);
     listAll<{ $id: string; name: string }>('consignors').then(setOwners).catch(() => undefined);
     listAll<{ $id: string; name: string }>('categories').then(setShelves).catch(() => undefined);
   }, []);
@@ -233,8 +232,7 @@ export function StocktakePage() {
   const groups = useMemo(() => groupLines(shown, groupBy), [shown, groupBy]);
   const summary = useMemo(() => summariseCount(lines ?? []), [lines]);
   const warnings = useMemo(() => countWarnings(lines ?? []), [lines]);
-  const nameOf = (id: string) =>
-    staff.find((s) => s.user_id === id || s.$id === id)?.display_name ?? 'someone';
+  const nameOf = (id: string) => nameFrom(names, id, 'someone');
 
   const submit = async () => {
     setBusy(true);
@@ -430,98 +428,31 @@ export function StocktakePage() {
                 }
                 pad={false}
               >
-                <div className="table-wrap">
-                  <table className="data">
-                    <thead>
-                      <tr>
-                        <th>Piece</th>
-                        {groupBy !== 'maker' && <th>Maker</th>}
-                        {groupBy !== 'category' && <th>Category</th>}
-                        <th className="num">Shelf says</th>
-                        <th style={{ width: '7rem' }}>Actually there</th>
-                        <th style={{ width: '13rem' }}>If it differs, why</th>
-                        <th className="num">Difference</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.lines.map(({ line, index }) => {
-                        const typed = (line.countedText ?? '').trim();
-                        const counted = typed === '' ? null : Number(typed);
-                        const delta = counted === null || !Number.isFinite(counted)
-                          ? null
-                          : counted - line.onHand;
-                        /*
-                          A piece with a change already waiting on it.
+                <ShopCountTable
+                  lines={group.lines}
+                  reasons={COUNT_REASONS}
+                  onChange={(index, patch) => setLine(index, patch as Partial<CountLine>)}
+                  showMaker={groupBy !== 'maker'}
+                  showCategory={groupBy !== 'category'}
+                  showDifference
+                  /*
+                    A piece with a change already waiting on it.
 
-                          Counted again here, it would go in as a SECOND
-                          pending difference on the same shelf — and approving
-                          both would take the same pieces off twice, because
-                          each applies its own delta. So the line is shown, and
-                          shown as held, rather than quietly dropped: a count
-                          sheet missing a piece somebody can see on the shelf
-                          is a count sheet people stop trusting.
-                        */
-                        const held = frozenBy(frozen, line.menuItemId, line.variantId);
-                        return (
-                          <tr key={`${line.menuItemId}-${line.variantId ?? ''}`}>
-                            <td>
-                              <div style={{ fontWeight: 550 }}>{line.name}</div>
-                              {line.variantLabel && <div className="small dim">{line.variantLabel}</div>}
-                            </td>
-                            {groupBy !== 'maker' && (
-                              <td className="dim small">{line.consignorName ?? 'The shop'}</td>
-                            )}
-                            {groupBy !== 'category' && (
-                              <td className="dim small">{line.categoryName ?? '—'}</td>
-                            )}
-                            <td className="num">{line.onHand}</td>
-                            <td>
-                              <Input
-                                type="number"
-                                min="0"
-                                step="1"
-                                placeholder={held ? 'held' : '—'}
-                                value={held ? '' : line.countedText ?? ''}
-                                onChange={(e) => setLine(index, { countedText: e.target.value })}
-                                disabled={!!held}
-                              />
-                            </td>
-                            <td>
-                              {held ? (
-                                <span className="small" style={{ color: 'var(--warn)' }}>
-                                  {nameOf(held.by)} already changed this to {held.line.counted}. Approve or turn
-                                  that down first.
-                                </span>
-                              ) : delta !== null && delta < 0 ? (
-                                <Select
-                                  value={line.reason ?? 'counted'}
-                                  onChange={(e) => setLine(index, { reason: e.target.value as CountReason })}
-                                >
-                                  {COUNT_REASONS.map((r) => (
-                                    <option key={r.value} value={r.value}>{r.label}</option>
-                                  ))}
-                                </Select>
-                              ) : (
-                                <span className="dim small">
-                                  {delta === null ? 'Not counted' : delta > 0 ? 'More than expected' : 'Matches'}
-                                </span>
-                              )}
-                            </td>
-                            <td className="num">
-                              {delta === null || delta === 0 ? (
-                                <span className="dim">—</span>
-                              ) : (
-                                <Badge tone={delta < 0 ? 'danger' : 'warn'}>
-                                  {delta > 0 ? `+${delta}` : delta}
-                                </Badge>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                    Counted again here, it would go in as a SECOND pending
+                    difference on the same shelf — and approving both would
+                    take the same pieces off twice, because each applies its
+                    own delta. So the line is shown, and shown as held, rather
+                    than quietly dropped: a count sheet missing a piece
+                    somebody can see on the shelf is a count sheet people stop
+                    trusting.
+                  */
+                  held={(line) => {
+                    const held = frozenBy(frozen, line.menuItemId, line.variantId);
+                    return held
+                      ? <>{nameFrom(names, held.by, 'someone')} already changed this to {held.line.counted}. Approve or turn that down first.</>
+                      : null;
+                  }}
+                />
               </Card>
             ))
           )}
@@ -668,7 +599,7 @@ function Approvals({
               <tbody>
                 {queue.map((c) => (
                   <tr key={c.$id}>
-                    <td className="dim small">{new Date(c.counted_at).toLocaleString()}</td>
+                    <td className="dim small">{dateTimeWords(c.counted_at)}</td>
                     <td>{nameOf(c.counted_by)}</td>
                     <td className="dim small">{c.note || '—'}</td>
                     <td className="num">{c.line_count}</td>

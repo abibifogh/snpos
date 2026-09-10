@@ -5,7 +5,7 @@ import {
 } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
-  formatMoney, Query, toCsv, downloadCsv, buildReceiptHtml, openPrintable, receiptForOrder,
+  Query, toCsv, downloadCsv, buildReceiptHtml, openPrintable, receiptForOrder,
   settleOrderNumbers, recomputeOrderTotals, cancelOrder, removeOrder, recomputeClosedShift,
   voidPayment, isLivePayment, changePaymentMethod, logPaymentMethodChange,
   unrecordedPaid, unrecordedWords, recordPayment,
@@ -15,12 +15,12 @@ import {
   repostShiftAccounts,
   quantityEditProblem, lineIsEditable, lineEditProblem, quantityProblem, quantityChanges, moneyEffect,
   removalEffects,
-  retotalOrder, applyQuantityCorrection, creditedLineIds, isLivePayment as paymentCounts,
-} from '@snpos/core';
+  retotalOrder, applyQuantityCorrection, creditedLineIds, isLivePayment as paymentCounts, dateWords, timeWords, dateTimeWords,
+  nameBook, nameFrom } from '@snpos/core';
 import type {
   Order, OrderItem, StaffProfile, Doc, Venue, Module, GroupChoice, SortChoice, MovableShift,
 } from '@snpos/core';
-import { useSession } from '../session';
+import { useSession, useMoney } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 
 interface Payment extends Doc {
@@ -155,7 +155,7 @@ export function OrdersPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
 
   /**
    * For orders whose stored total is already wrong. See recomputeOrderTotals:
@@ -536,8 +536,8 @@ export function OrdersPage() {
       const paid = payments.filter((p) => p.order_id === o.$id);
       return [
         o.order_no,
-        new Date(o.$createdAt).toLocaleDateString(),
-        new Date(o.$createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        dateWords(o.$createdAt),
+        timeWords(o.$createdAt),
         o.status,
         o.payment_status,
         o.channel,
@@ -598,10 +598,10 @@ export function OrdersPage() {
     return [...new Set(ids.filter(Boolean) as string[])];
   };
 
+  const names = useMemo(() => nameBook(staff), [staff]);
   const nameOf = (userId?: string) => {
     if (!userId) return ', ';
-    const person = staff.find((s) => s.user_id === userId || s.$id === userId);
-    return person?.display_name ?? 'Unknown';
+    return names.size ? nameFrom(names, userId, 'Unknown') : 'Unknown';
   };
 
   /*
@@ -1119,7 +1119,7 @@ export function OrdersPage() {
                   summary={(rs) => money(rs.reduce((n, o) => n + o.total, 0))}
                   renderRow={(o) => (
                   <tr key={o.$id}>
-                    <td className="dim small">{new Date(o.$createdAt).toLocaleString()}</td>
+                    <td className="dim small">{dateTimeWords(o.$createdAt)}</td>
                     <td style={{ fontWeight: 550 }}>{o.order_no}</td>
                     <td className="dim small">
                       {o.is_group ? `Group${o.group_reference ? ` · ${o.group_reference}` : ''}` : o.fulfilment}
@@ -1150,7 +1150,7 @@ export function OrdersPage() {
           <div className="table-wrap">
             <table className="data">
               <tbody>
-                <tr><td className="dim">Placed</td><td>{new Date(open.$createdAt).toLocaleString()}</td></tr>
+                <tr><td className="dim">Placed</td><td>{dateTimeWords(open.$createdAt)}</td></tr>
                 <tr><td className="dim">By</td><td>{open.placed_by}</td></tr>
                 {open.seat_note && <tr><td className="dim">Sitting</td><td>{open.seat_note}</td></tr>}
                 <tr><td className="dim">Accepted by</td><td>{nameOf(open.accepted_by)}</td></tr>
@@ -1667,7 +1667,7 @@ export function OrdersPage() {
                     <option value="">Pick a shift</option>
                     {choices.map((s) => (
                       <option key={s.$id} value={s.$id}>
-                        {s.code} · {new Date(s.opened_at).toLocaleString()}
+                        {s.code} · {dateTimeWords(s.opened_at)}
                         {s.status === 'closed' ? ' · closed' : ' · still open'}
                       </option>
                     ))}

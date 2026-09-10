@@ -8,8 +8,7 @@ import {
   formatMoney, parseMoney, toInput, levelOf, saveDropping, AVERAGE_COST_WORDS,
   purchasesFor, priceHistory, priceMoveNote, packProblem, hasPack, packSize,
   matches, sortStock, stockState, STOCK_SORTS, STOCK_STATES,
-  groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, normaliseName,
-} from '@snpos/core';
+  groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, normaliseName, bpWords, dateWords } from '@snpos/core';
 import { SalesHistory } from '../components/SalesHistory';
 import type {
   StockSort, StockState, Module, Ingredient, Recipe, MenuItem, Doc, Settings, PurchaseRow,
@@ -1028,7 +1027,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
             <Field label="Par level" hint="The amount you like to keep on hand.">
               <Input type="number" step="any" value={editing.par_level ?? 0} onChange={(e) => setEditing({ ...editing, par_level: Number(e.target.value) })} />
             </Field>
-            <Field label="Low warning at" hint={`Blank uses ${(lowDefaultBp / 100).toFixed(0)}% of par.`}>
+            <Field label="Low warning at" hint={`Blank uses ${bpWords(lowDefaultBp)} of par.`}>
               <Input
                 type="number"
                 step="any"
@@ -1290,7 +1289,7 @@ function PriceHistoryModal({
               <tbody>
                 {[...history.points].reverse().map((p, i) => (
                   <tr key={`${p.at}-${i}`}>
-                    <td className="dim small">{new Date(p.at).toLocaleDateString()}</td>
+                    <td className="dim small">{dateWords(p.at)}</td>
                     <td className="num">{p.qty} {ingredient.unit}</td>
                     <td className="num">{money(p.total)}</td>
                     <td className="num" style={{ fontWeight: 600 }}>{money(p.unitCost)}</td>
@@ -1311,7 +1310,7 @@ function PriceHistoryModal({
                             ? 'first one'
                             : p.changeBp === 0
                               ? 'same'
-                              : `${p.changeBp > 0 ? '+' : '−'}${(Math.abs(p.changeBp) / 100).toFixed(0)}%`}
+                              : `${p.changeBp > 0 ? '+' : '−'}${bpWords(Math.abs(p.changeBp))}`}
                         </span>
                       </div>
                     </td>

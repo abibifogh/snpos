@@ -4,8 +4,7 @@ import { db, DB_ID, listAll, humanError } from '../lib';
 import {
   formatMoney, downloadUrl, deleteFile, Query,
   isPostableExpenseAccount, expenseMethodsFor, expenseSides,
-  defaultExpenseSide, MODULE_LABELS, modulesOf, spendWords,
-} from '@snpos/core';
+  defaultExpenseSide, MODULE_LABELS, modulesOf, spendWords, dateWords } from '@snpos/core';
 import type {
   Module, Doc, ExpenseCategoryDoc, ImprestFloatDoc, Settings, ShiftExpense,
 } from '@snpos/core';
@@ -223,7 +222,7 @@ export function ExpensesPage() {
                   <tbody>
                     {rows.filter((r) => onSide(r, narrowSide(side, profile, settings))).map((r) => (
                       <tr key={r.$id}>
-                        <td className="dim small">{new Date(r.$createdAt).toLocaleDateString()}</td>
+                        <td className="dim small">{dateWords(r.$createdAt)}</td>
                         <td>{nameForKey(categories, r.category_key || r.category)}</td>
                         <td className="dim">
                           {r.payee || '-'}

@@ -3,15 +3,14 @@ import { useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, Empty, Modal, Notice, Segmented, Spinner, useToast } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
-  formatMoney,
+  
   approveBarCount, rejectBarCount, approveCount, rejectCount,
   tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS,
-  decideSpend, loadWaiting, waitingCounts, waitingSummary, waitedWords, refuseSpendWords, WAITING_KIND_WORDS,
-} from '@snpos/core';
+  decideSpend, loadWaiting, nameFrom, waitingCounts, waitingSummary, waitedWords, refuseSpendWords, WAITING_KIND_WORDS, dateTimeWords } from '@snpos/core';
 import type {
   WaitingItem, WaitingKind, WaitingSpend, WaitingTabShift, TabOrder,
 } from '@snpos/core';
-import { useSession } from '../session';
+import { useSession, useMoney } from '../session';
 
 type Show = WaitingKind | 'all';
 const SHOWS: Show[] = ['all', 'count', 'spend', 'shelf', 'tab'];
@@ -32,7 +31,7 @@ const SHOWS: Show[] = ['all', 'count', 'spend', 'shelf', 'tab'];
  * there.
  */
 export function WaitingPage() {
-  const { settings, user, profile } = useSession();
+  const { user, profile } = useSession();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const show = (SHOWS.includes(params.get('show') as Show) ? params.get('show') : 'all') as Show;
@@ -40,7 +39,7 @@ export function WaitingPage() {
 
   const isAdmin = profile?.role === 'admin';
   const userId = user?.$id ?? '';
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
 
   const [items, setItems] = useState<WaitingItem[] | null>(null);
   const [names, setNames] = useState<Map<string, string>>(new Map());
@@ -64,11 +63,7 @@ export function WaitingPage() {
   };
   useEffect(() => { load().catch((e) => { setError(humanError(e)); setItems([]); }); }, []);
 
-  const nameOf = (id?: string) => {
-    if (!id) return '';
-    if (names.size === 0) return '…';
-    return names.get(id) ?? 'Somebody no longer on the staff list';
-  };
+  const nameOf = (id?: string) => nameFrom(names, id, '');
 
   const counts = useMemo(() => waitingCounts(items ?? []), [items]);
   const shown = (items ?? []).filter((i) => show === 'all' || i.kind === show);
@@ -207,7 +202,7 @@ export function WaitingPage() {
                         {Number.isFinite(since) ? (
                           <>
                             {waitedWords(now - since)}
-                            <div className="small dim">{new Date(since).toLocaleString()}</div>
+                            <div className="small dim">{dateTimeWords(since)}</div>
                           </>
                         ) : '—'}
                       </td>
@@ -278,7 +273,7 @@ export function WaitingPage() {
                     {releasing.orders.map((o) => (
                       <tr key={o.$id}>
                         <td style={{ fontWeight: 550 }}>{displayOrderNo(o.order_no)}</td>
-                        <td className="small dim">{new Date(o.$createdAt).toLocaleString()}</td>
+                        <td className="small dim">{dateTimeWords(o.$createdAt)}</td>
                         <td className="num">{money(o.total)}</td>
                       </tr>
                     ))}

@@ -5,8 +5,7 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   bpToPercent, percentToBp, toInput, parseMoney,
   ADMIN_SECTIONS, GRANTABLE_ROLES, DEFAULT_ACCESS, parseAccess, asksForTip, modulesOf, saveDropping,
-  parseLevies, serialiseLevies, GHANA_LEVIES,
-} from '@snpos/core';
+  parseLevies, serialiseLevies, GHANA_LEVIES, dateTimeWords } from '@snpos/core';
 import type { Levy } from '@snpos/core';
 import type { Settings, Doc } from '@snpos/core';
 
@@ -858,7 +857,7 @@ export function SettingsPage() {
         </Field>
         {form.order_number_reset_on && (
           <p className="small dim" style={{ marginTop: 0 }}>
-            Numbering was last restarted on {new Date(form.order_number_reset_on).toLocaleString()}.
+            Numbering was last restarted on {dateTimeWords(form.order_number_reset_on)}.
             {' '}Remember to press Save.
           </p>
         )}
@@ -1051,7 +1050,7 @@ export function SettingsPage() {
               <tbody>
                 {deliveries.map((d) => (
                   <tr key={d.$id}>
-                    <td className="small dim">{new Date(d.$createdAt).toLocaleString()}</td>
+                    <td className="small dim">{dateTimeWords(d.$createdAt)}</td>
                     <td className="small">{REPORT_NAMES[d.kind] ?? d.kind}</td>
                     {/*
                       "Handed over", not "arrived".

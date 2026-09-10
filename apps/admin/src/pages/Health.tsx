@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card, Notice, Spinner } from '@snpos/ui';
 import { humanError } from '../lib';
-import { formatMoney, healthFacts, healthFindings, healthSummary, lastHealthReport } from '@snpos/core';
+import { healthFacts, healthFindings, healthSummary, lastHealthReport, dateTimeWords } from '@snpos/core';
 import type { HealthFinding } from '@snpos/core';
-import { useSession } from '../session';
+import { useMoney } from '../session';
 
 /** The three cards, by which findings belong on them. */
 const RECORDS = ['shifts_unposted', 'entries_broken', 'spends_unposted', 'spends_no_lines', 'counts_half', 'orders_no_payment', 'orders_no_lines', 'payouts', 'waste', 'trial'];
@@ -29,9 +29,8 @@ const tone = (level: HealthFinding['level']): 'ok' | 'warn' | 'danger' | 'defaul
  * themselves are in core, see health-rules.ts.
  */
 export function HealthPage() {
-  const { settings } = useSession();
   const navigate = useNavigate();
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
 
   const [findings, setFindings] = useState<HealthFinding[] | null>(null);
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
@@ -104,7 +103,7 @@ export function HealthPage() {
           <p className="dim small" style={{ margin: '0.2rem 0 0' }}>
             Checked every night at two, and whenever you open this page.
             {night === undefined ? '' : night
-              ? ` Last night's check, ${new Date(night.at).toLocaleString()}: ${night.words}`
+              ? ` Last night's check, ${dateTimeWords(night.at)}: ${night.words}`
               : ' The nightly check has not written anything down yet.'}
           </p>
         </div>

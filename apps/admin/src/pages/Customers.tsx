@@ -5,12 +5,11 @@ import {
 } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
-  formatMoney, listCreatedBetween, toCsv, downloadCsv, MODULE_LABELS,
+  listCreatedBetween, toCsv, downloadCsv, MODULE_LABELS,
   buildCustomers, sortCustomers, searchCustomers, summarise, anonymousCount,
-  isRegular, contactable, toSheet, REGULAR_AT,
-} from '@snpos/core';
+  isRegular, contactable, toSheet, REGULAR_AT, dateWords } from '@snpos/core';
 import type { CustomerRecord, CustomerOrder, CustomerSort, Module } from '@snpos/core';
-import { useSession } from '../session';
+import { useSession, useMoney } from '../session';
 import { SideFilter, type Side } from '../components/SideFilter';
 
 /**
@@ -59,7 +58,7 @@ export function CustomersPage() {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<CustomerRecord | null>(null);
 
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
 
   const load = async () => {
     setOrders(null);
@@ -233,7 +232,7 @@ export function CustomersPage() {
                         </td>
                         <td className="num">{r.orders}</td>
                         <td className="num" style={{ fontWeight: 600 }}>{money(r.spent)}</td>
-                        <td className="dim small">{new Date(r.lastSeen).toLocaleDateString()}</td>
+                        <td className="dim small">{dateWords(r.lastSeen)}</td>
                         <td className="small dim">
                           {r.modules.map((m) => MODULE_LABELS[m as Module] ?? m).join(', ') || '—'}
                         </td>
@@ -278,11 +277,11 @@ export function CustomersPage() {
             </div>
             <div>
               <div className="dim small">First in</div>
-              <div>{new Date(open.firstSeen).toLocaleDateString()}</div>
+              <div>{dateWords(open.firstSeen)}</div>
             </div>
             <div>
               <div className="dim small">Last in</div>
-              <div>{new Date(open.lastSeen).toLocaleDateString()}</div>
+              <div>{dateWords(open.lastSeen)}</div>
             </div>
           </div>
 
@@ -303,7 +302,7 @@ export function CustomersPage() {
               <tbody>
                 {open.history.map((o) => (
                   <tr key={o.$id} style={{ opacity: o.status === 'CANCELLED' || o.status === 'REJECTED' ? 0.5 : 1 }}>
-                    <td className="dim small">{new Date(o.$createdAt).toLocaleDateString()}</td>
+                    <td className="dim small">{dateWords(o.$createdAt)}</td>
                     <td>
                       {o.order_no ?? '—'}
                       {(o.status === 'CANCELLED' || o.status === 'REJECTED') && <> <Badge>Cancelled</Badge></>}

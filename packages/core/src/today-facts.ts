@@ -11,6 +11,7 @@ import { modulesOf } from './access';
 import { compareDays, takingsOf, byHour, sidesOn } from './today';
 import type { TodayOrder, TodayPayment, TodayLine, Takings, TradeSide } from './today';
 import type { Settings, StaffProfile } from './types';
+import { nameBook } from './staff-words';
 
 export interface OpenShiftFact {
   shift: Shift;
@@ -87,11 +88,7 @@ export async function todayFacts(venueId: string, settings: Settings | null, now
 
   const lines = await listByIds<TodayLine>('order_items', 'order_id', today.orders.map((o) => o.$id)).catch(() => [] as TodayLine[]);
 
-  const names = new Map<string, string>();
-  for (const p of staff) {
-    names.set(p.$id, p.display_name);
-    if (p.user_id) names.set(p.user_id, p.display_name);
-  }
+  const names = nameBook(staff);
 
   const all = [...kitchen, ...bar, ...craft];
   const open = [...new Set(all.map((s) => s.$id))].map((id) => all.find((s) => s.$id === id) as Shift).filter((s) => s.status === 'open');

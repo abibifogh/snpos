@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Input, Modal, Notice, Select, Spinner } from './components';
+import { ShopCountTable } from './countsheet';
 import {
   shelfLines, submitCount, pendingShelfLines, frozenPieces, frozenBy, pieceKey,
   summariseCount, groupLines, COUNT_REASONS, formatMoney,
@@ -334,69 +335,15 @@ export function CraftCountModal({
                   <span className="small dim">{group.counted} of {group.total}</span>
                 </div>
               )}
-              <div className="table-wrap">
-                <table className="data">
-                  <thead>
-                    <tr>
-                      <th>Piece</th>
-                      <th className="num">Should be</th>
-                      <th style={{ width: '6.5rem' }}>Actually</th>
-                      <th style={{ width: '11rem' }}>If it differs, why</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {group.lines.map(({ line, index }) => {
-                      const typed = (line.countedText ?? '').trim();
-                      const counted = typed === '' ? null : Number(typed);
-                      const delta = counted === null || !Number.isFinite(counted)
-                        ? null
-                        : counted - line.onHand;
-                      const held = frozenBy(frozen, line.menuItemId, line.variantId);
-                      return (
-                        <tr key={`${line.menuItemId}-${line.variantId ?? ''}`}>
-                          <td>
-                            <div style={{ fontWeight: 550 }}>{line.name}</div>
-                            {line.variantLabel && <div className="small dim">{line.variantLabel}</div>}
-                          </td>
-                          <td className="num">{line.onHand}</td>
-                          <td>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="1"
-                              inputMode="numeric"
-                              placeholder={held ? 'held' : '—'}
-                              value={held ? '' : line.countedText ?? ''}
-                              onChange={(e) => setLine(index, { countedText: e.target.value })}
-                              disabled={!!held}
-                            />
-                          </td>
-                          <td>
-                            {held ? (
-                              <span className="small" style={{ color: 'var(--warn)' }}>
-                                A change to {held.line.counted} is already waiting for an admin.
-                              </span>
-                            ) : delta !== null && delta < 0 ? (
-                              <Select
-                                value={line.reason ?? 'counted'}
-                                onChange={(e) => setLine(index, { reason: e.target.value as CountReason })}
-                              >
-                                {COUNT_REASONS.map((r) => (
-                                  <option key={r.value} value={r.value}>{r.label}</option>
-                                ))}
-                              </Select>
-                            ) : (
-                              <span className="dim small">
-                                {delta === null ? '' : delta > 0 ? `${delta} more than expected` : 'Matches'}
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <ShopCountTable
+                lines={group.lines}
+                reasons={COUNT_REASONS}
+                onChange={(index, patch) => setLine(index, patch as Partial<CountLine>)}
+                held={(line) => {
+                  const held = frozenBy(frozen, line.menuItemId, line.variantId);
+                  return held ? <>A change to {held.line.counted} is already waiting for an admin.</> : null;
+                }}
+              />
             </div>
           ))}
 

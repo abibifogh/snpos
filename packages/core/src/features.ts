@@ -54,7 +54,6 @@ export function featureConfig<T = unknown>(features: FeatureMap, key: string, op
 
 /** Features that cannot work without another being on. */
 export const FEATURE_DEPENDENCIES: Record<string, string[]> = {
-  loyalty: ['customers'],
 };
 
 export function unmetDependencies(features: FeatureMap, key: string): string[] {

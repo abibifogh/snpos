@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Badge, Button, Card, Empty, Spinner } from '@snpos/ui';
-import { listAll } from '@snpos/core';
-import type { StaffProfile, CountState } from '@snpos/core';
-import { countStateLabel } from '@snpos/core';
+import { dateTimeWords } from '@snpos/core';
+import type { CountState } from '@snpos/core';
+import { countStateLabel, loadStaffNames, nameFrom } from '@snpos/core';
 
 /**
  * One count, from either side of the business, in the shape the history reads.
@@ -80,18 +80,7 @@ export function CountHistory({
   const [lines, setLines] = useState<Record<string, HistoryLine[]>>({});
   const [busy, setBusy] = useState<string | null>(null);
 
-  useEffect(() => {
-    listAll<StaffProfile>('staff_profiles')
-      .then((rows) => {
-        const map = new Map<string, string>();
-        for (const p of rows) {
-          map.set(p.$id, p.display_name);
-          if (p.user_id) map.set(p.user_id, p.display_name);
-        }
-        setNames(map);
-      })
-      .catch(() => undefined);
-  }, []);
+  useEffect(() => { loadStaffNames().then(setNames).catch(() => undefined); }, []);
 
   /*
     A name, because the whole point is being able to ask a person.
@@ -107,11 +96,7 @@ export function CountHistory({
     left the staff list because a read has not landed yet would be a lie that
     corrects itself a second later, which is worse than a dash.
   */
-  const nameOf = (id?: string) => {
-    if (!id) return '—';
-    if (names.size === 0) return '…';
-    return names.get(id) ?? 'Somebody no longer on the staff list';
-  };
+  const nameOf = (id?: string) => nameFrom(names, id);
 
   const open = async (c: HistoryCount) => {
     if (openId === c.id) { setOpenId(null); return; }
@@ -156,7 +141,7 @@ export function CountHistory({
                 return (
                   <FragmentRow key={c.id}>
                     <tr style={state === 'rejected' || state === 'undone' ? { opacity: 0.6 } : undefined}>
-                      <td className="small dim">{c.at ? new Date(c.at).toLocaleString() : '—'}</td>
+                      <td className="small dim">{c.at ? dateTimeWords(c.at) : '—'}</td>
                       <td>
                         {c.title}
                         {c.phase && (
@@ -169,7 +154,7 @@ export function CountHistory({
                       <td><Badge tone={tone(state)}>{countStateLabel(state)}</Badge></td>
                       <td className="small">
                         {c.decidedBy ? nameOf(c.decidedBy) : <span className="dim">—</span>}
-                        {c.decidedAt && <div className="dim">{new Date(c.decidedAt).toLocaleString()}</div>}
+                        {c.decidedAt && <div className="dim">{dateTimeWords(c.decidedAt)}</div>}
                       </td>
                       <td className="num">
                         <Button size="sm" variant="ghost" onClick={() => void open(c)}>

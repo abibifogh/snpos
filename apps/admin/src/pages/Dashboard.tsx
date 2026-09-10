@@ -2,11 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, Badge, Spinner, Notice, TrendChart } from '@snpos/ui';
 import {
-  formatMoney, todayFacts, against, percentWords, tradingHours, topSellers, openForWords, SIDE_NAMES,
-  loadWaiting, waitedWords, levelOf,
-} from '@snpos/core';
+  todayFacts, against, percentWords, tradingHours, topSellers, openForWords, SIDE_NAMES,
+  loadWaiting, waitedWords, levelOf, timeWords, nameFrom } from '@snpos/core';
 import type { TodayFacts, WaitingItem } from '@snpos/core';
-import { useSession } from '../session';
+import { useSession, useMoney } from '../session';
 
 /**
  * Today.
@@ -21,7 +20,7 @@ import { useSession } from '../session';
  */
 export function Dashboard() {
   const { settings } = useSession();
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
   const [facts, setFacts] = useState<TodayFacts | null>(null);
   const [waiting, setWaiting] = useState<{ items: WaitingItem[]; names: Map<string, string> } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -148,7 +147,7 @@ export function Dashboard() {
                         <td>
                           <div style={{ fontWeight: 550 }}>{SIDE_NAMES[o.side]}{o.openedBy ? ` · ${o.openedBy}` : ''}</div>
                           <div className="small dim">
-                            Since {new Date(o.shift.opened_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} · {openForWords(o.shift.opened_at, facts.now)}
+                            Since {timeWords(o.shift.opened_at)} · {openForWords(o.shift.opened_at, facts.now)}
                             {o.side === 'bar' && o.countedIn === true ? ' · counted in' : ''}
                             {o.side === 'bar' && o.countedIn === false ? ' · not counted in' : ''}
                           </div>
@@ -163,7 +162,7 @@ export function Dashboard() {
                   {facts.closedToday.filter((c) => !facts.openShifts.some((o) => o.side === c.side)).map((c) => (
                     <tr key={c.code}>
                       <td colSpan={2} className="small dim">
-                        {SIDE_NAMES[c.side]} closed at {new Date(c.closedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                        {SIDE_NAMES[c.side]} closed at {timeWords(c.closedAt)}
                         {c.settled ? ' · settled' : ' · not yet settled'}
                       </td>
                     </tr>
@@ -192,7 +191,7 @@ export function Dashboard() {
                       <td>
                         <div style={{ fontWeight: 550 }}>{w.title}</div>
                         <div className="small dim">
-                          {w.by ? (waiting.names.get(w.by) ?? 'Somebody no longer on the staff list') : ''}
+                          {w.by ? nameFrom(waiting.names, w.by, '') : ''}
                           {w.at ? ` · waiting ${waitedWords(Date.parse(facts.now) - Date.parse(w.at))}` : ''}
                         </div>
                       </td>

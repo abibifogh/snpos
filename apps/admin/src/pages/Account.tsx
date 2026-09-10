@@ -1,3 +1,4 @@
+import { bpWords } from '@snpos/core';
 import { useState } from 'react';
 import { Button, Card, Field, Input, Notice, useToast } from '@snpos/ui';
 import { account, humanError } from '../lib';
@@ -147,7 +148,7 @@ export function AccountPage() {
                 <tr><td>Mark a bill paid</td><td className="num">{profile.can_mark_paid === false ? 'No' : 'Yes'}</td></tr>
                 <tr>
                   <td>Discount without a manager</td>
-                  <td className="num">up to {(profile.can_discount_up_to_bp / 100).toFixed(0)}%</td>
+                  <td className="num">up to {bpWords(profile.can_discount_up_to_bp)}</td>
                 </tr>
                 <tr>
                   <td>Venues</td>

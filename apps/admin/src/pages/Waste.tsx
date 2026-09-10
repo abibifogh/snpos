@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { formatMoney } from '@snpos/core';
+import { formatMoney, dateWords } from '@snpos/core';
 import type { Ingredient, MenuItem, Doc } from '@snpos/core';
 import { useSession } from '../session';
 
@@ -135,7 +135,7 @@ export function WastePage() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.$id}>
-                    <td className="dim small">{new Date(r.$createdAt).toLocaleDateString()}</td>
+                    <td className="dim small">{dateWords(r.$createdAt)}</td>
                     <td>{name(r)}</td>
                     <td className="num">{r.qty} {r.unit}</td>
                     <td><Badge>{REASONS.find((x) => x.v === r.reason)?.l ?? r.reason}</Badge></td>

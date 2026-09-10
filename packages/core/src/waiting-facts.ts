@@ -8,6 +8,7 @@ import { waitingList } from './waiting';
 import type { WaitingItem, WaitingSpend, WaitingTabShift } from './waiting';
 import type { Shift } from './shifts';
 import type { StaffProfile } from './types';
+import { nameBook } from './staff-words';
 
 /**
  * Everything waiting for somebody senior, read once.
@@ -41,11 +42,7 @@ export async function loadWaiting(venueId: string, money: (minor: number) => str
     listAll<{ key: string; name: string }>('expense_categories').catch(() => []),
   ]);
 
-  const names = new Map<string, string>();
-  for (const p of staff) {
-    names.set(p.$id, p.display_name);
-    if (p.user_id) names.set(p.user_id, p.display_name);
-  }
+  const names = nameBook(staff);
 
   // A bar count is named by the shift it was taken on, which the rows do not carry.
   const barCounts = filedCounts(checks);

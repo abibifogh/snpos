@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card, Empty, Notice, Spinner, Badge } from '@snpos/ui';
 import { listAll, humanError } from '../lib';
-import { formatMoney, loadConsignors, balancesByConsignor } from '@snpos/core';
+import { loadConsignors, balancesByConsignor, dateWords } from '@snpos/core';
 import type { Consignor, ConsignorPayout } from '@snpos/core';
-import { useSession } from '../session';
+import { useMoney } from '../session';
 
 /**
  * Who is waiting to be paid, and what has been paid already.
@@ -19,8 +19,7 @@ import { useSession } from '../session';
  * the workings for.
  */
 export function PayoutsPage() {
-  const { settings } = useSession();
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
 
   const [consignors, setConsignors] = useState<Consignor[] | null>(null);
   const [owed, setOwed] = useState<Record<string, number>>({});
@@ -149,7 +148,7 @@ export function PayoutsPage() {
                   <tr key={p.$id} style={p.status === 'reversed' ? { opacity: 0.5 } : undefined}>
                     <td><code>{p.reference}</code></td>
                     <td>{nameOf[p.consignor_id] ?? 'Unknown'}</td>
-                    <td className="small">{new Date(p.paid_at).toLocaleDateString()}</td>
+                    <td className="small">{dateWords(p.paid_at)}</td>
                     <td className="dim small">
                       {p.method}
                       {p.transaction_ref ? ` · ${p.transaction_ref}` : ''}
