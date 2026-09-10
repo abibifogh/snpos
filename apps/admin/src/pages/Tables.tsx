@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError, saveDropping } from '../lib';
-import type { Doc } from '@snpos/core';
+import type { Doc, FeatureFlag } from '@snpos/core';
 import { useSession } from '../session';
 
 interface TableRow extends Doc {
@@ -38,15 +38,25 @@ export function TablesPage() {
   const toast = useToast();
   const [rows, setRows] = useState<TableRow[] | null>(null);
   const [venues, setVenues] = useState<VenueRow[]>([]);
+  /** Whether group ordering is actually on, so a link that will not work says so. */
+  const [groupOn, setGroupOn] = useState(true);
   const [editing, setEditing] = useState<Partial<TableRow> | null>(null);
   const [showQr, setShowQr] = useState<TableRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
-    const [t, v] = await Promise.all([listAll<TableRow>('tables'), listAll<VenueRow>('venues')]);
+    const [t, v, flags] = await Promise.all([
+      listAll<TableRow>('tables'),
+      listAll<VenueRow>('venues'),
+      listAll<FeatureFlag>('feature_flags').catch(() => [] as FeatureFlag[]),
+    ]);
     setRows(t.sort((a, b) => a.sort - b.sort));
     setVenues(v);
+    // Absent reads as on, so a database that has never heard of the flag does
+    // not raise a warning about a setting nobody can find.
+    const flag = flags.find((f) => f.key === 'group_orders' && !f.venue_id);
+    setGroupOn(flag ? !!flag.enabled : true);
   };
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
 
@@ -263,6 +273,20 @@ export function TablesPage() {
           group-only, and it does not appear anywhere on the ordinary menu, the only way in is this link. Send it to
           whoever takes group bookings, and replace it if it ends up somewhere it should not be.
         </p>
+        {/*
+          Said where the link is copied from, not only on the Features page.
+
+          A group link handed out while the feature is off opens the ordinary
+          menu and looks for all the world like a broken link. The person
+          copying it is the person who can fix it, and this is the moment they
+          are thinking about group ordering.
+        */}
+        {!groupOn && (
+          <Notice tone="warn">
+            <strong>Group ordering is switched off</strong>, so this link opens the ordinary menu. Turn it on
+            under Features, or the party you send it to will see the à la carte list.
+          </Notice>
+        )}
         {venues.map((v) => {
           const url = groupUrl(v);
           return (
