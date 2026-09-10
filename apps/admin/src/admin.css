@@ -21,8 +21,26 @@
 }
 .sidebar nav { padding: 0.6rem; overflow-y: auto; flex: 1; }
 .sidebar .side-pick { padding: 0.2rem 0.3rem 0.4rem; }
-.sidebar .side-pick .segmented { width: 100%; display: flex; }
-.sidebar .side-pick .segmented button { flex: 1; }
+/*
+  Four choices across a narrow sidebar.
+
+  The pill shape this control has everywhere else does not survive here. Its
+  999px radius eats into the first and last labels, and with `Shop` last it
+  was the one that lost letters. The buttons could not shrink either: a flex
+  item will not go below its own content width unless told it may, so the
+  strip overflowed the sidebar and the right-hand end was cut off by it.
+
+  So in the sidebar the corners are square-ish, the padding is tighter, and
+  the buttons are allowed to shrink and, at worst, ellipsise — which reads as
+  a name too long for the space rather than as a button that is broken.
+*/
+.sidebar .side-pick .segmented {
+  width: 100%; display: flex; border-radius: var(--radius-sm);
+}
+.sidebar .side-pick .segmented button {
+  flex: 1 1 0; min-width: 0; padding: 0.35rem 0.3rem; text-align: center;
+  overflow: hidden; text-overflow: ellipsis;
+}
 .sidebar .group {
   font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--text-dim); padding: 0.9rem 0.65rem 0.35rem; font-weight: 600;

@@ -64,6 +64,8 @@ export interface OrderTotals {
   /** What the tax is made of: each levy, then VAT. See levies.ts. */
   tax_parts: TaxPart[];
   delivery_fee: number;
+  /** Containers, on an order being taken away. See group-booking.ts. */
+  pack_fee: number;
   total: number;
 }
 
@@ -72,6 +74,14 @@ export interface TotalsInput {
   /** Already-resolved discount amount in minor units. */
   discount?: number;
   deliveryFee?: number;
+  /**
+   * What the containers cost, on an order being taken away.
+   *
+   * Worked out by the caller rather than here, because how many containers an
+   * order needs is a rule about the order, not about its arithmetic. See
+   * packFeeFor in group-booking.ts.
+   */
+  packFee?: number;
   settings: Pick<Settings, 'tax_rate_bp' | 'tax_inclusive' | 'service_charge_bp'>
     & { levies?: string; vat_charged?: boolean };
 }
@@ -90,13 +100,23 @@ export interface TotalsInput {
  * Tips are deliberately absent: they are not sales, are never discounted and
  * are not taxed as revenue, so they are recorded on the payment instead.
  */
-export function computeTotals({ lines, discount = 0, deliveryFee = 0, settings }: TotalsInput): OrderTotals {
+export function computeTotals({
+  lines, discount = 0, deliveryFee = 0, packFee = 0, settings,
+}: TotalsInput): OrderTotals {
   const subtotal = lines.reduce((sum, l) => sum + lineTotal(l), 0);
   const discount_total = Math.min(Math.max(discount, 0), subtotal);
   const discounted = subtotal - discount_total;
 
   const service_total = Math.round((discounted * (settings.service_charge_bp || 0)) / 10000);
-  const taxableBase = discounted + service_total + deliveryFee;
+  /*
+    Fees are taxed, and are not discounted.
+
+    A pack fee is the price of a container the business bought and is passing
+    on, so it is a sale like any other and carries whatever VAT and levies
+    sales carry. It sits after the discount deliberately: a party negotiating
+    ten per cent off the food has not negotiated ten per cent off the boxes.
+  */
+  const taxableBase = discounted + service_total + deliveryFee + packFee;
 
   // VAT and the levies beside it, part by part. See levies.ts: with no
   // levies this is the single rate the system always had, to the rounding.
@@ -115,6 +135,7 @@ export function computeTotals({ lines, discount = 0, deliveryFee = 0, settings }
     tax_total,
     tax_parts: tax.parts,
     delivery_fee: deliveryFee,
+    pack_fee: packFee,
     // Inclusive tax is already inside the prices, so adding it again would
     // charge the customer twice.
     total: settings.tax_inclusive ? taxableBase : taxableBase + tax_total,
@@ -402,3 +423,256 @@ export const taxWords = (levies: Levy[], currencyCode?: string, vatOn = true): s
  */
 export const showsTaxParts = (parts: { amount: number }[], detail?: string): boolean =>
   detail !== 'combined' && parts.length > 1;
+
+/* -------------------------------------------- a group booking, meal by meal */
+
+/**
+ * A group that is staying, not visiting.
+ *
+ * The group menu was built for one meal: a party arrives, eats platters, goes
+ * home. A hotel group stays four nights, and every night is a different
+ * decision — Monday they eat in the restaurant, Tuesday they are out on an
+ * excursion and want it packed, Wednesday half of them are back late. Asking
+ * that booking to be typed as one order, four times, through four separate
+ * links, is how a front desk ends up with four unconnected tickets and no
+ * idea they belong to the same party.
+ *
+ * So a booking holds MEALS, not days. A meal carries its own moment, its own
+ * choice of eating in or taking away, and its own dishes.
+ *
+ * Meals rather than days because a party staying four nights eats eight
+ * times. Lunch on the terrace and dinner in the restaurant on the same
+ * Tuesday are two different sittings, cooked hours apart, and one of them
+ * might be packed for an excursion while the other is not. A booking keyed
+ * by calendar day could hold only one of the two, and the group would have
+ * to send a second booking for the other and hope somebody joins them up.
+ *
+ * ## One order per meal, not one order for the booking
+ *
+ * Sending the booking writes an order per meal. That is the whole reason this
+ * fits: an order already knows how to be scheduled and to stay silent until
+ * its own fire time, and the kitchen already knows how to cook a ticket that
+ * arrives when it is wanted. A single order spanning a stay would need every
+ * one of those behaviours inventing again, and would put Thursday's platters
+ * on Monday's pass.
+ *
+ * They are tied together by the booking's own id and by the reference the
+ * hotel gave, so the front desk can find all four.
+ *
+ * Pure. Imports nothing at runtime, which is what lets the fee rule and the
+ * refusals be tested without a browser. The arithmetic that needs
+ * computeTotals lives beside it, in pricing.ts.
+ */
+
+export type Fulfilment = 'dine_in' | 'takeaway';
+
+export interface GroupMeal {
+  /** Stable while the sheet is open, so a meal can be edited and removed. */
+  key: string;
+  /** The moment this food is wanted, ISO. Two meals may share a date. */
+  at: string;
+  fulfilment: Fulfilment;
+  lines: CartLine[];
+}
+
+export const FULFILMENT_WORDS: Record<Fulfilment, string> = {
+  dine_in: 'Eating here',
+  takeaway: 'Packed to take away',
+};
+
+/** How many portions are on a meal. Add-ons ride along with their dish and are not packed separately. */
+export const portionsOn = (meal: { lines: CartLine[] }): number =>
+  meal.lines.reduce((n, l) => n + Math.max(0, l.qty), 0);
+
+/**
+ * What the containers cost for one meal.
+ *
+ * Once per portion, because that is what gets packed: twenty lunches is
+ * twenty boxes. Nothing at all on a meal the group is eating in the
+ * restaurant, where the food goes out on plates the business already owns.
+ * Charged per meal, so a party that takes lunch away and dines in that
+ * evening pays for the lunch boxes only.
+ */
+export function packFeeFor(meal: { fulfilment: Fulfilment; lines: CartLine[] }, feePerPortion: number): number {
+  if (meal.fulfilment !== 'takeaway') return 0;
+  const fee = Math.max(0, Math.round(feePerPortion || 0));
+  return fee === 0 ? 0 : portionsOn(meal) * fee;
+}
+
+/** The calendar day a moment falls on, for grouping times into days. */
+export const dayKeyOf = (at: string | Date): string => {
+  const d = at instanceof Date ? at : new Date(at);
+  return Number.isFinite(d.getTime())
+    ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    : '';
+};
+
+/** The times on offer, gathered into the days they belong to, earliest first. */
+export function slotsByDay(slots: Date[]): { key: string; label: string; times: Date[] }[] {
+  const byDay = new Map<string, Date[]>();
+  for (const s of [...slots].sort((a, b) => a.getTime() - b.getTime())) {
+    const key = dayKeyOf(s);
+    const list = byDay.get(key) ?? [];
+    list.push(s);
+    byDay.set(key, list);
+  }
+  return [...byDay.entries()].map(([key, times]) => ({
+    key,
+    // Spelt out here too, for the reason in longDayWords.
+    label: longDayWords(times[0]),
+    times,
+  }));
+}
+
+/**
+ * The exact times already booked, so the picker cannot offer one twice.
+ *
+ * By the MOMENT, not by the day. A group eating at noon and again at seven on
+ * the same Tuesday is booking two meals, and a picker that struck Tuesday off
+ * after the first would send them away to book the second somewhere else.
+ * Only the same time twice is a duplicate.
+ */
+export const timesTaken = (meals: GroupMeal[]): Set<string> =>
+  new Set(meals.map((m) => new Date(m.at).toISOString()));
+
+/** Whether a time on offer is already on the booking. */
+export const timeIsTaken = (taken: Set<string>, at: Date): boolean => taken.has(at.toISOString());
+
+/** How many of a day's times are still free, so a full day can be dropped from the picker. */
+export const freeTimesOn = (times: Date[], taken: Set<string>): Date[] =>
+  times.filter((t) => !timeIsTaken(taken, t));
+
+export interface BookingCheck {
+  reference: string;
+  needReference: boolean;
+  referenceLabel: string;
+  size: number;
+  minSize: number;
+  contactName: string;
+}
+
+/**
+ * What is stopping this booking being sent, in the words of whoever is sending it.
+ *
+ * One thing at a time and the earliest first, because a list of five faults
+ * on a phone is read as "this does not work" rather than as five things to
+ * fix. Every one of them is about the booking as a whole; a day that is
+ * wrong is caught by dayProblem below and shown against that day.
+ */
+const LONG_MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+const LONG_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/**
+ * "Monday 14 September", spelt out rather than left to the browser.
+ *
+ * Same reasoning as dates.ts, which is not imported here only because this
+ * file deliberately imports nothing at runtime. A phone set to American
+ * English would otherwise read "September 14" beside an office reading
+ * "14 September", and this string goes in front of a hotel.
+ */
+export function longDayWords(at: string | Date): string {
+  const d = at instanceof Date ? at : new Date(at);
+  if (!Number.isFinite(d.getTime())) return 'that day';
+  return `${LONG_DAYS[d.getDay()]} ${d.getDate()} ${LONG_MONTHS[d.getMonth()]}`;
+}
+
+export function bookingProblem(meals: GroupMeal[], check: BookingCheck): string | null {
+  if (meals.length === 0) return 'Add a meal, and what the group would like to eat at it.';
+  const empty = [...meals].sort((a, b) => a.at.localeCompare(b.at)).find((m) => portionsOn(m) === 0);
+  if (empty) {
+    // Named by day AND time: a stay with lunch and dinner on the same Tuesday
+    // has two meals that a date alone cannot tell apart.
+    return `${mealLabel(empty.at)} has nothing on it. Add something, or take that meal off the booking.`;
+  }
+  if (!check.contactName.trim()) return 'Please give a name for the booking, so the kitchen knows whose it is.';
+  if (check.needReference && !check.reference.trim()) return `Please enter the ${check.referenceLabel.toLowerCase()}.`;
+  if (check.minSize > 0 && check.size < check.minSize) return `Group bookings are for ${check.minSize} people or more.`;
+  return null;
+}
+
+/** "Monday 14 September, 12:30" — which meal, where two share a date. */
+export const mealLabel = (at: string | Date): string => {
+  const d = at instanceof Date ? at : new Date(at);
+  if (!Number.isFinite(d.getTime())) return 'that meal';
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${longDayWords(d)}, ${two(d.getHours())}:${two(d.getMinutes())}`;
+};
+
+/** What a meal is worth saying about itself, under its own heading. */
+export function mealWords(
+  totals: { portions: number; packFee: number; total: number },
+  money: (n: number) => string,
+): string {
+  const portions = totals.portions === 1 ? '1 portion' : `${totals.portions} portions`;
+  const fee = totals.packFee > 0 ? `, ${money(totals.packFee)} of that packing` : '';
+  return `${portions}, ${money(totals.total)}${fee}.`;
+}
+
+/**
+ * What the pack fee means, said once and plainly.
+ *
+ * Shown wherever the choice is made rather than only on the bill, because a
+ * charge somebody meets at the end is a charge they argue about at the end.
+ */
+export function packWords(feePerPortion: number, money: (n: number) => string): string {
+  if (feePerPortion <= 0) return 'Nothing extra either way.';
+  return `Packed meals carry ${money(feePerPortion)} a portion for the containers. Eating here carries nothing.`;
+}
+
+export interface MealPricing extends OrderTotals {
+  packFee: number;
+  portions: number;
+}
+
+/** One meal of a group booking, priced, because one meal becomes one order. */
+export function mealTotals(
+  meal: GroupMeal,
+  settings: TotalsInput['settings'],
+  feePerPortion: number,
+): MealPricing {
+  const packFee = packFeeFor(meal, feePerPortion);
+  const totals = computeTotals({ lines: meal.lines.filter((l) => l.qty > 0), packFee, settings });
+  return { ...totals, packFee, portions: portionsOn(meal) };
+}
+
+export interface BookingTotals {
+  /** Every meal priced, in the order they will be eaten. */
+  meals: { meal: GroupMeal; totals: MealPricing }[];
+  subtotal: number;
+  packFees: number;
+  tax: number;
+  service: number;
+  total: number;
+  portions: number;
+}
+
+/**
+ * The whole booking.
+ *
+ * Added up from the meals rather than priced as one basket, so what the
+ * booking says matches what the orders will each say. Pricing the lot
+ * together and dividing would round differently and leave the sum of the
+ * tickets a cedi away from the quote the hotel agreed to.
+ */
+export function bookingTotals(
+  meals: GroupMeal[],
+  settings: TotalsInput['settings'],
+  feePerPortion: number,
+): BookingTotals {
+  const priced = [...meals]
+    .sort((a, b) => a.at.localeCompare(b.at))
+    .map((meal) => ({ meal, totals: mealTotals(meal, settings, feePerPortion) }));
+  const sum = (pick: (t: MealPricing) => number) => priced.reduce((n, p) => n + pick(p.totals), 0);
+  return {
+    meals: priced,
+    subtotal: sum((t) => t.subtotal),
+    packFees: sum((t) => t.packFee),
+    tax: sum((t) => t.tax_total),
+    service: sum((t) => t.service_total),
+    total: sum((t) => t.total),
+    portions: sum((t) => t.portions),
+  };
+}

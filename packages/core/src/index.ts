@@ -14,6 +14,8 @@ export * from './slots';
 export * from './slot-booking';
 export * from './busy';
 export * from './busy-state';
+export * from './waiting-lines';
+export * from './waiting-detail';
 export * from './stock';
 export * from './ledger';
 export * from './pin';

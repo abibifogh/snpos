@@ -87,6 +87,10 @@ export interface Order extends Doc {
   group_reference?: string;
   group_size?: number;
   group_contact_name?: string;
+  /** Which multi-day booking this day belongs to. See group-booking.ts. */
+  group_booking_id?: string;
+  /** What the containers cost, on a takeaway. */
+  pack_fee?: number;
   notes?: string;
   marked_paid_by?: string;
   marked_paid_at?: string;
@@ -330,7 +334,13 @@ export interface CreateOrderInput {
   pickupPointId?: string;
   /** Free text for an area with no table number: "by the pool bar, red shirt". */
   seatNote?: string;
-  group?: { reference?: string; size?: number; contactName?: string };
+  group?: {
+    reference?: string;
+    size?: number;
+    contactName?: string;
+    /** Shared by every day of one booking, so four tickets read as one party. */
+    bookingId?: string;
+  };
   /**
    * Placed by a customer rather than by staff.
    *
@@ -340,6 +350,14 @@ export interface CreateOrderInput {
    * handed every guest order the number 0001 until the unique index refused it.
    */
   guest?: boolean;
+  /**
+   * The containers on a takeaway, already worked out. See packFeeFor.
+   *
+   * A figure rather than a rule, because how many boxes an order needs is a
+   * fact about the order. order-guard is handed the same figure and carries
+   * it through rather than re-deriving it from the menu, which it cannot.
+   */
+  packFee?: number;
   /** Set for a pre-order; the kitchen sees nothing until fire_at. */
   scheduledFor?: Date;
   /**
@@ -422,7 +440,7 @@ export async function createOrder(
       : null
   );
 
-  const totals = computeTotals({ lines, discount: input.discount ?? 0, settings });
+  const totals = computeTotals({ lines, discount: input.discount ?? 0, packFee: input.packFee ?? 0, settings });
   const isPreorder = !!input.scheduledFor;
   const prepById: Record<string, number> = {};
   // Guests never number their own orders, and neither can anybody with no
@@ -473,6 +491,10 @@ export async function createOrder(
     group_reference: input.group?.reference ?? '',
     group_size: input.group?.size ?? 0,
     group_contact_name: input.group?.contactName ?? '',
+    group_booking_id: input.group?.bookingId ?? '',
+    // Stored as well as folded into the total, so a bill can show what the
+    // containers cost and a report can tell packaging from food.
+    pack_fee: totals.pack_fee,
     fulfilment: input.fulfilment ?? 'dine_in',
     pickup_point_id: input.pickupPointId ?? '',
     customer_name: input.customer?.name ?? '',

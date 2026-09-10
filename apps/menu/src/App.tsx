@@ -7,13 +7,16 @@ import {
   articlesFor, HELP_AREAS,
   featureConfig, previewUrl, humanError,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, screenShouldReset, screenClaim,
+  bookingTotals, offeredSlots, dietChips, matchesDiet, parseOmissions, dietaryLabels, couldBeWords,
 } from '@snpos/core';
 import type {
-  Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc,
+  Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc, GroupMeal,
 } from '@snpos/core';
 import { DishSheet } from './DishSheet';
 import { DietTags } from './DietTags';
 import { CartSheet } from './CartSheet';
+import { GroupSheet } from './GroupSheet';
+import { GroupDays } from './GroupDays';
 import { OrderStatus } from './OrderStatus';
 import { ScreenThanks } from './ScreenThanks';
 import { ScreenAttract } from './ScreenAttract';
@@ -74,6 +77,25 @@ export function App() {
    */
   const [counterOnly, setCounterOnly] = useState<string | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
+  /*
+    A group booking is a basket per MEAL, not one basket and not one a day.
+
+    A party staying four nights eats eight times, and lunch and dinner on the
+    same Tuesday are two sittings cooked hours apart. Held here rather than
+    inside the booking sheet because the MENU has to know which sitting a dish
+    is being added to: the sheet is where the booking is read back, and by
+    then it is too late to ask.
+  */
+  /**
+   * The diet a guest has filtered to, or none.
+   *
+   * Not remembered between visits. A shared counter tablet is everybody, and
+   * the next person to pick it up should be looking at the whole menu rather
+   * than at somebody else's restriction with no obvious way back.
+   */
+  const [diet, setDiet] = useState('');
+  const [groupMeals, setGroupMeals] = useState<GroupMeal[]>([]);
+  const [activeMeal, setActiveMeal] = useState<string | null>(null);
   const [openDish, setOpenDish] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   // Set from the address, never from a button. See the note by `groupToken`.
@@ -401,7 +423,39 @@ export function App() {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
+  /*
+    Group mode, worked out here rather than after the loading guard below.
+
+    addLine reads it to decide which basket a dish goes into, and a const
+    declared further down the component is not merely unset at that point, it
+    throws. That exact mistake has already cost this app a cart button that
+    did nothing; see the note beside `chosenSeat` in CartSheet.
+  */
+  const inGroupMode = groupMode && isEnabled(boot?.features ?? {}, 'group_orders');
+
   const addLine = useCallback((line: CartLine) => {
+    if (inGroupMode) {
+      if (!activeMeal) { toast('Pick a meal first'); return; }
+      setGroupMeals((all) => all.map((d) => {
+        if (d.key !== activeMeal) return d;
+        // Same dish, same options, same day merges rather than stacking.
+        const twin = d.lines.find(
+          (l) => l.menu_item_id === line.menu_item_id
+            && l.notes === line.notes
+            && JSON.stringify(l.addons.map((a) => a.option_id).sort())
+              === JSON.stringify(line.addons.map((a) => a.option_id).sort()),
+        );
+        return {
+          ...d,
+          lines: twin
+            ? d.lines.map((l) => (l === twin ? { ...l, qty: l.qty + line.qty } : l))
+            : [...d.lines, line],
+        };
+      }));
+      setOpenDish(null);
+      toast('Added to that meal');
+      return;
+    }
     setCart((c) => {
       // Same dish with identical options merges rather than stacking rows.
       const twin = c.find(
@@ -416,11 +470,22 @@ export function App() {
     });
     setOpenDish(null);
     toast('Added to your order');
-  }, [toast]);
+  }, [toast, inGroupMode, activeMeal]);
 
   const totals = useMemo(
     () => (boot ? computeTotals({ lines: cart, settings: boot.settings }) : null),
     [cart, boot],
+  );
+
+  /* A booking is priced day by day, because each day becomes its own order and
+     the sum of the tickets has to be the figure the hotel agreed to. */
+  const booking = useMemo(
+    () => bookingTotals(
+      groupMeals,
+      boot?.settings ?? ({} as Settings),
+      featureConfig(boot?.features ?? {}, 'group_orders', 'pack_fee', 0),
+    ),
+    [groupMeals, boot],
   );
 
   /**
@@ -615,7 +680,6 @@ export function App() {
   // The link opens group ordering; the feature switch still decides whether
   // group ordering exists at all. An old link doing something an admin has
   // since turned off would be the worst of both.
-  const inGroupMode = groupMode && isEnabled(features, 'group_orders');
 
   /**
    * One side of the business, never both.
@@ -632,9 +696,39 @@ export function App() {
   // menu and are the only thing shown on the group one, a hotel party
   // ordering platters does not want the a la carte list, and a walk-in
   // should not be offered a set meal for twenty.
-  const sections = visibleSections(menu)
+  /* The same times the ordinary pre-order picker offers, so a group can never
+     book a day the restaurant is shut. See offeredSlots. */
+  const groupSlots = useMemo(
+    () => (inGroupMode ? offeredSlots(venue, features) : []),
+    [inGroupMode, venue, features],
+  );
+
+  const onSide = visibleSections(menu)
     .filter((sec) => (sec.category.module ?? 'kitchen') === side)
     .filter((sec) => (inGroupMode ? sec.category.group_only : !sec.category.group_only));
+
+  /*
+    The chips, and what they hide.
+
+    Built from what is actually on this menu, so a chip never leads to an
+    empty page. Filtering keeps a dish that IS the diet and one that COULD be
+    with something left out; the card says which, so nobody is told a dish is
+    vegetarian when what is true is that it can be made so. A section with
+    nothing left drops out rather than sitting there empty.
+  */
+  const chips = dietChips(
+    onSide.flatMap((sec) => sec.entries.map((e) => ({
+      tags: e.item.tags,
+      omissions: parseOmissions(e.item.omissions),
+    }))),
+  );
+
+  const sections = !diet ? onSide : onSide
+    .map((sec) => ({
+      ...sec,
+      entries: sec.entries.filter((e) => matchesDiet(e.item.tags, parseOmissions(e.item.omissions), diet)),
+    }))
+    .filter((sec) => sec.entries.length > 0);
   const venueHours = parseWindows(venue.opening_hours);
   const venueOpen = isAvailable(venueHours);
   const preordersOn = isEnabled(features, 'preorders');
@@ -741,11 +835,16 @@ export function App() {
         />
       )}
 
+      {/* A group staying more than one night books every night at once, so
+          the day being ordered for is chosen before the food, not after. */}
       {inGroupMode && (
-        <div className="banner banner-info">
-          <strong>Ordering for a group.</strong> Set meals and platters, with one bill. We'll ask for your booking
-          reference so the kitchen and the front desk can find you.
-        </div>
+        <GroupDays
+          meals={groupMeals}
+          setMeals={setGroupMeals}
+          activeKey={activeMeal}
+          setActiveKey={setActiveMeal}
+          slots={groupSlots}
+        />
       )}
 
       {!venueOpen && (
@@ -764,6 +863,37 @@ export function App() {
               opening hours.
             </>
           )}
+        </div>
+      )}
+
+      {/*
+        What a guest can eat, above the categories.
+
+        First thing on the menu after the notices, because somebody with a
+        restriction is looking for it before they look at the food. Shown only
+        when this menu has something to offer at least one of them, so it
+        never appears as a row of dead ends.
+      */}
+      {chips.length > 0 && (
+        <div className="diet-chips" role="group" aria-label="Show dishes for a diet">
+          {chips.map((c) => (
+            <button
+              key={c.key}
+              className={diet === c.key ? 'on' : ''}
+              aria-pressed={diet === c.key}
+              onClick={() => setDiet(diet === c.key ? '' : c.key)}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {diet && (
+        <div className="diet-note">
+          <span>
+            Showing what is {dietaryLabels([diet])[0]?.label.toLowerCase() ?? diet}, and what can be made so.
+          </span>
+          <Button onClick={() => setDiet('')}>Show everything</Button>
         </div>
       )}
 
@@ -792,9 +922,6 @@ export function App() {
           key={section.category.$id}
           section={section}
           settings={settings}
-          // What each dish is safe for. On the group menu, where whoever is
-          // booking does not know their guests and has to ask on their behalf.
-          showDiet={inGroupMode}
           onPick={(id) => setOpenDish(id)}
         />
       ))}
@@ -809,7 +936,14 @@ export function App() {
         </div>
       )}
 
-      {cart.length > 0 && totals && (
+      {inGroupMode ? groupMeals.length > 0 && (
+        <div className="cart-bar">
+          <Button variant="primary" onClick={() => setShowCart(true)}>
+            See the booking · {groupMeals.length} meal{groupMeals.length === 1 ? '' : 's'} ·{' '}
+            {formatMoney(booking.total, settings)}
+          </Button>
+        </div>
+      ) : cart.length > 0 && totals && (
         <div className="cart-bar">
           <Button variant="primary" onClick={() => setShowCart(true)}>
             View order · {cart.reduce((n, l) => n + l.qty, 0)} item
@@ -822,13 +956,31 @@ export function App() {
         <DishSheet
           entry={dish}
           settings={settings}
-          showDiet={inGroupMode}
+          showDiet
           onClose={() => setOpenDish(null)}
           onAdd={addLine}
         />
       )}
 
-      {showCart && (
+      {showCart && inGroupMode && (
+        <GroupSheet
+          meals={groupMeals}
+          setMeals={setGroupMeals}
+          settings={settings}
+          venue={venue}
+          features={features}
+          onClose={() => setShowCart(false)}
+          onPlaced={(booked: { id: string; orderNo: string; at: string }[]) => {
+            setShowCart(false);
+            setActiveMeal(null);
+            for (const b of booked) rememberOrder({ id: b.id, no: b.orderNo, at: b.at, venueId: venue.$id });
+            toast(`Booking sent: ${booked.length} meal${booked.length === 1 ? '' : 's'}`);
+          }}
+          onError={(m: string) => toast(m)}
+        />
+      )}
+
+      {showCart && !inGroupMode && (
         <CartSheet
           cart={cart}
           setCart={setCart}
@@ -874,13 +1026,10 @@ export function App() {
 function Section({
   section,
   settings,
-  showDiet,
   onPick,
 }: {
   section: MenuSection;
   settings: Settings;
-  /** Say what each dish is safe for: vegan, gluten free, contains nuts. */
-  showDiet?: boolean;
   onPick: (id: string) => void;
 }) {
   const windows = parseWindows(section.category.availability);
@@ -909,7 +1058,13 @@ function Section({
             <div className="body">
               <div className="name">{entry.item.name}</div>
               {entry.item.description && <div className="desc">{entry.item.description}</div>}
-              {showDiet && <DietTags tags={entry.item.tags} />}
+              {/* Shown on every menu, not only the group one. A guest at a
+                  table has the same question a hotel booker does, and until
+                  now the ordinary menu never answered it. */}
+              <DietTags
+                tags={entry.item.tags}
+                couldBe={couldBeWords(entry.item.tags, parseOmissions(entry.item.omissions))}
+              />
               <div className="price">
                 {formatMoney(entry.price, settings)}
                 {entry.soldOut && <span className="dim"> · sold out</span>}

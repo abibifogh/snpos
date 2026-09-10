@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **74 collections, 1025 fields and 242 indexes**. Entered by hand at a
+> This is **74 collections, 1028 fields and 242 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -404,7 +404,7 @@ There are 74 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: managers, Team: admins
 
-**Attributes** (33)
+**Attributes** (34)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -428,6 +428,7 @@ There are 74 collections. A progress checklist is at the end of this document.
 | `unavailable_reason` | String | size 200 | No | ,  | No |
 | `group_only` | Boolean | ,  | No | false | No |
 | `tags` | String | size 40 | No | ,  | Yes |
+| `omissions` | String | size 2000 | No | ,  | No |
 | `sort` | Integer | ,  | **Yes** | ,  | No |
 | `track_stock` | Boolean | ,  | **Yes** | ,  | No |
 | `module` | Enum | kitchen, craft, bar | No | kitchen | No |
@@ -618,7 +619,7 @@ There are 74 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: All users · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: Team: admins
 
-**Attributes** (67)
+**Attributes** (69)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -658,6 +659,8 @@ There are 74 collections. A progress checklist is at the end of this document.
 | `group_reference` | String | size 60 | No | ,  | No |
 | `group_size` | Integer | ,  | No | 0 | No |
 | `group_contact_name` | String | size 120 | No | ,  | No |
+| `group_booking_id` | String | size 64 | No | ,  | No |
+| `pack_fee` | Integer | ,  | No | 0 | No |
 | `marked_paid_by` | String | size 64 | No | ,  | No |
 | `marked_paid_at` | Datetime | ,  | No | ,  | No |
 | `served_at` | Datetime | ,  | No | ,  | No |
@@ -2721,7 +2724,7 @@ group-wide default. `config` is a JSON string: copy the whole block from the
 | `busy_mode` | `true` | `{"auto_trip":true,"busy_pending_threshold":12,"pause_pending_threshold":20,"busy_extra_minutes":15,"hold_qr_orders_when_paused":true,"message_to_guest":"The kitchen is very busy, your order may take a little longer.","override_minutes":60}` |
 | `discounts` | `true` | `{"guest_codes_enabled":true,"staff_discounts_enabled":true,"staff_apply_window":"before_payment","manager_pin_above_bp":2000,"max_stacked":1,"show_savings_on_receipt":true,"invalid_code_message":"That code isn't valid for this order."}` |
 | `item_availability` | `true` | `{"who_can_mark":"all","require_reason":false,"alert_after_hours":24,"alert_emails":"","include_in_shift_summary":true}` |
-| `group_orders` | `false` | `{"require_reservation_number":true,"reservation_label":"Hotel reservation number","min_group_size":6,"notify_emails":"","notify_on_placed":true,"notify_group_on_accepted":true}` |
+| `group_orders` | `false` | `{"require_reservation_number":true,"reservation_label":"Hotel reservation number","min_group_size":6,"pack_fee":0,"notify_emails":"","notify_on_placed":true,"notify_group_on_accepted":true}` |
 | `help` | `true` | `{"audiences":{},"show_on_customer_menu":true}` |
 
 If pasting that much JSON is painful, you can set `config` to `{}` for now and
@@ -2772,14 +2775,14 @@ way mistakes creep in.
 - [ ]  5. `settings` (66 fields, 1 indexes)
 - [ ]  6. `payment_methods` (12 fields, 3 indexes)
 - [ ]  7. `categories` (13 fields, 3 indexes)
-- [ ]  8. `menu_items` (33 fields, 6 indexes)
+- [ ]  8. `menu_items` (34 fields, 6 indexes)
 - [ ]  9. `menu_item_categories` (5 fields, 4 indexes)
 - [ ] 10. `stations` (7 fields, 3 indexes)
 - [ ] 11. `addon_groups` (8 fields, 1 indexes)
 - [ ] 12. `addon_options` (8 fields, 2 indexes)
 - [ ] 13. `menu_item_addon_groups` (6 fields, 2 indexes)
 - [ ] 14. `tables` (13 fields, 4 indexes)
-- [ ] 15. `orders` (67 fields, 14 indexes)
+- [ ] 15. `orders` (69 fields, 14 indexes)
 - [ ] 16. `order_items` (26 fields, 4 indexes)
 - [ ] 17. `payments` (16 fields, 4 indexes)
 - [ ] 18. `shifts` (34 fields, 5 indexes)

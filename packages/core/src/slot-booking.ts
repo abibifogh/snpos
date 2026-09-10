@@ -1,5 +1,8 @@
 import { db, DB_ID, Query, Permission, Role, account, listAll } from './client';
-import { NO_LIMIT, SlotFull, placeOrder, seatId, slotIsFull, slotStamp } from './slots';
+import { NO_LIMIT, SlotFull, placeOrder, seatId, slotIsFull, slotStamp, servableSlots } from './slots';
+import { parseWindows } from './availability';
+import { featureConfig } from './features';
+import type { FeatureMap } from './features';
 
 /**
  * Taking a place in a pre-order time slot, and giving it back.
@@ -8,6 +11,29 @@ import { NO_LIMIT, SlotFull, placeOrder, seatId, slotIsFull, slotStamp } from '.
  * out from the slot and the place number, so claiming one is a create that
  * either succeeds or collides, and two people cannot both take the last one.
  */
+
+/**
+ * The times this business is offering, from its hours and its settings.
+ *
+ * One reader, so the ordinary pre-order picker and a group booking's day
+ * picker cannot offer different days. A screen that let a group book Sunday
+ * while the à la carte picker knew Sunday was shut would be two answers to
+ * the same question, and the group's is the one nobody checks until they
+ * arrive.
+ */
+export function offeredSlots(
+  venue: { opening_hours?: string },
+  features: FeatureMap,
+  from: Date = new Date(),
+  most = 200,
+): Date[] {
+  return servableSlots(parseWindows(venue.opening_hours), {
+    leadMinutes: featureConfig(features, 'preorders', 'min_lead_minutes', 30),
+    slotMinutes: featureConfig(features, 'preorders', 'slot_minutes', 15),
+    cutoffMinutes: featureConfig(features, 'preorders', 'cutoff_minutes_before_close', 30),
+    daysAhead: featureConfig(features, 'preorders', 'max_days_ahead', 7),
+  }, from, most);
+}
 
 export interface SlotSeat {
   $id: string;

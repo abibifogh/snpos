@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Modal, Input, Field, Notice, Select, FormError } from '@snpos/ui';
 import {
-  computeTotals, formatMoney, lineTotal, createOrder, parseWindows, taxWords, parseLevies, vatBpOf,
+  computeTotals, formatMoney, lineTotal, createOrder, taxWords, parseLevies, vatBpOf,
   isEnabled, featureConfig, db, DB_ID, ID, Query, isProvisionalOrderNo,
   ensureGuestSession, humanError, selfOrderModule, seatName,
-  placesBySlot, slotStamp, slotIsFull, slotWords, isSlotFull,
+  placesBySlot, slotStamp, slotIsFull, slotWords, isSlotFull, offeredSlots,
   busyNow, extraMinutes, holdsOrders, guestWords,
 } from '@snpos/core';
 import type { BusyNow } from '@snpos/core';
@@ -20,46 +20,6 @@ interface TableRow extends Doc {
   sort?: number;
 }
 
-/**
- * Slots the kitchen can actually serve.
- *
- * Offering a time the restaurant is shut, or one five minutes from now, is
- * worse than offering nothing, the customer plans around it and arrives to a
- * locked door.
- */
-function buildSlots(venue: Venue, features: FeatureMap, from = new Date()): Date[] {
-  const windows = parseWindows(venue.opening_hours);
-  if (!windows) return [];
-
-  const leadMinutes = featureConfig(features, 'preorders', 'min_lead_minutes', 30);
-  const slotMinutes = featureConfig(features, 'preorders', 'slot_minutes', 15);
-  const cutoff = featureConfig(features, 'preorders', 'cutoff_minutes_before_close', 30);
-  const daysAhead = featureConfig(features, 'preorders', 'max_days_ahead', 7);
-
-  const earliest = new Date(from.getTime() + leadMinutes * 60_000);
-  const slots: Date[] = [];
-  const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
-
-  for (let d = 0; d <= daysAhead && slots.length < 200; d++) {
-    const day = new Date(from);
-    day.setDate(day.getDate() + d);
-    for (const [open, close] of windows[DAYS[day.getDay()]] ?? []) {
-      const [oh, om] = open.split(':').map(Number);
-      const [ch, cm] = close.split(':').map(Number);
-      const start = new Date(day);
-      start.setHours(oh, om || 0, 0, 0);
-      const end = new Date(day);
-      end.setHours(ch, cm || 0, 0, 0);
-      if (end <= start) end.setDate(end.getDate() + 1); // crosses midnight
-      const last = new Date(end.getTime() - cutoff * 60_000);
-
-      for (let t = new Date(start); t <= last; t = new Date(t.getTime() + slotMinutes * 60_000)) {
-        if (t >= earliest) slots.push(new Date(t));
-      }
-    }
-  }
-  return slots.slice(0, 60);
-}
 
 /**
  * Wait for the order to be given its real number.
@@ -136,7 +96,7 @@ export function CartSheet({
   const discountsOn = isEnabled(features, 'discounts') && featureConfig(features, 'discounts', 'guest_codes_enabled', true);
 
   const slots = useMemo(
-    () => (preordersOn ? buildSlots(venue, features) : []),
+    () => (preordersOn ? offeredSlots(venue, features).slice(0, 60) : []),
     [venue, features, preordersOn],
   );
 

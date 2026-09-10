@@ -109,6 +109,39 @@
   background: var(--ok-bg); color: var(--ok);
 }
 .diet span.caution { background: var(--warn-bg); color: var(--warn); }
+/*
+  "Vegetarian on request" is a different promise from "Vegetarian".
+
+  Outlined rather than filled, so a guest scanning a page of green pills can
+  see at a glance which dishes already suit them and which would need asking.
+*/
+.diet span.onask {
+  background: none; color: var(--text-dim);
+  border: 1px dashed var(--border); font-weight: 550;
+}
+
+/*
+  The diet chips, above the category strip.
+
+  One row, scrolling sideways like the categories under it, and shown only
+  when the menu actually has something for at least one of them.
+*/
+.diet-chips {
+  display: flex; gap: 0.4rem; overflow-x: auto;
+  padding: 0.55rem 1rem 0; background: var(--bg);
+  -webkit-overflow-scrolling: touch;
+}
+.diet-chips button {
+  flex: none; padding: 0.3rem 0.75rem; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface);
+  font: inherit; font-size: 0.8rem; font-weight: 550; color: var(--text-dim); cursor: pointer;
+}
+.diet-chips button.on { background: var(--ok); border-color: var(--ok); color: #fff; }
+/* What the filter is doing, in a line, with the way out beside it. */
+.diet-note {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.6rem;
+  padding: 0.5rem 1rem; font-size: 0.82rem; color: var(--text-dim);
+}
 .dish img, .dish .noimg {
   width: 76px; height: 76px; border-radius: 9px; object-fit: cover; flex: none; background: var(--surface-2);
 }
