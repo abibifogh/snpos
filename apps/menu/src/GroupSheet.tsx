@@ -4,10 +4,11 @@ import {
   formatMoney, lineTotal, createOrder, featureConfig, isProvisionalOrderNo,
   ensureGuestSession, humanError, selfOrderModule, isSlotFull,
   bookingTotals, bookingProblem, packWords, mealWords, FULFILMENT_WORDS, dayKeyOf, longDayWords, timeWords,
+  linesByCategory, portionsIn,
   db, DB_ID, Query,
 } from '@snpos/core';
 import type {
-  CartLine, Settings, Venue, FeatureMap, GroupMeal, MealPricing, Fulfilment, Order,
+  CartLine, Settings, Venue, FeatureMap, GroupMeal, MealPricing, Fulfilment, Order, LoadedMenu,
 } from '@snpos/core';
 
 /**
@@ -25,13 +26,15 @@ import type {
  * for its own moment so the kitchen is silent until the morning it matters.
  */
 export function GroupSheet({
-  meals, setMeals, settings, venue, features, onClose, onPlaced, onError,
+  meals, setMeals, settings, venue, features, menu, onClose, onPlaced, onError,
 }: {
   meals: GroupMeal[];
   setMeals: (fn: (m: GroupMeal[]) => GroupMeal[]) => void;
   settings: Settings;
   venue: Venue;
   features: FeatureMap;
+  /** Only for the headings: which category each dish came from. */
+  menu: LoadedMenu;
   onClose: () => void;
   onPlaced: (booked: { id: string; orderNo: string; at: string }[]) => void;
   onError: (message: string) => void;
@@ -57,6 +60,23 @@ export function GroupSheet({
   );
 
   const money = (n: number) => formatMoney(n, settings);
+
+  /*
+    Which heading each dish belongs under, and the order the headings run in.
+
+    Taken from the menu the group has just ordered from, so the booking reads
+    down the same way that page did. A dish sitting in two categories is filed
+    under the first one it appeared in, which is the one they scrolled past.
+  */
+  const { categoryOf, order } = useMemo(() => {
+    const of = new Map<string, string>();
+    const seen: string[] = [];
+    for (const sec of menu.sections) {
+      seen.push(sec.category.name);
+      for (const e of sec.entries) if (!of.has(e.item.$id)) of.set(e.item.$id, sec.category.name);
+    }
+    return { categoryOf: (id: string) => of.get(id) ?? '', order: seen };
+  }, [menu]);
 
   const setMeal = (key: string, patch: Partial<GroupMeal>) =>
     setMeals((all) => all.map((m) => (m.key === key ? { ...m, ...patch } : m)));
@@ -196,19 +216,30 @@ export function GroupSheet({
             <p className="meta" style={{ margin: '0.4rem 0' }}>
               Nothing on this meal yet.
             </p>
-          ) : meal.lines.map((line: CartLine) => (
-            <div className="line" key={line.key}>
-              <div>
-                <div style={{ fontWeight: 550 }}>{line.name}</div>
-                {line.addons.length > 0 && <div className="meta">{line.addons.map((a) => a.name).join(', ')}</div>}
-                {line.notes && <div className="meta">&ldquo;{line.notes}&rdquo;</div>}
-                <div className="qty" style={{ marginTop: '0.4rem' }}>
-                  <button onClick={() => setQty(meal.key, line.key, line.qty - 1)} aria-label="One fewer">−</button>
-                  <span>{line.qty}</span>
-                  <button onClick={() => setQty(meal.key, line.key, line.qty + 1)} aria-label="One more">+</button>
-                </div>
+          ) : linesByCategory(meal.lines, categoryOf, order).map((group) => (
+            /* Under the heading it came from. Forty lines in a row is not
+               something anybody can check against forty guests; the same
+               forty under Wraps, Sandwiches and Mains is. */
+            <div key={group.category} style={{ marginTop: '0.5rem' }}>
+              <div className="spread" style={{ alignItems: 'baseline' }}>
+                <h4 style={{ margin: '0 0 0.2rem', fontSize: '0.9rem' }}>{group.category}</h4>
+                <span className="meta">{portionsIn(group)}</span>
               </div>
-              <div style={{ fontWeight: 600 }}>{formatMoney(lineTotal(line), settings)}</div>
+              {group.lines.map((line: CartLine) => (
+                <div className="line" key={line.key}>
+                  <div>
+                    <div style={{ fontWeight: 550 }}>{line.name}</div>
+                    {line.addons.length > 0 && <div className="meta">{line.addons.map((a) => a.name).join(', ')}</div>}
+                    {line.notes && <div className="meta">&ldquo;{line.notes}&rdquo;</div>}
+                    <div className="qty" style={{ marginTop: '0.4rem' }}>
+                      <button onClick={() => setQty(meal.key, line.key, line.qty - 1)} aria-label="One fewer">−</button>
+                      <span>{line.qty}</span>
+                      <button onClick={() => setQty(meal.key, line.key, line.qty + 1)} aria-label="One more">+</button>
+                    </div>
+                  </div>
+                  <div style={{ fontWeight: 600 }}>{formatMoney(lineTotal(line), settings)}</div>
+                </div>
+              ))}
             </div>
           ))}
 

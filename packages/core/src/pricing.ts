@@ -676,3 +676,51 @@ export function bookingTotals(
     portions: sum((t) => t.portions),
   };
 }
+
+/**
+ * A meal's dishes, gathered under the headings they came from.
+ *
+ * A party of forty orders forty-odd lines, and a flat list of them is not
+ * something anybody can check. Read under Wraps, Sandwiches, Mains it is: the
+ * person booking counts the wraps against the guests who wanted wraps, and
+ * the kitchen reading it back sees the same shape it will cook in.
+ *
+ * The headings keep the order they have on the menu rather than falling into
+ * alphabetical order, so the form reads down the same way the menu the group
+ * ordered from did. A dish whose category is gone or was never known goes
+ * last under a heading that says so, instead of disappearing.
+ */
+export interface LineGroup {
+  category: string;
+  lines: CartLine[];
+}
+
+export const UNGROUPED = 'Everything else';
+
+export function linesByCategory(
+  lines: CartLine[],
+  categoryOf: (menuItemId: string) => string,
+  /** The headings in menu order. Anything not named here follows, in the order it was added. */
+  order: readonly string[] = [],
+): LineGroup[] {
+  const groups = new Map<string, CartLine[]>();
+  for (const l of lines) {
+    const name = (categoryOf(l.menu_item_id) || '').trim() || UNGROUPED;
+    const list = groups.get(name) ?? [];
+    list.push(l);
+    groups.set(name, list);
+  }
+  const rank = new Map(order.map((name, i) => [name, i]));
+  return [...groups.entries()]
+    .map(([category, ls]) => ({ category, lines: ls }))
+    .sort((a, b) => {
+      // Named headings first, in menu order; then anything unplaced; and the
+      // catch-all last, wherever it fell.
+      const place = (c: string) => (c === UNGROUPED ? Number.MAX_SAFE_INTEGER : rank.get(c) ?? Number.MAX_SAFE_INTEGER - 1);
+      return place(a.category) - place(b.category);
+    });
+}
+
+/** How many portions are under one heading, for the count beside it. */
+export const portionsIn = (group: LineGroup): number =>
+  group.lines.reduce((n, l) => n + Math.max(0, l.qty), 0);
