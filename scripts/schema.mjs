@@ -224,14 +224,30 @@ export const COLLECTIONS = [
         from phones, not on a receipt, not at shift close. See vatBpOf.
         The levies are separate; each is switched on by having a rate.
       */
-      ['vat_charged', 'b', null, true, true],
+      /*
+        Optional, and that is not a detail.
+
+        This shipped as required, and provisioning a database that already had
+        a settings row failed on the next write to it: the row predates the
+        attribute, so it has no value for it, and Appwrite calls the whole
+        document invalid. A required attribute may not carry a default either,
+        so there is nothing for the old row to fall back on.
+
+        The rule this cost us: an attribute ADDED to a collection that already
+        holds documents must be optional, whatever it would have been on a
+        blank database. Absent then means the same as true here, which is
+        what vatBpOf already reads it as.
+      */
+      ['vat_charged', 'b', null, false, true],
       // The levies beside VAT, as JSON: [{key, name, rate_bp}]. VAT (the rate
       // above) applies on top of them. Empty is the single rate as before.
       ['levies', 's', 2000, false],
       // Whether a receipt lists each charge or adds them into one line. Both
       // are defensible: a customer wants to see what each body is owed, and a
       // narrow till roll wants one line. See showsTaxParts.
-      ['receipt_tax_detail', 'e', ['separate', 'combined'], true, 'separate'],
+      // Optional for the same reason as vat_charged above. Absent reads as
+      // 'separate', which is what the browser receipt already did.
+      ['receipt_tax_detail', 'e', ['separate', 'combined'], false, 'separate'],
       /*
         What shape the database is, as provisioning last left it.
 
