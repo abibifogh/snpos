@@ -3,11 +3,11 @@ import { Button, Modal, Input, Field, Notice, Select, FormError, Badge } from '@
 import {
   formatMoney, lineTotal, createOrder, featureConfig, isProvisionalOrderNo,
   ensureGuestSession, humanError, selfOrderModule, isSlotFull,
-  bookingTotals, bookingProblem, packWords, dayWords, FULFILMENT_WORDS, dayKeyOf, longDayWords, timeWords,
+  bookingTotals, bookingProblem, packWords, mealWords, FULFILMENT_WORDS, dayKeyOf, longDayWords, timeWords,
   db, DB_ID, Query,
 } from '@snpos/core';
 import type {
-  CartLine, Settings, Venue, FeatureMap, GroupDay, DayPricing, Fulfilment, Order,
+  CartLine, Settings, Venue, FeatureMap, GroupMeal, MealPricing, Fulfilment, Order,
 } from '@snpos/core';
 
 /**
@@ -25,10 +25,10 @@ import type {
  * for its own moment so the kitchen is silent until the morning it matters.
  */
 export function GroupSheet({
-  days, setDays, settings, venue, features, onClose, onPlaced, onError,
+  meals, setMeals, settings, venue, features, onClose, onPlaced, onError,
 }: {
-  days: GroupDay[];
-  setDays: (fn: (d: GroupDay[]) => GroupDay[]) => void;
+  meals: GroupMeal[];
+  setMeals: (fn: (m: GroupMeal[]) => GroupMeal[]) => void;
   settings: Settings;
   venue: Venue;
   features: FeatureMap;
@@ -52,19 +52,19 @@ export function GroupSheet({
   const [busy, setBusy] = useState(false);
 
   const booking = useMemo(
-    () => bookingTotals(days, settings, packFee),
-    [days, settings, packFee],
+    () => bookingTotals(meals, settings, packFee),
+    [meals, settings, packFee],
   );
 
   const money = (n: number) => formatMoney(n, settings);
 
-  const setDay = (key: string, patch: Partial<GroupDay>) =>
-    setDays((all) => all.map((d) => (d.key === key ? { ...d, ...patch } : d)));
+  const setMeal = (key: string, patch: Partial<GroupMeal>) =>
+    setMeals((all) => all.map((m) => (m.key === key ? { ...m, ...patch } : m)));
 
   const setQty = (key: string, lineKey: string, qty: number) =>
-    setDays((all) => all.map((d) => (d.key === key
-      ? { ...d, lines: d.lines.map((l: CartLine) => (l.key === lineKey ? { ...l, qty } : l)).filter((l: CartLine) => l.qty > 0) }
-      : d)));
+    setMeals((all) => all.map((m) => (m.key === key
+      ? { ...m, lines: m.lines.map((l: CartLine) => (l.key === lineKey ? { ...l, qty } : l)).filter((l: CartLine) => l.qty > 0) }
+      : m)));
 
   /**
    * Send the booking: one order per day.
@@ -79,7 +79,7 @@ export function GroupSheet({
    * to, rather than being left guessing whether any of it landed.
    */
   const send = async () => {
-    const said = bookingProblem(days, {
+    const said = bookingProblem(meals, {
       reference: groupRef,
       needReference,
       referenceLabel: reservationLabel,
@@ -96,11 +96,11 @@ export function GroupSheet({
 
     try {
       await ensureGuestSession();
-      for (const { day, totals } of booking.days) {
+      for (const { meal, totals } of booking.meals) {
         const { order } = await createOrder({
           module: selfOrderModule(settings),
           venueId: venue.$id,
-          lines: day.lines.filter((l: CartLine) => l.qty > 0),
+          lines: meal.lines.filter((l: CartLine) => l.qty > 0),
           settings,
           guest: true,
           channel: 'takeaway',
@@ -112,13 +112,13 @@ export function GroupSheet({
             bookingId,
           },
           customer: { name: name.trim() || undefined, email: email.trim() || undefined },
-          fulfilment: day.fulfilment,
+          fulfilment: meal.fulfilment,
           packFee: totals.packFee,
-          scheduledFor: new Date(day.at),
+          scheduledFor: new Date(meal.at),
           slotCapacity,
           openingHours: venue.opening_hours,
         });
-        booked.push({ id: order.$id, orderNo: order.order_no, at: day.at });
+        booked.push({ id: order.$id, orderNo: order.order_no, at: meal.at });
       }
 
       // The numbers are settled server-side a moment after each order lands.
@@ -134,7 +134,7 @@ export function GroupSheet({
         return { ...b, orderNo: mine?.[i]?.order_no ?? b.orderNo };
       }));
 
-      setDays(() => []);
+      setMeals(() => []);
       onPlaced(settled);
     } catch (e) {
       const message = isSlotFull(e)
@@ -142,7 +142,7 @@ export function GroupSheet({
         : humanError(e) || 'Could not send the booking. Please try again.';
       const done = booked.length;
       setProblem(done > 0
-        ? `${message} ${done} day${done === 1 ? '' : 's'} of the booking went through before this; the rest have not. Please tell the front desk.`
+        ? `${message} ${done} meal${done === 1 ? '' : 's'} of the booking went through before this; the rest have not. Please tell the front desk.`
         : message);
       onError(message);
     } finally {
@@ -155,28 +155,28 @@ export function GroupSheet({
       title="Your group booking"
       onClose={onClose}
       footer={
-        <Button variant="primary" onClick={() => void send()} loading={busy} disabled={days.length === 0} style={{ width: '100%' }}>
+        <Button variant="primary" onClick={() => void send()} loading={busy} disabled={meals.length === 0} style={{ width: '100%' }}>
           Send this booking · {money(booking.total)}
         </Button>
       }
     >
       <FormError message={problem} />
 
-      {days.length === 0 && (
+      {meals.length === 0 && (
         <Notice tone="info">
-          Nothing booked yet. Close this, pick a day at the top of the menu, and add what the group would like
-          to eat on it. Add as many days as the group is staying.
+          Nothing booked yet. Close this, add a meal at the top of the menu, and choose what the group would
+          like to eat at it. Lunch and dinner on the same day are two meals.
         </Notice>
       )}
 
-      {booking.days.map(({ day, totals }: { day: GroupDay; totals: DayPricing }) => (
-        <div key={day.key} style={{ marginBottom: '1.2rem' }}>
+      {booking.meals.map(({ meal, totals }: { meal: GroupMeal; totals: MealPricing }) => (
+        <div key={meal.key} style={{ marginBottom: '1.2rem' }}>
           <div className="spread" style={{ alignItems: 'baseline' }}>
             <h3 style={{ margin: '0 0 0.2rem' }}>
-              {longDayWords(day.at)}
+              {longDayWords(meal.at)}
             </h3>
             <span className="meta">
-              {timeWords(day.at)}
+              {timeWords(meal.at)}
             </span>
           </div>
 
@@ -184,28 +184,28 @@ export function GroupSheet({
               day's food rather than once for the whole stay. */}
           <Field hint={packWords(packFee, money)}>
             <Select
-              value={day.fulfilment}
-              onChange={(e) => setDay(day.key, { fulfilment: e.target.value as Fulfilment })}
+              value={meal.fulfilment}
+              onChange={(e) => setMeal(meal.key, { fulfilment: e.target.value as Fulfilment })}
             >
               <option value="dine_in">{FULFILMENT_WORDS.dine_in}</option>
               <option value="takeaway">{FULFILMENT_WORDS.takeaway}</option>
             </Select>
           </Field>
 
-          {day.lines.length === 0 ? (
+          {meal.lines.length === 0 ? (
             <p className="meta" style={{ margin: '0.4rem 0' }}>
-              Nothing on this day yet.
+              Nothing on this meal yet.
             </p>
-          ) : day.lines.map((line: CartLine) => (
+          ) : meal.lines.map((line: CartLine) => (
             <div className="line" key={line.key}>
               <div>
                 <div style={{ fontWeight: 550 }}>{line.name}</div>
                 {line.addons.length > 0 && <div className="meta">{line.addons.map((a) => a.name).join(', ')}</div>}
                 {line.notes && <div className="meta">&ldquo;{line.notes}&rdquo;</div>}
                 <div className="qty" style={{ marginTop: '0.4rem' }}>
-                  <button onClick={() => setQty(day.key, line.key, line.qty - 1)} aria-label="One fewer">−</button>
+                  <button onClick={() => setQty(meal.key, line.key, line.qty - 1)} aria-label="One fewer">−</button>
                   <span>{line.qty}</span>
-                  <button onClick={() => setQty(day.key, line.key, line.qty + 1)} aria-label="One more">+</button>
+                  <button onClick={() => setQty(meal.key, line.key, line.qty + 1)} aria-label="One more">+</button>
                 </div>
               </div>
               <div style={{ fontWeight: 600 }}>{formatMoney(lineTotal(line), settings)}</div>
@@ -213,18 +213,18 @@ export function GroupSheet({
           ))}
 
           <div className="spread" style={{ marginTop: '0.4rem' }}>
-            <span className="meta">{dayWords(totals, money)}</span>
+            <span className="meta">{mealWords(totals, money)}</span>
             <Button
               variant="ghost"
-              onClick={() => setDays((all) => all.filter((d) => d.key !== day.key))}
+              onClick={() => setMeals((all) => all.filter((m) => m.key !== meal.key))}
             >
-              Take this day off
+              Take this meal off
             </Button>
           </div>
         </div>
       ))}
 
-      {days.length > 0 && (
+      {meals.length > 0 && (
         <>
           <div className="spread" style={{ marginTop: '0.6rem' }}>
             <span>Food</span>
@@ -240,7 +240,7 @@ export function GroupSheet({
             <div className="spread"><span>Service</span><span>{money(booking.service)}</span></div>
           )}
           <div className="spread" style={{ fontWeight: 650, fontSize: '1.05rem' }}>
-            <span>{booking.days.length} day{booking.days.length === 1 ? '' : 's'} in all</span>
+            <span>{booking.meals.length} meal{booking.meals.length === 1 ? '' : 's'} in all</span>
             <span>{money(booking.total)}</span>
           </div>
 
@@ -263,8 +263,8 @@ export function GroupSheet({
           </Field>
 
           <p className="meta">
-            Each day is sent to the kitchen as its own order, on the morning it is wanted, so nothing is cooked
-            early. They all carry your reference.
+            Each meal is sent to the kitchen as its own order, in time to cook it and not before, so nothing
+            is made early. They all carry your reference.
           </p>
         </>
       )}
@@ -272,9 +272,9 @@ export function GroupSheet({
   );
 }
 
-/** A day that has just been added, ready for dishes. */
-export const newDay = (at: Date): GroupDay => ({
-  key: `d-${dayKeyOf(at)}-${Math.random().toString(36).slice(2, 6)}`,
+/** A meal that has just been added, ready for dishes. */
+export const newMeal = (at: Date): GroupMeal => ({
+  key: `m-${dayKeyOf(at)}-${at.getHours()}${at.getMinutes()}-${Math.random().toString(36).slice(2, 6)}`,
   at: at.toISOString(),
   fulfilment: 'dine_in',
   lines: [],

@@ -10,7 +10,7 @@ import {
   bookingTotals, offeredSlots,
 } from '@snpos/core';
 import type {
-  Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc, GroupDay,
+  Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc, GroupMeal,
 } from '@snpos/core';
 import { DishSheet } from './DishSheet';
 import { DietTags } from './DietTags';
@@ -78,14 +78,16 @@ export function App() {
   const [counterOnly, setCounterOnly] = useState<string | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
   /*
-    A group booking is a basket per day, not one basket.
+    A group booking is a basket per MEAL, not one basket and not one a day.
 
-    Held here rather than inside the booking sheet because the MENU has to
-    know which day a dish is being added to: the sheet is where the booking is
-    read back, and by then it is too late to ask.
+    A party staying four nights eats eight times, and lunch and dinner on the
+    same Tuesday are two sittings cooked hours apart. Held here rather than
+    inside the booking sheet because the MENU has to know which sitting a dish
+    is being added to: the sheet is where the booking is read back, and by
+    then it is too late to ask.
   */
-  const [groupDays, setGroupDays] = useState<GroupDay[]>([]);
-  const [activeDay, setActiveDay] = useState<string | null>(null);
+  const [groupMeals, setGroupMeals] = useState<GroupMeal[]>([]);
+  const [activeMeal, setActiveMeal] = useState<string | null>(null);
   const [openDish, setOpenDish] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   // Set from the address, never from a button. See the note by `groupToken`.
@@ -425,9 +427,9 @@ export function App() {
 
   const addLine = useCallback((line: CartLine) => {
     if (inGroupMode) {
-      if (!activeDay) { toast('Pick a day first'); return; }
-      setGroupDays((all) => all.map((d) => {
-        if (d.key !== activeDay) return d;
+      if (!activeMeal) { toast('Pick a meal first'); return; }
+      setGroupMeals((all) => all.map((d) => {
+        if (d.key !== activeMeal) return d;
         // Same dish, same options, same day merges rather than stacking.
         const twin = d.lines.find(
           (l) => l.menu_item_id === line.menu_item_id
@@ -443,7 +445,7 @@ export function App() {
         };
       }));
       setOpenDish(null);
-      toast('Added to that day');
+      toast('Added to that meal');
       return;
     }
     setCart((c) => {
@@ -460,7 +462,7 @@ export function App() {
     });
     setOpenDish(null);
     toast('Added to your order');
-  }, [toast]);
+  }, [toast, inGroupMode, activeMeal]);
 
   const totals = useMemo(
     () => (boot ? computeTotals({ lines: cart, settings: boot.settings }) : null),
@@ -471,11 +473,11 @@ export function App() {
      the sum of the tickets has to be the figure the hotel agreed to. */
   const booking = useMemo(
     () => bookingTotals(
-      groupDays,
+      groupMeals,
       boot?.settings ?? ({} as Settings),
       featureConfig(boot?.features ?? {}, 'group_orders', 'pack_fee', 0),
     ),
-    [groupDays, boot],
+    [groupMeals, boot],
   );
 
   /**
@@ -806,10 +808,10 @@ export function App() {
           the day being ordered for is chosen before the food, not after. */}
       {inGroupMode && (
         <GroupDays
-          days={groupDays}
-          setDays={setGroupDays}
-          activeKey={activeDay}
-          setActiveKey={setActiveDay}
+          meals={groupMeals}
+          setMeals={setGroupMeals}
+          activeKey={activeMeal}
+          setActiveKey={setActiveMeal}
           slots={groupSlots}
         />
       )}
@@ -875,10 +877,10 @@ export function App() {
         </div>
       )}
 
-      {inGroupMode ? groupDays.length > 0 && (
+      {inGroupMode ? groupMeals.length > 0 && (
         <div className="cart-bar">
           <Button variant="primary" onClick={() => setShowCart(true)}>
-            See the booking · {groupDays.length} day{groupDays.length === 1 ? '' : 's'} ·{' '}
+            See the booking · {groupMeals.length} meal{groupMeals.length === 1 ? '' : 's'} ·{' '}
             {formatMoney(booking.total, settings)}
           </Button>
         </div>
@@ -903,17 +905,17 @@ export function App() {
 
       {showCart && inGroupMode && (
         <GroupSheet
-          days={groupDays}
-          setDays={setGroupDays}
+          meals={groupMeals}
+          setMeals={setGroupMeals}
           settings={settings}
           venue={venue}
           features={features}
           onClose={() => setShowCart(false)}
           onPlaced={(booked: { id: string; orderNo: string; at: string }[]) => {
             setShowCart(false);
-            setActiveDay(null);
+            setActiveMeal(null);
             for (const b of booked) rememberOrder({ id: b.id, no: b.orderNo, at: b.at, venueId: venue.$id });
-            toast(`Booking sent: ${booked.length} day${booked.length === 1 ? '' : 's'}`);
+            toast(`Booking sent: ${booked.length} meal${booked.length === 1 ? '' : 's'}`);
           }}
           onError={(m: string) => toast(m)}
         />
