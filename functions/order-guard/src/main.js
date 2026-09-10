@@ -47,7 +47,10 @@ async function reprice({ db, DB_ID, orderId, settings }) {
     .filter((r) => r.status === 'applied')
     .reduce((sum, r) => sum + r.amount, 0);
 
-  const { service, tax, total } = totalsFor(subtotal, Math.min(discount, subtotal), settings);
+  // The fees already on the order go through untouched. See totalsFor: a
+  // pack fee is a fact about this order, not something the menu can re-derive.
+  const fees = (order.pack_fee || 0) + (order.delivery_fee || 0);
+  const { service, tax, total } = totalsFor(subtotal, Math.min(discount, subtotal), settings, fees);
   await db.updateDocument(DB_ID, 'orders', orderId, {
     subtotal,
     discount_total: Math.min(discount, subtotal),
@@ -1253,7 +1256,8 @@ export default async ({ req, res, log, error }) => {
       corrections.push(`discount: claimed ${order.discount_total}, allowed ${allowedDiscount}`);
     }
 
-    const { service, tax, total } = totalsFor(subtotal, discount, settings);
+    const fees = (order.pack_fee || 0) + (order.delivery_fee || 0);
+    const { service, tax, total } = totalsFor(subtotal, discount, settings, fees);
 
     /**
      * The wait, worked out where the queue is actually visible.

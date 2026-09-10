@@ -897,6 +897,29 @@ export const COLLECTIONS = [
       ['group_reference', 's', 60, false],
       ['group_size', 'i', null, false, 0],
       ['group_contact_name', 's', 120, false],
+      /*
+        Which booking this day belongs to.
+
+        A group staying four nights sends one booking and gets four orders,
+        one per day, because an order already knows how to wait for its own
+        fire time and the kitchen already knows how to cook a ticket that
+        arrives on the morning it is wanted. This ties the four back together
+        so the front desk can see them as one party rather than four
+        coincidences. The hotel's own reference is beside it and is what
+        people say out loud; this is what the screens match on, because two
+        bookings by the same party would share a reference and not a stay.
+      */
+      ['group_booking_id', 's', 64, false],
+      /*
+        What the containers cost on this order.
+
+        Only on a takeaway, counted once per portion, and settled when the
+        order is placed rather than worked out later: how many boxes a party
+        of twenty needs is a fact about that order, and re-deriving it from
+        the menu a week on would give a different answer if the fee changed.
+        order-guard is told the figure and carries it through untouched.
+      */
+      ['pack_fee', 'i', null, false, 0],
 
       // --- Payment is always marked by staff. Guests never settle a bill in
       // the app, so no customer-facing route may write these two fields.
@@ -3743,6 +3766,10 @@ export const FEATURES = [
       require_reservation_number: true,
       reservation_label: 'Hotel reservation number',
       min_group_size: 6,
+      // What the containers cost, per portion, on a day the group has chosen
+      // to take away. Nothing on a day they eat here. Minor units, so 200 is
+      // two cedis. See packFeeFor in group-booking.ts.
+      pack_fee: 0,
       // Somebody is told the moment a group order arrives, because a party of
       // twenty is a kitchen planning decision, not just another ticket.
       notify_emails: '',

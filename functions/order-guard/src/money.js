@@ -17,10 +17,20 @@
  *
  * Mirrors computeTotals in packages/core/src/pricing.ts.
  */
-export function totalsFor(subtotal, discount, settings) {
+export function totalsFor(subtotal, discount, settings, fees = 0) {
   const discounted = subtotal - discount;
   const service = Math.round((discounted * (settings.service_charge_bp || 0)) / 10000);
-  const taxable = discounted + service;
+  /*
+    Fees the guard did not work out, carried through rather than dropped.
+
+    The guard re-prices every order from the menu, and anything it does not
+    know about it removes. A pack fee is decided when the order is placed —
+    how many containers a takeaway needs is a fact about that order, not
+    something re-derivable from the menu — so the guard has to be told the
+    figure and keep it. Without this it would strip the fee from every group
+    takeaway a second after it was booked, and the bill would quietly drop.
+  */
+  const taxable = discounted + service + Math.max(0, Math.round(fees || 0));
   const tax = taxTotalFor({
     taxable,
     vatBp: vatBpOf(settings),

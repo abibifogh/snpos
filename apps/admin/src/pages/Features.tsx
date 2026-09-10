@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Card, Field, Input, Notice, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, listAll, humanError } from '../lib';
-import { FEATURE_DEPENDENCIES } from '@snpos/core';
+import { useSession } from '../session';
+import { FEATURE_DEPENDENCIES, toInput, parseMoney } from '@snpos/core';
 import type { FeatureFlag } from '@snpos/core';
 
 /** One number out of a feature's config text, or the fallback if it says nothing. */
@@ -51,7 +52,26 @@ const LABELS: Record<string, { title: string; blurb: string }> = {
  * nobody has. Only the settings an owner would actually reach for are here;
  * the rest of each feature's config stays where it is.
  */
-const NUMBERS: Record<string, { option: string; label: string; hint: string; fallback: number; min?: number }[]> = {
+const NUMBERS: Record<string, {
+  option: string; label: string; hint: string; fallback: number; min?: number;
+  /** Shown and typed in cedis, stored in pesewas, so nobody types 200 meaning two. */
+  money?: boolean;
+}[]> = {
+  group_orders: [
+    {
+      option: 'pack_fee',
+      label: 'Packing charge for each meal taken away',
+      hint: 'Added once per portion on a day the group chooses to take the food away. Nothing on a day they eat here. Leave at 0 to charge nothing.',
+      fallback: 0,
+      money: true,
+    },
+    {
+      option: 'min_group_size',
+      label: 'Smallest group that may book',
+      hint: 'A booking for fewer people than this is turned away with a note saying so.',
+      fallback: 6,
+    },
+  ],
   preorders: [
     {
       option: 'slot_capacity',
@@ -90,6 +110,8 @@ const NUMBERS: Record<string, { option: string; label: string; hint: string; fal
 
 export function FeaturesPage() {
   const toast = useToast();
+  const { settings } = useSession();
+  const decimals = settings?.currency_decimals ?? 2;
   const [rows, setRows] = useState<FeatureFlag[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
@@ -171,10 +193,20 @@ export function FeaturesPage() {
                         <Input
                           type="number"
                           min={n.min ?? 0}
-                          step="1"
-                          defaultValue={String(configNumber(f, n.option, n.fallback))}
+                          step={n.money ? '0.01' : '1'}
+                          /* Money is typed the way it is spoken. Stored in
+                             pesewas, so a box that took 200 for two cedis
+                             would be a hundredfold mistake nobody notices
+                             until a bill goes out. */
+                          defaultValue={n.money
+                            ? toInput(configNumber(f, n.option, n.fallback), decimals)
+                            : String(configNumber(f, n.option, n.fallback))}
                           onBlur={(e) => {
-                            const v = Math.max(n.min ?? 0, Math.round(Number(e.target.value) || 0));
+                            const raw = n.money
+                              ? parseMoney(e.target.value, decimals)
+                              : Math.round(Number(e.target.value) || 0);
+                            if (raw === null) return;
+                            const v = Math.max(n.min ?? 0, raw);
                             if (v !== configNumber(f, n.option, n.fallback)) void setNumber(f, n.option, v);
                           }}
                         />

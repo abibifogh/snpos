@@ -7,13 +7,16 @@ import {
   articlesFor, HELP_AREAS,
   featureConfig, previewUrl, humanError,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, screenShouldReset, screenClaim,
+  bookingTotals, offeredSlots,
 } from '@snpos/core';
 import type {
-  Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc,
+  Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc, GroupDay,
 } from '@snpos/core';
 import { DishSheet } from './DishSheet';
 import { DietTags } from './DietTags';
 import { CartSheet } from './CartSheet';
+import { GroupSheet } from './GroupSheet';
+import { GroupDays } from './GroupDays';
 import { OrderStatus } from './OrderStatus';
 import { ScreenThanks } from './ScreenThanks';
 import { ScreenAttract } from './ScreenAttract';
@@ -74,6 +77,15 @@ export function App() {
    */
   const [counterOnly, setCounterOnly] = useState<string | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
+  /*
+    A group booking is a basket per day, not one basket.
+
+    Held here rather than inside the booking sheet because the MENU has to
+    know which day a dish is being added to: the sheet is where the booking is
+    read back, and by then it is too late to ask.
+  */
+  const [groupDays, setGroupDays] = useState<GroupDay[]>([]);
+  const [activeDay, setActiveDay] = useState<string | null>(null);
   const [openDish, setOpenDish] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   // Set from the address, never from a button. See the note by `groupToken`.
@@ -401,7 +413,39 @@ export function App() {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
+  /*
+    Group mode, worked out here rather than after the loading guard below.
+
+    addLine reads it to decide which basket a dish goes into, and a const
+    declared further down the component is not merely unset at that point, it
+    throws. That exact mistake has already cost this app a cart button that
+    did nothing; see the note beside `chosenSeat` in CartSheet.
+  */
+  const inGroupMode = groupMode && isEnabled(boot?.features ?? {}, 'group_orders');
+
   const addLine = useCallback((line: CartLine) => {
+    if (inGroupMode) {
+      if (!activeDay) { toast('Pick a day first'); return; }
+      setGroupDays((all) => all.map((d) => {
+        if (d.key !== activeDay) return d;
+        // Same dish, same options, same day merges rather than stacking.
+        const twin = d.lines.find(
+          (l) => l.menu_item_id === line.menu_item_id
+            && l.notes === line.notes
+            && JSON.stringify(l.addons.map((a) => a.option_id).sort())
+              === JSON.stringify(line.addons.map((a) => a.option_id).sort()),
+        );
+        return {
+          ...d,
+          lines: twin
+            ? d.lines.map((l) => (l === twin ? { ...l, qty: l.qty + line.qty } : l))
+            : [...d.lines, line],
+        };
+      }));
+      setOpenDish(null);
+      toast('Added to that day');
+      return;
+    }
     setCart((c) => {
       // Same dish with identical options merges rather than stacking rows.
       const twin = c.find(
@@ -421,6 +465,17 @@ export function App() {
   const totals = useMemo(
     () => (boot ? computeTotals({ lines: cart, settings: boot.settings }) : null),
     [cart, boot],
+  );
+
+  /* A booking is priced day by day, because each day becomes its own order and
+     the sum of the tickets has to be the figure the hotel agreed to. */
+  const booking = useMemo(
+    () => bookingTotals(
+      groupDays,
+      boot?.settings ?? ({} as Settings),
+      featureConfig(boot?.features ?? {}, 'group_orders', 'pack_fee', 0),
+    ),
+    [groupDays, boot],
   );
 
   /**
@@ -615,7 +670,6 @@ export function App() {
   // The link opens group ordering; the feature switch still decides whether
   // group ordering exists at all. An old link doing something an admin has
   // since turned off would be the worst of both.
-  const inGroupMode = groupMode && isEnabled(features, 'group_orders');
 
   /**
    * One side of the business, never both.
@@ -632,6 +686,13 @@ export function App() {
   // menu and are the only thing shown on the group one, a hotel party
   // ordering platters does not want the a la carte list, and a walk-in
   // should not be offered a set meal for twenty.
+  /* The same times the ordinary pre-order picker offers, so a group can never
+     book a day the restaurant is shut. See offeredSlots. */
+  const groupSlots = useMemo(
+    () => (inGroupMode ? offeredSlots(venue, features) : []),
+    [inGroupMode, venue, features],
+  );
+
   const sections = visibleSections(menu)
     .filter((sec) => (sec.category.module ?? 'kitchen') === side)
     .filter((sec) => (inGroupMode ? sec.category.group_only : !sec.category.group_only));
@@ -741,11 +802,16 @@ export function App() {
         />
       )}
 
+      {/* A group staying more than one night books every night at once, so
+          the day being ordered for is chosen before the food, not after. */}
       {inGroupMode && (
-        <div className="banner banner-info">
-          <strong>Ordering for a group.</strong> Set meals and platters, with one bill. We'll ask for your booking
-          reference so the kitchen and the front desk can find you.
-        </div>
+        <GroupDays
+          days={groupDays}
+          setDays={setGroupDays}
+          activeKey={activeDay}
+          setActiveKey={setActiveDay}
+          slots={groupSlots}
+        />
       )}
 
       {!venueOpen && (
@@ -809,7 +875,14 @@ export function App() {
         </div>
       )}
 
-      {cart.length > 0 && totals && (
+      {inGroupMode ? groupDays.length > 0 && (
+        <div className="cart-bar">
+          <Button variant="primary" onClick={() => setShowCart(true)}>
+            See the booking · {groupDays.length} day{groupDays.length === 1 ? '' : 's'} ·{' '}
+            {formatMoney(booking.total, settings)}
+          </Button>
+        </div>
+      ) : cart.length > 0 && totals && (
         <div className="cart-bar">
           <Button variant="primary" onClick={() => setShowCart(true)}>
             View order · {cart.reduce((n, l) => n + l.qty, 0)} item
@@ -828,7 +901,25 @@ export function App() {
         />
       )}
 
-      {showCart && (
+      {showCart && inGroupMode && (
+        <GroupSheet
+          days={groupDays}
+          setDays={setGroupDays}
+          settings={settings}
+          venue={venue}
+          features={features}
+          onClose={() => setShowCart(false)}
+          onPlaced={(booked: { id: string; orderNo: string; at: string }[]) => {
+            setShowCart(false);
+            setActiveDay(null);
+            for (const b of booked) rememberOrder({ id: b.id, no: b.orderNo, at: b.at, venueId: venue.$id });
+            toast(`Booking sent: ${booked.length} day${booked.length === 1 ? '' : 's'}`);
+          }}
+          onError={(m: string) => toast(m)}
+        />
+      )}
+
+      {showCart && !inGroupMode && (
         <CartSheet
           cart={cart}
           setCart={setCart}
