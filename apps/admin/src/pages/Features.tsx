@@ -42,6 +42,35 @@ const LABELS: Record<string, { title: string; blurb: string }> = {
       + 'screen can also set the level by hand, which lapses on its own so nobody leaves ordering switched off.',
   },
   discounts: { title: 'Discounts and discount codes', blurb: 'Guests type a code while ordering; staff apply discounts before the bill is marked paid.' },
+  /*
+    These five had no entry, so they appeared on this page as their raw key
+    with no explanation: a switch called `group_orders` and nothing to say
+    what turning it on would do. A setting nobody can identify is a setting
+    nobody turns on, which is exactly what happened to group ordering.
+  */
+  group_orders: {
+    title: 'Group orders',
+    blurb:
+      'A separate, private link for parties and hotel bookings, set up under Tables. It shows only the categories '
+      + 'you have marked group-only, and lets a group staying several nights book a meal at a time, each one eaten '
+      + 'here or packed to take away. With this off, that link opens the ordinary menu.',
+  },
+  item_availability: {
+    title: 'Mark a dish as run out',
+    blurb: 'The 86 button on the kitchen screen. Takes a dish off the menu for the rest of service without editing it.',
+  },
+  combined_mode: {
+    title: 'One screen for kitchen and till',
+    blurb: 'For a counter where the same person cooks and takes the money, so the kitchen screen can settle a bill too.',
+  },
+  overdue_alerts: {
+    title: 'Alerts for late tickets',
+    blurb: 'The kitchen screen escalates a ticket that has waited too long, so a forgotten order announces itself.',
+  },
+  help: {
+    title: 'In-app help',
+    blurb: 'The question mark on each screen, showing the manual written for whoever is signed in.',
+  },
 };
 
 /**
