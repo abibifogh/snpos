@@ -33,8 +33,13 @@ const LABELS: Record<string, { title: string; blurb: string }> = {
   waste_log: { title: 'Waste log', blurb: 'Staff record spoiled or dropped food as it happens. This is what makes the stock alerts trustworthy.' },
   customers: { title: 'Customer profiles', blurb: 'Build a customer list from phone numbers or emails given at ordering. Always optional for the guest.' },
   shift_summary: { title: 'Summary at shift close', blurb: 'Sent the moment a shift ends, with stock flagged for the first time listed separately from anything low for 3+ shifts.' },
-  busy_mode: { title: 'Kitchen busy mode', blurb: 'When too many tickets are waiting, quote longer waits or hold new orders instead of drowning the kitchen.' },
-  time_pricing: { title: 'Happy hour / time-based prices', blurb: 'Change the price customers see at certain times of day.' },
+  busy_mode: {
+    title: 'Kitchen busy mode',
+    blurb:
+      'Past the first number below, every quote gets longer by the extra minutes. Past the second, orders from '
+      + 'phones stop and people are asked to order at the counter. Staff at the till are never stopped. The kitchen '
+      + 'screen can also set the level by hand, which lapses on its own so nobody leaves ordering switched off.',
+  },
   discounts: { title: 'Discounts and discount codes', blurb: 'Guests type a code while ordering; staff apply discounts before the bill is marked paid.' },
 };
 
@@ -53,6 +58,32 @@ const NUMBERS: Record<string, { option: string; label: string; hint: string; fal
       label: 'Most orders per time slot',
       hint: 'Nought means no limit. With a limit set, a time that is full stops being offered, and two people cannot both take the last place.',
       fallback: 0,
+    },
+  ],
+  busy_mode: [
+    {
+      option: 'busy_pending_threshold',
+      label: 'Tickets waiting before quotes get longer',
+      hint: 'Counted per side of the business, so drinks waiting at the bar do not make the kitchen look busy.',
+      fallback: 12,
+    },
+    {
+      option: 'busy_extra_minutes',
+      label: 'Extra minutes to quote when busy',
+      hint: 'Added to what a customer is told, so the promise is one the pass can keep.',
+      fallback: 15,
+    },
+    {
+      option: 'pause_pending_threshold',
+      label: 'Tickets waiting before orders from phones stop',
+      hint: 'People are asked to order at the counter instead. Staff taking orders at the till are never stopped.',
+      fallback: 20,
+    },
+    {
+      option: 'override_minutes',
+      label: 'How long a level set by hand lasts (minutes)',
+      hint: 'Then the ticket count takes over again. Nought means it never lapses, which risks ordering being left switched off overnight.',
+      fallback: 60,
     },
   ],
 };

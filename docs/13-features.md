@@ -36,8 +36,7 @@ accordingly. Defaults live in `FEATURES` in `scripts/schema.mjs`.
 | `customers` | Customer profiles | On | Everything about it is optional for the guest |
 | `purchase_orders` | Purchase orders and receiving | On | Flags short deliveries and price rises |
 | `shift_summary` | Summary at shift close | On | Sent on close, see 13.5 |
-| `busy_mode` | Kitchen busy mode | On | Trips automatically at a ticket threshold |
-| `time_pricing` | Happy hour / time-based prices | On | Changes the price shown, before any discount |
+| `busy_mode` | Kitchen busy mode | On | Trips on the tickets waiting, or set on the pass |
 
 ---
 
@@ -188,12 +187,13 @@ list on the terminal showing what's due in the next few hours.
   Always optional for the guest.
 - **Purchase orders**, raise an order to a supplier, then tick off what
   actually arrived. Short deliveries and quiet price rises get flagged.
-- **Busy mode**, when tickets waiting pass a threshold, customer orders are
-  quoted a longer wait; past a second threshold they're held. Trips
-  automatically or by hand from the kitchen screen.
-- **Time-based prices**, happy hour and similar. This changes the price the
-  customer *sees*; discounts (doc 14) reduce an already-priced bill. Keeping
-  the two separate is what makes the reports honest.
+- **Busy mode**, when tickets waiting pass a threshold every quote gets
+  longer; past a second threshold, orders from phones stop and people are
+  asked to order at the counter. Staff taking orders at the till are never
+  stopped. The level is counted from the tickets on the pass, and the kitchen
+  screen can set it by hand for what a count cannot see — a fryer down, a
+  coach party at the door. A level set by hand lapses on its own, so nobody
+  leaves ordering switched off overnight.
 
 
 ---

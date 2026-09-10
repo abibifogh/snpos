@@ -5,7 +5,9 @@ import {
   isEnabled, featureConfig, db, DB_ID, ID, Query, isProvisionalOrderNo,
   ensureGuestSession, humanError, selfOrderModule, seatName,
   placesBySlot, slotStamp, slotIsFull, slotWords, isSlotFull,
+  busyNow, extraMinutes, holdsOrders, guestWords,
 } from '@snpos/core';
+import type { BusyNow } from '@snpos/core';
 import type { CartLine, Settings, Venue, FeatureMap, LoadedMenu, Doc, Order } from '@snpos/core';
 
 interface TableRow extends Doc {
@@ -157,6 +159,28 @@ export function CartSheet({
   const takenAt = (at: Date) => taken.get(slotStamp(at)) ?? 0;
   const isFull = (at: Date) => slotIsFull(takenAt(at), slotCapacity);
 
+  /*
+    How far under it the kitchen is.
+
+    Read when the sheet opens rather than when the button is pressed, so
+    somebody about to order is told before they have typed their name that
+    the wait is longer than usual, or that orders from phones have stopped.
+    Finding that out after filling in a form is how a customer decides the
+    place is not worth the trouble.
+  */
+  const [pressure, setPressure] = useState<BusyNow | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void busyNow(venue.$id, features, selfOrderModule(settings))
+      .then((b) => { if (alive) setPressure(b); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [venue.$id, features, settings]);
+
+  const busyMinutes = pressure ? extraMinutes(pressure.level, pressure.cfg) : 0;
+  const held = !!pressure && holdsOrders(pressure.level, pressure.cfg);
+  const pressureWords = pressure ? guestWords(pressure.level, pressure.cfg) : '';
+
   // Closed with no slot chosen would be an order nobody can cook.
   const [slot, setSlot] = useState<string>(venueOpen ? '' : (slots[0]?.toISOString() ?? ''));
   const [name, setName] = useState('');
@@ -238,6 +262,17 @@ export function CartSheet({
   };
 
   const place = async () => {
+    /*
+      A kitchen that has stopped taking orders from phones.
+
+      Not for a pre-order: booking one o'clock is not asking the pass to cook
+      anything now, and refusing it would turn a busy hour into an empty
+      afternoon for no reason.
+    */
+    if (held && !slot) {
+      setProblem(pressureWords);
+      return;
+    }
     if (!venueOpen && !slot) {
       setProblem('Please choose a collection time.');
       return;
@@ -329,6 +364,9 @@ export function CartSheet({
         // The cap the picker greyed the full times out with. Passed in so the
         // place is taken as the order is written, not merely offered.
         slotCapacity,
+        // What the pass is carrying, so the customer is quoted a wait it can
+        // actually meet rather than the one it could meet on a quiet Tuesday.
+        busyMinutes,
         placedWhileClosed: !venueOpen,
         // The same hours this sheet already read to decide whether to show
         // "we are closed", so the notice and the quote cannot disagree in
@@ -396,12 +434,30 @@ export function CartSheet({
       title="Your order"
       onClose={onClose}
       footer={
-        <Button variant="primary" onClick={place} loading={busy} disabled={cart.length === 0} style={{ width: '100%' }}>
-          {slot ? 'Book this order' : 'Send to kitchen'} · {formatMoney(totals.total, settings)}
+        <Button
+          variant="primary"
+          onClick={place}
+          loading={busy}
+          /* Held only for now, never for a booked time: the button still
+             books one o'clock while the pass is drowning at noon. */
+          disabled={cart.length === 0 || (held && !slot)}
+          style={{ width: '100%' }}
+        >
+          {held && !slot
+            ? 'Please order at the counter'
+            : `${slot ? 'Book this order' : 'Send to kitchen'} · ${formatMoney(totals.total, settings)}`}
         </Button>
       }
     >
       <FormError message={problem} />
+
+      {/* Said at the top, before anything is filled in. A wait nobody
+          mentioned until the food was late is the complaint this prevents. */}
+      {pressureWords && (
+        <div style={{ marginBottom: '0.8rem' }}>
+          <Notice tone={held ? 'err' : 'warn'}>{pressureWords}</Notice>
+        </div>
+      )}
 
       {/* Asked first, and asked plainly. Somebody eating in has to be findable
           when the food is ready, and burying this under the bill is how an

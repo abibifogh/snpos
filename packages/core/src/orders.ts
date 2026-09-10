@@ -351,6 +351,15 @@ export interface CreateOrderInput {
    * it. See slots.ts for how a place is taken.
    */
   slotCapacity?: number;
+  /**
+   * Minutes to add to the quote because the kitchen is under it.
+   *
+   * Passed in for the same reason as the opening hours: the screen has
+   * already worked out how busy the pass is to decide whether to show the
+   * notice, and reading it twice is two chances to warn a customer and then
+   * quote them as though nothing were wrong. See busy.ts.
+   */
+  busyMinutes?: number;
   placedWhileClosed?: boolean;
   /**
    * The venue's trading hours, so a wait can start when the doors do.
@@ -492,11 +501,18 @@ export async function createOrder(
       A scheduled pre-order is left alone: somebody collecting at seven asked
       for seven, and is not waiting for anything.
     */
-    eta_minutes: input.scheduledFor
+    /*
+      Busy minutes go on top of the whole quote, including a pre-order's.
+
+      A ticket booked for one o'clock on a pass that is already under water
+      is not exempt from the state of the kitchen; it is the reason the
+      kitchen will still be under water at one.
+    */
+    eta_minutes: (input.busyMinutes ?? 0) + (input.scheduledFor
       ? estimateMinutes(lines, queueAhead)
       : doorWait > 0
         ? waitIncludingOpening(cookMinutes(lines) + queueAhead, doorWait)
-        : estimateMinutes(lines, queueAhead),
+        : estimateMinutes(lines, queueAhead)),
     // Which part of that was the building being shut. See the schema note:
     // the kitchen counts down to the whole figure, the customer is shown the
     // door wait plus a capped kitchen share, and the split has to be recorded

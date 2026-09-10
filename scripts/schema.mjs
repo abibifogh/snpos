@@ -2634,6 +2634,35 @@ export const COLLECTIONS = [
       which times are full. The link runs the other way — the order carries
       `preorder_seat_id` — and orders are staff-read only.
     */
+    /*
+      A busy level somebody set by hand, and nothing else.
+
+      How busy the kitchen IS gets counted from the tickets waiting, every
+      time it is asked. Nothing writes "we are busy now", because the write
+      that then matters is "we are not any more", and a kitchen in the weeds
+      never gets round to that one.
+
+      What cannot be counted is what a cook can see — a fryer down, three
+      people off, a coach party at the door — so a level can be set by hand,
+      and this row is where that is kept. One row per venue and side. It
+      lapses on its own after the configured time; see busy.ts.
+    */
+    id: 'kitchen_status',
+    name: 'Kitchen busy level',
+    perms: { read: ['any'], create: ALL_STAFF, update: ALL_STAFF, delete: MGMT },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['module', 'e', ['kitchen', 'bar', 'craft'], false, 'kitchen'],
+      // Blank means handed back to the ticket count. Kept rather than the row
+      // deleted, so a screen can say it has just been handed back.
+      ['level', 'e', ['normal', 'busy', 'paused'], false],
+      ['set_by', 's', 64, false],
+      ['set_at', 'd', null, false],
+      ['note', 's', 200, false],
+    ],
+    indexes: [['venue_module', 'key', ['venue_id', 'module']]],
+  },
+  {
     id: 'preorder_seats',
     name: 'Pre-order places',
     perms: { read: ['any'], create: ['users'], update: [], delete: ALL_STAFF },
@@ -3648,13 +3677,12 @@ export const FEATURES = [
       busy_extra_minutes: 15,
       hold_qr_orders_when_paused: true,
       message_to_guest: 'The kitchen is very busy, your order may take a little longer.',
+      // How long a level set by hand holds before the ticket count takes over
+      // again. Somebody pausing on a Friday night and going home would
+      // otherwise leave the ordering page dead all Saturday, with the only
+      // person who could explain it not at work. Nought never lapses.
+      override_minutes: 60,
     },
-  },
-  {
-    key: 'time_pricing',
-    label: 'Happy hour / time-based prices',
-    enabled: true,
-    config: { show_original_price: true, apply_to_qr: true, apply_to_pos: true, badge_text: 'Happy hour' },
   },
   {
     key: 'discounts',
