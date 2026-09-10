@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, Empty, Modal, Notice, Segmented, Spinner, useToast } from '@snpos/ui';
 import { humanError } from '../lib';
@@ -6,9 +6,10 @@ import {
   
   approveBarCount, rejectBarCount, approveCount, rejectCount,
   tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS,
-  decideSpend, loadWaiting, nameFrom, waitingCounts, waitingSummary, waitedWords, refuseSpendWords, WAITING_KIND_WORDS, dateTimeWords } from '@snpos/core';
+  decideSpend, loadWaiting, nameFrom, waitingCounts, waitingSummary, waitedWords, refuseSpendWords, WAITING_KIND_WORDS, dateTimeWords,
+  loadReview, offWords } from '@snpos/core';
 import type {
-  WaitingItem, WaitingKind, WaitingSpend, WaitingTabShift, TabOrder,
+  WaitingItem, WaitingKind, WaitingSpend, WaitingTabShift, TabOrder, Review,
 } from '@snpos/core';
 import { useSession, useMoney } from '../session';
 
@@ -51,6 +52,35 @@ export function WaitingPage() {
   /** The shift a code is being read out for, and the code once issued. */
   const [releasing, setReleasing] = useState<{ shift: WaitingTabShift; orders: TabOrder[] } | null>(null);
   const [issued, setIssued] = useState<string | null>(null);
+  /**
+   * The row whose lines are open, and what they are.
+   *
+   * One at a time, and read when it is opened. "436 pieces missing, worth
+   * forty thousand" is either a shop that has been robbed or a column typed
+   * into the wrong place, and those look identical from a summary. Nobody
+   * should be pressing Approve on that without seeing what is in it.
+   *
+   * Loading the lines for every waiting row up front would be slow on every
+   * visit to be useful on one.
+   */
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [review, setReview] = useState<Review | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+
+  const toggle = async (item: WaitingItem) => {
+    if (openId === item.id) { setOpenId(null); setReview(null); return; }
+    setOpenId(item.id);
+    setReview(null);
+    setReviewing(true);
+    try {
+      setReview(await loadReview(item.ref));
+    } catch (e) {
+      setError(humanError(e));
+      setOpenId(null);
+    } finally {
+      setReviewing(false);
+    }
+  };
 
   const load = async () => {
     setError(null);
@@ -196,8 +226,13 @@ export function WaitingPage() {
                   const decidable = item.kind !== 'tab';
                   // A spend is any manager's to decide; a count that moves a shelf is an admin's.
                   const may = item.kind === 'spend' ? true : isAdmin;
+                  const open = openId === item.id;
+                  // A tab has its own screen already, and there are no lines
+                  // behind it to read.
+                  const hasLines = item.kind !== 'tab';
                   return (
-                    <tr key={item.id}>
+                    <Fragment key={item.id}>
+                    <tr>
                       <td className="small dim" style={{ whiteSpace: 'nowrap' }}>
                         {Number.isFinite(since) ? (
                           <>
@@ -212,6 +247,16 @@ export function WaitingPage() {
                           <span style={{ fontWeight: 550 }}>{item.title}</span>
                         </div>
                         <div className="small dim" style={{ maxWidth: '44rem' }}>{item.detail}</div>
+                        {hasLines && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            style={{ marginTop: '0.3rem', paddingLeft: 0 }}
+                            onClick={() => void toggle(item)}
+                          >
+                            {open ? 'Hide what is in it' : 'See what is in it'}
+                          </Button>
+                        )}
                       </td>
                       <td className="dim small">
                         {nameOf(item.by) || '—'}
@@ -241,6 +286,17 @@ export function WaitingPage() {
                         )}
                       </td>
                     </tr>
+                    {open && (
+                      <tr>
+                        {/* Under the row it belongs to, not in a window over
+                            it: the figures being judged stay on screen while
+                            the lines that explain them are read. */}
+                        <td colSpan={5} style={{ background: 'var(--surface-2, rgba(0,0,0,0.02))' }}>
+                          {reviewing || !review ? <Spinner /> : <ReviewLines review={review} money={money} />}
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -328,5 +384,113 @@ export function WaitingPage() {
         </Modal>
       )}
     </>
+  );
+}
+
+/**
+ * The lines behind one waiting row.
+ *
+ * Two shapes, because a count and a spend are answering different questions.
+ * A count asks "does what was found make sense against what the shelf said",
+ * so it shows both and the gap. A spend asks "is this what the money went
+ * on", so it shows how many of what, and whether the lines add up to the
+ * amount claimed.
+ *
+ * Worst first in both cases. A page of four hundred lines is read from the
+ * top and abandoned somewhere in the middle, so the one worth arguing about
+ * has to be at the top rather than wherever the alphabet put it.
+ */
+function ReviewLines({ review, money }: { review: Review; money: (n: number) => string }) {
+  if (review.lines.length === 0) {
+    return (
+      <div style={{ padding: '0.6rem 0' }}>
+        <p className="small dim" style={{ margin: 0 }}>{review.empty}</p>
+        {review.note && <p className="small" style={{ margin: '0.4rem 0 0' }}>&ldquo;{review.note}&rdquo;</p>}
+      </div>
+    );
+  }
+
+  const spend = review.shape === 'spend';
+  const off = review.off ?? 0;
+
+  return (
+    <div style={{ padding: '0.5rem 0 0.8rem' }}>
+      {review.note && (
+        <p className="small" style={{ margin: '0 0 0.5rem' }}>
+          <span className="dim">They wrote: </span>&ldquo;{review.note}&rdquo;
+        </p>
+      )}
+
+      {/* Said above the table, because it is the reason to read the table. */}
+      {spend && off !== 0 && (
+        <div style={{ marginBottom: '0.5rem' }}>
+          <Notice tone="warn">{offWords(off, money)}</Notice>
+        </div>
+      )}
+
+      <div className="table-wrap" style={{ maxHeight: '22rem', overflowY: 'auto' }}>
+        <table className="data">
+          <thead>
+            <tr>
+              <th>{spend ? 'What was bought' : 'What'}</th>
+              {spend ? (
+                <>
+                  <th className="num">How many</th>
+                  <th className="num">Each</th>
+                </>
+              ) : (
+                <>
+                  <th className="num">Shelf said</th>
+                  <th className="num">Found</th>
+                  <th className="num">Difference</th>
+                </>
+              )}
+              <th className="num">Worth</th>
+            </tr>
+          </thead>
+          <tbody>
+            {review.lines.map((l, i) => (
+              <tr key={i}>
+                <td>
+                  <div style={{ fontWeight: 550 }}>{l.name}</div>
+                  {l.note && <div className="small dim">{l.note}</div>}
+                </td>
+                {spend ? (
+                  <>
+                    <td className="num">{l.qty}</td>
+                    <td className="num dim">{money(l.unitCost ?? 0)}</td>
+                  </>
+                ) : (
+                  <>
+                    <td className="num dim">{l.expected}</td>
+                    <td className="num">{l.counted}</td>
+                    <td className="num">
+                      {/* Coloured by direction, not by size. Short is the one
+                          that costs money and is worth finding on a long list. */}
+                      <Badge tone={(l.delta ?? 0) < 0 ? 'danger' : 'warn'}>
+                        {(l.delta ?? 0) > 0 ? `+${l.delta}` : l.delta}
+                      </Badge>
+                    </td>
+                  </>
+                )}
+                <td className="num">{money(Math.abs(l.worth))}</td>
+              </tr>
+            ))}
+          </tbody>
+          {spend && (
+            <tfoot>
+              <tr>
+                <td colSpan={3} style={{ fontWeight: 600 }}>These lines come to</td>
+                <td className="num" style={{ fontWeight: 600 }}>{money(review.total ?? 0)}</td>
+              </tr>
+              <tr>
+                <td colSpan={3} className="dim">The spend says</td>
+                <td className="num dim">{money(review.claimed ?? 0)}</td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </div>
   );
 }
