@@ -967,6 +967,7 @@ export function App() {
           meals={groupMeals}
           setMeals={setGroupMeals}
           settings={settings}
+          menu={menu}
           venue={venue}
           features={features}
           onClose={() => setShowCart(false)}
