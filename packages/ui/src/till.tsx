@@ -4,15 +4,15 @@ import {
   db, DB_ID, ID, saveDropping, formatMoney, parseMoney, toInput, loadIngredients, loadPaymentMethods,
   PAID_TO_KINDS, payeeLabel, legacyExpenseCategory, loadPaidToOptions, receiveStock, uploadFile,
   buyOptions, convertPurchase, describePurchase, hasPack, categoriesForSide, canSeePrivateExpenses,
-  expenseMethods, recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
-  fromTakings, postExpense, accountForExpense,
+  expenseMethodsFor, mayComeFromShift, recomputeClosedShift, recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
+  fromTakings, settleBoxSpend, listAll, Query, spendKind, spendSource,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
-  loadFloats, balancesFor, accountFor, recordBoxSpend, boxOverdrawn,
+  loadFloats, balancesFor, recordBoxSpend, boxOverdrawn,
   checkPurchase, raiseAlerts, FLAG_WORDS,
 } from '@snpos/core';
 import type {
   PaymentMethod, Settings, StaffProfile, PaidToKind, Supplier, ExpenseCategoryDoc, Ingredient,
-  CashHandover, HandoverDestination, Module, ShiftExpense, ImprestFloatDoc, CheckedLine,
+  CashHandover, HandoverDestination, Module, ShiftExpense, ImprestFloatDoc, CheckedLine, ExpenseDesk,
 } from '@snpos/core';
 
 /**
@@ -61,7 +61,7 @@ const CANNOT_STORE_SOURCE =
  * which screen it was entered from.
  */
 export function ExpenseModal({
-  module, venueId, shiftId, settings, userId, expense, askPaidFrom = true, fromFloatId, onClose, onDone,
+  module, venueId, shiftId, settings, userId, expense, askPaidFrom = true, fromFloatId, desk = 'till', onClose, onDone,
 }: {
   module: Module;
   venueId: string;
@@ -108,10 +108,23 @@ export function ExpenseModal({
    * a decision for an admin.
    */
   expense?: ShiftExpense | null;
+  /**
+   * Which desk this is: the till, or the office.
+   *
+   * THE SAME FORM, on both. The office used to have a second one, written
+   * beside this and drifting from it: no "looks dear" warning, a different
+   * default for whose money it was, corrections that reached the books from
+   * one and not the other. What differs between the two desks is small and
+   * is decided by the rules in expense-rules, not by a second form: the
+   * office may pay by transfer, and a new office spend comes off no drawer.
+   */
+  desk?: ExpenseDesk;
   onClose: () => void;
   onDone: (message: string) => void;
 }) {
   const editing = expense ?? null;
+  /** Lines already recorded against a spend being corrected. Shown, never re-entered. */
+  const [savedLines, setSavedLines] = useState<{ name_snapshot: string; qty: number }[]>([]);
   const [categories, setCategories] = useState<ExpenseCategoryDoc[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
@@ -156,7 +169,21 @@ export function ExpenseModal({
    * amount that was never there. Being chased over a shortage that did not
    * happen is exactly what teaches people to stop recording expenses.
    */
-  const [fromDrawer, setFromDrawer] = useState<boolean>(editing ? fromTakings(editing) : true);
+  /*
+    Whose money, in three answers: the drawer, a petty cash box, or neither.
+
+    Neither is a transfer from the bank or somebody's own pocket. The office
+    defaults to it — an expense typed up on Thursday for a Tuesday market run
+    comes out of no drawer being counted tonight — and the till defaults to
+    the drawer, which is exactly what is happening there.
+  */
+  const officeNew = desk === 'office' && !editing;
+  const [fromDrawer, setFromDrawer] = useState<boolean>(
+    editing ? fromTakings(editing) : !officeNew,
+  );
+  const [noBox, setNoBox] = useState<boolean>(
+    editing ? !fromTakings(editing) && !editing.imprest_float_id : officeNew,
+  );
   // What was actually bought. A shop run is rarely one thing, and an expense
   // recorded as a single number tells you money left without telling you what
   // came back with it.
@@ -318,13 +345,21 @@ export function ExpenseModal({
       // Only what an expense is allowed to be paid out of ever reaches the
       // form, so the restriction cannot be got round by leaving the dropdown
       // where it was.
-      const allowed = expenseMethods(m, settings);
+      const allowed = expenseMethodsFor(m, settings, desk);
       setMethods(allowed);
       // Same reason as the category above: a restored draft already has one.
       if (!editing) {
         setMethodId((cur) => cur || allowed.find((x) => x.kind === 'cash')?.$id || allowed[0]?.$id || '');
       }
       setIngredients(ing.filter((i) => i.active).sort((a, b) => a.name.localeCompare(b.name)));
+      // What a spend being corrected already put on the shelf, so nobody
+      // re-enters it and raises the stock twice.
+      if (editing) {
+        setSavedLines(
+          await listAll<{ name_snapshot: string; qty: number }>('expense_items', [Query.equal('expense_id', editing.$id)])
+            .catch(() => []),
+        );
+      }
 
       /*
         The petty cash boxes this side may spend from.
@@ -360,7 +395,7 @@ export function ExpenseModal({
   */
   const chosenBox = fromFloatId
     ? boxes.find((b) => b.$id === fromFloatId) ?? null
-    : fromDrawer ? null : boxes.find((b) => b.$id === boxId) ?? boxes[0] ?? null;
+    : fromDrawer || noBox ? null : boxes.find((b) => b.$id === boxId) ?? boxes[0] ?? null;
   /** What is being spent, as the form currently stands, for the warning below. */
   const boxSpend = parseMoney(amountText, settings.currency_decimals ?? 2) ?? 0;
 
@@ -541,6 +576,17 @@ export function ExpenseModal({
             : '',
         ].filter(Boolean).join(' · ').slice(0, 500), // the column's own limit
         from_takings: chosenBox ? false : fromDrawer,
+        // What it was and where the money came from, in a word each, so no
+        // screen has to work it out again. See spend-kind.ts.
+        kind: spendKind(filledLines.flatMap((l) => {
+          const ing = ingredients.find((i) => i.$id === l.ingredientId);
+          return ing ? [{ stocked: ing.counted_at_close !== false }] : [];
+        })),
+        source: spendSource({
+          imprest_float_id: chosenBox?.$id ?? '',
+          from_takings: chosenBox ? false : fromDrawer,
+          methodKind: methods.find((m) => m.$id === methodId)?.kind ?? 'cash',
+        }),
         /*
           The tin it came out of, so the money leaves the right place.
 
@@ -561,7 +607,29 @@ export function ExpenseModal({
        */
       if (editing) {
         const { dropped } = await saveDropping('shift_expenses', editing.$id, fields);
-        onDone(dropped.includes('from_takings') ? CANNOT_STORE_SOURCE : 'Spend corrected');
+        /*
+          The books follow from the row: the server reads the corrected spend
+          and brings its entry into line. See functions/notify/src/books-post.js.
+          The tin's own record moves by the difference here, or not at all.
+        */
+        await settleBoxSpend({
+          venueId,
+          expenseId: editing.$id,
+          boxId: chosenBox?.$id ?? null,
+          amount,
+          userId,
+          note: noteText.trim() || payee,
+        }).catch(() => undefined);
+        /*
+          A shift that has already closed is worked out again. Its expected
+          figures were written when it closed and do not recompute
+          themselves; without this a correction leaves the shift reporting a
+          shortage nobody caused. An open shift needs nothing.
+        */
+        const recomputed = shiftId ? (await recomputeClosedShift(shiftId).catch(() => null)) !== null : false;
+        onDone(dropped.includes('from_takings')
+          ? CANNOT_STORE_SOURCE
+          : recomputed ? 'Spend corrected, and that shift has been worked out again' : 'Spend corrected');
         return;
       }
 
@@ -605,54 +673,25 @@ export function ExpenseModal({
         }).catch(() => undefined);
       }
 
-      /**
-       * On the books straight away, not at shift close.
-       *
-       * Expenses used to reach the ledger only when a shift closed, so one
-       * recorded outside a shift never reached it at all. Keyed by the
-       * expense's own id, so the shift close doing it again later is a no-op
-       * rather than a second charge.
-       *
-       * Best effort on purpose. The spend is recorded either way, and an
-       * expense missing from the ledger is a bookkeeping job; an expense that
-       * would not save is a hole in the drawer nobody can explain.
-       */
-      void accountForExpense({ category_key: categoryKey })
-        .then(async (accountCode) => {
-          const entryId = await postExpense(venueId, {
-            expenseId,
-            amount,
-            accountCode,
-            postedBy: userId,
-            shiftId: shiftId || undefined,
-            // Out of the tin, not the till. Crediting cash for money that
-            // never left the drawer is how a box quietly empties while the
-            // balance sheet says the business still has it in hand.
-            fromAccount: chosenBox ? accountFor(chosenBox) : undefined,
-            memo: chosenBox ? `Paid from ${chosenBox.name}` : undefined,
-          });
+      /*
+        The books are written by the server, from this row, the moment it is
+        saved — see functions/notify/src/books-post.js. What it is charged to
+        comes from the lines: a bottle that went on the shelf is stock; the
+        taxi and the part nobody itemised are spent.
 
-          /*
-            And the box's own record.
-
-            Written after the posting, pointing at it, so the tin and the
-            books can be walked from either end. Without this the expense
-            would reach the accounts and the box would never hear about it —
-            which is exactly the hole this feature exists to close.
-          */
-          if (chosenBox) {
-            await recordBoxSpend({
-              venueId,
-              boxId: chosenBox.$id,
-              amount,
-              userId,
-              expenseId,
-              entryId: entryId ?? undefined,
-              note: noteText.trim() || payee,
-            });
-          }
-        })
-        .catch(() => undefined);
+        The box's own record is written here, pointing at the spend, so the
+        tin and the books can be walked from either end.
+      */
+      if (chosenBox) {
+        await recordBoxSpend({
+          venueId,
+          boxId: chosenBox.$id,
+          amount,
+          userId,
+          expenseId,
+          note: noteText.trim() || payee,
+        }).catch(() => undefined);
+      }
 
       // Each line is recorded and then delivered into stock. From where the
       // person is standing these are one action, so a line that fails to stock
@@ -799,6 +838,12 @@ export function ExpenseModal({
           somebody has to enter the same delivery twice.
 
           Not on the shop counter: see `stocks` above. */}
+      {savedLines.length > 0 && (
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Already added to stock from this spend:{' '}
+          {savedLines.map((l) => `${l.qty} × ${l.name_snapshot}`).join(', ')}. Adding more below adds to stock again.
+        </p>
+      )}
       {stocks && <Field
         label="What was bought"
         hint="Leave empty for spending with nothing to stock: transport, gas, repairs."
@@ -1010,17 +1055,23 @@ export function ExpenseModal({
         hidden={!!fromFloatId}
         label="Where did the money come from"
         hint={fromDrawer
-          ? 'Taken off what your drawer should hold at the end of the shift.'
-          : boxes.length > 0
-            ? 'Comes out of the petty cash box, not your drawer. The box is counted on its own.'
-            : 'Recorded as money the business spent. Not taken off your drawer.'}
+          ? 'Taken off what the drawer should hold at the end of the shift.'
+          : !noBox && boxes.length > 0
+            ? 'Comes out of the petty cash box, not a drawer. The box is counted on its own.'
+            : 'A transfer from the bank, or somebody\u2019s own money to be paid back. Not taken off any drawer.'}
       >
         <Select
-          value={fromDrawer ? 'shift' : 'petty'}
-          onChange={(e) => setFromDrawer(e.target.value === 'shift')}
+          value={fromDrawer ? 'shift' : noBox || boxes.length === 0 ? 'other' : 'petty'}
+          onChange={(e) => {
+            setFromDrawer(e.target.value === 'shift');
+            setNoBox(e.target.value === 'other');
+          }}
         >
-          <option value="shift">From my shift</option>
-          <option value="petty">From petty cash</option>
+          {/* The drawer is only an answer where there is a drawer: the till,
+              or the office correcting a row that already says so. */}
+          {mayComeFromShift(desk, !!editing) && !!shiftId && <option value="shift">From the shift\u2019s drawer</option>}
+          {boxes.length > 0 && <option value="petty">From a petty cash box</option>}
+          <option value="other">Bank transfer, or own money</option>
         </Select>
       </Field>
 
@@ -1033,7 +1084,7 @@ export function ExpenseModal({
         there actually needs, because a box cannot pay out what it does not
         hold.
       */}
-      {!fromFloatId && !fromDrawer && !editing && boxes.length > 0 && (
+      {!fromFloatId && !fromDrawer && !noBox && !editing && boxes.length > 0 && (
         <Field
           label={boxes.length > 1 ? 'Which petty cash box' : 'The petty cash box'}
           hint={
@@ -1055,12 +1106,7 @@ export function ExpenseModal({
           )}
         </Field>
       )}
-      {!fromFloatId && !fromDrawer && boxes.length === 0 && (
-        <Notice tone="info">
-          No petty cash box has been set up, so this is recorded as money the business spent and nothing else.
-          An admin can add one under Money, Petty cash, and then spending from it is counted and reconciled.
-        </Notice>
-      )}
+
       {/* Which tin, and what is in it, when the screen decided rather than the
           person. Said plainly rather than left implicit: a form that spends
           money without naming where it came from is one somebody has to trust

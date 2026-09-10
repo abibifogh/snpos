@@ -8,8 +8,7 @@ import {
   formatMoney, listCreatedBetween, listAll, toCsv, downloadCsv,
   analyseExpenses, previousWindow, changeWords, highlights, sideOf, SIDES, SIDE_WORDS,
   loadAlerts, acknowledgeAlert, isOutstanding, describeFlag, FLAG_WORDS,
-  rankItems, itemCoverage, vitalFew, itemHighlights, listByIds,
-} from '@snpos/core';
+  rankItems, itemCoverage, vitalFew, itemHighlights, listByIds, bpWords, dateWords } from '@snpos/core';
 import type {
   AnalysedExpense, ExpenseAnalysis as Analysis, Slice, Side, Settings, StaffProfile,
   PurchaseAlert, ExpenseCategoryDoc, AnalysedItem,
@@ -93,7 +92,7 @@ function SliceTable({
                 <td className="num">{money(r.now)}</td>
                 <td className="num dim">{r.before ? money(r.before) : '—'}</td>
                 <td><Change bp={r.changeBp} /></td>
-                <td className="num dim">{r.now > 0 ? `${(r.shareBp / 100).toFixed(0)}%` : ''}</td>
+                <td className="num dim">{r.now > 0 ? `${bpWords(r.shareBp)}` : ''}</td>
                 <td className="num dim">{r.count || ''}</td>
               </tr>
             ))}
@@ -369,7 +368,7 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
                 <div className="dim small">Period before</div>
                 <div style={{ fontSize: '1.2rem' }}>{money(a.spend.before)}</div>
                 <div className="small dim">
-                  {new Date(back.from).toLocaleDateString()} – {new Date(back.to).toLocaleDateString()}
+                  {dateWords(back.from)} – {dateWords(back.to)}
                 </div>
               </div>
               <div>
@@ -379,7 +378,7 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
               </div>
               <div>
                 <div className="dim small">Has a receipt</div>
-                <div style={{ fontSize: '1.2rem' }}>{(a.receiptedBp / 100).toFixed(0)}%</div>
+                <div style={{ fontSize: '1.2rem' }}>{bpWords(a.receiptedBp)}</div>
                 <div className="small dim">of what was spent</div>
               </div>
               <div>
@@ -419,7 +418,7 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
                   <tbody>
                     {outstanding.map((x) => (
                       <tr key={x.$id}>
-                        <td className="dim small">{new Date(x.$createdAt).toLocaleDateString()}</td>
+                        <td className="dim small">{dateWords(x.$createdAt)}</td>
                         <td>
                           <Badge tone="warn">{FLAG_WORDS[x.kind]}</Badge>{' '}
                           <span className="small">
@@ -493,7 +492,7 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
                             ? `${money(s.largest.amount)} · ${labelOf(s.largest.category_key || s.largest.category || 'other')}`
                             : '—'}
                         </td>
-                        <td className="num dim">{s.count ? `${(s.receiptedBp / 100).toFixed(0)}%` : '—'}</td>
+                        <td className="num dim">{s.count ? `${bpWords(s.receiptedBp)}` : '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -518,7 +517,7 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
             <Card title="Every item, ranked by what it cost">
               <p className="small dim" style={{ marginTop: 0 }}>
                 Measured against the {money(coverage.itemised)} that was itemised, not against everything spent.
-                Transport, gas and repairs have no lines behind them — {(coverage.coverBp / 100).toFixed(0)}% of
+                Transport, gas and repairs have no lines behind them — {bpWords(coverage.coverBp)} of
                 spending in these dates does.
               </p>
 
@@ -540,7 +539,7 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
                           {side === 'all' && <span className="dim"> · {SIDE_WORDS[r.side]}</span>}
                         </span>
                         <span className="small" style={{ whiteSpace: 'nowrap' }}>
-                          {money(r.now)} <span className="dim">({(r.shareBp / 100).toFixed(1)}%)</span>
+                          {money(r.now)} <span className="dim">({bpWords(r.shareBp, 1)})</span>
                         </span>
                       </div>
                       <div
@@ -564,12 +563,12 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
                       </div>
                       <div className="small dim">
                         {r.qty > 0 && <>{r.qty} bought · {money(r.unitCost)} each · </>}
-                        {r.times} {r.times === 1 ? 'time' : 'times'} · running {(r.cumulativeBp / 100).toFixed(0)}%
+                        {r.times} {r.times === 1 ? 'time' : 'times'} · running {bpWords(r.cumulativeBp)}
                         {r.priceMoveBp !== null && Math.abs(r.priceMoveBp) >= 500 && (
                           <>
                             {' · '}
                             <span style={{ color: r.priceMoveBp > 0 ? 'var(--warn)' : 'var(--ok)' }}>
-                              {r.priceMoveBp > 0 ? 'up' : 'down'} {Math.abs(r.priceMoveBp / 100).toFixed(0)}% a unit
+                              {r.priceMoveBp > 0 ? 'up' : 'down'} {bpWords(Math.abs(r.priceMoveBp))} a unit
                             </span>
                           </>
                         )}

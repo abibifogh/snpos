@@ -213,6 +213,36 @@ export const COLLECTIONS = [
       ['favicon_id', 's', 64, false],
       ['tax_rate_bp', 'i', null, true, 0],
       ['tax_inclusive', 'b', null, true, true],
+      /*
+        Whether VAT is charged at all.
+
+        A switch of its own rather than a rate of nought, because a business
+        that deregisters wants its rate kept for the day it registers again,
+        and because "we do not charge VAT" is a statement somebody can read
+        off the settings page. Off means the rate above is not applied
+        anywhere: not on the till, not in the guard that re-prices orders
+        from phones, not on a receipt, not at shift close. See vatBpOf.
+        The levies are separate; each is switched on by having a rate.
+      */
+      ['vat_charged', 'b', null, true, true],
+      // The levies beside VAT, as JSON: [{key, name, rate_bp}]. VAT (the rate
+      // above) applies on top of them. Empty is the single rate as before.
+      ['levies', 's', 2000, false],
+      // Whether a receipt lists each charge or adds them into one line. Both
+      // are defensible: a customer wants to see what each body is owed, and a
+      // narrow till roll wants one line. See showsTaxParts.
+      ['receipt_tax_detail', 'e', ['separate', 'combined'], true, 'separate'],
+      /*
+        What shape the database is, as provisioning last left it.
+
+        Written by scripts/provision.mjs at the end of a run: the fingerprint
+        of the schema it applied, and when. Each app is built knowing the
+        fingerprint its code expects, and says plainly when the row carries
+        another — see packages/core/src/schema-status.ts. Before this, the
+        first sign of a forgotten provision run was a save refused on a till.
+      */
+      ['schema_version', 's', 40, false],
+      ['schema_applied_at', 'd', null, false],
       ['service_charge_bp', 'i', null, true, 0],
       // What a shift starts with in the drawer.
       //   zero       nothing carried over; count it in each time
@@ -766,21 +796,6 @@ export const COLLECTIONS = [
     ],
     indexes: [['qr_token_unique', 'unique', ['qr_token']], ['zone_sort', 'key', ['zone', 'sort']]],
   },
-  {
-    id: 'dining_sessions',
-    name: 'Dining sessions',
-    perms: { read: ALL_STAFF, create: ['users'], update: ALL_STAFF, delete: [] },
-    attributes: [
-      ['table_id', 's', 64, true],
-      ['opened_at', 'd', null, true],
-      ['closed_at', 'd', null, false],
-      ['guest_count', 'i', null, true, 1],
-      ['anon_user_ids', 's[]', 64, false],
-      ['status', 'e', ['open', 'billing', 'closed'], true, 'open'],
-      ['shift_id', 's', 64, false],
-    ],
-    indexes: [['table_status', 'key', ['table_id', 'status']]],
-  },
 
   // ------------------------------------------------------------------ orders
   {
@@ -898,6 +913,12 @@ export const COLLECTIONS = [
       ['is_preorder', 'b', null, false, false],
       ['scheduled_for', 'd', null, false],
       ['fire_at', 'd', null, false],
+      // The place this order holds in its time slot, where the slot is
+      // capped. Held here rather than the other way round so the places
+      // themselves carry nothing about the customer: anyone may count them,
+      // because a phone choosing a time has to know which times are full.
+      // See preorder_seats and slots.ts.
+      ['preorder_seat_id', 's', 64, false],
       ['slot_id', 's', 64, false],
       ['placed_while_closed', 'b', null, false, false],
       ['delivery_zone_id', 's', 64, false],
@@ -1244,6 +1265,11 @@ export const COLLECTIONS = [
        * a field that arrives after the rows do can never be required.
        */
       ['from_takings', 'b', null, false, true],
+      // What it was and where the money came from, in one word each, written
+      // when the row is saved so every screen reads the same answer. See
+      // spend-kind.ts. Absent on rows from before; those are derived.
+      ['kind', 'e', ['stock', 'overhead'], false, 'overhead'],
+      ['source', 'e', ['drawer', 'box', 'bank', 'own'], false, 'drawer'],
       ['note', 's', 500, false],
       ['receipt_file_id', 's', 64, false],
       ['created_by', 's', 64, true],
@@ -1634,6 +1660,9 @@ export const COLLECTIONS = [
        */
       ['unit', 'e', ['g', 'kg', 'ml', 'l', 'each', 'pack', 'bottle', 'case', 'shot', 'cl'], true],
       ['base_unit_cost', 'i', null, true, 0],
+      // What the last delivery cost. base_unit_cost is the weighted average,
+      // which is what the shelf is valued at and what cost of sales uses.
+      ['last_unit_cost', 'i', null, false, 0],
       /**
        * Which side of the business keeps this on its shelves.
        *
@@ -1777,37 +1806,6 @@ export const COLLECTIONS = [
       ['payment_terms', 's', 80, false],
       ['active', 'b', null, true, true],
     ],
-  },
-  {
-    id: 'purchases',
-    name: 'Purchases',
-    perms: { read: MGMT, create: MGMT, update: MGMT, delete: ADMIN },
-    attributes: [
-      ['supplier_id', 's', 64, true],
-      ['invoice_no', 's', 80, false],
-      ['purchased_at', 'd', null, true],
-      ['subtotal', 'i', null, true, 0],
-      ['tax', 'i', null, true, 0],
-      ['total', 'i', null, true, 0],
-      ['paid_from_method_id', 's', 64, false],
-      ['shift_id', 's', 64, false],
-      ['received_by', 's', 64, true],
-      ['document_file_id', 's', 64, false],
-    ],
-    indexes: [['supplier_date', 'key', ['supplier_id', 'purchased_at']]],
-  },
-  {
-    id: 'purchase_items',
-    name: 'Purchase items',
-    perms: { read: MGMT, create: MGMT, update: MGMT, delete: ADMIN },
-    attributes: [
-      ['purchase_id', 's', 64, true],
-      ['ingredient_id', 's', 64, true],
-      ['qty', 'f', null, true, 0],
-      ['unit_cost', 'i', null, true, 0],
-      ['line_total', 'i', null, true, 0],
-    ],
-    indexes: [['purchase', 'key', ['purchase_id']], ['ingredient', 'key', ['ingredient_id']]],
   },
   {
     id: 'stock_movements',
@@ -2119,27 +2117,6 @@ export const COLLECTIONS = [
       ['location', 'key', ['location_id']],
     ],
   },
-  {
-    id: 'stock_flags',
-    name: 'Stock variance flags',
-    perms: { read: MGMT, create: ALL_STAFF, update: MGMT, delete: ADMIN },
-    attributes: [
-      ['ingredient_id', 's', 64, true],
-      ['period_start', 'd', null, true],
-      ['period_end', 'd', null, true],
-      ['theoretical_usage', 'f', null, true, 0],
-      ['actual_usage', 'f', null, true, 0],
-      ['variance_qty', 'f', null, true, 0],
-      ['variance_bp', 'i', null, true, 0],
-      ['variance_value', 'i', null, true, 0],
-      ['severity', 'e', ['info', 'warn', 'critical'], true, 'warn'],
-      ['likely_causes', 's[]', 40, false],
-      ['status', 'e', ['open', 'investigating', 'resolved'], true, 'open'],
-      ['resolution_note', 's', 1000, false],
-      ['resolved_by', 's', 64, false],
-    ],
-    indexes: [['status_severity', 'key', ['status', 'severity']], ['ingredient', 'key', ['ingredient_id']]],
-  },
 
   // -------------------------------------------------------------- accounting
   {
@@ -2341,8 +2318,13 @@ export const COLLECTIONS = [
     id: 'journal_entries',
     name: 'Journal entries',
     /**
-     * Created by whoever closes the shift, which may be the cook. Edited and
-     * removed by an admin, and by nobody else.
+     * Written by the server, and by managers and admins from the accounting
+     * page. Not by the till: a shift close, a spend, a payout and a write-off
+     * are events the server answers by posting (see functions/notify), so no
+     * cashier or cook holds the right to write a journal row, and a till that
+     * loses its connection mid-close cannot leave the books short.
+     *
+     * Edited and removed by an admin, and by nobody else.
      *
      * This was append-only, on the usual argument: a wrong entry is corrected
      * by posting its opposite, never by editing history, because books that
@@ -2357,7 +2339,7 @@ export const COLLECTIONS = [
      * the erase page never clears. Quietly is the part that was worth
      * preventing, not editing.
      */
-    perms: { read: MGMT, create: ALL_STAFF, update: ADMIN, delete: ADMIN },
+    perms: { read: MGMT, create: MGMT, update: ADMIN, delete: ADMIN },
     attributes: [
       ['date', 'd', null, true],
       ['source', 'e', ['shift_close', 'purchase', 'expense', 'refund', 'adjustment', 'reversal'], true],
@@ -2389,7 +2371,7 @@ export const COLLECTIONS = [
     // An edit replaces an entry's lines rather than patching them: the number
     // of lines changes, and matching old to new is guesswork. See the note on
     // journal_entries for why this is editable at all.
-    perms: { read: MGMT, create: ALL_STAFF, update: ADMIN, delete: ADMIN },
+    perms: { read: MGMT, create: MGMT, update: ADMIN, delete: ADMIN },
     attributes: [
       ['entry_id', 's', 64, true],
       ['account_code', 's', 10, true],
@@ -2528,20 +2510,6 @@ export const COLLECTIONS = [
     indexes: [['user_unique', 'unique', ['user_id']], ['email', 'key', ['email']], ['active_role', 'key', ['active', 'role']]],
   },
   {
-    id: 'devices',
-    name: 'Devices',
-    perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: MGMT },
-    attributes: [
-      ['name', 's', 80, true],
-      ['kind', 'e', ['kds', 'pos', 'admin'], true],
-      ['station', 'e', ['hot', 'cold', 'bar', 'dessert', 'all'], true, 'all'],
-      ['last_seen', 'd', null, true],
-      ['audio_ok', 'b', null, true, false],
-      ['app_version', 's', 40, false],
-    ],
-    indexes: [['kind_seen', 'key', ['kind', 'last_seen']]],
-  },
-  {
     id: 'audit_log',
     name: 'Audit log',
     // Anyone can add to it, nobody can change or remove anything, and only
@@ -2648,45 +2616,67 @@ export const COLLECTIONS = [
     indexes: [['venue_active_sort', 'key', ['venue_id', 'active', 'sort']]],
   },
   {
-    id: 'delivery_zones',
-    name: 'Delivery zones',
-    perms: { read: ['any'], create: MGMT, update: MGMT, delete: MGMT },
+    /*
+      One booked place in one pre-order time slot.
+
+      A row rather than a counter, and the row's ID is worked out from the
+      slot and the place number: `p<venue+point hash>-<slot minute>-<place>`.
+      Claiming a place is therefore creating that document, which either
+      succeeds or collides, so two customers racing for the last place at
+      noon cannot both have it. A counter would need read-then-write, which
+      loses one of two simultaneous bookings every time. See slots.ts.
+
+      How many are booked is how many rows exist. There is no count stored
+      anywhere, so there is nothing that can disagree with the bookings.
+
+      No customer data lives here on purpose: it is readable by anyone,
+      because the customer's own phone has to count the bookings to know
+      which times are full. The link runs the other way — the order carries
+      `preorder_seat_id` — and orders are staff-read only.
+    */
+    /*
+      A busy level somebody set by hand, and nothing else.
+
+      How busy the kitchen IS gets counted from the tickets waiting, every
+      time it is asked. Nothing writes "we are busy now", because the write
+      that then matters is "we are not any more", and a kitchen in the weeds
+      never gets round to that one.
+
+      What cannot be counted is what a cook can see — a fryer down, three
+      people off, a coach party at the door — so a level can be set by hand,
+      and this row is where that is kept. One row per venue and side. It
+      lapses on its own after the configured time; see busy.ts.
+    */
+    id: 'kitchen_status',
+    name: 'Kitchen busy level',
+    perms: { read: ['any'], create: ALL_STAFF, update: ALL_STAFF, delete: MGMT },
     attributes: [
       ['venue_id', 's', 64, true],
-      ['pickup_point_id', 's', 64, false], // which point dispatches this zone
-      ['name', 's', 120, true],
-      ['fee', 'i', null, true, 0],
-      ['min_order_total', 'i', null, true, 0],
-      ['eta_minutes', 'i', null, true, 30],
-      ['active', 'b', null, true, true],
-      ['sort', 'i', null, true, 0],
+      ['module', 'e', ['kitchen', 'bar', 'craft'], false, 'kitchen'],
+      // Blank means handed back to the ticket count. Kept rather than the row
+      // deleted, so a screen can say it has just been handed back.
+      ['level', 'e', ['normal', 'busy', 'paused'], false],
+      ['set_by', 's', 64, false],
+      ['set_at', 'd', null, false],
+      ['note', 's', 200, false],
     ],
-    indexes: [['venue_active', 'key', ['venue_id', 'active', 'sort']]],
+    indexes: [['venue_module', 'key', ['venue_id', 'module']]],
   },
-
   {
-    // Bookable time slots for pre-orders. A row per slot per venue, created on
-    // demand. `booked_count` is what stops fifty people all pre-ordering for
-    // 12:00, capacity is checked and incremented server-side in one step, so
-    // two simultaneous orders can't both take the last place.
-    id: 'preorder_slots',
-    name: 'Pre-order slots',
-    perms: { read: ['any'], create: ['users'], update: ['users'], delete: MGMT },
+    id: 'preorder_seats',
+    name: 'Pre-order places',
+    perms: { read: ['any'], create: ['users'], update: [], delete: ALL_STAFF },
     attributes: [
       ['venue_id', 's', 64, true],
       ['pickup_point_id', 's', 64, false],
       ['slot_start', 'd', null, true],
-      ['slot_end', 'd', null, true],
-      ['capacity', 'i', null, true, 0], // 0 = unlimited
-      ['booked_count', 'i', null, true, 0],
-      ['status', 'e', ['open', 'full', 'closed'], true, 'open'],
-      ['closed_reason', 's', 200, false],
+      ['place', 'i', null, true, 1],
     ],
     indexes: [
-      ['venue_slot', 'unique', ['venue_id', 'pickup_point_id', 'slot_start']],
-      ['venue_start', 'key', ['venue_id', 'slot_start']],
+      ['venue_slot', 'key', ['venue_id', 'slot_start']],
     ],
   },
+
 
   // ---- 3. Waste log ------------------------------------------------------
   {
@@ -2718,31 +2708,6 @@ export const COLLECTIONS = [
   },
 
   // ---- 4. Staff clock in / out ------------------------------------------
-  {
-    id: 'time_entries',
-    name: 'Time entries',
-    perms: { read: MGMT, create: ALL_STAFF, update: MGMT, delete: ADMIN },
-    attributes: [
-      ['venue_id', 's', 64, true],
-      ['user_id', 's', 64, true],
-      ['shift_id', 's', 64, false],
-      ['clock_in', 'd', null, true],
-      ['clock_out', 'd', null, false],
-      ['break_minutes', 'i', null, true, 0],
-      ['minutes_worked', 'i', null, false], // computed on clock-out
-      ['hourly_rate_snapshot', 'i', null, false],
-      ['labour_cost', 'i', null, false],
-      ['source', 'e', ['pin', 'manager', 'auto_close'], true, 'pin'],
-      ['edited_by', 's', 64, false],
-      ['edit_reason', 's', 300, false],
-      ['note', 's', 300, false],
-    ],
-    indexes: [
-      ['user_in', 'key', ['user_id', 'clock_in']],
-      ['venue_in', 'key', ['venue_id', 'clock_in']],
-      ['open', 'key', ['user_id', 'clock_out']],
-    ],
-  },
 
   // ---- 5 & 6. Customers and loyalty --------------------------------------
   {
@@ -2774,145 +2739,12 @@ export const COLLECTIONS = [
       ['last_seen', 'key', ['last_seen']],
     ],
   },
-  {
-    id: 'loyalty_programs',
-    name: 'Loyalty programs',
-    perms: { read: ['any'], create: ADMIN, update: ADMIN, delete: ADMIN },
-    attributes: [
-      ['name', 's', 120, true],
-      ['venue_ids', 's[]', 64, false], // empty = all venues
-      ['kind', 'e', ['points', 'stamps', 'spend_tiers'], true, 'points'],
-      ['earn_per_currency_unit', 'f', null, false], // points mode
-      ['stamp_target', 'i', null, false], // stamps mode: buy N get 1
-      ['stamp_qualifying_item_ids', 's[]', 64, false],
-      ['redeem_value_per_point', 'i', null, false],
-      ['min_redeem_points', 'i', null, true, 0],
-      ['reward_description', 's', 300, false],
-      ['expiry_days', 'i', null, false],
-      ['active', 'b', null, true, true],
-    ],
-    indexes: [['active', 'key', ['active']]],
-  },
-  {
-    id: 'loyalty_ledger',
-    name: 'Loyalty ledger',
-    perms: { read: ALL_STAFF, create: ALL_STAFF, update: [], delete: [] },
-    attributes: [
-      ['venue_id', 's', 64, true],
-      ['customer_id', 's', 64, true],
-      ['program_id', 's', 64, true],
-      ['order_id', 's', 64, false],
-      ['type', 'e', ['earn', 'redeem', 'adjust', 'expire', 'reverse'], true],
-      ['delta', 'i', null, true],
-      ['balance_after', 'i', null, true],
-      ['expires_at', 'd', null, false],
-      ['note', 's', 300, false],
-      ['created_by', 's', 64, false],
-    ],
-    indexes: [
-      ['customer_created', 'key', ['customer_id', '$createdAt']],
-      ['order', 'key', ['order_id']],
-    ],
-  },
 
   // ---- 7. Feedback -------------------------------------------------------
-  {
-    id: 'feedback',
-    name: 'Feedback',
-    perms: { read: MGMT, create: ['any'], update: MGMT, delete: ADMIN },
-    attributes: [
-      ['venue_id', 's', 64, true],
-      ['order_id', 's', 64, false],
-      ['customer_id', 's', 64, false],
-      ['rating', 'i', null, true], // 1–5
-      ['food_rating', 'i', null, false],
-      ['service_rating', 'i', null, false],
-      ['speed_rating', 'i', null, false],
-      ['tags', 's[]', 40, false],
-      ['comment', 's', 2000, false],
-      ['item_ids', 's[]', 64, false], // what they actually ate
-      ['served_by', 's', 64, false],
-      ['shift_id', 's', 64, false],
-      ['status', 'e', ['new', 'seen', 'responded', 'resolved', 'ignored'], true, 'new'],
-      ['response', 's', 2000, false],
-      ['responded_by', 's', 64, false],
-      ['responded_at', 'd', null, false],
-    ],
-    indexes: [
-      ['venue_created', 'key', ['venue_id', '$createdAt']],
-      ['rating', 'key', ['rating']],
-      ['status', 'key', ['status']],
-      ['served_by', 'key', ['served_by']],
-    ],
-  },
 
   // ---- 8. Multi-language menu -------------------------------------------
-  {
-    // Generic so any user-facing text can be translated without new columns:
-    // one row per (thing, language, field).
-    id: 'translations',
-    name: 'Translations',
-    perms: { read: ['any'], create: MGMT, update: MGMT, delete: MGMT },
-    attributes: [
-      ['entity_type', 'e', ['menu_item', 'category', 'addon_group', 'addon_option', 'venue', 'pickup_point', 'discount'], true],
-      ['entity_id', 's', 64, true],
-      ['locale', 's', 10, true],
-      ['field', 's', 40, true], // 'name' | 'description' | ...
-      ['value', 's', 2000, true],
-      ['machine_translated', 'b', null, true, false],
-      ['updated_by', 's', 64, false],
-    ],
-    indexes: [
-      ['entity_locale_field', 'unique', ['entity_type', 'entity_id', 'locale', 'field']],
-      ['locale', 'key', ['locale']],
-    ],
-  },
 
   // ---- 9. Purchase orders and receiving ---------------------------------
-  {
-    id: 'purchase_orders',
-    name: 'Purchase orders',
-    perms: { read: MGMT, create: MGMT, update: MGMT, delete: MGMT },
-    attributes: [
-      ['venue_id', 's', 64, true],
-      ['supplier_id', 's', 64, true],
-      ['po_number', 's', 40, true],
-      ['status', 'e', ['draft', 'sent', 'part_received', 'received', 'cancelled'], true, 'draft'],
-      ['expected_at', 'd', null, false],
-      ['sent_at', 'd', null, false],
-      ['subtotal', 'i', null, true, 0],
-      ['tax', 'i', null, true, 0],
-      ['total', 'i', null, true, 0],
-      ['ordered_by', 's', 64, true],
-      ['approved_by', 's', 64, false],
-      ['note', 's', 1000, false],
-      ['auto_generated', 'b', null, true, false], // raised from par levels
-    ],
-    indexes: [
-      ['venue_status', 'key', ['venue_id', 'status']],
-      ['po_number_unique', 'unique', ['venue_id', 'po_number']],
-      ['supplier', 'key', ['supplier_id']],
-    ],
-  },
-  {
-    id: 'purchase_order_items',
-    name: 'Purchase order items',
-    perms: { read: MGMT, create: MGMT, update: MGMT, delete: MGMT },
-    attributes: [
-      ['venue_id', 's', 64, true],
-      ['purchase_order_id', 's', 64, true],
-      ['ingredient_id', 's', 64, true],
-      ['qty_ordered', 'f', null, true],
-      ['qty_received', 'f', null, true, 0],
-      ['unit', 's', 20, true],
-      ['unit_cost_expected', 'i', null, true, 0],
-      ['unit_cost_actual', 'i', null, false],
-      ['line_total', 'i', null, true, 0],
-      ['discrepancy', 'e', ['none', 'short', 'over', 'price_up', 'price_down', 'quality', 'not_delivered'], true, 'none'],
-      ['discrepancy_note', 's', 500, false],
-    ],
-    indexes: [['po', 'key', ['purchase_order_id']], ['ingredient', 'key', ['ingredient_id']]],
-  },
 
   // ---- 10. Scheduled summaries ------------------------------------------
   {
@@ -2974,7 +2806,9 @@ export const COLLECTIONS = [
     perms: { read: MGMT, create: [], update: [], delete: [] },
     attributes: [
       ['venue_id', 's', 64, true],
-      ['kind', 'e', ['shift_close', 'daily_digest', 'backup'], true],
+      // 'health' is the nightly check: records that do not add up, written
+      // down whether or not anybody was emailed. See functions/notify/src/health-night.js.
+      ['kind', 'e', ['shift_close', 'daily_digest', 'backup', 'health'], true],
       ['shift_id', 's', 64, false],
       ['period_start', 'd', null, true],
       ['period_end', 'd', null, true],
@@ -3187,51 +3021,8 @@ export const COLLECTIONS = [
   },
 
   // ---- 11. Kitchen busy mode --------------------------------------------
-  {
-    id: 'kitchen_status',
-    name: 'Kitchen status',
-    perms: { read: ['any'], create: ALL_STAFF, update: ALL_STAFF, delete: MGMT },
-    attributes: [
-      ['venue_id', 's', 64, true],
-      ['station', 's', 40, true, 'all'],
-      ['mode', 'e', ['normal', 'busy', 'paused'], true, 'normal'],
-      ['pending_count', 'i', null, true, 0],
-      ['quoted_wait_minutes', 'i', null, true, 0],
-      ['auto', 'b', null, true, true], // tripped by thresholds vs set by hand
-      ['set_by', 's', 64, false],
-      ['reason', 's', 300, false],
-      ['until', 'd', null, false],
-    ],
-    indexes: [['venue_station', 'unique', ['venue_id', 'station']]],
-  },
 
   // ---- 12. Time-based prices --------------------------------------------
-  {
-    // Changes the price the customer SEES (happy hour, breakfast pricing).
-    // Distinct from a discount, which reduces an already-priced bill.
-    id: 'price_rules',
-    name: 'Price rules',
-    perms: { read: ['any'], create: MGMT, update: MGMT, delete: MGMT },
-    attributes: [
-      ['name', 's', 120, true],
-      ['venue_ids', 's[]', 64, false],
-      ['scope', 'e', ['all', 'category', 'item', 'tag'], true, 'item'],
-      ['target_ids', 's[]', 64, false],
-      ['adjust_kind', 'e', ['percent_off', 'amount_off', 'fixed_price'], true, 'percent_off'],
-      ['adjust_value', 'i', null, true], // basis points, minor units, or price
-      ['days_of_week', 's[]', 3, false], // 'mon'…'sun'; empty = every day
-      ['time_start', 's', 5, false], // '16:00'
-      ['time_end', 's', 5, false],
-      ['starts_at', 'd', null, false],
-      ['ends_at', 'd', null, false],
-      ['channels', 's[]', 20, false], // 'qr', 'pos', 'takeaway', 'delivery'
-      ['priority', 'i', null, true, 0], // highest wins; ties broken by cheapest
-      ['show_original_price', 'b', null, true, true],
-      ['badge_text', 's', 40, false],
-      ['active', 'b', null, true, true],
-    ],
-    indexes: [['active_priority', 'key', ['active', 'priority']]],
-  },
 
   // ---- Discounts and discount codes -------------------------------------
   {
@@ -3682,12 +3473,12 @@ for (const c of COLLECTIONS) {
  * can never be accidentally omitted from a collection that needs it.
  */
 export const VENUE_SCOPED = [
-  'tables', 'dining_sessions', 'orders', 'order_items', 'payments',
+  'tables', 'orders', 'order_items', 'payments',
   'shifts', 'shift_expenses', 'shift_stock_checks',
-  'ingredients', 'suppliers', 'purchases', 'purchase_items',
-  'stock_movements', 'stock_flags',
+  'ingredients', 'suppliers',
+  'stock_movements',
   'journal_entries', 'journal_lines',
-  'devices', 'audit_log', 'payment_methods',
+  'audit_log', 'payment_methods',
 ];
 
 for (const id of VENUE_SCOPED) {
@@ -3849,40 +3640,10 @@ export const FEATURES = [
     config: { require_photo_above_value: 0, require_manager_above_value: 0, prompt_at_shift_close: true },
   },
   {
-    key: 'time_clock',
-    label: 'Staff clock in / out',
-    enabled: true,
-    config: { clock_in_with_pin: true, auto_clock_out_hours: 14, track_labour_cost: true, require_manager_edit_reason: true },
-  },
-  {
     key: 'customers',
     label: 'Customer profiles',
     enabled: true,
     config: { collect_phone: true, collect_email: true, collect_name: true, optional_always: true, merge_on_matching_phone: true },
-  },
-  {
-    key: 'loyalty',
-    label: 'Loyalty / stamp card',
-    enabled: true,
-    config: { requires: ['customers'], kind: 'stamps', stamp_target: 9, show_progress_on_receipt: true },
-  },
-  {
-    key: 'feedback',
-    label: 'Feedback after paying',
-    enabled: true,
-    config: { prompt_after_payment: true, prompt_on_receipt_email: true, ask_food_and_service: true, alert_managers_below_rating: 3 },
-  },
-  {
-    key: 'multilingual',
-    label: 'Multi-language menu',
-    enabled: true,
-    config: { locales: ['en'], show_language_picker: true, fall_back_to_default: true },
-  },
-  {
-    key: 'purchase_orders',
-    label: 'Purchase orders and receiving',
-    enabled: true,
-    config: { require_approval_above: 0, auto_suggest_from_par_levels: true, flag_price_rise_bp: 1000, block_receive_without_check: true },
   },
   {
     key: 'shift_summary',
@@ -3916,13 +3677,12 @@ export const FEATURES = [
       busy_extra_minutes: 15,
       hold_qr_orders_when_paused: true,
       message_to_guest: 'The kitchen is very busy, your order may take a little longer.',
+      // How long a level set by hand holds before the ticket count takes over
+      // again. Somebody pausing on a Friday night and going home would
+      // otherwise leave the ordering page dead all Saturday, with the only
+      // person who could explain it not at work. Nought never lapses.
+      override_minutes: 60,
     },
-  },
-  {
-    key: 'time_pricing',
-    label: 'Happy hour / time-based prices',
-    enabled: true,
-    config: { show_original_price: true, apply_to_qr: true, apply_to_pos: true, badge_text: 'Happy hour' },
   },
   {
     key: 'discounts',
@@ -4014,6 +3774,16 @@ export const SYSTEM_ACCOUNT_CODES = [
   // Depreciation posts to these three by number, the same way a shift close
   // posts to the ten above, so they cannot be deleted either.
   '1500', '1510', '6060',
+  // The bank, and what the craft shop holds for its makers. A craft sale
+  // credits the makers' share here and a payout debits it; a settlement moves
+  // card and mobile-money takings from clearing into the bank.
+  '1040', '2400',
+  // A settlement posts the provider's fee here by number.
+  '6070',
+  // The levies beside VAT, each credited by number at shift close.
+  '2110', '2120', '2130', '2190',
+  // Waste is written off the shelf to here by number.
+  '6080',
 ];
 
 export const SEED_ACCOUNTS = [
@@ -4030,6 +3800,7 @@ export const SEED_ACCOUNTS = [
     neither of them can be found.
   */
   ['1030', 'Petty cash (imprest)', 'asset'],
+  ['1040', 'Bank account', 'asset'],
   ['1200', 'Inventory - kitchen', 'asset'],
   ['1210', 'Inventory - bar', 'asset'],
   ['1220', 'Inventory - craft shop', 'asset'],
@@ -4040,8 +3811,16 @@ export const SEED_ACCOUNTS = [
   // subtracted from the cost, because "what it cost" and "how much of it has
   // been used up" are both worth being able to read.
   ['1510', 'Less: accumulated depreciation', 'asset'],
-  ['2100', 'Tax payable', 'liability'],
+  ['2100', 'VAT payable', 'liability'],
+  // Ghana's levies, each declared on its own return. See levies.ts.
+  ['2110', 'NHIL payable', 'liability'],
+  ['2120', 'GETFund levy payable', 'liability'],
+  ['2130', 'Tourism levy payable', 'liability'],
+  ['2190', 'Other levies payable', 'liability'],
   ['2200', 'Tips payable', 'liability'],
+  // A consigned piece is not the shop's. When it sells, the maker's share is
+  // theirs from that moment and the shop is holding it.
+  ['2400', 'Owed to makers', 'liability'],
   ['2300', 'Accounts payable', 'liability'],
   ['3000', 'Owner equity', 'equity'],
   ['4000', 'Restaurant sales', 'revenue'],
@@ -4058,6 +3837,8 @@ export const SEED_ACCOUNTS = [
   ['6040', 'Staff advances', 'expense'],
   ['6050', 'Petty cash', 'expense'],
   ['6060', 'Depreciation', 'expense'],
+  ['6070', 'Payment provider fees', 'expense'],
+  ['6080', 'Waste and spoilage', 'expense'],
   ['6090', 'Other expenses', 'expense'],
   ['7000', 'Cash over / short', 'expense'],
 ];
@@ -4073,14 +3854,13 @@ export const SEED_ACCOUNTS = [
 export const SEED_EXPENSE_CATEGORIES = [
   { key: 'supplies', name: 'Supplies', account_code: '6000', sort: 1 },
   /*
-    Buying stock is not spending, so these point at the balance sheet rather
-    than at an expense account. The money turns into something the business
-    still has; it becomes a cost when the drink is poured, not when the bottle
-    is carried in.
+    No "Bar stock" or "Kitchen stock" here any more. Buying stock is not
+    spending, and a category was the only way a delivery used to reach the
+    balance sheet; it is now the LINES of a spend that say what went on a
+    shelf, and they post to inventory on their own. Rows already filed under
+    the old stock categories still read; the categories themselves are hidden
+    from every picker. See isStockCategory.
   */
-  { key: 'bar_stock', name: 'Bar stock', account_code: '1210', module: 'bar', sort: 8 },
-  { key: 'craft_stock', name: 'Craft stock', account_code: '1220', module: 'craft', sort: 9 },
-  { key: 'kitchen_stock', name: 'Kitchen stock', account_code: '1200', module: 'kitchen', sort: 10 },
   { key: 'transport', name: 'Transport', account_code: '6010', sort: 2 },
   { key: 'utilities', name: 'Utilities', account_code: '6020', sort: 3 },
   { key: 'repairs', name: 'Repairs & maintenance', account_code: '6030', sort: 4 },

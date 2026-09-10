@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react';
-import { Badge, Button, Field, Modal, Notice, Select } from '@snpos/ui';
-import { db, DB_ID, ID, humanError } from '../lib';
+import { useState } from 'react';
+import { Badge, Field, Select } from '@snpos/ui';
+import { db, DB_ID, ID } from '../lib';
 import { parseMoney, toInput, packProblem } from '@snpos/core';
 import type { Ingredient, Settings, Module } from '@snpos/core';
 import type { KeyedRow } from './KeyedList';
+import { ImportDialog, type ImportColumn } from './ImportDialog';
 
 /**
  * Bulk stock entry from a spreadsheet.
@@ -12,21 +13,12 @@ import type { KeyedRow } from './KeyedList';
  * set up. The template exists because "just upload a CSV" is only simple for
  * people who already know what columns it wants.
  *
- * Nothing is written until the whole file has been read and shown back. An
- * import that half-works leaves a stock list nobody trusts, which is worse
- * than one that refused.
+ * A row that cannot be read is skipped and named, and the rest still goes in:
+ * a stock export routinely carries a line or two the shelf does not hold, and
+ * refusing the whole file over one of them is refusing the useful part.
  */
 
 interface Supplier { $id: string; name: string }
-
-const COLUMNS = [
-  'name', 'unit', 'cost_per_unit', 'in_stock', 'par_level',
-  'low_warning_at', 'category', 'supplier', 'expense_category', 'critical',
-  // How it arrives, when that is not how it is counted: a bar buys a bottle
-  // and pours shots. Both optional — a kitchen buying rice by the kilo leaves
-  // them off entirely and nothing changes. See packs.ts.
-  'bought_as', 'units_per_purchase',
-];
 
 /**
  * Bar units are here too, and they are not decoration.
@@ -36,6 +28,24 @@ const COLUMNS = [
  * lines into litres by hand — which is where the mistakes come from.
  */
 const UNITS = ['g', 'kg', 'ml', 'l', 'each', 'pack', 'bottle', 'case', 'shot', 'cl'];
+
+const COLUMNS: ImportColumn[] = [
+  { key: 'name', heading: 'name', required: true, help: 'What it is called. A name already on the list updates that line.' },
+  { key: 'unit', heading: 'unit', required: true, help: `How it is counted: one of ${UNITS.join(', ')}.` },
+  { key: 'cost_per_unit', heading: 'cost_per_unit', help: 'What one unit costs to buy.' },
+  { key: 'in_stock', heading: 'in_stock', help: 'How many units are on the shelf now.' },
+  { key: 'par_level', heading: 'par_level', help: 'How many you like to hold; the buying list works from this.' },
+  { key: 'low_warning_at', heading: 'low_warning_at', help: 'Warn when it falls to this. Blank means the usual rule.' },
+  { key: 'category', heading: 'category', help: 'A stock category by name, as set up on this page.' },
+  { key: 'supplier', heading: 'supplier', help: 'A supplier by name, as set up under Suppliers.' },
+  { key: 'expense_category', heading: 'expense_category', help: 'Which spend heading buying it goes under.' },
+  { key: 'critical', heading: 'critical', help: 'yes if running out stops service.' },
+  // How it arrives, when that is not how it is counted: a bar buys a bottle
+  // and pours shots. Both optional — a kitchen buying rice by the kilo leaves
+  // them off entirely and nothing changes. See packs.ts.
+  { key: 'bought_as', heading: 'bought_as', help: 'What it arrives as, when that differs from how it is counted: bottle, case.' },
+  { key: 'units_per_purchase', heading: 'units_per_purchase', help: 'How many counted units one of those holds.' },
+];
 
 interface ParsedRow {
   line: number;
@@ -55,24 +65,7 @@ interface ParsedRow {
   problems: string[];
 }
 
-/** Split one CSV line, honouring quotes so "Rice, long grain" stays one field. */
-function splitCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let cur = '';
-  let quoted = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const c = line[i];
-    if (quoted) {
-      if (c === '"' && line[i + 1] === '"') { cur += '"'; i += 1; }
-      else if (c === '"') quoted = false;
-      else cur += c;
-    } else if (c === '"') quoted = true;
-    else if (c === ',') { out.push(cur); cur = ''; }
-    else cur += c;
-  }
-  out.push(cur);
-  return out.map((v) => v.trim());
-}
+interface Read { rows: ParsedRow[] }
 
 export function StockImport({
   existing,
@@ -96,57 +89,33 @@ export function StockImport({
   onClose: () => void;
   onDone: (message: string) => void;
 }) {
-  const fileInput = useRef<HTMLInputElement>(null);
-  const [rows, setRows] = useState<ParsedRow[] | null>(null);
-  const [fileName, setFileName] = useState('');
   const [onConflict, setOnConflict] = useState<'update' | 'skip'>('update');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   const decimals = settings?.currency_decimals ?? 2;
 
-  /** A file with the headings filled in and one example row to copy. */
-  const downloadTemplate = () => {
-    const example = [
-      'Rice (long grain)', 'kg', toInput(1250, decimals), '40', '25', '8',
-      categories?.[0]?.name ?? 'Dry goods',
-      suppliers[0]?.name ?? '',
-      expenseCategories?.[0]?.name ?? 'Supplies',
-      'no',
-    ];
-    const csv = [COLUMNS.join(','), example.map((v) => (v.includes(',') ? `"${v}"` : v)).join(',')].join('\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'stock-template.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  /** One example row to copy, using names this business actually has. */
+  const example = [
+    'Rice (long grain)', 'kg', toInput(1250, decimals), '40', '25', '8',
+    categories?.[0]?.name ?? 'Dry goods',
+    suppliers[0]?.name ?? '',
+    expenseCategories?.[0]?.name ?? 'Supplies',
+    'no', '', '',
+  ];
 
-  const read = async (file: File) => {
-    setError(null);
-    setFileName(file.name);
-    const text = await file.text();
-    const lines = text.split(/\r?\n/).filter((l) => l.trim());
-    if (lines.length < 2) {
-      setError('That file has headings but no rows.');
-      setRows(null);
-      return;
-    }
+  const read = (grid: string[][]): Read => {
+    const [head, ...body] = grid;
+    if (!head || body.length === 0) throw new Error('That file has headings but no rows.');
 
-    const headers = splitCsvLine(lines[0]).map((h) => h.toLowerCase().replace(/\s+/g, '_'));
+    const headers = head.map((h) => h.trim().toLowerCase().replace(/\s+/g, '_'));
     const missing = ['name', 'unit'].filter((c) => !headers.includes(c));
     if (missing.length) {
-      setError(`The file needs a "${missing.join('" and a "')}" column. Download the template to see the layout.`);
-      setRows(null);
-      return;
+      throw new Error(`The file needs a "${missing.join('" and a "')}" column. Download the template to see the layout.`);
     }
 
-    const at = (cells: string[], col: string) => cells[headers.indexOf(col)] ?? '';
-    const parsed: ParsedRow[] = [];
+    const at = (cells: string[], col: string) => (cells[headers.indexOf(col)] ?? '').trim();
+    const rows: ParsedRow[] = [];
 
-    for (let i = 1; i < lines.length; i += 1) {
-      const cells = splitCsvLine(lines[i]);
+    body.forEach((cells, i) => {
+      if (cells.every((c) => !c.trim())) return;
       const problems: string[] = [];
       const name = at(cells, 'name');
       if (!name) problems.push('no name');
@@ -200,8 +169,8 @@ export function StockImport({
       const packSays = packProblem(packSize, unit, packName);
       if (packSays) problems.push(packSays);
 
-      parsed.push({
-        line: i + 1,
+      rows.push({
+        line: i + 2,
         name,
         unit,
         cost: cost ?? 0,
@@ -217,158 +186,119 @@ export function StockImport({
         existingId: existing.find((e) => e.name.toLowerCase() === name.toLowerCase())?.$id,
         problems,
       });
-    }
+    });
 
-    setRows(parsed);
+    return { rows };
   };
 
-  const usable = (rows ?? []).filter((r) => r.problems.length === 0);
-  const broken = (rows ?? []).filter((r) => r.problems.length > 0);
-  const updates = usable.filter((r) => r.existingId);
-  const creates = usable.filter((r) => !r.existingId);
-
-  const apply = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      let created = 0;
-      let updated = 0;
-      for (const r of usable) {
-        const payload = {
-          venue_id: venueId,
-          name: r.name,
-          unit: r.unit,
-          base_unit_cost: r.cost,
-          // Which side's shelves these sit on, taken from the page doing the
-          // importing. A bar counting rice and a kitchen counting gin are both
-          // counting somebody else's larder.
-          module,
-          current_qty: r.qty,
-          par_level: r.par,
-          critical: r.critical,
-          supplier_id: r.supplierId,
-          category: r.category,
-          expense_category_key: r.expenseKey,
-          active: true,
-          pack_size: r.packSize,
-          pack_name: r.packName,
-          ...(r.low !== undefined ? { low_threshold: r.low } : {}),
-        };
-        if (r.existingId) {
-          if (onConflict === 'skip') continue;
-          await db.updateDocument(DB_ID, 'ingredients', r.existingId, payload);
-          updated += 1;
-        } else {
-          await db.createDocument(DB_ID, 'ingredients', ID.unique(), payload);
-          created += 1;
-        }
-      }
-      onDone(`${created} added, ${updated} updated${broken.length ? `, ${broken.length} skipped` : ''}`);
-    } catch (e) {
-      setError(humanError(e));
-      setBusy(false);
-    }
-  };
+  const usableOf = (r: Read) => r.rows.filter((x) => x.problems.length === 0);
 
   return (
-    <Modal
+    <ImportDialog<Read>
       title="Import stock from a spreadsheet"
-      wide
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={apply} loading={busy} disabled={usable.length === 0}>
-            {usable.length === 0 ? 'Nothing to import' : `Import ${usable.length} ${usable.length === 1 ? 'row' : 'rows'}`}
-          </Button>
-        </>
-      }
-    >
-      {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
-
-      <p className="small dim" style={{ marginTop: 0 }}>
+      intro={<p style={{ marginTop: 0 }}>
         Start from the template; it has the right headings and one example row. Fill it in with any spreadsheet
         program, save as CSV, and bring it back here. Nothing is written until you have seen what will happen.
-      </p>
-
-      <div className="row" style={{ marginBottom: '1rem' }}>
-        <Button size="sm" onClick={downloadTemplate}>Download the template</Button>
-        <Button size="sm" variant="primary" onClick={() => fileInput.current?.click()}>
-          {fileName ? 'Choose a different file' : 'Choose your file'}
-        </Button>
-        {fileName && <span className="small dim">{fileName}</span>}
-        <input
-          ref={fileInput}
-          type="file"
-          accept=".csv,text/csv"
-          style={{ display: 'none' }}
-          onChange={(e) => e.target.files?.[0] && read(e.target.files[0])}
-        />
-      </div>
-
-      {rows && (
-        <>
-          <div className="row row-wrap" style={{ marginBottom: '0.7rem' }}>
-            <Badge tone="ok">{creates.length} new</Badge>
-            {updates.length > 0 && <Badge tone="warn">{updates.length} already exist</Badge>}
-            {broken.length > 0 && <Badge tone="danger">{broken.length} cannot be read</Badge>}
-          </div>
-
-          {updates.length > 0 && (
-            <Field label="Ingredients that already exist" hint="Matched by name, ignoring capitals.">
-              <Select value={onConflict} onChange={(e) => setOnConflict(e.target.value as 'update' | 'skip')}>
-                <option value="update">Update them with the values in the file</option>
-                <option value="skip">Leave them exactly as they are</option>
-              </Select>
-            </Field>
-          )}
-
-          {broken.length > 0 && (
-            <div style={{ marginBottom: '0.8rem' }}>
-              <Notice tone="warn">
-                These rows are skipped. Everything else still imports, fix them and run the file again.
-              </Notice>
-              <ul className="small" style={{ margin: '0.5rem 0 0', paddingLeft: '1.2rem' }}>
-                {broken.slice(0, 8).map((r) => (
-                  <li key={r.line}>
-                    Row {r.line}{r.name ? ` (${r.name})` : ''}: {r.problems.join('; ')}
-                  </li>
-                ))}
-                {broken.length > 8 && <li className="dim">…and {broken.length - 8} more</li>}
-              </ul>
+      </p>}
+      template={{ name: 'stock-template', headings: COLUMNS.map((c) => c.heading), rows: [example] }}
+      columns={COLUMNS}
+      read={read}
+      problems={(r) => r.rows.filter((x) => x.problems.length > 0).map((x) => ({
+        line: x.line,
+        message: `${x.name ? `${x.name}: ` : ''}${x.problems.join('; ')}`,
+      }))}
+      problemsStop={false}
+      count={(r) => usableOf(r).length}
+      action={(n) => (n ? `Import ${n} ${n === 1 ? 'row' : 'rows'}` : 'Nothing to import')}
+      body={(r) => {
+        const usable = usableOf(r);
+        const updates = usable.filter((x) => x.existingId);
+        const creates = usable.filter((x) => !x.existingId);
+        return (
+          <>
+            <div className="row row-wrap" style={{ marginBottom: '0.7rem' }}>
+              <Badge tone="ok">{creates.length} new</Badge>
+              {updates.length > 0 && <Badge tone="warn">{updates.length} already exist</Badge>}
             </div>
-          )}
 
-          <div className="table-wrap" style={{ maxHeight: '32vh', overflowY: 'auto' }}>
-            <table className="data">
-              <thead>
-                <tr>
-                  <th>Ingredient</th><th>Unit</th><th className="num">Cost</th>
-                  <th className="num">In stock</th><th className="num">Par</th><th>What happens</th>
-                </tr>
-              </thead>
-              <tbody>
-                {usable.map((r) => (
-                  <tr key={r.line}>
-                    <td>{r.name}</td>
-                    <td className="dim">{r.unit}</td>
-                    <td className="num">{toInput(r.cost, decimals)}</td>
-                    <td className="num dim">{r.qty}</td>
-                    <td className="num dim">{r.par}</td>
-                    <td>
-                      {r.existingId
-                        ? onConflict === 'skip'
-                          ? <Badge>Left alone</Badge>
-                          : <Badge tone="warn">Updated</Badge>
-                        : <Badge tone="ok">Added</Badge>}
-                    </td>
+            {updates.length > 0 && (
+              <Field label="Ingredients that already exist" hint="Matched by name, ignoring capitals.">
+                <Select value={onConflict} onChange={(e) => setOnConflict(e.target.value as 'update' | 'skip')}>
+                  <option value="update">Update them with the values in the file</option>
+                  <option value="skip">Leave them exactly as they are</option>
+                </Select>
+              </Field>
+            )}
+
+            <div className="table-wrap" style={{ maxHeight: '32vh', overflowY: 'auto' }}>
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Ingredient</th><th>Unit</th><th className="num">Cost</th>
+                    <th className="num">In stock</th><th className="num">Par</th><th>What happens</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-    </Modal>
+                </thead>
+                <tbody>
+                  {usable.map((x) => (
+                    <tr key={x.line}>
+                      <td>{x.name}</td>
+                      <td className="dim">{x.unit}</td>
+                      <td className="num">{toInput(x.cost, decimals)}</td>
+                      <td className="num dim">{x.qty}</td>
+                      <td className="num dim">{x.par}</td>
+                      <td>
+                        {x.existingId
+                          ? onConflict === 'skip'
+                            ? <Badge>Left alone</Badge>
+                            : <Badge tone="warn">Updated</Badge>
+                          : <Badge tone="ok">Added</Badge>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        );
+      }}
+      write={async (r) => {
+        let created = 0;
+        let updated = 0;
+        const broken = r.rows.length - usableOf(r).length;
+        for (const x of usableOf(r)) {
+          const payload = {
+            venue_id: venueId,
+            name: x.name,
+            unit: x.unit,
+            base_unit_cost: x.cost,
+            // Which side's shelves these sit on, taken from the page doing the
+            // importing. A bar counting rice and a kitchen counting gin are both
+            // counting somebody else's larder.
+            module,
+            current_qty: x.qty,
+            par_level: x.par,
+            critical: x.critical,
+            supplier_id: x.supplierId,
+            category: x.category,
+            expense_category_key: x.expenseKey,
+            active: true,
+            pack_size: x.packSize,
+            pack_name: x.packName,
+            ...(x.low !== undefined ? { low_threshold: x.low } : {}),
+          };
+          if (x.existingId) {
+            if (onConflict === 'skip') continue;
+            await db.updateDocument(DB_ID, 'ingredients', x.existingId, payload);
+            updated += 1;
+          } else {
+            await db.createDocument(DB_ID, 'ingredients', ID.unique(), payload);
+            created += 1;
+          }
+        }
+        onDone(`${created} added, ${updated} updated${broken ? `, ${broken} skipped` : ''}`);
+        return undefined;
+      }}
+      onClose={onClose}
+    />
   );
 }

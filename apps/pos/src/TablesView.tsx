@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Spinner, Empty, Card, Badge } from '@snpos/ui';
-import { listAll, Query, subscribeCollection } from '@snpos/core';
+import { listAll, Query, subscribeCollection, formatMoney } from '@snpos/core';
 import type { PosContext, TableRow } from './App';
 import type { Order } from '@snpos/core';
 
@@ -84,7 +84,7 @@ export function TablesView({ ctx, onOpen }: { ctx: PosContext; onOpen: (t: Table
             </div>
             {total > 0 && (
               <div style={{ marginTop: '0.4rem' }}>
-                <Badge tone="warn">{(total / 10 ** (ctx.settings.currency_decimals ?? 2)).toFixed(2)}</Badge>
+                <Badge tone="warn">{formatMoney(total, ctx.settings)}</Badge>
               </div>
             )}
           </button>

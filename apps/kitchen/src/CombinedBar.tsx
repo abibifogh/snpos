@@ -264,7 +264,6 @@ export function CombinedBar({
       setShift(null);
       await reload();
       setClosing(false);
-      if (result.ledgerError) onToast(`Shift closed, but the accounts entry failed: ${result.ledgerError}`, 'err');
       const total = Object.values(result.variance).reduce((a, b) => a + Math.abs(b), 0);
       const base = total === 0 ? 'Shift closed and balanced' : `Shift closed, ${money(total)} out`;
       onToast(result.stockNote ? `${base}. ${result.stockNote}` : base, total > tolerance ? 'err' : 'ok');

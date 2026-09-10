@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Badge, useToast, ViewTabs} from '@snpos/ui';
+import { Link } from 'react-router-dom';
+import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Badge, useToast, ViewTabs, ShopCountTable } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
-  shelfLines, submitCount, pendingCounts, countLines, approveCount, rejectCount, decidedCounts,
-  summariseCount, countWarnings, groupLines, COUNT_REASONS, isSelfApproval, formatMoney,
+  shelfLines, submitCount, pendingCounts, countLines, decidedCounts,
+  summariseCount, countWarnings, groupLines, COUNT_REASONS, 
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft, clearAllWarning,
-  pendingShelfLines, frozenPieces, frozenBy,
-} from '@snpos/core';
+  pendingShelfLines, frozenPieces, frozenBy, dateTimeWords, loadStaffNames, nameFrom } from '@snpos/core';
 import type {
-  CountLine, CountReason, CountGrouping, PendingCount, PendingCountLine, StaffProfile, WaitingChange,
+  CountLine, CountReason, CountGrouping, PendingCount, PendingCountLine, WaitingChange,
 } from '@snpos/core';
 import { listAll } from '@snpos/core';
 import { CountUpload } from '../components/CountUpload';
-import { useSession } from '../session';
+import { useSession, useMoney } from '../session';
 import { CountHistory, type HistoryCount } from '../components/CountHistory';
 
 /** Where a half-finished count lives while somebody serves a customer. */
@@ -63,7 +63,7 @@ export function StocktakePage() {
    * what it was worth, and whose decision moved the shelf.
    */
   const [past, setPast] = useState<HistoryCount[] | null>(null);
-  const [staff, setStaff] = useState<StaffProfile[]>([]);
+  const [names, setNames] = useState<Map<string, string> | null>(null);
   /**
    * Pieces that already have a change waiting, so they cannot be counted into
    * a second one. See shelf-approval: two pending differences on one shelf are
@@ -77,7 +77,7 @@ export function StocktakePage() {
   const userId = user?.$id ?? '';
   const store = typeof window === 'undefined' ? null : window.localStorage;
 
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
 
   const loadShelf = () =>
     shelfLines()
@@ -114,7 +114,7 @@ export function StocktakePage() {
   useEffect(() => {
     void loadShelf();
     void loadQueue();
-    listAll<StaffProfile>('staff_profiles').then(setStaff).catch(() => undefined);
+    loadStaffNames().then(setNames).catch(() => undefined);
     listAll<{ $id: string; name: string }>('consignors').then(setOwners).catch(() => undefined);
     listAll<{ $id: string; name: string }>('categories').then(setShelves).catch(() => undefined);
   }, []);
@@ -232,8 +232,7 @@ export function StocktakePage() {
   const groups = useMemo(() => groupLines(shown, groupBy), [shown, groupBy]);
   const summary = useMemo(() => summariseCount(lines ?? []), [lines]);
   const warnings = useMemo(() => countWarnings(lines ?? []), [lines]);
-  const nameOf = (id: string) =>
-    staff.find((s) => s.user_id === id || s.$id === id)?.display_name ?? 'someone';
+  const nameOf = (id: string) => nameFrom(names, id, 'someone');
 
   const submit = async () => {
     setBusy(true);
@@ -315,11 +314,8 @@ export function StocktakePage() {
           <Approvals
             queue={queue}
             isAdmin={isAdmin}
-            reviewerId={userId}
             money={money}
             nameOf={nameOf}
-            onDone={async () => { await loadQueue(); await loadShelf(); }}
-            onToast={toast}
           />
           <div style={{ marginTop: '1rem' }}>
             <CountHistory
@@ -432,98 +428,31 @@ export function StocktakePage() {
                 }
                 pad={false}
               >
-                <div className="table-wrap">
-                  <table className="data">
-                    <thead>
-                      <tr>
-                        <th>Piece</th>
-                        {groupBy !== 'maker' && <th>Maker</th>}
-                        {groupBy !== 'category' && <th>Category</th>}
-                        <th className="num">Shelf says</th>
-                        <th style={{ width: '7rem' }}>Actually there</th>
-                        <th style={{ width: '13rem' }}>If it differs, why</th>
-                        <th className="num">Difference</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.lines.map(({ line, index }) => {
-                        const typed = (line.countedText ?? '').trim();
-                        const counted = typed === '' ? null : Number(typed);
-                        const delta = counted === null || !Number.isFinite(counted)
-                          ? null
-                          : counted - line.onHand;
-                        /*
-                          A piece with a change already waiting on it.
+                <ShopCountTable
+                  lines={group.lines}
+                  reasons={COUNT_REASONS}
+                  onChange={(index, patch) => setLine(index, patch as Partial<CountLine>)}
+                  showMaker={groupBy !== 'maker'}
+                  showCategory={groupBy !== 'category'}
+                  showDifference
+                  /*
+                    A piece with a change already waiting on it.
 
-                          Counted again here, it would go in as a SECOND
-                          pending difference on the same shelf — and approving
-                          both would take the same pieces off twice, because
-                          each applies its own delta. So the line is shown, and
-                          shown as held, rather than quietly dropped: a count
-                          sheet missing a piece somebody can see on the shelf
-                          is a count sheet people stop trusting.
-                        */
-                        const held = frozenBy(frozen, line.menuItemId, line.variantId);
-                        return (
-                          <tr key={`${line.menuItemId}-${line.variantId ?? ''}`}>
-                            <td>
-                              <div style={{ fontWeight: 550 }}>{line.name}</div>
-                              {line.variantLabel && <div className="small dim">{line.variantLabel}</div>}
-                            </td>
-                            {groupBy !== 'maker' && (
-                              <td className="dim small">{line.consignorName ?? 'The shop'}</td>
-                            )}
-                            {groupBy !== 'category' && (
-                              <td className="dim small">{line.categoryName ?? '—'}</td>
-                            )}
-                            <td className="num">{line.onHand}</td>
-                            <td>
-                              <Input
-                                type="number"
-                                min="0"
-                                step="1"
-                                placeholder={held ? 'held' : '—'}
-                                value={held ? '' : line.countedText ?? ''}
-                                onChange={(e) => setLine(index, { countedText: e.target.value })}
-                                disabled={!!held}
-                              />
-                            </td>
-                            <td>
-                              {held ? (
-                                <span className="small" style={{ color: 'var(--warn)' }}>
-                                  {nameOf(held.by)} already changed this to {held.line.counted}. Approve or turn
-                                  that down first.
-                                </span>
-                              ) : delta !== null && delta < 0 ? (
-                                <Select
-                                  value={line.reason ?? 'counted'}
-                                  onChange={(e) => setLine(index, { reason: e.target.value as CountReason })}
-                                >
-                                  {COUNT_REASONS.map((r) => (
-                                    <option key={r.value} value={r.value}>{r.label}</option>
-                                  ))}
-                                </Select>
-                              ) : (
-                                <span className="dim small">
-                                  {delta === null ? 'Not counted' : delta > 0 ? 'More than expected' : 'Matches'}
-                                </span>
-                              )}
-                            </td>
-                            <td className="num">
-                              {delta === null || delta === 0 ? (
-                                <span className="dim">—</span>
-                              ) : (
-                                <Badge tone={delta < 0 ? 'danger' : 'warn'}>
-                                  {delta > 0 ? `+${delta}` : delta}
-                                </Badge>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                    Counted again here, it would go in as a SECOND pending
+                    difference on the same shelf — and approving both would
+                    take the same pieces off twice, because each applies its
+                    own delta. So the line is shown, and shown as held, rather
+                    than quietly dropped: a count sheet missing a piece
+                    somebody can see on the shelf is a count sheet people stop
+                    trusting.
+                  */
+                  held={(line) => {
+                    const held = frozenBy(frozen, line.menuItemId, line.variantId);
+                    return held
+                      ? <>{nameFrom(names, held.by, 'someone')} already changed this to {held.line.counted}. Approve or turn that down first.</>
+                      : null;
+                  }}
+                />
               </Card>
             ))
           )}
@@ -622,58 +551,29 @@ export function StocktakePage() {
 }
 
 /**
- * Counts waiting to be applied.
+ * Counts waiting to be applied, line by line.
  *
- * Read-only for a manager, deliberately. They can see what they submitted and
- * that it is still waiting, which is the difference between a queue and a
- * black hole; applying it is an admin's.
+ * A look, not a decision. Deciding happens under Money, Waiting for you,
+ * where every held count, spend and shelf change sits in one list; this tab
+ * is where somebody reads the lines of a shop count before going there. A
+ * manager can see what they submitted and that it is still waiting, which is
+ * the difference between a queue and a black hole.
  */
 function Approvals({
-  queue, isAdmin, reviewerId, money, nameOf, onDone, onToast,
+  queue, isAdmin, money, nameOf,
 }: {
   queue: PendingCount[] | null;
   isAdmin: boolean;
-  reviewerId: string;
   money: (n: number) => string;
   nameOf: (id: string) => string;
-  onDone: () => Promise<void>;
-  onToast: (message: string, tone?: 'ok' | 'err') => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [lines, setLines] = useState<PendingCountLine[] | null>(null);
-  const [reviewNote, setReviewNote] = useState('');
-  const [busy, setBusy] = useState(false);
 
   const open = async (id: string) => {
     setOpenId(id);
     setLines(null);
-    setReviewNote('');
     setLines(await countLines(id).catch(() => []));
-  };
-
-  const act = async (approve: boolean) => {
-    if (!openId) return;
-    setBusy(true);
-    try {
-      if (approve) {
-        const { applied, failed } = await approveCount({ countId: openId, reviewerId, note: reviewNote });
-        onToast(
-          failed > 0
-            ? `${applied} applied, ${failed} could not be. The count stays here until they are.`
-            : `${applied} difference${applied === 1 ? '' : 's'} applied to the shelf`,
-          failed > 0 ? 'err' : 'ok',
-        );
-      } else {
-        await rejectCount({ countId: openId, reviewerId, note: reviewNote });
-        onToast('Count rejected. The shelf is unchanged.');
-      }
-      setOpenId(null);
-      await onDone();
-    } catch (e) {
-      onToast(humanError(e), 'err');
-    } finally {
-      setBusy(false);
-    }
   };
 
   const current = (queue ?? []).find((c) => c.$id === openId) ?? null;
@@ -699,7 +599,7 @@ function Approvals({
               <tbody>
                 {queue.map((c) => (
                   <tr key={c.$id}>
-                    <td className="dim small">{new Date(c.counted_at).toLocaleString()}</td>
+                    <td className="dim small">{dateTimeWords(c.counted_at)}</td>
                     <td>{nameOf(c.counted_by)}</td>
                     <td className="dim small">{c.note || '—'}</td>
                     <td className="num">{c.line_count}</td>
@@ -710,9 +610,7 @@ function Approvals({
                       {c.surplus_pieces > 0 && <Badge tone="warn"> +{c.surplus_pieces}</Badge>}
                     </td>
                     <td className="num">
-                      <Button size="sm" onClick={() => void open(c.$id)}>
-                        {isAdmin ? 'Review' : 'Look'}
-                      </Button>
+                      <Button size="sm" onClick={() => void open(c.$id)}>Look</Button>
                     </td>
                   </tr>
                 ))}
@@ -726,34 +624,19 @@ function Approvals({
         <Modal
           wide
           title={`Counted by ${nameOf(current.counted_by)}`}
-          onClose={() => (busy ? undefined : setOpenId(null))}
+          onClose={() => setOpenId(null)}
           footer={
-            isAdmin ? (
-              <>
-                <Button variant="ghost" onClick={() => setOpenId(null)} disabled={busy}>Close</Button>
-                <Button variant="danger" onClick={() => void act(false)} loading={busy}>Reject</Button>
-                <Button variant="primary" onClick={() => void act(true)} loading={busy}>
-                  Apply to the shelf
-                </Button>
-              </>
-            ) : (
-              <Button onClick={() => setOpenId(null)}>Close</Button>
-            )
+            <>
+              <Button variant="ghost" onClick={() => setOpenId(null)}>Close</Button>
+              {isAdmin && <Link className="btn btn-primary" to="/waiting?show=count">Decide it under Waiting for you</Link>}
+            </>
           }
         >
-          {!isAdmin && (
-            <Notice tone="info">
-              Waiting for an admin. Nothing on the shelf has changed, and the till is still selling what it says.
-            </Notice>
-          )}
-          {isAdmin && isSelfApproval(current, reviewerId) && (
-            /* Allowed and said out loud. A shop with one admin who counts their
-               own shelves would otherwise have a count nobody can ever approve,
-               which is not a control — it is a locked door with the key inside. */
-            <Notice tone="warn">
-              This is your own count. You can apply it, and both names on the record will be yours.
-            </Notice>
-          )}
+          <Notice tone="info">
+            {isAdmin
+              ? 'Nothing on the shelf has changed. Approve or refuse this under Money, Waiting for you, with everything else that is held.'
+              : 'Waiting for an admin. Nothing on the shelf has changed, and the till is still selling what it says.'}
+          </Notice>
 
           {!lines ? <Spinner /> : (
             <div className="table-wrap">
@@ -791,23 +674,14 @@ function Approvals({
           )}
 
           {isAdmin && (
-            <>
-              {/* Said before the button, not after. Applying the DIFFERENCE is
-                  what makes a count taken this morning safe to approve this
-                  evening: anything sold in between is a movement of its own and
-                  stays counted. */}
-              <p className="small dim">
-                The <strong>change</strong> column is what is applied, not the counted figure. Anything sold since
-                this was counted stays sold — approving takes the difference off whatever the shelf holds now.
-              </p>
-              <Field label="Note" hint="Kept on the count, whether you apply it or turn it down.">
-                <Input
-                  value={reviewNote}
-                  placeholder="Checked against the shelf on the 14th"
-                  onChange={(e) => setReviewNote(e.target.value)}
-                />
-              </Field>
-            </>
+            /* Said before the decision, not after. Applying the DIFFERENCE is
+               what makes a count taken this morning safe to approve this
+               evening: anything sold in between is a movement of its own and
+               stays counted. */
+            <p className="small dim">
+              The <strong>change</strong> column is what is applied, not the counted figure. Anything sold since
+              this was counted stays sold — approving takes the difference off whatever the shelf holds now.
+            </p>
           )}
         </Modal>
       )}

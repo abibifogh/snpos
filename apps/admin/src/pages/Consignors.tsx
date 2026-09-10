@@ -3,7 +3,7 @@ import {
   Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Toggle, Badge, useToast,
 } from '@snpos/ui';
 import { db, DB_ID, ID, humanError } from '../lib';
-import { listAll, Query } from '@snpos/core';
+import { listAll, Query, dateWords } from '@snpos/core';
 import {
   formatMoney, parseMoney, toInput,
   loadConsignors, balancesByConsignor, ledgerFor, buildStatement, recordPayout, nextReference,
@@ -14,7 +14,7 @@ import type {
   Consignor, LedgerEntry, Statement, Settings, ConsignmentIntake, MenuItem, ProductVariant, UnsoldLine,
   OwedLine,
 } from '@snpos/core';
-import { useSession } from '../session';
+import { useSession, useMoney } from '../session';
 import { MakerUpload } from '../components/MakerUpload';
 
 /**
@@ -30,7 +30,7 @@ export function ConsignorsPage() {
   const { settings, user } = useSession();
   const [uploading, setUploading] = useState(false);
   const decimals = settings?.currency_decimals ?? 2;
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
 
   const [rows, setRows] = useState<Consignor[] | null>(null);
   const [owed, setOwed] = useState<Record<string, number>>({});
@@ -701,7 +701,7 @@ function StatementModal({
             title="What they brought in"
             head={['Date', 'Delivery', 'Pieces', 'Worth to them']}
             rows={statement.broughtIn.lines.map((l) => [
-              new Date(l.at).toLocaleDateString(), l.reference, String(l.pieces),
+              dateWords(l.at), l.reference, String(l.pieces),
               l.value ? money(l.value) : '',
             ])}
             foot={[
@@ -714,7 +714,7 @@ function StatementModal({
             title="What has sold"
             head={['Date', 'Piece', 'Qty', 'Theirs']}
             rows={statement.sold.map((l) => [
-              new Date(l.at).toLocaleDateString(), l.description, l.qty ? String(l.qty) : '', money(l.amount),
+              dateWords(l.at), l.description, l.qty ? String(l.qty) : '', money(l.amount),
             ])}
             foot={[
               `${statement.soldCount} piece${statement.soldCount === 1 ? '' : 's'}`,
@@ -726,7 +726,7 @@ function StatementModal({
             title="What they have been paid"
             head={['Date', 'How', '', 'Paid']}
             rows={statement.payments.map((l) => [
-              new Date(l.at).toLocaleDateString(), l.description, '', money(Math.abs(l.amount)),
+              dateWords(l.at), l.description, '', money(Math.abs(l.amount)),
             ])}
             foot={['Paid in this period', '', '', money(statement.paidOut)]}
           />
@@ -736,7 +736,7 @@ function StatementModal({
               title="Adjustments"
               head={['Date', 'What', '', 'Amount']}
               rows={statement.other.map((l) => [
-                new Date(l.at).toLocaleDateString(), l.description, '', money(l.amount),
+                dateWords(l.at), l.description, '', money(l.amount),
               ])}
               foot={null}
             />
@@ -756,7 +756,7 @@ function StatementModal({
             <table>
               <tbody>
                 <tr>
-                  <td>Owed at {new Date(from).toLocaleDateString()}</td>
+                  <td>Owed at {dateWords(from)}</td>
                   <td className="num">{money(statement.openingBalance)}</td>
                 </tr>
                 <tr>
@@ -771,7 +771,7 @@ function StatementModal({
                   <td className="num">{statement.paidOut ? `− ${money(statement.paidOut)}` : money(0)}</td>
                 </tr>
                 <tr>
-                  <td style={{ fontWeight: 650 }}>Owed at {new Date(to).toLocaleDateString()}</td>
+                  <td style={{ fontWeight: 650 }}>Owed at {dateWords(to)}</td>
                   <td className="num" style={{ fontWeight: 650 }}>{money(statement.closingBalance)}</td>
                 </tr>
               </tbody>
@@ -783,7 +783,7 @@ function StatementModal({
               is owed too. Said plainly rather than left to be worked out. */}
           {Math.round(owedNow) !== Math.round(statement.closingBalance) && (
             <p className="small dim">
-              Owed right now, including anything after {new Date(to).toLocaleDateString()}:{' '}
+              Owed right now, including anything after {dateWords(to)}:{' '}
               <strong>{money(owedNow)}</strong>
             </p>
           )}
@@ -865,7 +865,7 @@ function OwedBreakdown({
       ) : (
         <>
           <div className="spread" style={{ marginBottom: '0.7rem' }}>
-            <span className="dim small">{lines.length} entries, oldest {new Date(lines[lines.length - 1].entry.entry_at).toLocaleDateString()}</span>
+            <span className="dim small">{lines.length} entries, oldest {dateWords(lines[lines.length - 1].entry.entry_at)}</span>
             <span style={{ fontSize: '1.3rem', fontWeight: 650 }}>{money(balance)}</span>
           </div>
           <div className="table-wrap">
@@ -879,7 +879,7 @@ function OwedBreakdown({
               <tbody>
                 {lines.map(({ entry, runningBalance }: OwedLine, i: number) => (
                   <tr key={`${entry.entry_at}-${i}`}>
-                    <td className="dim small">{new Date(entry.entry_at).toLocaleDateString()}</td>
+                    <td className="dim small">{dateWords(entry.entry_at)}</td>
                     <td>
                       <Badge tone={entry.amount < 0 ? 'ok' : 'default'}>{labelForKind(entry.kind)}</Badge>
                     </td>

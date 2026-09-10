@@ -28,6 +28,15 @@ export interface Settings extends Doc {
   logo_dark_id?: string;
   tax_rate_bp: number;
   tax_inclusive: boolean;
+  /** Whether VAT is charged at all. Off means the rate above is not applied. See vatBpOf. */
+  vat_charged?: boolean;
+  /** The levies beside VAT, as JSON. See levies.ts. */
+  levies?: string;
+  /** Whether a receipt prints each charge separately or adds them into one line. */
+  receipt_tax_detail?: 'separate' | 'combined';
+  /** The schema fingerprint provisioning last applied, and when. See schema-status.ts. */
+  schema_version?: string;
+  schema_applied_at?: string;
   service_charge_bp: number;
   shift_float_policy: 'zero' | 'carry_over' | 'fixed' | 'prompt';
   allow_negative_cash?: boolean;

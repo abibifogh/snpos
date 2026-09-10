@@ -1,13 +1,18 @@
 name: Provision Appwrite
 
-# Applies schema changes to Appwrite. Run it after any change to
-# scripts/schema.mjs.
+# Applies schema changes to Appwrite.
 #
-# Deliberately NOT automatic on push: this writes to the live database, and a
-# schema change should be a decision someone makes, not a side effect of
-# merging. It is safe to re-run — it creates what is missing and skips the
-# rest — but it is not something to do by accident.
+# Runs on every merge to main, called from the Deploy workflow, so a schema
+# change can never ship without the database that has to hold it. It is safe
+# to run every time: it creates what is missing, updates permissions, and
+# skips the rest — it never drops anything. Then it stamps the settings row
+# with the schema's fingerprint, which is how the apps know the database is
+# current (see scripts/schema-fingerprint.mjs).
+#
+# It can still be run by hand from the Actions tab, with the confirmation
+# word, for a database that needs catching up outside a deploy.
 on:
+  workflow_call:
   workflow_dispatch:
     inputs:
       confirm:
@@ -20,7 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check the confirmation
-        if: ${{ inputs.confirm != 'provision' }}
+        # Only when started by hand. Called from Deploy, the merge is the decision.
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm != 'provision' }}
         run: |
           echo "Nothing was run."
           echo
@@ -61,7 +67,7 @@ jobs:
         # fails on a missing package.json and buries the one line that
         # matters ("Type 'provision' in the confirmation box") under a red
         # error that looks like a broken build.
-        if: ${{ always() && inputs.confirm == 'provision' }}
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.confirm == 'provision') }}
         run: npm run doctor
         env:
           APPWRITE_ENDPOINT: ${{ vars.APPWRITE_ENDPOINT }}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { formatMoney } from '@snpos/core';
+import { formatMoney, dateWords } from '@snpos/core';
 import type { Ingredient, MenuItem, Doc } from '@snpos/core';
 import { useSession } from '../session';
 
@@ -56,6 +56,7 @@ export function WastePage() {
       // Valuing waste at cost is what turns "we binned some chicken" into a
       // number that shows up next to the day's profit.
       const value = kind === 'ingredient' && ing ? Math.round(ing.base_unit_cost * editing.qty) : 0;
+      // The row is the event: the server posts the write-off from it.
       await db.createDocument(DB_ID, 'waste_log', ID.unique(), {
         venue_id: 'main',
         ingredient_id: kind === 'ingredient' ? editing.ingredient_id : '',
@@ -79,6 +80,8 @@ export function WastePage() {
         await db.updateDocument(DB_ID, 'ingredients', ing.$id, {
           current_qty: Number((ing.current_qty - Number(editing.qty)).toFixed(4)),
         }).catch(() => undefined);
+        // And off the books: the server posts the write-off from this row.
+        // See functions/notify/src/books-post.js.
       }
 
       setEditing(null);
@@ -132,7 +135,7 @@ export function WastePage() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.$id}>
-                    <td className="dim small">{new Date(r.$createdAt).toLocaleDateString()}</td>
+                    <td className="dim small">{dateWords(r.$createdAt)}</td>
                     <td>{name(r)}</td>
                     <td className="num">{r.qty} {r.unit}</td>
                     <td><Badge>{REASONS.find((x) => x.v === r.reason)?.l ?? r.reason}</Badge></td>

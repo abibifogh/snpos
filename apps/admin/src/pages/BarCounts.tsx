@@ -1,23 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Empty, Field, Input, Notice, Select, Spinner, useToast } from '@snpos/ui';
+import { Link } from 'react-router-dom';
+import { Badge, Button, Card, Empty, Field, Input, Notice, Select, Spinner, useToast, BarCountTable } from '@snpos/ui';
 import { db, DB_ID, humanError } from '../lib';
 import {
   barCountSheet, saveBarCount, hasOpeningCount, byUnit, summariseBarCount, readyToClose,
-  formatMoney, listAll, Query, loadOpenShifts, loadLocations, saleLocation, mayCountWithoutShift,
+  listAll, Query, loadOpenShifts, loadLocations, saleLocation, mayCountWithoutShift,
   countDraftKey, readCountDraft, saveCountDraft, clearCountDraft,
   restoreCount, draftFromCount, countRestoredWords, countDraftLines, clearAllWarning,
   filedCounts, undoProblem, undoBarCount, pourMissedSales, loadIngredients,
   loadRecipes, pourState, pourLabel, pourWords, unexplainedByWiring, drinksToMoveToBar,
-  heldWords, unheldWords, pendingBarChecks, barCountHistory, approveBarCount, rejectBarCount, countState,
+  heldWords, unheldWords, pendingBarChecks, barCountHistory, countState,
   isStoreCount, STORE_COUNT_PREFIX, unpouredForShift, unpouredWords, unpouredSummary,
-  relinkShelves, relinkWords, relinkIsEmpty,
-} from '@snpos/core';
+  relinkShelves, relinkWords, relinkIsEmpty, dateTimeWords } from '@snpos/core';
 import { CountHistory, type HistoryCount } from '../components/CountHistory';
 import type {
   Unpoured, Undecided,
   BarCountLine, Shift, Doc, StockLocation, FiledCheck, FiledCount, PourRow, PourItem, PourState,
 } from '@snpos/core';
-import { useSession } from '../session';
+import { useSession, useMoney } from '../session';
 
 interface CheckRow extends Doc {
   shift_id: string;
@@ -44,7 +44,7 @@ interface CheckRow extends Doc {
  * argument at the end.
  */
 export function BarCountsPage() {
-  const { settings, profile, user } = useSession();
+  const { profile, user } = useSession();
   const toast = useToast();
 
   const [shift, setShift] = useState<Shift | null>(null);
@@ -160,7 +160,7 @@ export function BarCountsPage() {
    */
   const isManager = profile?.role === 'admin' || profile?.role === 'manager';
   const canCount = mayCountWithoutShift({ isStore, isManager, hasShift: !!shift });
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
 
   /**
    * One shape for the history component, whichever collection a count came
@@ -820,114 +820,55 @@ export function BarCountsPage() {
                   </Badge>
                 }
               >
-                <div className="table-wrap">
-                  <table className="data">
-                    <thead>
-                      <tr>
-                        <th>What</th>
-                        <th className="num">Should be</th>
-                        <th style={{ width: '7rem' }}>Actually</th>
-                        <th className="num">Difference</th>
-                        <th className="num">Worth</th>
-                        <th style={{ width: '12rem' }}>Note</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.lines.map((l) => {
-                        const typed = (l.countedText ?? '').trim();
-                        const counted = typed === '' ? null : Number(typed);
-                        const delta = counted === null || !Number.isFinite(counted)
-                          ? null
-                          : Math.round((counted - l.expected) * 1000) / 1000;
-                        return (
-                          <tr key={l.ingredientId}>
-                            <td style={{ fontWeight: 550 }}>
-                              {l.name}
-                              {/* Said on the row rather than only in the total,
-                                  because the person reading it is looking at
-                                  one line and asking what happened to it. */}
-                              {(() => {
-                                const state = pourFor(l.ingredientId);
-                                const label = pourLabel(state);
-                                if (!label) return null;
-                                const toMove = state === 'not-on-the-bar'
-                                  ? drinksToMoveToBar(l.ingredientId, recipes, drinks) : [];
-                                return (
-                                  <div
-                                    className="row"
-                                    style={{ marginTop: '0.15rem', gap: '0.4rem', alignItems: 'center' }}
-                                    title={pourWords(state, l.name) ?? ''}
-                                  >
-                                    <Badge tone="warn">{label}</Badge>
-                                    {/* The fix in one press, where the fault is
-                                        shown. Only where the fix is a setting:
-                                        a drink with no recipe at all needs a
-                                        recipe written, which is a form, not a
-                                        button. */}
-                                    {toMove.length > 0 && isManager && (
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={async () => {
-                                          try {
-                                            for (const d of toMove) {
-                                              await db.updateDocument(DB_ID, 'menu_items', d.$id, { module: 'bar' });
-                                            }
-                                            setDrinks((all) => all.map((d) => (
-                                              toMove.some((m) => m.$id === d.$id) ? { ...d, module: 'bar' } : d
-                                            )));
-                                            toast(`${toMove.map((d) => d.name).join(', ')} set to the bar`);
-                                          } catch (e) {
-                                            setError(humanError(e));
-                                          }
-                                        }}
-                                      >
-                                        Set {toMove.length === 1 ? toMove[0].name : `${toMove.length} drinks`} to the bar
-                                      </Button>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-                            </td>
-                            <td className="num dim">{l.expected}</td>
-                            <td>
-                              <Input
-                                type="number"
-                                step="any"
-                                min="0"
-                                placeholder="—"
-                                value={l.countedText ?? ''}
-                                onChange={(e) => setLine(l.ingredientId, { countedText: e.target.value })}
-                              />
-                            </td>
-                            <td className="num">
-                              {delta === null || delta === 0
-                                ? <span className="dim">—</span>
-                                : <Badge tone={delta < 0 ? 'danger' : 'warn'}>{delta > 0 ? `+${delta}` : delta}</Badge>}
-                            </td>
-                            <td className="num dim">
-                              {delta === null || delta === 0 ? '' : money(Math.round(Math.abs(delta) * l.unitCost))}
-                            </td>
-                            <td>
-                              {/* Only where there is something to explain. A
-                                  note box on every line is four hundred boxes
-                                  nobody fills in. */}
-                              {delta !== null && delta !== 0 ? (
-                                <Input
-                                  value={l.note ?? ''}
-                                  placeholder="Breakage, a taste…"
-                                  onChange={(e) => setLine(l.ingredientId, { note: e.target.value })}
-                                />
-                              ) : (
-                                <span className="dim small">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <BarCountTable
+                  lines={group.lines}
+                  onChange={setLine}
+                  money={money}
+                  /* Said on the row rather than only in the total, because the
+                     person reading it is looking at one line and asking what
+                     happened to it. */
+                  extra={(l) => {
+                    const state = pourFor(l.ingredientId);
+                    const label = pourLabel(state);
+                    if (!label) return null;
+                    const toMove = state === 'not-on-the-bar'
+                      ? drinksToMoveToBar(l.ingredientId, recipes, drinks) : [];
+                    return (
+                      <div
+                        className="row"
+                        style={{ marginTop: '0.15rem', gap: '0.4rem', alignItems: 'center' }}
+                        title={pourWords(state, l.name) ?? ''}
+                      >
+                        <Badge tone="warn">{label}</Badge>
+                        {/* The fix in one press, where the fault is shown. Only
+                            where the fix is a setting: a drink with no recipe
+                            at all needs a recipe written, which is a form, not
+                            a button. */}
+                        {toMove.length > 0 && isManager && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={async () => {
+                              try {
+                                for (const d of toMove) {
+                                  await db.updateDocument(DB_ID, 'menu_items', d.$id, { module: 'bar' });
+                                }
+                                setDrinks((all) => all.map((d) => (
+                                  toMove.some((m) => m.$id === d.$id) ? { ...d, module: 'bar' } : d
+                                )));
+                                toast(`${toMove.map((d) => d.name).join(', ')} set to the bar`);
+                              } catch (e) {
+                                setError(humanError(e));
+                              }
+                            }}
+                          >
+                            Set {toMove.length === 1 ? toMove[0].name : `${toMove.length} drinks`} to the bar
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  }}
+                />
               </Card>
             ))
           )}
@@ -1050,43 +991,20 @@ export function BarCountsPage() {
       )}
 
       {/*
-        HELD COUNTS, AND THE RECORD.
+        HELD COUNTS.
 
-        A count with a difference on it waits here until an admin agrees.
-        Agreeing applies the difference the count found — not the figure it
-        wrote, because the shelf has been sold from since — and stamps who
-        agreed and when. Refusing leaves the shelf exactly as it was and keeps
-        the count, marked, because a count that was disagreed with is a better
-        record than a gap.
+        A count with a difference on it waits until an admin agrees, and the
+        agreeing happens under Money, Waiting for you, beside every other held
+        thing. Here it is only named, so somebody at the bar page knows the
+        shelf has not moved yet. The held counts stay in the record below,
+        marked as waiting.
       */}
-      {isManager && (
-        <CountHistory
-          title="Counts waiting for an admin"
-          counts={pending}
-          money={money}
-          emptyWords="A count that finds a difference waits here until an admin agrees. Nothing is waiting."
-          onApprove={isAdmin ? async (c) => {
-            const row = c as HistoryCount & { shiftId: string; phaseKey: 'open' | 'close' };
-            try {
-              const { applied, failed } = await approveBarCount({
-                venueId: 'main', shiftId: row.shiftId, phase: row.phaseKey, userId: user?.$id ?? '',
-                locationId: placeId || undefined,
-              });
-              toast(failed > 0
-                ? `${applied} applied, ${failed} could not be. The count stays here until they are.`
-                : `${applied} difference${applied === 1 ? '' : 's'} applied to the shelf`, failed > 0 ? 'err' : undefined);
-              await load();
-            } catch (e) { setError(humanError(e)); }
-          } : undefined}
-          onReject={isAdmin ? async (c) => {
-            const row = c as HistoryCount & { shiftId: string; phaseKey: 'open' | 'close' };
-            try {
-              await rejectBarCount({ shiftId: row.shiftId, phase: row.phaseKey, userId: user?.$id ?? '' });
-              toast('Count refused. The shelf is unchanged.');
-              await load();
-            } catch (e) { setError(humanError(e)); }
-          } : undefined}
-        />
+      {isManager && pending && pending.length > 0 && (
+        <Notice tone="info">
+          {pending.length === 1 ? 'One count is' : `${pending.length} counts are`} waiting for an admin. The shelf
+          still says what it said before {pending.length === 1 ? 'it' : 'them'}.
+          {isAdmin && <> Decide {pending.length === 1 ? 'it' : 'them'} under <Link to="/waiting?show=count">Waiting for you</Link>.</>}
+        </Notice>
       )}
 
       {isManager && (
@@ -1116,7 +1034,7 @@ export function BarCountsPage() {
               <tbody>
                 {filed.map((c) => (
                   <tr key={`${c.shiftId}-${c.phase}`} className={c.undoneAt ? 'dim' : undefined}>
-                    <td className="small dim">{c.at ? new Date(c.at).toLocaleString() : '—'}</td>
+                    <td className="small dim">{c.at ? dateTimeWords(c.at) : '—'}</td>
                     <td>{c.phase === 'open' ? 'Counted in' : 'Counted out'}</td>
                     <td className="num">{c.changed}</td>
                     <td className="num">{money(c.worth)}</td>

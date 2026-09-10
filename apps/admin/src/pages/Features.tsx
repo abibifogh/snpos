@@ -1,8 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Card, Notice, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
+import { Card, Field, Input, Notice, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, listAll, humanError } from '../lib';
 import { FEATURE_DEPENDENCIES } from '@snpos/core';
 import type { FeatureFlag } from '@snpos/core';
+
+/** One number out of a feature's config text, or the fallback if it says nothing. */
+function configNumber(flag: FeatureFlag, option: string, fallback: number): number {
+  try {
+    const v = (JSON.parse(flag.config || '{}') as Record<string, unknown>)[option];
+    return typeof v === 'number' ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 /** Plain-language labels. The keys come from scripts/schema.mjs. */
 const LABELS: Record<string, { title: string; blurb: string }> = {
@@ -21,16 +31,61 @@ const LABELS: Record<string, { title: string; blurb: string }> = {
   preorders: { title: 'Order ahead / order while closed', blurb: 'Customers order outside opening hours for a time when you are open. The kitchen stays silent until it needs cooking.' },
   takeaway: { title: 'Takeaway and delivery', blurb: 'Orders not tied to a table, with as many pickup points per venue as you need.' },
   waste_log: { title: 'Waste log', blurb: 'Staff record spoiled or dropped food as it happens. This is what makes the stock alerts trustworthy.' },
-  time_clock: { title: 'Staff clock in / out', blurb: 'Hours worked per person, and staff cost as a share of sales.' },
   customers: { title: 'Customer profiles', blurb: 'Build a customer list from phone numbers or emails given at ordering. Always optional for the guest.' },
-  loyalty: { title: 'Loyalty / stamp card', blurb: 'Points, or buy-9-get-1-free, tracked automatically.' },
-  feedback: { title: 'Feedback after paying', blurb: 'A one-tap rating linked to the order, the dishes and the server.' },
-  multilingual: { title: 'Multi-language menu', blurb: 'Customers pick their language when they scan.' },
-  purchase_orders: { title: 'Purchase orders and receiving', blurb: 'Order from suppliers, then tick off what actually arrived. Catches short deliveries and quiet price rises.' },
   shift_summary: { title: 'Summary at shift close', blurb: 'Sent the moment a shift ends, with stock flagged for the first time listed separately from anything low for 3+ shifts.' },
-  busy_mode: { title: 'Kitchen busy mode', blurb: 'When too many tickets are waiting, quote longer waits or hold new orders instead of drowning the kitchen.' },
-  time_pricing: { title: 'Happy hour / time-based prices', blurb: 'Change the price customers see at certain times of day.' },
+  busy_mode: {
+    title: 'Kitchen busy mode',
+    blurb:
+      'Past the first number below, every quote gets longer by the extra minutes. Past the second, orders from '
+      + 'phones stop and people are asked to order at the counter. Staff at the till are never stopped. The kitchen '
+      + 'screen can also set the level by hand, which lapses on its own so nobody leaves ordering switched off.',
+  },
   discounts: { title: 'Discounts and discount codes', blurb: 'Guests type a code while ordering; staff apply discounts before the bill is marked paid.' },
+};
+
+/**
+ * The numbers behind a switch, where leaving them unreachable would make the
+ * switch a lie.
+ *
+ * A cap on a time slot that can only be set by editing the database is a cap
+ * nobody has. Only the settings an owner would actually reach for are here;
+ * the rest of each feature's config stays where it is.
+ */
+const NUMBERS: Record<string, { option: string; label: string; hint: string; fallback: number; min?: number }[]> = {
+  preorders: [
+    {
+      option: 'slot_capacity',
+      label: 'Most orders per time slot',
+      hint: 'Nought means no limit. With a limit set, a time that is full stops being offered, and two people cannot both take the last place.',
+      fallback: 0,
+    },
+  ],
+  busy_mode: [
+    {
+      option: 'busy_pending_threshold',
+      label: 'Tickets waiting before quotes get longer',
+      hint: 'Counted per side of the business, so drinks waiting at the bar do not make the kitchen look busy.',
+      fallback: 12,
+    },
+    {
+      option: 'busy_extra_minutes',
+      label: 'Extra minutes to quote when busy',
+      hint: 'Added to what a customer is told, so the promise is one the pass can keep.',
+      fallback: 15,
+    },
+    {
+      option: 'pause_pending_threshold',
+      label: 'Tickets waiting before orders from phones stop',
+      hint: 'People are asked to order at the counter instead. Staff taking orders at the till are never stopped.',
+      fallback: 20,
+    },
+    {
+      option: 'override_minutes',
+      label: 'How long a level set by hand lasts (minutes)',
+      hint: 'Then the ticket count takes over again. Nought means it never lapses, which risks ordering being left switched off overnight.',
+      fallback: 60,
+    },
+  ],
 };
 
 export function FeaturesPage() {
@@ -56,6 +111,26 @@ export function FeaturesPage() {
       toast(humanError(e), 'err');
     } finally {
       setSaving(null);
+    }
+  };
+
+  /** One number inside a feature's config, saved on its own. */
+  const setNumber = async (flag: FeatureFlag, option: string, value: number) => {
+    let config: Record<string, unknown> = {};
+    try {
+      config = flag.config ? (JSON.parse(flag.config) as Record<string, unknown>) : {};
+    } catch {
+      // A config nobody can read is replaced rather than refused: the
+      // alternative is a number that cannot be set and no way to say why.
+      config = {};
+    }
+    const next = JSON.stringify({ ...config, [option]: value });
+    setRows((r) => r?.map((x) => (x.$id === flag.$id ? { ...x, config: next } : x)) ?? null);
+    try {
+      await db.updateDocument(DB_ID, 'feature_flags', flag.$id, { config: next });
+    } catch (e) {
+      toast(humanError(e), 'err');
+      await load().catch(() => undefined);
     }
   };
 
@@ -88,6 +163,24 @@ export function FeaturesPage() {
                       </Badge>
                     </div>
                   )}
+                  {/* Only while the feature is on: a number that governs
+                      something switched off is a question with no answer. */}
+                  {f.enabled && (NUMBERS[f.key] ?? []).map((n) => (
+                    <div key={n.option} style={{ marginTop: '0.6rem', maxWidth: '22rem' }}>
+                      <Field label={n.label} hint={n.hint}>
+                        <Input
+                          type="number"
+                          min={n.min ?? 0}
+                          step="1"
+                          defaultValue={String(configNumber(f, n.option, n.fallback))}
+                          onBlur={(e) => {
+                            const v = Math.max(n.min ?? 0, Math.round(Number(e.target.value) || 0));
+                            if (v !== configNumber(f, n.option, n.fallback)) void setNumber(f, n.option, v);
+                          }}
+                        />
+                      </Field>
+                    </div>
+                  ))}
                 </div>
                 <Toggle
                   checked={f.enabled}

@@ -4,13 +4,12 @@ import {
 } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
-  formatMoney, parseMoney, Query,
+  parseMoney, Query,
   loadConsignors, nextReference, moveStock, buildDeliverySlipHtml, openPrintable,
   rateFor, flatFor, dueFor,
-  planUnwind, describeUnwind, stockDelta, changed, listByIds,
-} from '@snpos/core';
+  planUnwind, describeUnwind, stockDelta, changed, listByIds, dateWords } from '@snpos/core';
 import type { Consignor, ConsignmentIntake, MenuItem, Category, ProductMove, Settings } from '@snpos/core';
-import { useSession } from '../session';
+import { useSession, useMoney } from '../session';
 
 /**
  * The desk where work arrives.
@@ -29,7 +28,7 @@ export function IntakePage() {
   const toast = useToast();
   const { settings, user, profile } = useSession();
   const decimals = settings?.currency_decimals ?? 2;
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
 
   const [rows, setRows] = useState<ConsignmentIntake[] | null>(null);
   const [consignors, setConsignors] = useState<Consignor[]>([]);
@@ -160,7 +159,7 @@ export function IntakePage() {
                   <tr key={r.$id}>
                     <td><code>{r.reference}</code></td>
                     <td>{nameOf[r.consignor_id] ?? 'Unknown'}</td>
-                    <td className="small">{new Date(r.received_at).toLocaleDateString()}</td>
+                    <td className="small">{dateWords(r.received_at)}</td>
                     <td className="num">{r.piece_count}</td>
                     <td className="num">{money(r.total_retail)}</td>
                     <td className="row-actions">
@@ -249,6 +248,7 @@ function ReceiveModal({
   const [pieces, setPieces] = useState<DraftPiece[]>([blankPiece(categories[0]?.$id ?? '')]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const money = useMoney();
 
   useEffect(() => {
     nextReference('consignment_intakes', 'INT').then(setReference).catch(() => setReference('INT-0001'));
@@ -427,8 +427,8 @@ function ReceiveModal({
           </Button>
           {filled.length > 0 && (
             <p className="small dim" style={{ marginBottom: 0 }}>
-              {totalPieces} piece{totalPieces === 1 ? '' : 's'} at {symbol}{(totalRetail / 100).toFixed(2)} on the
-              shelf, {symbol}{(totalDue / 100).toFixed(2)} of that theirs.
+              {totalPieces} piece{totalPieces === 1 ? '' : 's'} at {money(totalRetail)} on the
+              shelf, {money(totalDue)} of that theirs.
             </p>
           )}
         </div>

@@ -7,6 +7,7 @@ import type { CountLine, PendingCount, PendingCountLine } from './stocktake';
 import type { WaitingChange } from './shelf-approval';
 import { hasShelf } from './craft-services';
 import type { ImportMaker } from './maker-import';
+import { SHELF_CHANGE_NOTE } from './waiting';
 
 /**
  * The arithmetic lives next door, in a file that imports nothing.
@@ -206,6 +207,12 @@ export async function recordPayout(opts: {
     paid_by: opts.userId ?? '',
   })) as unknown as ConsignorPayout;
 
+  /*
+    The shop's own books follow from the row. The server posts the payout —
+    what the shop owed the maker goes down, and the drawer, the wallet or the
+    bank with it — the same way it posts the maker's own ledger line. See
+    functions/notify/src/books-post.js.
+  */
   return { payout, postedToLedger: await waitForPayoutEntry(payout.$id) };
 }
 
@@ -828,7 +835,7 @@ export async function submitShelfChange(opts: {
   return submitCount({
     venueId: opts.venueId,
     userId: opts.userId,
-    note: opts.note?.trim() || 'Changed on the products page.',
+    note: opts.note?.trim() || SHELF_CHANGE_NOTE,
     lines: [{
       menuItemId: piece.menuItemId,
       variantId: piece.variantId,

@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import type { ReactNode } from 'react';
 import { account, db, DB_ID, applyThemeSettings } from './lib';
 import type { Models } from 'appwrite';
-import { requireStaff, signOutCompletely, staffProfileFor } from '@snpos/core';
+import { requireStaff, signOutCompletely, staffProfileFor, formatMoney } from '@snpos/core';
 import type { Settings, StaffProfile } from '@snpos/core';
 
 interface SessionValue {
@@ -18,6 +18,18 @@ interface SessionValue {
 
 const Ctx = createContext<SessionValue>({} as SessionValue);
 export const useSession = () => useContext(Ctx);
+
+/**
+ * Money, in the business's own currency, from wherever the settings are.
+ *
+ * Thirty-two pages each wrote `settings ? formatMoney(n, settings) : String(n)`
+ * at the top; this is that line, once. Before the settings have loaded a
+ * figure shows as the bare number rather than nothing.
+ */
+export const useMoney = () => {
+  const { settings } = useContext(Ctx);
+  return (minor: number) => (settings ? formatMoney(minor, settings) : String(minor));
+};
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Models.User<Models.Preferences> | null>(null);

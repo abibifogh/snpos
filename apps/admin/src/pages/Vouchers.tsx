@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, FormError, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { formatMoney, parseMoney, toInput } from '@snpos/core';
+import { formatMoney, parseMoney, toInput, dateWords } from '@snpos/core';
 import type { Doc } from '@snpos/core';
 import { useSession } from '../session';
 
@@ -276,7 +276,7 @@ export function VouchersPage() {
                       <td style={{ fontWeight: 550 }}>{v.name}</td>
                       <td>{v.code ? <code>{v.code}</code> : <span className="dim small">staff only</span>}</td>
                       <td>{worth(v)}</td>
-                      <td>{v.ends_at ? new Date(v.ends_at).toLocaleDateString() : <span className="dim">no end</span>}</td>
+                      <td>{v.ends_at ? dateWords(v.ends_at) : <span className="dim">no end</span>}</td>
                       <td>{v.used_count}{v.usage_limit_total ? ` / ${v.usage_limit_total}` : ''}</td>
                       <td><Badge tone={s.tone}>{s.label}</Badge></td>
                       <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>

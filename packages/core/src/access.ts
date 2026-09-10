@@ -133,10 +133,34 @@ export const selfOrderModule = (settings: Settings | null): Module => {
   return bar ? 'bar' : 'craft';
 };
 
+/**
+ * The sides of the business, in the words the sidebar uses.
+ *
+ * MODULE_LABELS names the trades; these name the sides as a filter reads
+ * them, short enough to sit three abreast at the top of a column.
+ */
+export const SIDE_NAMES: Record<Module, string> = { kitchen: 'Bistro', bar: 'Bar', craft: 'Shop' };
+
+/**
+ * The sidebar, grouped by the job somebody is doing rather than by which
+ * trade owns the page.
+ *
+ * It used to be one group per trade — Kitchen, Craft shop, Bar — and a
+ * business running all three had three "Categories" links, three catalogue
+ * links and two stock links, each a separate page. Staff learned which
+ * group held their copy and never opened the others. The pages are now
+ * grouped by what you came to do: sell, count, handle money, keep the books,
+ * set things up. The per-side pages that were three links are one link with
+ * a side switch on the page; see NAV_MERGES and navFor.
+ *
+ * Permissions are unchanged: every key here is exactly what it was, and the
+ * merged links appear when any of their keys is granted.
+ */
+export const NAV_GROUPS = ['Today', 'Sell', 'Stock', 'Money', 'Books', 'People & setup'] as const;
+
 export const ADMIN_SECTIONS: AdminSection[] = [
-  { key: 'dashboard', label: 'Dashboard', path: '/', group: 'Overview' },
-  { key: 'orders', label: 'Orders', path: '/orders', group: 'Overview' },
-  { key: 'reports', label: 'Reports', path: '/reports', group: 'Overview' },
+  { key: 'dashboard', label: 'Today', path: '/', group: 'Today' },
+  { key: 'orders', label: 'Orders', path: '/orders', group: 'Today' },
   /*
     The people who have bought something.
 
@@ -147,27 +171,45 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     list" is a decision worth making on purpose rather than inheriting from a
     job title.
   */
-  { key: 'customers', label: 'Customers', path: '/customers', group: 'Overview' },
-  // Everything one side of the business owns lives under that side, so the two
-  // catalogues never share a list. A cook adding a dish and a shop assistant
-  // adding a basket are doing unrelated jobs on unrelated stock.
-  { key: 'menu_categories', label: 'Categories', path: '/menu/categories', group: 'Kitchen', module: 'kitchen' },
-  { key: 'menu_items', label: 'Dishes & drinks', path: '/menu/items', group: 'Kitchen', module: 'kitchen' },
-  { key: 'menu_options', label: 'Options', path: '/menu/options', group: 'Kitchen', module: 'kitchen' },
-  { key: 'stations', label: 'Stations', path: '/stations', group: 'Kitchen', module: 'kitchen' },
-  { key: 'stock', label: 'Ingredients', path: '/stock', group: 'Kitchen', module: 'kitchen' },
-  { key: 'waste', label: 'Waste', path: '/waste', group: 'Kitchen', module: 'kitchen' },
-  { key: 'shop_categories', label: 'Categories', path: '/shop/categories', group: 'Craft shop', module: 'craft' },
-  { key: 'shop_items', label: 'Products', path: '/shop/items', group: 'Craft shop', module: 'craft' },
-  { key: 'consignors', label: 'Consignors', path: '/consignors', group: 'Craft shop', module: 'craft' },
-  { key: 'intake', label: 'Goods received', path: '/intake', group: 'Craft shop', module: 'craft' },
-  { key: 'stocktake', label: 'Count the shelf', path: '/stocktake', group: 'Craft shop', module: 'craft' },
-  { key: 'bar_categories', label: 'Categories', path: '/bar/categories', group: 'Bar', module: 'bar' },
-  { key: 'bar_items', label: 'Drinks & cocktails', path: '/bar/items', group: 'Bar', module: 'bar' },
-  { key: 'bar_stock', label: 'Bottles & mixers', path: '/bar/stock', group: 'Bar', module: 'bar' },
-  { key: 'bar_counts', label: 'Counts & variances', path: '/bar/counts', group: 'Bar', module: 'bar' },
-  { key: 'locations', label: 'Where stock sits', path: '/locations', group: 'Bar', module: 'bar' },
-  { key: 'payouts', label: 'Payouts', path: '/payouts', group: 'Craft shop', module: 'craft' },
+  { key: 'customers', label: 'Customers', path: '/customers', group: 'Sell' },
+  // One catalogue page per side, each its own grant, reached through one
+  // link with a side switch. A cook adding a dish and a shop assistant
+  // adding a basket are doing unrelated jobs on unrelated stock, and each
+  // can be given one side without the other.
+  { key: 'menu_categories', label: 'Categories · bistro', path: '/catalogue/categories', group: 'Sell', module: 'kitchen' },
+  { key: 'shop_categories', label: 'Categories · shop', path: '/catalogue/categories', group: 'Sell', module: 'craft' },
+  { key: 'bar_categories', label: 'Categories · bar', path: '/catalogue/categories', group: 'Sell', module: 'bar' },
+  { key: 'menu_items', label: 'Menu & products · bistro', path: '/catalogue/items', group: 'Sell', module: 'kitchen' },
+  { key: 'shop_items', label: 'Menu & products · shop', path: '/catalogue/items', group: 'Sell', module: 'craft' },
+  { key: 'bar_items', label: 'Menu & products · bar', path: '/catalogue/items', group: 'Sell', module: 'bar' },
+  { key: 'menu_options', label: 'Options', path: '/menu/options', group: 'Sell', module: 'kitchen' },
+  { key: 'tables', label: 'Tables & QR', path: '/tables', group: 'Sell' },
+  { key: 'vouchers', label: 'Discount vouchers', path: '/vouchers', group: 'Sell' },
+  { key: 'stock', label: 'Ingredients · bistro', path: '/stock', group: 'Stock', module: 'kitchen' },
+  { key: 'bar_stock', label: 'Bottles & mixers · bar', path: '/stock', group: 'Stock', module: 'bar' },
+  { key: 'waste', label: 'Waste', path: '/waste', group: 'Stock', module: 'kitchen' },
+  { key: 'bar_counts', label: 'Bar counts', path: '/bar/counts', group: 'Stock', module: 'bar' },
+  { key: 'stocktake', label: 'Shop stocktake', path: '/stocktake', group: 'Stock', module: 'craft' },
+  { key: 'locations', label: 'Where stock sits', path: '/locations', group: 'Stock', module: 'bar' },
+  { key: 'consignors', label: 'Makers', path: '/consignors', group: 'Stock', module: 'craft' },
+  { key: 'intake', label: 'Goods received', path: '/intake', group: 'Stock', module: 'craft' },
+  /*
+    Everything held for somebody senior, on one page: bar and store counts,
+    shop stocktakes, shelf changes, spends nobody has looked at, and shifts
+    that cannot close for the tabs on them. Each used to wait on its own page.
+    See waiting.ts.
+  */
+  { key: 'waiting', label: 'Waiting for you', path: '/waiting', group: 'Money' },
+  { key: 'shifts', label: 'Shifts', path: '/shifts', group: 'Money' },
+  { key: 'expenses', label: 'Spends', path: '/expenses', group: 'Money' },
+  /*
+    Petty cash, on the imprest system.
+
+    Under Money rather than beside Spends, because it is not a list of
+    spending — it is a thing that holds money and has to be counted, which is
+    closer to a shift than to a receipt.
+  */
+  { key: 'imprest', label: 'Petty cash', path: '/imprest', group: 'Money' },
   /*
     Under Money, not under a side of the business. A tab spans all three — a
     guest who has a drink at the bar, lunch from the kitchen and a basket from
@@ -175,17 +217,8 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     from the other two.
   */
   { key: 'tabs', label: 'Tabs', path: '/tabs', group: 'Money' },
-  { key: 'shifts', label: 'Shifts', path: '/shifts', group: 'Money' },
-  { key: 'expenses', label: 'Expenses', path: '/expenses', group: 'Money' },
-  /*
-    Petty cash, on the imprest system.
-
-    Under Money rather than beside Expenses, because it is not a list of
-    spending — it is a thing that holds money and has to be counted, which is
-    closer to a shift than to a receipt.
-  */
-  { key: 'imprest', label: 'Petty cash', path: '/imprest', group: 'Money' },
-  { key: 'vouchers', label: 'Discount vouchers', path: '/vouchers', group: 'Money' },
+  { key: 'payouts', label: 'Payouts', path: '/payouts', group: 'Money', module: 'craft' },
+  { key: 'reports', label: 'Reports', path: '/reports', group: 'Books' },
   /**
    * The books, and the parts of them, each granted separately.
    *
@@ -197,22 +230,47 @@ export const ADMIN_SECTIONS: AdminSection[] = [
    * which was safe and meant a bookkeeper could not be given the books; the
    * answer to that is to say which parts, not to hand over all of them.
    */
-  { key: 'accounting', label: 'Accounting', path: '/accounting', group: 'Money' },
-  { key: 'accounting_statements', label: 'Profit & loss and balance sheet', path: '/accounting', group: 'Money', parent: 'accounting' },
-  { key: 'accounting_journal', label: 'Journal: read and post entries', path: '/accounting', group: 'Money', parent: 'accounting' },
-  { key: 'accounting_trial', label: 'Trial balance', path: '/accounting', group: 'Money', parent: 'accounting' },
-  { key: 'accounting_assets', label: 'Fixed assets and depreciation', path: '/accounting', group: 'Money', parent: 'accounting' },
-  { key: 'accounting_bank', label: 'Reconcile against a statement', path: '/accounting', group: 'Money', parent: 'accounting' },
-  { key: 'accounting_chart', label: 'Chart of accounts', path: '/accounting', group: 'Money', parent: 'accounting' },
+  { key: 'accounting', label: 'Accounting', path: '/accounting', group: 'Books' },
+  { key: 'accounting_statements', label: 'Profit & loss and balance sheet', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_journal', label: 'Journal: read and post entries', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_trial', label: 'Trial balance', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_assets', label: 'Fixed assets and depreciation', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_bank', label: 'Reconcile against a statement', path: '/accounting', group: 'Books', parent: 'accounting' },
+  // The entries a shift close leaves hanging: card and mobile money reaching
+  // the bank, tips handed over, tax remitted. See settle.ts.
+  { key: 'accounting_settle', label: 'Settle card, mobile money, tips and tax', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_chart', label: 'Chart of accounts', path: '/accounting', group: 'Books', parent: 'accounting' },
   // Its own grant, and the most consequential of them: it decides what
   // everybody else is allowed to change, including the person who closed it.
-  { key: 'accounting_locks', label: 'Close and reopen periods', path: '/accounting', group: 'Money', parent: 'accounting' },
-  { key: 'venues', label: 'Venues', path: '/venues', group: 'Setup' },
-  { key: 'tables', label: 'Tables & QR', path: '/tables', group: 'Setup' },
-  { key: 'staff', label: 'Staff', path: '/staff', group: 'Setup' },
-  { key: 'features', label: 'Features', path: '/features', group: 'Setup' },
-  { key: 'settings', label: 'Settings', path: '/settings', group: 'Setup', ownerOnly: true },
-  { key: 'erase', label: 'Erase records', path: '/erase', group: 'Setup', ownerOnly: true },
+  { key: 'accounting_locks', label: 'Close and reopen periods', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'staff', label: 'Staff', path: '/staff', group: 'People & setup' },
+  { key: 'stations', label: 'Stations', path: '/stations', group: 'People & setup', module: 'kitchen' },
+  { key: 'venues', label: 'Venues', path: '/venues', group: 'People & setup' },
+  { key: 'features', label: 'Features', path: '/features', group: 'People & setup' },
+  // Records that do not add up and jobs that have gone quiet, checked
+  // nightly and on opening. Owner-only: every button on it changes the books.
+  { key: 'health', label: 'Health', path: '/health', group: 'People & setup', ownerOnly: true },
+  { key: 'settings', label: 'Settings', path: '/settings', group: 'People & setup', ownerOnly: true },
+  { key: 'erase', label: 'Erase records', path: '/erase', group: 'People & setup', ownerOnly: true },
+];
+
+/**
+ * Pages that are one link for several sides.
+ *
+ * Each side keeps its own grant; the link appears when any of them is held,
+ * and the page's side switch offers only the sides that are. See navFor and
+ * catalogueSides.
+ */
+export interface NavMerge {
+  to: string;
+  label: string;
+  keys: Partial<Record<Module, string>>;
+}
+
+export const NAV_MERGES: NavMerge[] = [
+  { to: '/catalogue/categories', label: 'Categories', keys: { kitchen: 'menu_categories', craft: 'shop_categories', bar: 'bar_categories' } },
+  { to: '/catalogue/items', label: 'Menu & products', keys: { kitchen: 'menu_items', craft: 'shop_items', bar: 'bar_items' } },
+  { to: '/stock', label: 'Ingredients & bottles', keys: { kitchen: 'stock', bar: 'bar_stock' } },
 ];
 
 /** Roles that can be granted admin sections at all. */
@@ -231,7 +289,7 @@ export const DEFAULT_ACCESS: Record<string, string[]> = {
     // A manager opens tabs. It is the job: deciding who is good for credit is
     // a floor decision made while somebody is standing there, and an owner who
     // has to be rung at eleven at night to open one is an owner who gets rung.
-    'dashboard', 'orders', 'reports', 'shifts', 'expenses', 'vouchers', 'tabs',
+    'dashboard', 'orders', 'reports', 'shifts', 'expenses', 'vouchers', 'tabs', 'waiting',
     'menu_items', 'stock', 'waste', 'stations',
     // A shop manager runs the intake desk and needs to see who is owed what.
     'shop_categories', 'shop_items', 'consignors', 'intake', 'stocktake', 'payouts',
@@ -359,6 +417,76 @@ export function canOpen(section: string, profile: StaffProfile | null, settings:
  */
 export function sectionsFor(profile: StaffProfile | null, settings: Settings | null): AdminSection[] {
   return ADMIN_SECTIONS.filter((s) => !s.parent && canOpen(s.key, profile, settings));
+}
+
+export interface NavLinkSpec {
+  to: string;
+  label: string;
+  end?: boolean;
+  /** The section keys this link stands for: one, or several for a merged page. */
+  keys: string[];
+}
+
+export interface NavGroup {
+  group: string;
+  links: NavLinkSpec[];
+}
+
+/** The sides of a merged page this person may open, in the order the switch shows them. */
+export function catalogueSides(to: string, profile: StaffProfile | null, settings: Settings | null): Module[] {
+  const merge = NAV_MERGES.find((m) => m.to === to);
+  if (!merge) return [];
+  return (['kitchen', 'bar', 'craft'] as Module[]).filter((side) => {
+    const key = merge.keys[side];
+    return !!key && canOpen(key, profile, settings);
+  });
+}
+
+/** The sides this person can filter the sidebar by: what runs, narrowed to what they work on. */
+export function sidebarSides(profile: StaffProfile | null, settings: Settings | null): Module[] {
+  const mods = modulesForStaff(profile, settings);
+  return (['kitchen', 'bar', 'craft'] as Module[]).filter((m) => mods[m]);
+}
+
+/**
+ * The sidebar for this person: the pages they may open, grouped by job,
+ * with the per-side pages folded into one link each, narrowed to one side
+ * when a side is chosen.
+ *
+ * Narrowing hides the links that belong to another side and points the
+ * merged links at the chosen side, so a bartender who picks Bar sees the
+ * bar's counts and bottles and nothing about the kitchen. Anything with no
+ * side — shifts, spends, the books — is always there.
+ */
+export function navFor(profile: StaffProfile | null, settings: Settings | null, side: Module | 'all' = 'all'): NavGroup[] {
+  const groups = new Map<string, NavLinkSpec[]>();
+  const merged = new Set<string>();
+  const add = (group: string, link: NavLinkSpec) => groups.set(group, [...(groups.get(group) ?? []), link]);
+
+  for (const s of ADMIN_SECTIONS) {
+    if (s.parent) continue;
+    const merge = NAV_MERGES.find((m) => Object.values(m.keys).includes(s.key));
+    if (merge) {
+      if (merged.has(merge.to)) continue;
+      const sides = catalogueSides(merge.to, profile, settings).filter((m) => side === 'all' || m === side);
+      if (sides.length === 0) continue;
+      merged.add(merge.to);
+      add(s.group, {
+        to: side === 'all' ? merge.to : `${merge.to}?side=${side}`,
+        label: merge.label,
+        keys: sides.map((m) => merge.keys[m] as string),
+      });
+      continue;
+    }
+    if (!canOpen(s.key, profile, settings)) continue;
+    if (side !== 'all' && s.module && s.module !== side) continue;
+    add(s.group, { to: s.path, label: s.label, end: s.path === '/', keys: [s.key] });
+  }
+
+  const order = [...NAV_GROUPS] as string[];
+  return [...groups.entries()]
+    .sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
+    .map(([group, links]) => ({ group, links }));
 }
 
 /** The areas of one page this person may open. Empty when they may open none. */

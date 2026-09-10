@@ -3,8 +3,7 @@ import { Button, Card, MenuGrid } from '@snpos/ui';
 import {
   listAll, marginOf, menuEngineering, whatToActOn, soldAtALoss,
   QUADRANT_MEANING, quadrantLabel,
-  type MenuRow, type DishTrade, type CostedItem,
-} from '@snpos/core';
+  type MenuRow, type DishTrade, type CostedItem, bpWords } from '@snpos/core';
 
 /**
  * Which dishes earn their place.
@@ -180,7 +179,7 @@ export function MenuEngineeringPanel({
         <div className="notice notice-info" style={{ marginTop: '1rem' }}>
           <strong>
             {uncosted.rows.length} {uncosted.rows.length === 1 ? 'dish has' : 'dishes have'} no recipe
-            {uncosted.revenueBp > 0 && <> — {(uncosted.revenueBp / 100).toFixed(0)}% of the takings</>}.
+            {uncosted.revenueBp > 0 && <> — {bpWords(uncosted.revenueBp)} of the takings</>}.
           </strong>{' '}
           They are left out of everything above rather than counted as costing nothing, which would
           have made them look like the most profitable things you sell and pulled the average up for
@@ -201,7 +200,7 @@ function Row({ r, money }: { r: MenuRow; money: (n: number) => string }) {
       <td className="num">{money(r.unitPrice)}</td>
       <td className="num">{money(r.unitCost)}</td>
       <td className={`num${r.contribution < 0 ? ' bad' : ''}`}>{money(r.contribution)}</td>
-      <td className={`num${r.contribution < 0 ? ' bad' : ''}`}>{(r.marginBp / 100).toFixed(0)}%</td>
+      <td className={`num${r.contribution < 0 ? ' bad' : ''}`}>{bpWords(r.marginBp)}</td>
       <td className={`num${r.totalContribution < 0 ? ' bad' : ''}`}>{money(r.totalContribution)}</td>
       <td><span className={`q-tag q-${r.quadrant}`}>{quadrantLabel(r.quadrant)}</span></td>
     </tr>

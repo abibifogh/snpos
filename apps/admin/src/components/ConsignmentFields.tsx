@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { Badge, Button, Field, Input, Notice, Select, Textarea, Toggle } from '@snpos/ui';
 import {
   parseMoney, toInput, countedAsWarning, drinkStockIsSpare, frozenBy, waitingWords,
-  isService, serviceProblem, NO_SHELF_WORDS,
-} from '@snpos/core';
+  isService, serviceProblem, NO_SHELF_WORDS, bpWords } from '@snpos/core';
 import type { Consignor, MenuItem, ProductVariant, VariantType, Module, WaitingChange } from '@snpos/core';
 
 /** A size row being edited, before it is written. */
@@ -112,7 +111,7 @@ export function ConsignmentFields({
   const usualTerms = chosen
     ? (chosen.commission_flat ?? 0) > 0
       ? `${symbol}${((chosen.commission_flat as number) / 10 ** decimals).toFixed(decimals)} a piece`
-      : `${(chosen.commission_bp / 100).toFixed(0)}%`
+      : `${bpWords(chosen.commission_bp)}`
     : '';
 
   const setVariant = (index: number, patch: Partial<DraftVariant>) =>

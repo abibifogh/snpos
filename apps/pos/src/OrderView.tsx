@@ -11,8 +11,7 @@ import {
   cartKey, cartWorthHolding, restorableCart, restoredWords,
   chipColour, showsPicture, inkOn, downloadUrl, isService, canRepriceLine,
   amountDueOn, unrungProblem, displayOrderNo, humanError,
-  loadOpenTabs, postOrderToTab, postProblem, tabOwing, ordersOnTab, paidOnOrders,
-} from '@snpos/core';
+  loadOpenTabs, postOrderToTab, postProblem, tabOwing, ordersOnTab, paidOnOrders, bpWords } from '@snpos/core';
 import type {
   CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, Settings, DiscountRow,
   Recipe, Ingredient, MenuItem, TakenPayment, Tab,
@@ -1524,7 +1523,7 @@ function DiscountModal({
       )}
 
       <p className="small dim">
-        Your limit is {(ceilingBp / 100).toFixed(0)}%. Every discount is recorded against your name and against
+        Your limit is {bpWords(ceilingBp)}. Every discount is recorded against your name and against
         the code it came from.
       </p>
     </Modal>

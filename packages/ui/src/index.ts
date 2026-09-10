@@ -9,12 +9,14 @@ export * from './shift';
 // presentational; a second copy of "record what left the drawer" is how the
 // same purchase ends up filed two different ways.
 export * from './shifthistory';
+export * from './countsheet';
 export * from './barcount';
 export * from './craftcount';
 export * from './till';
 export * from './eightysix';
 export * from './ErrorBoundary';
 export * from './OfflineBar';
+export * from './SchemaBar';
 export * from './useOfflineQueue';
 export * from './trend';
 export * from './menugrid';

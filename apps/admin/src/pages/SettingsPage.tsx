@@ -5,7 +5,8 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   bpToPercent, percentToBp, toInput, parseMoney,
   ADMIN_SECTIONS, GRANTABLE_ROLES, DEFAULT_ACCESS, parseAccess, asksForTip, modulesOf, saveDropping,
-} from '@snpos/core';
+  parseLevies, serialiseLevies, GHANA_LEVIES, dateTimeWords } from '@snpos/core';
+import type { Levy } from '@snpos/core';
 import type { Settings, Doc } from '@snpos/core';
 
 import { useSession } from '../session';
@@ -245,6 +246,9 @@ export function SettingsPage() {
         secondary_color: form.secondary_color,
         tax_rate_bp: Number(form.tax_rate_bp),
         tax_inclusive: form.tax_inclusive,
+        vat_charged: form.vat_charged !== false,
+        levies: form.levies ?? '',
+        receipt_tax_detail: form.receipt_tax_detail ?? 'separate',
         service_charge_bp: Number(form.service_charge_bp),
         kitchen_ack_sla_seconds: Number(form.kitchen_ack_sla_seconds),
         require_reject_reason: form.require_reject_reason,
@@ -447,7 +451,7 @@ export function SettingsPage() {
 
       <FoldCard
         title="Money"
-        summary={`${form.currency_code} · tax ${bpToPercent(form.tax_rate_bp)}% · service ${bpToPercent(form.service_charge_bp)}%`}
+        summary={`${form.currency_code} · VAT ${form.vat_charged === false ? 'not charged' : `${bpToPercent(form.tax_rate_bp)}%`} · service ${bpToPercent(form.service_charge_bp)}%`}
       >
         <div className="grid-2">
           <Field label="Code" hint="Three letters, e.g. GHS.">
@@ -505,12 +509,31 @@ export function SettingsPage() {
         </div>
 
         <h3 style={{ marginTop: '1.6rem' }}>Tax and service</h3>
+
+        {/*
+          A switch, not a rate of nought. A business that deregisters keeps
+          its rate for the day it registers again, and the switch is a
+          sentence somebody can read rather than a number they have to
+          interpret. See vatBpOf: everything that works out tax reads it.
+        */}
+        <Field hint="Turn this off if you are not VAT registered. Your rate is kept, and nothing charges it while this is off. Levies below are separate and stay as you set them.">
+          <Toggle
+            checked={form.vat_charged !== false}
+            onChange={(v) => set('vat_charged', v)}
+            label="We charge VAT"
+          />
+        </Field>
+
         <div className="grid-2">
-          <Field label="Tax rate (%)" hint="0 if you do not charge tax.">
+          <Field
+            label="VAT rate (%)"
+            hint={form.vat_charged === false ? 'Kept, but not charged while the switch above is off.' : undefined}
+          >
             <Input
               type="number"
               step="0.01"
               min="0"
+              disabled={form.vat_charged === false}
               value={bpToPercent(form.tax_rate_bp)}
               onChange={(e) => set('tax_rate_bp', percentToBp(e.target.value))}
             />
@@ -528,6 +551,75 @@ export function SettingsPage() {
         <Field hint="Tax-inclusive means the price on the menu is what the customer pays; tax is worked out from it rather than added on top.">
           <Toggle checked={form.tax_inclusive} onChange={(v) => set('tax_inclusive', v)} label="Menu prices include tax" />
         </Field>
+
+        {/*
+          How the receipt says it. Only bites where there is more than one
+          charge; one charge is one line whichever way this is set.
+        */}
+        <Field
+          label="How a receipt shows tax"
+          hint="Applies to the printed receipt and the emailed one alike."
+        >
+          <Select
+            value={form.receipt_tax_detail ?? 'separate'}
+            onChange={(e) => set('receipt_tax_detail', e.target.value as 'separate' | 'combined')}
+          >
+            <option value="separate">A line for each: VAT, NHIL, GETFund, and so on</option>
+            <option value="combined">One line for all of them together</option>
+          </Select>
+        </Field>
+
+        {/*
+          The levies beside VAT. Each is declared on its own return to a
+          different body, and the rate above is VAT, which Ghana charges on
+          the price PLUS these. A business with none switched on gets the
+          single rate it always had.
+        */}
+        <h3 style={{ marginTop: '1.6rem' }}>Levies beside VAT</h3>
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Each levy is a share of the price and is owed to its own body on its own return. The tax rate above is
+          VAT, charged on the price plus these levies, which is how Ghana stacks them. Receipts show each one,
+          and every shift close credits each to its own account.
+        </p>
+        <div className="stack" style={{ gap: '0.5rem' }}>
+          {GHANA_LEVIES.map((known) => {
+            const current = parseLevies(form.levies);
+            const mine = current.find((l) => l.key === known.key);
+            const on = !!mine;
+            const write = (next: Levy[]) => set('levies', serialiseLevies(next));
+            return (
+              <div className="row row-wrap" key={known.key} style={{ gap: '0.6rem 1rem' }}>
+                <Toggle
+                  checked={on}
+                  onChange={(v) => write(v
+                    ? [...current.filter((l) => l.key !== known.key), { ...known }]
+                    : current.filter((l) => l.key !== known.key))}
+                  label={known.name}
+                />
+                {on && (
+                  <label className="row small dim" style={{ gap: '0.4rem' }}>
+                    at
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      style={{ width: '6rem' }}
+                      value={bpToPercent(mine?.rate_bp ?? known.rate_bp)}
+                      onChange={(e) => write(current.map((l) => (l.key === known.key
+                        ? { ...l, rate_bp: percentToBp(e.target.value) }
+                        : l)))}
+                    />
+                    %
+                  </label>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <p className="small dim">
+          The rates offered are the ones in force when this was written. Check them against the current
+          notice from the revenue authority; they are yours to change.
+        </p>
       </FoldCard>
 
       <FoldCard title="Tips" summary={askOn === 'none' ? 'Never asked' : `Asked on the ${askOn === 'both' ? 'till and in the kitchen' : askOn}`}>
@@ -803,7 +895,7 @@ export function SettingsPage() {
         </Field>
         {form.order_number_reset_on && (
           <p className="small dim" style={{ marginTop: 0 }}>
-            Numbering was last restarted on {new Date(form.order_number_reset_on).toLocaleString()}.
+            Numbering was last restarted on {dateTimeWords(form.order_number_reset_on)}.
             {' '}Remember to press Save.
           </p>
         )}
@@ -996,7 +1088,7 @@ export function SettingsPage() {
               <tbody>
                 {deliveries.map((d) => (
                   <tr key={d.$id}>
-                    <td className="small dim">{new Date(d.$createdAt).toLocaleString()}</td>
+                    <td className="small dim">{dateTimeWords(d.$createdAt)}</td>
                     <td className="small">{REPORT_NAMES[d.kind] ?? d.kind}</td>
                     {/*
                       "Handed over", not "arrived".

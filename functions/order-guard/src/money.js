@@ -21,11 +21,69 @@ export function totalsFor(subtotal, discount, settings) {
   const discounted = subtotal - discount;
   const service = Math.round((discounted * (settings.service_charge_bp || 0)) / 10000);
   const taxable = discounted + service;
-  const rate = settings.tax_rate_bp || 0;
-  const tax = settings.tax_inclusive
-    ? Math.round(taxable - (taxable * 10000) / (10000 + rate))
-    : Math.round((taxable * rate) / 10000);
+  const tax = taxTotalFor({
+    taxable,
+    vatBp: vatBpOf(settings),
+    inclusive: !!settings.tax_inclusive,
+    levies: parseLevies(settings.levies),
+  });
   return { service, tax, total: settings.tax_inclusive ? taxable : taxable + tax };
+}
+
+/**
+ * The VAT rate in force, nought where the business charges no VAT.
+ *
+ * Mirrors vatBpOf in packages/core/src/pricing.ts. The guard re-prices every
+ * order that arrives from a phone, so it has to apply the same switch the
+ * till applied or it would reject its own correct totals.
+ */
+export function vatBpOf(settings) {
+  return settings.vat_charged === false ? 0 : Math.max(0, Math.round(settings.tax_rate_bp || 0));
+}
+
+/**
+ * The levies beside VAT, read from the settings' JSON text.
+ *
+ * Mirrors parseLevies in packages/core/src/levies.ts.
+ */
+export function parseLevies(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((l) => !!l && typeof l === 'object' && typeof l.key === 'string')
+      .map((l) => ({
+        key: String(l.key).trim(),
+        name: String(l.name ?? l.key).trim(),
+        rate_bp: Math.max(0, Math.round(Number(l.rate_bp) || 0)),
+      }))
+      .filter((l) => l.key !== '' && l.rate_bp > 0);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The whole tax on a taxable amount: each levy on the amount, VAT on the
+ * amount plus the levies. Added on top, or worked backwards from a price
+ * that includes it.
+ *
+ * Mirrors the total of taxBreakdown in packages/core/src/levies.ts.
+ */
+export function taxTotalFor(input) {
+  const taxable = Math.round(input.taxable);
+  const vatBp = Math.max(0, Math.round(input.vatBp || 0));
+  const levies = input.levies.filter((l) => l.rate_bp > 0);
+  const leviesBp = levies.reduce((s, l) => s + l.rate_bp, 0);
+  if (taxable === 0 || (vatBp === 0 && leviesBp === 0)) return 0;
+  if (input.inclusive) {
+    const base = (taxable * 10000 * 10000) / ((10000 + leviesBp) * (10000 + vatBp));
+    return Math.round(taxable - base);
+  }
+  const leviesSum = levies.reduce((s, l) => s + Math.round((taxable * l.rate_bp) / 10000), 0);
+  const vat = Math.round(((taxable + leviesSum) * vatBp) / 10000);
+  return leviesSum + vat;
 }
 
 /**
@@ -36,9 +94,7 @@ export function totalsFor(subtotal, discount, settings) {
 export function rateFor(line, consignor, settings) {
   const candidates = [line?.commission_bp, consignor?.commission_bp, settings?.default_commission_bp];
   for (const bp of candidates) {
-    if (typeof bp === 'number' && Number.isFinite(bp) && bp >= 0) {
-      return Math.max(0, Math.min(10000, Math.round(bp)));
-    }
+    if (typeof bp === 'number' && Number.isFinite(bp) && bp >= 0) return bp;
   }
   return 3000;
 }

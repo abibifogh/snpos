@@ -486,9 +486,6 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       await ctx.reloadShift();
       setClosing(false);
 
-      if (result.ledgerError) {
-        onToast(`Shift closed, but the accounts entry failed: ${result.ledgerError}`, 'err');
-      }
       const off = Object.values(result.variance).reduce((a, b) => a + Math.abs(b), 0);
       const base = off === 0 ? 'Shift closed and balanced' : `Shift closed, ${money(off)} out`;
       onToast(result.stockNote ? `${base}. ${result.stockNote}` : base, off > tolerance ? 'err' : 'ok');

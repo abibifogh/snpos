@@ -6,7 +6,7 @@ import {
   openAccounts,
 } from '../ledger-math.ts';
 import { reconcile } from '../ledger-math.ts';
-import { matchStatement, readStatement, isLocked } from '../ledger-math.ts';
+import { matchStatement, readStatement, isLocked, correctionPlan, nextDay } from '../ledger-math.ts';
 import type { AccountRow, LineRow, RecLine, BankLine } from '../ledger-math.ts';
 
 const CHART: AccountRow[] = [
@@ -383,4 +383,43 @@ test('an account with no flag is in use', () => {
    */
   assert.equal(openAccounts(CHART).length, CHART.length);
   assert.equal(openAccounts([{ code: '9000', name: 'x', type: 'expense', active: true }]).length, 1);
+});
+
+/* ------------------------------------------ correcting inside a closed month */
+
+test('an entry in an open month is edited in place', () => {
+  assert.deepEqual(
+    correctionPlan({ entryDate: '2026-10-03T12:00:00Z', lockedThrough: '2026-09-30', today: '2026-10-09' }),
+    { mode: 'edit' },
+  );
+  assert.deepEqual(correctionPlan({ entryDate: '2026-10-03T12:00:00Z', lockedThrough: null, today: '2026-10-09' }), { mode: 'edit' });
+});
+
+test('an entry in a closed month is reversed and re-posted on the first open day', () => {
+  /*
+    The closed month keeps its figure; the open month carries the difference.
+    That is what an accountant expects, and the only way a reported month
+    stays reported.
+  */
+  assert.deepEqual(
+    correctionPlan({ entryDate: '2026-09-14T12:00:00Z', lockedThrough: '2026-09-30', today: '2026-10-09' }),
+    { mode: 'reverse', postOn: '2026-10-01' },
+  );
+});
+
+test('moving an open entry back into a closed month is a correction too, not a loophole', () => {
+  assert.equal(
+    correctionPlan({ entryDate: '2026-10-03T12:00:00Z', targetDate: '2026-09-20T12:00:00Z', lockedThrough: '2026-09-30', today: '2026-10-09' }).mode,
+    'reverse',
+  );
+});
+
+test('the correction never lands in the future', () => {
+  // Locked through a date that has not arrived yet: post today, not tomorrow.
+  assert.deepEqual(
+    correctionPlan({ entryDate: '2026-09-14T12:00:00Z', lockedThrough: '2026-12-31', today: '2026-10-09' }),
+    { mode: 'reverse', postOn: '2026-10-09' },
+  );
+  assert.equal(nextDay('2026-09-30'), '2026-10-01');
+  assert.equal(nextDay('2026-12-31'), '2027-01-01');
 });

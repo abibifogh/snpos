@@ -2,19 +2,21 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, useToast } from '@snpos/ui';
 import { listAll, humanError, saveDropping } from '../lib';
 import {
-  formatMoney, parseMoney, toInput, Query,
-  ledgerLines, loadAccounts, postManualEntry, reverseEntry, editEntry, deleteEntry, loadFixedAssets, postDepreciation,
+  parseMoney, toInput, Query,
+  ledgerLines, loadAccounts, postManualEntry, reverseEntry, correctEntry, deleteEntry, loadFixedAssets, postDepreciation,
   profitAndLoss, balanceSheet, totalsByAccount, naturalBalance, entryProblem, within,
   bookValue, monthOf, reconcile, db, DB_ID, ID,
   matchStatement, readStatement, parseCsv, loadStatementLines, importStatementLines,
   postFromStatement, attachReceipt, downloadUrl, areasOf,
   loadLocks, lockPeriod, openAccounts,
-} from '@snpos/core';
+  hanging, postSettlement, postTipsPaid, postTaxRemitted, settlementProblem, paydownProblem,
+  closeFacts, closeChecklist, mayLock, closeProgress, lockOverWarningsWords, bpWords } from '@snpos/core';
 import type {
   AccountRow, JournalEntry, JournalLine, FixedAsset, LineRow, Doc, BankStatementLine, Settings,
-  PeriodLock,
+  PeriodLock, CloseItem,
 } from '@snpos/core';
-import { useSession } from '../session';
+import { useNavigate } from 'react-router-dom';
+import { useSession, useMoney } from '../session';
 import { AccountsManager } from '../components/AccountsManager';
 
 /**
@@ -31,7 +33,7 @@ import { AccountsManager } from '../components/AccountsManager';
  * sitting, and each of those is the same figures read a different way; putting
  * them behind separate navigation makes it feel like separate work.
  */
-type Tab = 'statements' | 'journal' | 'trial' | 'assets' | 'bank' | 'chart' | 'locks';
+type Tab = 'statements' | 'journal' | 'trial' | 'assets' | 'bank' | 'settle' | 'chart' | 'locks';
 
 /** A month back from today, as YYYY-MM-DD, for the default window. */
 const monthStart = (d = new Date()) => `${d.toISOString().slice(0, 7)}-01`;
@@ -69,7 +71,11 @@ export function AccountingPage() {
    */
   const allowed = useMemo(() => areasOf('accounting', profile, settings), [profile, settings]);
   const can = (area: Tab) => allowed.includes(`accounting_${area}`);
-  const [tab, setTab] = useState<Tab>('statements');
+  // A link may name the tab: /accounting?tab=locks from the health page, say.
+  const [tab, setTab] = useState<Tab>(() => {
+    const asked = new URLSearchParams(window.location.hash.split('?')[1] ?? window.location.search).get('tab');
+    return (['statements', 'journal', 'trial', 'assets', 'bank', 'settle', 'chart', 'locks'].includes(asked ?? '') ? asked : 'statements') as Tab;
+  });
   useEffect(() => {
     // Land on something they can see. Opening on a tab they were not given
     // shows an empty page that reads as a fault rather than as a permission.
@@ -94,7 +100,7 @@ export function AccountingPage() {
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(today());
 
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
   const decimals = settings?.currency_decimals ?? 2;
 
   const load = async () => {
@@ -165,6 +171,7 @@ export function AccountingPage() {
           ['trial', 'Trial balance'],
           ['assets', 'Fixed assets'],
           ['bank', 'Reconcile'],
+          ['settle', 'Settle up'],
           ['chart', 'Chart of accounts'],
           ['locks', 'Close a period'],
         ] as [Tab, string][]).filter(([key]) => can(key)).map(([key, label]) => (
@@ -183,7 +190,7 @@ export function AccountingPage() {
         </Notice>
       )}
 
-      {tab !== 'chart' && tab !== 'assets' && tab !== 'bank' && (
+      {tab !== 'chart' && tab !== 'assets' && tab !== 'bank' && tab !== 'settle' && (
         <Card pad>
           <div className="grid-2">
             <Field label="From" hint="The profit and loss covers these dates.">
@@ -289,10 +296,14 @@ export function AccountingPage() {
         />
       )}
 
+      {tab === 'settle' && can('settle') && (
+        <Settle venueId={venueId} userId={user?.$id ?? ''} money={money} decimals={decimals} onChanged={load} toast={toast} />
+      )}
+
       {tab === 'chart' && can('chart') && <AccountsManager />}
 
       {tab === 'locks' && can('locks') && (
-        <Locks venueId={venueId} userId={user?.$id ?? ''} onChanged={load} toast={toast} />
+        <Locks venueId={venueId} userId={user?.$id ?? ''} onChanged={load} toast={toast} onGoto={setTab} />
       )}
     </>
   );
@@ -531,12 +542,13 @@ function Journal({
     setProblem(null);
     try {
       const withNotes = asLines().map((l, i) => ({ ...l, memo: draft[i].memo }));
+      let how: 'edited' | 'reversed' = 'edited';
       if (changing) {
-        await editEntry(
+        how = (await correctEntry(
           changing,
           { date: new Date(`${date}T12:00:00`), memo: memo.trim(), lines: withNotes },
           { editedBy: userId },
-        );
+        )).mode;
       } else {
         await postManualEntry(
           venueId,
@@ -549,7 +561,9 @@ function Journal({
       setDraft([{ ...BLANK }, { ...BLANK }]);
       setMemo('');
       await onChanged();
-      toast(changing ? 'Entry changed. The old version is in the audit log.' : 'Entry posted');
+      toast(!changing ? 'Entry posted' : how === 'reversed'
+        ? 'That month is closed, so the entry was reversed and posted again in the first open day. The closed month keeps its figure.'
+        : 'Entry changed. The old version is in the audit log.');
     } catch (e) {
       setProblem(humanError(e));
     } finally {
@@ -925,7 +939,7 @@ function Assets({
                     <td className="num">{money(a.cost)}</td>
                     <td className="dim small">
                       {a.method === 'reducing_balance'
-                        ? `${((a.rate_bp ?? 0) / 100).toFixed(0)}% a year, reducing`
+                        ? `${bpWords(a.rate_bp ?? 0)} a year, reducing`
                         : `over ${a.life_months} months`}
                     </td>
                     {/* What it is carried at today: the cost less everything
@@ -1537,18 +1551,228 @@ function Reconcile({
  * accounts that can be relied on and accounts that were true on the day they
  * were printed.
  */
+/**
+ * The entries a shift close leaves hanging, cleared.
+ *
+ * Every close debits card and mobile-money takings to a clearing account,
+ * credits tips to tips owed and tax to tax collected — and nothing ever moved
+ * any of them again, so all three climbed for ever. This is where the
+ * provider's settlement, the tips handed over and the tax remitted are
+ * written down, with the balance each one is clearing shown beside the box.
+ */
+function Settle({
+  venueId, userId, money, decimals, onChanged, toast,
+}: {
+  venueId: string;
+  userId: string;
+  money: (n: number) => string;
+  decimals: number;
+  onChanged: () => Promise<void>;
+  toast: (m: string, t?: 'ok' | 'err') => void;
+}) {
+  const [owed, setOwed] = useState<{
+    card: number; momo: number; tips: number; tax: number;
+    taxes: { account_code: string; name: string; amount: number }[];
+  } | null>(null);
+  const [taxAccount, setTaxAccount] = useState('');
+  const [kind, setKind] = useState<'momo' | 'card'>('momo');
+  const [receivedText, setReceivedText] = useState('');
+  const [feeText, setFeeText] = useState('');
+  const [settleDate, setSettleDate] = useState(today());
+  const [settleRef, setSettleRef] = useState('');
+  const [tipsText, setTipsText] = useState('');
+  const [tipsDate, setTipsDate] = useState(today());
+  const [taxText, setTaxText] = useState('');
+  const [taxDate, setTaxDate] = useState(today());
+  const [taxRef, setTaxRef] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = () => hanging(venueId).then(setOwed).catch(() => setOwed(null));
+  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [venueId]);
+
+  const at = (d: string) => new Date(`${d}T12:00:00`);
+  const run = async (what: string, work: () => Promise<void>, done: string) => {
+    setBusy(what);
+    try {
+      await work();
+      await load();
+      await onChanged();
+      toast(done);
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const outstanding = kind === 'momo' ? (owed?.momo ?? 0) : (owed?.card ?? 0);
+  const received = parseMoney(receivedText, decimals) ?? 0;
+  const fee = parseMoney(feeText, decimals) ?? 0;
+  const settleWhy = settlementProblem({ received, fee, outstanding });
+  const tips = parseMoney(tipsText, decimals) ?? 0;
+  const tipsWhy = paydownProblem(tips, owed?.tips ?? 0, 'in tips');
+  const tax = parseMoney(taxText, decimals) ?? 0;
+  // One return at a time: VAT, NHIL and the rest are owed to different
+  // bodies, and a remittance names which. The first with anything owed is
+  // the default.
+  const taxChoices = owed?.taxes ?? [];
+  const chosenTax = taxChoices.find((t) => t.account_code === taxAccount) ?? taxChoices[0];
+  const taxWhy = paydownProblem(tax, chosenTax?.amount ?? 0, 'tax');
+
+  return (
+    <div className="stack">
+      <Card title="Card and mobile money settled to the bank" pad>
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Every close puts card and mobile-money takings into a clearing account. When the provider pays it into
+          the bank, record it here: what arrived, and what they kept. Waiting now:
+          {' '}<strong>{money(owed?.momo ?? 0)}</strong> mobile money, <strong>{money(owed?.card ?? 0)}</strong> card.
+        </p>
+        <div className="grid-2">
+          <Field label="Which provider">
+            <Select value={kind} onChange={(e) => setKind(e.target.value as 'momo' | 'card')}>
+              <option value="momo">Mobile money</option>
+              <option value="card">Card</option>
+            </Select>
+          </Field>
+          <Field label="Paid into the bank on">
+            <Input type="date" value={settleDate} onChange={(e) => setSettleDate(e.target.value)} />
+          </Field>
+          <Field label="Amount that arrived" hint="What the bank statement shows.">
+            <Input inputMode="decimal" value={receivedText} onChange={(e) => setReceivedText(e.target.value)} />
+          </Field>
+          <Field label="Fee the provider kept" hint="Zero if they charge nothing, or bill it separately.">
+            <Input inputMode="decimal" value={feeText} onChange={(e) => setFeeText(e.target.value)} />
+          </Field>
+          <Field label="Reference" hint="The settlement or batch number, so it can be found on the statement.">
+            <Input value={settleRef} onChange={(e) => setSettleRef(e.target.value)} />
+          </Field>
+        </div>
+        {receivedText && settleWhy && <Notice tone="warn">{settleWhy}</Notice>}
+        <div className="row" style={{ marginTop: '0.75rem' }}>
+          <Button
+            variant="primary"
+            disabled={!!settleWhy || busy !== null}
+            loading={busy === 'settle'}
+            onClick={() => run('settle', async () => {
+              await postSettlement(venueId, {
+                kind, received, fee, date: at(settleDate), reference: settleRef.trim(), postedBy: userId,
+              });
+              setReceivedText(''); setFeeText(''); setSettleRef('');
+            }, `${money(received + fee)} cleared, ${money(received)} into the bank`)}
+          >
+            Record the settlement
+          </Button>
+        </div>
+      </Card>
+
+      <Card title="Tips handed to staff" pad>
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Tips are held for the staff they were left for. Owed now: <strong>{money(owed?.tips ?? 0)}</strong>.
+          Recording a payout takes it out of the drawer and off the books.
+        </p>
+        <div className="grid-2">
+          <Field label="Paid out"><Input inputMode="decimal" value={tipsText} onChange={(e) => setTipsText(e.target.value)} /></Field>
+          <Field label="On"><Input type="date" value={tipsDate} onChange={(e) => setTipsDate(e.target.value)} /></Field>
+        </div>
+        {tipsText && tipsWhy && <Notice tone="warn">{tipsWhy}</Notice>}
+        <div className="row" style={{ marginTop: '0.75rem' }}>
+          <Button
+            variant="primary"
+            disabled={!!tipsWhy || busy !== null}
+            loading={busy === 'tips'}
+            onClick={() => run('tips', async () => {
+              await postTipsPaid(venueId, { amount: tips, date: at(tipsDate), postedBy: userId });
+              setTipsText('');
+            }, `${money(tips)} of tips paid out`)}
+          >
+            Record tips paid
+          </Button>
+        </div>
+      </Card>
+
+      <Card title="Tax remitted" pad>
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Tax collected on sales is owed to the revenue authority until it is paid, each levy on its own return.
+          Owed now: {taxChoices.length === 0
+            ? <strong>nothing</strong>
+            : taxChoices.map((t, i) => <span key={t.account_code}>{i > 0 ? ' · ' : ''}<strong>{money(t.amount)}</strong> {t.name}</span>)}.
+          Paid from the bank.
+        </p>
+        <div className="grid-2">
+          <Field label="Which return">
+            <Select value={chosenTax?.account_code ?? ''} onChange={(e) => setTaxAccount(e.target.value)}>
+              {taxChoices.map((t) => <option key={t.account_code} value={t.account_code}>{t.name} · {money(t.amount)} owed</option>)}
+            </Select>
+          </Field>
+          <Field label="Remitted"><Input inputMode="decimal" value={taxText} onChange={(e) => setTaxText(e.target.value)} /></Field>
+          <Field label="On"><Input type="date" value={taxDate} onChange={(e) => setTaxDate(e.target.value)} /></Field>
+          <Field label="Reference" hint="The return or receipt number."><Input value={taxRef} onChange={(e) => setTaxRef(e.target.value)} /></Field>
+        </div>
+        {taxText && taxWhy && <Notice tone="warn">{taxWhy}</Notice>}
+        <div className="row" style={{ marginTop: '0.75rem' }}>
+          <Button
+            variant="primary"
+            disabled={!!taxWhy || !chosenTax || busy !== null}
+            loading={busy === 'tax'}
+            onClick={() => run('tax', async () => {
+              await postTaxRemitted(venueId, {
+                amount: tax, date: at(taxDate), reference: taxRef.trim(), postedBy: userId, account: chosenTax?.account_code,
+              });
+              setTaxText(''); setTaxRef('');
+            }, `${money(tax)} of tax remitted`)}
+          >
+            Record tax remitted
+          </Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function Locks({
-  venueId, userId, onChanged, toast,
+  venueId, userId, onChanged, toast, onGoto,
 }: {
   venueId: string;
   userId: string;
   onChanged: () => Promise<void>;
   toast: (m: string, t?: 'ok' | 'err') => void;
+  onGoto: (tab: Tab) => void;
 }) {
+  const navigate = useNavigate();
   const [locks, setLocks] = useState<PeriodLock[]>([]);
   const [through, setThrough] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  /**
+   * The checklist for the date typed, read afresh each time it changes.
+   *
+   * A lock is a checklist, not a date: see period-close.ts. Nothing here is
+   * decided on the page; the page only shows what the rules found and keeps
+   * the button shut while anything blocks.
+   */
+  const [items, setItems] = useState<CloseItem[] | null>(null);
+  const [checking, setChecking] = useState(false);
+  useEffect(() => {
+    if (!through || !venueId) { setItems(null); return; }
+    let live = true;
+    setChecking(true);
+    closeFacts(venueId, through)
+      .then((f) => { if (live) setItems(closeChecklist(f)); })
+      .catch(() => { if (live) setItems(null); })
+      .finally(() => { if (live) setChecking(false); });
+    return () => { live = false; };
+  }, [through, venueId]);
+  const verdict = items ? mayLock(items) : null;
+
+  /** Where each unfinished item is dealt with. */
+  const go = (item: CloseItem) => {
+    if (item.goto === 'settle' || item.goto === 'journal') { onGoto(item.goto); return; }
+    if (item.goto === 'shifts') navigate('/shifts');
+    if (item.goto === 'payouts') navigate('/payouts');
+    if (item.goto === 'counts') navigate('/bar/counts');
+    // Held counts, spends and shelf changes are all decided on the one page.
+    if (item.goto === 'waiting') navigate(item.key === 'spends' ? '/waiting?show=spend' : item.key === 'shelf' ? '/waiting?show=shelf' : '/waiting?show=count');
+  };
 
   const load = () => loadLocks(venueId).then(setLocks).catch(() => setLocks([]));
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [venueId]);
@@ -1560,6 +1784,15 @@ function Locks({
 
   const apply = async () => {
     if (!through) return;
+    // Reopening moves the line back and needs no checklist; closing does.
+    if (!reopening) {
+      if (!verdict) { toast('Still checking the month. Try again in a moment.', 'err'); return; }
+      if (!verdict.ok) {
+        toast(`Not yet: ${verdict.blocking.map((b) => b.title.toLowerCase()).join('; ')}.`, 'err');
+        return;
+      }
+      if (verdict.warnings.length > 0 && !confirm(lockOverWarningsWords(verdict.warnings, through))) return;
+    }
     setBusy(true);
     try {
       await lockPeriod(venueId, through, { lockedBy: userId, note: note.trim() });
@@ -1576,6 +1809,46 @@ function Locks({
 
   return (
     <>
+      <Card
+        title="Before the month can be locked"
+        actions={items ? <span className="dim small">{closeProgress(items)}</span> : undefined}
+        pad
+      >
+        <p className="small dim" style={{ marginTop: 0 }}>
+          A lock is a checklist, not a date. Pick the last day to close below and this fills in. Anything that
+          would still change the month's figures blocks the lock; money still in transit is named and lets it
+          through, because a settlement that lands next month belongs to next month.
+        </p>
+        {!through && <Notice tone="info">Choose the date to close up to, and the checks appear here.</Notice>}
+        {through && checking && !items && <Spinner />}
+        {items && (
+          <div className="table-wrap">
+            <table className="data">
+              <tbody>
+                {items.map((i) => (
+                  <tr key={i.key}>
+                    <td style={{ width: '2rem' }}>
+                      <span className={`badge ${i.state === 'ok' ? 'badge-ok' : i.state === 'warn' ? 'badge-warn' : 'badge-danger'}`}>
+                        {i.state === 'ok' ? 'Done' : i.state === 'warn' ? 'In transit' : 'Blocks'}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{i.title}</div>
+                      <div className="dim small">{i.detail}</div>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {i.state !== 'ok' && i.goto && (
+                        <Button size="sm" onClick={() => go(i)}>Deal with it</Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
       <Card title="Close the books to a date" pad>
         <p className="small dim" style={{ marginTop: 0 }}>
           Nothing can be posted, edited or reversed on or before the date the books are closed to — not by hand,
@@ -1608,8 +1881,13 @@ function Locks({
         )}
 
         <div className="row" style={{ justifyContent: 'flex-end' }}>
-          <Button variant={reopening ? 'danger' : 'primary'} loading={busy} disabled={!through} onClick={() => void apply()}>
-            {reopening ? 'Reopen the books' : 'Close the books'}
+          <Button
+            variant={reopening ? 'danger' : 'primary'}
+            loading={busy}
+            disabled={!through || (!reopening && (!verdict || !verdict.ok))}
+            onClick={() => void apply()}
+          >
+            {reopening ? 'Reopen the books' : verdict && !verdict.ok ? `${verdict.blocking.length} thing${verdict.blocking.length === 1 ? '' : 's'} left` : 'Close the books'}
           </Button>
         </div>
       </Card>

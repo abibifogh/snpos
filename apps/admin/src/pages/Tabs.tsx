@@ -4,12 +4,11 @@ import {
 } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
-  formatMoney, parseMoney,
+  parseMoney,
   loadTabs, ordersOnTab, paidOnOrders, openTab, closeTab, reopenTab, unpostOrder,
-  tabOwing, tabSummaryWords, tabIsOpen, displayOrderNo, MODULE_LABELS,
-} from '@snpos/core';
+  tabOwing, tabSummaryWords, tabIsOpen, displayOrderNo, MODULE_LABELS, dateTimeWords } from '@snpos/core';
 import type { Tab, Order, Module } from '@snpos/core';
-import { useSession } from '../session';
+import { useSession, useMoney } from '../session';
 
 /**
  * Running accounts, and what is on them.
@@ -28,7 +27,7 @@ export function TabsPage() {
   const { settings, profile, user } = useSession();
   const toast = useToast();
   const decimals = settings?.currency_decimals ?? 2;
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
   const me = profile?.user_id ?? profile?.$id ?? user?.$id ?? '';
 
   const [tabs, setTabs] = useState<Tab[] | null>(null);
@@ -307,7 +306,7 @@ export function TabsPage() {
                       <tbody>
                         {at.orders.map((o) => (
                           <tr key={o.$id}>
-                            <td className="small">{new Date(o.$createdAt).toLocaleString()}</td>
+                            <td className="small">{dateTimeWords(o.$createdAt)}</td>
                             <td style={{ fontWeight: 550 }}>{displayOrderNo(o.order_no)}</td>
                             <td className="small dim">{MODULE_LABELS[(o.module ?? 'kitchen') as Module]}</td>
                             <td className="num">{money(o.total)}</td>

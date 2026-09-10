@@ -14,6 +14,7 @@ import {
   SEED_VARIANT_TYPES, SEED_PACK_KINDS,
   SYSTEM_ACCOUNT_CODES,
 } from './schema.mjs';
+import { schemaFingerprint } from './schema-fingerprint.mjs';
 
 const { APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY } = process.env;
 if (!APPWRITE_ENDPOINT || !APPWRITE_PROJECT_ID || !APPWRITE_API_KEY) {
@@ -460,6 +461,8 @@ async function main() {
       secondary_color: '#F59E0B',
       tax_rate_bp: 0,
       tax_inclusive: true,
+      vat_charged: true,
+      receipt_tax_detail: 'separate',
       service_charge_bp: 0,
       shift_float_policy: 'zero', // never inherit the previous shift automatically
       shift_float_default: 0,
@@ -598,6 +601,21 @@ async function main() {
     );
   }
   log('✓', 'Seed data');
+
+  /*
+    THE STAMP, last, and only after everything above has landed.
+
+    The apps compare this to the fingerprint they were built with and say
+    "database update needed" while the two differ. Written at the very end so
+    a run that stopped part-way leaves the old stamp in place, and the apps
+    keep saying so until a run gets all the way through.
+  */
+  const version = schemaFingerprint({ COLLECTIONS, FEATURES, SYSTEM_ACCOUNT_CODES, TEAMS, BUCKETS });
+  await retry(() => db.updateDocument(DB_ID, 'settings', 'main', {
+    schema_version: version,
+    schema_applied_at: new Date().toISOString(),
+  }), 'stamp settings');
+  log('✓', `Schema ${version} stamped on the settings row`);
 
   log('▸', `Done, ${created} created, ${skipped} already present.`);
   log('▸', 'Next: npm run seed:admin -- --email you@example.com --name "Owner"');

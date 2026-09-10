@@ -22,7 +22,8 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { COLLECTIONS, SYSTEM_ACCOUNT_CODES } from './schema.mjs';
+import { COLLECTIONS, SYSTEM_ACCOUNT_CODES, FEATURES, TEAMS, BUCKETS } from './schema.mjs';
+import { schemaFingerprint } from './schema-fingerprint.mjs';
 
 /**
  * `scripts` is here because seeding and importing write real rows too.
@@ -255,22 +256,22 @@ for (const root of ROOTS) {
 // The two lists of account codes have to agree.
 //
 // schema.mjs marks accounts as system so provisioning knows which ones an admin
-// must not delete; ledger.ts names them so postings can refer to them by
+// must not delete; accounts.ts names them so postings can refer to them by
 // meaning. They live in different languages and cannot import each other, so
 // the only thing keeping them together is this check. Drift here would let an
 // admin remove an account a shift close writes to, and it would surface as a
 // shift that will not close, not as an error anybody could act on.
 {
-  const ledger = readFileSync(new URL('../packages/core/src/ledger.ts', import.meta.url), 'utf8');
-  const block = /export const ACCOUNTS = \{([\s\S]*?)\} as const;/.exec(ledger);
+  const accounts = readFileSync(new URL('../packages/core/src/accounts.ts', import.meta.url), 'utf8');
+  const block = /export const ACCOUNTS = \{([\s\S]*?)\} as const;/.exec(accounts);
   const inCode = new Set([...(block?.[1] ?? '').matchAll(/'(\d+)'/g)].map((m) => m[1]));
   const inSchema = new Set(SYSTEM_ACCOUNT_CODES);
   const onlyCode = [...inCode].filter((c) => !inSchema.has(c));
   const onlySchema = [...inSchema].filter((c) => !inCode.has(c));
   if (onlyCode.length || onlySchema.length) {
     console.error('SYSTEM_ACCOUNT_CODES and ACCOUNTS disagree:\n');
-    if (onlyCode.length) console.error(`  posted to in ledger.ts but not protected in schema.mjs: ${onlyCode.join(', ')}`);
-    if (onlySchema.length) console.error(`  protected in schema.mjs but not posted to in ledger.ts: ${onlySchema.join(', ')}`);
+    if (onlyCode.length) console.error(`  posted to in accounts.ts but not protected in schema.mjs: ${onlyCode.join(', ')}`);
+    if (onlySchema.length) console.error(`  protected in schema.mjs but not posted to in accounts.ts: ${onlySchema.join(', ')}`);
     console.error('\nAn account the code posts to must be protected, or an admin can delete it.');
     process.exit(1);
   }
@@ -462,6 +463,27 @@ if (settingsFaults.length) {
   console.error('so and suggest provisioning — which will not help, because provisioning does');
   console.error('what scripts/schema.mjs says. Add them to the settings collection there.');
   process.exit(1);
+}
+
+/**
+ * The apps must know the schema's current fingerprint.
+ *
+ * packages/core/src/schema-version.ts is generated from the schema, and the
+ * apps read it to say when the database is behind. A schema change committed
+ * without regenerating it ships apps that believe an old shape is current, so
+ * the one screen built to catch a forgotten provision run would stay quiet.
+ */
+{
+  const want = schemaFingerprint({ COLLECTIONS, FEATURES, SYSTEM_ACCOUNT_CODES, TEAMS, BUCKETS });
+  let have = '';
+  try {
+    have = /SCHEMA_VERSION = '([0-9a-f]+)'/.exec(readFileSync('packages/core/src/schema-version.ts', 'utf8'))?.[1] ?? '';
+  } catch { /* missing is stale */ }
+  if (have !== want) {
+    console.error(`The schema changed (fingerprint ${want}) but packages/core/src/schema-version.ts says '${have || 'nothing'}'.`);
+    console.error('Run:  npm run gen:schema   and commit the result, so the apps can tell when the database is behind.');
+    process.exit(1);
+  }
 }
 
 if (indexFaults.length) {

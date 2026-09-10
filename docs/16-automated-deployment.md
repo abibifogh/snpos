@@ -12,13 +12,16 @@ Setting it up is about **fifteen minutes of clicking**, once.
 
 | Piece | Where it lives | Who runs it |
 | --- | --- | --- |
-| The four apps | GitHub Pages, free | Built and published automatically on every change |
-| The database | Appwrite Cloud | Updated when you click **Run workflow** |
+| The four apps | GitHub Pages, free | Built and published automatically on every merge to `main` |
+| The database's shape | Appwrite Cloud | Provisioned automatically on the same merge, before the apps go out |
+| The background jobs | Appwrite Cloud | Deployed automatically on the same merge, after the database |
 | Your data | Appwrite Cloud | Never touched by a deploy |
 
-Deploying the apps and changing the database are deliberately separate. Code
-can be republished any number of times harmlessly; the database is where your
-sales live, so touching it stays a decision you make on purpose.
+One merge does all three, in that order. Provisioning only ever adds — a new
+table, a new column, a changed permission — and never removes or rewrites your
+data, which is what makes it safe to run every time. Each of the three can
+still be started by hand from the **Actions** tab when you need one on its
+own.
 
 ---
 
@@ -92,23 +95,39 @@ broken build cannot reach your staff mid-service.
 
 ### Changing the database
 
-When `scripts/schema.mjs` changes, the new tables or fields need applying:
+Nothing to do either. When a merge to `main` changes `scripts/schema.mjs`, the
+**Deploy** run provisions the new tables or fields first, then deploys the
+background jobs, then publishes the apps. The run's log shows each step.
 
-**Actions → Provision Appwrite → Run workflow**, type `provision` in the
-confirmation box, click the green button.
+If you ever need to provision on its own — a database that was set up before
+this, or a run that failed part-way — **Actions → Provision Appwrite → Run
+workflow**, type `provision` in the confirmation box, click the green button.
+The confirmation box is only asked for when you start it by hand. It finishes
+by printing the same report `npm run doctor` gives.
 
-The confirmation box exists so this cannot happen by a stray click. The script
-is safe to re-run, it creates what is missing and skips what exists, but
-writing to a live database should always be deliberate.
+### "Database update needed"
 
-It finishes by printing the same report `npm run doctor` gives, so you can see
-what it found.
+Each staff app compares the database against the version it was built for,
+and shows a yellow bar across the top when the database is behind. Staff see
+that the app still works and that the owner has been told; an admin sees the
+step to take. It shows when a provision step failed or was never run, and
+goes away on its own once one gets all the way through. The first deploy
+after this feature arrived shows it until that deploy's provision step has
+finished, which is expected.
 
 ### Watching it
 
 The **Actions** tab lists every run with a green tick or a red cross. Click any
 run to read what happened. A red cross on **Check** means the code did not
 compile and nothing was published.
+
+**Admin → Health** is the other place to look. Every night at two the server
+checks for records that do not add up — a shift closed but not on the books,
+an order marked paid with no payment, a payout that never reached the maker's
+ledger — and for background jobs that have gone quiet, and writes the answers
+down. The page shows the last check and checks again when you open it; each
+finding has a button to the place it is fixed. If anything needs fixing, the
+people who get the daily summary get an email that morning.
 
 ---
 
@@ -163,7 +182,7 @@ Appwrite as **Functions**, deployed from GitHub like everything else:
 | --- | --- | --- |
 | `preorder-fire` | Every minute | Releases pre-orders to the kitchen at their fire time, re-checking availability first |
 | `kitchen-escalate` | Every minute | Raises the alarm level on unacknowledged orders and flags a manager past the top level |
-| `notify` | On payment, on shift close | Emails the receipt; emails the shift summary |
+| `notify` | On payment, on shift close, on every spend, payout and write-off, and hourly | Emails the receipt and the shift summary; writes the books from each of those rows; sweeps hourly for anything missed |
 
 The first two exist precisely because a screen cannot be relied on. A tablet
 that has crashed, been unplugged, or had its battery optimised into silence is
@@ -172,8 +191,9 @@ display is no longer running to notice.
 
 ### Deploying them
 
-**Actions → Deploy functions → Run workflow**, type `deploy`. Same pattern as
-Provision, and manual for the same reason.
+Every merge to `main` deploys them, after the database and before the apps.
+To deploy them on their own: **Actions → Deploy functions → Run workflow**,
+type `deploy`. The confirmation is only asked for when started by hand.
 
 **Four is the limit.** Appwrite's free plan allows four functions, and this
 project has four. A fifth is accepted by `appwrite.json` and pushed happily by
@@ -231,9 +251,9 @@ Actions → New repository secret**, add four secrets:
 
 Finally:
 
-- **Actions → Deploy functions → Run workflow**, type `deploy`. This is what
-  hands the settings to the email function; adding the secrets alone does
-  nothing until this runs.
+- **Actions → Deploy functions → Run workflow**, type `deploy` (or merge
+  anything to `main`, which runs it too). This is what hands the settings to
+  the email function; adding the secrets alone does nothing until this runs.
 - **Admin → Settings → Email**: set the from-name to the restaurant's name and
   the from-address to the sender you verified in step 2.
 

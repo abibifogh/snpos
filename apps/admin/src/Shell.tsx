@@ -1,31 +1,46 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { Button, Logo, THEME_MODES, themeMode, setThemeMode } from '@snpos/ui';
-import { sectionsFor, wordsFor } from '@snpos/core';
+import { Button, Logo, SchemaBar, Segmented, THEME_MODES, themeMode, setThemeMode } from '@snpos/ui';
+import { navFor, wordsFor, sidebarSides, SIDE_NAMES } from '@snpos/core';
+import type { Module } from '@snpos/core';
 import { useSession } from './session';
 
 export function Shell({ children }: { children: ReactNode }) {
   const { settings, profile, user, signOut } = useSession();
   const path = useLocation().pathname;
 
+  /**
+   * Which side of the business the sidebar is narrowed to.
+   *
+   * Remembered on this device. A bartender who picks Bar on Monday should
+   * find the bar on Tuesday; an owner who wants everything picks All once.
+   */
+  const [side, setSide] = useState<Module | 'all'>(() => {
+    try {
+      const saved = window.localStorage.getItem('admin.side');
+      return saved === 'kitchen' || saved === 'bar' || saved === 'craft' ? saved : 'all';
+    } catch { return 'all'; }
+  });
+  const pickSide = (s: Module | 'all') => {
+    setSide(s);
+    try { window.localStorage.setItem('admin.side', s); } catch { /* a private window forgets; fine */ }
+  };
+  const sides = sidebarSides(profile, settings);
+  // A side that stopped running, or that this person no longer works on, is
+  // not a filter: it would hide everything and explain nothing.
+  const filter: Module | 'all' = side !== 'all' && sides.includes(side) ? side : 'all';
+
   // The navigation is built from what this person may actually open, not from
   // a fixed list with some entries hidden. One source, so a link can never
-  // appear for a page the router will refuse.
-  const sections = sectionsFor(profile, settings);
-  // A shop assistant hunting for "Dishes & drinks" to add a woven basket is
-  // being asked to translate, every time. One map decides what things are
-  // called; everything else about the page is the same.
+  // appear for a page the router will refuse. Grouped by the job somebody is
+  // doing, with the per-side pages folded into one link each; see navFor.
   const words = wordsFor(settings);
-  const groups: { group: string; links: { to: string; label: string; end?: boolean }[] }[] = [];
-  for (const s of sections) {
-    const group = words[s.group] ?? s.group;
-    const existing = groups.find((g) => g.group === group);
-    const link = { to: s.path, label: words[s.key] ?? s.label, end: s.path === '/' };
-    if (existing) existing.links.push(link);
-    else groups.push({ group, links: [link] });
-  }
-  groups.push({ group: 'You', links: [{ to: '/account', label: 'Your account' }, { to: '/help', label: 'Help' }] });
+  const groups = navFor(profile, settings, filter).map((g) => ({
+    group: words[g.group] ?? g.group,
+    links: g.links.map((l) => ({ ...l, label: words[l.keys[0]] ?? l.label })),
+  }));
+  groups.push({ group: 'You', links: [{ to: '/account', label: 'Your account', keys: [] }, { to: '/help', label: 'Help', keys: [] }] });
 
   const [narrow, setNarrow] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(max-width: 820px)').matches,
@@ -76,7 +91,9 @@ export function Shell({ children }: { children: ReactNode }) {
   }, [drawer]);
 
   /** What to put in the bar, so somebody knows where they are with it shut. */
-  const hereLabel = sections.find((sec) => (sec.path === '/' ? path === '/' : path.startsWith(sec.path)))?.label
+  const bare = (to: string) => to.split('?')[0];
+  const hereLabel = groups.flatMap((g) => g.links)
+    .find((l) => (l.end ? path === '/' : path === bare(l.to) || path.startsWith(`${bare(l.to)}/`)))?.label
     ?? 'Admin';
 
   return (
@@ -114,6 +131,18 @@ export function Shell({ children }: { children: ReactNode }) {
           <span>{settings?.restaurant_name ?? 'NiceOps POS'}</span>
         </div>
         <nav>
+          {/* One side at a time, for somebody who works on one. Only offered
+              where there is more than one to choose between. */}
+          {sides.length > 1 && (
+            <div className="side-pick">
+              <Segmented<Module | 'all'>
+                value={filter}
+                onChange={pickSide}
+                ariaLabel="Which side of the business"
+                options={[{ value: 'all', label: 'All' }, ...sides.map((m) => ({ value: m, label: SIDE_NAMES[m] }))]}
+              />
+            </div>
+          )}
           {groups.map((section) => {
             /**
              * Folded, except the one you are standing in.
@@ -130,7 +159,7 @@ export function Shell({ children }: { children: ReactNode }) {
              * restoring whatever was open last Tuesday.
              */
             const here = section.links.some((l) =>
-              l.end ? path === l.to : path === l.to || path.startsWith(`${l.to}/`),
+              l.end ? path === '/' : path === bare(l.to) || path.startsWith(`${bare(l.to)}/`),
             );
             return (
               /* Open where you are standing, folded elsewhere — on a phone
@@ -168,6 +197,8 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
       </aside>
       <div className="main">
+        {/* Across the top of every page, for the person who can fix it. */}
+        <SchemaBar settings={settings} owner={profile?.role === 'admin'} />
         <div className="page">{children}</div>
       </div>
     </div>

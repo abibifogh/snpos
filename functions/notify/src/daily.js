@@ -67,7 +67,7 @@ const esc = (s) =>
  * an admin saying they do not want this one. It is only worth logging when
  * something was actually generated and had nowhere to go.
  */
-async function recipientsFor(db, DB_ID, event) {
+export async function recipientsFor(db, DB_ID, event) {
   const subs = await db
     .listDocuments(DB_ID, 'report_subscriptions', [Query.equal('active', true), Query.limit(50)])
     .catch(() => ({ documents: [] }));

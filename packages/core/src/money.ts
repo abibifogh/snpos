@@ -99,3 +99,15 @@ export function sharesFor(bills: { total: number }[], taken: number): number[] {
     return share;
   });
 }
+
+/**
+ * A rate held in basis points, as a percentage somebody would say.
+ *
+ * Thirty places did `(bp / 100).toFixed(0)` by hand, and a rate of 12.5%
+ * printed as 13% on some of them and 12.5% on others.
+ */
+export function bpWords(bp: number | null | undefined, decimals = 0): string {
+  if (bp === null || bp === undefined || !Number.isFinite(bp)) return '';
+  const pct = bp / 100;
+  return `${(decimals === 0 && pct % 1 !== 0 ? pct.toFixed(1) : pct.toFixed(decimals))}%`;
+}

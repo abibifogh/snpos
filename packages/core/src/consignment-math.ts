@@ -121,6 +121,38 @@ export function splitSale(gross: number, commissionBp: number, flatPerUnit = 0, 
 export const dueFor = (price: number, bp: number, flatPerUnit = 0): number =>
   splitSale(price, bp, flatPerUnit, 1).consignor;
 
+/**
+ * What a set of sold lines earned for their makers, all together.
+ *
+ * Asked at shift close, where the shop's books need one figure: the part of
+ * the night's craft takings that is not the shop's. Each line is split the
+ * way the server splits it when it credits the maker — the same three-way
+ * lookup for the rate, the same flat-amount rule — so the books and the
+ * makers' statements cannot disagree about the same sale.
+ *
+ * Lines with no maker are the shop's own and contribute nothing.
+ */
+export function makersShareOf(
+  lines: {
+    consignor_id?: string;
+    line_total: number;
+    qty?: number;
+    commission_bp?: number | null;
+    commission_flat?: number | null;
+  }[],
+  consignors: { $id: string; commission_bp?: number | null; commission_flat?: number | null }[],
+  settings?: { default_commission_bp?: number | null } | null,
+): number {
+  let share = 0;
+  for (const line of lines) {
+    if (!line.consignor_id) continue;
+    const maker = consignors.find((c) => c.$id === line.consignor_id) ?? null;
+    const split = splitSale(line.line_total || 0, rateFor(line, maker, settings), flatFor(line, maker), line.qty || 1);
+    share += split.consignor;
+  }
+  return share;
+}
+
 /* ---------------------------------------------------------------- ledgers */
 
 export type LedgerKind = 'sale' | 'refund' | 'payout' | 'adjustment' | 'fee';

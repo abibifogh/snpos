@@ -2,14 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Empty, Modal, Notice, Spinner, Badge, Input, Field, useToast } from '@snpos/ui';
 import { listAll, humanError, db, DB_ID } from '../lib';
 import {
-  formatMoney, axisMoney, trialBalance, buildReportHtml, openPrintable, downloadUrl,
+  axisMoney, trialBalance, buildReportHtml, openPrintable, downloadUrl,
   toCsv, downloadCsv,
   parseCostAccounts, serialiseCostAccounts, startingCostChoice, hasCostChoice, splitCosts, costCodeFor,
   isLivePayment,
-  listCreatedBetween, listByIds, dayStartIso, dayEndIso, windowProblem,
-} from '@snpos/core';
+  listCreatedBetween, listByIds, dayStartIso, dayEndIso, windowProblem, dateTimeWords } from '@snpos/core';
 import type { Order, OrderItem, Doc, TrialBalanceRow } from '@snpos/core';
-import { useSession } from '../session';
+import { useSession, useMoney } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 import { Insights } from '../components/Insights';
 import { MenuEngineeringPanel } from '../components/MenuEngineering';
@@ -268,7 +267,7 @@ export function ReportsPage() {
 
   const accountName = (code: string) => accounts.find((a) => a.code === code)?.name ?? code;
   const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? 'Unknown';
-  const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  const money = useMoney();
   const tickMoney = (n: number) => (settings ? axisMoney(n, settings) : String(n));
 
   const periodLabel = `${since.toLocaleDateString()} – ${until.toLocaleDateString()}`;
@@ -752,7 +751,7 @@ function EmailPanel({ receipts }: { receipts: Receipt[] }) {
               <tbody>
                 {recent.map((r) => (
                   <tr key={r.$id}>
-                    <td className="dim small">{new Date(r.$createdAt).toLocaleString()}</td>
+                    <td className="dim small">{dateTimeWords(r.$createdAt)}</td>
                     <td className="small">{r.to_email || '-'}</td>
                     <td>
                       <Badge tone={r.status === 'sent' ? 'ok' : r.status === 'failed' || r.status === 'bounced' ? 'danger' : 'warn'}>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo, HelpModal, EightySixModal,
-  OfflineBar, useOfflineQueue, IdleScreen, ThemeButton,
+  OfflineBar, SchemaBar, useOfflineQueue, IdleScreen, ThemeButton,
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
@@ -12,7 +12,10 @@ import {
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, addonNames, addonsUnreadable,
   formatWait, giveTheMoneyBack, wakesScreen, latestMovement,
   billsToSettle, settleableTotal, billsToSettleLabel,
+  busyConfigFrom, busyLevel, loadOverride, setBusyLevel, staffWords, LEVEL_WORDS,
+  humanError,
 } from '@snpos/core';
+import type { BusyLevel, BusyOverride } from '@snpos/core';
 import type {
   Order, OrderItem, Settings, Venue, StaffProfile, StaffSession, HelpRole, MenuItem, Doc, FeatureMap,
 } from '@snpos/core';
@@ -81,6 +84,16 @@ export function App() {
   const [who, setWho] = useState<StaffProfile | null>(null);
   const [session, setSession] = useState<StaffSession | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  /**
+   * A busy level somebody set by hand, or none.
+   *
+   * How busy the pass IS gets counted from the tickets on this screen, which
+   * are already here — no read is needed for that. This is only the part a
+   * count cannot know, and it is read once and after every change rather than
+   * polled: a level set on this screen is set BY this screen.
+   */
+  const [override, setOverride] = useState<BusyOverride | null>(null);
+  const [busyOpen, setBusyOpen] = useState(false);
   const [offOpen, setOffOpen] = useState(false);
   const [offItems, setOffItems] = useState<MenuItem[]>([]);
   const [offBusy, setOffBusy] = useState<string | null>(null);
@@ -427,6 +440,40 @@ export function App() {
   );
 
   const pending = visible.filter((o) => o.status === 'PENDING');
+
+  /*
+    How busy this pass is, worked out from the tickets already on screen.
+
+    Not filtered by station: the customer's wait is the whole kitchen's
+    problem, and a cook looking at the cold section only would otherwise see
+    "keeping up" while the hot section drowns. Anything cooked or waiting to
+    be cooked counts; anything already handed over does not.
+  */
+  const busyCfg = useMemo(() => busyConfigFrom(features), [features]);
+  const waitingNow = useMemo(
+    () => orders.filter((o) => ['PENDING', 'ACCEPTED', 'PREPARING'].includes(o.status)).length,
+    [orders],
+  );
+  const level: BusyLevel = busyLevel({ waiting: waitingNow, cfg: busyCfg, override });
+  const busyOn = isEnabled(features, 'busy_mode');
+
+  const readOverride = useCallback(() => {
+    if (!venue) return;
+    void loadOverride(venue.$id).then(setOverride).catch(() => undefined);
+  }, [venue]);
+  useEffect(() => { readOverride(); }, [readOverride]);
+
+  const chooseLevel = async (next: BusyLevel | null) => {
+    if (!venue) return;
+    try {
+      await setBusyLevel({ venueId: venue.$id, level: next, userId: who?.$id ?? '' });
+      readOverride();
+      setBusyOpen(false);
+      setToast(next ? `Set to ${LEVEL_WORDS[next].toLowerCase()}` : 'Back to counting tickets');
+    } catch (e) {
+      setToast(humanError(e));
+    }
+  };
 
   /**
    * Food that has gone out and has not been paid for.
@@ -947,9 +994,43 @@ export function App() {
         />
       )}
 
+      {busyOpen && (
+        <Modal title="How busy are we?" onClose={() => setBusyOpen(false)}>
+          <p className="small dim" style={{ marginTop: 0 }}>
+            {staffWords({ waiting: waitingNow, cfg: busyCfg, override })}
+          </p>
+          <p className="small dim">
+            Left alone, this follows the tickets waiting. Setting it by hand is for what the count cannot see: a
+            fryer down, people off, a coach party at the door. It goes back to counting on its own, so nobody
+            leaves ordering switched off overnight.
+          </p>
+          <div className="stack" style={{ gap: '0.5rem' }}>
+            {(['normal', 'busy', 'paused'] as BusyLevel[]).map((l) => (
+              <Button
+                key={l}
+                variant={l === level ? 'primary' : undefined}
+                onClick={() => void chooseLevel(l)}
+              >
+                {LEVEL_WORDS[l]}
+                {l === 'busy' && ` — quote ${busyCfg.extraMinutes} minutes longer`}
+                {l === 'paused' && (busyCfg.holdWhenPaused
+                  ? ' — phones are asked to order at the counter'
+                  : ' — says so, but keeps taking orders')}
+              </Button>
+            ))}
+            {override && (
+              <Button variant="ghost" onClick={() => void chooseLevel(null)}>
+                Go back to counting tickets
+              </Button>
+            )}
+          </div>
+        </Modal>
+      )}
+
       {/* Loud on purpose. Offline support nobody notices is how a service ends
           up sitting on one iPad that never got put back on the wifi. */}
       <OfflineBar queued={queued} onRetry={() => void flushQueue()} />
+      <SchemaBar settings={settings} />
 
       <div className="kds-top">
         <div className="row">
@@ -996,6 +1077,28 @@ export function App() {
               }}
             >
               86
+            </button>
+          )}
+          {/*
+            How busy the pass is, and the one control that changes it.
+
+            On the pass rather than in an office app, because the person who
+            knows the fryer is down is standing here, and a switch they have
+            to ask somebody else to flip is a switch that never gets flipped
+            during the service it was for.
+          */}
+          {busyOn && (
+            <button
+              className="kds-help"
+              style={{
+                width: 'auto',
+                padding: '0 0.7rem',
+                color: level === 'paused' ? '#ff6b5e' : level === 'busy' ? 'var(--warn)' : undefined,
+              }}
+              title={staffWords({ waiting: waitingNow, cfg: busyCfg, override })}
+              onClick={() => setBusyOpen(true)}
+            >
+              {LEVEL_WORDS[level]}
             </button>
           )}
           {isEnabled(features, 'help') && (

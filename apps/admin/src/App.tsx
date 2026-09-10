@@ -1,27 +1,27 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Spinner, Notice } from '@snpos/ui';
-import { canOpen } from '@snpos/core';
+import { canOpen, NAV_MERGES } from '@snpos/core';
 import type { ReactElement } from 'react';
 import { useSession } from './session';
 import { Login } from './pages/Login';
 import { Shell } from './Shell';
 import { Dashboard } from './pages/Dashboard';
 import { SettingsPage } from './pages/SettingsPage';
-import { CategoriesPage } from './pages/Categories';
-import { MenuItemsPage } from './pages/MenuItems';
 import { FeaturesPage } from './pages/Features';
 import { VenuesPage } from './pages/Venues';
 import { AccountPage } from './pages/Account';
 import { HelpPage } from './pages/Help';
 import { AddonsPage } from './pages/Addons';
 import { ExpensesPage } from './pages/Expenses';
+import { WaitingPage } from './pages/Waiting';
+import { HealthPage } from './pages/Health';
+import { CataloguePage } from './pages/Catalogue';
 import { ImprestPage } from './pages/Imprest';
 import { CustomersPage } from './pages/Customers';
 import { AccountingPage } from './pages/Accounting';
 import { TablesPage } from './pages/Tables';
 import { ShiftsPage } from './pages/Shifts';
 import { StaffPage } from './pages/Staff';
-import { StockPage } from './pages/Stock';
 import { WastePage } from './pages/Waste';
 import { ReportsPage } from './pages/Reports';
 import { StationsPage } from './pages/Stations';
@@ -66,20 +66,31 @@ export function App() {
       </>
     );
 
+  /** A page that stands for several sides: open if any of them is. */
+  const guardAny = (to: string, element: ReactElement) => {
+    const keys = Object.values(NAV_MERGES.find((m) => m.to === to)?.keys ?? {});
+    return keys.some((k) => canOpen(k, profile, settings)) ? element : guard(keys[0] ?? '', element);
+  };
+
   return (
     <Shell>
       <Routes>
         <Route path="/" element={guard('dashboard', <Dashboard />)} />
         <Route path="/orders" element={guard('orders', <OrdersPage />)} />
         <Route path="/reports" element={guard('reports', <ReportsPage />)} />
-        <Route path="/menu/categories" element={guard('menu_categories', <CategoriesPage module="kitchen" />)} />
-        <Route path="/menu/items" element={guard('menu_items', <MenuItemsPage module="kitchen" />)} />
-        {/* Same two screens, the other side of the business. One component, so
-            a fix to the catalogue reaches both rather than one of them. */}
-        <Route path="/shop/categories" element={guard('shop_categories', <CategoriesPage module="craft" />)} />
-        <Route path="/shop/items" element={guard('shop_items', <MenuItemsPage module="craft" />)} />
+        {/* One catalogue page per kind, with a side switch on it. Each side is
+            still its own grant; the page offers only the sides this person
+            holds. The old per-side addresses still work, redirected. */}
+        <Route path="/catalogue/categories" element={guardAny('/catalogue/categories', <CataloguePage kind="categories" />)} />
+        <Route path="/catalogue/items" element={guardAny('/catalogue/items', <CataloguePage kind="items" />)} />
+        <Route path="/menu/categories" element={<Navigate to="/catalogue/categories?side=kitchen" replace />} />
+        <Route path="/menu/items" element={<Navigate to="/catalogue/items?side=kitchen" replace />} />
+        <Route path="/shop/categories" element={<Navigate to="/catalogue/categories?side=craft" replace />} />
+        <Route path="/shop/items" element={<Navigate to="/catalogue/items?side=craft" replace />} />
         <Route path="/menu/options" element={guard('menu_options', <AddonsPage />)} />
         <Route path="/expenses" element={guard('expenses', <ExpensesPage />)} />
+        <Route path="/waiting" element={guard('waiting', <WaitingPage />)} />
+        <Route path="/health" element={guard('health', <HealthPage />)} />
         <Route path="/imprest" element={guard('imprest', <ImprestPage />)} />
         <Route path="/customers" element={guard('customers', <CustomersPage />)} />
         <Route path="/accounting" element={guard('accounting', <AccountingPage />)} />
@@ -92,9 +103,9 @@ export function App() {
             shelves — a dish and a cocktail are both a menu item with a recipe,
             and a bottle is an ingredient. What it does NOT share is the
             counting, which is why that has a screen of its own. */}
-        <Route path="/bar/categories" element={guard('bar_categories', <CategoriesPage module="bar" />)} />
-        <Route path="/bar/items" element={guard('bar_items', <MenuItemsPage module="bar" />)} />
-        <Route path="/bar/stock" element={guard('bar_stock', <StockPage module="bar" />)} />
+        <Route path="/bar/categories" element={<Navigate to="/catalogue/categories?side=bar" replace />} />
+        <Route path="/bar/items" element={<Navigate to="/catalogue/items?side=bar" replace />} />
+        <Route path="/bar/stock" element={<Navigate to="/stock?side=bar" replace />} />
         <Route path="/bar/counts" element={guard('bar_counts', <BarCountsPage />)} />
         <Route path="/locations" element={guard('locations', <LocationsPage />)} />
         <Route path="/payouts" element={guard('payouts', <PayoutsPage />)} />
@@ -102,7 +113,7 @@ export function App() {
         <Route path="/tables" element={guard('tables', <TablesPage />)} />
         <Route path="/shifts" element={guard('shifts', <ShiftsPage />)} />
         <Route path="/staff" element={guard('staff', <StaffPage />)} />
-        <Route path="/stock" element={guard('stock', <StockPage />)} />
+        <Route path="/stock" element={guardAny('/stock', <CataloguePage kind="stock" />)} />
         <Route path="/stations" element={guard('stations', <StationsPage />)} />
         <Route path="/waste" element={guard('waste', <WastePage />)} />
         <Route path="/features" element={guard('features', <FeaturesPage />)} />
