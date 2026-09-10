@@ -5,7 +5,7 @@ import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from
 import { liveOrders } from './orders';
 import { countable } from './bar-count';
 import { makersShareOf } from './consignment-math';
-import { splitTax, parseLevies } from './pricing';
+import { splitTax, parseLevies, vatBpOf } from './pricing';
 import { loadConsignors } from './consignment';
 import { postShift, reverseEntry, shiftCloseEntries, lockedThroughFor, isLocked } from './ledger';
 import { isLivePayment } from './payments';
@@ -1141,7 +1141,7 @@ export async function repostShiftAccounts(opts: {
     tips: takings.tipsTotal,
     tax: paid.reduce((a, o) => a + o.tax_total, 0),
     taxParts: splitTax(paid.reduce((a, o) => a + o.tax_total, 0), {
-      vatBp: settingsRow?.tax_rate_bp ?? 0, levies: parseLevies(settingsRow?.levies),
+      vatBp: vatBpOf(settingsRow ?? {}), levies: parseLevies(settingsRow?.levies),
     }),
     discounts: paid.reduce((a, o) => a + o.discount_total, 0),
     // Left where it is. See the note above.

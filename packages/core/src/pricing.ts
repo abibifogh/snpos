@@ -72,7 +72,8 @@ export interface TotalsInput {
   /** Already-resolved discount amount in minor units. */
   discount?: number;
   deliveryFee?: number;
-  settings: Pick<Settings, 'tax_rate_bp' | 'tax_inclusive' | 'service_charge_bp'> & { levies?: string };
+  settings: Pick<Settings, 'tax_rate_bp' | 'tax_inclusive' | 'service_charge_bp'>
+    & { levies?: string; vat_charged?: boolean };
 }
 
 /**
@@ -101,7 +102,7 @@ export function computeTotals({ lines, discount = 0, deliveryFee = 0, settings }
   // levies this is the single rate the system always had, to the rounding.
   const tax = taxBreakdown({
     taxable: taxableBase,
-    vatBp: settings.tax_rate_bp || 0,
+    vatBp: vatBpOf(settings),
     inclusive: !!settings.tax_inclusive,
     levies: parseLevies(settings.levies),
   });
@@ -229,6 +230,24 @@ export const GHANA_LEVIES: readonly Levy[] = [
  * account for goes to "Other levies payable" rather than being folded into
  * VAT, which would file it on the wrong return.
  */
+/**
+ * The VAT rate actually in force, which is nought when the business says it
+ * does not charge VAT.
+ *
+ * A switch rather than "type nought in the rate box", because those are two
+ * different statements and only one of them survives somebody tidying up. A
+ * business that stops charging VAT wants its rate remembered for the day it
+ * registers again, and a rate box left at 15 with a switch turned off is a
+ * clearer record than a nought nobody can explain. Every place that works
+ * out tax reads the rate through here, so the switch cannot be honoured on
+ * the receipt and forgotten at the till.
+ *
+ * The levies are not affected. Each is its own charge to its own body, and
+ * they are turned on and off one at a time in settings.
+ */
+export const vatBpOf = (settings: { tax_rate_bp?: number; vat_charged?: boolean }): number =>
+  (settings.vat_charged === false ? 0 : Math.max(0, Math.round(settings.tax_rate_bp || 0)));
+
 export const LEVY_ACCOUNTS: Record<string, string> = {
   vat: '2100',
   nhil: '2110',
@@ -358,6 +377,28 @@ export function splitTax(taxTotal: number, input: { vatBp: number; levies: Levy[
   return parts;
 }
 
-/** "VAT and levies" where there are levies, "VAT" where there are not. */
-export const taxWords = (levies: Levy[], currencyCode?: string): string =>
-  levies.length > 0 ? 'VAT and levies' : currencyCode === 'GHS' ? 'VAT' : 'Tax';
+/**
+ * What to call the one line, when tax is shown as one line.
+ *
+ * "VAT and levies" where both are charged, and where VAT is not, the levies
+ * are named instead. A receipt that says VAT on a business that does not
+ * charge it is the kind of wrong that a customer can take to the revenue
+ * authority.
+ */
+export const taxWords = (levies: Levy[], currencyCode?: string, vatOn = true): string => {
+  if (levies.length === 0) return currencyCode === 'GHS' ? 'VAT' : 'Tax';
+  if (vatOn) return 'VAT and levies';
+  return levies.length === 1 ? levies[0].name : 'Levies';
+};
+
+/**
+ * Whether a receipt prints each charge on its own line or adds them into one.
+ *
+ * The business's choice, because both are defensible: a customer wants to
+ * see what each body is owed, and a narrow till roll wants one line. One
+ * part is one line either way, so the choice only bites where there are
+ * several. Read by the browser receipt and by the server's PDF, so a
+ * printed copy and an emailed one agree.
+ */
+export const showsTaxParts = (parts: { amount: number }[], detail?: string): boolean =>
+  detail !== 'combined' && parts.length > 1;

@@ -246,7 +246,9 @@ export function SettingsPage() {
         secondary_color: form.secondary_color,
         tax_rate_bp: Number(form.tax_rate_bp),
         tax_inclusive: form.tax_inclusive,
+        vat_charged: form.vat_charged !== false,
         levies: form.levies ?? '',
+        receipt_tax_detail: form.receipt_tax_detail ?? 'separate',
         service_charge_bp: Number(form.service_charge_bp),
         kitchen_ack_sla_seconds: Number(form.kitchen_ack_sla_seconds),
         require_reject_reason: form.require_reject_reason,
@@ -449,7 +451,7 @@ export function SettingsPage() {
 
       <FoldCard
         title="Money"
-        summary={`${form.currency_code} · tax ${bpToPercent(form.tax_rate_bp)}% · service ${bpToPercent(form.service_charge_bp)}%`}
+        summary={`${form.currency_code} · VAT ${form.vat_charged === false ? 'not charged' : `${bpToPercent(form.tax_rate_bp)}%`} · service ${bpToPercent(form.service_charge_bp)}%`}
       >
         <div className="grid-2">
           <Field label="Code" hint="Three letters, e.g. GHS.">
@@ -507,12 +509,31 @@ export function SettingsPage() {
         </div>
 
         <h3 style={{ marginTop: '1.6rem' }}>Tax and service</h3>
+
+        {/*
+          A switch, not a rate of nought. A business that deregisters keeps
+          its rate for the day it registers again, and the switch is a
+          sentence somebody can read rather than a number they have to
+          interpret. See vatBpOf: everything that works out tax reads it.
+        */}
+        <Field hint="Turn this off if you are not VAT registered. Your rate is kept, and nothing charges it while this is off. Levies below are separate and stay as you set them.">
+          <Toggle
+            checked={form.vat_charged !== false}
+            onChange={(v) => set('vat_charged', v)}
+            label="We charge VAT"
+          />
+        </Field>
+
         <div className="grid-2">
-          <Field label="Tax rate (%)" hint="0 if you do not charge tax.">
+          <Field
+            label="VAT rate (%)"
+            hint={form.vat_charged === false ? 'Kept, but not charged while the switch above is off.' : undefined}
+          >
             <Input
               type="number"
               step="0.01"
               min="0"
+              disabled={form.vat_charged === false}
               value={bpToPercent(form.tax_rate_bp)}
               onChange={(e) => set('tax_rate_bp', percentToBp(e.target.value))}
             />
@@ -529,6 +550,23 @@ export function SettingsPage() {
         </div>
         <Field hint="Tax-inclusive means the price on the menu is what the customer pays; tax is worked out from it rather than added on top.">
           <Toggle checked={form.tax_inclusive} onChange={(v) => set('tax_inclusive', v)} label="Menu prices include tax" />
+        </Field>
+
+        {/*
+          How the receipt says it. Only bites where there is more than one
+          charge; one charge is one line whichever way this is set.
+        */}
+        <Field
+          label="How a receipt shows tax"
+          hint="Applies to the printed receipt and the emailed one alike."
+        >
+          <Select
+            value={form.receipt_tax_detail ?? 'separate'}
+            onChange={(e) => set('receipt_tax_detail', e.target.value as 'separate' | 'combined')}
+          >
+            <option value="separate">A line for each: VAT, NHIL, GETFund, and so on</option>
+            <option value="combined">One line for all of them together</option>
+          </Select>
         </Field>
 
         {/*

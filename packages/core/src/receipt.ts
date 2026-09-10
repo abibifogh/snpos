@@ -4,7 +4,7 @@ import { downloadUrl } from './files';
 import { addonNames } from './orders-time';
 import type { Settings, Venue, Doc } from './types';
 import type { Order, OrderItem } from './orders';
-import { splitTax, parseLevies, taxWords } from './pricing';
+import { splitTax, parseLevies, taxWords, vatBpOf, showsTaxParts } from './pricing';
 
 /**
  * A printable receipt, in the shape people expect from a till.
@@ -334,6 +334,14 @@ export async function receiptForOrder(opts: {
 
   const logoId = settings.logo_light_id;
 
+  const taxParts = splitTax(order.tax_total, {
+    vatBp: vatBpOf(settings),
+    levies: parseLevies(settings.levies),
+  });
+  const taxPartLines = showsTaxParts(taxParts, settings.receipt_tax_detail)
+    ? taxParts.map((t) => ({ label: t.name, amount: money(t.amount) }))
+    : undefined;
+
   return {
     restaurantName: settings.restaurant_name,
     venueName: venue?.name,
@@ -351,11 +359,12 @@ export async function receiptForOrder(opts: {
     discount: order.discount_total > 0 ? money(order.discount_total) : undefined,
     service: order.service_total > 0 ? money(order.service_total) : undefined,
     tax: order.tax_total > 0 ? money(order.tax_total) : undefined,
-    taxLabel: taxWords(parseLevies(settings.levies), settings.currency_code),
+    taxLabel: taxWords(parseLevies(settings.levies), settings.currency_code, vatBpOf(settings) > 0),
     taxInclusive: settings.tax_inclusive,
-    // Each levy on its own line, because each is a different body's money.
-    taxParts: splitTax(order.tax_total, { vatBp: settings.tax_rate_bp, levies: parseLevies(settings.levies) })
-      .map((t) => ({ label: t.name, amount: money(t.amount) })),
+    // Each levy on its own line, because each is a different body's money —
+    // unless the business has asked for one line, which a narrow till roll
+    // is a fair reason to want.
+    taxParts: taxPartLines,
     tip: order.tip_total > 0 ? money(order.tip_total) : undefined,
     total: money(order.total),
     payments: payments.map((p) => ({

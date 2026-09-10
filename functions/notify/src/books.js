@@ -250,6 +250,26 @@ const LEVY_ACCOUNTS = {
 /** Mirrors levyAccount in packages/core/src/pricing.ts. */
 export const levyAccount = (key) => LEVY_ACCOUNTS[key] || ACCOUNTS.otherLeviesPayable;
 
+/**
+ * The VAT rate in force, nought when the business says it charges no VAT.
+ *
+ * Mirrors vatBpOf in packages/core/src/pricing.ts. The switch has to be read
+ * here as well as in the browser, or a shift would credit VAT to the revenue
+ * authority's account that the receipt never charged.
+ */
+export const vatBpOf = (settings) =>
+  (settings.vat_charged === false ? 0 : Math.max(0, Math.round(settings.tax_rate_bp || 0)));
+
+/** Mirrors taxWords in packages/core/src/pricing.ts. */
+export function taxWords(levies, currencyCode, vatOn = true) {
+  if (levies.length === 0) return currencyCode === 'GHS' ? 'VAT' : 'Tax';
+  if (vatOn) return 'VAT and levies';
+  return levies.length === 1 ? levies[0].name : 'Levies';
+}
+
+/** Mirrors showsTaxParts in packages/core/src/pricing.ts. */
+export const showsTaxParts = (parts, detail) => detail !== 'combined' && parts.length > 1;
+
 /** Mirrors splitTax in packages/core/src/pricing.ts. */
 export function splitTax(taxTotal, input) {
   const total = Math.max(0, Math.round(taxTotal));

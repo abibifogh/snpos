@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   GHANA_LEVIES, LEVY_ACCOUNTS, OTHER_LEVIES_ACCOUNT, parseLevies, serialiseLevies,
-  taxBreakdown, splitTax, taxWords, levyAccount,
+  taxBreakdown, splitTax, taxWords, levyAccount, vatBpOf, showsTaxParts,
 } from '../pricing.ts';
 import { ACCOUNTS } from '../accounts.ts';
 
@@ -79,4 +79,39 @@ test('the word on the receipt', () => {
   assert.equal(taxWords(ghana), 'VAT and levies');
   assert.equal(taxWords([], 'GHS'), 'VAT');
   assert.equal(taxWords([], 'USD'), 'Tax');
+});
+
+test('a business that does not charge VAT is not told it does', () => {
+  // The whole point: a receipt that says VAT where none was charged is a
+  // document a customer could take to the revenue authority.
+  assert.equal(taxWords(ghana, 'GHS', false), 'Levies');
+  assert.equal(taxWords([ghana[0]], 'GHS', false), 'NHIL');
+  assert.equal(taxWords(ghana, 'GHS', true), 'VAT and levies');
+});
+
+test('the VAT switch decides the rate, and the rate is kept while it is off', () => {
+  assert.equal(vatBpOf({ tax_rate_bp: 1500 }), 1500);
+  assert.equal(vatBpOf({ tax_rate_bp: 1500, vat_charged: true }), 1500);
+  assert.equal(vatBpOf({ tax_rate_bp: 1500, vat_charged: false }), 0);
+  // An old settings row has no such field, and charges VAT as it always did.
+  assert.equal(vatBpOf({ tax_rate_bp: 1250, vat_charged: undefined }), 1250);
+  assert.equal(vatBpOf({}), 0);
+});
+
+test('switching VAT off leaves the levies charging', () => {
+  const off = taxBreakdown({ taxable: 10000, vatBp: vatBpOf({ tax_rate_bp: 1500, vat_charged: false }), inclusive: false, levies: ghana });
+  // NHIL 2.5 + GETFund 2.5 + tourism 1 = 6% of 100.00, and no VAT part.
+  assert.equal(off.total, 600);
+  assert.equal(off.parts.some((p) => p.key === 'vat'), false);
+  assert.deepEqual(off.parts.map((p) => p.key), ['nhil', 'getfund', 'tourism']);
+});
+
+test('the receipt lists each charge unless the business asked for one line', () => {
+  const parts = splitTax(2100, { vatBp: 1500, levies: ghana });
+  assert.equal(parts.length, 4);
+  assert.equal(showsTaxParts(parts, 'separate'), true);
+  assert.equal(showsTaxParts(parts, undefined), true);
+  assert.equal(showsTaxParts(parts, 'combined'), false);
+  // One charge is one line whichever way it is set.
+  assert.equal(showsTaxParts(splitTax(1500, { vatBp: 1500, levies: [] }), 'separate'), false);
 });

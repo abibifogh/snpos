@@ -23,11 +23,22 @@ export function totalsFor(subtotal, discount, settings) {
   const taxable = discounted + service;
   const tax = taxTotalFor({
     taxable,
-    vatBp: settings.tax_rate_bp || 0,
+    vatBp: vatBpOf(settings),
     inclusive: !!settings.tax_inclusive,
     levies: parseLevies(settings.levies),
   });
   return { service, tax, total: settings.tax_inclusive ? taxable : taxable + tax };
+}
+
+/**
+ * The VAT rate in force, nought where the business charges no VAT.
+ *
+ * Mirrors vatBpOf in packages/core/src/pricing.ts. The guard re-prices every
+ * order that arrives from a phone, so it has to apply the same switch the
+ * till applied or it would reject its own correct totals.
+ */
+export function vatBpOf(settings) {
+  return settings.vat_charged === false ? 0 : Math.max(0, Math.round(settings.tax_rate_bp || 0));
 }
 
 /**

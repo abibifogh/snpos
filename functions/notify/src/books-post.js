@@ -1,6 +1,6 @@
 import {
   ACCOUNTS, shiftEntries, takingsByKind, cashVarianceOf, payoutLines, wasteLines,
-  debitsForSpend, spendPostingLines, sameDebits, parseLevies, splitTax, makersShareOf, isLocked,
+  debitsForSpend, spendPostingLines, sameDebits, parseLevies, splitTax, vatBpOf, makersShareOf, isLocked,
 } from './books.js';
 
 /**
@@ -230,7 +230,7 @@ export async function postShiftClose(ctx, shift) {
       takings: takingsByKind(payments, methods),
       tips: shift.tip_total || 0,
       tax,
-      taxParts: splitTax(tax, { vatBp: settings.tax_rate_bp || 0, levies: parseLevies(settings.levies) }),
+      taxParts: splitTax(tax, { vatBp: vatBpOf(settings), levies: parseLevies(settings.levies) }),
       discounts: shift.discount_total || 0,
       cogs: shift.cogs_total || 0,
       cashVariance: cashVarianceOf(shift.counted, shift.expected),

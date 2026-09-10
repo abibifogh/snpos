@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **72 collections, 1010 fields and 238 indexes**. Entered by hand at a
+> This is **72 collections, 1012 fields and 238 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -258,7 +258,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 **Read**: Any · **Create**: _none, server only_ · **Update**: Team: admins · **Delete**: _none, server only_
 
-**Attributes** (64)
+**Attributes** (66)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -277,7 +277,9 @@ There are 72 collections. A progress checklist is at the end of this document.
 | `favicon_id` | String | size 64 | No | ,  | No |
 | `tax_rate_bp` | Integer | ,  | **Yes** | ,  | No |
 | `tax_inclusive` | Boolean | ,  | **Yes** | ,  | No |
+| `vat_charged` | Boolean | ,  | **Yes** | ,  | No |
 | `levies` | String | size 2000 | No | ,  | No |
+| `receipt_tax_detail` | Enum | separate, combined | **Yes** | ,  | No |
 | `schema_version` | String | size 40 | No | ,  | No |
 | `schema_applied_at` | Datetime | ,  | No | ,  | No |
 | `service_charge_bp` | Integer | ,  | **Yes** | ,  | No |
@@ -2719,7 +2721,7 @@ way mistakes creep in.
 - [ ]  2. `venue_menu_items` (7 fields, 2 indexes)
 - [ ]  3. `organisations` (13 fields, 3 indexes)
 - [ ]  4. `org_requests` (10 fields, 1 indexes)
-- [ ]  5. `settings` (64 fields, 1 indexes)
+- [ ]  5. `settings` (66 fields, 1 indexes)
 - [ ]  6. `payment_methods` (12 fields, 3 indexes)
 - [ ]  7. `categories` (13 fields, 3 indexes)
 - [ ]  8. `menu_items` (33 fields, 6 indexes)

@@ -213,9 +213,25 @@ export const COLLECTIONS = [
       ['favicon_id', 's', 64, false],
       ['tax_rate_bp', 'i', null, true, 0],
       ['tax_inclusive', 'b', null, true, true],
+      /*
+        Whether VAT is charged at all.
+
+        A switch of its own rather than a rate of nought, because a business
+        that deregisters wants its rate kept for the day it registers again,
+        and because "we do not charge VAT" is a statement somebody can read
+        off the settings page. Off means the rate above is not applied
+        anywhere: not on the till, not in the guard that re-prices orders
+        from phones, not on a receipt, not at shift close. See vatBpOf.
+        The levies are separate; each is switched on by having a rate.
+      */
+      ['vat_charged', 'b', null, true, true],
       // The levies beside VAT, as JSON: [{key, name, rate_bp}]. VAT (the rate
       // above) applies on top of them. Empty is the single rate as before.
       ['levies', 's', 2000, false],
+      // Whether a receipt lists each charge or adds them into one line. Both
+      // are defensible: a customer wants to see what each body is owed, and a
+      // narrow till roll wants one line. See showsTaxParts.
+      ['receipt_tax_detail', 'e', ['separate', 'combined'], true, 'separate'],
       /*
         What shape the database is, as provisioning last left it.
 

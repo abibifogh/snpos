@@ -5,7 +5,9 @@ import {
 } from '../books.ts';
 import { ACCOUNTS, salesAccount, cogsAccount, inventoryAccount, payoutAccount } from '../accounts.ts';
 import { spendDebits, spendPostingLines, sameDebits } from '../spend-posting.ts';
-import { splitTax, parseLevies, levyAccount, GHANA_LEVIES, serialiseLevies } from '../pricing.ts';
+import {
+  splitTax, parseLevies, levyAccount, GHANA_LEVIES, serialiseLevies, vatBpOf, taxWords, showsTaxParts,
+} from '../pricing.ts';
 import { makersShareOf, splitSale, rateFor, flatFor } from '../consignment-math.ts';
 import { isLocked } from '../ledger-math.ts';
 import * as server from '../../../../functions/notify/src/books.js';
@@ -101,6 +103,31 @@ test('a payout and a write-off each make one balanced pair', () => {
  * The function that now writes the books cannot import this package, so it
  * carries a copy of every rule above. These run both over the same inputs.
  */
+
+test('the VAT switch and the receipt wording read the same on both sides', () => {
+  for (const s of [
+    { tax_rate_bp: 1500 },
+    { tax_rate_bp: 1500, vat_charged: true },
+    { tax_rate_bp: 1500, vat_charged: false },
+    { tax_rate_bp: 0, vat_charged: false },
+    {},
+  ]) {
+    assert.equal(server.vatBpOf(s), vatBpOf(s), JSON.stringify(s));
+  }
+  const ghana = [...GHANA_LEVIES];
+  for (const [levies, code, on] of [
+    [ghana, 'GHS', true], [ghana, 'GHS', false], [[ghana[0]], 'GHS', false],
+    [[], 'GHS', true], [[], 'USD', true], [[], 'USD', false],
+  ] as const) {
+    assert.equal(server.taxWords(levies, code, on), taxWords([...levies], code, on));
+  }
+  for (const detail of ['separate', 'combined', undefined] as const) {
+    for (const n of [0, 1, 2, 4]) {
+      const parts = Array.from({ length: n }, () => ({ amount: 1 }));
+      assert.equal(server.showsTaxParts(parts, detail), showsTaxParts(parts, detail), `${detail} ${n}`);
+    }
+  }
+});
 
 test('the chart of accounts is the same on both sides, and the books’ own copy matches it', () => {
   assert.deepEqual(server.ACCOUNTS, ACCOUNTS);

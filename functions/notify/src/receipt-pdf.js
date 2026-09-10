@@ -13,6 +13,8 @@
  * the amount should be.
  */
 
+import { splitTax, parseLevies, vatBpOf, taxWords, showsTaxParts } from './books.js';
+
 /** Courier is 600/1000 em wide at every size, the only reason this is easy. */
 const CHAR_W = 0.6;
 
@@ -213,12 +215,30 @@ export function receiptPdf({ settings, venue, order, items, payments, methods })
     if (i.notes) r.text(`  "${i.notes}"`, { size: 7.5 });
   }
 
+  /*
+    Tax, the way the business asked for it.
+
+    This used to print one combined line whatever the settings said, so a
+    printed receipt and an emailed one disagreed about what a customer had
+    been charged NHIL. Now both read the same two settings: whether VAT is
+    charged at all, and whether the charges are listed separately.
+  */
+  const taxParts = splitTax(order.tax_total || 0, {
+    vatBp: vatBpOf(settings),
+    levies: parseLevies(settings.levies),
+  });
+  const taxSeparate = showsTaxParts(taxParts, settings.receipt_tax_detail);
+  const taxLabel = taxWords(parseLevies(settings.levies), settings.currency_code, vatBpOf(settings) > 0);
+
   r.rule();
   r.pair('Sub Total', money(order.subtotal));
   if (order.discount_total) r.pair('Discount', `-${money(order.discount_total)}`);
   if (order.service_total) r.pair('Service', money(order.service_total));
   if (order.tip_total) r.pair('Tip', money(order.tip_total));
-  if (!settings.tax_inclusive && order.tax_total) r.pair(settings.levies ? 'VAT and levies' : 'Tax', money(order.tax_total));
+  if (!settings.tax_inclusive && order.tax_total) {
+    if (taxSeparate) for (const t of taxParts) r.pair(t.name, money(t.amount));
+    else r.pair(taxLabel, money(order.tax_total));
+  }
   r.gap();
   r.pair('TOTAL', money(order.total), { bold: true, size: 11 });
   r.gap();
@@ -228,7 +248,10 @@ export function receiptPdf({ settings, venue, order, items, payments, methods })
     r.pair(`Tendered ${name}`, money((p.amount || 0) + (p.tip || 0)));
     if (p.change_given) r.pair('Change', money(p.change_given));
   }
-  if (settings.tax_inclusive && order.tax_total) r.pair(settings.levies ? 'VAT and levies (incl)' : 'Tax Total (incl)', money(order.tax_total));
+  if (settings.tax_inclusive && order.tax_total) {
+    if (taxSeparate) for (const t of taxParts) r.pair(`Includes ${t.name}`, money(t.amount));
+    else r.pair(`${taxLabel} Total (incl)`, money(order.tax_total));
+  }
   if (order.payment_status !== 'paid') {
     r.gap();
     r.centre('*** NOT YET PAID ***', { bold: true });

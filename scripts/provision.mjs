@@ -461,6 +461,8 @@ async function main() {
       secondary_color: '#F59E0B',
       tax_rate_bp: 0,
       tax_inclusive: true,
+      vat_charged: true,
+      receipt_tax_detail: 'separate',
       service_charge_bp: 0,
       shift_float_policy: 'zero', // never inherit the previous shift automatically
       shift_float_default: 0,

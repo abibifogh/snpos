@@ -102,6 +102,11 @@ test('order totals agree, inclusive and exclusive, with and without a discount, 
     { tax_rate_bp: 1500, tax_inclusive: true, service_charge_bp: 1000, levies: GHANA },
     { tax_rate_bp: 0, tax_inclusive: false, service_charge_bp: 0, levies: GHANA },
     { tax_rate_bp: 1500, tax_inclusive: true, service_charge_bp: 0, levies: 'not json' },
+    // Not VAT registered. The rate is still on the row, and nothing charges
+    // it; the levies beside it are unaffected and still do.
+    { tax_rate_bp: 1500, tax_inclusive: false, service_charge_bp: 0, vat_charged: false },
+    { tax_rate_bp: 1500, tax_inclusive: true, service_charge_bp: 1000, vat_charged: false, levies: GHANA },
+    { tax_rate_bp: 1500, tax_inclusive: false, service_charge_bp: 0, vat_charged: true, levies: GHANA },
   ];
   for (const settings of shapes) {
     for (const subtotal of [0, 1, 99, 100, 333, 1000, 12345]) {
