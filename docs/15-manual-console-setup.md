@@ -277,9 +277,9 @@ There are 74 collections. A progress checklist is at the end of this document.
 | `favicon_id` | String | size 64 | No | ,  | No |
 | `tax_rate_bp` | Integer | ,  | **Yes** | ,  | No |
 | `tax_inclusive` | Boolean | ,  | **Yes** | ,  | No |
-| `vat_charged` | Boolean | ,  | **Yes** | ,  | No |
+| `vat_charged` | Boolean | ,  | No | true | No |
 | `levies` | String | size 2000 | No | ,  | No |
-| `receipt_tax_detail` | Enum | separate, combined | **Yes** | ,  | No |
+| `receipt_tax_detail` | Enum | separate, combined | No | separate | No |
 | `schema_version` | String | size 40 | No | ,  | No |
 | `schema_applied_at` | Datetime | ,  | No | ,  | No |
 | `service_charge_bp` | Integer | ,  | **Yes** | ,  | No |

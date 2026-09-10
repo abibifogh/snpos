@@ -449,38 +449,75 @@ async function main() {
 
   // ---- seed data ---------------------------------------------------------
   await waitForAttributes('settings', COLLECTIONS.find((c) => c.id === 'settings').attributes.map((a) => a[0]));
-  await ensure('settings/main', () =>
-    db.createDocument(DB_ID, 'settings', 'main', {
-      restaurant_name: process.env.RESTAURANT_NAME || 'My Restaurant',
-      timezone: process.env.TIMEZONE || 'Africa/Accra',
-      currency_code: process.env.CURRENCY_CODE || 'GHS',
-      currency_symbol: process.env.CURRENCY_SYMBOL || 'GH₵',
-      currency_decimals: 2,
-      symbol_position: 'before',
-      primary_color: '#0F766E',
-      secondary_color: '#F59E0B',
-      tax_rate_bp: 0,
-      tax_inclusive: true,
-      vat_charged: true,
-      receipt_tax_detail: 'separate',
-      service_charge_bp: 0,
-      shift_float_policy: 'zero', // never inherit the previous shift automatically
-      shift_float_default: 0,
-      kitchen_ack_sla_seconds: 60,
-      kitchen_ping_max_level: 4,
-      require_reject_reason: true,
-      qr_orders_need_approval: false,
-      order_number_prefix: 'ORD',
-      low_stock_default_bp: 3000,
-      stock_variance_threshold_bp: 1000,
-      stock_variance_value_floor: 2000,
-      expense_approval_threshold: 20000,
-      cash_variance_tolerance: 500,
-      terminal_idle_lock_seconds: 180,
-      storage_mode: storageMode,
-      shared_bucket_id: sharedBucketId,
-    }),
-  );
+
+  /*
+    What a brand-new settings row starts as.
+
+    Pulled out of the create call because it is needed twice: once to make the
+    row on a blank database, and once to fill in whatever a row made months
+    ago has never heard of. See the backfill below.
+  */
+  const SETTINGS_SEED = {
+    restaurant_name: process.env.RESTAURANT_NAME || 'My Restaurant',
+    timezone: process.env.TIMEZONE || 'Africa/Accra',
+    currency_code: process.env.CURRENCY_CODE || 'GHS',
+    currency_symbol: process.env.CURRENCY_SYMBOL || 'GH₵',
+    currency_decimals: 2,
+    symbol_position: 'before',
+    primary_color: '#0F766E',
+    secondary_color: '#F59E0B',
+    tax_rate_bp: 0,
+    tax_inclusive: true,
+    vat_charged: true,
+    receipt_tax_detail: 'separate',
+    service_charge_bp: 0,
+    shift_float_policy: 'zero', // never inherit the previous shift automatically
+    shift_float_default: 0,
+    kitchen_ack_sla_seconds: 60,
+    kitchen_ping_max_level: 4,
+    require_reject_reason: true,
+    qr_orders_need_approval: false,
+    order_number_prefix: 'ORD',
+    low_stock_default_bp: 3000,
+    stock_variance_threshold_bp: 1000,
+    stock_variance_value_floor: 2000,
+    expense_approval_threshold: 20000,
+    cash_variance_tolerance: 500,
+    terminal_idle_lock_seconds: 180,
+    storage_mode: storageMode,
+    shared_bucket_id: sharedBucketId,
+  };
+
+  await ensure('settings/main', () => db.createDocument(DB_ID, 'settings', 'main', SETTINGS_SEED));
+
+  /*
+    A settings row made months ago, brought up to date.
+
+    Every release that adds a setting used to reach only brand-new databases:
+    the row is created once and never touched again, so an existing business
+    got the attribute and no value in it. Screens then read undefined and fell
+    back to whatever each of them thought sensible, which is how two screens
+    come to disagree about the same setting.
+
+    Only ABSENT values are filled. Anything the owner has set, including
+    deliberately setting something back to nought or false, is theirs and is
+    left exactly as it is.
+  */
+  const live = await db.getDocument(DB_ID, 'settings', 'main').catch(() => null);
+  if (live) {
+    const missing = {};
+    for (const [key, value] of Object.entries(SETTINGS_SEED)) {
+      // Only what this database actually has an attribute for: a settings row
+      // read back from an older schema knows nothing of the newest ones, and
+      // writing a key the collection lacks fails the whole patch.
+      const known = COLLECTIONS.find((c) => c.id === 'settings').attributes.some((a) => a[0] === key);
+      if (known && (live[key] === undefined || live[key] === null)) missing[key] = value;
+    }
+    if (Object.keys(missing).length > 0) {
+      await retry(() => db.updateDocument(DB_ID, 'settings', 'main', missing), 'fill in settings');
+      log('  ~', `settings filled in: ${Object.keys(missing).join(', ')}`);
+    }
+  }
 
   await waitForAttributes('accounts', ['code', 'name', 'type', 'system']);
   // `system` marks the accounts the code itself posts to at shift close. The

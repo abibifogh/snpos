@@ -466,6 +466,51 @@ if (settingsFaults.length) {
 }
 
 /**
+ * A new setting must be optional, or provisioning breaks the row it is added to.
+ *
+ * This one cost a failed deploy. `settings.vat_charged` shipped as required.
+ * On a blank database that is fine, the seed writes a value. On a database
+ * that already had a settings row, the row predates the attribute and so has
+ * no value for it, Appwrite calls the whole document invalid, and the next
+ * write to it fails — which was provisioning's own final act, stamping the
+ * schema version. A required attribute may not carry a default either, so
+ * there is nothing for the old row to fall back on.
+ *
+ * The settings row is the one document that always already exists, on every
+ * install, from the first provisioning run onwards. So an attribute added to
+ * it from now on has to be optional, however tempting `required` looks.
+ *
+ * The attributes that were required before this rule existed are listed and
+ * left alone: they were there when the row was created and the seed has
+ * always written them. The list does not grow.
+ */
+const SETTINGS_REQUIRED_FROM_THE_START = new Set([
+  'org_id', 'restaurant_name', 'timezone', 'currency_code', 'currency_symbol', 'currency_decimals',
+  'symbol_position', 'primary_color', 'secondary_color', 'tax_rate_bp', 'tax_inclusive',
+  'service_charge_bp', 'shift_float_policy', 'shift_float_default', 'kitchen_ack_sla_seconds',
+  'kitchen_ping_max_level', 'require_reject_reason', 'qr_orders_need_approval',
+  'low_stock_default_bp', 'stock_variance_threshold_bp', 'stock_variance_value_floor',
+  'expense_approval_threshold', 'cash_variance_tolerance', 'terminal_idle_lock_seconds',
+]);
+
+{
+  const col = COLLECTIONS.find((c) => c.id === 'settings');
+  const newlyRequired = (col?.attributes ?? [])
+    .filter(([key, , , required]) => required === true && !SETTINGS_REQUIRED_FROM_THE_START.has(key))
+    .map(([key]) => key);
+
+  if (newlyRequired.length) {
+    console.error('These settings are required, and a settings row that already exists has no value for them:\n');
+    for (const f of newlyRequired) console.error(`  ${f}`);
+    console.error('\nProvisioning would add the column and then fail on the next write to the row,');
+    console.error('with "Invalid document structure: Missing required attribute". Mark them');
+    console.error('optional in scripts/schema.mjs and give them a default. Absent then has to');
+    console.error('mean something sensible in the code that reads them, which it should anyway.');
+    process.exit(1);
+  }
+}
+
+/**
  * The apps must know the schema's current fingerprint.
  *
  * packages/core/src/schema-version.ts is generated from the schema, and the
