@@ -5,7 +5,7 @@ so it matches exactly what `npm run provision` would have built.
 
 > **Before you start, read this.**
 >
-> This is **72 collections, 1012 fields and 238 indexes**. Entered by hand at a
+> This is **73 collections, 1018 fields and 240 indexes**. Entered by hand at a
 > realistic pace that is somewhere between 8 and 15 hours of clicking, and a
 > single mistyped field name will surface later as a broken screen rather than
 > an error at the time. The script does the same work in about four minutes and
@@ -127,7 +127,7 @@ Attributes are created asynchronously. If an index refuses to save with
 "attribute not available", wait ten seconds and try again, the attribute is
 still being built.
 
-There are 72 collections. A progress checklist is at the end of this document.
+There are 73 collections. A progress checklist is at the end of this document.
 
 ---
 
@@ -618,7 +618,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: All users · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: Team: admins
 
-**Attributes** (66)
+**Attributes** (67)
 
 | Key | Type | Size / Enum values | Required | Default | Array |
 | --- | --- | --- | --- | --- | --- |
@@ -673,6 +673,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 | `is_preorder` | Boolean | ,  | No | false | No |
 | `scheduled_for` | Datetime | ,  | No | ,  | No |
 | `fire_at` | Datetime | ,  | No | ,  | No |
+| `preorder_seat_id` | String | size 64 | No | ,  | No |
 | `slot_id` | String | size 64 | No | ,  | No |
 | `placed_while_closed` | Boolean | ,  | No | false | No |
 | `delivery_zone_id` | String | size 64 | No | ,  | No |
@@ -1908,7 +1909,30 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 54. `waste_log`, Waste log
+### 54. `preorder_seats`, Pre-order places
+
+**Read**: Any · **Create**: All users · **Update**: _none, server only_ · **Delete**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins
+
+**Attributes** (5)
+
+| Key | Type | Size / Enum values | Required | Default | Array |
+| --- | --- | --- | --- | --- | --- |
+| `org_id` | String | size 64 | No | ,  | No |
+| `venue_id` | String | size 64 | **Yes** | ,  | No |
+| `pickup_point_id` | String | size 64 | No | ,  | No |
+| `slot_start` | Datetime | ,  | **Yes** | ,  | No |
+| `place` | Integer | ,  | **Yes** | ,  | No |
+
+**Indexes** (2)
+
+| Index key | Type | Attributes (in this order) |
+| --- | --- | --- |
+| `venue_slot` | key | `venue_id`, `slot_start` |
+| `org` | key | `org_id` |
+
+---
+
+### 55. `waste_log`, Waste log
 
 **Read**: Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: managers, Team: admins
 
@@ -1942,7 +1966,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 55. `customers`, Customers
+### 56. `customers`, Customers
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Any · **Update**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Delete**: Team: admins
 
@@ -1978,7 +2002,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 56. `report_subscriptions`, Report subscriptions
+### 57. `report_subscriptions`, Report subscriptions
 
 **Read**: Team: managers, Team: admins · **Create**: Team: admins · **Update**: Team: admins · **Delete**: Team: admins
 
@@ -2003,7 +2027,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 57. `stock_level_uploads`, Opening level uploads
+### 58. `stock_level_uploads`, Opening level uploads
 
 **Read**: Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: _none, server only_ · **Delete**: Team: admins
 
@@ -2029,7 +2053,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 58. `summary_reports`, Summary reports
+### 59. `summary_reports`, Summary reports
 
 **Read**: Team: managers, Team: admins · **Create**: _none, server only_ · **Update**: _none, server only_ · **Delete**: _none, server only_
 
@@ -2063,7 +2087,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 59. `purchase_alerts`, Purchase alerts
+### 60. `purchase_alerts`, Purchase alerts
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
@@ -2100,7 +2124,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 60. `imprest_floats`, Petty cash boxes
+### 61. `imprest_floats`, Petty cash boxes
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
@@ -2128,7 +2152,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 61. `imprest_movements`, Petty cash movements
+### 62. `imprest_movements`, Petty cash movements
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
@@ -2158,7 +2182,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 62. `imprest_counts`, Petty cash counts
+### 63. `imprest_counts`, Petty cash counts
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
@@ -2187,7 +2211,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 63. `discounts`, Discounts
+### 64. `discounts`, Discounts
 
 **Read**: Any · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: managers, Team: admins
 
@@ -2236,7 +2260,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 64. `discount_redemptions`, Discount redemptions
+### 65. `discount_redemptions`, Discount redemptions
 
 **Read**: Team: managers, Team: admins · **Create**: All users · **Update**: Team: managers, Team: admins · **Delete**: _none, server only_
 
@@ -2270,7 +2294,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 65. `cash_handovers`, Cash handovers
+### 66. `cash_handovers`, Cash handovers
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
@@ -2305,7 +2329,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 66. `consignors`, Consignors
+### 67. `consignors`, Consignors
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
@@ -2339,7 +2363,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 67. `consignment_intakes`, Consignment intakes
+### 68. `consignment_intakes`, Consignment intakes
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
@@ -2369,7 +2393,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 68. `product_variants`, Product variants
+### 69. `product_variants`, Product variants
 
 **Read**: Any · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: managers, Team: admins
 
@@ -2401,7 +2425,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 69. `variant_types`, Variant types
+### 70. `variant_types`, Variant types
 
 **Read**: Any · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
@@ -2427,7 +2451,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 70. `product_moves`, Product movements
+### 71. `product_moves`, Product movements
 
 **Read**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Create**: Team: cooks, Team: waiters, Team: cashiers, Team: managers, Team: admins · **Update**: _none, server only_ · **Delete**: Team: admins
 
@@ -2461,7 +2485,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 71. `consignor_ledger`, Consignor ledger
+### 72. `consignor_ledger`, Consignor ledger
 
 **Read**: Team: managers, Team: admins · **Create**: _none, server only_ · **Update**: _none, server only_ · **Delete**: _none, server only_
 
@@ -2500,7 +2524,7 @@ There are 72 collections. A progress checklist is at the end of this document.
 
 ---
 
-### 72. `consignor_payouts`, Consignor payouts
+### 73. `consignor_payouts`, Consignor payouts
 
 **Read**: Team: managers, Team: admins · **Create**: Team: managers, Team: admins · **Update**: Team: managers, Team: admins · **Delete**: Team: admins
 
@@ -2731,7 +2755,7 @@ way mistakes creep in.
 - [ ] 12. `addon_options` (8 fields, 2 indexes)
 - [ ] 13. `menu_item_addon_groups` (6 fields, 2 indexes)
 - [ ] 14. `tables` (13 fields, 4 indexes)
-- [ ] 15. `orders` (66 fields, 14 indexes)
+- [ ] 15. `orders` (67 fields, 14 indexes)
 - [ ] 16. `order_items` (26 fields, 4 indexes)
 - [ ] 17. `payments` (16 fields, 4 indexes)
 - [ ] 18. `shifts` (34 fields, 5 indexes)
@@ -2770,25 +2794,26 @@ way mistakes creep in.
 - [ ] 51. `feature_flags` (6 fields, 3 indexes)
 - [ ] 52. `receipts` (16 fields, 4 indexes)
 - [ ] 53. `pickup_points` (13 fields, 2 indexes)
-- [ ] 54. `waste_log` (13 fields, 5 indexes)
-- [ ] 55. `customers` (16 fields, 4 indexes)
-- [ ] 56. `report_subscriptions` (7 fields, 2 indexes)
-- [ ] 57. `stock_level_uploads` (8 fields, 2 indexes)
-- [ ] 58. `summary_reports` (15 fields, 3 indexes)
-- [ ] 59. `purchase_alerts` (17 fields, 4 indexes)
-- [ ] 60. `imprest_floats` (10 fields, 2 indexes)
-- [ ] 61. `imprest_movements` (11 fields, 3 indexes)
-- [ ] 62. `imprest_counts` (11 fields, 2 indexes)
-- [ ] 63. `discounts` (29 fields, 4 indexes)
-- [ ] 64. `discount_redemptions` (13 fields, 5 indexes)
-- [ ] 65. `cash_handovers` (15 fields, 4 indexes)
-- [ ] 66. `consignors` (15 fields, 3 indexes)
-- [ ] 67. `consignment_intakes` (11 fields, 3 indexes)
-- [ ] 68. `product_variants` (12 fields, 4 indexes)
-- [ ] 69. `variant_types` (7 fields, 3 indexes)
-- [ ] 70. `product_moves` (13 fields, 5 indexes)
-- [ ] 71. `consignor_ledger` (18 fields, 5 indexes)
-- [ ] 72. `consignor_payouts` (14 fields, 3 indexes)
+- [ ] 54. `preorder_seats` (5 fields, 2 indexes)
+- [ ] 55. `waste_log` (13 fields, 5 indexes)
+- [ ] 56. `customers` (16 fields, 4 indexes)
+- [ ] 57. `report_subscriptions` (7 fields, 2 indexes)
+- [ ] 58. `stock_level_uploads` (8 fields, 2 indexes)
+- [ ] 59. `summary_reports` (15 fields, 3 indexes)
+- [ ] 60. `purchase_alerts` (17 fields, 4 indexes)
+- [ ] 61. `imprest_floats` (10 fields, 2 indexes)
+- [ ] 62. `imprest_movements` (11 fields, 3 indexes)
+- [ ] 63. `imprest_counts` (11 fields, 2 indexes)
+- [ ] 64. `discounts` (29 fields, 4 indexes)
+- [ ] 65. `discount_redemptions` (13 fields, 5 indexes)
+- [ ] 66. `cash_handovers` (15 fields, 4 indexes)
+- [ ] 67. `consignors` (15 fields, 3 indexes)
+- [ ] 68. `consignment_intakes` (11 fields, 3 indexes)
+- [ ] 69. `product_variants` (12 fields, 4 indexes)
+- [ ] 70. `variant_types` (7 fields, 3 indexes)
+- [ ] 71. `product_moves` (13 fields, 5 indexes)
+- [ ] 72. `consignor_ledger` (18 fields, 5 indexes)
+- [ ] 73. `consignor_payouts` (14 fields, 3 indexes)
 
 **Stage 6, seed documents**
 
@@ -2809,7 +2834,7 @@ way mistakes creep in.
 
 Sanity-check before building on top of it:
 
-1. The `snpos` database lists **72 collections**.
+1. The `snpos` database lists **73 collections**.
 2. `settings/main` exists and `shift_float_policy` reads `zero`.
 3. `venues/main` exists and is active.
 4. `feature_flags` holds **14 rows**, each with a blank `venue_id`.

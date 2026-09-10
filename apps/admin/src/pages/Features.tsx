@@ -1,8 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Card, Notice, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
+import { Card, Field, Input, Notice, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, listAll, humanError } from '../lib';
 import { FEATURE_DEPENDENCIES } from '@snpos/core';
 import type { FeatureFlag } from '@snpos/core';
+
+/** One number out of a feature's config text, or the fallback if it says nothing. */
+function configNumber(flag: FeatureFlag, option: string, fallback: number): number {
+  try {
+    const v = (JSON.parse(flag.config || '{}') as Record<string, unknown>)[option];
+    return typeof v === 'number' ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 /** Plain-language labels. The keys come from scripts/schema.mjs. */
 const LABELS: Record<string, { title: string; blurb: string }> = {
@@ -28,6 +38,25 @@ const LABELS: Record<string, { title: string; blurb: string }> = {
   discounts: { title: 'Discounts and discount codes', blurb: 'Guests type a code while ordering; staff apply discounts before the bill is marked paid.' },
 };
 
+/**
+ * The numbers behind a switch, where leaving them unreachable would make the
+ * switch a lie.
+ *
+ * A cap on a time slot that can only be set by editing the database is a cap
+ * nobody has. Only the settings an owner would actually reach for are here;
+ * the rest of each feature's config stays where it is.
+ */
+const NUMBERS: Record<string, { option: string; label: string; hint: string; fallback: number; min?: number }[]> = {
+  preorders: [
+    {
+      option: 'slot_capacity',
+      label: 'Most orders per time slot',
+      hint: 'Nought means no limit. With a limit set, a time that is full stops being offered, and two people cannot both take the last place.',
+      fallback: 0,
+    },
+  ],
+};
+
 export function FeaturesPage() {
   const toast = useToast();
   const [rows, setRows] = useState<FeatureFlag[] | null>(null);
@@ -51,6 +80,26 @@ export function FeaturesPage() {
       toast(humanError(e), 'err');
     } finally {
       setSaving(null);
+    }
+  };
+
+  /** One number inside a feature's config, saved on its own. */
+  const setNumber = async (flag: FeatureFlag, option: string, value: number) => {
+    let config: Record<string, unknown> = {};
+    try {
+      config = flag.config ? (JSON.parse(flag.config) as Record<string, unknown>) : {};
+    } catch {
+      // A config nobody can read is replaced rather than refused: the
+      // alternative is a number that cannot be set and no way to say why.
+      config = {};
+    }
+    const next = JSON.stringify({ ...config, [option]: value });
+    setRows((r) => r?.map((x) => (x.$id === flag.$id ? { ...x, config: next } : x)) ?? null);
+    try {
+      await db.updateDocument(DB_ID, 'feature_flags', flag.$id, { config: next });
+    } catch (e) {
+      toast(humanError(e), 'err');
+      await load().catch(() => undefined);
     }
   };
 
@@ -83,6 +132,24 @@ export function FeaturesPage() {
                       </Badge>
                     </div>
                   )}
+                  {/* Only while the feature is on: a number that governs
+                      something switched off is a question with no answer. */}
+                  {f.enabled && (NUMBERS[f.key] ?? []).map((n) => (
+                    <div key={n.option} style={{ marginTop: '0.6rem', maxWidth: '22rem' }}>
+                      <Field label={n.label} hint={n.hint}>
+                        <Input
+                          type="number"
+                          min={n.min ?? 0}
+                          step="1"
+                          defaultValue={String(configNumber(f, n.option, n.fallback))}
+                          onBlur={(e) => {
+                            const v = Math.max(n.min ?? 0, Math.round(Number(e.target.value) || 0));
+                            if (v !== configNumber(f, n.option, n.fallback)) void setNumber(f, n.option, v);
+                          }}
+                        />
+                      </Field>
+                    </div>
+                  ))}
                 </div>
                 <Toggle
                   checked={f.enabled}

@@ -10,6 +10,8 @@ export * from './pricing';
 export * from './menu';
 export * from './realtime';
 export * from './orders';
+export * from './slots';
+export * from './slot-booking';
 export * from './stock';
 export * from './ledger';
 export * from './pin';

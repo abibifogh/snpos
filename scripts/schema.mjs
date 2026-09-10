@@ -913,6 +913,12 @@ export const COLLECTIONS = [
       ['is_preorder', 'b', null, false, false],
       ['scheduled_for', 'd', null, false],
       ['fire_at', 'd', null, false],
+      // The place this order holds in its time slot, where the slot is
+      // capped. Held here rather than the other way round so the places
+      // themselves carry nothing about the customer: anyone may count them,
+      // because a phone choosing a time has to know which times are full.
+      // See preorder_seats and slots.ts.
+      ['preorder_seat_id', 's', 64, false],
       ['slot_id', 's', 64, false],
       ['placed_while_closed', 'b', null, false, false],
       ['delivery_zone_id', 's', 64, false],
@@ -2608,6 +2614,38 @@ export const COLLECTIONS = [
       ['sort', 'i', null, true, 0],
     ],
     indexes: [['venue_active_sort', 'key', ['venue_id', 'active', 'sort']]],
+  },
+  {
+    /*
+      One booked place in one pre-order time slot.
+
+      A row rather than a counter, and the row's ID is worked out from the
+      slot and the place number: `p<venue+point hash>-<slot minute>-<place>`.
+      Claiming a place is therefore creating that document, which either
+      succeeds or collides, so two customers racing for the last place at
+      noon cannot both have it. A counter would need read-then-write, which
+      loses one of two simultaneous bookings every time. See slots.ts.
+
+      How many are booked is how many rows exist. There is no count stored
+      anywhere, so there is nothing that can disagree with the bookings.
+
+      No customer data lives here on purpose: it is readable by anyone,
+      because the customer's own phone has to count the bookings to know
+      which times are full. The link runs the other way — the order carries
+      `preorder_seat_id` — and orders are staff-read only.
+    */
+    id: 'preorder_seats',
+    name: 'Pre-order places',
+    perms: { read: ['any'], create: ['users'], update: [], delete: ALL_STAFF },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['pickup_point_id', 's', 64, false],
+      ['slot_start', 'd', null, true],
+      ['place', 'i', null, true, 1],
+    ],
+    indexes: [
+      ['venue_slot', 'key', ['venue_id', 'slot_start']],
+    ],
   },
 
 

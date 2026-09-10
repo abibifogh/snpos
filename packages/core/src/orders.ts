@@ -17,6 +17,7 @@ export {
   addonNames, addonsUnreadable, waitIncludingOpening, customerWait, quotedWait, formatWait,
 } from './orders-time';
 import { createOrQueue, isOffline } from './offline';
+import { claimPlace, releasePlace } from './slot-booking';
 import { computeTotals, lineUnitPrice, lineTotal } from './pricing';
 // Pure, and the reason a bar can ring up a sale at all. See order-numbers.
 import { nextInRun, formatOrderNo, prefixFor } from './order-numbers';
@@ -97,6 +98,8 @@ export interface Order extends Doc {
   is_preorder?: boolean;
   scheduled_for?: string;
   fire_at?: string;
+  /** The place this order holds in a capped time slot. See slots.ts. */
+  preorder_seat_id?: string;
   placed_while_closed?: boolean;
   /** How much of eta_minutes was the building being shut. */
   opening_wait_minutes?: number;
@@ -339,6 +342,15 @@ export interface CreateOrderInput {
   guest?: boolean;
   /** Set for a pre-order; the kitchen sees nothing until fire_at. */
   scheduledFor?: Date;
+  /**
+   * How many orders that time slot may hold, or nought for no limit.
+   *
+   * Passed in rather than read here, like the opening hours above: the screen
+   * offering the times has already read the setting to grey out the full
+   * ones, and reading it twice is two chances to offer a time and then refuse
+   * it. See slots.ts for how a place is taken.
+   */
+  slotCapacity?: number;
   placedWhileClosed?: boolean;
   /**
    * The venue's trading hours, so a wait can start when the doors do.
@@ -371,9 +383,35 @@ export interface CreatedOrder {
  * Extra portions of the same dish are not multiplied; three of one thing goes
  * in one pan, and doubling it produces a number nobody believes.
  */
-export async function createOrder(input: CreateOrderInput, attempt = 0): Promise<CreatedOrder> {
+export async function createOrder(
+  input: CreateOrderInput,
+  attempt = 0,
+  /** A place already taken, carried through a retry so one order takes one place. */
+  claimed: string | null = null,
+): Promise<CreatedOrder> {
   const { venueId, lines, settings, channel, placedBy } = input;
   if (lines.length === 0) throw new Error('An order needs at least one item.');
+
+  /*
+    The place in the time slot is taken FIRST, before a single row is written.
+
+    A capped slot is the one thing here that somebody else can take while this
+    order is being written, so it is claimed at the start and held for the
+    rest. Claiming last would be fairer to nobody: a customer who began
+    ordering earlier would lose the last place to one who began later and had
+    fewer lines to save. If the slot is full, SlotFull is thrown and nothing
+    at all has been written yet.
+  */
+  const seatDocId = claimed ?? (
+    input.scheduledFor && (input.slotCapacity ?? 0) > 0
+      ? await claimPlace({
+        venueId,
+        pickupPointId: input.pickupPointId,
+        at: input.scheduledFor,
+        capacity: input.slotCapacity ?? 0,
+      })
+      : null
+  );
 
   const totals = computeTotals({ lines, discount: input.discount ?? 0, settings });
   const isPreorder = !!input.scheduledFor;
@@ -476,6 +514,8 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
   if (input.scheduledFor) {
     payload.scheduled_for = input.scheduledFor.toISOString();
     payload.fire_at = fireTimeFor(lines, input.scheduledFor, prepById).toISOString();
+    // Which place this order holds, so cancelling gives the time back.
+    if (seatDocId) payload.preorder_seat_id = seatDocId;
   }
 
   // Strip undefined so Appwrite does not reject the document.
@@ -577,8 +617,12 @@ export async function createOrder(input: CreateOrderInput, attempt = 0): Promise
         got the same answer, and was refused for the same reason. The message
         that reached the bar was about a unique attribute constraint.
       */
-      return createOrder(input, attempt + 1);
+      // The place already taken goes with it, or the retry would take a
+      // second one and the slot would count one order as two.
+      return createOrder(input, attempt + 1, seatDocId);
     }
+    // The order is not happening, so the time goes back to the next customer.
+    await releasePlace(seatDocId);
     throw e;
   }
 
@@ -771,9 +815,14 @@ export async function recomputeOrderTotals(
  * record itself should not exist.
  */
 export async function cancelOrder(
-  order: Pick<Order, '$id' | 'venue_id' | 'shift_id'>,
+  order: Pick<Order, '$id' | 'venue_id' | 'shift_id'> & { preorder_seat_id?: string },
   opts: { reason: string; userId: string },
 ): Promise<{ givenBack: number; payments: number }> {
+  // A cancelled pre-order gives its time back, or the slot stays full of
+  // orders nobody is coming for and the next customer is turned away for
+  // nothing.
+  await releasePlace(order.preorder_seat_id);
+
   await db.updateDocument(DB_ID, 'orders', order.$id, {
     status: 'CANCELLED',
     /*
@@ -896,12 +945,15 @@ export async function giveTheMoneyBack(
  * What was physically counted that night is never touched.
  */
 export async function removeOrder(
-  order: Pick<Order, '$id' | 'venue_id' | 'shift_id'>,
+  order: Pick<Order, '$id' | 'venue_id' | 'shift_id'> & { preorder_seat_id?: string },
   opts: { userId: string },
 ): Promise<{ removed: number }> {
   // The one write that decides whether any of this is allowed.
   await db.deleteDocument(DB_ID, 'orders', order.$id);
   let removed = 1;
+
+  // Its place in the time slot goes back with it. See cancelOrder.
+  await releasePlace(order.preorder_seat_id);
 
   for (const [collection, field] of [
     ['order_items', 'order_id'],

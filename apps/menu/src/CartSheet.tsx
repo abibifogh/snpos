@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Modal, Input, Field, Notice, Select, FormError } from '@snpos/ui';
 import {
   computeTotals, formatMoney, lineTotal, createOrder, parseWindows, taxWords, parseLevies, vatBpOf,
   isEnabled, featureConfig, db, DB_ID, ID, Query, isProvisionalOrderNo,
   ensureGuestSession, humanError, selfOrderModule, seatName,
+  placesBySlot, slotStamp, slotIsFull, slotWords, isSlotFull,
 } from '@snpos/core';
 import type { CartLine, Settings, Venue, FeatureMap, LoadedMenu, Doc, Order } from '@snpos/core';
 
@@ -136,6 +137,25 @@ export function CartSheet({
     () => (preordersOn ? buildSlots(venue, features) : []),
     [venue, features, preordersOn],
   );
+
+  /*
+    How full each time already is.
+
+    Read once for the whole picker rather than once per time, and read again
+    after a refusal so a customer who is told noon has gone is looking at a
+    list that says so. Nought means no cap and nothing is read at all.
+  */
+  const slotCapacity = featureConfig(features, 'preorders', 'slot_capacity', 0);
+  const [taken, setTaken] = useState<Map<string, number>>(new Map());
+  const refreshSlots = useCallback(async () => {
+    if (!preordersOn || slotCapacity <= 0 || slots.length === 0) return;
+    const counts = await placesBySlot(venue.$id, slots[0], slots[slots.length - 1]).catch(() => new Map());
+    setTaken(counts);
+  }, [preordersOn, slotCapacity, slots, venue.$id]);
+  useEffect(() => { void refreshSlots(); }, [refreshSlots]);
+
+  const takenAt = (at: Date) => taken.get(slotStamp(at)) ?? 0;
+  const isFull = (at: Date) => slotIsFull(takenAt(at), slotCapacity);
 
   // Closed with no slot chosen would be an order nobody can cook.
   const [slot, setSlot] = useState<string>(venueOpen ? '' : (slots[0]?.toISOString() ?? ''));
@@ -306,6 +326,9 @@ export function CartSheet({
         customer: { name: name.trim() || undefined, email: email.trim() || undefined },
         fulfilment: chosenSeat ? 'dine_in' : 'takeaway',
         scheduledFor: slot ? new Date(slot) : undefined,
+        // The cap the picker greyed the full times out with. Passed in so the
+        // place is taken as the order is written, not merely offered.
+        slotCapacity,
         placedWhileClosed: !venueOpen,
         // The same hours this sheet already read to decide whether to show
         // "we are closed", so the notice and the quote cannot disagree in
@@ -343,6 +366,20 @@ export function CartSheet({
       );
       setCart(() => []);
     } catch (e) {
+      /*
+        A time that filled up while this customer was typing is not a fault,
+        and must not read like one. Their cart is untouched, the times are
+        counted again so the one they lost now shows as full, and the time
+        they cannot have is cleared so the button cannot simply re-send it.
+      */
+      if (isSlotFull(e)) {
+        await refreshSlots();
+        setSlot('');
+        const message = (e as Error).message;
+        setProblem(message);
+        onError(message);
+        return;
+      }
       // Through humanError, so the server's own vocabulary, roles, scopes,
       // permissions, never reaches somebody who only wants lunch.
       const said = e ? humanError(e) : '';
@@ -432,8 +469,12 @@ export function CartSheet({
           ) : (
             <Select value={slot} onChange={(e) => setSlot(e.target.value)}>
               {slots.map((s) => (
-                <option key={s.toISOString()} value={s.toISOString()}>
+                /* A full time is shown and disabled rather than dropped. A
+                   customer who came for noon needs to see that noon is gone,
+                   not wonder why the list starts at half past. */
+                <option key={s.toISOString()} value={s.toISOString()} disabled={isFull(s)}>
                   {s.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  {slotWords(takenAt(s), slotCapacity) && ` — ${slotWords(takenAt(s), slotCapacity)}`}
                 </option>
               ))}
             </Select>
@@ -446,8 +487,9 @@ export function CartSheet({
           <Select value={slot} onChange={(e) => setSlot(e.target.value)}>
             <option value="">As soon as possible</option>
             {slots.slice(0, 24).map((s) => (
-              <option key={s.toISOString()} value={s.toISOString()}>
+              <option key={s.toISOString()} value={s.toISOString()} disabled={isFull(s)}>
                 {s.toLocaleString([], { hour: '2-digit', minute: '2-digit', weekday: 'short' })}
+                {slotWords(takenAt(s), slotCapacity) && ` — ${slotWords(takenAt(s), slotCapacity)}`}
               </option>
             ))}
           </Select>
