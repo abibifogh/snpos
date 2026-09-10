@@ -41,6 +41,9 @@
   padding: 0.85rem 1.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem;
 }
 .page { padding: 1.5rem; max-width: 1100px; width: 100%; }
+/* The day's headline figures, one card a side. */
+.grid-4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1rem; }
+.grid-4 .card { margin: 0; }
 .page > * + * { margin-top: 1.15rem; }
 
 .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 1.5rem; }

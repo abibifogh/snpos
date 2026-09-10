@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, Empty, Modal, Notice, Segmented, Spinner, useToast } from '@snpos/ui';
-import { humanError, listAll } from '../lib';
+import { humanError } from '../lib';
 import {
-  formatMoney, Query,
-  pendingBarChecks, filedCounts, approveBarCount, rejectBarCount,
-  pendingCounts, pendingShelfLines, approveCount, rejectCount,
-  loadLocations, loadOpenShifts, tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS,
-  decideSpend, waitingList, waitingCounts, waitingSummary, waitedWords, refuseSpendWords, WAITING_KIND_WORDS,
+  formatMoney,
+  approveBarCount, rejectBarCount, approveCount, rejectCount,
+  tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS,
+  decideSpend, loadWaiting, waitingCounts, waitingSummary, waitedWords, refuseSpendWords, WAITING_KIND_WORDS,
 } from '@snpos/core';
 import type {
-  StaffProfile, WaitingItem, WaitingKind, WaitingSpend, WaitingTabShift, Shift, TabOrder,
+  WaitingItem, WaitingKind, WaitingSpend, WaitingTabShift, TabOrder,
 } from '@snpos/core';
 import { useSession } from '../session';
 
@@ -56,66 +55,12 @@ export function WaitingPage() {
 
   const load = async () => {
     setError(null);
-    /*
-      Every queue at once. Each fails soft to "nothing waiting" except the
-      shifts, which fail loud: a page that cannot see the shifts must not say
-      nothing is waiting on them.
-    */
-    const [checks, shopCounts, shelfLines, pendingSpends, places, staff, kitchen, bar, craft, categories] = await Promise.all([
-      pendingBarChecks(),
-      pendingCounts().catch(() => []),
-      pendingShelfLines().catch(() => []),
-      listAll<WaitingSpend & { venue_id: string; source?: string }>('shift_expenses', [Query.equal('approval_status', 'pending')])
-        .catch(() => [] as (WaitingSpend & { venue_id: string; source?: string })[]),
-      loadLocations('main').catch(() => []),
-      listAll<StaffProfile>('staff_profiles').catch(() => [] as StaffProfile[]),
-      loadOpenShifts('main', 'kitchen'),
-      loadOpenShifts('main', 'bar'),
-      loadOpenShifts('main', 'craft'),
-      listAll<{ key: string; name: string }>('expense_categories').catch(() => []),
-    ]);
-
-    const book = new Map<string, string>();
-    for (const p of staff) {
-      book.set(p.$id, p.display_name);
-      if (p.user_id) book.set(p.user_id, p.display_name);
-    }
-    setNames(book);
-    setSpends(new Map(pendingSpends.map((s) => [s.$id, s])));
-
-    // A bar count is named by the shift it was taken on, which the rows do not carry.
-    const barCounts = filedCounts(checks);
-    const shiftIds = [...new Set(barCounts.map((c) => c.shiftId).filter((id) => id && !id.startsWith('store:')))];
-    const shifts = shiftIds.length > 0
-      ? await listAll<Shift>('shifts', [Query.equal('$id', shiftIds)]).catch(() => [] as Shift[])
-      : [];
-
-    // The shifts that cannot close: an open shift with money on tabs.
-    const open = [...new Set([...kitchen, ...bar, ...craft].map((s) => s.$id))]
-      .map((id) => [...kitchen, ...bar, ...craft].find((s) => s.$id === id)!)
-      .filter((s) => s.status === 'open');
-    const tabShifts: WaitingTabShift[] = await Promise.all(open.map(async (s) => {
-      const t = await tabExposure(s.$id, s.module ?? 'kitchen', s.venue_id ?? 'main').catch(() => ({ orders: [], value: 0 }));
-      return { $id: s.$id, code: s.code, module: s.module, venue_id: s.venue_id, opened_at: s.opened_at, tabOrders: t.orders.length, tabValue: t.value };
-    }));
-    setTabShifts(new Map(tabShifts.map((s) => [s.$id, s])));
-
-    setItems(waitingList({
-      barCounts,
-      shopCounts,
-      shelfLines: shelfLines.map((w) => ({
-        countId: w.countId,
-        name: w.line.variant_label ? `${w.line.name_snapshot} · ${w.line.variant_label}` : w.line.name_snapshot,
-        expected: w.line.expected,
-        counted: w.line.counted,
-      })),
-      spends: pendingSpends,
-      tabShifts,
-      shiftCodes: Object.fromEntries(shifts.map((s) => [s.$id, s.code])),
-      storeNames: Object.fromEntries(places.map((p) => [p.$id, p.name])),
-      categoryNames: Object.fromEntries(categories.map((c) => [c.key, c.name])),
-      money,
-    }));
+    // One reader, shared with the Today dashboard, so the two cannot count differently.
+    const got = await loadWaiting('main', money);
+    setNames(got.names);
+    setSpends(got.spends);
+    setTabShifts(got.tabShifts);
+    setItems(got.items);
   };
   useEffect(() => { load().catch((e) => { setError(humanError(e)); setItems([]); }); }, []);
 
