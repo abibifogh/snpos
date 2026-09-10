@@ -835,6 +835,21 @@ export function App() {
         />
       )}
 
+      {/*
+        A group link that lands on the ordinary menu.
+
+        The token matched this venue, so somebody was given this link on
+        purpose, but group ordering is switched off. Without a word here the
+        guest simply gets the à la carte menu and nobody can tell whether the
+        link is wrong, the feature is off, or the app is broken.
+      */}
+      {groupMode && !inGroupMode && (
+        <div className="banner banner-info">
+          <strong>Group ordering is not switched on at the moment.</strong> This is the ordinary menu. Please
+          order at the counter, or ask the front desk to turn group ordering on.
+        </div>
+      )}
+
       {/* A group staying more than one night books every night at once, so
           the day being ordered for is chosen before the food, not after. */}
       {inGroupMode && (

@@ -99,7 +99,23 @@ export function GroupDays({
         </div>
       )}
 
-      {meals.length === 0 && (
+      {/*
+        No times to offer at all.
+
+        The times come from the venue's opening hours, so a venue whose hours
+        have never been set can serve nobody and this screen could offer
+        nothing. It used to say nothing either: no "add a meal" button, no
+        reason, just a heading and a dead end. Said plainly instead, because
+        the person reading it can either fix it or ring somebody who can.
+      */}
+      {slots.length === 0 && (
+        <div className="banner banner-info">
+          <strong>No times can be offered yet.</strong> This venue&rsquo;s opening hours have not been set, so
+          there is nothing to book against. Please order at the counter, or ask the front desk.
+        </div>
+      )}
+
+      {meals.length === 0 && slots.length > 0 && (
         <div className="banner banner-info">
           <strong>Booking for a group staying with us.</strong> Add a meal, choose what the group will eat at it,
           then add the next. Lunch and dinner on the same day are two meals, and each can be eaten here or
