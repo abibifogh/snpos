@@ -309,6 +309,22 @@ export async function postSpend(ctx, expense) {
       if (e.locked) return { skipped: 'locked', through: e.through };
       throw e;
     }
+    /*
+      The reversed entry stops answering to the spend's key.
+
+      Only once the reversal has actually been written, so a refusal blocked
+      by a closed month leaves everything as it was and can be tried again.
+
+      Renaming does two things. A refusal undone finds nothing on the books
+      and posts afresh below, rather than meeting a reversed entry and being
+      left alone — which is what used to happen, and left an approved spend
+      costing the month nothing. And it keeps that guard meaning what it
+      says for an entry somebody reversed BY HAND in the books: that one
+      keeps the spend's key, so a later touch of the row still leaves it
+      alone. Same shape as the supersede in correctEntry.
+    */
+    await ctx.db.updateDocument(ctx.DB_ID, 'journal_entries', existing.$id, { source_id: `${key}:refused` })
+      .catch(() => undefined);
     ctx.log(`Reversed the refused spend ${expense.$id}.`);
     return { ok: true, reversed: true };
   }

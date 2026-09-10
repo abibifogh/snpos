@@ -865,6 +865,34 @@ console.log('\n=== V — refusing a spend takes it off the books; approving only
   // Refusing again does not reverse the reversal.
   const again = await postSpend(server, rows.find((r) => r.$id === 'e-no'));
   results.push(['V refused twice is refused once', ok('again', again.skipped, 'refused, nothing on the books')]);
+
+  /*
+    A refusal undone.
+
+    An admin who refuses the wrong row presses approve, and the spend has to
+    reach the books again. It used to meet its own reversed entry and be left
+    alone, so an approved spend cost the month nothing and nothing said so.
+  */
+  await decideSpend({ expenseId: 'e-no', decision: 'approved', by: 'micheal' });
+  const undone = await postSpend(server, (__all('shift_expenses') as any[]).find((r) => r.$id === 'e-no'));
+  const after = __all('journal_lines') as any[];
+  const transportNow = after.filter((l) => l.account_code === '6010').reduce((s2, l) => s2 + l.debit - l.credit, 0);
+  const cashNow = after.filter((l) => l.account_code === '1000').reduce((s2, l) => s2 + l.debit - l.credit, 0);
+  results.push(['V approving after a refusal posts it again', ok(
+    'posted / transport / cash', [!!undone.posted, transportNow, cashNow], [true, 5_500, -5_500],
+  )]);
+  // And the row settles: a second look changes nothing.
+  const settled = await postSpend(server, (__all('shift_expenses') as any[]).find((r) => r.$id === 'e-no'));
+  results.push(['V and then it is quiet again', ok('settled', settled.skipped, 'already posted')]);
+
+  // Refused once more, it comes off again — the reversal and the repost are
+  // not a one-off trick that only works the first time round.
+  await decideSpend({ expenseId: 'e-no', decision: 'rejected', by: 'micheal' });
+  await postSpend(server, (__all('shift_expenses') as any[]).find((r) => r.$id === 'e-no'));
+  const last = __all('journal_lines') as any[];
+  results.push(['V refused again comes off again', ok(
+    'transport', last.filter((l) => l.account_code === '6010').reduce((s2, l) => s2 + l.debit - l.credit, 0), 1_500,
+  )]);
 }
 
 /* ------------------------------ a shift closed at the till, booked by the server */
