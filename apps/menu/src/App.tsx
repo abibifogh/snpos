@@ -477,6 +477,23 @@ export function App() {
     [cart, boot],
   );
 
+  /*
+    The times the ordinary pre-order picker offers, so a group can never book
+    a day the restaurant is shut. See offeredSlots.
+
+    ABOVE the loading guard below, with every other hook, and read through
+    `boot` rather than the values destructured out of it further down. It sat
+    under the guard for one release and took the whole menu down with it: on
+    the first render `boot` is null and the component returns early, on the
+    second it runs one hook more than it did the first time, and React stops
+    the app dead. Every hook in this component has to run on every render,
+    including the renders that show a spinner.
+  */
+  const groupSlots = useMemo(
+    () => (inGroupMode && boot ? offeredSlots(boot.venue, boot.features) : []),
+    [inGroupMode, boot],
+  );
+
   /* A booking is priced day by day, because each day becomes its own order and
      the sum of the tickets has to be the figure the hotel agreed to. */
   const booking = useMemo(
@@ -696,13 +713,6 @@ export function App() {
   // menu and are the only thing shown on the group one, a hotel party
   // ordering platters does not want the a la carte list, and a walk-in
   // should not be offered a set meal for twenty.
-  /* The same times the ordinary pre-order picker offers, so a group can never
-     book a day the restaurant is shut. See offeredSlots. */
-  const groupSlots = useMemo(
-    () => (inGroupMode ? offeredSlots(venue, features) : []),
-    [inGroupMode, venue, features],
-  );
-
   const onSide = visibleSections(menu)
     .filter((sec) => (sec.category.module ?? 'kitchen') === side)
     .filter((sec) => (inGroupMode ? sec.category.group_only : !sec.category.group_only));

@@ -511,6 +511,73 @@ const SETTINGS_REQUIRED_FROM_THE_START = new Set([
 }
 
 /**
+ * A hook must not sit below a screen's loading guard.
+ *
+ * This one took the whole customer menu down for a release. A component that
+ * returns a spinner while it is loading, and then calls useMemo further down,
+ * runs one hook fewer on its first render than on its second — and React does
+ * not warn, it stops the app dead with "Rendered more hooks than during the
+ * previous render". Every screen here has that shape: read, show a spinner,
+ * then render. So the mistake is one keystroke away at all times, and nothing
+ * else in the build catches it. There is no eslint in this repo, and the
+ * type checker has no opinion about hook order.
+ *
+ * Deliberately blunt. It looks for a guard at the top level of a component —
+ * an `if` that returns — and then for any hook call at that same level below
+ * it. That is the shape that breaks. A hook nested inside another function is
+ * indented further and is not this bug.
+ */
+const HOOK = /^ {2}(?:const\s+[^=]+=\s*)?use[A-Z]\w*[<(]/;
+const INLINE_GUARD = /^ {2}if\s*\(.*\)\s*return\b/;
+const OPEN_GUARD = /^ {2}if\s*\(.*\)\s*\{\s*$/;
+
+const hookFaults = [];
+for (const file of [...sourceFiles('apps'), ...sourceFiles('packages')].filter((f) => f.endsWith('.tsx'))) {
+  const lines = readFileSync(file, 'utf8').split('\n');
+  let guard = 0;
+  let inGuardBlock = false;
+  let blockReturns = false;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+
+    // A new top-level function starts the reckoning again.
+    if (/^(export\s+)?(default\s+)?function\s/.test(line)) {
+      guard = 0;
+      inGuardBlock = false;
+    }
+
+    if (inGuardBlock) {
+      if (/^\s+return\b/.test(line)) blockReturns = true;
+      if (/^ {2}\}/.test(line)) {
+        if (blockReturns) guard = i + 1;
+        inGuardBlock = false;
+      }
+      continue;
+    }
+
+    if (INLINE_GUARD.test(line)) { guard = i + 1; continue; }
+    if (OPEN_GUARD.test(line)) { inGuardBlock = true; blockReturns = false; continue; }
+
+    if (guard && HOOK.test(line)) {
+      hookFaults.push({ file, line: i + 1, guard, text: line.trim().slice(0, 60) });
+    }
+  }
+}
+
+if (hookFaults.length) {
+  console.error('These hooks are called below a return, so they do not run on every render:\n');
+  for (const f of hookFaults) {
+    console.error(`  ${f.file}:${f.line}  ${f.text}`);
+    console.error(`    a return above it at line ${f.guard} means this is skipped on some renders`);
+  }
+  console.error('\nReact counts hooks and refuses to carry on when the count changes, which takes');
+  console.error('the whole screen down rather than just this part of it. Move the hook above the');
+  console.error('guard and read whatever it needs through the state that may still be loading.');
+  process.exit(1);
+}
+
+/**
  * The apps must know the schema's current fingerprint.
  *
  * packages/core/src/schema-version.ts is generated from the schema, and the
