@@ -189,6 +189,8 @@ export interface MenuItem extends Doc {
   station: Station | 'inherit';
   station_key?: string;
   tags?: string[];
+  /** What can be left out, and what the dish becomes without it. JSON; see dietary.ts. */
+  omissions?: string;
   sort: number;
   track_stock: boolean;
   /** Kitchen or craft. Set from the category it was created under. */

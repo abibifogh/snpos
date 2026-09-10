@@ -7,7 +7,7 @@ import {
   articlesFor, HELP_AREAS,
   featureConfig, previewUrl, humanError,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, screenShouldReset, screenClaim,
-  bookingTotals, offeredSlots,
+  bookingTotals, offeredSlots, dietChips, matchesDiet, parseOmissions, dietaryLabels, couldBeWords,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc, GroupMeal,
@@ -86,6 +86,14 @@ export function App() {
     is being added to: the sheet is where the booking is read back, and by
     then it is too late to ask.
   */
+  /**
+   * The diet a guest has filtered to, or none.
+   *
+   * Not remembered between visits. A shared counter tablet is everybody, and
+   * the next person to pick it up should be looking at the whole menu rather
+   * than at somebody else's restriction with no obvious way back.
+   */
+  const [diet, setDiet] = useState('');
   const [groupMeals, setGroupMeals] = useState<GroupMeal[]>([]);
   const [activeMeal, setActiveMeal] = useState<string | null>(null);
   const [openDish, setOpenDish] = useState<string | null>(null);
@@ -695,9 +703,32 @@ export function App() {
     [inGroupMode, venue, features],
   );
 
-  const sections = visibleSections(menu)
+  const onSide = visibleSections(menu)
     .filter((sec) => (sec.category.module ?? 'kitchen') === side)
     .filter((sec) => (inGroupMode ? sec.category.group_only : !sec.category.group_only));
+
+  /*
+    The chips, and what they hide.
+
+    Built from what is actually on this menu, so a chip never leads to an
+    empty page. Filtering keeps a dish that IS the diet and one that COULD be
+    with something left out; the card says which, so nobody is told a dish is
+    vegetarian when what is true is that it can be made so. A section with
+    nothing left drops out rather than sitting there empty.
+  */
+  const chips = dietChips(
+    onSide.flatMap((sec) => sec.entries.map((e) => ({
+      tags: e.item.tags,
+      omissions: parseOmissions(e.item.omissions),
+    }))),
+  );
+
+  const sections = !diet ? onSide : onSide
+    .map((sec) => ({
+      ...sec,
+      entries: sec.entries.filter((e) => matchesDiet(e.item.tags, parseOmissions(e.item.omissions), diet)),
+    }))
+    .filter((sec) => sec.entries.length > 0);
   const venueHours = parseWindows(venue.opening_hours);
   const venueOpen = isAvailable(venueHours);
   const preordersOn = isEnabled(features, 'preorders');
@@ -835,6 +866,37 @@ export function App() {
         </div>
       )}
 
+      {/*
+        What a guest can eat, above the categories.
+
+        First thing on the menu after the notices, because somebody with a
+        restriction is looking for it before they look at the food. Shown only
+        when this menu has something to offer at least one of them, so it
+        never appears as a row of dead ends.
+      */}
+      {chips.length > 0 && (
+        <div className="diet-chips" role="group" aria-label="Show dishes for a diet">
+          {chips.map((c) => (
+            <button
+              key={c.key}
+              className={diet === c.key ? 'on' : ''}
+              aria-pressed={diet === c.key}
+              onClick={() => setDiet(diet === c.key ? '' : c.key)}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {diet && (
+        <div className="diet-note">
+          <span>
+            Showing what is {dietaryLabels([diet])[0]?.label.toLowerCase() ?? diet}, and what can be made so.
+          </span>
+          <Button onClick={() => setDiet('')}>Show everything</Button>
+        </div>
+      )}
+
       <nav className="cat-nav">
         {sections.map((s) => (
           <button
@@ -860,9 +922,6 @@ export function App() {
           key={section.category.$id}
           section={section}
           settings={settings}
-          // What each dish is safe for. On the group menu, where whoever is
-          // booking does not know their guests and has to ask on their behalf.
-          showDiet={inGroupMode}
           onPick={(id) => setOpenDish(id)}
         />
       ))}
@@ -897,7 +956,7 @@ export function App() {
         <DishSheet
           entry={dish}
           settings={settings}
-          showDiet={inGroupMode}
+          showDiet
           onClose={() => setOpenDish(null)}
           onAdd={addLine}
         />
@@ -967,13 +1026,10 @@ export function App() {
 function Section({
   section,
   settings,
-  showDiet,
   onPick,
 }: {
   section: MenuSection;
   settings: Settings;
-  /** Say what each dish is safe for: vegan, gluten free, contains nuts. */
-  showDiet?: boolean;
   onPick: (id: string) => void;
 }) {
   const windows = parseWindows(section.category.availability);
@@ -1002,7 +1058,13 @@ function Section({
             <div className="body">
               <div className="name">{entry.item.name}</div>
               {entry.item.description && <div className="desc">{entry.item.description}</div>}
-              {showDiet && <DietTags tags={entry.item.tags} />}
+              {/* Shown on every menu, not only the group one. A guest at a
+                  table has the same question a hotel booker does, and until
+                  now the ordinary menu never answered it. */}
+              <DietTags
+                tags={entry.item.tags}
+                couldBe={couldBeWords(entry.item.tags, parseOmissions(entry.item.omissions))}
+              />
               <div className="price">
                 {formatMoney(entry.price, settings)}
                 {entry.soldOut && <span className="dim"> · sold out</span>}

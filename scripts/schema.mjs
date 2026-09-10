@@ -598,6 +598,21 @@ export const COLLECTIONS = [
       // does not want the à la carte list, and vice versa.
       ['group_only', 'b', null, false, false],
       ['tags', 's[]', 40, false],
+      /*
+        What can be left out, and what the dish becomes without it.
+
+        Red red is vegetarian but for the momoni in it, and a guest reading a
+        menu has no way to know the kitchen would happily leave it out. They
+        order something else, or they ask and the answer depends on who is on.
+        Either way a dish that would have suited them did not get sold.
+
+        JSON, like `availability` above, so this needs no table of its own and
+        a dish with nothing removable carries nothing at all:
+          [{key, name, earns: ['vegetarian'], ingredientId?}]
+        See dietary.ts. `ingredientId` ties it to a recipe line, which is what
+        lets a dish sold without momoni leave the momoni on the shelf.
+      */
+      ['omissions', 's', 2000, false],
       ['sort', 'i', null, true, 0],
       ['track_stock', 'b', null, true, false],
       // ---------------------------------------------------------- craft shop

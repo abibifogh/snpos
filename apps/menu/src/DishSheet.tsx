@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button, Modal, Textarea, FormError } from '@snpos/ui';
-import { formatMoney, previewUrl } from '@snpos/core';
+import { formatMoney, previewUrl, parseOmissions, omissionWords, tagsWithout } from '@snpos/core';
 import type { MenuEntry, Settings, CartLine, CartAddon } from '@snpos/core';
 import { DietTags } from './DietTags';
 
@@ -33,6 +33,18 @@ export function DishSheet({
     }
     return initial;
   });
+
+  /*
+    What this dish can be made without, and what the guest has asked to leave out.
+
+    An omission is not an add-on: it costs nothing and takes something away.
+    It rides on the line as an add-on shaped entry all the same, because that
+    is what already reaches the kitchen ticket, the bill and the order history
+    — so "no momoni" prints beside the dish with nothing new plumbed for it.
+  */
+  const omissions = parseOmissions(entry.item.omissions);
+  const [without, setWithout] = useState<string[]>([]);
+  const nowTags = tagsWithout(entry.item.tags, omissions, without);
 
   const img = previewUrl(entry.item.image_id, 'menu', settings, 640, 420);
 
@@ -78,7 +90,14 @@ export function DishSheet({
       name: entry.item.name,
       unit_price: entry.price,
       qty,
-      addons,
+      addons: [
+        ...addons,
+        // Priced at nothing, so the total is untouched, and named the way the
+        // pass reads it out.
+        ...omissions
+          .filter((o) => without.includes(o.key))
+          .map((o) => ({ option_id: `omit-${o.key}`, group_id: 'omit', name: `No ${o.name}`, price_delta: 0 })),
+      ],
       notes: notes.trim() || undefined,
       station: entry.station,
       station_key: entry.stationKey,
@@ -111,7 +130,28 @@ export function DishSheet({
         />
       )}
       {entry.item.description && <p style={{ marginTop: 0 }}>{entry.item.description}</p>}
-      {showDiet && <DietTags tags={entry.item.tags} />}
+      {/* The tags follow the switches below: tick "leave out the momoni" and
+          the dish says vegetarian there and then, which is the confirmation
+          the guest came for. */}
+      {showDiet && <DietTags tags={nowTags} />}
+
+      {omissions.length > 0 && (
+        <div style={{ marginTop: '1rem' }}>
+          <h3>Can be made without</h3>
+          {omissions.map((o) => (
+            <label className="opt-row" key={o.key}>
+              <span>{omissionWords(o)}</span>
+              <input
+                type="checkbox"
+                checked={without.includes(o.key)}
+                onChange={() => setWithout((w) => (
+                  w.includes(o.key) ? w.filter((k) => k !== o.key) : [...w, o.key]
+                ))}
+              />
+            </label>
+          ))}
+        </div>
+      )}
 
       {entry.groups.map(({ group, options }) => (
         <div key={group.$id} style={{ marginTop: '1.2rem' }}>

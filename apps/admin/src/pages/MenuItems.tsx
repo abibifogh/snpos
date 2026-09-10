@@ -13,10 +13,10 @@ import {
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition,
   pendingShelfLines, submitShelfChange, frozenPieces, frozenBy, needsApproval, shelfChangeProblem, sentWords,
   isService, SERVICE_LABEL,
-  DIETARY_TAGS, toggleDietaryTag, dietarySummary,
+  DIETARY_TAGS, toggleDietaryTag, dietarySummary, parseOmissions, serialiseOmissions, omissionWords,
   nameBook, nameFrom,
 } from '@snpos/core';
-import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice, WaitingChange, StaffProfile, ProductVariant } from '@snpos/core';
+import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice, WaitingChange, StaffProfile, ProductVariant, Omission } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
 // Which sizes this drink still sells, and what makes two of them a clash.
 import { liveSizes, retiredSizes, sizeProblem, retiredWords } from '@snpos/core';
@@ -160,6 +160,14 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   const [reassigning, setReassigning] = useState<{ itemId: string; from: string; to: string } | null>(null);
   const [tab, setTab] = useState<'items' | 'types'>('items');
   const [variants, setVariants] = useState<DraftVariant[]>([]);
+  /**
+   * What this dish can be made without, while the form is open.
+   *
+   * Held apart from `editing` because it is a list being edited row by row and
+   * the dish stores it as one piece of JSON. Read out of the dish when the
+   * form opens, written back as text when it saves.
+   */
+  const [omissions, setOmissions] = useState<Omission[]>([]);
   const [removedVariantIds, setRemovedVariantIds] = useState<string[]>([]);
   /**
    * Sizes kept only because sales already went through them.
@@ -195,6 +203,12 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   const [variantWas, setVariantWas] = useState<Record<string, number>>({});
   const frozen = useMemo(() => frozenPieces(waiting), [waiting]);
   const names = useMemo(() => nameBook(staff), [staff]);
+
+  const setOmission = (index: number, patch: Partial<Omission>) =>
+    setOmissions((all) => all.map((o, i) => (i === index ? { ...o, ...patch } : o)));
+
+  /** The recipe as the form currently has it, so an omission can name a line of it. */
+  const recipeRows = draftRecipes.filter((r) => r.ingredient_id);
   const whoChanged = (id: string) => (names.size ? nameFrom(names, id, 'Somebody') : 'Somebody');
   /**
    * How many of a product's sizes are held.
@@ -382,6 +396,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     // showing every day of the week. Choosing where a dish goes is the whole
     // job here; it should not have a default.
     setPickedCategories(item ? categoriesFor(item) : []);
+    setOmissions(item ? parseOmissions(item.omissions) : []);
     setPickedAddons(item ? itemAddons.filter((a) => a.menu_item_id === item.$id).map((a) => a.group_id) : []);
     // A copy takes the recipe with it but none of the row ids, so saving writes
     // a second recipe rather than moving the original's.
@@ -793,6 +808,9 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       // What the dish is safe for. Written as a list even when empty, so
       // unticking the last box actually clears it.
       tags: editing.tags ?? [],
+      // Written even when empty, for the same reason as the tags above:
+      // removing the last one has to actually clear it.
+      omissions: serialiseOmissions(omissions),
       // Blank means "wherever its main category goes". `station` is the old
       // built-in enum the database still requires; `station_key` is the one the
       // kitchen screen actually reads.
@@ -1559,6 +1577,84 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
                 </div>
               </Field>
             )}
+
+            {/*
+              What the kitchen would happily leave out.
+
+              Directly under the tags, because it is the same question asked
+              the other way round: those say what the dish IS, this says what
+              it could be. Red red is vegetarian but for the momoni, and a
+              guest reading the menu has no way to know that unless it is
+              written down here.
+            */}
+            {module === 'kitchen' && (
+              <Field
+                label="Can be made without"
+                hint="Each of these becomes one switch on the customer's menu, and the dish is listed as that diet 'on request'. Leave empty for a dish nothing can come out of."
+              >
+                <div className="stack" style={{ gap: '0.6rem', marginTop: '0.2rem' }}>
+                  {omissions.map((o, i) => (
+                    <div key={o.key} className="stack" style={{ gap: '0.3rem' }}>
+                      <div className="row" style={{ gap: '0.5rem' }}>
+                        <Input
+                          placeholder="momoni (salted fish)"
+                          value={o.name}
+                          onChange={(e) => setOmission(i, { name: e.target.value })}
+                        />
+                        <Button size="sm" variant="ghost" onClick={() => setOmissions(omissions.filter((_, x) => x !== i))}>
+                          Remove
+                        </Button>
+                      </div>
+                      {/* Which recipe line it is, where the dish has one. Set,
+                          the shelf keeps its momoni when a plate goes out
+                          without it; unset, the omission is only words, which
+                          is right for a dish whose stock is not tracked. */}
+                      {recipeRows.length > 0 && (
+                        <Select
+                          value={o.ingredientId ?? ''}
+                          onChange={(e) => setOmission(i, { ingredientId: e.target.value || undefined })}
+                        >
+                          <option value="">Not on the recipe, so nothing comes off the shelf</option>
+                          {recipeRows.map((r) => (
+                            <option key={r.ingredient_id} value={r.ingredient_id}>
+                              {ingredients.find((x) => x.$id === r.ingredient_id)?.name ?? 'An ingredient'}
+                            </option>
+                          ))}
+                        </Select>
+                      )}
+                      <div className="row row-wrap" style={{ gap: '0.3rem 0.9rem' }}>
+                        <span className="small dim">Without it this is:</span>
+                        {DIETARY_TAGS.filter((t) => !t.caution).map((t) => (
+                          <Toggle
+                            key={t.key}
+                            checked={o.earns.includes(t.key)}
+                            onChange={() => setOmission(i, {
+                              earns: o.earns.includes(t.key)
+                                ? o.earns.filter((k) => k !== t.key)
+                                : [...o.earns, t.key],
+                            })}
+                            label={t.label}
+                          />
+                        ))}
+                      </div>
+                      <div className="small dim">{omissionWords(o)}</div>
+                    </div>
+                  ))}
+                  <div>
+                    <Button
+                      size="sm"
+                      onClick={() => setOmissions([
+                        ...omissions,
+                        { key: `o${Date.now().toString(36)}`, name: '', earns: [] },
+                      ])}
+                    >
+                      Add something that can be left out
+                    </Button>
+                  </div>
+                </div>
+              </Field>
+            )}
+
             {module === 'kitchen' && (
               <StationPicker
                 stations={stations}
