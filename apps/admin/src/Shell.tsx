@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { Button, Logo, SchemaBar, Segmented, THEME_MODES, themeMode, setThemeMode } from '@snpos/ui';
+import { Button, Logo, SchemaBar, StaleBar, Segmented, THEME_MODES, themeMode, setThemeMode } from '@snpos/ui';
 import { navFor, wordsFor, sidebarSides, SIDE_NAMES } from '@snpos/core';
 import type { Module } from '@snpos/core';
 import { useSession } from './session';
@@ -197,6 +197,11 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
       </aside>
       <div className="main">
+        {/* Above the database bar on purpose. When a page is an old copy the
+            two bars are the same fault, and this one names it correctly: the
+            other reads the mismatch the wrong way round and sends somebody to
+            provision a database that is in fact ahead of the page. */}
+        <StaleBar />
         {/* Across the top of every page, for the person who can fix it. */}
         <SchemaBar settings={settings} owner={profile?.role === 'admin'} />
         <div className="page">{children}</div>
