@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, Field, Input, Notice, Spinner, Toggle, Badge, Button, useToast } from '@snpos/ui';
 import { db, DB_ID, listAll, humanError } from '../lib';
 import { useSession } from '../session';
@@ -15,8 +16,15 @@ function configNumber(flag: FeatureFlag, option: string, fallback: number): numb
   }
 }
 
-/** Plain-language labels. The keys come from scripts/schema.mjs. */
-const LABELS: Record<string, { title: string; blurb: string }> = {
+/**
+ * Plain-language labels. The keys come from scripts/schema.mjs.
+ *
+ * `to` is the page where the feature is actually used, named by the words the
+ * sidebar uses for it. A switch that says "set up under Tables" when the
+ * sidebar says "Tables & QR", inside a group that is folded shut, is a switch
+ * whose other half nobody finds.
+ */
+const LABELS: Record<string, { title: string; blurb: string; to?: string; toLabel?: string }> = {
   // Named for receipts, but it carries every email a customer gets, and it is
   // also what makes the ordering page ask for an address in the first place.
   // Left unsaid, an owner switches this off to stop receipts and quietly stops
@@ -51,9 +59,11 @@ const LABELS: Record<string, { title: string; blurb: string }> = {
   group_orders: {
     title: 'Group orders',
     blurb:
-      'A separate, private link for parties and hotel bookings, set up under Tables. It shows only the categories '
-      + 'you have marked group-only, and lets a group staying several nights book a meal at a time, each one eaten '
-      + 'here or packed to take away. With this off, that link opens the ordinary menu.',
+      'A separate, private link for parties and hotel bookings. It shows only the categories you have marked '
+      + 'group-only, and lets a group staying several nights book a meal at a time, each one eaten here or packed '
+      + 'to take away. With this off, that link opens the ordinary menu.',
+    to: '/tables',
+    toLabel: 'Sell → Tables & QR',
   },
   item_availability: {
     title: 'Mark a dish as run out',
@@ -242,7 +252,12 @@ export function FeaturesPage() {
               <div className="feature-row" key={f.$id}>
                 <div className="meta">
                   <h3>{meta.title}</h3>
-                  <div className="small dim">{meta.blurb}</div>
+                  <div className="small dim">
+                    {meta.blurb}
+                    {meta.to && (
+                      <> The link itself is under <Link to={meta.to}>{meta.toLabel ?? meta.to}</Link>.</>
+                    )}
+                  </div>
                   {unmet.length > 0 && (
                     <div style={{ marginTop: '0.4rem' }}>
                       <Badge tone="warn">

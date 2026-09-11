@@ -145,7 +145,8 @@ export function ExpensesPage() {
   return (
     <>
       <div className="spread">
-        <h1>Expenses</h1>
+        {/* "Spends" in the sidebar, so "Spends" here. */}
+        <h1>Spends</h1>
         {tab === 'expenses' && <SideFilter value={side} onChange={setSide} settings={settings} profile={profile} />}
         {tab === 'expenses' && (
           <div className="row">
