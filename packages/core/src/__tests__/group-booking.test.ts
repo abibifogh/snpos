@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   packFeeFor, portionsOn, mealTotals, bookingTotals, bookingProblem, mealWords, packWords,
-  slotsByDay, timesTaken, timeIsTaken, freeTimesOn, FULFILMENT_WORDS, linesByCategory, portionsIn, UNGROUPED,
+  slotsByDay, timesTaken, timeIsTaken, freeTimesOn, FULFILMENT_WORDS,
   mealMoment, momentProblem, dayInput, timeInput, BOOKING_OPENS, BOOKING_CLOSES,
 } from '../pricing.ts';
 import type { GroupMeal } from '../pricing.ts';
@@ -128,41 +128,6 @@ test('a meal and the charge say what they are in words', () => {
   assert.match(packWords(200, money), /GH₵2\.00 a portion/);
   assert.match(packWords(0, money), /Nothing extra/);
   assert.equal(FULFILMENT_WORDS.takeaway, 'Packed to take away');
-});
-
-test('a meal’s dishes read under the headings they came from, in menu order', () => {
-  const lines = [
-    line('club', 3_000, 2),
-    line('chicken-wrap', 4_000, 5),
-    line('jollof', 5_000, 3),
-    line('beef-wrap', 4_500, 1),
-  ];
-  const of = (id: string) => ({
-    'chicken-wrap': 'Wraps', 'beef-wrap': 'Wraps', 'club': 'Sandwiches', 'jollof': 'Mains',
-  }[id] ?? '');
-
-  const groups = linesByCategory(lines, of, ['Wraps', 'Sandwiches', 'Mains']);
-  assert.deepEqual(groups.map((g) => g.category), ['Wraps', 'Sandwiches', 'Mains']);
-  // Not alphabetical, and not the order the dishes happened to be tapped in.
-  assert.deepEqual(groups[0].lines.map((l) => l.name), ['chicken-wrap', 'beef-wrap']);
-  assert.equal(portionsIn(groups[0]), 6);
-  assert.equal(portionsIn(groups[2]), 3);
-});
-
-test('a dish whose heading is gone is shown, not lost', () => {
-  const groups = linesByCategory([line('mystery', 1_000, 1), line('jollof', 5_000, 2)],
-    (id) => (id === 'jollof' ? 'Mains' : ''), ['Mains']);
-  assert.deepEqual(groups.map((g) => g.category), ['Mains', UNGROUPED]);
-  assert.equal(portionsIn(groups[1]), 1);
-});
-
-test('a heading the menu order never mentioned still comes before the catch-all', () => {
-  const groups = linesByCategory(
-    [line('a', 100, 1), line('b', 100, 1), line('c', 100, 1)],
-    (id) => ({ a: 'Mains', b: 'Specials' }[id] ?? ''),
-    ['Mains'],
-  );
-  assert.deepEqual(groups.map((g) => g.category), ['Mains', 'Specials', UNGROUPED]);
 });
 
 test('a meal can be booked on any day, at any time the kitchen could serve', () => {

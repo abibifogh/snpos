@@ -22,6 +22,26 @@ export function nameBook(profiles: { $id: string; user_id?: string; display_name
 }
 
 /**
+ * The same thing as a plain object, for the detail panels.
+ *
+ * Keyed under BOTH of a person's ids, because the records these panels read
+ * carry both: what somebody wrote carries their login's id, what points at a
+ * colleague carries their staff profile's. A lookup that knew only one of
+ * them called people who were at work that day "no longer on the staff list".
+ */
+export function namesByBothIds(
+  profiles: { $id: string; user_id?: string; display_name?: string }[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const p of profiles) {
+    const name = p.display_name || 'Somebody with no name set';
+    out[p.$id] = name;
+    if (p.user_id) out[p.user_id] = name;
+  }
+  return out;
+}
+
+/**
  * The name, or the honest answer.
  *
  * An empty book is not the same as a missing profile: the list is fetched

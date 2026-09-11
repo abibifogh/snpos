@@ -1,10 +1,13 @@
-import { db, DB_ID, ID, Query, listAll, listByIds } from './client';
+import { db, DB_ID, ID, Query, listAll } from './client';
 import type { Doc } from './types';
 import { ACCOUNTS, postEntry } from './ledger';
 import { boxBalance, countBox, coversFrom, spendCorrections } from './imprest-rules';
 import type { ImprestMovement, ImprestKind } from './imprest-rules';
 // Shaping a movement into a panel is pure and lives next door.
 import type { DetailExpense, DetailNames } from './imprest-detail';
+import { spendReviewLines, linesAgainst } from './waiting-lines';
+import type { ReviewLine } from './waiting-lines';
+import { staffNamesByIds } from './staff-names';
 
 /**
  * Petty cash boxes, and the two sets of books they have to agree with.
@@ -430,6 +433,20 @@ export async function reconcileFloat(opts: {
 
 /* ------------------------------------------- what one line in a box actually was */
 
+/** One row of a spend's itemised lines, as the database stores it. */
+interface SpendItemRow { name_snapshot: string; qty?: number; unit_cost?: number; line_total?: number }
+
+/** Everything one movement's panel shows. */
+export interface MovementDetail {
+  expense: DetailExpense | null;
+  names: DetailNames;
+  /** What the spend was itemised as, worst first. Empty when nothing was. */
+  items: ReviewLine[];
+  /** What those lines come to, and by how much they miss the amount claimed. */
+  itemsTotal: number;
+  itemsOff: number;
+}
+
 /**
  * Everything behind one movement, ready for a panel.
  *
@@ -444,7 +461,7 @@ export async function reconcileFloat(opts: {
  */
 export async function loadMovementDetail(
   movement: Pick<ImprestMovementDoc, '$id' | 'kind' | 'ref_id' | 'created_by'>,
-): Promise<{ expense: DetailExpense | null; names: DetailNames }> {
+): Promise<MovementDetail> {
   const names: DetailNames = { people: {}, suppliers: {}, categories: {}, shifts: {} };
 
   const expense = movement.kind === 'spend' && movement.ref_id
@@ -454,20 +471,39 @@ export async function loadMovementDetail(
     : null;
 
   /*
+    What the money was actually spent on, line by line.
+
+    The panel used to stop at the total. "GH\u20b5445.00 on Ingredients" is a
+    figure to approve on trust: four hundred and forty-five cedis of one thing
+    or of thirty things look identical, and a decimal point in the wrong place
+    looks like both. The same lines are read on the Waiting page and shaped by
+    the same pure function, so the two screens can never disagree about what a
+    spend contained.
+  */
+  const items = expense
+    ? spendReviewLines(await listAll<SpendItemRow>('expense_items', [
+      Query.equal('expense_id', expense.$id),
+    ]).catch(() => [] as SpendItemRow[]))
+    : [];
+  const { total: itemsTotal, off: itemsOff } = linesAgainst(items, expense?.amount ?? 0);
+
+  /*
     Only the rows this panel actually names.
 
     Reading every member of staff and every supplier to show one of each is the
     same waste as loading the expenses with the list, and it is the reason
     detail panels get built to show ids instead.
   */
-  const peopleIds = [movement.created_by, expense?.created_by, expense?.approved_by, expense?.paid_to_staff_id]
-    .filter((x): x is string => !!x);
-  if (peopleIds.length > 0) {
-    const staff = await listByIds<{ $id: string; display_name?: string }>(
-      'staff_profiles', '$id', peopleIds,
-    ).catch(() => []);
-    for (const s of staff) names.people[s.$id] = s.display_name || 'Somebody with no name set';
-  }
+  /*
+    Both kinds of id, because this row carries both: `created_by` is the login
+    that wrote it, `paid_to_staff_id` is the colleague's profile. Asking only
+    for profile documents found nothing for anything a member of staff had
+    recorded, and the panel then called them "somebody no longer on the staff
+    list" while they were at work. See staffNamesByIds.
+  */
+  names.people = await staffNamesByIds([
+    movement.created_by, expense?.created_by, expense?.approved_by, expense?.paid_to_staff_id,
+  ]);
 
   if (expense?.supplier_id) {
     const s = await db.getDocument(DB_ID, 'suppliers', expense.supplier_id)
@@ -493,5 +529,5 @@ export async function loadMovementDetail(
     }
   }
 
-  return { expense, names };
+  return { expense, names, items, itemsTotal, itemsOff };
 }

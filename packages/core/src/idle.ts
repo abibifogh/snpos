@@ -297,6 +297,16 @@ export interface ScreenVerdict {
   screen: boolean | null;
   /** Whether the venue may be written down. Only a token knows it. */
   rememberVenue: boolean;
+  /**
+   * Whether to forget that this device was ever set up as a screen.
+   *
+   * A guest's own address is not a screen and must not open on the attract
+   * page, but it is also not somebody dismantling the counter. Opening a
+   * group link on the tablet to check something should not leave the counter
+   * needing to be set up again, so the visit is not a screen and the device's
+   * own setting is left where it is. Only `screenMode=off` forgets.
+   */
+  forget: boolean;
 }
 
 export function screenClaim(claim: ScreenClaim): ScreenVerdict {
@@ -304,10 +314,26 @@ export function screenClaim(claim: ScreenClaim): ScreenVerdict {
     Off wins. It is the only way back for a device that has been told it is a
     screen, and a way out that can be outvoted is not a way out.
   */
-  if (claim.turnedOff) return { screen: false, rememberVenue: false };
-  if (claim.tokenMatched) return { screen: true, rememberVenue: true };
-  if (claim.declared) return { screen: true, rememberVenue: false };
+  if (claim.turnedOff) return { screen: false, rememberVenue: false, forget: true };
+  if (claim.tokenMatched) return { screen: true, rememberVenue: true, forget: false };
+  if (claim.declared) return { screen: true, rememberVenue: false, forget: false };
   // Last, and only where the address is not somebody's own. See `installed`.
-  if (claim.installed && !claim.guestToken) return { screen: true, rememberVenue: false };
-  return { screen: null, rememberVenue: false };
+  if (claim.installed && !claim.guestToken) return { screen: true, rememberVenue: false, forget: false };
+  /*
+    A guest's own address is never a counter screen, whatever this device has
+    been before.
+
+    "Leave it as it was" is right for an address with nothing to say on the
+    subject. A table's QR code, a walk-in link and a group's link all have
+    something to say: they belong to one particular person, who needs their
+    own order back afterwards and their own receipt.
+
+    Without this, a browser that had ever been shown the screen address kept
+    that for good, and every guest link opened on it afterwards landed on
+    "Touch anywhere to begin" — which is how a hotel's private group link came
+    to open a counter screen's attract page. It does not forget the device's
+    setting, so the counter is still a counter next time it is opened there.
+  */
+  if (claim.guestToken) return { screen: false, rememberVenue: false, forget: false };
+  return { screen: null, rememberVenue: false, forget: false };
 }
