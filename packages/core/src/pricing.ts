@@ -542,6 +542,74 @@ export const timeIsTaken = (taken: Set<string>, at: Date): boolean => taken.has(
 export const freeTimesOn = (times: Date[], taken: Set<string>): Date[] =>
   times.filter((t) => !timeIsTaken(taken, t));
 
+/**
+ * When a group may ask to eat, and it is not the service timetable.
+ *
+ * The picker used to offer only the slots the kitchen serves walk-ins in,
+ * taken from the venue's opening hours. That is right for somebody ordering
+ * lunch on the way in and wrong for a party: a hotel booking forty covers for
+ * a Tuesday in November is an arrangement made with the kitchen in advance,
+ * and the kitchen opens for it. Worse, a venue whose hours had never been
+ * filled in could offer nothing at all, so the booking form was unusable for
+ * a reason nobody reading it would guess.
+ *
+ * So any date, and any time within the hours the business could conceivably
+ * serve food. The pair below is the outer edge, not a promise: the booking
+ * still has to be accepted.
+ */
+export const BOOKING_OPENS = '09:00';
+export const BOOKING_CLOSES = '22:00';
+const HHMM = (s: string): number => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
+  if (!m) return Number.NaN;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  return h > 23 || min > 59 ? Number.NaN : h * 60 + min;
+};
+
+/** A date as the date box wants it, yyyy-mm-dd in this device's own timezone. */
+export const dayInput = (at: string | Date): string => dayKeyOf(at);
+
+/** A time as the time box wants it, HH:mm, likewise local. */
+export function timeInput(at: string | Date): string {
+  const d = at instanceof Date ? at : new Date(at);
+  if (!Number.isFinite(d.getTime())) return '';
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * The two boxes, put back together into one moment.
+ *
+ * Built field by field rather than by parsing "2026-11-04T19:30", because
+ * that string is read as UTC by some engines and as local by others, and a
+ * booking three hours out is a party standing in an empty restaurant.
+ */
+export function mealMoment(day: string, time: string): Date | null {
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec((day ?? '').trim());
+  const mins = HHMM(time ?? '');
+  if (!d || !Number.isFinite(mins)) return null;
+  const at = new Date(Number(d[1]), Number(d[2]) - 1, Number(d[3]), Math.floor(mins / 60), mins % 60, 0, 0);
+  return Number.isFinite(at.getTime()) ? at : null;
+}
+
+/**
+ * What is wrong with the moment somebody has picked, in their words.
+ *
+ * Said rather than prevented. A date box can be told its earliest date and a
+ * time box its range, and both are then quietly ignored by somebody typing
+ * into them — the limits are a hint to the widget, never a rule. This is the
+ * rule.
+ */
+export function momentProblem(at: Date | null, now: Date = new Date()): string | null {
+  if (!at) return 'Choose a day and a time.';
+  if (at.getTime() <= now.getTime()) return 'That time has already gone. Please choose a later one.';
+  const mins = at.getHours() * 60 + at.getMinutes();
+  if (mins < HHMM(BOOKING_OPENS) || mins > HHMM(BOOKING_CLOSES)) {
+    return `Meals can be booked between ${BOOKING_OPENS} and ${BOOKING_CLOSES}. Please choose a time in between.`;
+  }
+  return null;
+}
+
 export interface BookingCheck {
   reference: string;
   needReference: boolean;

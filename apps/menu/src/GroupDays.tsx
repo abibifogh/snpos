@@ -1,67 +1,85 @@
 import { useState } from 'react';
-import { Button, Field, Modal, Select, Badge } from '@snpos/ui';
+import { Button, Field, Modal, Input, Notice } from '@snpos/ui';
 import {
-  slotsByDay, timesTaken, timeIsTaken, freeTimesOn, portionsOn,
-  FULFILMENT_WORDS, longDayWords, timeWords,
+  timesTaken, timeIsTaken, portionsOn, mealMoment, momentProblem, dayInput, timeInput,
+  BOOKING_OPENS, BOOKING_CLOSES, FULFILMENT_WORDS, longDayWords, timeWords,
 } from '@snpos/core';
 import type { GroupMeal } from '@snpos/core';
 import { newMeal } from './GroupSheet';
 
+/** Today, as the date box wants it, so nobody books yesterday. */
+const todayInput = () => dayInput(new Date());
+
 /**
  * Which meal of the stay is being ordered for.
  *
- * A strip above the menu, because in group mode every dish tapped has to go
- * somewhere, and "somewhere" is a particular sitting. Without this the group
- * builds one pile of food and is asked at the end to sort it into meals,
- * which is the same work done twice and done worse.
+ * A party staying four nights eats eight times, and every dish tapped has to
+ * belong to one particular sitting. Lunch on the terrace and dinner in the
+ * restaurant on the same Tuesday are two of them: cooked hours apart, and one
+ * may be packed for an excursion while the other is not. So the same date can
+ * appear twice and only the same TIME twice is refused.
  *
- * MEALS, not days. A party staying four nights eats eight times: lunch on the
- * terrace and dinner in the restaurant on the same Tuesday are two sittings,
- * cooked hours apart, and one may be packed for an excursion while the other
- * is not. So the same date can appear twice, and only the same TIME twice is
- * refused as a duplicate.
+ * Written as a list of what has been booked so far, rather than as a row of
+ * chips. The chips were compact and read as decoration — the button that adds
+ * a meal looked like one more tab, and the way to take a meal off was inside
+ * a sheet two taps away. Both are the whole job, so both are ordinary buttons
+ * that say what they do, in the place somebody is looking when they want
+ * them.
  *
- * The times offered are the ones the kitchen can actually serve, taken from
- * the same list the ordinary pre-order picker uses, so a booking can never
- * land when the restaurant is shut.
+ * Any date, and any time the kitchen could serve: see BOOKING_OPENS. A group
+ * booking is an arrangement made in advance, not a slot in today's service.
  */
 export function GroupDays({
-  meals, setMeals, activeKey, setActiveKey, slots,
+  meals, setMeals, activeKey, setActiveKey,
 }: {
   meals: GroupMeal[];
   setMeals: (fn: (m: GroupMeal[]) => GroupMeal[]) => void;
   activeKey: string | null;
   setActiveKey: (key: string | null) => void;
-  /** Every servable moment, across the days ahead. */
-  slots: Date[];
 }) {
   const [adding, setAdding] = useState(false);
-  const [pickedDay, setPickedDay] = useState('');
-  const [pickedTime, setPickedTime] = useState('');
+  const [day, setDay] = useState('');
+  const [time, setTime] = useState('');
 
   const taken = timesTaken(meals);
-  // A day drops off the list only once every one of its times is booked.
-  const byDay = slotsByDay(slots)
-    .map((d) => ({ ...d, times: freeTimesOn(d.times, taken) }))
-    .filter((d) => d.times.length > 0);
-  const times = byDay.find((d) => d.key === pickedDay)?.times ?? [];
-
-  /** Midday where the day offers it: a meal not said otherwise is lunch. */
-  const middayOf = (list: Date[]) => list.find((t) => t.getHours() >= 12) ?? list[0];
+  const picked = mealMoment(day, time);
+  // Said before the button is pressed, so nothing is refused after the fact.
+  const wrong = picked && timeIsTaken(taken, picked)
+    ? 'That day and time is already on your booking. Pick another time for a second sitting.'
+    : momentProblem(picked);
 
   const open = () => {
-    const first = byDay[0];
-    setPickedDay(first?.key ?? '');
-    setPickedTime(first ? (middayOf(first.times)?.toISOString() ?? '') : '');
+    /*
+      Opens on the next round hour, tomorrow. A group booking is almost never
+      for the next twenty minutes, and a box that starts blank is a box that
+      has to be filled in twice before anything happens.
+    */
+    const start = new Date();
+    start.setDate(start.getDate() + 1);
+    start.setHours(12, 0, 0, 0);
+    setDay(dayInput(start));
+    setTime(timeInput(start));
     setAdding(true);
   };
 
   const add = () => {
-    if (!pickedTime) return;
-    const meal = newMeal(new Date(pickedTime));
+    if (!picked || wrong) return;
+    const meal = newMeal(picked);
     setMeals((all) => [...all, meal]);
     setActiveKey(meal.key);
     setAdding(false);
+  };
+
+  const drop = (meal: GroupMeal) => {
+    if (portionsOn(meal) > 0
+      && !confirm(`Take ${longDayWords(meal.at)}, ${timeWords(meal.at)} off the booking? What is on it will be lost.`)) {
+      return;
+    }
+    setMeals((all) => {
+      const left = all.filter((m) => m.key !== meal.key);
+      if (activeKey === meal.key) setActiveKey(left[0]?.key ?? null);
+      return left;
+    });
   };
 
   const ordered = [...meals].sort((a, b) => a.at.localeCompare(b.at));
@@ -69,57 +87,56 @@ export function GroupDays({
 
   return (
     <>
-      <div className="cat-nav" style={{ gap: '0.4rem' }}>
-        {ordered.map((m, i) => {
-          const sameDayBefore = i > 0 && longDayWords(ordered[i - 1].at) === longDayWords(m.at);
+      <div className="group-plan">
+        {ordered.length > 0 && <h2 className="group-plan-title">Your booking</h2>}
+
+        {ordered.map((m) => {
           const n = portionsOn(m);
+          const on = m.key === activeKey;
           return (
-            <button key={m.key} className={m.key === activeKey ? 'on' : ''} onClick={() => setActiveKey(m.key)}>
-              {/* The date once per day. Two sittings on one Tuesday read as
-                  "Tuesday 14 · 12:30" then "· 19:00", which is how somebody
-                  says it out loud. */}
-              {!sameDayBefore && <>{longDayWords(m.at)}{' · '}</>}
-              {timeWords(m.at)}
-              {n > 0 && <> · {n}</>}
-              {m.fulfilment === 'takeaway' && ' · packed'}
-            </button>
+            <div key={m.key} className={`group-meal${on ? ' on' : ''}`}>
+              {/* The card itself chooses the meal, so ordering for a different
+                  sitting is one tap on the thing you are reading. */}
+              <button
+                type="button"
+                className="group-meal-pick"
+                aria-pressed={on}
+                onClick={() => setActiveKey(m.key)}
+              >
+                <span className="group-meal-when">{longDayWords(m.at)}, {timeWords(m.at)}</span>
+                <span className="group-meal-what">
+                  {n === 0 ? 'Nothing on it yet' : `${n} portion${n === 1 ? '' : 's'}`}
+                  {' · '}
+                  {FULFILMENT_WORDS[m.fulfilment].toLowerCase()}
+                </span>
+              </button>
+              {/* Plainly a button, plainly next to the meal it removes. It
+                  used to be a faint word inside the booking sheet. */}
+              <Button variant="danger" size="sm" onClick={() => drop(m)}>Remove</Button>
+            </div>
           );
         })}
-        {byDay.length > 0 && (
-          <button onClick={open} style={{ fontWeight: 600 }}>+ Add a meal</button>
-        )}
+
+        {/* Full width and primary. This is the first thing anybody has to do
+            and it used to look like one more tab in a row of tabs. */}
+        <Button variant="primary" onClick={open} style={{ width: '100%' }}>
+          + Add {ordered.length === 0 ? 'a meal' : 'another meal'}
+        </Button>
       </div>
+
+      {meals.length === 0 && (
+        <Notice tone="info">
+          <strong>Booking for a group.</strong> Add a meal and say when the group will eat it, then choose
+          their food from the menu below. Lunch and dinner on the same day are two meals.
+        </Notice>
+      )}
 
       {/* Said above the menu, because a dish tapped with no meal chosen has
           nowhere to go and the reason has to be obvious before it happens. */}
       {active && (
         <div className="banner banner-info">
-          <strong>Ordering for {longDayWords(active.at)}, {timeWords(active.at)}.</strong>{' '}
-          {FULFILMENT_WORDS[active.fulfilment].toLowerCase()}. Tap another meal above to order for it instead.
-        </div>
-      )}
-
-      {/*
-        No times to offer at all.
-
-        The times come from the venue's opening hours, so a venue whose hours
-        have never been set can serve nobody and this screen could offer
-        nothing. It used to say nothing either: no "add a meal" button, no
-        reason, just a heading and a dead end. Said plainly instead, because
-        the person reading it can either fix it or ring somebody who can.
-      */}
-      {slots.length === 0 && (
-        <div className="banner banner-info">
-          <strong>No times can be offered yet.</strong> This venue&rsquo;s opening hours have not been set, so
-          there is nothing to book against. Please order at the counter, or ask the front desk.
-        </div>
-      )}
-
-      {meals.length === 0 && slots.length > 0 && (
-        <div className="banner banner-info">
-          <strong>Booking for a group staying with us.</strong> Add a meal, choose what the group will eat at it,
-          then add the next. Lunch and dinner on the same day are two meals, and each can be eaten here or
-          packed to take away.
+          <strong>Choosing food for {longDayWords(active.at)}, {timeWords(active.at)}.</strong>{' '}
+          Tap another meal above to order for that one instead.
         </div>
       )}
 
@@ -128,46 +145,35 @@ export function GroupDays({
           title="Add a meal"
           onClose={() => setAdding(false)}
           footer={
-            <Button variant="primary" onClick={add} disabled={!pickedTime} style={{ width: '100%' }}>
+            <Button variant="primary" onClick={add} disabled={!!wrong} style={{ width: '100%' }}>
               Add this meal
             </Button>
           }
         >
-          {byDay.length === 0 ? (
-            <p className="meta">Every time we can serve is already on your booking.</p>
-          ) : (
-            <>
-              <Field label="Which day?">
-                <Select
-                  value={pickedDay}
-                  onChange={(e) => {
-                    setPickedDay(e.target.value);
-                    const day = byDay.find((d) => d.key === e.target.value);
-                    setPickedTime(day ? (middayOf(day.times)?.toISOString() ?? '') : '');
-                  }}
-                >
-                  {byDay.map((d) => (
-                    <option key={d.key} value={d.key}>{d.label}</option>
-                  ))}
-                </Select>
-              </Field>
-              <Field
-                label="What time?"
-                hint="Add the same day again for a second sitting: lunch and dinner are two meals."
-              >
-                <Select value={pickedTime} onChange={(e) => setPickedTime(e.target.value)}>
-                  {times.map((t) => (
-                    <option key={t.toISOString()} value={t.toISOString()}>{timeWords(t)}</option>
-                  ))}
-                </Select>
-              </Field>
-              {/* Only the same moment twice is a duplicate, and the list above
-                  already leaves those out; this catches a stale selection. */}
-              {pickedTime && timeIsTaken(taken, new Date(pickedTime)) && (
-                <Badge tone="warn">That time is already on the booking</Badge>
-              )}
-            </>
-          )}
+          <Field label="Which day?" hint="Any day from today onwards.">
+            <Input
+              type="date"
+              value={day}
+              min={todayInput()}
+              onChange={(e) => setDay(e.target.value)}
+            />
+          </Field>
+          <Field
+            label="What time?"
+            hint={`Any time between ${BOOKING_OPENS} and ${BOOKING_CLOSES}. Add the same day again for a second sitting: lunch and dinner are two meals.`}
+          >
+            <Input
+              type="time"
+              value={time}
+              min={BOOKING_OPENS}
+              max={BOOKING_CLOSES}
+              step={300}
+              onChange={(e) => setTime(e.target.value)}
+            />
+          </Field>
+          {/* The boxes' own limits are a hint to the widget and are ignored by
+              anybody typing into them, so the rule is said here as well. */}
+          {wrong && <Notice tone="warn">{wrong}</Notice>}
         </Modal>
       )}
     </>

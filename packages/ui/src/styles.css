@@ -451,6 +451,13 @@ table.data th.num { text-align: right; }
 /* The database-is-behind bar: the same shape, steady rather than pulsing, because
    nothing is in flight — somebody has a button to press. */
 .offline-bar.schema-bar .dot { animation: none; }
+/* A button that reads as the sentence it sits in. The out-of-date bar ends on
+   "Reload now", and a full-sized button there would break the line in half. */
+.offline-bar .linkish {
+  font: inherit; font-weight: 650; color: inherit; background: none; border: 0;
+  padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 0.15em;
+}
+.offline-bar .linkish:disabled { cursor: default; opacity: 0.7; text-decoration: none; }
 .offline-retry {
   margin-left: auto; padding: 0.3rem 0.7rem; font: inherit; font-size: 0.82rem; font-weight: 600;
   color: inherit; background: transparent; border: 1px solid currentColor;

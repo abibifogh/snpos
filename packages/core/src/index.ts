@@ -108,6 +108,7 @@ export * from './spend-kind';
 export * from './waiting';
 export * from './books';
 export * from './schema-status';
+export * from './build-freshness';
 export * from './health-rules';
 export * from './health';
 export * from './waiting-facts';

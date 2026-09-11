@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   packFeeFor, portionsOn, mealTotals, bookingTotals, bookingProblem, mealWords, packWords,
   slotsByDay, timesTaken, timeIsTaken, freeTimesOn, FULFILMENT_WORDS, linesByCategory, portionsIn, UNGROUPED,
+  mealMoment, momentProblem, dayInput, timeInput, BOOKING_OPENS, BOOKING_CLOSES,
 } from '../pricing.ts';
 import type { GroupMeal } from '../pricing.ts';
 
@@ -162,4 +163,52 @@ test('a heading the menu order never mentioned still comes before the catch-all'
     ['Mains'],
   );
   assert.deepEqual(groups.map((g) => g.category), ['Mains', 'Specials', UNGROUPED]);
+});
+
+test('a meal can be booked on any day, at any time the kitchen could serve', () => {
+  /*
+    The picker used to offer only the slots walk-ins are served in, read from
+    the opening hours. A party books weeks ahead and the kitchen opens for
+    them, and a venue whose hours were never filled in could offer nothing at
+    all — a booking form that refused every date for a reason it never gave.
+  */
+  const at = mealMoment('2026-11-04', '19:30');
+  assert.equal(at?.getFullYear(), 2026);
+  assert.equal(at?.getMonth(), 10);
+  assert.equal(at?.getDate(), 4);
+  assert.equal(at?.getHours(), 19);
+  assert.equal(at?.getMinutes(), 30);
+  // Built locally, never parsed as UTC: a booking three hours out is a party
+  // standing in an empty restaurant.
+  assert.equal(dayInput(at as Date), '2026-11-04');
+  assert.equal(timeInput(at as Date), '19:30');
+});
+
+test('half-filled boxes are not a moment', () => {
+  assert.equal(mealMoment('', '19:30'), null);
+  assert.equal(mealMoment('2026-11-04', ''), null);
+  assert.equal(mealMoment('4 November', '19:30'), null);
+  assert.equal(mealMoment('2026-11-04', '25:00'), null);
+  assert.equal(mealMoment('2026-11-04', '19:70'), null);
+  assert.match(String(momentProblem(null)), /Choose a day and a time/);
+});
+
+test('the hours are a rule, not just a hint to the box', () => {
+  const now = new Date('2026-11-01T09:00:00');
+  const on = (time: string) => momentProblem(mealMoment('2026-11-04', time), now);
+  // The edges are in.
+  assert.equal(on(BOOKING_OPENS), null);
+  assert.equal(on(BOOKING_CLOSES), null);
+  assert.equal(on('12:45'), null);
+  // Outside them, said in the words of whoever typed it.
+  assert.match(String(on('08:59')), /between 09:00 and 22:00/);
+  assert.match(String(on('22:01')), /between 09:00 and 22:00/);
+  assert.match(String(on('03:00')), /between 09:00 and 22:00/);
+});
+
+test('a time that has gone is refused before the booking is sent', () => {
+  const now = new Date('2026-11-04T13:00:00');
+  assert.match(String(momentProblem(mealMoment('2026-11-04', '12:00'), now)), /already gone/);
+  // Later the same day is fine: a group can book lunch for this evening.
+  assert.equal(momentProblem(mealMoment('2026-11-04', '19:00'), now), null);
 });

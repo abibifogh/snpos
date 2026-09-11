@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Modal, Spinner, Notice, useToast, Logo, HelpModal, OfflineBar, useOfflineQueue } from '@snpos/ui';
+import { Button, Modal, Spinner, Notice, useToast, Logo, HelpModal, OfflineBar, StaleBar, useOfflineQueue } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
   ensureGuestSession, db, DB_ID, Query, listAll, loadMenu, visibleSections, computeTotals, selfOrderModule,
@@ -7,7 +7,7 @@ import {
   articlesFor, HELP_AREAS,
   featureConfig, previewUrl, humanError,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, screenShouldReset, screenClaim,
-  bookingTotals, offeredSlots, dietChips, matchesDiet, parseOmissions, dietaryLabels, couldBeWords,
+  bookingTotals, dietChips, matchesDiet, parseOmissions, dietaryLabels, couldBeWords,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc, GroupMeal,
@@ -478,22 +478,14 @@ export function App() {
   );
 
   /*
-    The times the ordinary pre-order picker offers, so a group can never book
-    a day the restaurant is shut. See offeredSlots.
-
-    ABOVE the loading guard below, with every other hook, and read through
-    `boot` rather than the values destructured out of it further down. It sat
-    under the guard for one release and took the whole menu down with it: on
-    the first render `boot` is null and the component returns early, on the
-    second it runs one hook more than it did the first time, and React stops
-    the app dead. Every hook in this component has to run on every render,
-    including the renders that show a spinner.
+    A group used to be offered only the slots the kitchen serves walk-ins in,
+    read from the venue's opening hours. That is wrong for a party — the
+    booking is an arrangement made with the kitchen weeks ahead, and the
+    kitchen opens for it — and it left the form unusable at a venue whose
+    hours had never been filled in, with nothing on screen to say why. The
+    picker now takes any date and any time between BOOKING_OPENS and
+    BOOKING_CLOSES; see GroupDays.
   */
-  const groupSlots = useMemo(
-    () => (inGroupMode && boot ? offeredSlots(boot.venue, boot.features) : []),
-    [inGroupMode, boot],
-  );
-
   /* A booking is priced day by day, because each day becomes its own order and
      the sum of the tickets has to be the figure the hotel agreed to. */
   const booking = useMemo(
@@ -755,6 +747,10 @@ export function App() {
 
   return (
     <div className="menu-app">
+      {/* A guest's phone holding an old copy of the menu orders from old
+          prices and cannot see a dish added this morning. It is also the
+          likeliest reason a link "does not show the changes". */}
+      <StaleBar />
       <OfflineBar queued={queued} onRetry={() => void flushQueue()} />
       <header className="menu-header">
         <div className="row" style={{ justifyContent: 'center', gap: '0.55rem' }}>
@@ -891,7 +887,6 @@ export function App() {
           setMeals={setGroupMeals}
           activeKey={activeMeal}
           setActiveKey={setActiveMeal}
-          slots={groupSlots}
         />
       )}
 

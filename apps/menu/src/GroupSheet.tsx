@@ -245,11 +245,21 @@ export function GroupSheet({
 
           <div className="spread" style={{ marginTop: '0.4rem' }}>
             <span className="meta">{mealWords(totals, money)}</span>
+            {/* Plainly a button. As a ghost it read as a caption, and the only
+                other way to drop a meal was to empty it dish by dish. It asks
+                first when there is something to lose. */}
             <Button
-              variant="ghost"
-              onClick={() => setMeals((all) => all.filter((m) => m.key !== meal.key))}
+              variant="danger"
+              size="sm"
+              onClick={() => {
+                if (meal.lines.length > 0
+                  && !confirm(`Take ${longDayWords(meal.at)}, ${timeWords(meal.at)} off the booking? What is on it will be lost.`)) {
+                  return;
+                }
+                setMeals((all) => all.filter((m) => m.key !== meal.key));
+              }}
             >
-              Take this meal off
+              Remove this meal
             </Button>
           </div>
         </div>
