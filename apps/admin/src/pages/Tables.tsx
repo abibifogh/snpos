@@ -40,23 +40,42 @@ export function TablesPage() {
   const [venues, setVenues] = useState<VenueRow[]>([]);
   /** Whether group ordering is actually on, so a link that will not work says so. */
   const [groupOn, setGroupOn] = useState(true);
+  /*
+    How many headings the group menu actually has.
+
+    The link shows only the categories marked group-only. With none marked, it
+    opens on an empty menu, which from the other end is indistinguishable from
+    a broken link — and it is the second of the two reasons a group link
+    disappoints, the first being the switch above. Counted here because this is
+    where somebody is holding the link and wondering why.
+  */
+  const [groupCats, setGroupCats] = useState<number | null>(null);
   const [editing, setEditing] = useState<Partial<TableRow> | null>(null);
   const [showQr, setShowQr] = useState<TableRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
-    const [t, v, flags] = await Promise.all([
+    const [t, v, flags, cats] = await Promise.all([
       listAll<TableRow>('tables'),
       listAll<VenueRow>('venues'),
       listAll<FeatureFlag>('feature_flags').catch(() => [] as FeatureFlag[]),
+      listAll<Doc & { group_only?: boolean; active?: boolean }>('categories')
+        .catch(() => [] as (Doc & { group_only?: boolean; active?: boolean })[]),
     ]);
     setRows(t.sort((a, b) => a.sort - b.sort));
     setVenues(v);
     // Absent reads as on, so a database that has never heard of the flag does
     // not raise a warning about a setting nobody can find.
+    //
+    // A row naming a venue beats the business-wide one, and the Features page
+    // shows those too now. Here the worst case is what matters: if group
+    // ordering is off anywhere, the link is off for somebody.
     const flag = flags.find((f) => f.key === 'group_orders' && !f.venue_id);
-    setGroupOn(flag ? !!flag.enabled : true);
+    const overridden = flags.filter((f) => f.key === 'group_orders' && !!f.venue_id);
+    const anywhereOff = overridden.some((f) => !f.enabled);
+    setGroupOn((flag ? !!flag.enabled : true) && !anywhereOff);
+    setGroupCats(cats.filter((c) => c.group_only && c.active !== false).length);
   };
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
 
@@ -286,6 +305,23 @@ export function TablesPage() {
             <strong>Group ordering is switched off</strong>, so this link opens the ordinary menu. Turn it on
             under Features, or the party you send it to will see the à la carte list.
           </Notice>
+        )}
+        {/*
+          The other reason a group link disappoints. The switch being on is
+          only half of it: with nothing marked group-only there is nothing for
+          the link to show, and the party gets an empty page.
+        */}
+        {groupOn && groupCats === 0 && (
+          <Notice tone="warn">
+            <strong>No category is marked group-only yet</strong>, so this link opens on an empty menu. Under Menu,
+            edit a category and tick &ldquo;group-only&rdquo; for each one a party should be able to order from.
+          </Notice>
+        )}
+        {groupOn && !!groupCats && (
+          <p className="small dim" style={{ marginTop: 0 }}>
+            {groupCats} categor{groupCats === 1 ? 'y is' : 'ies are'} marked group-only, so that is what this link
+            shows. Everything else on the menu stays hidden from it.
+          </p>
         )}
         {venues.map((v) => {
           const url = groupUrl(v);
