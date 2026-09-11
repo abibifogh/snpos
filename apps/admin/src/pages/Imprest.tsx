@@ -14,11 +14,12 @@ import {
   needsExplaining, IMPREST_KIND_LABELS, loadPaidToOptions, loadAccounts, ACCOUNTS,
   uploadFile, downloadUrl, listByIds, saveDropping as saveRow,
   loadMovementDetail, movementTitle, movementRows, expenseRows, amountDisagreesWords, noDetailWords, dateWords, dateTimeWords,
+  offWords,
   nameBook, nameFrom } from '@snpos/core';
 import type {
   ImprestFloatDoc, ImprestMovementDoc, ImprestCountDoc, StaffProfile,
   AccountRow, ImprestHealth, Module, Settings,
-  DetailExpense, DetailNames,
+  MovementDetail,
 } from '@snpos/core';
 import { useSession, useMoney } from '../session';
 
@@ -95,15 +96,15 @@ export function ImprestPage() {
    * was recorded all along and was not reachable from here.
    */
   const [detail, setDetail] = useState<ImprestMovementDoc | null>(null);
-  const [detailOf, setDetailOf] = useState<
-    { expense: DetailExpense | null; names: DetailNames } | null
-  >(null);
+  const [detailOf, setDetailOf] = useState<MovementDetail | null>(null);
 
   const openMovement = (m: ImprestMovementDoc) => {
     setDetail(m);
     setDetailOf(null);
     void loadMovementDetail(m).then(setDetailOf).catch(() => setDetailOf({
-      expense: null, names: { people: {}, suppliers: {}, categories: {}, shifts: {} },
+      expense: null,
+      names: { people: {}, suppliers: {}, categories: {}, shifts: {} },
+      items: [], itemsTotal: 0, itemsOff: 0,
     }));
   };
 
@@ -969,6 +970,60 @@ export function ImprestPage() {
                   <DetailList
                     rows={expenseRows({ expense: detailOf.expense, names: detailOf.names, money })}
                   />
+
+                  {/*
+                    What the money actually went on.
+
+                    The panel used to stop at the total. Four hundred and
+                    forty-five cedis of one thing and of thirty things look
+                    exactly the same as a figure, and so does a decimal point
+                    in the wrong place. Most till spends are one amount with a
+                    note and nothing itemised, which is ordinary — said in
+                    words rather than shown as an empty table.
+                  */}
+                  <h3>What it was spent on</h3>
+                  {detailOf.items.length === 0 ? (
+                    <p className="small dim" style={{ marginTop: 0 }}>
+                      Nothing was itemised on this spend, so there is only the amount and the note above.
+                    </p>
+                  ) : (
+                    <>
+                      {detailOf.itemsOff !== 0 && (
+                        <Notice tone="warn">{offWords(detailOf.itemsOff, money)}</Notice>
+                      )}
+                      <div className="table-wrap">
+                        <table className="data">
+                          <thead>
+                            <tr>
+                              <th>What was bought</th>
+                              <th className="num">How many</th>
+                              <th className="num">Each</th>
+                              <th className="num">Worth</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {detailOf.items.map((l, i) => (
+                              <tr key={i}>
+                                <td>
+                                  <div style={{ fontWeight: 550 }}>{l.name}</div>
+                                  {l.note && <div className="small dim">{l.note}</div>}
+                                </td>
+                                <td className="num">{l.qty}</td>
+                                <td className="num dim">{money(l.unitCost ?? 0)}</td>
+                                <td className="num">{money(Math.abs(l.worth))}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr>
+                              <td colSpan={3} style={{ fontWeight: 600 }}>These lines come to</td>
+                              <td className="num" style={{ fontWeight: 600 }}>{money(detailOf.itemsTotal)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </>
+                  )}
                   <p className="small" style={{ marginBottom: 0 }}>
                     {detailOf.expense.receipt_file_id ? (
                       <a
