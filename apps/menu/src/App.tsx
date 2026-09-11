@@ -375,10 +375,14 @@ export function App() {
             if (verdict.screen) {
               window.localStorage.setItem(SCREEN_DEVICE_KEY, '1');
               if (verdict.rememberVenue) window.localStorage.setItem(SCREEN_VENUE_KEY, venue.$id);
-            } else {
+            } else if (verdict.forget) {
               window.localStorage.removeItem(SCREEN_DEVICE_KEY);
               window.localStorage.removeItem(SCREEN_VENUE_KEY);
             }
+            /* Otherwise this visit is not a screen and the device's own
+               setting is left alone: see `forget` on ScreenVerdict. Somebody
+               opening a guest link on the counter tablet has not dismantled
+               the counter. */
           } catch {
             // A browser refusing storage means the address has to carry the
             // token every time, which is how this worked before.
@@ -1010,7 +1014,6 @@ export function App() {
           meals={groupMeals}
           setMeals={setGroupMeals}
           settings={settings}
-          menu={menu}
           venue={venue}
           features={features}
           onClose={() => setShowCart(false)}

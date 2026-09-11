@@ -69,7 +69,42 @@ test('a guest who installed their own table link keeps their own order', () => {
     table's QR link is asking for THEIR table, and turning that into a counter
     screen would take away the receipt they installed it for.
   */
-  assert.equal(screenClaim({ ...none, installed: true, guestToken: true }).screen, null);
+  assert.equal(screenClaim({ ...none, installed: true, guestToken: true }).screen, false);
+});
+
+test('a guest’s own link is never a counter screen, whatever the device was', () => {
+  /*
+    A browser shown the screen address once kept that setting for good, and
+    "leave the device as it was" then applied to guest links too. So a hotel's
+    private group link, opened on a laptop somebody had once tested the
+    counter screen on, landed on "Touch anywhere to begin" instead of the
+    group menu — and so would every table QR and walk-in link opened there.
+
+    An address with nothing to say leaves the device alone; these three say
+    plainly that they belong to one particular person.
+  */
+  assert.equal(screenClaim({ ...none, guestToken: true }).screen, false);
+  assert.equal(screenClaim({ ...none, guestToken: true }).rememberVenue, false);
+});
+
+test('a guest link on the counter tablet does not dismantle the counter', () => {
+  /*
+    Not a screen for this visit, and the device's own setting left where it
+    is. Only screenMode=off forgets — otherwise a member of staff opening a
+    group link on the tablet to check something would leave the counter
+    needing to be set up again, and nothing would say why.
+  */
+  assert.equal(screenClaim({ ...none, guestToken: true }).forget, false);
+  assert.equal(screenClaim({ ...none, turnedOff: true }).forget, true);
+  // Being told it IS a screen never forgets either.
+  assert.equal(screenClaim({ ...none, tokenMatched: true }).forget, false);
+  assert.equal(screenClaim({ ...none, declared: true }).forget, false);
+});
+
+test('an explicit screen address still wins over a guest link on the same address', () => {
+  // Setting a counter up is deliberate; the guest token is incidental to it.
+  assert.equal(screenClaim({ ...none, tokenMatched: true, guestToken: true }).screen, true);
+  assert.equal(screenClaim({ ...none, declared: true, guestToken: true }).screen, true);
 });
 
 test('an installed icon still never says which counter it is', () => {
