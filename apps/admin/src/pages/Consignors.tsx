@@ -150,7 +150,9 @@ export function ConsignorsPage() {
   return (
     <div>
       <div className="page-head">
-        <h1>Consignors</h1>
+        {/* "Makers" in the sidebar, so "Makers" here. Consignor is the trade
+            word and nobody looking for it in the list would find it. */}
+        <h1>Makers</h1>
         <div className="row" style={{ gap: '0.5rem' }}>
           {/* A shop opening its doors already has thirty of these written down
               somewhere, and the alternative is thirty forms and four commission

@@ -846,6 +846,29 @@ export function App() {
       )}
 
       {/*
+        A group link whose token this venue does not recognise.
+
+        It used to fall through to the ordinary menu without a word, on the
+        reasoning that somebody guessing at addresses should learn nothing.
+        That reasoning was worth less than it cost. A token is replaced from
+        the Tables page and every link already handed out stops working at
+        that moment, so the common holder of an unrecognised token is not an
+        attacker but a hotel with last month's link — and both they and the
+        restaurant had no way at all to find that out. A guest quietly served
+        the à la carte menu orders from it, at the wrong prices, believing
+        they are booking a group.
+
+        Somebody guessing learns only that their guess was wrong, which the
+        ordinary menu already told them.
+      */}
+      {groupToken && !groupMode && (
+        <div className="banner banner-info">
+          <strong>This group ordering link is not recognised.</strong> It may have been replaced with a newer one.
+          This is the ordinary menu; please ask whoever sent it for the current link.
+        </div>
+      )}
+
+      {/*
         A group link that lands on the ordinary menu.
 
         The token matched this venue, so somebody was given this link on

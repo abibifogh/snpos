@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Card, Field, Input, Notice, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
+import { Link } from 'react-router-dom';
+import { Card, Field, Input, Notice, Spinner, Toggle, Badge, Button, useToast } from '@snpos/ui';
 import { db, DB_ID, listAll, humanError } from '../lib';
 import { useSession } from '../session';
 import { FEATURE_DEPENDENCIES, toInput, parseMoney } from '@snpos/core';
-import type { FeatureFlag } from '@snpos/core';
+import type { FeatureFlag, Venue } from '@snpos/core';
 
 /** One number out of a feature's config text, or the fallback if it says nothing. */
 function configNumber(flag: FeatureFlag, option: string, fallback: number): number {
@@ -15,8 +16,15 @@ function configNumber(flag: FeatureFlag, option: string, fallback: number): numb
   }
 }
 
-/** Plain-language labels. The keys come from scripts/schema.mjs. */
-const LABELS: Record<string, { title: string; blurb: string }> = {
+/**
+ * Plain-language labels. The keys come from scripts/schema.mjs.
+ *
+ * `to` is the page where the feature is actually used, named by the words the
+ * sidebar uses for it. A switch that says "set up under Tables" when the
+ * sidebar says "Tables & QR", inside a group that is folded shut, is a switch
+ * whose other half nobody finds.
+ */
+const LABELS: Record<string, { title: string; blurb: string; to?: string; toLabel?: string }> = {
   // Named for receipts, but it carries every email a customer gets, and it is
   // also what makes the ordering page ask for an address in the first place.
   // Left unsaid, an owner switches this off to stop receipts and quietly stops
@@ -51,9 +59,11 @@ const LABELS: Record<string, { title: string; blurb: string }> = {
   group_orders: {
     title: 'Group orders',
     blurb:
-      'A separate, private link for parties and hotel bookings, set up under Tables. It shows only the categories '
-      + 'you have marked group-only, and lets a group staying several nights book a meal at a time, each one eaten '
-      + 'here or packed to take away. With this off, that link opens the ordinary menu.',
+      'A separate, private link for parties and hotel bookings. It shows only the categories you have marked '
+      + 'group-only, and lets a group staying several nights book a meal at a time, each one eaten here or packed '
+      + 'to take away. With this off, that link opens the ordinary menu.',
+    to: '/tables',
+    toLabel: 'Sell → Tables & QR',
   },
   item_availability: {
     title: 'Mark a dish as run out',
@@ -142,11 +152,47 @@ export function FeaturesPage() {
   const { settings } = useSession();
   const decimals = settings?.currency_decimals ?? 2;
   const [rows, setRows] = useState<FeatureFlag[] | null>(null);
+  /*
+    Settings that belong to one venue rather than to the whole business.
+
+    These used to be filtered out and never shown. A switch on this page could
+    therefore read "on" while a venue quietly overruled it, and the screens
+    would behave as though it were off with nothing anywhere to explain why —
+    and no way to undo it from here, because the row you needed was hidden.
+    Shown beneath the switch it contradicts, with a way to drop it.
+  */
+  const [overrides, setOverrides] = useState<FeatureFlag[]>([]);
+  const [venues, setVenues] = useState<Venue[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
 
-  const load = () => listAll<FeatureFlag>('feature_flags').then((r) => setRows(r.filter((x) => !x.venue_id)));
-  useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
+  const load = () => listAll<FeatureFlag>('feature_flags').then((r) => {
+    setRows(r.filter((x) => !x.venue_id));
+    setOverrides(r.filter((x) => !!x.venue_id));
+  });
+  useEffect(() => {
+    load().catch((e) => setError(humanError(e)));
+    // Only to put a name to an override. A venue list that will not load must
+    // not take this page down; the id is still enough to say one exists.
+    listAll<Venue>('venues').then(setVenues).catch(() => undefined);
+  }, []);
+
+  const venueName = (id: string) => venues.find((v) => v.$id === id)?.name ?? id;
+
+  /** Drop a venue's override so the switch above governs everywhere again. */
+  const dropOverride = async (row: FeatureFlag) => {
+    if (!confirm(
+      `Use the setting above at ${venueName(row.venue_id ?? '')} as well?`
+      + ' This venue is currently set on its own.',
+    )) return;
+    try {
+      await db.deleteDocument(DB_ID, 'feature_flags', row.$id);
+      await load();
+      toast('That venue now follows the setting above');
+    } catch (e) {
+      toast(humanError(e), 'err');
+    }
+  };
 
   const enabled = (key: string) => rows?.find((r) => r.key === key)?.enabled ?? false;
 
@@ -206,7 +252,12 @@ export function FeaturesPage() {
               <div className="feature-row" key={f.$id}>
                 <div className="meta">
                   <h3>{meta.title}</h3>
-                  <div className="small dim">{meta.blurb}</div>
+                  <div className="small dim">
+                    {meta.blurb}
+                    {meta.to && (
+                      <> The link itself is under <Link to={meta.to}>{meta.toLabel ?? meta.to}</Link>.</>
+                    )}
+                  </div>
                   {unmet.length > 0 && (
                     <div style={{ marginTop: '0.4rem' }}>
                       <Badge tone="warn">
@@ -214,6 +265,23 @@ export function FeaturesPage() {
                       </Badge>
                     </div>
                   )}
+                  {/* A venue that has been set on its own. Named here because
+                      this is the switch it disagrees with, and because a
+                      feature that reads "on" while a venue has it off is the
+                      hardest kind of fault to find: everything looks right. */}
+                  {overrides.filter((o) => o.key === f.key).map((o) => (
+                    <div key={o.$id} style={{ marginTop: '0.5rem' }}>
+                      <Notice tone="warn">
+                        <strong>{venueName(o.venue_id ?? '')} is set on its own</strong> and has this{' '}
+                        {o.enabled ? 'switched on' : 'switched off'}
+                        {o.enabled === f.enabled ? '' : ', which is the opposite of the switch here'}. The switch
+                        here does not reach that venue.{' '}
+                        <Button size="sm" variant="ghost" onClick={() => dropOverride(o)}>
+                          Use the setting here instead
+                        </Button>
+                      </Notice>
+                    </div>
+                  ))}
                   {/* Only while the feature is on: a number that governs
                       something switched off is a question with no answer. */}
                   {f.enabled && (NUMBERS[f.key] ?? []).map((n) => (
@@ -253,6 +321,22 @@ export function FeaturesPage() {
           })
         )}
       </Card>
+
+      {/*
+        An override whose switch is not on this page at all.
+
+        Setting up only creates the group-wide row when no row with that key
+        exists anywhere, so a venue-only row leaves the feature with no switch
+        to appear under. Without this it would govern the screens from
+        somewhere nobody can see.
+      */}
+      {rows && overrides.filter((o) => !rows.some((r) => r.key === o.key)).map((o) => (
+        <Notice tone="warn" key={o.$id}>
+          <strong>{LABELS[o.key]?.title ?? o.key}</strong> is set only at {venueName(o.venue_id ?? '')}, where it is{' '}
+          {o.enabled ? 'on' : 'off'}. There is no business-wide setting for it, so it has no switch above.{' '}
+          <Button size="sm" variant="ghost" onClick={() => dropOverride(o)}>Remove this setting</Button>
+        </Notice>
+      ))}
     </>
   );
 }
