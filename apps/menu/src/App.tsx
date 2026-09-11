@@ -8,9 +8,10 @@ import {
   featureConfig, previewUrl, humanError,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, screenShouldReset, screenClaim,
   bookingTotals, dietChips, matchesDiet, parseOmissions, dietaryLabels, couldBeWords,
+  needsChoosing, defaultPicks,
 } from '@snpos/core';
 import type {
-  Settings, Venue, LoadedMenu, MenuSection, CartLine, FeatureMap, Doc, GroupMeal,
+  Settings, Venue, LoadedMenu, MenuSection, MenuEntry, CartLine, FeatureMap, Doc, GroupMeal,
 } from '@snpos/core';
 import { DishSheet } from './DishSheet';
 import { DietTags } from './DietTags';
@@ -475,6 +476,34 @@ export function App() {
     setOpenDish(null);
     toast('Added to your order');
   }, [toast, inGroupMode, activeMeal]);
+
+  /**
+   * One of something, straight from the row, with no sheet in between.
+   *
+   * Only ever reached for a dish with nothing to decide — Dish sends anything
+   * that needs a choice to the sheet instead — so the defaults ARE the order.
+   * Options chosen for somebody are still carried, which is what makes a dish
+   * with a pre-answered required choice addable at all.
+   */
+  const quickAdd = useCallback((entry: MenuEntry) => {
+    const picks = defaultPicks(entry.groups);
+    addLine({
+      key: `${entry.item.$id}-${Date.now()}`,
+      menu_item_id: entry.item.$id,
+      name: entry.item.name,
+      unit_price: entry.price,
+      qty: 1,
+      addons: entry.groups.flatMap(({ group, options }) =>
+        (picks[group.$id] ?? []).flatMap((id) => {
+          const option = options.find((o) => o.$id === id);
+          return option
+            ? [{ option_id: option.$id, group_id: group.$id, name: option.name, price_delta: option.price_delta }]
+            : [];
+        })),
+      station: entry.station,
+      station_key: entry.stationKey,
+    });
+  }, [addLine]);
 
   const totals = useMemo(
     () => (boot ? computeTotals({ lines: cart, settings: boot.settings }) : null),
@@ -970,6 +999,7 @@ export function App() {
           section={section}
           settings={settings}
           onPick={(id) => setOpenDish(id)}
+          onQuickAdd={quickAdd}
         />
       ))}
 
@@ -1070,14 +1100,95 @@ export function App() {
   );
 }
 
+/**
+ * One dish on the menu, with the two things somebody wants from it.
+ *
+ * The whole row used to be a single button that opened a sheet. That is one
+ * tap too many for a hotel ordering twelve of the same wrap — they know what
+ * they want and the sheet has nothing to tell them — and at the same time the
+ * description was clamped to two lines with no way to read the rest without
+ * opening that sheet. So the two jobs are now two buttons, said out loud.
+ *
+ * Add only adds where there is nothing to decide. A dish sold in sizes, or
+ * with a choice the kitchen needs made, opens the sheet instead and the
+ * button says so, because adding one of those silently sends the pass a
+ * ticket with a hole in it. See needsChoosing.
+ */
+function Dish({
+  entry, settings, unavailable, onOpen, onQuickAdd,
+}: {
+  entry: MenuEntry;
+  settings: Settings;
+  unavailable: boolean;
+  onOpen: () => void;
+  onQuickAdd: (entry: MenuEntry) => void;
+}) {
+  /*
+    The full description, in place.
+
+    Not a measurement of whether the text is actually clamped: that needs the
+    element on screen and re-measuring on every resize and font change, and it
+    gets the answer wrong on the pass where it matters. The button is offered
+    where there is plainly more to read, and closing it again is a tap.
+  */
+  const [more, setMore] = useState(false);
+  const img = previewUrl(entry.item.image_id, 'menu', settings, 160, 160);
+  const long = (entry.item.description ?? '').length > 90;
+  const decide = needsChoosing(entry.groups, entry.variants ?? []);
+
+  return (
+    <div className={`dish${unavailable ? ' dish-off' : ''}`}>
+      <div className="body">
+        <div className="name">{entry.item.name}</div>
+        {entry.item.description && (
+          <div className={more ? 'desc desc-all' : 'desc'}>{entry.item.description}</div>
+        )}
+        {/* Shown on every menu, not only the group one. A guest at a table has
+            the same question a hotel booker does, and until now the ordinary
+            menu never answered it. */}
+        <DietTags
+          tags={entry.item.tags}
+          couldBe={couldBeWords(entry.item.tags, parseOmissions(entry.item.omissions))}
+        />
+        <div className="price">
+          {formatMoney(entry.price, settings)}
+          {entry.soldOut && <span className="dim"> · sold out</span>}
+        </div>
+        <div className="dish-actions">
+          {long && (
+            <button type="button" className="linkish" onClick={() => setMore((m) => !m)}>
+              {more ? 'View less' : 'View more'}
+            </button>
+          )}
+          <button type="button" className="linkish" onClick={onOpen} disabled={unavailable}>
+            {decide ? 'Choose options' : 'Open'}
+          </button>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={unavailable}
+            onClick={() => (decide ? onOpen() : onQuickAdd(entry))}
+          >
+            {entry.soldOut ? 'Sold out' : 'Add'}
+          </Button>
+        </div>
+      </div>
+      {img ? <img src={img} alt="" /> : <div className="noimg" />}
+    </div>
+  );
+}
+
 function Section({
   section,
   settings,
   onPick,
+  onQuickAdd,
 }: {
   section: MenuSection;
   settings: Settings;
   onPick: (id: string) => void;
+  /** Straight into the basket, for a dish with nothing to decide. */
+  onQuickAdd: (entry: MenuEntry) => void;
 }) {
   const windows = parseWindows(section.category.availability);
   const next = section.open ? null : nextAvailable(windows);
@@ -1092,35 +1203,16 @@ function Section({
           {next && `, from ${next.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`}
         </div>
       )}
-      {section.entries.map((entry) => {
-        const img = previewUrl(entry.item.image_id, 'menu', settings, 160, 160);
-        const unavailable = !section.open || entry.soldOut;
-        return (
-          <button
-            key={entry.item.$id}
-            className="dish"
-            disabled={unavailable}
-            onClick={() => onPick(entry.item.$id)}
-          >
-            <div className="body">
-              <div className="name">{entry.item.name}</div>
-              {entry.item.description && <div className="desc">{entry.item.description}</div>}
-              {/* Shown on every menu, not only the group one. A guest at a
-                  table has the same question a hotel booker does, and until
-                  now the ordinary menu never answered it. */}
-              <DietTags
-                tags={entry.item.tags}
-                couldBe={couldBeWords(entry.item.tags, parseOmissions(entry.item.omissions))}
-              />
-              <div className="price">
-                {formatMoney(entry.price, settings)}
-                {entry.soldOut && <span className="dim"> · sold out</span>}
-              </div>
-            </div>
-            {img ? <img src={img} alt="" /> : <div className="noimg" />}
-          </button>
-        );
-      })}
+      {section.entries.map((entry) => (
+        <Dish
+          key={entry.item.$id}
+          entry={entry}
+          settings={settings}
+          unavailable={!section.open || entry.soldOut}
+          onOpen={() => onPick(entry.item.$id)}
+          onQuickAdd={onQuickAdd}
+        />
+      ))}
     </section>
   );
 }

@@ -647,6 +647,20 @@ export function longDayWords(at: string | Date): string {
   return `${LONG_DAYS[d.getDay()]} ${d.getDate()} ${LONG_MONTHS[d.getMonth()]}`;
 }
 
+/**
+ * "Wed 23 · 12:00" — a meal named small enough to be a tab.
+ *
+ * Short because a stay of four nights with lunch and dinner is eight of these
+ * side by side, and the full "Wednesday 23 September" would leave one of them
+ * on screen. Spelt by hand for the same reason longDayWords is.
+ */
+export function tabLabel(at: string | Date): string {
+  const d = at instanceof Date ? at : new Date(at);
+  if (!Number.isFinite(d.getTime())) return 'A meal';
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${LONG_DAYS[d.getDay()].slice(0, 3)} ${d.getDate()} · ${two(d.getHours())}:${two(d.getMinutes())}`;
+}
+
 export function bookingProblem(meals: GroupMeal[], check: BookingCheck): string | null {
   if (meals.length === 0) return 'Add a meal, and what the group would like to eat at it.';
   const empty = [...meals].sort((a, b) => a.at.localeCompare(b.at)).find((m) => portionsOn(m) === 0);
