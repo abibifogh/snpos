@@ -658,6 +658,17 @@ export interface BookingCheck {
   size: number;
   minSize: number;
   contactName: string;
+  /**
+   * Required, unlike on an ordinary order.
+   *
+   * A walk-in who would rather not give an address is standing in the room
+   * and can be told when the food is ready. A party of forty booked three
+   * weeks ahead has nothing to hold: the arrangement was made on a screen
+   * they have since closed, and on the day the only record of what they asked
+   * for is in the kitchen. So the booking is confirmed in writing, and that
+   * needs somewhere to send it.
+   */
+  email: string;
 }
 
 /**
@@ -702,6 +713,17 @@ export function tabLabel(at: string | Date): string {
   return `${LONG_DAYS[d.getDay()].slice(0, 3)} ${d.getDate()} · ${two(d.getHours())}:${two(d.getMinutes())}`;
 }
 
+/**
+ * Enough of an address to be worth sending to.
+ *
+ * Deliberately not a full specification of what an address may be — that
+ * rejects real ones, and the only thing being prevented here is a blank box
+ * or an obvious slip. Something, an @, something, a dot, something.
+ */
+export function emailLooksReal(value: string | undefined | null): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test((value ?? '').trim());
+}
+
 export function bookingProblem(meals: GroupMeal[], check: BookingCheck): string | null {
   if (meals.length === 0) return 'Add a meal, and what the group would like to eat at it.';
   const empty = [...meals].sort((a, b) => a.at.localeCompare(b.at)).find((m) => portionsOn(m) === 0);
@@ -713,6 +735,9 @@ export function bookingProblem(meals: GroupMeal[], check: BookingCheck): string 
   if (!check.contactName.trim()) return 'Please give a name for the booking, so the kitchen knows whose it is.';
   if (check.needReference && !check.reference.trim()) return `Please enter the ${check.referenceLabel.toLowerCase()}.`;
   if (check.minSize > 0 && check.size < check.minSize) return `Group bookings are for ${check.minSize} people or more.`;
+  if (!emailLooksReal(check.email)) {
+    return 'Please give an email address. We send the booking through in writing so you have it on the day.';
+  }
   return null;
 }
 

@@ -503,6 +503,16 @@ async function postPayoutToLedger({ db, DB_ID, payout, log }) {
 /** How long after sending an order a customer may still call it back. */
 const CANCEL_WINDOW_MS = 2 * 60 * 1000;
 
+/*
+  How much notice a group has to give to cancel.
+
+  Mirrors CHANGE_CUTOFF_DAYS in packages/core/src/booking-changes.ts. The two
+  are the same number on purpose: a party that cannot change a booking five
+  days out cannot get out of it another way either, and two different answers
+  to "how late is too late" is how a rule stops being believed.
+*/
+const CANCEL_BOOKING_DAYS = 5;
+
 /**
  * Honour a cancellation request, or say why not.
  *
@@ -893,6 +903,58 @@ async function cancelForCustomer({ db, DB_ID, doc, log }) {
     // Already off. Not a refusal, they got what they asked for.
     await settle('cancelled');
     return { ok: true, already: true };
+  }
+
+  /*
+    A group cancelling a booking, which is a different thing entirely.
+
+    The two-minute window below is for "I pressed send too fast" — it is short
+    because a kitchen must not be throwing away food somebody has started. A
+    party cancelling a booking made three weeks ago is not that: nothing has
+    been cooked, nothing has been started, and the sitting is days away. What
+    protects the kitchen there is notice, not speed, so the rule is the same
+    one the form uses — five clear days before the FIRST sitting of the
+    booking, because a stay is shopped for as a whole.
+
+    Checked here and not only on the form. The date is on the booking and the
+    clock is the browser's, and both belong to whoever is holding the page.
+  */
+  if (order.is_group && order.status === 'SCHEDULED') {
+    const booking = order.group_booking_id
+      ? await db.getDocument(DB_ID, 'group_bookings', order.group_booking_id).catch(() => null)
+      : null;
+    const firstAt = Date.parse(booking?.first_at || order.scheduled_for || '');
+    const daysLeft = Number.isFinite(firstAt)
+      ? Math.floor((firstAt - Date.now()) / 86400000)
+      : Number.NaN;
+
+    if (!Number.isFinite(daysLeft)) {
+      await settle('refused', 'This booking has no date on it. Please ring the restaurant.');
+      return { ok: true, refused: 'no date' };
+    }
+    if (daysLeft < CANCEL_BOOKING_DAYS) {
+      await settle(
+        'refused',
+        `A booking can only be cancelled ${CANCEL_BOOKING_DAYS} days or more before the first meal, and that `
+        + 'has passed. The food is already being shopped for. Please ring the restaurant.',
+      );
+      return { ok: true, refused: 'too close' };
+    }
+
+    await db.updateDocument(DB_ID, 'orders', order.$id, {
+      status: 'CANCELLED',
+      rejected_at: new Date().toISOString(),
+      reject_reason_code: 'customer_request',
+      reject_reason_note: `Group booking cancelled by the customer, ${daysLeft} days before the first meal.`,
+    });
+    // The place it was holding in a capped slot goes back, or the slot stays
+    // full of a party that is not coming.
+    if (order.preorder_seat_id) {
+      await db.deleteDocument(DB_ID, 'preorder_seats', order.preorder_seat_id).catch(() => undefined);
+    }
+    await settle('cancelled');
+    log(`${order.order_no} cancelled with the booking, ${daysLeft} days out`);
+    return { ok: true, cancelled: order.order_no };
   }
 
   const age = Date.now() - Date.parse(order.$createdAt);

@@ -13,6 +13,12 @@ name: Provision Appwrite
 # word, for a database that needs catching up outside a deploy.
 on:
   workflow_call:
+    inputs:
+      from_deploy:
+        description: 'Set by the Deploy workflow. The merge was the decision.'
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch:
     inputs:
       confirm:
@@ -25,8 +31,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check the confirmation
-        # Only when started by hand. Called from Deploy, the merge is the decision.
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm != 'provision' }}
+        # Only when somebody started THIS workflow by hand.
+        #
+        # `github.event_name` is the CALLER's event, not this workflow's, so a
+        # Deploy started by hand looked exactly like a provision started by
+        # hand — and Deploy passes no confirmation word, because merging was
+        # the decision. Running Deploy from the Actions tab therefore failed
+        # here every single time, before touching anything, and the run went
+        # red for a reason that had nothing to do with the deploy. The apps
+        # still went out; the report did not say so.
+        #
+        # So Deploy says outright that it is Deploy. A caller that says
+        # nothing still has to confirm, which is the safe way round.
+        if: ${{ !inputs.from_deploy && inputs.confirm != 'provision' }}
         run: |
           echo "Nothing was run."
           echo

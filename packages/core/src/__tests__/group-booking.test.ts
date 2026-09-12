@@ -4,7 +4,7 @@ import {
   packFeeFor, portionsOn, mealTotals, bookingTotals, bookingProblem, mealWords, packWords,
   slotsByDay, timesTaken, timeIsTaken, freeTimesOn, FULFILMENT_WORDS,
   mealMoment, momentProblem, dayInput, timeInput, BOOKING_OPENS, BOOKING_CLOSES,
-  serviceOf, mealServiceWords, SERVICE_WORDS,
+  serviceOf, mealServiceWords, SERVICE_WORDS, emailLooksReal,
 } from '../pricing.ts';
 import type { GroupMeal } from '../pricing.ts';
 
@@ -63,7 +63,10 @@ test('a meal switched to eating here loses its packing charge', () => {
 });
 
 test('a booking says the one thing stopping it, earliest first', () => {
-  const ok = { reference: 'R1', needReference: true, referenceLabel: 'Booking ref', size: 10, minSize: 6, contactName: 'Ama' };
+  const ok = {
+    reference: 'R1', needReference: true, referenceLabel: 'Booking ref',
+    size: 10, minSize: 6, contactName: 'Ama', email: 'ama@example.com',
+  };
   assert.match(String(bookingProblem([], ok)), /Add a meal/);
 
   const some = [meal('2026-09-14T12:00:00Z', 'dine_in'), meal('2026-09-15T12:00:00Z', 'dine_in', [])];
@@ -83,7 +86,8 @@ test('the empty meal named is the earliest one, named by day and time', () => {
     meal('2026-09-14T12:30:00', 'dine_in', []),
   ];
   const said = String(bookingProblem(meals, {
-    reference: 'R', needReference: false, referenceLabel: 'ref', size: 9, minSize: 0, contactName: 'Ama',
+    reference: 'R', needReference: false, referenceLabel: 'ref', size: 9, minSize: 0,
+    contactName: 'Ama', email: 'ama@example.com',
   }));
   assert.match(said, /14 September, 12:30/);
 });
@@ -195,4 +199,36 @@ test('a sitting eaten here says whether it is plated or a buffet', () => {
   assert.match(mealServiceWords({ fulfilment: 'dine_in', service: 'buffet' }), /Eating here · buffet/);
   assert.equal(mealServiceWords({ fulfilment: 'takeaway' }), 'Packed to take away');
   assert.equal(SERVICE_WORDS.plated, 'Served to each guest');
+});
+
+test('a booking is not sent without somewhere to send it', () => {
+  /*
+    Required here and optional on an ordinary order, and the difference is the
+    situation. A walk-in who would rather not give an address is standing in
+    the room. A party of forty booked three weeks ahead has nothing to hold:
+    the arrangement was made on a screen they closed, and on the day the only
+    record of what they asked for is in the kitchen.
+  */
+  const full = [meal('2026-09-14T12:00:00Z', 'dine_in')];
+  const base = {
+    reference: 'R1', needReference: false, referenceLabel: 'ref',
+    size: 10, minSize: 6, contactName: 'Ama',
+  };
+  assert.match(String(bookingProblem(full, { ...base, email: '' })), /give an email address/);
+  assert.match(String(bookingProblem(full, { ...base, email: 'ama' })), /give an email address/);
+  assert.match(String(bookingProblem(full, { ...base, email: 'ama@example' })), /give an email address/);
+  assert.equal(bookingProblem(full, { ...base, email: 'ama@example.com' }), null);
+  // Trimmed, because a pasted address arrives with a space on it.
+  assert.equal(bookingProblem(full, { ...base, email: '  ama@example.com ' }), null);
+});
+
+test('what counts as an address is a blank-box check, not a specification', () => {
+  // Rejecting real addresses to look thorough is how a booking gets lost.
+  assert.equal(emailLooksReal('a.b+tag@sub.domain.co.uk'), true);
+  assert.equal(emailLooksReal("o'brien@example.com"), true);
+  assert.equal(emailLooksReal(''), false);
+  assert.equal(emailLooksReal('   '), false);
+  assert.equal(emailLooksReal('no-at-sign.com'), false);
+  assert.equal(emailLooksReal('two@@example.com'), false);
+  assert.equal(emailLooksReal(undefined), false);
 });

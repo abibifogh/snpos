@@ -780,67 +780,165 @@ export default async ({ req, res, log, error }) => {
       return res.json({ sent: true, item: doc.name_snapshot });
     }
 
-    // ------------------------------------------------- group order placed
-    // A party of twenty is a kitchen planning decision, not just another
-    // ticket, so somebody is told the moment it arrives rather than when the
-    // pass fills up.
-    if (events.some((e) => e.includes('collections.orders')) && doc.is_group) {
-      const wanted = await featureConfig('group_orders', 'notify_on_placed', true);
-      if (wanted) {
-        const already = await db.listDocuments(DB_ID, 'order_notices', [
-          Query.equal('order_id', doc.$id),
-          Query.equal('stage', 'group_placed'),
-          Query.limit(1),
-        ]).catch(() => ({ total: 0 }));
+    /*
+      A group booking, once — not once per sitting.
 
-        if (already.total === 0) {
-          const configured = await featureConfig('group_orders', 'notify_emails', '');
-          let to = String(configured || '')
-            .split(/[,;\s]+/)
-            .filter(Boolean);
-          if (to.length === 0) {
-            // Falls back to whoever gets the shift summary, so turning this on
-            // does not require setting up a second list of addresses.
-            const subs = await db.listDocuments(DB_ID, 'report_subscriptions', [
-              Query.equal('active', true), Query.limit(50),
-            ]).catch(() => ({ documents: [] }));
-            to = subs.documents.map((x) => x.email).filter(Boolean);
-          }
+      This used to hang off the ORDERS, so a hotel booking four sittings sent
+      four "a group has ordered" emails, each describing a quarter of the
+      arrangement. Four messages for one thing is the shape that teaches
+      somebody to make a filter rule, and then the fifth one matters and
+      nobody sees it.
 
-          await db.createDocument(DB_ID, 'order_notices', 'unique()', {
-            venue_id: doc.venue_id, order_id: doc.$id, stage: 'group_placed',
-            to_email: to.join(','),
-            status: transport && to.length ? 'queued' : 'failed',
-            last_error: !transport ? 'No SMTP configured on the function.' : to.length ? '' : 'No recipients configured.',
-          }).catch(() => undefined);
+      It hangs off the booking now, which is written last by the form once
+      every sitting has landed. One booking, one message — and the same
+      message goes to the person who booked, because a party of forty arranged
+      three weeks ahead has nothing else to hold.
+    */
+    if (events.some((e) => e.includes('collections.group_bookings'))) {
+      const already = await db.listDocuments(DB_ID, 'order_notices', [
+        Query.equal('order_id', doc.$id),
+        Query.equal('stage', 'group_placed'),
+        Query.limit(1),
+      ]).catch(() => ({ total: 0 }));
+      if (already.total > 0) return res.json({ already: true });
 
-          if (transport && to.length) {
-            const label = await featureConfig('group_orders', 'reservation_label', 'Reservation');
-            try {
-              await transport.sendMail({
-                from,
-                to: to.join(','),
-                subject: `Group order ${doc.order_no}${doc.group_size ? ` · ${doc.group_size} people` : ''}`,
-                html: shell(
-                  'A group has ordered',
-                  `<table style="width:100%;border-collapse:collapse;font-size:15px">
-                     ${row('Order', doc.order_no)}
-                     ${row('People', String(doc.group_size || '-'))}
-                     ${row(label, doc.group_reference || '-')}
-                     ${row('Booked by', doc.group_contact_name || doc.customer_name || '-')}
-                     ${row('Total', money(doc.total, settings), true)}
-                   </table>
-                   <p style="margin:18px 0 0;color:#5d6b7a;font-size:13px">The kitchen has it on the pass now.</p>`,
-                  brand,
-                ),
-              });
-              log(`Group notice sent for ${doc.order_no}`);
-            } catch (e) {
-              error(`Group notice failed for ${doc.order_no}: ${e.message}`);
-            }
-          }
-        }
+      /*
+        Whoever runs the place, plus anybody named by hand.
+
+        Admins by default rather than by configuration: a group booking is a
+        planning decision and the person who has to make it is the person who
+        owns the business. The configured list is added, not substituted, so
+        naming an events address does not quietly stop the owner hearing.
+      */
+      const configured = String(await featureConfig('group_orders', 'notify_emails', '') || '')
+        .split(/[,;\s]+/)
+        .filter(Boolean);
+      const staff = await db.listDocuments(DB_ID, 'staff_profiles', [
+        Query.equal('role', ['admin', 'manager']),
+        Query.limit(50),
+      ]).catch(() => ({ documents: [] }));
+      const admins = staff.documents.map((p) => p.email).filter(Boolean);
+      const houseTo = [...new Set([...configured, ...admins])];
+
+      const money = (n) => `${doc.currency_code || ''}${((n || 0) / 100).toFixed(2)}`;
+      const when = (iso) => {
+        const d = new Date(iso);
+        return Number.isFinite(d.getTime()) ? d.toLocaleString() : '';
+      };
+      const label = await featureConfig('group_orders', 'reservation_label', 'Reservation');
+      const spread = doc.first_at === doc.last_at
+        ? when(doc.first_at)
+        : `${when(doc.first_at)} to ${when(doc.last_at)}`;
+      const facts = `<table style="width:100%;border-collapse:collapse;font-size:15px">
+           ${row('Booked by', doc.contact_name || '-')}
+           ${row(label, doc.reference || '-')}
+           ${row('People', String(doc.size || '-'))}
+           ${row('Sittings', `${doc.sittings || 0} · ${doc.portions || 0} portions`)}
+           ${row('When', spread)}
+           ${row('Orders', doc.order_nos || '-')}
+           ${row('Total', money(doc.total))}
+         </table>`;
+
+      await db.createDocument(DB_ID, 'order_notices', 'unique()', {
+        venue_id: doc.venue_id,
+        order_id: doc.$id,
+        stage: 'group_placed',
+        to_email: [...houseTo, doc.email].filter(Boolean).join(','),
+        status: transport ? 'queued' : 'failed',
+        last_error: transport ? '' : 'No SMTP configured on the function.',
+      }).catch(() => undefined);
+
+      if (!transport) {
+        log('A group booked, but no SMTP is configured on the function, so nobody was told.');
+        return res.json({ sent: false, reason: 'no smtp' });
       }
+
+      // The house first, and the guest even if the house list is empty: the
+      // person who booked is the one who cannot ask anybody what they ordered.
+      if (houseTo.length) {
+        await transport.sendMail({
+          from,
+          to: houseTo.join(','),
+          subject: `Group booking · ${doc.contact_name || 'a party'}${doc.size ? ` · ${doc.size} people` : ''}`,
+          html: shell('A group has booked', facts),
+        }).catch((e) => error(`Group notice to the house failed: ${e.message}`));
+      } else {
+        log('A group booked and no admin has an email address on their staff profile, so only the guest was told.');
+      }
+
+      if (doc.email) {
+        await transport.sendMail({
+          from,
+          to: doc.email,
+          subject: `Your group booking${doc.reference ? ` · ${doc.reference}` : ''}`,
+          html: shell(
+            'Your booking is in',
+            `<p style="margin:0 0 10px">Thank you. Here is the whole booking, so you have it on the day.</p>
+             ${facts}
+             <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">Each sitting reaches the kitchen in time to
+             cook it and not before.</p>
+             ${(process.env.APP_URL || '')
+               ? `<p style="margin:14px 0 0"><a href="${(process.env.APP_URL || '').replace(/\/+$/, '')}/menu/?change=${doc.$id}"
+                    style="color:#0f766e;font-weight:600">Need to change something?</a></p>`
+               : '<p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">If anything needs to change, ring us.</p>'}`,
+          ),
+        }).catch((e) => error(`Group confirmation to the guest failed: ${e.message}`));
+      }
+
+      return res.json({ sent: true, booking: doc.$id, to: houseTo.length + (doc.email ? 1 : 0) });
+    }
+
+    /*
+      A group asking for something to be changed.
+
+      Straight to the people who can decide, because the alternative is a
+      telephone call to whoever picks up, written on whatever is nearest. It
+      is a REQUEST — nothing has changed, and the email says so, so nobody
+      reads it as a done thing and stops looking.
+    */
+    if (events.some((e) => e.includes('collections.booking_changes'))) {
+      const staff = await db.listDocuments(DB_ID, 'staff_profiles', [
+        Query.equal('role', ['admin', 'manager']),
+        Query.limit(50),
+      ]).catch(() => ({ documents: [] }));
+      const configured = String(await featureConfig('group_orders', 'notify_emails', '') || '')
+        .split(/[,;\s]+/)
+        .filter(Boolean);
+      const to = [...new Set([...configured, ...staff.documents.map((p) => p.email).filter(Boolean)])];
+
+      if (!transport || !to.length) {
+        log(`A group asked for a change to booking ${doc.booking_id}, but ${
+          !transport ? 'no SMTP is configured' : 'no admin has an email address'}, so nobody was told by email. `
+          + 'It is on the Waiting for you page.');
+        return res.json({ sent: false });
+      }
+
+      const KINDS = {
+        numbers: 'How many people', timing: 'A day or a time', food: 'What was ordered',
+        dietary: 'Something somebody cannot eat', cancel: 'Cancel all or part of it', other: 'Something else',
+      };
+      await transport.sendMail({
+        from,
+        to: to.join(','),
+        subject: `Group booking change asked for · ${doc.contact_name || doc.reference || doc.booking_id}`,
+        html: shell(
+          'A group has asked for a change',
+          `<table style="width:100%;border-collapse:collapse;font-size:15px">
+             ${row('Booked by', doc.contact_name || '-')}
+             ${row('Reference', doc.reference || '-')}
+             ${row('About', KINDS[doc.kind] || doc.kind)}
+             ${row('First meal', doc.first_at ? new Date(doc.first_at).toLocaleString() : '-')}
+           </table>
+           <p style="margin:14px 0 4px;font-weight:600">What they asked for</p>
+           <p style="margin:0;white-space:pre-wrap">${String(doc.note || '')
+             .replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</p>
+           <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">Nothing has changed. The kitchen is still
+           working to what was ordered. Decide it on the Waiting for you page${
+             doc.email ? `, and they are expecting an answer at ${doc.email}` : ''}.</p>`,
+        ),
+      }).catch((e) => error(`Change request notice failed: ${e.message}`));
+
+      return res.json({ sent: true, change: doc.$id, to: to.length });
     }
 
     // ------------------------------------------------- order progress

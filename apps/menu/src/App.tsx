@@ -19,6 +19,7 @@ import { CartSheet } from './CartSheet';
 import { GroupSheet } from './GroupSheet';
 import { GroupDays } from './GroupDays';
 import { BasketPanel } from './BasketPanel';
+import { BookingChange } from './BookingChange';
 import { OrderStatus } from './OrderStatus';
 import { ScreenThanks } from './ScreenThanks';
 import { ScreenAttract } from './ScreenAttract';
@@ -283,6 +284,15 @@ export function App() {
    * it. See isGroupPath.
    */
   const groupPath = isGroupPath(window.location.pathname, window.location.hash);
+  /**
+   * A booking somebody wants to change, named in the address.
+   *
+   * The link is in the confirmation email and on the thank-you, because those
+   * are the two places the person who booked still has weeks later. It needs
+   * no token of its own: the id is already unguessable, and what it opens is a
+   * message box, not the booking.
+   */
+  const changeBooking = params.get('change');
   /**
    * A screen that stays put and serves one customer after another.
    *
@@ -651,6 +661,19 @@ export function App() {
     bar.scrollTo({ left: left - bar.clientWidth / 2 + tab.offsetWidth / 2, behavior: 'smooth' });
   }, [activeSection]);
 
+
+  /* Before the menu, because it is not the menu: somebody arriving here has
+     come from an email about a booking they already made. */
+  if (changeBooking) {
+    return (
+      <div className="menu-app">
+        <BookingChange
+          bookingId={changeBooking}
+          onClose={() => { window.location.href = window.location.pathname; }}
+        />
+      </div>
+    );
+  }
 
   if (counterOnly !== null) {
     return (
