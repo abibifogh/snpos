@@ -109,6 +109,7 @@ export * from './waiting';
 export * from './books';
 export * from './schema-status';
 export * from './build-freshness';
+export * from './dish-choices';
 export * from './health-rules';
 export * from './health';
 export * from './waiting-facts';

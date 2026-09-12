@@ -94,6 +94,24 @@
 .group-meal-when { font-weight: 600; }
 .group-meal-what { font-size: 0.85rem; color: var(--muted); }
 
+/* ---- the booking sheet's tabs ------------------------------------------ */
+/* One meal at a time. Eight sittings laid out one under another made a sheet
+   to be scrolled through rather than read, with the Send button at the bottom
+   of it a leap of faith. The tabs carry the shape of the whole booking in one
+   line; the panel shows only what is being looked at. */
+.book-tabs {
+  display: flex; gap: 0.35rem; overflow-x: auto; padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+  -webkit-overflow-scrolling: touch;
+}
+.book-tabs button {
+  flex: none; padding: 0.35rem 0.7rem; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface);
+  font: inherit; font-size: 0.82rem; font-weight: 550; color: var(--text); cursor: pointer;
+  white-space: nowrap;
+}
+.book-tabs button.on { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+
 /* A section has to announce itself.
    The heading was 1.05rem against dish names at 0.97rem, eight hundredths of
    a rem apart, both dark, both semibold. Scrolling past, a customer could not
@@ -116,7 +134,24 @@
   padding: 0.85rem 0; border: none; border-bottom: 1px solid var(--border);
   background: none; font: inherit; color: var(--text); cursor: pointer;
 }
-.dish:disabled { opacity: 0.45; cursor: default; }
+.dish.dish-off { opacity: 0.45; }
+/* The row is no longer one big button: Add and View more are their own, and a
+   button inside a button is not a thing a browser will render. */
+.dish { cursor: default; }
+.dish .desc.desc-all {
+  display: block; -webkit-line-clamp: none; overflow: visible;
+}
+.dish-actions {
+  display: flex; align-items: center; gap: 0.9rem; margin-top: 0.5rem; flex-wrap: wrap;
+}
+.dish-actions .linkish {
+  font: inherit; font-size: 0.84rem; font-weight: 600; color: var(--brand);
+  background: none; border: 0; padding: 0; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 0.15em;
+}
+.dish-actions .linkish:disabled { opacity: 0.5; cursor: default; }
+/* Pushed to the end of the row, where a thumb reaches it. */
+.dish-actions > :last-child { margin-left: auto; }
 .dish .body { flex: 1; min-width: 0; }
 .dish .name { font-weight: 600; font-size: 0.97rem; }
 .dish .desc {
