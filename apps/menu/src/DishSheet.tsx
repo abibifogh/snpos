@@ -6,6 +6,7 @@ import {
 } from '@snpos/core';
 import type { MenuEntry, Settings, CartLine, CartAddon } from '@snpos/core';
 import { DietTags } from './DietTags';
+import { QtyBox } from './QtyBox';
 
 /**
  * One dish, its options, and the quantity, the only screen where a customer
@@ -134,11 +135,7 @@ export function DishSheet({
       onClose={onClose}
       footer={
         <div className="spread" style={{ width: '100%' }}>
-          <div className="qty">
-            <button onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label="Fewer">−</button>
-            <span>{qty}</span>
-            <button onClick={() => setQty((q) => q + 1)} aria-label="More">+</button>
-          </div>
+          <QtyBox qty={qty} onChange={setQty} label={entry.item.name} />
           <Button variant="primary" onClick={add}>
             Add · {formatMoney(unitPrice * qty, settings)}
           </Button>

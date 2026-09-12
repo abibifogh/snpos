@@ -1,4 +1,5 @@
 import { Button } from '@snpos/ui';
+import { QtyBox } from './QtyBox';
 import { formatMoney, lineTotal } from '@snpos/core';
 import type { CartLine, Settings } from '@snpos/core';
 
@@ -64,10 +65,8 @@ export function BasketPanel({
                       <div className="basket-line-note">{line.addons.map((a) => a.name).join(', ')}</div>
                     )}
                     {line.notes && <div className="basket-line-note">&ldquo;{line.notes}&rdquo;</div>}
-                    <div className="qty" style={{ marginTop: '0.35rem' }}>
-                      <button onClick={() => onQty(line.key, line.qty - 1)} aria-label={`One fewer ${line.name}`}>−</button>
-                      <span>{line.qty}</span>
-                      <button onClick={() => onQty(line.key, line.qty + 1)} aria-label={`One more ${line.name}`}>+</button>
+                    <div style={{ marginTop: '0.35rem' }}>
+                      <QtyBox qty={line.qty} onChange={(q) => onQty(line.key, q)} least={0} label={line.name} />
                     </div>
                   </div>
                   <div className="basket-line-money">{formatMoney(lineTotal(line), settings)}</div>

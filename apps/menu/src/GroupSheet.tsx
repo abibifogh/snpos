@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Button, Modal, Input, Field, Notice, Select, FormError, Badge } from '@snpos/ui';
+import { QtyBox } from './QtyBox';
 import {
   formatMoney, lineTotal, createOrder, featureConfig, isProvisionalOrderNo,
   ensureGuestSession, humanError, selfOrderModule, isSlotFull,
@@ -267,10 +268,13 @@ export function GroupSheet({
                     <div style={{ fontWeight: 550 }}>{line.name}</div>
                     {line.addons.length > 0 && <div className="meta">{line.addons.map((a) => a.name).join(', ')}</div>}
                     {line.notes && <div className="meta">&ldquo;{line.notes}&rdquo;</div>}
-                    <div className="qty" style={{ marginTop: '0.4rem' }}>
-                      <button onClick={() => setQty(shown.meal.key, line.key, line.qty - 1)} aria-label="One fewer">−</button>
-                      <span>{line.qty}</span>
-                      <button onClick={() => setQty(shown.meal.key, line.key, line.qty + 1)} aria-label="One more">+</button>
+                    <div style={{ marginTop: '0.4rem' }}>
+                      <QtyBox
+                        qty={line.qty}
+                        onChange={(q) => setQty(shown.meal.key, line.key, q)}
+                        least={0}
+                        label={line.name}
+                      />
                     </div>
                   </div>
                   <div style={{ fontWeight: 600 }}>{formatMoney(lineTotal(line), settings)}</div>
