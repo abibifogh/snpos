@@ -1364,11 +1364,19 @@ export function App() {
 /**
  * One dish on the menu, with the two things somebody wants from it.
  *
- * The whole row used to be a single button that opened a sheet. That is one
- * tap too many for a hotel ordering twelve of the same wrap — they know what
- * they want and the sheet has nothing to tell them — and at the same time the
- * description was clamped to two lines with no way to read the rest without
- * opening that sheet. So the two jobs are now two buttons, said out loud.
+ * The row opens the dish and Add adds it. That is the whole of it.
+ *
+ * Tapping the row is how everybody expects a list of things to behave, and it
+ * had stopped working: the row was made a plain box when Add moved onto it,
+ * because a button cannot sit inside a button. So it is a box that listens for
+ * a tap and answers the keyboard, with Add stopping the tap from carrying
+ * through to it.
+ *
+ * "View more" is gone. It expanded the description in place, which is a third
+ * thing to explain on a row that has two, and the sheet it was competing with
+ * shows the full description anyway along with everything else about the dish.
+ * Open stays, spelled out, because a row that only responds to a tap tells
+ * somebody nothing about what a tap would do.
  *
  * Add only adds where there is nothing to decide. A dish sold in sizes, or
  * with a choice the kitchen needs made, opens the sheet instead and the
@@ -1384,26 +1392,29 @@ function Dish({
   onOpen: () => void;
   onQuickAdd: (entry: MenuEntry) => void;
 }) {
-  /*
-    The full description, in place.
-
-    Not a measurement of whether the text is actually clamped: that needs the
-    element on screen and re-measuring on every resize and font change, and it
-    gets the answer wrong on the pass where it matters. The button is offered
-    where there is plainly more to read, and closing it again is a tap.
-  */
-  const [more, setMore] = useState(false);
   const img = previewUrl(entry.item.image_id, 'menu', settings, 160, 160);
-  const long = (entry.item.description ?? '').length > 90;
   const decide = needsChoosing(entry.groups, entry.variants ?? []);
 
+  /* A tap anywhere on the row, and the keyboard's version of the same thing.
+     Space is included because a thing behaving as a button has to answer the
+     keys a button answers, and Space scrolls the page if it is not caught. */
+  const rowOpens = unavailable
+    ? {}
+    : {
+      role: 'button',
+      tabIndex: 0,
+      'aria-label': `${entry.item.name}, ${formatMoney(entry.price, settings)}`,
+      onClick: onOpen,
+      onKeyDown: (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); }
+      },
+    };
+
   return (
-    <div className={`dish${unavailable ? ' dish-off' : ''}`}>
+    <div className={`dish${unavailable ? ' dish-off' : ' dish-open'}`} {...rowOpens}>
       <div className="body">
         <div className="name">{entry.item.name}</div>
-        {entry.item.description && (
-          <div className={more ? 'desc desc-all' : 'desc'}>{entry.item.description}</div>
-        )}
+        {entry.item.description && <div className="desc">{entry.item.description}</div>}
         {/* Shown on every menu, not only the group one. A guest at a table has
             the same question a hotel booker does, and until now the ordinary
             menu never answered it. */}
@@ -1416,19 +1427,20 @@ function Dish({
           {entry.soldOut && <span className="dim"> · sold out</span>}
         </div>
         <div className="dish-actions">
-          {long && (
-            <button type="button" className="linkish" onClick={() => setMore((m) => !m)}>
-              {more ? 'View less' : 'View more'}
-            </button>
-          )}
           <button type="button" className="linkish" onClick={onOpen} disabled={unavailable}>
             {decide ? 'Choose options' : 'Open'}
           </button>
+          {/* The tap stops here. Without that, adding one wrap would add it
+              and open the sheet on top of it, and the sheet's own Add would
+              then be sitting over a dish already in the basket. */}
           <Button
             size="sm"
             variant="primary"
             disabled={unavailable}
-            onClick={() => (decide ? onOpen() : onQuickAdd(entry))}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (decide) onOpen(); else onQuickAdd(entry);
+            }}
           >
             {entry.soldOut ? 'Sold out' : 'Add'}
           </Button>
