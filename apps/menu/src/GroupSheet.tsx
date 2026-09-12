@@ -7,7 +7,7 @@ import {
   bookingTotals, bookingProblem, packWords, mealWords, FULFILMENT_WORDS, dayKeyOf, longDayWords, timeWords,
   serviceOf, SERVICE_WORDS, SERVICE_HINTS,
   tabLabel,
-  db, DB_ID, Query,
+  db, DB_ID, Query, recordGroupBooking,
 } from '@snpos/core';
 import type {
   CartLine, Settings, Venue, FeatureMap, GroupMeal, MealPricing, Fulfilment, ServiceStyle, Order,
@@ -92,6 +92,7 @@ export function GroupSheet({
       size: Number(groupSize || 0),
       minSize: minGroup,
       contactName: name,
+      email,
     });
     if (said) {
       setProblem(said);
@@ -156,6 +157,35 @@ export function GroupSheet({
           .sort((x, y) => (x.scheduled_for ?? '').localeCompare(y.scheduled_for ?? ''));
         return { ...b, orderNo: mine?.[i]?.order_no ?? b.orderNo };
       }));
+
+      /*
+        The booking itself, written last.
+
+        Once every sitting has actually landed, and not before: a booking row
+        for sittings that failed would be a confirmation of something that is
+        not booked. Writing it is also what sends the emails — one to whoever
+        runs the place and one to the person who booked — so a stay of four
+        sittings is one message each rather than four.
+
+        Never fatal. The food is ordered and the kitchen has it; failing the
+        whole booking here would tell somebody their party is not booked when
+        it is, which is the worse of the two wrongs by a distance.
+      */
+      await recordGroupBooking({
+        bookingId,
+        venueId: venue.$id,
+        reference: groupRef.trim(),
+        contactName: name.trim(),
+        email: email.trim(),
+        size: Number(groupSize || 0),
+        sittings: booking.meals.length,
+        portions: booking.portions,
+        total: booking.total,
+        currencyCode: settings.currency_code,
+        orderNos: settled.map((b) => b.orderNo),
+        firstAt: booking.meals[0]?.meal.at ?? '',
+        lastAt: booking.meals[booking.meals.length - 1]?.meal.at ?? '',
+      }).catch(() => undefined);
 
       setMeals(() => []);
       onPlaced(settled);
@@ -343,8 +373,19 @@ export function GroupSheet({
                   onChange={(e) => { setGroupSize(e.target.value); setProblem(null); }}
                 />
               </Field>
-              <Field label="Email" hint="Optional. We will send the booking through so you have it in writing.">
-                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              {/* Required here, optional on an ordinary order, and the
+                  difference is the situation: a walk-in is standing in the
+                  room and can be told; a party of forty booked three weeks ago
+                  has nothing to hold. */}
+              <Field
+                label="Email"
+                hint="We send the whole booking through in writing, so you have it on the day."
+              >
+                <Input
+                  type="email"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); setProblem(null); }}
+                />
               </Field>
 
               {/* The whole booking, priced, on the tab where somebody is about

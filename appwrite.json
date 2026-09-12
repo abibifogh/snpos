@@ -1,101 +1,102 @@
 {
-    "projectId": "${APPWRITE_PROJECT_ID}",
-    "projectName": "NiceOps POS",
-    "functions": [
-        {
-            "$id": "order-guard",
-            "name": "Order guard",
-            "runtime": "node-18.0",
-            "execute": [],
-            "events": [
-                "databases.snpos.collections.orders.documents.*.create",
-                "databases.snpos.collections.discount_redemptions.documents.*.create",
-                "databases.snpos.collections.order_cancellations.documents.*.create",
-                "databases.snpos.collections.order_reversals.documents.*.create",
-                "databases.snpos.collections.consignor_reassignments.documents.*.create",
-                "databases.snpos.collections.payments.documents.*.create",
-                "databases.snpos.collections.consignor_payouts.documents.*.create"
-            ],
-            "schedule": "",
-            "timeout": 30,
-            "enabled": true,
-            "logging": true,
-            "entrypoint": "src/main.js",
-            "commands": "npm install",
-            "path": "functions/order-guard",
-            "ignore": [
-                "node_modules",
-                ".npm"
-            ]
-        },
-        {
-            "$id": "preorder-fire",
-            "name": "Pre-order fire",
-            "runtime": "node-18.0",
-            "execute": [],
-            "events": [],
-            "schedule": "* * * * *",
-            "timeout": 60,
-            "enabled": true,
-            "logging": true,
-            "entrypoint": "src/main.js",
-            "commands": "npm install",
-            "path": "functions/preorder-fire",
-            "ignore": [
-                "node_modules",
-                ".npm"
-            ]
-        },
-        {
-            "$id": "kitchen-escalate",
-            "name": "Kitchen escalation",
-            "runtime": "node-18.0",
-            "execute": [],
-            "events": [],
-            "schedule": "* * * * *",
-            "timeout": 30,
-            "enabled": true,
-            "logging": true,
-            "entrypoint": "src/main.js",
-            "commands": "npm install",
-            "path": "functions/kitchen-escalate",
-            "ignore": [
-                "node_modules",
-                ".npm"
-            ]
-        },
-        {
-            "$id": "notify",
-            "name": "Notify: emails and reports",
-            "runtime": "node-18.0",
-            "execute": [
-                "any"
-            ],
-            "events": [
-                "databases.snpos.collections.orders.documents.*.update",
-                "databases.snpos.collections.shifts.documents.*.update",
-                "databases.snpos.collections.shift_expenses.documents.*.create",
-                "databases.snpos.collections.shift_expenses.documents.*.update",
-                "databases.snpos.collections.consignor_payouts.documents.*.create",
-                "databases.snpos.collections.consignor_payouts.documents.*.update",
-                "databases.snpos.collections.waste_log.documents.*.create",
-                "databases.snpos.collections.staff_profiles.documents.*.create",
-                "databases.snpos.collections.staff_profiles.documents.*.update",
-                "databases.snpos.collections.staff_profiles.documents.*.delete",
-                "databases.snpos.collections.item_availability.documents.*.create",
-                "databases.snpos.collections.approval_notices.documents.*.create"
-            ],
-            "schedule": "0 * * * *",
-            "timeout": 60,
-            "enabled": true,
-            "logging": true,
-            "entrypoint": "src/main.js",
-            "commands": "npm install",
-            "path": "functions/notify",
-            "ignore": [
-                "node_modules",
-                ".npm"
-            ]
-        }
-    ]
+  "projectId": "${APPWRITE_PROJECT_ID}",
+  "projectName": "NiceOps POS",
+  "functions": [
+    {
+      "$id": "order-guard",
+      "name": "Order guard",
+      "runtime": "node-18.0",
+      "execute": [],
+      "events": [
+        "databases.snpos.collections.orders.documents.*.create",
+        "databases.snpos.collections.discount_redemptions.documents.*.create",
+        "databases.snpos.collections.order_cancellations.documents.*.create",
+        "databases.snpos.collections.order_reversals.documents.*.create",
+        "databases.snpos.collections.consignor_reassignments.documents.*.create",
+        "databases.snpos.collections.payments.documents.*.create",
+        "databases.snpos.collections.consignor_payouts.documents.*.create"
+      ],
+      "schedule": "",
+      "timeout": 30,
+      "enabled": true,
+      "logging": true,
+      "entrypoint": "src/main.js",
+      "commands": "npm install",
+      "path": "functions/order-guard",
+      "ignore": [
+        "node_modules",
+        ".npm"
+      ]
+    },
+    {
+      "$id": "preorder-fire",
+      "name": "Pre-order fire",
+      "runtime": "node-18.0",
+      "execute": [],
+      "events": [],
+      "schedule": "* * * * *",
+      "timeout": 60,
+      "enabled": true,
+      "logging": true,
+      "entrypoint": "src/main.js",
+      "commands": "npm install",
+      "path": "functions/preorder-fire",
+      "ignore": [
+        "node_modules",
+        ".npm"
+      ]
+    },
+    {
+      "$id": "kitchen-escalate",
+      "name": "Kitchen escalation",
+      "runtime": "node-18.0",
+      "execute": [],
+      "events": [],
+      "schedule": "* * * * *",
+      "timeout": 30,
+      "enabled": true,
+      "logging": true,
+      "entrypoint": "src/main.js",
+      "commands": "npm install",
+      "path": "functions/kitchen-escalate",
+      "ignore": [
+        "node_modules",
+        ".npm"
+      ]
+    },
+    {
+      "$id": "notify",
+      "name": "Notify: emails and reports",
+      "runtime": "node-18.0",
+      "execute": [
+        "any"
+      ],
+      "events": [
+        "databases.snpos.collections.orders.documents.*.update",
+        "databases.snpos.collections.shifts.documents.*.update",
+        "databases.snpos.collections.shift_expenses.documents.*.create",
+        "databases.snpos.collections.shift_expenses.documents.*.update",
+        "databases.snpos.collections.consignor_payouts.documents.*.create",
+        "databases.snpos.collections.consignor_payouts.documents.*.update",
+        "databases.snpos.collections.waste_log.documents.*.create",
+        "databases.snpos.collections.staff_profiles.documents.*.create",
+        "databases.snpos.collections.staff_profiles.documents.*.update",
+        "databases.snpos.collections.staff_profiles.documents.*.delete",
+        "databases.snpos.collections.item_availability.documents.*.create",
+        "databases.snpos.collections.approval_notices.documents.*.create",
+        "databases.snpos.collections.group_bookings.documents.*.create"
+      ],
+      "schedule": "0 * * * *",
+      "timeout": 60,
+      "enabled": true,
+      "logging": true,
+      "entrypoint": "src/main.js",
+      "commands": "npm install",
+      "path": "functions/notify",
+      "ignore": [
+        "node_modules",
+        ".npm"
+      ]
+    }
+  ]
 }

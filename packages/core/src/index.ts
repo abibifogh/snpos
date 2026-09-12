@@ -113,6 +113,7 @@ export * from './dish-choices';
 export * from './quantity';
 export * from './group-link';
 export * from './group-menu';
+export * from './group-bookings';
 export * from './health-rules';
 export * from './health';
 export * from './waiting-facts';

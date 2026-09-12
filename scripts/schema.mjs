@@ -861,6 +861,58 @@ export const COLLECTIONS = [
   },
 
   // ------------------------------------------------------------------ orders
+  /*
+    ONE RECORD FOR THE WHOLE BOOKING.
+
+    The kitchen's unit of work is a sitting: Tuesday lunch and Thursday dinner
+    are cooked two days apart and each needs its own ticket, released at its
+    own hour. That cannot be one order — an order has one fire time — so the
+    orders stay one per sitting and always will.
+
+    What was missing is the thing above them. A hotel that booked four
+    sittings was handed four order numbers and had four rows to find, with
+    nothing anywhere saying they were one arrangement, and the "a group has
+    ordered" email went out four times. This is that thing: one row, one
+    reference, written once the sittings are placed, with the orders hanging
+    off it by group_booking_id.
+
+    Its id IS the booking id the orders carry, so the two can always be walked
+    between without an index or a guess.
+
+    Created by 'users' for the same reason orders are — the person booking is
+    a guest with an anonymous session. It carries no prices anybody is trusted
+    on: the figures here are a summary for an email, and every order under it
+    was re-priced server-side by order-guard when it landed.
+  */
+  {
+    id: 'group_bookings',
+    name: 'Group bookings',
+    perms: { read: ALL_STAFF, create: ['users'], update: ALL_STAFF, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      /** The hotel's own reference, where one is asked for. */
+      ['reference', 's', 80, false],
+      ['contact_name', 's', 120, true],
+      /*
+        Now required on the form, so the person who books always gets their own
+        copy. A party of forty arranged weeks ahead and confirmed only on a
+        screen is a party with nothing to check against on the day.
+      */
+      ['email', 's', 160, true],
+      ['size', 'i', null, false, 0],
+      /** How many sittings, and how many portions across all of them. */
+      ['sittings', 'i', null, false, 0],
+      ['portions', 'i', null, false, 0],
+      ['total', 'i', null, false, 0],
+      ['currency_code', 's', 8, false],
+      /** The order numbers under this booking, as the kitchen will call them. */
+      ['order_nos', 's', 400, false],
+      /** The first and last sitting, for a line in an email. */
+      ['first_at', 'd', null, false],
+      ['last_at', 'd', null, false],
+    ],
+    indexes: [['venue_when', 'key', ['venue_id', 'first_at']]],
+  },
   {
     id: 'orders',
     name: 'Orders',
