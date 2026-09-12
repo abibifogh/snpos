@@ -400,3 +400,258 @@ export function dietChips(
   }
   return DIETARY_TAGS.filter((t) => !t.caution && seen.has(t.key));
 }
+
+/* =========================== checking a menu against itself =========== */
+
+/**
+ * Checking a menu's dietary tags against itself.
+ *
+ * These tags are the one thing on the system that can put somebody in
+ * hospital. Everything else is money, and money can be corrected the next
+ * morning. A dish wrongly marked nut free is read by somebody who is trusting
+ * it, and they will not check twice.
+ *
+ * Nobody can tell from the outside whether "Red red is pescatarian" is true —
+ * that is the kitchen's knowledge and this system has no way to taste the
+ * food. What CAN be checked is whether the menu contradicts itself, and that
+ * catches a surprising amount: a tag that implies another and stands alone, a
+ * pair that cannot both be true, the same dish tagged two ways in two places,
+ * a dish on the group menu with nothing said about it at all, and a choice
+ * that silently strips a claim off a plate.
+ *
+ * Every finding names the dish and says what to do. None of them guesses at
+ * what the food actually contains.
+ *
+ * Pure. Imports nothing at runtime, like the rest of this file.
+ */
+
+/**
+ * A tag that is true necessarily makes another true.
+ *
+ * These are claims about who a dish SUITS, not about what is in it. A vegan
+ * dish suits a vegetarian and it suits a pescatarian, because both of those
+ * people eat everything a vegan eats and more. A dish marked vegan and not
+ * vegetarian is not wrong about the food — it is missing from the vegetarian
+ * filter, so a guest who needs it never sees it.
+ */
+export const DIET_IMPLIES: Record<string, string[]> = {
+  vegan: ['vegetarian', 'pescatarian', 'dairy_free'],
+  vegetarian: ['pescatarian'],
+};
+
+/** Two things that cannot both be true of one plate. */
+export const DIET_EXCLUDES: [string, string][] = [
+  ['nut_free', 'contains_nuts'],
+  ['vegan', 'contains_shellfish'],
+  ['vegetarian', 'contains_shellfish'],
+];
+
+export type DietFindingKind =
+  | 'contradiction'
+  | 'implied'
+  | 'untagged'
+  | 'disagrees'
+  | 'option-unassessed'
+  | 'option-strips';
+
+export interface DietFinding {
+  kind: DietFindingKind;
+  /** Worst first: a contradiction is wrong, a gap is only incomplete. */
+  severity: 'wrong' | 'gap';
+  /** The dish, named as the guest sees it. */
+  dish: string;
+  itemId: string;
+  says: string;
+  /** What to do about it, in the owner's words. */
+  fix: string;
+}
+
+const label = (key: string): string => dietaryLabels([key])[0]?.label ?? key;
+const clean = (tags?: string[]): string[] => (tags ?? []).map((t) => t.trim()).filter(Boolean);
+
+export interface ReviewDish {
+  $id: string;
+  name: string;
+  tags?: string[];
+  group_only?: boolean;
+  group_heading?: string;
+}
+
+/** What one dish's own tags say about each other. */
+export function reviewDish(dish: ReviewDish): DietFinding[] {
+  const out: DietFinding[] = [];
+  const has = new Set(clean(dish.tags));
+  const at = { dish: dish.name, itemId: dish.$id };
+
+  for (const [a, b] of DIET_EXCLUDES) {
+    if (has.has(a) && has.has(b)) {
+      out.push({
+        ...at,
+        kind: 'contradiction',
+        severity: 'wrong',
+        says: `Marked both ${label(a).toLowerCase()} and ${label(b).toLowerCase()}.`,
+        fix: 'Both cannot be true. Untick whichever is wrong — a guest is reading one of them.',
+      });
+    }
+  }
+
+  for (const [tag, implied] of Object.entries(DIET_IMPLIES)) {
+    if (!has.has(tag)) continue;
+    for (const need of implied) {
+      if (has.has(need)) continue;
+      out.push({
+        ...at,
+        kind: 'implied',
+        severity: 'gap',
+        says: `Marked ${label(tag).toLowerCase()} but not ${label(need).toLowerCase()}.`,
+        fix: `Anything ${label(tag).toLowerCase()} is also ${label(need).toLowerCase()}. `
+          + `Without it this dish is missing from the ${label(need).toLowerCase()} filter, `
+          + 'so the guests who need it never see it.',
+      });
+    }
+  }
+
+  if (has.size === 0) {
+    out.push({
+      ...at,
+      kind: 'untagged',
+      severity: 'gap',
+      says: 'Nothing is said about what this suits.',
+      fix: 'A party booking for guests they have never met reads the tags and orders round them. '
+        + 'A dish with none is a dish they will not risk.',
+    });
+  }
+
+  return out;
+}
+
+/**
+ * The same dish, tagged two ways.
+ *
+ * Not a duplicate-name check for its own sake: a menu may sell "Fries" at the
+ * bar and in the bistro quite deliberately. What matters is that the two rows
+ * disagree about who the food suits, because then the answer a guest gets
+ * depends on which one they happened to tap.
+ */
+export function reviewAgreement(dishes: ReviewDish[]): DietFinding[] {
+  const byName = new Map<string, ReviewDish[]>();
+  for (const d of dishes) {
+    const key = d.name.trim().toLowerCase();
+    if (!key) continue;
+    byName.set(key, [...(byName.get(key) ?? []), d]);
+  }
+
+  const out: DietFinding[] = [];
+  for (const [, group] of byName) {
+    if (group.length < 2) continue;
+    const shape = (d: ReviewDish) => [...clean(d.tags)].sort().join('|');
+    const first = shape(group[0]);
+    if (group.every((d) => shape(d) === first)) continue;
+    for (const d of group) {
+      out.push({
+        dish: d.name,
+        itemId: d.$id,
+        kind: 'disagrees',
+        severity: 'wrong',
+        says: `"${d.name}" appears ${group.length} times with different dietary tags.`,
+        fix: 'Whichever a guest taps is the answer they get. Make them agree, or give them different names.',
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Choices that can quietly take a claim off a plate.
+ *
+ * The hardest of these to spot by reading the menu, because the dish is
+ * correctly tagged and the option is correctly tagged and the fault only
+ * exists when somebody ticks the box. An option nobody has judged is worse
+ * again: it takes nothing away by design — see dietAssessed — so a vegan bowl
+ * with unjudged cheese on it still says vegan.
+ */
+export function reviewOptions(
+  dishes: ReviewDish[],
+  optionsFor: (itemId: string) => OptionDiet[],
+): DietFinding[] {
+  const out: DietFinding[] = [];
+  for (const d of dishes) {
+    const claims = clean(d.tags).filter((t) => !dietaryLabels([t])[0]?.caution);
+    if (claims.length === 0) continue;
+
+    const options = optionsFor(d.$id);
+    const unjudged = options.filter((o) => !dietAssessed(o)).map((o) => o.name);
+    if (unjudged.length > 0) {
+      out.push({
+        dish: d.name,
+        itemId: d.$id,
+        kind: 'option-unassessed',
+        severity: 'wrong',
+        says: `${unjudged.length} choice${unjudged.length === 1 ? '' : 's'} on this dish `
+          + `${unjudged.length === 1 ? 'has' : 'have'} nothing said about them: ${unjudged.join(', ')}.`,
+        fix: 'Until they are judged they take nothing away, so this dish goes on claiming '
+          + `${dietaryLabels(claims).map((t) => t.label.toLowerCase()).join(', ')} with them on it. `
+          + 'Set them under Options, or mark them as not food.',
+      });
+      continue;
+    }
+
+    const strips = options.filter((o) => {
+      if (o.diet_neutral) return false;
+      const its = new Set(clean(o.tags));
+      return claims.some((c) => !its.has(c));
+    });
+    if (strips.length > 0) {
+      out.push({
+        dish: d.name,
+        itemId: d.$id,
+        kind: 'option-strips',
+        severity: 'gap',
+        says: `${strips.map((o) => o.name).join(', ')} will take a dietary claim off this dish when chosen.`,
+        fix: 'Nothing to fix if that is right — the menu says so as it is ticked. Listed so you can check it is.',
+      });
+    }
+  }
+  return out;
+}
+
+/** Worst first, then by dish, so a list is read from the top and acted on. */
+export function worstDietFirst(findings: DietFinding[]): DietFinding[] {
+  const rank = (f: DietFinding) => (f.severity === 'wrong' ? 0 : 1);
+  return [...findings].sort((a, b) => rank(a) - rank(b) || a.dish.localeCompare(b.dish));
+}
+
+/** The whole review, in the order it should be read. */
+export function reviewMenu(
+  dishes: ReviewDish[],
+  optionsFor: (itemId: string) => OptionDiet[] = () => [],
+): DietFinding[] {
+  return worstDietFirst([
+    ...dishes.flatMap(reviewDish),
+    ...reviewAgreement(dishes),
+    ...reviewOptions(dishes, optionsFor),
+  ]);
+}
+
+/** "3 wrong, 6 worth a look" — the headline above the list. */
+export function reviewSummary(findings: DietFinding[], checked: number): string {
+  if (checked === 0) return 'No dishes to check.';
+  if (findings.length === 0) {
+    return `All ${checked} dish${checked === 1 ? '' : 'es'} checked. Nothing contradicts itself.`;
+  }
+  const wrong = findings.filter((f) => f.severity === 'wrong').length;
+  const gaps = findings.length - wrong;
+  const parts = [
+    wrong > 0 ? `${wrong} to put right` : '',
+    gaps > 0 ? `${gaps} worth a look` : '',
+  ].filter(Boolean);
+  return `${checked} dish${checked === 1 ? '' : 'es'} checked: ${parts.join(', ')}.`;
+}
+
+/** Every diet a menu claims anywhere, for a coverage count. */
+export function dietsClaimed(dishes: ReviewDish[]): { key: string; label: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const d of dishes) for (const t of clean(d.tags)) counts.set(t, (counts.get(t) ?? 0) + 1);
+  return DIETARY_TAGS.filter((t) => counts.has(t.key))
+    .map((t) => ({ key: t.key, label: t.label, count: counts.get(t.key) ?? 0 }));
+}

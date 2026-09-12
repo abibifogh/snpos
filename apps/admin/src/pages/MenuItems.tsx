@@ -16,6 +16,7 @@ import {
   DIETARY_TAGS, toggleDietaryTag, dietarySummary, parseOmissions, serialiseOmissions, omissionWords,
   omissionProblem, couldBeWords,
   headingsInUse, headingProblem, itemsUnder, renameWords,
+  reviewMenu, reviewSummary, dietsClaimed,
   nameBook, nameFrom,
 } from '@snpos/core';
 import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice, WaitingChange, StaffProfile, ProductVariant, Omission } from '@snpos/core';
@@ -35,6 +36,7 @@ import { useSession } from '../session';
 interface ItemCategory extends Doc { menu_item_id: string; category_id: string; sort: number; active: boolean }
 interface AddonGroup extends Doc { name: string; required: boolean; sort: number; module?: string }
 interface ItemAddonGroup extends Doc { menu_item_id: string; group_id: string; sort: number }
+interface AddonOptionRow extends Doc { group_id: string; name: string; tags?: string[]; diet_neutral?: boolean }
 
 /**
  * The catalogue, for one side of the business at a time.
@@ -68,6 +70,8 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [links, setLinks] = useState<ItemCategory[]>([]);
   const [addonGroups, setAddonGroups] = useState<AddonGroup[]>([]);
+  /** Every choice, by the group it belongs to. Read only by the dietary review. */
+  const [addonOptions, setAddonOptions] = useState<AddonOptionRow[]>([]);
   const [itemAddons, setItemAddons] = useState<ItemAddonGroup[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -241,7 +245,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
   const decimals = settings?.currency_decimals ?? 2;
 
   const load = async () => {
-    const [i, c, l, g, ia, ing, r] = await Promise.all([
+    const [i, c, l, g, ia, ing, r, opts] = await Promise.all([
       listAll<MenuItem>('menu_items'),
       listAll<Category>('categories'),
       listAll<ItemCategory>('menu_item_categories'),
@@ -249,6 +253,10 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       listAll<ItemAddonGroup>('menu_item_addon_groups'),
       listAll<Ingredient>('ingredients'),
       listAll<Recipe>('recipes'),
+      /* What each choice is, for the dietary review: a dish can be tagged
+         perfectly and still mislead, because the fault only exists once
+         somebody ticks a box. See reviewOptions. */
+      listAll<AddonOptionRow>('addon_options').catch(() => [] as AddonOptionRow[]),
     ]);
     // Rows written before modules existed have none, and were kitchen rows.
     const mine = (x: { module?: string }) => (x.module ?? 'kitchen') === module;
@@ -269,6 +277,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     // and a dish cannot be given gin.
     setIngredients(ing.filter((x) => x.active && mine(x)).sort((a, b) => a.name.localeCompare(b.name)));
     setRecipes(r);
+    setAddonOptions(opts);
     /*
       Sizes are the bar's problem as much as the shop's.
 
@@ -782,6 +791,51 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     }
   };
 
+  /*
+    The dietary review, run over this side's dishes.
+
+    These tags are the one thing on this system that can put somebody in
+    hospital; everything else is money, and money is corrected the next
+    morning. Nobody can tell from here whether "Red red is pescatarian" is
+    TRUE — that is the kitchen's knowledge and no software can taste the food.
+    What can be checked is whether the menu contradicts itself, and that
+    catches more than it sounds: a claim that carries another and stands
+    alone, a pair that cannot both hold, the same dish tagged two ways, a dish
+    with nothing said about it, and — hardest of all to see by reading — a
+    choice that takes a claim off the plate when somebody ticks it.
+  */
+  const [reviewing, setReviewing] = useState(false);
+
+  const optionsByItem = useMemo(() => {
+    const byGroup = new Map<string, AddonOptionRow[]>();
+    for (const o of addonOptions) byGroup.set(o.group_id, [...(byGroup.get(o.group_id) ?? []), o]);
+    return (itemId: string) => itemAddons
+      .filter((l) => l.menu_item_id === itemId)
+      .flatMap((l) => byGroup.get(l.group_id) ?? [])
+      .map((o) => ({ name: o.name, tags: o.tags, diet_neutral: o.diet_neutral }));
+  }, [addonOptions, itemAddons]);
+
+  /*
+    The group menu where there is one, the whole side where there is not.
+
+    A dish reaches the group menu through the category it sits in, so this
+    follows the same links the menu itself does rather than guessing from the
+    dish alone.
+  */
+  const groupDishes = useMemo(() => {
+    const groupCats = new Set(categories.filter((c) => c.group_only).map((c) => c.$id));
+    const inGroup = (i: MenuItem) => groupCats.has(i.category_id)
+      || links.some((l) => l.menu_item_id === i.$id && l.active !== false && groupCats.has(l.category_id));
+    const all = (items ?? []).filter((i) => i.active !== false);
+    const only = all.filter(inGroup);
+    return { list: only.length > 0 ? only : all, groupOnly: only.length > 0 };
+  }, [items, categories, links]);
+
+  const findings = useMemo(
+    () => reviewMenu(groupDishes.list, optionsByItem),
+    [groupDishes, optionsByItem],
+  );
+
   const save = async () => {
     if (!mayEdit) { setError('Only a manager or the owner can change what is for sale.'); return; }
     /*
@@ -1283,6 +1337,91 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
         }}
         onClear={() => { setGroups([]); setSorts([]); }}
       />
+
+      {/*
+        The dietary review.
+
+        Behind a button rather than always on: it is a thing somebody sits
+        down to do, not a warning to live beside, and a panel of amber that is
+        always there is a panel nobody reads on the day it matters.
+      */}
+      {module === 'kitchen' && (items ?? []).length > 0 && (
+        <Card title="Dietary tags">
+          <div className="spread" style={{ alignItems: 'baseline' }}>
+            <p className="small dim" style={{ margin: 0, maxWidth: '44rem' }}>
+              {reviewSummary(findings, groupDishes.list.length)}{' '}
+              {groupDishes.groupOnly
+                ? 'Checked across the dishes a group can order.'
+                : 'No category is marked group-only, so every dish on this side was checked.'}
+            </p>
+            <Button size="sm" onClick={() => setReviewing(!reviewing)}>
+              {reviewing ? 'Hide' : 'Check the tags'}
+            </Button>
+          </div>
+
+          {reviewing && (
+            <div style={{ marginTop: '0.8rem' }}>
+              {/* What this cannot do, said before what it can. Nothing here
+                  knows what the food contains; it only knows what the menu
+                  says about itself. */}
+              <Notice tone="info">
+                This checks the menu against itself: claims that contradict each other, a claim that carries
+                another with it, a dish tagged two ways, and choices that quietly take a claim off a plate. It
+                cannot tell whether a dish really is what it says — only the kitchen knows that.
+              </Notice>
+
+              <p className="small dim">
+                What this menu claims:{' '}
+                {dietsClaimed(groupDishes.list).length === 0
+                  ? 'nothing yet.'
+                  : dietsClaimed(groupDishes.list).map((d) => `${d.label} (${d.count})`).join(' · ')}
+              </p>
+
+              {findings.length === 0 ? (
+                <Notice tone="ok">Nothing contradicts itself.</Notice>
+              ) : (
+                <div className="table-wrap">
+                  <table className="data">
+                    <thead>
+                      <tr><th>Dish</th><th>What is wrong</th><th /></tr>
+                    </thead>
+                    <tbody>
+                      {findings.map((f, i) => (
+                        <tr key={`${f.itemId}-${f.kind}-${i}`}>
+                          <td style={{ fontWeight: 550, whiteSpace: 'nowrap' }}>
+                            {f.dish}
+                            <div>
+                              <Badge tone={f.severity === 'wrong' ? 'danger' : 'warn'}>
+                                {f.severity === 'wrong' ? 'Put right' : 'Worth a look'}
+                              </Badge>
+                            </div>
+                          </td>
+                          <td>
+                            <div>{f.says}</div>
+                            <div className="small dim">{f.fix}</div>
+                          </td>
+                          <td className="num">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                const it = (items ?? []).find((x) => x.$id === f.itemId);
+                                if (it) open(it);
+                              }}
+                            >
+                              Open
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
 
       {/*
         The group menu's headings, as a set rather than one dish at a time.
