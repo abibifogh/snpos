@@ -205,6 +205,28 @@ test before trusting it.
 If the third one asks which table you are at, the query string is being
 dropped and the redirect is not safe to keep.
 
+### A name of its own for group ordering, without moving anything
+
+If the point is only that hotels should be given something that says what it
+is for, moving the whole site is the expensive way round. The site can carry
+one custom domain and it is already carrying the one printed on every table
+sticker — so leave it there, and make the new name a redirect INTO it.
+
+That way round is safe by construction: the new name has never been printed on
+anything, so nothing depends on how it behaves.
+
+1. **DNS.** Add `orders` as a redirect to `https://pos.example.com/group`
+   (Cloudflare: a proxied record plus a redirect rule; a registrar: a URL
+   redirect record). Path and query do not matter here — it is one address
+   going to one address.
+2. **`GROUP_URL`.** Set the repository variable to `https://orders.example.com`
+   and Admin hands that out as the group link instead of the path version.
+3. Nothing else changes. `SITE_DOMAIN` stays as it is, every sticker keeps
+   working, and no page moves.
+
+And if the short path is good enough, `https://pos.example.com/group` needs no
+DNS work at all.
+
 ### Two ways to do the redirect
 
 **Cloudflare** (free, and the one that preserves everything). Move the
