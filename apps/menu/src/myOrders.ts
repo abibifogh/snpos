@@ -11,6 +11,8 @@
  * phone to keep it either.
  */
 
+import { orderHash, orderIdInHash } from '@snpos/core';
+
 const KEY = 'snpos-my-orders';
 const KEEP_HOURS = 24;
 
@@ -48,17 +50,23 @@ export function rememberOrder(order: MyOrder): void {
 /**
  * The order the address is asking for, if any.
  *
- * Kept in the hash rather than in React state alone, so refreshing the page, 
+ * Kept in the hash rather than in React state alone, so refreshing the page,
  * or locking the phone and coming back to it, lands on the same screen instead
  * of throwing the guest back to the menu with no way to find their order.
  */
 export function orderIdFromHash(): string | null {
-  const match = /^#\/order\/([A-Za-z0-9_-]+)/.exec(window.location.hash || '');
-  return match ? match[1] : null;
+  return orderIdInHash(window.location.hash || '');
 }
 
+/**
+ * Whichever menu they are on stays the menu they are on.
+ *
+ * The group segment is carried through opening an order and coming back out
+ * of it. See orderHash: without that, the back arrow took a party that had
+ * just booked off their own menu and onto the ordinary one.
+ */
 export function showOrderInAddress(id: string | null): void {
-  const next = id ? `#/order/${id}` : '#/';
+  const next = orderHash(id, window.location.pathname, window.location.hash);
   if (window.location.hash !== next) {
     // replaceState rather than pushing: the back button should take a guest
     // out of the app, not walk them backwards through their own order.

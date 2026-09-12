@@ -1,6 +1,7 @@
 import { Client, Databases, Query, Users } from 'node-appwrite';
 import nodemailer from 'nodemailer';
 import { receiptPdf } from './receipt-pdf.js';
+import { bookingSittings, bookingSheetPdf } from './booking-sheet.js';
 import { tradeWords, offSubject } from './words.js';
 import { dailyDigest, nightlyBackup, deliveryFrom } from './daily.js';
 import { ensureLogin, revokeLogin } from './staff.js';
@@ -651,6 +652,45 @@ export default async ({ req, res, log, error }) => {
     }
   };
 
+  /**
+   * The booking sheet, as a real PDF, for whichever email is going out.
+   *
+   * An email body can hold a summary and no more: sittings, portions, a
+   * total. What a party of forty actually consists of — every dish, every
+   * choice ticked, everything left out, the notes in the guests' own words
+   * and what each plate is then suitable for — is a document, and the kitchen
+   * needs it on paper by the pass. See booking-sheet.js.
+   *
+   * Undefined on any failure, never a throw. A booking notice that arrives
+   * without its attachment is worth far more than one that never arrives
+   * because building a PDF went wrong.
+   */
+  const bookingSheet = async (label) => {
+    if (!doc?.$id) return undefined;
+    try {
+      const [sittings, venue] = await Promise.all([
+        bookingSittings({ db, DB_ID, Query, booking: doc }),
+        db.getDocument(DB_ID, 'venues', doc.venue_id).catch(() => null),
+      ]);
+      if (sittings.length === 0) {
+        error(`Booking ${doc.$id} has no orders to write a sheet from.`);
+        return undefined;
+      }
+      const stem = String(doc.reference || doc.contact_name || doc.$id)
+        .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'booking';
+      return [{
+        filename: `group-booking-${stem}.pdf`,
+        content: bookingSheetPdf({
+          settings, venue, booking: doc, sittings, label, accent: brand,
+        }),
+        contentType: 'application/pdf',
+      }];
+    } catch (e) {
+      error(`Group booking sheet failed for ${doc.$id}, sending without it: ${e.message}`);
+      return undefined;
+    }
+  };
+
   // ---------------------------------------------- hourly sweep (no document)
   // Nothing arrived, so this is the timer. The only thing worth checking on a
   // clock is the absence of an event: a dish taken off the menu that nobody
@@ -827,6 +867,7 @@ export default async ({ req, res, log, error }) => {
         return Number.isFinite(d.getTime()) ? d.toLocaleString() : '';
       };
       const label = await featureConfig('group_orders', 'reservation_label', 'Reservation');
+      const sheet = await bookingSheet(label);
       const spread = doc.first_at === doc.last_at
         ? when(doc.first_at)
         : `${when(doc.first_at)} to ${when(doc.last_at)}`;
@@ -861,7 +902,15 @@ export default async ({ req, res, log, error }) => {
           from,
           to: houseTo.join(','),
           subject: `Group booking · ${doc.contact_name || 'a party'}${doc.size ? ` · ${doc.size} people` : ''}`,
-          html: shell('A group has booked', facts),
+          html: shell(
+            'A group has booked',
+            facts + (sheet
+              ? `<p style="margin:16px 0 0;color:#5d6b7a;font-size:14px">Attached is the full sheet: every
+                 sitting, every choice, everything left out, the notes in the guests' own words, and what each
+                 plate is suitable for. Print it for the pass.</p>`
+              : ''),
+          ),
+          attachments: sheet,
         }).catch((e) => error(`Group notice to the house failed: ${e.message}`));
       } else {
         log('A group booked and no admin has an email address on their staff profile, so only the guest was told.');
@@ -878,6 +927,11 @@ export default async ({ req, res, log, error }) => {
              revert. As soon as it is approved you will be emailed.</p>
              <p style="margin:0 0 10px">Here is the whole booking, so you have it on the day.</p>
              ${facts}
+             ${sheet
+               ? `<p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">The attached sheet lists every sitting
+                  in full — each dish, the choices made, anything left out, your notes, and what each plate is
+                  suitable for. Please check it and tell us if anything is wrong.</p>`
+               : ''}
              <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">Each sitting reaches the kitchen in time to
              cook it and not before.</p>
              ${(process.env.APP_URL || '')
@@ -885,6 +939,7 @@ export default async ({ req, res, log, error }) => {
                     style="color:#0f766e;font-weight:600">Need to change something?</a></p>`
                : '<p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">If anything needs to change, ring us.</p>'}`,
           ),
+          attachments: sheet,
         }).catch((e) => error(`Group confirmation to the guest failed: ${e.message}`));
       }
 
@@ -914,6 +969,12 @@ export default async ({ req, res, log, error }) => {
       const said = String(doc.decided_note || '').replace(/[<>&]/g, (c) => (
         { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
       const yes = doc.status === 'approved';
+      // The confirmed sheet, so the party holds the same document the kitchen
+      // is working to. Only on a yes: attaching a full menu to "we cannot
+      // take this booking" would be a strange thing to receive.
+      const agreed = yes
+        ? await bookingSheet(await featureConfig('group_orders', 'reservation_label', 'Reservation'))
+        : undefined;
       await transport.sendMail({
         from,
         to: doc.email,
@@ -926,6 +987,10 @@ export default async ({ req, res, log, error }) => {
             ? `<p style="margin:0 0 10px">Good news — we have your booking and the kitchen has it in hand.
                ${doc.sittings || 0} sitting${doc.sittings === 1 ? '' : 's'}, ${doc.portions || 0} portions.</p>
                ${said ? `<p style="margin:0 0 10px">${said}</p>` : ''}
+               ${agreed
+                 ? `<p style="margin:0 0 10px;color:#5d6b7a;font-size:14px">The attached sheet is what the
+                    kitchen is working to — every sitting, every choice and every dietary note.</p>`
+                 : ''}
                <p style="margin:0;color:#5d6b7a;font-size:14px">Orders ${doc.order_nos || ''}. Nothing is owed
                until the day.</p>`
             : `<p style="margin:0 0 10px">We are sorry — we are not able to take this booking.</p>
@@ -933,6 +998,7 @@ export default async ({ req, res, log, error }) => {
                <p style="margin:0;color:#5d6b7a;font-size:14px">Please ring us if you would like to talk about
                another date.</p>`,
         ),
+        attachments: agreed,
       }).catch((e) => error(`Booking decision notice failed: ${e.message}`));
 
       return res.json({ sent: true, booking: doc.$id, status: doc.status });
