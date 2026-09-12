@@ -4,7 +4,7 @@ import {
   packFeeFor, portionsOn, mealTotals, bookingTotals, bookingProblem, mealWords, packWords,
   slotsByDay, timesTaken, timeIsTaken, freeTimesOn, FULFILMENT_WORDS,
   mealMoment, momentProblem, dayInput, timeInput, BOOKING_OPENS, BOOKING_CLOSES,
-  serviceOf, mealServiceWords, SERVICE_WORDS, emailLooksReal,
+  serviceOf, mealServiceWords, SERVICE_WORDS, emailLooksReal, portionsAtBiggest,
 } from '../pricing.ts';
 import type { GroupMeal } from '../pricing.ts';
 
@@ -65,18 +65,20 @@ test('a meal switched to dine in loses its packing charge', () => {
 test('a booking says the one thing stopping it, earliest first', () => {
   const ok = {
     reference: 'R1', needReference: true, referenceLabel: 'Booking ref',
-    size: 10, minSize: 6, contactName: 'Ama', email: 'ama@example.com',
+    minSize: 6, contactName: 'Ama', email: 'ama@example.com',
   };
   assert.match(String(bookingProblem([], ok)), /Add a meal/);
 
   const some = [meal('2026-09-14T12:00:00Z', 'dine_in'), meal('2026-09-15T12:00:00Z', 'dine_in', [])];
   assert.match(String(bookingProblem(some, ok)), /has nothing on it/);
 
-  const full = [meal('2026-09-14T12:00:00Z', 'dine_in')];
+  // Party-sized, because this test is about which complaint comes first and
+  // the smallest-group rule is counted from the plates now.
+  const full = [meal('2026-09-14T12:00:00Z', 'dine_in', [line('jollof', 5_000, 9)])];
   assert.match(String(bookingProblem(full, { ...ok, contactName: ' ' })), /give a name/);
   assert.match(String(bookingProblem(full, { ...ok, reference: '' })), /booking ref/);
   assert.equal(bookingProblem(full, { ...ok, reference: '', needReference: false }), null);
-  assert.match(String(bookingProblem(full, { ...ok, size: 2 })), /6 people or more/);
+  // The party's size is counted from the plates now; see the test below.
   assert.equal(bookingProblem(full, ok), null);
 });
 
@@ -86,7 +88,7 @@ test('the empty meal named is the earliest one, named by day and time', () => {
     meal('2026-09-14T12:30:00', 'dine_in', []),
   ];
   const said = String(bookingProblem(meals, {
-    reference: 'R', needReference: false, referenceLabel: 'ref', size: 9, minSize: 0,
+    reference: 'R', needReference: false, referenceLabel: 'ref', minSize: 0,
     contactName: 'Ama', email: 'ama@example.com',
   }));
   assert.match(said, /14 September, 12:30/);
@@ -210,10 +212,10 @@ test('a booking is not sent without somewhere to send it', () => {
     the arrangement was made on a screen they closed, and on the day the only
     record of what they asked for is in the kitchen.
   */
-  const full = [meal('2026-09-14T12:00:00Z', 'dine_in')];
+  const full = [meal('2026-09-14T12:00:00Z', 'dine_in', [line('jollof', 5_000, 9)])];
   const base = {
     reference: 'R1', needReference: false, referenceLabel: 'ref',
-    size: 10, minSize: 6, contactName: 'Ama',
+    minSize: 6, contactName: 'Ama',
   };
   assert.match(String(bookingProblem(full, { ...base, email: '' })), /give an email address/);
   assert.match(String(bookingProblem(full, { ...base, email: 'ama' })), /give an email address/);
@@ -232,4 +234,52 @@ test('what counts as an address is a blank-box check, not a specification', () =
   assert.equal(emailLooksReal('no-at-sign.com'), false);
   assert.equal(emailLooksReal('two@@example.com'), false);
   assert.equal(emailLooksReal(undefined), false);
+});
+
+test('how big a party is comes from the plates, not from a box they typed in', () => {
+  /*
+    "How many people?" was a second answer to a question the order had already
+    answered, and it was the only gate on the smallest-group rule — so it was
+    a box a party of two could put "twenty" into and walk straight through.
+  */
+  const big = meal('2026-09-14T12:00:00Z', 'dine_in', [line('jollof', 5_000, 8)]);
+  const small = meal('2026-09-15T12:00:00Z', 'dine_in', [line('jollof', 5_000, 2)]);
+  assert.equal(portionsAtBiggest([small, big]), 8);
+  assert.equal(portionsAtBiggest([]), 0);
+
+  const base = {
+    reference: 'R', needReference: false, referenceLabel: 'ref',
+    minSize: 6, contactName: 'Ama', email: 'ama@example.com',
+  };
+  assert.equal(bookingProblem([big, small], base), null);
+  assert.match(String(bookingProblem([small], base)), /start at 6 plates at a sitting, and the biggest here has 2/);
+});
+
+test('four dinners for two is still two, and is refused', () => {
+  /*
+    The reason it is the biggest sitting and not the sum. Twenty-four plates
+    across a stay is not twenty-four people, and adding them up would let a
+    couple book four nights and clear a minimum of six.
+  */
+  const twoEach = ['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17']
+    .map((d) => meal(`${d}T19:00:00Z`, 'dine_in', [line('jollof', 5_000, 2)]));
+  assert.equal(portionsAtBiggest(twoEach), 2);
+  assert.match(
+    String(bookingProblem(twoEach, {
+      reference: 'R', needReference: false, referenceLabel: 'ref',
+      minSize: 6, contactName: 'Ama', email: 'ama@example.com',
+    })),
+    /the biggest here has 2/,
+  );
+});
+
+test('a light sitting does not disqualify a party that eats properly once', () => {
+  // Biggest rather than smallest: a party of twelve who take coffee for two
+  // one morning are still a party of twelve.
+  const dinner = meal('2026-09-14T19:00:00Z', 'dine_in', [line('jollof', 5_000, 12)]);
+  const coffee = meal('2026-09-15T08:00:00Z', 'dine_in', [line('coffee', 1_000, 2)]);
+  assert.equal(bookingProblem([dinner, coffee], {
+    reference: 'R', needReference: false, referenceLabel: 'ref',
+    minSize: 6, contactName: 'Ama', email: 'ama@example.com',
+  }), null);
 });

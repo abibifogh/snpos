@@ -8,9 +8,10 @@ import {
   tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS,
   decideSpend, loadWaiting, nameFrom, waitingCounts, waitingSummary, waitedWords, refuseSpendWords, WAITING_KIND_WORDS, dateTimeWords,
   loadReview, offWords,
-  openBookingChanges, decideBookingChange, CHANGE_KIND_WORDS } from '@snpos/core';
+  openBookingChanges, decideBookingChange, CHANGE_KIND_WORDS,
+  pendingGroupBookings, decideGroupBooking } from '@snpos/core';
 import type {
-  WaitingItem, WaitingKind, WaitingSpend, WaitingTabShift, TabOrder, Review, BookingChangeDoc,
+  WaitingItem, WaitingKind, WaitingSpend, WaitingTabShift, TabOrder, Review, BookingChangeDoc, GroupBookingDoc,
 } from '@snpos/core';
 import { useSession, useMoney } from '../session';
 
@@ -75,6 +76,8 @@ export function WaitingPage() {
     senior, and nothing else on any screen says so.
   */
   const [changes, setChanges] = useState<BookingChangeDoc[]>([]);
+  /** Group bookings nobody has agreed to yet. The guest has been told to expect this. */
+  const [bookings, setBookings] = useState<GroupBookingDoc[]>([]);
   const [replying, setReplying] = useState<Record<string, string>>({});
 
   const [openId, setOpenId] = useState<string | null>(null);
@@ -105,6 +108,7 @@ export function WaitingPage() {
     setTabShifts(got.tabShifts);
     setItems(got.items);
     setChanges(await openBookingChanges());
+    setBookings(await pendingGroupBookings());
   };
   useEffect(() => { load().catch((e) => { setError(humanError(e)); setItems([]); }); }, []);
 
@@ -181,6 +185,33 @@ export function WaitingPage() {
     looked at, made from a summary. This closes the request and records who
     closed it.
   */
+  /*
+    Agreeing to a booking, or saying it cannot be done.
+
+    Writing the decision is what emails the group: the function watches that
+    collection, so one place decides and one place tells them, and the two
+    cannot come apart. Refusing does NOT cancel the sittings — a refusal that
+    silently emptied the kitchen's day would be a decision nobody reviewed.
+    Cancel them on the Orders page if that is what is meant.
+  */
+  const decideBooking = async (b: GroupBookingDoc, status: 'approved' | 'refused') => {
+    if (status === 'refused' && !confirm(
+      `Tell ${b.contact_name} you cannot take this booking? They are emailed straight away. `
+      + 'The sittings stay on the kitchen\'s list until somebody cancels them on the Orders page.',
+    )) return;
+    setBusy(b.$id);
+    setError(null);
+    try {
+      await decideGroupBooking({ id: b.$id, status, by: userId, note: replying[b.$id] ?? '' });
+      await load();
+      toast(status === 'approved' ? 'Booking approved, the group has been told' : 'The group has been told');
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const decide = async (c: BookingChangeDoc, status: 'done' | 'refused') => {
     setBusy(c.$id);
     setError(null);
@@ -237,6 +268,52 @@ export function WaitingPage() {
       </p>
 
       {error && <Notice>{error}</Notice>}
+
+      {/*
+        Bookings waiting to be agreed to.
+
+        First on the page, because the guest has been told in writing that
+        this is happening and is waiting on it — and because a party of forty
+        is a shopping and staffing decision that gets harder to make the
+        longer it sits.
+      */}
+      {bookings.length > 0 && (
+        <Card title={`Group bookings waiting for you (${bookings.length})`}>
+          <p className="small dim" style={{ marginTop: 0 }}>
+            The sittings are already scheduled and will reach the kitchen at their own times whatever you decide
+            here — holding food back until a button is pressed would mean one forgotten booking is a party
+            standing in a room with nothing cooked. What this changes is what the group is told.
+          </p>
+          {bookings.map((b) => (
+            <div key={b.$id} style={{ padding: '0.6rem 0', borderBottom: '1px solid var(--border)' }}>
+              <div className="spread" style={{ alignItems: 'baseline' }}>
+                <strong>{b.contact_name}{b.reference ? ` · ${b.reference}` : ''}</strong>
+                <span className="small dim">
+                  {b.sittings} sitting{b.sittings === 1 ? '' : 's'} · {b.portions} portions · {money(b.total ?? 0)}
+                </span>
+              </div>
+              <div className="small dim">
+                {b.first_at ? `First meal ${dateTimeWords(b.first_at)}` : 'No date'}
+                {b.email ? ` · ${b.email}` : ''}
+                {b.order_nos ? ` · ${b.order_nos}` : ''}
+              </div>
+              <div className="row" style={{ gap: '0.5rem', marginTop: '0.4rem' }}>
+                <Input
+                  placeholder="A line to the group (optional)"
+                  value={replying[b.$id] ?? ''}
+                  onChange={(e) => setReplying({ ...replying, [b.$id]: e.target.value })}
+                />
+                <Button size="sm" variant="primary" loading={busy === b.$id} onClick={() => void decideBooking(b, 'approved')}>
+                  Approve
+                </Button>
+                <Button size="sm" variant="danger" disabled={busy === b.$id} onClick={() => void decideBooking(b, 'refused')}>
+                  Cannot take it
+                </Button>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
 
       {/* Above the queues: a party is waiting on an answer, and unlike a count
           it is a person who will ring if nobody replies. */}

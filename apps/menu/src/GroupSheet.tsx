@@ -5,6 +5,7 @@ import {
   formatMoney, lineTotal, createOrder, featureConfig, isProvisionalOrderNo,
   ensureGuestSession, humanError, selfOrderModule, isSlotFull,
   bookingTotals, bookingProblem, packWords, mealWords, FULFILMENT_WORDS, dayKeyOf, longDayWords, timeWords,
+  portionsAtBiggest,
   serviceOf, SERVICE_WORDS, SERVICE_HINTS,
   tabLabel,
   db, DB_ID, Query, recordGroupBooking,
@@ -39,7 +40,22 @@ export function GroupSheet({
   venue: Venue;
   features: FeatureMap;
   onClose: () => void;
-  onPlaced: (booked: { id: string; orderNo: string; at: string }[]) => void;
+  /**
+   * Everything the sent page needs, because this sheet is gone by then.
+   *
+   * `bookingId` is null when the booking record could not be written, which
+   * is also what stops both emails — so the page says so rather than
+   * promising a confirmation nobody will get.
+   */
+  onPlaced: (sent: {
+    booked: { id: string; orderNo: string; at: string }[];
+    bookingId: string | null;
+    contactName: string;
+    email: string;
+    reference: string;
+    portions: number;
+    total: number;
+  }) => void;
   onError: (message: string) => void;
 }) {
   const needReference = featureConfig(features, 'group_orders', 'require_reservation_number', true);
@@ -53,7 +69,6 @@ export function GroupSheet({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [groupRef, setGroupRef] = useState('');
-  const [groupSize, setGroupSize] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -63,6 +78,17 @@ export function GroupSheet({
   );
 
   const money = (n: number) => formatMoney(n, settings);
+
+  /*
+    How big the party is, counted rather than asked.
+
+    There used to be a "How many people?" box. It asked a second time for
+    something the order had already said — somebody ordering thirty plates has
+    told you there are about thirty of them — and it was the only gate on the
+    smallest-group rule, so a party of two could type "twenty" and walk
+    through. The biggest sitting is the count: see portionsAtBiggest.
+  */
+  const partySize = portionsAtBiggest(meals);
 
   const setMeal = (key: string, patch: Partial<GroupMeal>) =>
     setMeals((all) => all.map((m) => (m.key === key ? { ...m, ...patch } : m)));
@@ -89,7 +115,6 @@ export function GroupSheet({
       reference: groupRef,
       needReference,
       referenceLabel: reservationLabel,
-      size: Number(groupSize || 0),
       minSize: minGroup,
       contactName: name,
       email,
@@ -113,6 +138,8 @@ export function GroupSheet({
     setBusy(true);
     setProblem(null);
     const bookingId = `gb-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    /** Whether the booking record landed, which is what sends both emails. */
+    let recorded = false;
     const booked: { id: string; orderNo: string; at: string }[] = [];
 
     try {
@@ -128,7 +155,7 @@ export function GroupSheet({
           placedBy: name.trim(),
           group: {
             reference: groupRef.trim(),
-            size: Number(groupSize || 0),
+            size: partySize,
             contactName: name.trim(),
             bookingId,
           },
@@ -177,7 +204,7 @@ export function GroupSheet({
         reference: groupRef.trim(),
         contactName: name.trim(),
         email: email.trim(),
-        size: Number(groupSize || 0),
+        size: partySize,
         sittings: booking.meals.length,
         portions: booking.portions,
         total: booking.total,
@@ -185,10 +212,32 @@ export function GroupSheet({
         orderNos: settled.map((b) => b.orderNo),
         firstAt: booking.meals[0]?.meal.at ?? '',
         lastAt: booking.meals[booking.meals.length - 1]?.meal.at ?? '',
-      }).catch(() => undefined);
+      })
+        .then(() => { recorded = true; })
+        .catch((e) => {
+          /*
+            Not fatal, and no longer silent.
+
+            The food IS ordered: failing the whole booking here would tell
+            somebody their party is not booked when it is, which is the worse
+            of the two wrongs by a distance. But this write is what sends both
+            emails, so swallowing it meant a booking went in, nobody was told,
+            and nothing anywhere said why. The page says so instead, and the
+            console names it.
+          */
+          onError(`The booking was placed but its confirmation could not be sent: ${humanError(e)}`);
+        });
 
       setMeals(() => []);
-      onPlaced(settled);
+      onPlaced({
+        booked: settled,
+        bookingId: recorded ? bookingId : null,
+        contactName: name.trim(),
+        email: email.trim(),
+        reference: groupRef.trim(),
+        portions: booking.portions,
+        total: booking.total,
+      });
     } catch (e) {
       const message = isSlotFull(e)
         ? (e as Error).message
@@ -365,14 +414,7 @@ export function GroupSheet({
               <Field label={reservationLabel} hint={needReference ? 'Needed for a group booking.' : 'Optional.'}>
                 <Input value={groupRef} onChange={(e) => { setGroupRef(e.target.value); setProblem(null); }} />
               </Field>
-              <Field label="How many people?" hint={minGroup > 0 ? `Group bookings are for ${minGroup} or more.` : undefined}>
-                <Input
-                  type="number"
-                  min={minGroup || 1}
-                  value={groupSize}
-                  onChange={(e) => { setGroupSize(e.target.value); setProblem(null); }}
-                />
-              </Field>
+
               {/* Required here, optional on an ordinary order, and the
                   difference is the situation: a walk-in is standing in the
                   room and can be told; a party of forty booked three weeks ago
