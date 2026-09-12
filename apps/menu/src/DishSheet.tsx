@@ -1,6 +1,9 @@
 import { useState } from 'react';
-import { Button, Modal, Textarea, FormError } from '@snpos/ui';
-import { formatMoney, previewUrl, parseOmissions, omissionWords, tagsWithout } from '@snpos/core';
+import { Button, Modal, Textarea, FormError, Notice } from '@snpos/ui';
+import {
+  formatMoney, previewUrl, parseOmissions, omissionWords, tagsWithout,
+  tagsWithOptions, dietLostWords, dietUnknownWords,
+} from '@snpos/core';
 import type { MenuEntry, Settings, CartLine, CartAddon } from '@snpos/core';
 import { DietTags } from './DietTags';
 
@@ -44,7 +47,7 @@ export function DishSheet({
   */
   const omissions = parseOmissions(entry.item.omissions);
   const [without, setWithout] = useState<string[]>([]);
-  const nowTags = tagsWithout(entry.item.tags, omissions, without);
+  const withoutTags = tagsWithout(entry.item.tags, omissions, without);
 
   const img = previewUrl(entry.item.image_id, 'menu', settings, 640, 420);
 
@@ -71,6 +74,27 @@ export function DishSheet({
   );
 
   const unitPrice = entry.price + addons.reduce((s, a) => s + a.price_delta, 0);
+
+  /*
+    What the plate is once the choices are on it.
+
+    A vegan bowl with cheese ticked is not a vegan bowl, and the pills above
+    used to go on saying vegan the whole way to the pass. They change as the
+    boxes are ticked now, and what a choice cost is said in words underneath —
+    a guest who watches "Vegan" disappear has been told something; one who does
+    not notice has been misled by a screen that knew.
+  */
+  const chosenOptions = entry.groups.flatMap(({ group, options }) =>
+    (chosen[group.$id] ?? []).flatMap((id) => {
+      const option = options.find((o) => o.$id === id);
+      return option
+        ? [{ name: option.name, tags: option.tags, diet_neutral: option.diet_neutral }]
+        : [];
+    }));
+  const withOptions = tagsWithOptions(withoutTags, chosenOptions);
+  const nowTags = withOptions.tags;
+  const lost = dietLostWords(withoutTags, nowTags);
+  const unsure = dietUnknownWords(withOptions.unknown);
 
   const add = () => {
     for (const { group } of entry.groups) {
@@ -134,6 +158,9 @@ export function DishSheet({
           the dish says vegetarian there and then, which is the confirmation
           the guest came for. */}
       {showDiet && <DietTags tags={nowTags} />}
+      {/* Said where the choice was made, not discovered at the table. */}
+      {showDiet && lost && <Notice tone="warn">{lost}</Notice>}
+      {showDiet && unsure && <Notice tone="warn">{unsure}</Notice>}
 
       {omissions.length > 0 && (
         <div style={{ marginTop: '1rem' }}>
