@@ -1,15 +1,16 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Badge, Button, Card, Empty, Modal, Notice, Segmented, Spinner, useToast } from '@snpos/ui';
+import { Badge, Button, Card, Empty, Input, Modal, Notice, Segmented, Spinner, useToast } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
   
   approveBarCount, rejectBarCount, approveCount, rejectCount,
   tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS,
   decideSpend, loadWaiting, nameFrom, waitingCounts, waitingSummary, waitedWords, refuseSpendWords, WAITING_KIND_WORDS, dateTimeWords,
-  loadReview, offWords } from '@snpos/core';
+  loadReview, offWords,
+  openBookingChanges, decideBookingChange, CHANGE_KIND_WORDS } from '@snpos/core';
 import type {
-  WaitingItem, WaitingKind, WaitingSpend, WaitingTabShift, TabOrder, Review,
+  WaitingItem, WaitingKind, WaitingSpend, WaitingTabShift, TabOrder, Review, BookingChangeDoc,
 } from '@snpos/core';
 import { useSession, useMoney } from '../session';
 
@@ -63,6 +64,19 @@ export function WaitingPage() {
    * Loading the lines for every waiting row up front would be slow on every
    * visit to be useful on one.
    */
+  /*
+    Group bookings asking for a change.
+
+    Beside the queues rather than inside them, because it is a different kind
+    of thing: a count or a spend is decided by agreeing or refusing a figure
+    somebody has already written down, and this is a party asking a question
+    that may need a telephone call before anybody can answer it. What it
+    shares is the reason it is on this page at all — it waits for somebody
+    senior, and nothing else on any screen says so.
+  */
+  const [changes, setChanges] = useState<BookingChangeDoc[]>([]);
+  const [replying, setReplying] = useState<Record<string, string>>({});
+
   const [openId, setOpenId] = useState<string | null>(null);
   const [review, setReview] = useState<Review | null>(null);
   const [reviewing, setReviewing] = useState(false);
@@ -90,6 +104,7 @@ export function WaitingPage() {
     setSpends(got.spends);
     setTabShifts(got.tabShifts);
     setItems(got.items);
+    setChanges(await openBookingChanges());
   };
   useEffect(() => { load().catch((e) => { setError(humanError(e)); setItems([]); }); }, []);
 
@@ -158,6 +173,28 @@ export function WaitingPage() {
     });
   };
 
+  /*
+    Marked dealt with, which is all this does.
+
+    The orders are edited on the Orders page like any other correction — a
+    button here that rewrote a party's tickets would be a change nobody had
+    looked at, made from a summary. This closes the request and records who
+    closed it.
+  */
+  const decide = async (c: BookingChangeDoc, status: 'done' | 'refused') => {
+    setBusy(c.$id);
+    setError(null);
+    try {
+      await decideBookingChange({ id: c.$id, status, by: userId, reply: replying[c.$id] ?? '' });
+      await load();
+      toast(status === 'done' ? 'Marked as done' : 'Marked as not possible');
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const openRelease = async (item: WaitingItem) => {
     if (item.ref.kind !== 'tab') return;
     const ref = item.ref;
@@ -200,6 +237,50 @@ export function WaitingPage() {
       </p>
 
       {error && <Notice>{error}</Notice>}
+
+      {/* Above the queues: a party is waiting on an answer, and unlike a count
+          it is a person who will ring if nobody replies. */}
+      {changes.length > 0 && (
+        <Card title={`Group bookings asking for a change (${changes.length})`}>
+          <p className="small dim" style={{ marginTop: 0 }}>
+            Nothing has changed on any of these. The kitchen is still working to what was ordered until you agree
+            to it and edit the orders yourself.
+          </p>
+          {changes.map((c) => (
+            <div key={c.$id} style={{ padding: '0.6rem 0', borderBottom: '1px solid var(--border)' }}>
+              <div className="spread" style={{ alignItems: 'baseline' }}>
+                <strong>
+                  {c.contact_name || 'A group'}
+                  {c.reference ? ` · ${c.reference}` : ''}
+                </strong>
+                <span className="small dim">
+                  {CHANGE_KIND_WORDS[c.kind as keyof typeof CHANGE_KIND_WORDS] ?? c.kind}
+                  {c.first_at ? ` · first meal ${dateTimeWords(c.first_at)}` : ''}
+                </span>
+              </div>
+              <p style={{ margin: '0.3rem 0', whiteSpace: 'pre-wrap' }}>{c.note}</p>
+              <div className="row" style={{ gap: '0.5rem', marginTop: '0.4rem' }}>
+                <Input
+                  placeholder={c.email ? `A line back to ${c.email} (optional)` : 'A note for the record (optional)'}
+                  value={replying[c.$id] ?? ''}
+                  onChange={(e) => setReplying({ ...replying, [c.$id]: e.target.value })}
+                />
+                <Button
+                  size="sm"
+                  variant="primary"
+                  loading={busy === c.$id}
+                  onClick={() => void decide(c, 'done')}
+                >
+                  Done
+                </Button>
+                <Button size="sm" variant="ghost" disabled={busy === c.$id} onClick={() => void decide(c, 'refused')}>
+                  Cannot do it
+                </Button>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
 
       <Card pad={false}>
         {!items ? (

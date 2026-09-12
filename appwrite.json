@@ -84,7 +84,8 @@
         "databases.snpos.collections.staff_profiles.documents.*.delete",
         "databases.snpos.collections.item_availability.documents.*.create",
         "databases.snpos.collections.approval_notices.documents.*.create",
-        "databases.snpos.collections.group_bookings.documents.*.create"
+        "databases.snpos.collections.group_bookings.documents.*.create",
+        "databases.snpos.collections.booking_changes.documents.*.create"
       ],
       "schedule": "0 * * * *",
       "timeout": 60,

@@ -876,12 +876,69 @@ export default async ({ req, res, log, error }) => {
             `<p style="margin:0 0 10px">Thank you. Here is the whole booking, so you have it on the day.</p>
              ${facts}
              <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">Each sitting reaches the kitchen in time to
-             cook it and not before. If anything needs to change, reply to this message or ring us.</p>`,
+             cook it and not before.</p>
+             ${(process.env.APP_URL || '')
+               ? `<p style="margin:14px 0 0"><a href="${(process.env.APP_URL || '').replace(/\/+$/, '')}/menu/?change=${doc.$id}"
+                    style="color:#0f766e;font-weight:600">Need to change something?</a></p>`
+               : '<p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">If anything needs to change, ring us.</p>'}`,
           ),
         }).catch((e) => error(`Group confirmation to the guest failed: ${e.message}`));
       }
 
       return res.json({ sent: true, booking: doc.$id, to: houseTo.length + (doc.email ? 1 : 0) });
+    }
+
+    /*
+      A group asking for something to be changed.
+
+      Straight to the people who can decide, because the alternative is a
+      telephone call to whoever picks up, written on whatever is nearest. It
+      is a REQUEST — nothing has changed, and the email says so, so nobody
+      reads it as a done thing and stops looking.
+    */
+    if (events.some((e) => e.includes('collections.booking_changes'))) {
+      const staff = await db.listDocuments(DB_ID, 'staff_profiles', [
+        Query.equal('role', ['admin', 'manager']),
+        Query.limit(50),
+      ]).catch(() => ({ documents: [] }));
+      const configured = String(await featureConfig('group_orders', 'notify_emails', '') || '')
+        .split(/[,;\s]+/)
+        .filter(Boolean);
+      const to = [...new Set([...configured, ...staff.documents.map((p) => p.email).filter(Boolean)])];
+
+      if (!transport || !to.length) {
+        log(`A group asked for a change to booking ${doc.booking_id}, but ${
+          !transport ? 'no SMTP is configured' : 'no admin has an email address'}, so nobody was told by email. `
+          + 'It is on the Waiting for you page.');
+        return res.json({ sent: false });
+      }
+
+      const KINDS = {
+        numbers: 'How many people', timing: 'A day or a time', food: 'What was ordered',
+        dietary: 'Something somebody cannot eat', cancel: 'Cancel all or part of it', other: 'Something else',
+      };
+      await transport.sendMail({
+        from,
+        to: to.join(','),
+        subject: `Group booking change asked for · ${doc.contact_name || doc.reference || doc.booking_id}`,
+        html: shell(
+          'A group has asked for a change',
+          `<table style="width:100%;border-collapse:collapse;font-size:15px">
+             ${row('Booked by', doc.contact_name || '-')}
+             ${row('Reference', doc.reference || '-')}
+             ${row('About', KINDS[doc.kind] || doc.kind)}
+             ${row('First meal', doc.first_at ? new Date(doc.first_at).toLocaleString() : '-')}
+           </table>
+           <p style="margin:14px 0 4px;font-weight:600">What they asked for</p>
+           <p style="margin:0;white-space:pre-wrap">${String(doc.note || '')
+             .replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</p>
+           <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">Nothing has changed. The kitchen is still
+           working to what was ordered. Decide it on the Waiting for you page${
+             doc.email ? `, and they are expecting an answer at ${doc.email}` : ''}.</p>`,
+        ),
+      }).catch((e) => error(`Change request notice failed: ${e.message}`));
+
+      return res.json({ sent: true, change: doc.$id, to: to.length });
     }
 
     // ------------------------------------------------- order progress

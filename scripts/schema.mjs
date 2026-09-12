@@ -913,6 +913,45 @@ export const COLLECTIONS = [
     ],
     indexes: [['venue_when', 'key', ['venue_id', 'first_at']]],
   },
+  /*
+    A group asking for something to be changed.
+
+    A REQUEST, not a change. Nothing written here edits an order: the kitchen's
+    tickets are what the kitchen is cooking, and a guest who could quietly
+    rewrite them the day before service could empty a pass with nobody having
+    agreed to it. This is a message with the booking attached, addressed to the
+    people who can decide.
+
+    Created by 'users' — the person asking is the guest who booked, holding an
+    anonymous session, exactly as when they booked. Read by staff only: a
+    request names a party, a reference and what they want, and that is nobody
+    else's business.
+  */
+  {
+    id: 'booking_changes',
+    name: 'Group booking change requests',
+    perms: { read: ALL_STAFF, create: ['users'], update: ALL_STAFF, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['booking_id', 's', 64, true],
+      /** Copied so a list reads without fetching the booking for every row. */
+      ['contact_name', 's', 120, false],
+      ['reference', 's', 80, false],
+      ['email', 's', 160, false],
+      ['kind', 'e', ['numbers', 'timing', 'food', 'dietary', 'cancel', 'other'], true],
+      ['note', 's', 2000, true],
+      /** The first sitting, so the cutoff can be checked again server-side. */
+      ['first_at', 'd', null, false],
+      ['status', 'e', ['open', 'done', 'refused'], true, 'open'],
+      ['decided_by', 's', 64, false],
+      ['decided_at', 'd', null, false],
+      ['reply', 's', 1000, false],
+    ],
+    indexes: [
+      ['by_status', 'key', ['status']],
+      ['by_booking', 'key', ['booking_id']],
+    ],
+  },
   {
     id: 'orders',
     name: 'Orders',

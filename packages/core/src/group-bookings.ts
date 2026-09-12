@@ -1,4 +1,4 @@
-import { db, DB_ID } from './client';
+import { db, DB_ID, ID, Query, listAll } from './client';
 
 /**
  * One record for a whole group booking.
@@ -72,4 +72,119 @@ export async function recordGroupBooking(input: {
     first_at: input.firstAt,
     last_at: input.lastAt,
   });
+}
+
+/* ------------------------------------------- asking for something to change */
+
+export interface BookingChangeDoc {
+  $id: string;
+  venue_id: string;
+  booking_id: string;
+  contact_name?: string;
+  reference?: string;
+  email?: string;
+  kind: string;
+  note: string;
+  first_at?: string;
+  status: 'open' | 'done' | 'refused';
+  decided_by?: string;
+  decided_at?: string;
+  reply?: string;
+  $createdAt?: string;
+}
+
+/** One booking, by the id its orders carry. Null where it is not found. */
+export async function loadGroupBooking(bookingId: string): Promise<GroupBookingDoc | null> {
+  return db.getDocument(DB_ID, 'group_bookings', bookingId)
+    .then((d) => d as unknown as GroupBookingDoc)
+    .catch(() => null);
+}
+
+/**
+ * Ask for a change. Writes a message; changes nothing.
+ *
+ * The cutoff is checked here as well as on the form, because a form's rule is
+ * a suggestion to whoever is holding the page: the date is on the booking and
+ * the clock is the browser's, and both are the guest's to set. See
+ * changeProblem.
+ */
+export async function requestBookingChange(input: {
+  booking: GroupBookingDoc;
+  kind: string;
+  note: string;
+}): Promise<void> {
+  await db.createDocument(DB_ID, 'booking_changes', ID.unique(), {
+    venue_id: input.booking.venue_id,
+    booking_id: input.booking.$id,
+    contact_name: input.booking.contact_name ?? '',
+    reference: input.booking.reference ?? '',
+    email: input.booking.email ?? '',
+    kind: input.kind,
+    note: input.note.trim().slice(0, 2000),
+    ...(input.booking.first_at ? { first_at: input.booking.first_at } : {}),
+    status: 'open',
+  });
+}
+
+/** Everything still waiting on somebody, oldest first. */
+export async function openBookingChanges(): Promise<BookingChangeDoc[]> {
+  const rows = await listAll<BookingChangeDoc>('booking_changes', [Query.equal('status', 'open')])
+    .catch(() => [] as BookingChangeDoc[]);
+  return rows.sort((a, b) => (a.$createdAt ?? '').localeCompare(b.$createdAt ?? ''));
+}
+
+/** Mark one dealt with, with a line back to the guest where there is one. */
+export async function decideBookingChange(input: {
+  id: string;
+  status: 'done' | 'refused';
+  by: string;
+  reply?: string;
+}): Promise<void> {
+  await db.updateDocument(DB_ID, 'booking_changes', input.id, {
+    status: input.status,
+    decided_by: input.by,
+    decided_at: new Date().toISOString(),
+    reply: (input.reply ?? '').slice(0, 1000),
+  });
+}
+
+/* --------------------------------------------------- calling the whole thing off */
+
+/**
+ * Cancel every sitting of a booking.
+ *
+ * Asked for, not done here. A guest cannot edit an order — they never could,
+ * and giving them that would let anybody holding a link empty a pass — so this
+ * writes the same cancellation request the two-minute "I pressed send too
+ * fast" button writes, one per sitting, and the server decides. See
+ * order-guard: it refuses anything inside five days of the first sitting,
+ * whatever the page believed.
+ *
+ * One row per order rather than one for the booking, because a cancellation is
+ * settled against an order: each is refused or cancelled on its own and says
+ * which, and a booking that half-cancelled has to be readable afterwards.
+ */
+export async function cancelGroupBooking(bookingId: string): Promise<{ asked: number }> {
+  const orders = await listAll<{ $id: string; venue_id: string; status: string }>(
+    'orders',
+    [Query.equal('group_booking_id', bookingId)],
+  ).catch(() => []);
+
+  const live = orders.filter((o) => !['CANCELLED', 'REJECTED'].includes(o.status));
+  for (const o of live) {
+    await db.createDocument(DB_ID, 'order_cancellations', ID.unique(), {
+      venue_id: o.venue_id,
+      order_id: o.$id,
+      requested_at: new Date().toISOString(),
+      status: 'requested',
+    }).catch(() => undefined);
+  }
+  return { asked: live.length };
+}
+
+/** Whether the sittings of a booking are all off now. For the page to read back. */
+export async function bookingIsCancelled(bookingId: string): Promise<boolean> {
+  const orders = await listAll<{ status: string }>('orders', [Query.equal('group_booking_id', bookingId)])
+    .catch(() => []);
+  return orders.length > 0 && orders.every((o) => ['CANCELLED', 'REJECTED'].includes(o.status));
 }
