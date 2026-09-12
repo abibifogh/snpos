@@ -874,9 +874,8 @@ export default async ({ req, res, log, error }) => {
           subject: `Your group booking${doc.reference ? ` · ${doc.reference}` : ''}`,
           html: shell(
             'Your booking is with us',
-            `<p style="margin:0 0 10px">Thank you. We will look at this and come back to you — a group booking is
-             checked before it is confirmed, so the kitchen can be sure of the shopping and the room. You will be
-             emailed as soon as it is approved.</p>
+            `<p style="margin:0 0 10px">Thank you for your group order. Our bistro will check your order and
+             revert. As soon as it is approved you will be emailed.</p>
              <p style="margin:0 0 10px">Here is the whole booking, so you have it on the day.</p>
              ${facts}
              <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">Each sitting reaches the kitchen in time to

@@ -38,9 +38,8 @@ export function GroupSent({
       <h1>Your booking is with us</h1>
 
       <Notice tone="ok">
-        <strong>{settings.restaurant_name} will look at this and come back to you.</strong> A group booking is
-        checked before it is confirmed, so the kitchen can be sure of the shopping and the room. As soon as it is
-        approved you will be emailed{email ? <> at <strong>{email}</strong></> : ''}.
+        <strong>Thank you for your group order.</strong> Our bistro will check your order and revert. As soon as
+        it is approved you will be emailed{email ? <> at <strong>{email}</strong></> : ''}.
       </Notice>
 
       <h2 style={{ fontSize: '1.05rem', marginBottom: '0.3rem' }}>What you have asked for</h2>
