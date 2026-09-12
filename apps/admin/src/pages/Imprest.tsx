@@ -223,7 +223,11 @@ export function ImprestPage() {
         fixed_amount: fixed,
         account_code: editing.account_code || ACCOUNTS.pettyCash,
         custodian_id: editing.custodian_id ?? '',
-        module: editing.module ?? '',
+        /* Left out rather than blanked. `module` is an optional enum and an
+           empty string is not one of its values — Appwrite refuses the whole
+           document for it, so a box belonging to no one side could not be
+           saved at all, and the error named a field this form never shows. */
+        ...(editing.module ? { module: editing.module } : {}),
         note: (editing.note ?? '').slice(0, 500),
         active: editing.active !== false,
         sort: editing.sort ?? 0,

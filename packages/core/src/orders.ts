@@ -496,9 +496,6 @@ export async function createOrder(
     group_size: input.group?.size ?? 0,
     group_contact_name: input.group?.contactName ?? '',
     group_booking_id: input.group?.bookingId ?? '',
-    // Said on the ticket, because it changes how the whole sitting is cooked
-    // and served, not what is on it.
-    group_service: input.groupService ?? '',
     // Stored as well as folded into the total, so a bill can show what the
     // containers cost and a report can tell packaging from food.
     pack_fee: totals.pack_fee,
@@ -563,6 +560,18 @@ export async function createOrder(
     // so the very first ticket to appear already has the right rule on it.
     prep_minutes: cookMinutes(lines),
   };
+
+  /*
+    Only where there is one. `group_service` is an enum of 'plated' and
+    'buffet', and an empty string is not one of them — Appwrite refuses the
+    WHOLE document for it, which is how one new field on group bookings
+    stopped every ordinary order in the building: "Attribute group_service has
+    invalid format" on a walk-in that has no group and never will.
+
+    An optional enum is left out, never blanked. See the same rule in the
+    schema note beside it.
+  */
+  if (input.groupService) payload.group_service = input.groupService;
 
   if (input.scheduledFor) {
     payload.scheduled_for = input.scheduledFor.toISOString();

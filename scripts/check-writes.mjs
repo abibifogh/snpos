@@ -113,6 +113,7 @@ function objectAt(src, open) {
 function topLevelKeys(body) {
   const keys = new Set();
   const literals = new Map();
+  const fallbacks = new Map();
   let depth = 0;
   let expectKey = false;
   let i = 0;
@@ -176,6 +177,20 @@ function topLevelKeys(body) {
         // ternary, a template — is left alone rather than half-read.
         const lit = /^[A-Za-z_$][A-Za-z0-9_$]*\s*:\s*(['"])([^'"\\]*)\1\s*[,}]/.exec(body.slice(i));
         if (lit) literals.set(m[1], lit[2]);
+        /*
+          `field: something ?? ''` — the value when the something is absent.
+
+          Read as well as the plain literal, because this is the shape the
+          mistake actually takes. An optional enum written as `x ?? ''` looks
+          careful and is a live fault every time the left side is unset:
+          Appwrite refuses an empty string for an enum and refuses the WHOLE
+          document with it. That is how one new field on group bookings
+          stopped every ordinary order in the building — a walk-in that has no
+          group and never will, refused with "group_service has invalid
+          format", at the till, mid-service.
+        */
+        const fb = /^[A-Za-z_$][A-Za-z0-9_$]*\s*:\s*[^,{}]*\?\?\s*(['"])([^'"\\]*)\1\s*[,}]/.exec(body.slice(i));
+        if (fb) fallbacks.set(m[1], fb[2]);
         expectKey = false;
         // Step past the name only; the value is walked normally so nested
         // objects still adjust the depth.
@@ -191,6 +206,7 @@ function topLevelKeys(body) {
   }
 
   keys.literals = literals;
+  keys.fallbacks = fallbacks;
   return keys;
 }
 
@@ -199,15 +215,72 @@ const problems = [];
 for (const root of ROOTS) {
   for (const file of sourceFiles(root)) {
     const src = readFileSync(file, 'utf8');
-    // createDocument(DB_ID, 'x', id, {…})  and  updateDocument(DB_ID, 'x', id, {…})
-    const re = /(create|update)Document\(\s*DB_ID,\s*'([a-z_]+)'\s*,[^,]+,\s*\{/g;
+    /*
+      createDocument(DB_ID, 'x', id, {…}) — and the same call handed a payload
+      built further up as a variable.
+
+      The second shape was invisible to this check until it cost a day's
+      trading. `createOrder` builds `payload` as a const and passes it by
+      name, so the single most important write in the system — the one that
+      sells the food — had never been read by this file at all. A new enum
+      written as `x ?? ''` went out in it and Appwrite refused every order
+      taken anywhere, walk-ins included.
+
+      A payload built as a variable is usually added to afterwards
+      (`payload.fire_at = …`), so what it holds at the point of the literal is
+      not the whole document: the "did you leave out something required" check
+      is skipped for those. Every check about a VALUE still applies, because a
+      value that is wrong in the literal is wrong in the document.
+    */
+    /*
+      Three ways a document is written, not one.
+
+      `createOrQueue` and `updateOrQueue` are the offline-capable pair and
+      `saveDropping` is the one that sheds unknown fields; all three take the
+      collection as their FIRST argument, with no DB_ID in front. Only the raw
+      `db.createDocument` shape was ever matched here, which meant the write
+      that sells the food — orders go out through createOrQueue — was never
+      checked at all. That is how an enum written as `x ?? ''` reached a till.
+    */
+    const re = new RegExp(
+      '(?:(create|update)Document\\(\\s*DB_ID,\\s*\'([a-z_]+)\'\\s*,[^,]+,\\s*'
+      + '|(createOrQueue|updateOrQueue|saveDropping)(?:<[^>(]*>)?\\(\\s*\'([a-z_]+)\'\\s*,[^,]+,\\s*)'
+      + '(\\{|([A-Za-z_$][A-Za-z0-9_$]*)\\s*[,)])',
+      'g',
+    );
     let m;
     while ((m = re.exec(src))) {
-      const [, verb, collection] = m;
+      const [, docVerb, docCollection, wrapper, wrapCollection, opener, varName] = m;
+      const collection = docCollection ?? wrapCollection;
+      // saveDropping decides create or update from whether it was given an id,
+      // so it is read as an update: it never promises to carry every field.
+      const verb = docVerb ?? (wrapper === 'createOrQueue' ? 'create' : 'update');
       const def = schema.get(collection);
       if (!def) continue;
 
-      const body = objectAt(src, m.index + m[0].length - 1);
+      let body;
+      let indirect = false;
+      if (opener === '{') {
+        body = objectAt(src, m.index + m[0].length - 1);
+      } else {
+        /*
+          The object this name was given — the NEAREST one above the call.
+
+          The last, not the first. A file that builds two payloads called
+          `payload` is ordinary, and reading the first one against the second
+          one's collection reports every field of a perfectly good import as
+          unknown. Nothing is worse for a check like this than crying wolf:
+          the next real fault is read as more noise.
+        */
+        const declRe = new RegExp(`\\b(?:const|let|var)\\s+${varName}\\b[^=;]*=\\s*\\{`, 'g');
+        const before = src.slice(0, m.index);
+        let decl = null;
+        let d;
+        while ((d = declRe.exec(before))) decl = d;
+        if (!decl) continue;
+        body = objectAt(src, decl.index + decl[0].length - 1);
+        indirect = true;
+      }
       if (!body) continue;
 
       const keys = topLevelKeys(body);
@@ -243,9 +316,33 @@ for (const root of ROOTS) {
         }
       }
 
+      /*
+        And the value it falls back to when nothing is there.
+
+        An optional enum has no empty state: leaving the field out is how you
+        say "not this one". Writing '' says "this one, and it is nothing",
+        which Appwrite refuses along with the whole document.
+      */
+      for (const [field, value] of keys.fallbacks ?? []) {
+        const allowed = def.enums.get(field);
+        if (allowed && !allowed.includes(value)) {
+          problems.push({
+            file,
+            line,
+            collection,
+            kind: 'enum',
+            fields: [
+              `${field}: falls back to '${value}', which is not one of (${allowed.join(', ')}). `
+              + 'Leave the field out instead — that is how an optional enum says "none".',
+            ],
+          });
+        }
+      }
+
       // Only a create must carry every required field; an update touches a
-      // subset on purpose.
-      if (verb === 'create' && !spread) {
+      // subset on purpose — and a payload built as a variable is added to
+      // after the literal, so what is written there is not all of it.
+      if (verb === 'create' && !spread && !indirect) {
         const missing = def.required.filter((k) => !keys.has(k));
         if (missing.length) problems.push({ file, line, collection, kind: 'missing', fields: missing });
       }
