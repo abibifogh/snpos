@@ -43,6 +43,20 @@ const menuBase = (import.meta.env.VITE_MENU_URL as string | undefined) ?? 'http:
  * been told where its root is.
  */
 const siteBase = (import.meta.env.VITE_SITE_URL as string | undefined) ?? menuBase;
+/**
+ * An address of its own for group ordering, where the business has one.
+ *
+ * Set GROUP_URL as a repository variable and Admin hands that out instead —
+ * "orders.niceoperation.com" rather than "pos.niceoperation.com/group". It is
+ * only ever a name that redirects here: this site can carry one custom domain
+ * and it is already carrying the one on every table sticker.
+ *
+ * A separate name is worth having for the sound of it — a hotel is given
+ * something that says what it is for, and it can be changed later without
+ * touching a sticker. Unset, the link is the short path on this site, which
+ * works with no DNS at all.
+ */
+const groupUrlOverride = (import.meta.env.VITE_GROUP_URL as string | undefined) ?? '';
 
 export function TablesPage() {
   const { settings } = useSession();
@@ -218,7 +232,7 @@ export function TablesPage() {
     The token link stays — it is the private way in, and anybody already given
     one keeps working — but it is no longer the thing a front desk copies.
   */
-  const tidyUrl = groupLink(siteBase);
+  const tidyUrl = groupUrlOverride.trim() || groupLink(siteBase);
   const groupUrl = (v: VenueRow) => (v.group_token ? `${menuBase}/?g=${v.group_token}` : null);
 
   const makeGroupLink = async (v: VenueRow, replacing = false) => {

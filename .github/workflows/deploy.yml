@@ -111,6 +111,13 @@ jobs:
           # Where the site itself starts, so Admin can hand out the short
           # group address — /group rather than /menu/group. See groupLink.
           export VITE_SITE_URL="${{ steps.base.outputs.url }}"
+          # An address of its own for group ordering, where there is one.
+          #
+          # Optional. Set the repository variable GROUP_URL to a name that
+          # REDIRECTS to <site>/group — this site can only carry one custom
+          # domain, and it is already carrying the one printed on every table
+          # sticker. Unset, Admin hands out <site>/group, which needs no DNS.
+          export VITE_GROUP_URL="${{ vars.GROUP_URL }}"
           for app in admin menu kitchen pos; do
             BASE_PATH="$ROOT/$app/" RESTAURANT_NAME="${{ vars.RESTAURANT_NAME }}" \
               npm run build -w "@snpos/$app"
