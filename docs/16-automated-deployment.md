@@ -157,7 +157,72 @@ Being straight about the limits:
 
 ---
 
-## 16.6 If something goes wrong
+## 16.6 Changing the address
+
+The domain lives in ONE place: the repository variable `SITE_DOMAIN`, under
+**Settings → Secrets and variables → Actions → Variables**. The deploy writes
+it into the site's `CNAME` file and builds every link from it, so the QR codes
+Admin prints, the walk-in poster and the group link all follow it without
+being edited anywhere.
+
+To move from `pos.example.com` to `orders.example.com`:
+
+1. **DNS.** Add a CNAME record, host `orders`, value `<owner>.github.io`.
+   Leave the old record alone.
+2. **`SITE_DOMAIN`.** Change it to `orders.example.com`.
+3. **Deploy.** Merge anything, or run the Deploy workflow by hand.
+4. Wait for the certificate, then tick **Enforce HTTPS** under Settings → Pages.
+
+### The old address stops working, and stickers are printed with it
+
+GitHub Pages serves **one custom domain per site**. The moment the new one
+takes over, the old one is dead — and it is on every table sticker, the
+walk-in poster, the counter screen's home-screen icon, and any group link
+already sent to a hotel. None of those can be edited from here; they were
+printed.
+
+So the old name needs something that speaks HTTP and sends people on. DNS
+alone cannot do this: a CNAME points a name at a server, it does not rewrite
+an address.
+
+**The part that is easy to get wrong.** A table sticker is not
+`https://pos.example.com` — it is
+`https://pos.example.com/menu/?t=8f3c1a…`. A redirect that keeps only the
+domain sends every table to the front page, and the guest is asked which table
+they are sitting at as though the sticker had never been scanned. Whatever you
+use, the rule must preserve **the path and the query string**. Many registrar
+"URL forwarding" features quietly drop the query string; that is the one to
+test before trusting it.
+
+**Test it before you rely on it.** Open, in this order:
+
+| Address | Should land on |
+| --- | --- |
+| `pos.example.com` | the front page on the new domain |
+| `pos.example.com/group` | the group menu |
+| `pos.example.com/menu/?t=<a real table token>` | the menu, naming that table |
+
+If the third one asks which table you are at, the query string is being
+dropped and the redirect is not safe to keep.
+
+### Two ways to do the redirect
+
+**Cloudflare** (free, and the one that preserves everything). Move the
+domain's nameservers to Cloudflare, add a proxied record for `pos` (the orange
+cloud — an unproxied record cannot be redirected), then **Rules → Redirect
+Rules**: when hostname equals `pos.example.com`, a dynamic redirect to
+`concat("https://orders.example.com", http.request.uri.path)` preserving the
+query string, status 301.
+
+**Registrar URL forwarding** (Namecheap, GoDaddy, Porkbun and most others).
+Add a URL redirect record on the `pos` host pointing at
+`https://orders.example.com`, and turn on whatever the provider calls
+wildcard, path or "forward with path". Then run the three tests above — this
+is the route that drops query strings.
+
+---
+
+## 16.7 If something goes wrong
 
 | What you see | What it means |
 | --- | --- |
@@ -173,7 +238,7 @@ and I can usually tell you the cause from the first few lines.
 
 ---
 
-## 16.7 Server-side functions
+## 16.8 Server-side functions
 
 Three things must happen whether or not anyone has a screen open. They run on
 Appwrite as **Functions**, deployed from GitHub like everything else:
