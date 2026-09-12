@@ -96,6 +96,8 @@ export function App() {
    * than at somebody else's restriction with no obvious way back.
    */
   const [diet, setDiet] = useState('');
+  /** Which group heading the list is narrowed to, or '' for all of them. */
+  const [heading, setHeading] = useState('');
   const [groupMeals, setGroupMeals] = useState<GroupMeal[]>([]);
   const [activeMeal, setActiveMeal] = useState<string | null>(null);
   const [openDish, setOpenDish] = useState<string | null>(null);
@@ -867,12 +869,30 @@ export function App() {
     }))),
   );
 
-  const sections = !diet ? onSide : onSide
+  const byDiet = !diet ? onSide : onSide
     .map((sec) => ({
       ...sec,
       entries: sec.entries.filter((e) => matchesDiet(e.item.tags, parseOmissions(e.item.omissions), diet)),
     }))
     .filter((sec) => sec.entries.length > 0);
+
+  /*
+    On the group menu the headings narrow the list; on the ordinary menu they
+    jump to it.
+
+    A walk-in scrolls a short menu and wants to be taken to the puddings. A
+    party working through a booking is doing something else entirely — they are
+    counting wraps against the guests who wanted wraps — and everything that is
+    not wraps is in the way while they do it. So here the strip is a filter,
+    with All to get back.
+
+    A heading that has gone, because the menu was reloaded or the diet filter
+    emptied it, reads as All rather than as an empty page.
+  */
+  const headingLive = heading && byDiet.some((sec) => sec.category.name === heading) ? heading : '';
+  const sections = inGroupMode && headingLive
+    ? byDiet.filter((sec) => sec.category.name === headingLive)
+    : byDiet;
   const venueHours = parseWindows(venue.opening_hours);
   const venueOpen = isAvailable(venueHours, new Date(clock));
   const preordersOn = isEnabled(features, 'preorders');
@@ -1107,8 +1127,44 @@ export function App() {
       */}
       <div className="menu-layout">
       <div className="menu-col">
+      {/*
+        The same strip, doing two different jobs.
+
+        On the ordinary menu it jumps: a walk-in scrolls a short list and wants
+        taking to the puddings. On the group menu it narrows, because a party
+        working through a booking is counting wraps against the guests who
+        wanted wraps, and everything that is not wraps is in the way. All is
+        how they get back, and it is first because it is the state the page
+        opens in.
+      */}
       <nav className="cat-nav">
-        {sections.map((s) => (
+        {inGroupMode ? (
+          <>
+            <button
+              className={headingLive ? '' : 'on'}
+              aria-pressed={!headingLive}
+              onClick={() => { setHeading(''); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            >
+              All
+            </button>
+            {byDiet.map((s) => (
+              <button
+                key={s.category.$id}
+                className={headingLive === s.category.name ? 'on' : ''}
+                aria-pressed={headingLive === s.category.name}
+                onClick={() => {
+                  setHeading(headingLive === s.category.name ? '' : s.category.name);
+                  /* Back to the top with it. Narrowing the list while halfway
+                     down it leaves somebody looking at whatever happens to be
+                     under their thumb, which reads as nothing having changed. */
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              >
+                {s.category.name}
+              </button>
+            ))}
+          </>
+        ) : sections.map((s) => (
           <button
             key={s.category.$id}
             data-cat={s.category.$id}
@@ -1139,11 +1195,22 @@ export function App() {
 
       {sections.length === 0 && (
         <div style={{ padding: '2rem 1rem' }}>
-          <Notice tone="warn">
-            {inGroupMode
-              ? 'No group menu has been set up yet. Ask an admin to mark a category as group-only.'
-              : 'The menu is not ready yet. Please ask a member of staff.'}
-          </Notice>
+          {/* A filter that found nothing is not a menu that is missing, and
+              saying so would send somebody to ask staff about a page they can
+              fix with one tap. */}
+          {diet ? (
+            <Notice tone="warn">
+              Nothing on this menu is {dietaryLabels([diet])[0]?.label.toLowerCase() ?? diet}, or can be made so.
+              {' '}
+              <button type="button" className="linkish" onClick={() => setDiet('')}>Show everything</button>
+            </Notice>
+          ) : (
+            <Notice tone="warn">
+              {inGroupMode
+                ? 'No group menu has been set up yet. Ask an admin to mark a category as group-only.'
+                : 'The menu is not ready yet. Please ask a member of staff.'}
+            </Notice>
+          )}
         </div>
       )}
       </div>
