@@ -14,6 +14,7 @@ import {
   pendingShelfLines, submitShelfChange, frozenPieces, frozenBy, needsApproval, shelfChangeProblem, sentWords,
   isService, SERVICE_LABEL,
   DIETARY_TAGS, toggleDietaryTag, dietarySummary, parseOmissions, serialiseOmissions, omissionWords,
+  omissionProblem, couldBeWords,
   nameBook, nameFrom,
 } from '@snpos/core';
 import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice, WaitingChange, StaffProfile, ProductVariant, Omission } from '@snpos/core';
@@ -757,6 +758,17 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     if (sizeClash) { setError(sizeClash); return; }
 
     /*
+      A half-filled "can be made without" row.
+
+      It used to be dropped on the way to the database, so somebody could tick
+      "makes it vegetarian", press save, watch the form close happily and find
+      nothing had changed — then report, correctly, that the feature does not
+      work. Refused and named instead.
+    */
+    const omissionSays = omissionProblem(omissions);
+    if (omissionSays) { setError(omissionSays); return; }
+
+    /*
       The shelf figure, which is not simply a field on this form.
 
       Checked here so a bad one is refused before anything is written rather
@@ -811,6 +823,9 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       // Written even when empty, for the same reason as the tags above:
       // removing the last one has to actually clear it.
       omissions: serialiseOmissions(omissions),
+      // The heading on the group menu, which is not the category the bistro
+      // runs on. See byHeading.
+      group_heading: (editing.group_heading ?? '').trim(),
       // Blank means "wherever its main category goes". `station` is the old
       // built-in enum the database still requires; `station_key` is the one the
       // kitchen screen actually reads.
@@ -1558,6 +1573,41 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
             )}
             {module === 'kitchen' && (
               <Field
+                label="Heading on the group menu"
+                hint={
+                  /*
+                    The group menu's own divisions, which are not the bistro's.
+
+                    The categories this business runs on are days of the week —
+                    right for a walk-in, who can only have what is cooked
+                    today, and no use to somebody booking forty covers for a
+                    Tuesday three weeks out. They are counting wraps against
+                    the guests who wanted wraps.
+                  */
+                  (editing.group_heading ?? '').trim()
+                    ? `Group bookings will see this under "${(editing.group_heading ?? '').trim()}".`
+                    : 'Wraps, Sandwiches, Mains — however a party would count their order. '
+                      + 'Left blank it sits under its ordinary category. Only used on the group menu.'
+                }
+              >
+                <Input
+                  list="group-headings"
+                  placeholder="Wraps"
+                  value={editing.group_heading ?? ''}
+                  onChange={(e) => setEditing({ ...editing, group_heading: e.target.value })}
+                />
+                {/* The headings already in use, so the second wrap is filed
+                    under "Wraps" and not under "wraps". */}
+                <datalist id="group-headings">
+                  {[...new Set((items ?? [])
+                    .map((i) => (i.group_heading ?? '').trim())
+                    .filter(Boolean))].sort().map((h) => <option key={h} value={h} />)}
+                </datalist>
+              </Field>
+            )}
+
+            {module === 'kitchen' && (
+              <Field
                 label="Dietary"
                 hint={
                   (editing.tags ?? []).length
@@ -1590,7 +1640,21 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
             {module === 'kitchen' && (
               <Field
                 label="Can be made without"
-                hint="Each of these becomes one switch on the customer's menu, and the dish is listed as that diet 'on request'. Leave empty for a dish nothing can come out of."
+                hint={
+                  /*
+                    The result, said back where it was set.
+
+                    Somebody filling this in has no way to know it took: the
+                    effect is on a menu they are not looking at, two apps away.
+                    So the pill the guest will see is echoed here as it is
+                    ticked, and "nothing yet" says plainly that it is not
+                    working rather than leaving them to wonder.
+                  */
+                  couldBeWords(editing.tags, omissions)
+                    ? `Guests will see this dish marked: ${couldBeWords(editing.tags, omissions)}`
+                    : "Each of these becomes one switch on the customer's menu, and the dish is listed as that "
+                      + "diet 'on request'. Nothing is marked yet. Leave empty for a dish nothing can come out of."
+                }
               >
                 <div className="stack" style={{ gap: '0.6rem', marginTop: '0.2rem' }}>
                   {omissions.map((o, i) => (

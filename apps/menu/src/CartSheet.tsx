@@ -9,6 +9,7 @@ import {
 } from '@snpos/core';
 import type { BusyNow } from '@snpos/core';
 import type { CartLine, Settings, Venue, FeatureMap, LoadedMenu, Doc, Order } from '@snpos/core';
+import { QtyBox } from './QtyBox';
 
 interface TableRow extends Doc {
   venue_id: string;
@@ -166,10 +167,11 @@ export function CartSheet({
 
   const totals = computeTotals({ lines: cart, discount: codeState?.amount ?? 0, settings });
 
-  const setQty = (key: string, delta: number) =>
-    setCart((c) =>
-      c.flatMap((l) => (l.key === key ? (l.qty + delta <= 0 ? [] : [{ ...l, qty: l.qty + delta }]) : [l])),
-    );
+  /* An absolute figure rather than a step, now that the number can be typed
+     as well as nudged. Nought takes the line off, which is what pressing minus
+     on the last one has always done and is now also what typing 0 does. */
+  const setQty = (key: string, qty: number) =>
+    setCart((c) => c.flatMap((l) => (l.key === key ? (qty <= 0 ? [] : [{ ...l, qty }]) : [l])));
 
   const applyCode = async () => {
     setCodeError(null);
@@ -441,10 +443,8 @@ export function CartSheet({
             <div style={{ fontWeight: 550 }}>{line.name}</div>
             {line.addons.length > 0 && <div className="meta">{line.addons.map((a) => a.name).join(', ')}</div>}
             {line.notes && <div className="meta">“{line.notes}”</div>}
-            <div className="qty" style={{ marginTop: '0.4rem' }}>
-              <button onClick={() => setQty(line.key, -1)} aria-label="Fewer">−</button>
-              <span>{line.qty}</span>
-              <button onClick={() => setQty(line.key, +1)} aria-label="More">+</button>
+            <div style={{ marginTop: '0.4rem' }}>
+              <QtyBox qty={line.qty} onChange={(q) => setQty(line.key, q)} least={0} label={line.name} />
             </div>
           </div>
           <div style={{ fontWeight: 600 }}>{formatMoney(lineTotal(line), settings)}</div>

@@ -120,6 +120,21 @@ jobs:
           for app in admin menu kitchen pos; do
             cp -r "apps/$app/dist" "site/$app"
           done
+          # A real page at /menu/group, because the group link is an address
+          # somebody is given rather than a route inside the app.
+          #
+          # A copy of the menu's own index.html, not a redirect: the assets it
+          # names are absolute (/menu/assets/...), so the same file works from
+          # a folder below. The app reads the address and opens in group mode;
+          # see isGroupPath. A redirect would have shown the ordinary menu for
+          # a moment first, which on a slow phone is long enough to tap.
+          #
+          # This also keeps the path away from the 404 fallback below, which
+          # would otherwise hand "/menu/group" back as "#/group" — and the menu
+          # app's hash already means something: which order is on screen.
+          mkdir -p site/menu/group
+          cp site/menu/index.html site/menu/group/index.html
+
           # Pages runs Jekyll by default, which strips files beginning with _.
           touch site/.nojekyll
 

@@ -299,6 +299,16 @@
   background: var(--surface); font-size: 1.15rem; cursor: pointer; color: var(--text);
 }
 .qty span { min-width: 1.5rem; text-align: center; font-weight: 600; }
+/* The number between the buttons is a field now: a party ordering forty does
+   not tap plus forty times. Sized to the digits rather than stretched, so it
+   still reads as one control and not as a form. */
+.qty-box {
+  width: 3.2rem; height: 38px; text-align: center;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+  font: inherit; font-weight: 600; color: var(--text);
+}
+.qty-box:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
+.basket .qty-box { width: 2.8rem; height: 30px; }
 
 .opt-row {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;

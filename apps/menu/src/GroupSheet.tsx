@@ -1,14 +1,16 @@
 import { useMemo, useState } from 'react';
 import { Button, Modal, Input, Field, Notice, Select, FormError, Badge } from '@snpos/ui';
+import { QtyBox } from './QtyBox';
 import {
   formatMoney, lineTotal, createOrder, featureConfig, isProvisionalOrderNo,
   ensureGuestSession, humanError, selfOrderModule, isSlotFull,
   bookingTotals, bookingProblem, packWords, mealWords, FULFILMENT_WORDS, dayKeyOf, longDayWords, timeWords,
+  serviceOf, SERVICE_WORDS, SERVICE_HINTS,
   tabLabel,
   db, DB_ID, Query,
 } from '@snpos/core';
 import type {
-  CartLine, Settings, Venue, FeatureMap, GroupMeal, MealPricing, Fulfilment, Order,
+  CartLine, Settings, Venue, FeatureMap, GroupMeal, MealPricing, Fulfilment, ServiceStyle, Order,
 } from '@snpos/core';
 
 /** The last tab: asked once for the booking, not once per meal. */
@@ -131,6 +133,7 @@ export function GroupSheet({
           },
           customer: { name: name.trim() || undefined, email: email.trim() || undefined },
           fulfilment: meal.fulfilment,
+          groupService: serviceOf(meal) ?? undefined,
           packFee: totals.packFee,
           scheduledFor: new Date(meal.at),
           slotCapacity,
@@ -248,6 +251,30 @@ export function GroupSheet({
                 </Select>
               </Field>
 
+              {/*
+                Plated or a buffet, and only where the question has two
+                answers. Forty covers plated and forty as a buffet are the
+                same food and two different days of work — forty plates
+                leaving together at a promised time, against chafing dishes
+                set out beforehand and topped up — and the kitchen used to
+                find out which when the party arrived. Food going into boxes
+                is not asked.
+              */}
+              {shown.meal.fulfilment === 'dine_in' && (
+                <Field
+                  label="How should it be served?"
+                  hint={SERVICE_HINTS[serviceOf(shown.meal) ?? 'plated']}
+                >
+                  <Select
+                    value={serviceOf(shown.meal) ?? 'plated'}
+                    onChange={(e) => setMeal(shown.meal.key, { service: e.target.value as ServiceStyle })}
+                  >
+                    <option value="plated">{SERVICE_WORDS.plated}</option>
+                    <option value="buffet">{SERVICE_WORDS.buffet}</option>
+                  </Select>
+                </Field>
+              )}
+
               {/* A flat list, in the order they were tapped.
 
                   These used to be gathered under the headings they came from,
@@ -267,10 +294,13 @@ export function GroupSheet({
                     <div style={{ fontWeight: 550 }}>{line.name}</div>
                     {line.addons.length > 0 && <div className="meta">{line.addons.map((a) => a.name).join(', ')}</div>}
                     {line.notes && <div className="meta">&ldquo;{line.notes}&rdquo;</div>}
-                    <div className="qty" style={{ marginTop: '0.4rem' }}>
-                      <button onClick={() => setQty(shown.meal.key, line.key, line.qty - 1)} aria-label="One fewer">−</button>
-                      <span>{line.qty}</span>
-                      <button onClick={() => setQty(shown.meal.key, line.key, line.qty + 1)} aria-label="One more">+</button>
+                    <div style={{ marginTop: '0.4rem' }}>
+                      <QtyBox
+                        qty={line.qty}
+                        onChange={(q) => setQty(shown.meal.key, line.key, q)}
+                        least={0}
+                        label={line.name}
+                      />
                     </div>
                   </div>
                   <div style={{ fontWeight: 600 }}>{formatMoney(lineTotal(line), settings)}</div>
