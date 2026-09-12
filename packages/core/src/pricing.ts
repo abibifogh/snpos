@@ -478,7 +478,7 @@ export interface GroupMeal {
 }
 
 export const FULFILMENT_WORDS: Record<Fulfilment, string> = {
-  dine_in: 'Eating here',
+  dine_in: 'Dine in',
   takeaway: 'Packed to take away',
 };
 
@@ -513,7 +513,7 @@ export function serviceOf(meal: { fulfilment: Fulfilment; service?: ServiceStyle
   return meal.fulfilment === 'dine_in' ? (meal.service ?? 'plated') : null;
 }
 
-/** "Eating here · buffet, set out to share" — one line for a ticket or a tab. */
+/** "Dine in · buffet, set out to share" — one line for a ticket or a tab. */
 export function mealServiceWords(meal: { fulfilment: Fulfilment; service?: ServiceStyle }): string {
   const style = serviceOf(meal);
   return style
@@ -767,7 +767,7 @@ export function mealWords(
  */
 export function packWords(feePerPortion: number, money: (n: number) => string): string {
   if (feePerPortion <= 0) return 'Nothing extra either way.';
-  return `Packed meals carry ${money(feePerPortion)} a portion for the containers. Eating here carries nothing.`;
+  return `Packed meals carry ${money(feePerPortion)} a portion for the containers. Dining in carries nothing.`;
 }
 
 export interface MealPricing extends OrderTotals {

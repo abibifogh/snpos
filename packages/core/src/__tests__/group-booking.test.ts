@@ -22,7 +22,7 @@ test('packing is charged once per portion, and only on a meal that is taken away
   const lines = [line('jollof', 5_000, 12), line('salad', 2_000, 8)];
   assert.equal(portionsOn({ lines }), 20);
   assert.equal(packFeeFor({ fulfilment: 'takeaway', lines }, 200), 4_000);
-  // Eating here uses the restaurant's own plates.
+  // Dining in uses the restaurant's own plates.
   assert.equal(packFeeFor({ fulfilment: 'dine_in', lines }, 200), 0);
   // No fee set means no fee, whatever the day says.
   assert.equal(packFeeFor({ fulfilment: 'takeaway', lines }, 0), 0);
@@ -54,7 +54,7 @@ test('a booking is the sum of its meals, so the tickets add up to the quote', ()
   assert.equal(b.total, b.meals.reduce((n, m) => n + m.totals.total, 0));
 });
 
-test('a meal switched to eating here loses its packing charge', () => {
+test('a meal switched to dine in loses its packing charge', () => {
   const packed = bookingTotals([meal('2026-09-14T12:00:00Z', 'takeaway')], settings, 300);
   const eaten = bookingTotals([meal('2026-09-14T12:00:00Z', 'dine_in')], settings, 300);
   assert.equal(packed.packFees, 600);
@@ -196,7 +196,8 @@ test('a sitting eaten here says whether it is plated or a buffet', () => {
   // And the question is not asked of food going into boxes.
   assert.equal(serviceOf({ fulfilment: 'takeaway', service: 'buffet' }), null);
 
-  assert.match(mealServiceWords({ fulfilment: 'dine_in', service: 'buffet' }), /Eating here · buffet/);
+  assert.match(mealServiceWords({ fulfilment: 'dine_in', service: 'buffet' }), /Dine in · buffet/);
+  assert.equal(FULFILMENT_WORDS.dine_in, 'Dine in');
   assert.equal(mealServiceWords({ fulfilment: 'takeaway' }), 'Packed to take away');
   assert.equal(SERVICE_WORDS.plated, 'Served to each guest');
 });
