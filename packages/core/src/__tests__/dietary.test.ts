@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DIETARY_TAGS, isDietaryTag, dietaryLabels, dietarySummary, toggleDietaryTag, tagsWithOptions, dietAssessed, dietLostWords, dietUnknownWords,
+  DIETARY_TAGS, isDietaryTag, dietaryLabels, dietarySummary, toggleDietaryTag, omissionProblem, tagsWithOptions, dietAssessed, dietLostWords, dietUnknownWords,
 } from '../dietary.ts';
 
 test('the words come out in the list order, whatever order they were ticked in', () => {
@@ -135,4 +135,30 @@ test('what the choice cost is said in the guest’s words', () => {
   // A caution appearing is not a loss and is not announced as one.
   assert.equal(dietLostWords(['vegan'], ['vegan', 'contains_nuts']), '');
   assert.equal(dietUnknownWords([]), '');
+});
+
+test('a half-filled omission is refused rather than dropped in silence', () => {
+  /*
+    serialiseOmissions drops a row with no name and has to — a switch labelled
+    "Leave out ." is worse than no switch. Dropping it silently is how somebody
+    ticks "makes it vegetarian", saves, watches the form close happily, and
+    finds nothing changed. They then report that the feature does not work,
+    which from where they are standing is exactly what happened.
+  */
+  assert.equal(omissionProblem([]), null);
+  assert.equal(omissionProblem([{ key: 'a', name: 'momoni', earns: ['vegetarian'] }]), null);
+
+  assert.match(
+    String(omissionProblem([{ key: 'a', name: '  ', earns: ['vegetarian'] }])),
+    /Say what can be left out to make this vegetarian/,
+  );
+  assert.match(
+    String(omissionProblem([{ key: 'a', name: '', earns: [] }])),
+    /has no name/,
+  );
+  // Named, but it makes the dish nothing, so the switch would do nothing.
+  assert.match(
+    String(omissionProblem([{ key: 'a', name: 'momoni', earns: [] }])),
+    /Tick what the dish becomes without momoni/,
+  );
 });

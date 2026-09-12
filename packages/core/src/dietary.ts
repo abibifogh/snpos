@@ -158,6 +158,33 @@ export function parseOmissions(raw?: string | null): Omission[] {
   }
 }
 
+/**
+ * What is stopping these being saved, in the owner's words.
+ *
+ * `serialiseOmissions` drops a row with no name, and it has to — a switch on
+ * the customer's menu labelled "Leave out ." is worse than no switch. But
+ * dropping it in silence is how somebody ticks "makes it vegetarian", presses
+ * save, sees the form close happily, and finds nothing has changed. They then
+ * report, correctly, that the feature does not work.
+ *
+ * So the row is refused instead, and named.
+ */
+export function omissionProblem(list: Omission[]): string | null {
+  const blank = list.find((o) => !o.name.trim());
+  if (blank) {
+    return blank.earns.length > 0
+      ? `Say what can be left out to make this ${dietaryLabels(blank.earns)[0]?.label.toLowerCase() ?? 'suitable'}`
+        + ' — the guest needs to read what they are asking for.'
+      : 'One of the things that can be left out has no name. Give it one, or remove the row.';
+  }
+  const useless = list.find((o) => o.earns.length === 0);
+  if (useless) {
+    return `Tick what the dish becomes without ${useless.name.trim()}. `
+      + 'Left blank it is a switch that changes nothing a guest can see.';
+  }
+  return null;
+}
+
 export const serialiseOmissions = (list: Omission[]): string =>
   JSON.stringify(list
     .filter((o) => o.name.trim() !== '')
