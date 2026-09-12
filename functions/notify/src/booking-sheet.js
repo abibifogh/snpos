@@ -223,6 +223,26 @@ export function bookingSheetPdf({
   ];
   factTable(doc, facts, { accent });
 
+  /* --------------------------------------------- what the party asked for */
+  /*
+    Their own words, whole, in a box of their own.
+
+    Not folded into the warnings below and not abbreviated: it is the one
+    thing on this sheet nobody here wrote, and "the coach leaves at two" is
+    not a fact a summary can carry.
+  */
+  const said = clean(booking.note);
+  if (said) {
+    doc.gap(8);
+    doc.text('A note from the party', { size: 10.5, font: 'bold' });
+    doc.gap(2);
+    const top = doc.y;
+    doc.text(`“${said}”`, { size: 10, font: 'italic', x: doc.left + 12, width: doc.inner - 12 });
+    // Drawn after the text, so the bar is as tall as however much they wrote.
+    doc.fill(doc.left, doc.y - 2, 3, top - doc.y + 4, accent);
+    doc.gap(4);
+  }
+
   /* ------------------------------------------- what the kitchen must know first */
   const notice = kitchenNotice(sittings);
   if (notice.length) {

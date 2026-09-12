@@ -135,6 +135,34 @@ test('the sheet carries every choice, every omission, every note and every tag',
   assert.ok(pdf.includes('26'), '12 + 4 + 10 plates');
 });
 
+test('what the party said about the whole booking is on the sheet, whole', () => {
+  /*
+    Not a dish note. "The coach leaves at two" is true of the arrangement and
+    had nowhere to go before this but a telephone call to whoever picked up.
+  */
+  const said = 'The coach leaves at two, so we cannot run late. One guest is in a wheelchair. '
+    + 'Please bring the cake out at the end of the second sitting.';
+  const pdf = bookingSheetPdf({
+    settings: {}, booking: { ...booking, note: said }, sittings,
+  }).toString('latin1');
+
+  assert.ok(pdf.includes('A note from the party'));
+  // Every sentence of it, not a summary and not a truncation.
+  for (const part of ['The coach leaves at two', 'wheelchair', 'bring the cake out']) {
+    assert.ok(pdf.includes(part), `the sheet must say "${part}"`);
+  }
+  // And it comes before the sittings, like everything else they must read.
+  assert.ok(pdf.indexOf('A note from the party') < pdf.indexOf('Sitting 1 of 2'));
+});
+
+test('a booking with nothing to add prints no note block', () => {
+  for (const note of [undefined, '', '   ']) {
+    const pdf = bookingSheetPdf({ settings: {}, booking: { ...booking, note }, sittings })
+      .toString('latin1');
+    assert.ok(!pdf.includes('A note from the party'));
+  }
+});
+
 test('what would ruin the service is pulled to the front', () => {
   const pdf = bookingSheetPdf({ settings: {}, booking, sittings }).toString('latin1');
   const notice = pdf.indexOf('What the kitchen must know');

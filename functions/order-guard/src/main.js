@@ -954,6 +954,37 @@ async function cancelForCustomer({ db, DB_ID, doc, log }) {
     }
     await settle('cancelled');
     log(`${order.order_no} cancelled with the booking, ${daysLeft} days out`);
+
+    /*
+      And once the LAST sitting is off, the booking itself is off.
+
+      Written here rather than by the page, for two reasons. A guest is not
+      staff and cannot write to the booking — they never could, and giving
+      them that would let anybody holding a link mark a booking whatever they
+      liked. And the cancellation is settled one order at a time, so only the
+      server is in a position to know that the last one has just gone.
+
+      Marking it is also what TELLS everybody: notify watches this collection,
+      so the party and the restaurant each get one message about the booking
+      rather than one per sitting, and there is no way to cancel a booking
+      and not say so. Nobody was told at all before this.
+    */
+    if (order.group_booking_id) {
+      const siblings = await db.listDocuments(DB_ID, 'orders', [
+        Query.equal('group_booking_id', order.group_booking_id),
+        Query.limit(100),
+      ]).then((r) => r.documents).catch(() => []);
+      const allOff = siblings.length > 0
+        && siblings.every((o) => ['CANCELLED', 'REJECTED'].includes(o.status));
+      if (allOff && booking && booking.status !== 'cancelled') {
+        await db.updateDocument(DB_ID, 'group_bookings', order.group_booking_id, {
+          status: 'cancelled',
+          decided_at: new Date().toISOString(),
+          decided_note: `Cancelled by the party, ${daysLeft} days before the first meal.`,
+        }).catch((e) => log(`Could not mark booking ${order.group_booking_id} cancelled: ${e.message}`));
+      }
+    }
+
     return { ok: true, cancelled: order.order_no };
   }
 

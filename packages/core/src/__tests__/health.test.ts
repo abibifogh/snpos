@@ -28,6 +28,7 @@ const clean: HealthFacts = {
   trialBalanced: true,
   failedReceipts: 0,
   failedSummaries: 0,
+  failedBookingNotices: 0,
   lastHealthRun: '2026-09-08T02:05:00.000Z',
   lastBackup: '2026-09-08T23:10:00.000Z',
   lastDigest: '2026-09-08T23:05:00.000Z',
@@ -38,7 +39,7 @@ test('a clean night is every question answered "None" and nothing to fix', () =>
   assert.ok(findings.every((f) => f.level === 'ok'), findings.filter((f) => f.level !== 'ok').map((f) => f.key).join(','));
   assert.deepEqual(healthSummary(findings), { blocks: 0, warns: 0, words: 'Everything adds up.' });
   // Every question is asked every time, so the page can show what was checked.
-  assert.equal(findings.length, 18);
+  assert.equal(findings.length, 19);
 });
 
 test('what stops the books being trusted is a block; what is waiting on somebody is a warning', () => {
@@ -132,6 +133,7 @@ test('the nightly check asks the same questions and gives the same answers', () 
       trialBalanced: false,
       failedReceipts: 2,
       failedSummaries: 1,
+      failedBookingNotices: 1,
       lastBackup: undefined,
     },
   ];

@@ -1905,9 +1905,10 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
                     working rather than leaving them to wonder.
                   */
                   couldBeWords(editing.tags, omissions)
-                    ? `Guests will see this dish marked: ${couldBeWords(editing.tags, omissions)}`
-                    : "Each of these becomes one switch on the customer's menu, and the dish is listed as that "
-                      + "diet 'on request'. Nothing is marked yet. Leave empty for a dish nothing can come out of."
+                    ? `Guests will see this dish marked “${couldBeWords(editing.tags, omissions)}”.`
+                    : "Each of these becomes one switch on the customer's menu, and the dish is marked as one "
+                      + 'they can open and make that way. Nothing is marked yet. Leave empty for a dish nothing '
+                      + 'can come out of.'
                 }
               >
                 <div className="stack" style={{ gap: '0.6rem', marginTop: '0.2rem' }}>

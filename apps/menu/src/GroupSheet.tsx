@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Button, Modal, Input, Field, Notice, Select, FormError, Badge } from '@snpos/ui';
+import { Button, Modal, Input, Field, Notice, Select, FormError, Badge, Textarea } from '@snpos/ui';
 import { QtyBox } from './QtyBox';
 import {
   formatMoney, lineTotal, createOrder, featureConfig, isProvisionalOrderNo,
@@ -69,6 +69,16 @@ export function GroupSheet({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [groupRef, setGroupRef] = useState('');
+  /**
+   * Anything true of the whole booking rather than of one dish.
+   *
+   * Every dish already has its own box for "no pepper on this one". What had
+   * nowhere to go was the sentence about the arrangement: the coach that
+   * leaves at two, the high chair, the guest in a wheelchair, the cake to be
+   * brought out at the end. It arrived by telephone, to whoever picked up, or
+   * it did not arrive.
+   */
+  const [note, setNote] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -212,6 +222,7 @@ export function GroupSheet({
         orderNos: settled.map((b) => b.orderNo),
         firstAt: booking.meals[0]?.meal.at ?? '',
         lastAt: booking.meals[booking.meals.length - 1]?.meal.at ?? '',
+        note: note.trim(),
       })
         .then(() => { recorded = true; })
         .catch((e) => {
@@ -427,6 +438,22 @@ export function GroupSheet({
                   type="email"
                   value={email}
                   onChange={(e) => { setEmail(e.target.value); setProblem(null); }}
+                />
+              </Field>
+
+              {/* Not a dish note — every dish has its own box for those. This
+                  is for what is true of the whole booking, which until now
+                  had nowhere to go but a telephone call. */}
+              <Field
+                label="Anything else we should know?"
+                hint="About the booking as a whole — a high chair, a wheelchair, a coach to catch, a cake at the
+                      end. For one dish, use the box on that dish. Optional."
+              >
+                <Textarea
+                  rows={3}
+                  maxLength={1000}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
                 />
               </Field>
 

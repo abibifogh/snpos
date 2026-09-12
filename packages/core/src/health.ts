@@ -26,7 +26,7 @@ export async function healthFacts(venueId: string, now: Date = new Date()): Prom
 
   const settings = await db.getDocument(DB_ID, 'settings', 'main').catch(() => null) as { schema_version?: string } | null;
 
-  const [shifts, entries, lines, spends, counts, checks, orders, payouts, wastes, reports, receipts, owed] = await Promise.all([
+  const [shifts, entries, lines, spends, counts, checks, orders, payouts, wastes, reports, receipts, notices, owed] = await Promise.all([
     listAll<{ $id: string; code: string; status: string; closed_at?: string; opened_at?: string; posted_to_ledger?: boolean }>('shifts', [Query.equal('venue_id', venueId)]),
     listAll<JournalEntry>('journal_entries', [Query.equal('venue_id', venueId)]),
     listAll<JournalLine>('journal_lines', [Query.equal('venue_id', venueId)]),
@@ -38,6 +38,7 @@ export async function healthFacts(venueId: string, now: Date = new Date()): Prom
     listAll<{ $id: string; value: number; $createdAt: string }>('waste_log', [Query.greaterThanEqual('$createdAt', ago(30 * 24))]).catch(() => []),
     listAll<{ kind: string; $createdAt: string; delivery_status: string }>('summary_reports', [Query.greaterThanEqual('$createdAt', ago(60 * 24))]).catch(() => []),
     listAll<{ status: string }>('receipts', [Query.greaterThanEqual('$createdAt', ago(7 * 24))]).catch(() => []),
+    listAll<{ status: string; stage: string }>('order_notices', [Query.greaterThanEqual('$createdAt', ago(7 * 24))]).catch(() => []),
     hanging(venueId).catch(() => ({ card: 0, momo: 0 })),
   ]);
 
@@ -130,6 +131,7 @@ export async function healthFacts(venueId: string, now: Date = new Date()): Prom
     clearing: { card: owed.card, momo: owed.momo },
     trialBalanced: totalDebit === totalCredit,
     failedReceipts: receipts.filter((r) => r.status === 'failed' || r.status === 'bounced').length,
+    failedBookingNotices: notices.filter((n) => n.stage === 'group_placed' && n.status === 'failed').length,
     failedSummaries: reports.filter((r) => r.$createdAt >= weekAgo && r.delivery_status === 'failed' && r.kind !== 'health').length,
     lastHealthRun: latest('health'),
     lastBackup: latest('backup'),

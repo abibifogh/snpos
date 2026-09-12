@@ -37,8 +37,13 @@ test('nothing removable means nothing changes', () => {
 });
 
 test('the pill reads as a possibility, and never as a warning', () => {
-  assert.equal(couldBeWords([], [momoni]), 'Vegetarian on request');
-  assert.equal(couldBeWords([], [momoni, egg]), 'Vegetarian or Vegan on request');
+  /*
+    It says what to DO, not what could be. "Vegetarian on request" sent guests
+    looking for a box to type a request into, or waiting to tell a waiter;
+    the thing they had to do was tap the dish and turn a switch on.
+  */
+  assert.equal(couldBeWords([], [momoni]), 'Open to make it vegetarian');
+  assert.equal(couldBeWords([], [momoni, egg]), 'Open to make it vegetarian or vegan');
   // A caution is not something to offer somebody: nobody asks for it spicy
   // by having something left out.
   assert.equal(couldBeWords([], [{ key: 'x', name: 'chilli', earns: ['spicy'] }]), '');

@@ -112,7 +112,7 @@ export function toggleDietaryTag(tags: readonly string[] | undefined | null, key
  *
  * So an ingredient can be marked as one that may be left out, and told what
  * the dish becomes without it. That single fact does all the work: the card
- * can say "vegetarian on request" before anybody opens it, the dish itself
+ * can say "open to make it vegetarian" before anybody opens it, the dish itself
  * offers one switch, and the filter at the top of the menu can count a dish
  * as vegetarian-if-asked without pretending it already is.
  *
@@ -232,11 +232,21 @@ export function tagsWithout(
   return [...has];
 }
 
-/** "Vegetarian on request", or nothing. The pill on the card. */
+/**
+ * "Open to make it vegan", or nothing. The pill on the card.
+ *
+ * It said "Vegan on request", which is what a menu printed on paper says and
+ * is wrong on a screen. "On request" tells a guest to ask somebody — so they
+ * looked for a box to type it in, or waited to tell a waiter who was never
+ * coming, when the thing they had to do was tap the dish and turn a switch on.
+ *
+ * So it names the action instead of describing the outcome: open it, and the
+ * switch is in there.
+ */
 export function couldBeWords(tags: readonly string[] | undefined | null, omissions: Omission[]): string {
   const labels = dietaryLabels(couldBe(tags, omissions)).filter((t) => !t.caution);
   if (labels.length === 0) return '';
-  return `${labels.map((t) => t.label).join(' or ')} on request`;
+  return `Open to make it ${labels.map((t) => t.label.toLowerCase()).join(' or ')}`;
 }
 
 /**

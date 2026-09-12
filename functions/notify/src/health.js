@@ -142,6 +142,9 @@ export function healthFindings(f, w) {
   out.push(failedMail > 0
     ? { key: 'mail', level: 'info', title: 'Emails that failed this week', count: failedMail, detail: [f.failedReceipts > 0 ? plural(f.failedReceipts, 'receipt', 'receipts') : '', f.failedSummaries > 0 ? plural(f.failedSummaries, 'report', 'reports') : ''].filter(Boolean).join(', ') + '. Each row says why under Reports.', goto: '/reports', action: 'Open reports' }
     : none('mail', 'Emails that failed this week'));
+  out.push(f.failedBookingNotices > 0
+    ? { key: 'booking_mail', level: 'warn', title: 'Group bookings nobody here was told about', count: f.failedBookingNotices, detail: `${plural(f.failedBookingNotices, 'booking notice', 'booking notices')} did not get through this week. The usual cause is that no admin or manager has an email address on their staff profile. You can also name an address under Features, Group ordering.`, goto: '/staff', action: 'Open staff' }
+    : none('booking_mail', 'Group bookings nobody here was told about'));
 
   return out;
 }
@@ -200,7 +203,7 @@ export async function healthFacts(ctx, venueId, now = new Date()) {
 
   const settings = await ctx.db.getDocument(ctx.DB_ID, 'settings', 'main').catch(() => null);
 
-  const [shifts, entries, lines, spends, counts, checks, orders, payouts, wastes, reports, receipts] = await Promise.all([
+  const [shifts, entries, lines, spends, counts, checks, orders, payouts, wastes, reports, receipts, notices] = await Promise.all([
     listAll(ctx, 'shifts', [Q.equal('venue_id', venueId)]),
     listAll(ctx, 'journal_entries', [Q.equal('venue_id', venueId)]),
     listAll(ctx, 'journal_lines', [Q.equal('venue_id', venueId)]),
@@ -212,6 +215,7 @@ export async function healthFacts(ctx, venueId, now = new Date()) {
     listAll(ctx, 'waste_log', [Q.greaterThanEqual('$createdAt', ago(30 * 24))]).catch(() => []),
     listAll(ctx, 'summary_reports', [Q.greaterThanEqual('$createdAt', ago(60 * 24))]).catch(() => []),
     listAll(ctx, 'receipts', [Q.greaterThanEqual('$createdAt', ago(7 * 24))]).catch(() => []),
+    listAll(ctx, 'order_notices', [Q.greaterThanEqual('$createdAt', ago(7 * 24))]).catch(() => []),
   ]);
 
   const byEntry = new Map();
@@ -297,6 +301,7 @@ export async function healthFacts(ctx, venueId, now = new Date()) {
     clearing: { card: Math.max(0, balance('1010')), momo: Math.max(0, balance('1020')) },
     trialBalanced: totalDebit === totalCredit,
     failedReceipts: receipts.filter((r) => r.status === 'failed' || r.status === 'bounced').length,
+    failedBookingNotices: notices.filter((n) => n.stage === 'group_placed' && n.status === 'failed').length,
     failedSummaries: reports.filter((r) => r.$createdAt >= weekAgo && r.delivery_status === 'failed' && r.kind !== 'health').length,
     lastHealthRun: latest('health'),
     lastBackup: latest('backup'),

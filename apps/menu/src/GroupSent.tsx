@@ -69,10 +69,6 @@ export function GroupSent({
         <span>{formatMoney(total, settings)}</span>
       </div>
 
-      <p className="meta">
-        Nothing is owed yet. Each sitting reaches the kitchen in time to cook it and not before.
-      </p>
-
       {/*
         The way back in, given while they still have the page.
 
