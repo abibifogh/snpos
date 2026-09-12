@@ -27,10 +27,24 @@ export const GROUP_PATH = 'group';
  * /menu/group on a domain of its own, /snpos/menu/group on github.io, and
  * either of them with a trailing slash, which is what a browser adds when it
  * asks a folder for its index.
+ *
+ * THE HASH COUNTS TOO, and not as a nicety. This site is served by GitHub
+ * Pages, which answers an address with no file behind it from one 404 page at
+ * the root — and that page's job is to hand the rest of the address back to
+ * the app as a hash, since an app that routes on hashes is the only kind a
+ * static host can serve deep links for. So /menu/group arrives as /menu/#/group
+ * whenever the real page is missing: before this deploy has run, on a browser
+ * holding the old 404 in its cache, or from any link somebody saved in that
+ * form. It is the same address and it opens the same menu.
+ *
+ * There is no ambiguity to worry about: this app's hash means one other thing,
+ * which is #/order/<id>.
  */
-export function isGroupPath(pathname: string): boolean {
+export function isGroupPath(pathname: string, hash: string = ''): boolean {
   const parts = (pathname || '').split('/').filter(Boolean);
-  return parts[parts.length - 1] === GROUP_PATH;
+  if (parts[parts.length - 1] === GROUP_PATH) return true;
+  const routed = (hash || '').replace(/^#\/?/, '').split('/').filter(Boolean);
+  return routed.length === 1 && routed[0] === GROUP_PATH;
 }
 
 /**

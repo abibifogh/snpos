@@ -43,6 +43,26 @@ export function isAvailable(windows: Windows | null, at: Date = new Date()): boo
   });
 }
 
+/**
+ * Which sections are on, worked out against the clock right now.
+ *
+ * The menu is read from the database once, and whether a section is open was
+ * settled at that moment and then carried around as a fact. On a phone that is
+ * harmless: the page is opened, read, and closed inside ten minutes. On the
+ * counter screen it is not — that tablet is switched on and left, and a menu
+ * loaded on Thursday evening went on offering Thursday's specials all through
+ * Friday, because nothing ever asked the question a second time.
+ *
+ * So the answer is worked out where it is used rather than where it is read,
+ * against a clock the screen keeps ticking.
+ */
+export function openNow<T extends { category: { availability?: string } }>(
+  sections: T[],
+  at: Date = new Date(),
+): (T & { open: boolean })[] {
+  return sections.map((sec) => ({ ...sec, open: isAvailable(parseWindows(sec.category.availability), at) }));
+}
+
 /** The next moment this becomes available, searching up to `days` ahead. */
 export function nextAvailable(windows: Windows | null, from: Date = new Date(), days = 7): Date | null {
   if (!windows) return from;

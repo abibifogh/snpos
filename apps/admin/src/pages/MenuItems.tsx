@@ -15,6 +15,7 @@ import {
   isService, SERVICE_LABEL,
   DIETARY_TAGS, toggleDietaryTag, dietarySummary, parseOmissions, serialiseOmissions, omissionWords,
   omissionProblem, couldBeWords,
+  headingsInUse, headingProblem, itemsUnder, renameWords,
   nameBook, nameFrom,
 } from '@snpos/core';
 import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice, WaitingChange, StaffProfile, ProductVariant, Omission } from '@snpos/core';
@@ -722,6 +723,65 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     }
   };
 
+  /*
+    Renaming a heading on the group menu, across every dish that carries it.
+
+    A heading is a word typed on a dish rather than a record anywhere, which is
+    what makes it cheap to start using and what makes it drift: "Wraps" and
+    "wraps" are two headings, and a typo sits on the group menu until somebody
+    works out which dish is carrying it. Fixing that one dish at a time means
+    opening each, and missing one leaves a heading of one dish behind.
+
+    Renaming into a heading that already exists is allowed and is the point —
+    it is how the typo is merged away.
+  */
+  const [renaming, setRenaming] = useState<{ from: string; to: string } | null>(null);
+
+  const applyRename = async () => {
+    if (!renaming) return;
+    const says = headingProblem(renaming.to, renaming.from);
+    if (says) { setError(says); return; }
+    const touched = itemsUnder(items ?? [], renaming.from);
+    setBusy(true);
+    setError(null);
+    try {
+      // One at a time rather than all at once: a menu can carry hundreds of
+      // dishes and firing hundreds of writes together is the greed that put
+      // the tills on the floor when the month's allowance ran out.
+      for (const it of touched) {
+        await db.updateDocument(DB_ID, 'menu_items', it.$id, { group_heading: renaming.to.trim() });
+      }
+      setRenaming(null);
+      await load();
+      toast(renameWords(touched.length, renaming.to));
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clearHeading = async (heading: string) => {
+    const touched = itemsUnder(items ?? [], heading);
+    if (!confirm(
+      `Take "${heading}" off ${touched.length} dish${touched.length === 1 ? '' : 'es'}? They stay on the group `
+      + 'menu and fall back to the category they are already in. Nothing is deleted.',
+    )) return;
+    setBusy(true);
+    setError(null);
+    try {
+      for (const it of touched) {
+        await db.updateDocument(DB_ID, 'menu_items', it.$id, { group_heading: '' });
+      }
+      await load();
+      toast(`"${heading}" removed from ${touched.length} dish${touched.length === 1 ? '' : 'es'}`);
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const save = async () => {
     if (!mayEdit) { setError('Only a manager or the owner can change what is for sale.'); return; }
     /*
@@ -1223,6 +1283,61 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
         }}
         onClear={() => { setGroups([]); setSorts([]); }}
       />
+
+      {/*
+        The group menu's headings, as a set rather than one dish at a time.
+
+        They are only ever typed on dishes, so without this the way to correct
+        "wraps" to "Wraps" is to open every dish carrying it — and the one you
+        miss leaves a heading of one behind on the group menu.
+      */}
+      {module === 'kitchen' && headingsInUse(items ?? []).length > 0 && (
+        <Card title="Headings on the group menu">
+          <p className="small dim" style={{ marginTop: 0 }}>
+            How a party sees the group menu divided. Renaming one moves every dish under it; renaming into a
+            heading that already exists joins the two.
+          </p>
+          {headingsInUse(items ?? []).map((h) => (
+            <div className="row" key={h.heading} style={{ justifyContent: 'space-between', padding: '0.35rem 0' }}>
+              <span>
+                <strong>{h.heading}</strong>
+                <span className="small dim"> · {h.count} dish{h.count === 1 ? '' : 'es'}</span>
+              </span>
+              <div className="row">
+                <Button size="sm" onClick={() => { setError(null); setRenaming({ from: h.heading, to: h.heading }); }}>
+                  Rename
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => void clearHeading(h.heading)}>Remove</Button>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {renaming && (
+        <Modal
+          title={`Rename "${renaming.from}"`}
+          onClose={() => setRenaming(null)}
+          footer={
+            <Button variant="primary" loading={busy} onClick={() => void applyRename()} style={{ width: '100%' }}>
+              Rename
+            </Button>
+          }
+        >
+          {error && <Notice>{error}</Notice>}
+          <Field
+            label="New heading"
+            hint={renameWords(itemsUnder(items ?? [], renaming.from).length, renaming.to || renaming.from)}
+          >
+            <Input
+              autoFocus
+              value={renaming.to}
+              onChange={(e) => { setRenaming({ ...renaming, to: e.target.value }); setError(null); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') void applyRename(); }}
+            />
+          </Field>
+        </Modal>
+      )}
 
       <Card pad={false}>
         {!items ? (
