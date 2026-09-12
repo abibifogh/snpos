@@ -52,3 +52,59 @@ export function byHeading<T>(items: T[], headingOf: (item: T) => string): Headed
 /** How many portions are under one heading, for the count beside it. */
 export const portionsIn = (group: Headed<CartLine>): number =>
   group.entries.reduce((n, l) => n + Math.max(0, l.qty), 0);
+
+/* ------------------------------------------ keeping the headings tidy */
+
+/**
+ * The headings in use, and how many dishes are under each.
+ *
+ * A heading is not a record anywhere — it is a word typed on a dish, and the
+ * set of them is whatever the dishes happen to say. That is what makes them
+ * cheap to start using and what makes them drift: "Wraps" and "wraps" are two
+ * headings, and a heading with a typo in it sits on the group menu until
+ * somebody finds which dish carries it.
+ *
+ * So they are counted here and can be renamed as a set. Renaming is also how
+ * two are merged, which is the fix for the typo: rename "wraps" to "Wraps"
+ * and the dishes join the ones already there.
+ */
+export function headingsInUse(
+  items: { group_heading?: string }[],
+): { heading: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const i of items) {
+    const h = (i.group_heading ?? '').trim();
+    if (h) counts.set(h, (counts.get(h) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([heading, count]) => ({ heading, count }))
+    .sort((a, b) => a.heading.localeCompare(b.heading));
+}
+
+/**
+ * What is wrong with a heading somebody has typed, or null.
+ *
+ * Renaming to a heading that already exists is allowed and is the whole point
+ * — it is how two are merged — so the only refusals are the ones that would
+ * lose work or do nothing.
+ */
+export function headingProblem(name: string, from?: string): string | null {
+  const trimmed = (name ?? '').trim();
+  if (!trimmed) {
+    return 'Give the heading a name. To take it off the dishes instead, use Remove.';
+  }
+  if (trimmed.length > 80) return 'That is too long for a heading. Keep it to a few words.';
+  if (from !== undefined && trimmed === from.trim()) return 'That is the name it already has.';
+  return null;
+}
+
+/** Which dishes a rename would touch. Matched exactly, spacing aside. */
+export function itemsUnder<T extends { group_heading?: string }>(items: T[], heading: string): T[] {
+  const want = (heading ?? '').trim();
+  return items.filter((i) => (i.group_heading ?? '').trim() === want);
+}
+
+/** "9 dishes move to Wraps" — said before it happens, not after. */
+export function renameWords(count: number, to: string): string {
+  return `${count} dish${count === 1 ? '' : 'es'} will be listed under "${to.trim()}" on the group menu.`;
+}
