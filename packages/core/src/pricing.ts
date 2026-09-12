@@ -478,7 +478,7 @@ export interface GroupMeal {
 }
 
 export const FULFILMENT_WORDS: Record<Fulfilment, string> = {
-  dine_in: 'Eating here',
+  dine_in: 'Dine in',
   takeaway: 'Packed to take away',
 };
 
@@ -513,7 +513,7 @@ export function serviceOf(meal: { fulfilment: Fulfilment; service?: ServiceStyle
   return meal.fulfilment === 'dine_in' ? (meal.service ?? 'plated') : null;
 }
 
-/** "Eating here · buffet, set out to share" — one line for a ticket or a tab. */
+/** "Dine in · buffet, set out to share" — one line for a ticket or a tab. */
 export function mealServiceWords(meal: { fulfilment: Fulfilment; service?: ServiceStyle }): string {
   const style = serviceOf(meal);
   return style
@@ -655,7 +655,6 @@ export interface BookingCheck {
   reference: string;
   needReference: boolean;
   referenceLabel: string;
-  size: number;
   minSize: number;
   contactName: string;
   /**
@@ -724,6 +723,16 @@ export function emailLooksReal(value: string | undefined | null): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test((value ?? '').trim());
 }
 
+/**
+ * The most plates at any one sitting, which is what says how big a party is.
+ *
+ * Not the sum. A stay of four sittings for six people is twenty-four plates
+ * and six people; summing would let a couple book four dinners and clear a
+ * minimum of six.
+ */
+export const portionsAtBiggest = (meals: GroupMeal[]): number =>
+  meals.reduce((most, m) => Math.max(most, portionsOn(m)), 0);
+
 export function bookingProblem(meals: GroupMeal[], check: BookingCheck): string | null {
   if (meals.length === 0) return 'Add a meal, and what the group would like to eat at it.';
   const empty = [...meals].sort((a, b) => a.at.localeCompare(b.at)).find((m) => portionsOn(m) === 0);
@@ -734,7 +743,30 @@ export function bookingProblem(meals: GroupMeal[], check: BookingCheck): string 
   }
   if (!check.contactName.trim()) return 'Please give a name for the booking, so the kitchen knows whose it is.';
   if (check.needReference && !check.reference.trim()) return `Please enter the ${check.referenceLabel.toLowerCase()}.`;
-  if (check.minSize > 0 && check.size < check.minSize) return `Group bookings are for ${check.minSize} people or more.`;
+  /*
+    How big the party is, counted rather than asked.
+
+    It used to be a box: "How many people?", typed by the person booking and
+    trusted. Two things wrong with that. It is a second answer to a question
+    the order has already answered — somebody ordering thirty plates has told
+    you there are about thirty of them — and being asked to repeat yourself is
+    how a form starts to feel like paperwork. And it was the only gate on the
+    smallest-group rule, so it was a box a party of two could put "twenty"
+    into and walk straight through.
+
+    Counted at the BIGGEST sitting, not across the whole booking. A stay of
+    four sittings for six people is twenty-four plates in total and six
+    people, and adding them up would let a couple book four dinners and pass a
+    minimum of six. The biggest sitting is the closest the order comes to
+    saying how many mouths there are. Taking the biggest rather than the
+    smallest also leaves a light breakfast alone: a party that eats properly
+    once is still a party.
+  */
+  const biggest = portionsAtBiggest(meals);
+  if (check.minSize > 0 && biggest < check.minSize) {
+    return `Group bookings start at ${check.minSize} plates at a sitting, and the biggest here has ${biggest}. `
+      + 'Add more, or order from the ordinary menu.';
+  }
   if (!emailLooksReal(check.email)) {
     return 'Please give an email address. We send the booking through in writing so you have it on the day.';
   }
@@ -767,7 +799,7 @@ export function mealWords(
  */
 export function packWords(feePerPortion: number, money: (n: number) => string): string {
   if (feePerPortion <= 0) return 'Nothing extra either way.';
-  return `Packed meals carry ${money(feePerPortion)} a portion for the containers. Eating here carries nothing.`;
+  return `Packed meals carry ${money(feePerPortion)} a portion for the containers. Dining in carries nothing.`;
 }
 
 export interface MealPricing extends OrderTotals {

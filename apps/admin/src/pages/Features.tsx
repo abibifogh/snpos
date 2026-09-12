@@ -106,8 +106,10 @@ const NUMBERS: Record<string, {
     },
     {
       option: 'min_group_size',
-      label: 'Smallest group that may book',
-      hint: 'A booking for fewer people than this is turned away with a note saying so.',
+      label: 'Fewest plates at a sitting',
+      hint: 'Counted from the order rather than asked for: a booking whose biggest sitting has fewer plates than '
+        + 'this is turned away, and told how many it has. Counted at the biggest sitting, so a party that takes '
+        + 'coffee for two one morning is not caught by it.',
       fallback: 6,
     },
   ],

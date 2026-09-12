@@ -910,8 +910,29 @@ export const COLLECTIONS = [
       /** The first and last sitting, for a line in an email. */
       ['first_at', 'd', null, false],
       ['last_at', 'd', null, false],
+      /*
+        Whether the restaurant has agreed to it.
+
+        A party of forty is a planning decision, not a ticket: the shopping,
+        the staffing and the room all have to be possible before anybody
+        promises them. So a booking arrives WAITING, the guest is told so
+        plainly on the page that sends it, and somebody here agrees to it.
+
+        The sittings are still scheduled and still reach the kitchen at their
+        own hours. Holding the food back until a button is pressed would mean
+        one forgotten booking is a party standing in a room with nothing
+        cooked, which is a worse failure than cooking for a party that was
+        always coming. What approval changes is what the guest is told.
+      */
+      ['status', 'e', ['pending', 'approved', 'refused'], true, 'pending'],
+      ['decided_by', 's', 64, false],
+      ['decided_at', 'd', null, false],
+      ['decided_note', 's', 1000, false],
     ],
-    indexes: [['venue_when', 'key', ['venue_id', 'first_at']]],
+    indexes: [
+      ['venue_when', 'key', ['venue_id', 'first_at']],
+      ['by_status', 'key', ['status']],
+    ],
   },
   /*
     A group asking for something to be changed.

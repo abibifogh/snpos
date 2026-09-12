@@ -794,7 +794,8 @@ export default async ({ req, res, log, error }) => {
       message goes to the person who booked, because a party of forty arranged
       three weeks ahead has nothing else to hold.
     */
-    if (events.some((e) => e.includes('collections.group_bookings'))) {
+    if (events.some((e) => e.includes('collections.group_bookings'))
+        && events.some((e) => e.endsWith('.create'))) {
       const already = await db.listDocuments(DB_ID, 'order_notices', [
         Query.equal('order_id', doc.$id),
         Query.equal('stage', 'group_placed'),
@@ -872,8 +873,11 @@ export default async ({ req, res, log, error }) => {
           to: doc.email,
           subject: `Your group booking${doc.reference ? ` · ${doc.reference}` : ''}`,
           html: shell(
-            'Your booking is in',
-            `<p style="margin:0 0 10px">Thank you. Here is the whole booking, so you have it on the day.</p>
+            'Your booking is with us',
+            `<p style="margin:0 0 10px">Thank you. We will look at this and come back to you — a group booking is
+             checked before it is confirmed, so the kitchen can be sure of the shopping and the room. You will be
+             emailed as soon as it is approved.</p>
+             <p style="margin:0 0 10px">Here is the whole booking, so you have it on the day.</p>
              ${facts}
              <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">Each sitting reaches the kitchen in time to
              cook it and not before.</p>
@@ -886,6 +890,53 @@ export default async ({ req, res, log, error }) => {
       }
 
       return res.json({ sent: true, booking: doc.$id, to: houseTo.length + (doc.email ? 1 : 0) });
+    }
+
+    /*
+      A booking agreed to, or turned down.
+
+      The decision and the telling are one act: this watches the collection
+      the decision is written to, so there is no way to approve a booking and
+      not tell the party, and no way to tell them something that was not
+      decided.
+    */
+    if (events.some((e) => e.includes('collections.group_bookings'))
+        && events.some((e) => e.endsWith('.update'))) {
+      if (doc.status !== 'approved' && doc.status !== 'refused') return res.json({ ok: true, skipped: 'still waiting' });
+      if (!doc.email) {
+        log(`Booking ${doc.$id} was ${doc.status} but carries no email address, so nobody was told.`);
+        return res.json({ sent: false });
+      }
+      if (!transport) {
+        log(`Booking ${doc.$id} was ${doc.status} but no SMTP is configured, so the group was not told.`);
+        return res.json({ sent: false });
+      }
+
+      const said = String(doc.decided_note || '').replace(/[<>&]/g, (c) => (
+        { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+      const yes = doc.status === 'approved';
+      await transport.sendMail({
+        from,
+        to: doc.email,
+        subject: yes
+          ? `Your group booking is confirmed${doc.reference ? ` · ${doc.reference}` : ''}`
+          : `About your group booking${doc.reference ? ` · ${doc.reference}` : ''}`,
+        html: shell(
+          yes ? 'Your booking is confirmed' : 'We cannot take this booking',
+          yes
+            ? `<p style="margin:0 0 10px">Good news — we have your booking and the kitchen has it in hand.
+               ${doc.sittings || 0} sitting${doc.sittings === 1 ? '' : 's'}, ${doc.portions || 0} portions.</p>
+               ${said ? `<p style="margin:0 0 10px">${said}</p>` : ''}
+               <p style="margin:0;color:#5d6b7a;font-size:14px">Orders ${doc.order_nos || ''}. Nothing is owed
+               until the day.</p>`
+            : `<p style="margin:0 0 10px">We are sorry — we are not able to take this booking.</p>
+               ${said ? `<p style="margin:0 0 10px">${said}</p>` : ''}
+               <p style="margin:0;color:#5d6b7a;font-size:14px">Please ring us if you would like to talk about
+               another date.</p>`,
+        ),
+      }).catch((e) => error(`Booking decision notice failed: ${e.message}`));
+
+      return res.json({ sent: true, booking: doc.$id, status: doc.status });
     }
 
     /*

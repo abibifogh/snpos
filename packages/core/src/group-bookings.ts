@@ -37,6 +37,8 @@ export interface GroupBookingDoc {
   order_nos?: string;
   first_at?: string;
   last_at?: string;
+  status?: 'pending' | 'approved' | 'refused';
+  decided_note?: string;
 }
 
 export async function recordGroupBooking(input: {
@@ -71,6 +73,8 @@ export async function recordGroupBooking(input: {
     order_nos: input.orderNos.join(', ').slice(0, 400),
     first_at: input.firstAt,
     last_at: input.lastAt,
+    // Waiting, until somebody here agrees to it. See the schema note.
+    status: 'pending',
   });
 }
 
@@ -187,4 +191,32 @@ export async function bookingIsCancelled(bookingId: string): Promise<boolean> {
   const orders = await listAll<{ status: string }>('orders', [Query.equal('group_booking_id', bookingId)])
     .catch(() => []);
   return orders.length > 0 && orders.every((o) => ['CANCELLED', 'REJECTED'].includes(o.status));
+}
+
+/** Bookings nobody has agreed to yet, soonest first. */
+export async function pendingGroupBookings(): Promise<GroupBookingDoc[]> {
+  const rows = await listAll<GroupBookingDoc>('group_bookings', [Query.equal('status', 'pending')])
+    .catch(() => [] as GroupBookingDoc[]);
+  return rows.sort((a, b) => (a.first_at ?? '').localeCompare(b.first_at ?? ''));
+}
+
+/**
+ * Agree to a booking, or say it cannot be done.
+ *
+ * Writing the decision is what emails the guest: the function watches this
+ * collection, so there is one place that decides and one place that tells
+ * them, and the two cannot come apart.
+ */
+export async function decideGroupBooking(input: {
+  id: string;
+  status: 'approved' | 'refused';
+  by: string;
+  note?: string;
+}): Promise<void> {
+  await db.updateDocument(DB_ID, 'group_bookings', input.id, {
+    status: input.status,
+    decided_by: input.by,
+    decided_at: new Date().toISOString(),
+    decided_note: (input.note ?? '').slice(0, 1000),
+  });
 }

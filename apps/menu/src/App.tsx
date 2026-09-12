@@ -20,6 +20,7 @@ import { GroupSheet } from './GroupSheet';
 import { GroupDays } from './GroupDays';
 import { BasketPanel } from './BasketPanel';
 import { BookingChange } from './BookingChange';
+import { GroupSent } from './GroupSent';
 import { OrderStatus } from './OrderStatus';
 import { ScreenThanks } from './ScreenThanks';
 import { ScreenAttract } from './ScreenAttract';
@@ -100,6 +101,16 @@ export function App() {
   /** Which group heading the list is narrowed to, or '' for all of them. */
   const [heading, setHeading] = useState('');
   const [groupMeals, setGroupMeals] = useState<GroupMeal[]>([]);
+  /** The booking just sent, while its own page is up. See GroupSent. */
+  const [sentBooking, setSentBooking] = useState<{
+    booked: { orderNo: string; at: string }[];
+    bookingId: string | null;
+    contactName: string;
+    email: string;
+    reference: string;
+    portions: number;
+    total: number;
+  } | null>(null);
   const [activeMeal, setActiveMeal] = useState<string | null>(null);
   const [openDish, setOpenDish] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -664,6 +675,8 @@ export function App() {
 
   /* Before the menu, because it is not the menu: somebody arriving here has
      come from an email about a booking they already made. */
+  /* Before the menu: they have just sent a booking and the menu is not the
+     answer to what they are now asking. */
   if (changeBooking) {
     return (
       <div className="menu-app">
@@ -794,6 +807,35 @@ export function App() {
   }
 
   const { settings, venue, table, seating, menu, features } = boot;
+
+  /*
+    The booking just sent, before the menu.
+
+    Below the loading guard rather than above it, because it needs the
+    restaurant's own name and currency, and those arrive with everything else.
+    A party that has just committed several thousand cedis for a Tuesday three
+    weeks out is asking whether it is actually booked and what happens next; a
+    message that slides away in four seconds answers neither. See GroupSent.
+  */
+  if (sentBooking) {
+    return (
+      <div className="menu-app">
+        <GroupSent
+          booked={sentBooking.booked}
+          contactName={sentBooking.contactName}
+          email={sentBooking.email}
+          reference={sentBooking.reference}
+          portions={sentBooking.portions}
+          total={sentBooking.total}
+          settings={settings}
+          changeUrl={sentBooking.bookingId
+            ? `${window.location.pathname}?change=${sentBooking.bookingId}`
+            : null}
+          onDone={() => setSentBooking(null)}
+        />
+      </div>
+    );
+  }
   // The link opens group ordering; the feature switch still decides whether
   // group ordering exists at all. An old link doing something an admin has
   // since turned off would be the worst of both.
@@ -1331,11 +1373,15 @@ export function App() {
           venue={venue}
           features={features}
           onClose={() => setShowCart(false)}
-          onPlaced={(booked: { id: string; orderNo: string; at: string }[]) => {
+          onPlaced={(sent) => {
             setShowCart(false);
             setActiveMeal(null);
-            for (const b of booked) rememberOrder({ id: b.id, no: b.orderNo, at: b.at, venueId: venue.$id });
-            toast(`Booking sent: ${booked.length} meal${booked.length === 1 ? '' : 's'}`);
+            for (const b of sent.booked) rememberOrder({ id: b.id, no: b.orderNo, at: b.at, venueId: venue.$id });
+            /* A page, not a toast. A party that has just committed several
+               thousand cedis for a Tuesday three weeks out is asking whether
+               it is actually booked and what happens next; a message that
+               slides away in four seconds answers neither. See GroupSent. */
+            setSentBooking(sent);
           }}
           onError={(m: string) => toast(m)}
         />
