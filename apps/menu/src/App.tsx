@@ -8,7 +8,7 @@ import {
   featureConfig, previewUrl, humanError,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, screenShouldReset, screenClaim,
   bookingTotals, dietChips, matchesDiet, parseOmissions, dietaryLabels, couldBeWords,
-  needsChoosing, defaultPicks, longDayWords, timeWords, isGroupPath, byHeading,
+  needsChoosing, defaultPicks, longDayWords, timeWords, isGroupPath, byHeading, openNow,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, MenuSection, MenuEntry, CartLine, FeatureMap, Doc, GroupMeal,
@@ -157,6 +157,34 @@ export function App() {
   const [attract, setAttract] = useState(true);
 
   /*
+    A clock the page keeps, so the menu can change day without being reloaded.
+
+    The counter screen is switched on and left. Everything that depends on the
+    time — which specials are on, whether the doors are open, when they open
+    next — was settled once when the page loaded and then carried around as a
+    fact, so a menu loaded on Thursday evening went on offering Thursday's
+    specials all through Friday.
+
+    A minute is as fine as any of these questions get: a section that opens at
+    11:00 appears by 11:01, which is inside the time it takes somebody to walk
+    to the counter.
+  */
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    const tick = setInterval(() => setClock(Date.now()), 60_000);
+    /* A tablet that has been asleep wakes with a clock an hour or a day out of
+       date and no timer having fired, so coming back is asked as well. */
+    const wake = () => setClock(Date.now());
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('focus', wake);
+    return () => {
+      clearInterval(tick);
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('focus', wake);
+    };
+  }, []);
+
+  /*
     A counter screen stays awake; a phone is left alone.
 
     A tablet that dims and sleeps is a screen nobody walks up to — worse than
@@ -252,7 +280,7 @@ export function App() {
    * costs less than it sounds — seeing the group menu is not booking against
    * it. See isGroupPath.
    */
-  const groupPath = isGroupPath(window.location.pathname);
+  const groupPath = isGroupPath(window.location.pathname, window.location.hash);
   /**
    * A screen that stays put and serves one customer after another.
    *
@@ -678,7 +706,15 @@ export function App() {
     way out and both being true for one render would flash the menu between
     them.
   */
-  if (screenMode && attract && !thanks && cart.length === 0) {
+  /*
+    Never on a group address, whatever this device has been before.
+
+    Belt and braces beside the screenClaim rule: the verdict that turns screen
+    mode off needs the venue to have loaded, and this needs only the address.
+    A hotel opening its booking link on a laptop somebody once tested the
+    counter screen on was landing on "Touch anywhere to begin".
+  */
+  if (screenMode && !groupPath && attract && !thanks && cart.length === 0) {
     return (
       <ScreenAttract
         venueName={boot.venue?.name ?? boot.settings.restaurant_name}
@@ -766,6 +802,16 @@ export function App() {
     So the group menu takes every group-only section, whatever the clock says,
     and treats it as open.
   */
+  /*
+    The menu as the clock has it now.
+
+    Whether a section is on was worked out when the menu was read and then
+    carried around as a fact, which is fine for ten minutes on a phone and
+    wrong on a screen left switched on: Thursday's specials were still being
+    offered on Friday. Asked again on every tick of `clock`.
+  */
+  const live = openNow(menu.sections, new Date(clock));
+
   const groupSections = () => {
     /*
       The group menu is divided the way a party counts, not the way the week
@@ -780,7 +826,7 @@ export function App() {
       The sections it builds are shaped like the menu's own, because the
       heading strip and the section list read them the same way.
     */
-    const from = menu.sections
+    const from = live
       .filter((sec) => (sec.category.module ?? 'kitchen') === side)
       .filter((sec) => sec.category.group_only);
     const flat = from.flatMap((sec) => sec.entries.map((entry) => ({ entry, fallback: sec.category.name })));
@@ -798,7 +844,10 @@ export function App() {
 
   const onSide = inGroupMode
     ? groupSections()
-    : visibleSections(menu)
+    // Recomputed against the ticking clock, not read off the menu as loaded;
+    // see openNow. visibleSections' own rule, applied to the fresh answer.
+    : live
+      .filter((sec) => sec.open || sec.category.unavailable_display !== 'hide')
       .filter((sec) => (sec.category.module ?? 'kitchen') === side)
       .filter((sec) => !sec.category.group_only);
 
@@ -825,7 +874,7 @@ export function App() {
     }))
     .filter((sec) => sec.entries.length > 0);
   const venueHours = parseWindows(venue.opening_hours);
-  const venueOpen = isAvailable(venueHours);
+  const venueOpen = isAvailable(venueHours, new Date(clock));
   const preordersOn = isEnabled(features, 'preorders');
   const allowWhenClosed = featureConfig(features, 'preorders', 'allow_when_closed', true);
   const canOrderNow = venueOpen || (preordersOn && allowWhenClosed);
@@ -1005,8 +1054,8 @@ export function App() {
             <>
               <strong>We're closed right now.</strong> You can still order, pick a time when we're open and we'll have
               it ready.
-              {nextAvailable(venueHours) && (
-                <> Next open {nextAvailable(venueHours)!.toLocaleString([], { weekday: 'long', hour: '2-digit', minute: '2-digit' })}.</>
+              {nextAvailable(venueHours, new Date(clock)) && (
+                <> Next open {nextAvailable(venueHours, new Date(clock))!.toLocaleString([], { weekday: 'long', hour: '2-digit', minute: '2-digit' })}.</>
               )}
             </>
           ) : (
