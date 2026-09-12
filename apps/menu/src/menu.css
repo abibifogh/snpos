@@ -210,6 +210,88 @@
   background: var(--surface); border-top: 1px solid var(--border); box-shadow: 0 -4px 16px rgba(16,24,40,0.08);
 }
 .cart-bar .btn { width: 100%; padding: 0.85rem; font-size: 0.98rem; }
+/* What is in the basket, not only what it costs. A total on its own is the
+   one number somebody cannot check against the guests in front of them. */
+.cart-bar-btn {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  width: 100%; padding: 0.8rem 1rem; border: 0; border-radius: 10px;
+  background: var(--brand); color: var(--brand-ink);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.cart-bar-what { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.cart-bar-what strong { font-size: 0.98rem; font-weight: 650; }
+.cart-bar-sub { font-size: 0.8rem; opacity: 0.85; }
+.cart-bar-money { font-size: 1.02rem; font-weight: 700; white-space: nowrap; }
+
+/* ---- the basket beside the menu ---------------------------------------- */
+/*
+  Two columns where there is room for two, one where there is not.
+
+  Above the breakpoint the page widens and the basket stands on the right,
+  filling as dishes are tapped — which is how every ordering tool worth
+  copying does it, and what a party of forty actually needs: the order in
+  front of them while they count it against their guests.
+
+  Below it the aside is gone and the bar at the foot of the page takes over.
+  A basket pinned beside a phone menu would eat a third of a screen that is
+  mostly menu, and one stacked underneath is one nobody scrolls to. The bar
+  that opens the basket full-screen is what the good delivery apps settled
+  on, and it is right for the same reason.
+*/
+.menu-layout { display: block; }
+.menu-col { min-width: 0; }
+.basket { display: none; }
+
+@media (min-width: 960px) {
+  /* The page is a phone column by default; give it room for the second one. */
+  .menu-app { max-width: 1120px; padding-bottom: 2rem; }
+  .menu-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 21rem;
+    gap: 1.5rem;
+    align-items: start;
+    padding: 0 1rem;
+  }
+  /* The sections carry their own side padding for the phone; inside the grid
+     the column supplies it, so they would otherwise be indented twice. */
+  .menu-layout .section,
+  .menu-layout .cat-nav { padding-left: 0; padding-right: 0; }
+
+  .basket { display: block; position: sticky; top: 1rem; }
+  /* Never taller than the screen: a basket of forty lines has to scroll
+     inside itself rather than run off the bottom and take the total with it. */
+  .basket-inner {
+    display: flex; flex-direction: column; max-height: calc(100vh - 2rem);
+    border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+    overflow: hidden;
+  }
+  /* The bar is the phone's answer and would be a second, disagreeing basket
+     here. */
+  .cart-bar { display: none; }
+}
+
+.basket-head { padding: 0.85rem 0.9rem 0.6rem; border-bottom: 1px solid var(--border); }
+.basket-head h2 { margin: 0; font-size: 1.05rem; font-weight: 650; }
+.basket-sub { font-size: 0.82rem; color: var(--text-dim); margin-top: 0.15rem; }
+.basket-empty { margin: 0; padding: 1.2rem 0.9rem; font-size: 0.86rem; color: var(--text-dim); }
+.basket-lines { flex: 1; overflow-y: auto; padding: 0 0.9rem; }
+.basket-line {
+  display: flex; gap: 0.6rem; justify-content: space-between;
+  padding: 0.65rem 0; border-bottom: 1px solid var(--border);
+}
+.basket-line:last-child { border-bottom: none; }
+.basket-line-body { min-width: 0; }
+.basket-line-name { font-weight: 550; font-size: 0.9rem; overflow-wrap: anywhere; }
+.basket-line-note { font-size: 0.79rem; color: var(--text-dim); margin-top: 0.1rem; }
+.basket-line-money { font-weight: 600; font-size: 0.9rem; white-space: nowrap; }
+/* Smaller than the thumb-sized ones on the phone sheet: this is a mouse. */
+.basket .qty button { width: 30px; height: 30px; font-size: 1rem; }
+.basket .qty { gap: 0.6rem; }
+.basket-foot { padding: 0.75rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom, 0)); border-top: 1px solid var(--border); }
+.basket-total {
+  display: flex; justify-content: space-between; gap: 0.6rem;
+  font-weight: 650; margin-bottom: 0.6rem; font-size: 0.95rem;
+}
 
 .qty { display: flex; align-items: center; gap: 0.9rem; }
 .qty button {
