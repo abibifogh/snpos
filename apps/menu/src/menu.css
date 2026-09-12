@@ -134,12 +134,17 @@
   padding: 0.85rem 0; border: none; border-bottom: 1px solid var(--border);
   background: none; font: inherit; color: var(--text); cursor: pointer;
 }
-.dish.dish-off { opacity: 0.45; }
-/* The row is no longer one big button: Add and View more are their own, and a
-   button inside a button is not a thing a browser will render. */
-.dish { cursor: default; }
-.dish .desc.desc-all {
-  display: block; -webkit-line-clamp: none; overflow: visible;
+.dish.dish-off { opacity: 0.45; cursor: default; }
+/* A tap anywhere on the row opens the dish. It is a plain box rather than a
+   button because Add sits inside it, and a button inside a button is not a
+   thing a browser will render — so it carries the button's manners instead:
+   the pointer, the focus ring, and the keys. */
+.dish.dish-open { cursor: pointer; }
+.dish.dish-open:focus-visible {
+  outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 8px;
+}
+@media (hover: hover) {
+  .dish.dish-open:hover { background: var(--surface-2, rgba(0,0,0,0.02)); }
 }
 .dish-actions {
   display: flex; align-items: center; gap: 0.9rem; margin-top: 0.5rem; flex-wrap: wrap;

@@ -108,6 +108,9 @@ jobs:
           # The QR codes printed for tables must point at the deployed menu,
           # not at localhost, so the admin app is told where it lives.
           export VITE_MENU_URL="${{ steps.base.outputs.url }}/menu"
+          # Where the site itself starts, so Admin can hand out the short
+          # group address — /group rather than /menu/group. See groupLink.
+          export VITE_SITE_URL="${{ steps.base.outputs.url }}"
           for app in admin menu kitchen pos; do
             BASE_PATH="$ROOT/$app/" RESTAURANT_NAME="${{ vars.RESTAURANT_NAME }}" \
               npm run build -w "@snpos/$app"
@@ -134,6 +137,19 @@ jobs:
           # app's hash already means something: which order is on screen.
           mkdir -p site/menu/group
           cp site/menu/index.html site/menu/group/index.html
+          # And the short one, at the root of the site: /group.
+          #
+          # The same file again. Its asset paths are absolute (/menu/assets/…)
+          # so it works from anywhere, and the app reads the last part of the
+          # address to know it is the group menu — see isGroupPath, which is
+          # why /group and /menu/group both do.
+          #
+          # Both are published rather than one redirecting to the other: a
+          # redirect shows the ordinary menu for a moment first, which on a
+          # slow phone is long enough to tap, and every link already given out
+          # has to go on working.
+          mkdir -p site/group
+          cp site/menu/index.html site/group/index.html
 
           # Pages runs Jekyll by default, which strips files beginning with _.
           touch site/.nojekyll
