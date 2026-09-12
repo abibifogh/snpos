@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError, saveDropping } from '../lib';
+import { groupLink } from '@snpos/core';
 import type { Doc, FeatureFlag } from '@snpos/core';
 import { useSession } from '../session';
 
@@ -201,6 +202,14 @@ export function TablesPage() {
    * are not for the whole dining room to read, and a walk-in should not be
    * offered a platter for twenty. Give it to whoever books groups.
    */
+  /*
+    The address to hand out, and the private one behind it.
+
+    The tidy one is the same for every venue and can be said down a telephone.
+    The token link stays — it is the private way in, and anybody already given
+    one keeps working — but it is no longer the thing a front desk copies.
+  */
+  const tidyUrl = groupLink(menuBase);
   const groupUrl = (v: VenueRow) => (v.group_token ? `${menuBase}/?g=${v.group_token}` : null);
 
   const makeGroupLink = async (v: VenueRow, replacing = false) => {
@@ -329,6 +338,28 @@ export function TablesPage() {
             shows. Everything else on the menu stays hidden from it.
           </p>
         )}
+        {/* The one to give out. Short enough to read aloud, and the same
+            every time, so it can go on a rate card or in an email template
+            without being looked up. */}
+        <div className="row" style={{ justifyContent: 'space-between', padding: '0.4rem 0' }}>
+          <span style={{ fontWeight: 550 }}>The link to give out</span>
+          <div className="row">
+            <Input readOnly value={tidyUrl} style={{ width: '22rem' }} onFocus={(e) => e.currentTarget.select()} />
+            <Button size="sm" onClick={() => { navigator.clipboard.writeText(tidyUrl); toast('Link copied'); }}>Copy</Button>
+          </div>
+        </div>
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Anybody who types this address sees the group menu and its prices. Seeing it is not booking against
+          it: a booking still needs a contact name, the reservation reference where you require one, and a
+          group at least as large as your smallest. If you would rather it could not be found at all, hand out
+          a private link below instead.
+        </p>
+
+        <h4 style={{ margin: '1rem 0 0.3rem' }}>Private links, one per venue</h4>
+        <p className="small dim" style={{ marginTop: 0 }}>
+          Unguessable, and can be replaced if one ends up somewhere it should not be. Anybody already using one
+          keeps working.
+        </p>
         {venues.map((v) => {
           const url = groupUrl(v);
           return (
@@ -341,7 +372,7 @@ export function TablesPage() {
                   <Button size="sm" variant="ghost" onClick={() => makeGroupLink(v, true)}>Replace</Button>
                 </div>
               ) : (
-                <Button size="sm" onClick={() => makeGroupLink(v)}>Create group link</Button>
+                <Button size="sm" onClick={() => makeGroupLink(v)}>Create private link</Button>
               )}
             </div>
           );

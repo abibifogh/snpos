@@ -8,7 +8,7 @@ import {
   featureConfig, previewUrl, humanError,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, screenShouldReset, screenClaim,
   bookingTotals, dietChips, matchesDiet, parseOmissions, dietaryLabels, couldBeWords,
-  needsChoosing, defaultPicks, longDayWords, timeWords,
+  needsChoosing, defaultPicks, longDayWords, timeWords, isGroupPath,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, MenuSection, MenuEntry, CartLine, FeatureMap, Doc, GroupMeal,
@@ -244,6 +244,16 @@ export function App() {
    */
   const groupToken = params.get('g');
   /**
+   * The group menu asked for by name rather than by token.
+   *
+   * ".../menu/group" is something a front desk can say down a telephone and
+   * somebody else can type. The token link still works and is still private;
+   * this one is public by definition, which is the owner's trade to make and
+   * costs less than it sounds — seeing the group menu is not booking against
+   * it. See isGroupPath.
+   */
+  const groupPath = isGroupPath(window.location.pathname);
+  /**
    * A screen that stays put and serves one customer after another.
    *
    * Read here rather than looked up, because everything else about this mode
@@ -355,7 +365,10 @@ export function App() {
         // Only a token that actually matches this venue opens group ordering.
         // A guessed or stale one quietly gets the ordinary menu rather than an
         // error, which tells somebody poking at addresses nothing at all.
-        setGroupMode(!!groupToken && venue.group_token === groupToken);
+        /* Either way in: the address that says so, or a token that matches
+           this venue. A guessed or stale token still gets the ordinary menu
+           rather than an error. */
+        setGroupMode(groupPath || (!!groupToken && venue.group_token === groupToken));
         /*
           A matched token switches this device into screen mode for good; an
           address that says so explicitly switches it back. Anything else —
@@ -369,7 +382,7 @@ export function App() {
           installed,
           // A table's QR code, a walk-in link, a group's link: an address that
           // belongs to one particular guest, who must keep their own order.
-          guestToken: !!token || !!walkInToken || !!groupToken,
+          guestToken: !!token || !!walkInToken || !!groupToken || groupPath,
         });
         if (verdict.screen !== null) {
           setScreenMode(verdict.screen);
@@ -419,7 +432,7 @@ export function App() {
         setError(humanError(e));
       }
     })();
-  }, [token, walkInToken, groupToken]);
+  }, [token, walkInToken, groupToken, groupPath]);
 
   // The phone's own back and forward buttons move between the menu and an
   // order, so the address stays the single source of truth for which is shown.
@@ -916,7 +929,7 @@ export function App() {
         Somebody guessing learns only that their guess was wrong, which the
         ordinary menu already told them.
       */}
-      {groupToken && !groupMode && (
+      {groupToken && !groupPath && !groupMode && (
         <div className="banner banner-info">
           <strong>This group ordering link is not recognised.</strong> It may have been replaced with a newer one.
           This is the ordinary menu; please ask whoever sent it for the current link.
