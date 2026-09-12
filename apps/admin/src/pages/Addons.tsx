@@ -6,6 +6,7 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, Query, listAll as listAllCore, canDeleteCatalogue,
   modulesOf, MODULE_LABELS,
+  DIETARY_TAGS, toggleDietaryTag, dietAssessed,
 } from '@snpos/core';
 import type { Doc, Ingredient, Recipe, Module } from '@snpos/core';
 import { useSession } from '../session';
@@ -29,6 +30,9 @@ interface AddonOption extends Doc {
   sort: number;
   default_selected: boolean;
   max_qty: number;
+  /** What this choice is. See tagsWithOptions; a choice can only take away. */
+  tags?: string[];
+  diet_neutral?: boolean;
 }
 
 /** A row being edited before it is saved; price is held as typed text. */
@@ -42,6 +46,16 @@ interface DraftOption {
   ingredientId: string;
   qtyText: string;
   recipeId?: string;
+  /**
+   * What this choice IS, in the same words a dish uses.
+   *
+   * A chosen option can only take a diet away from a plate, never grant one:
+   * cheese being vegetarian does not make a beef stew vegetarian, but it does
+   * stop a vegan bowl being vegan. See tagsWithOptions.
+   */
+  tags: string[];
+  /** Not food — a napkin, "no ice", "well done". Changes no dietary claim. */
+  diet_neutral: boolean;
 }
 
 export function AddonsPage() {
@@ -108,6 +122,8 @@ export function AddonsPage() {
               $id: copy ? undefined : o.$id,
               name: o.name,
               priceText: toInput(o.price_delta, decimals),
+              tags: o.tags ?? [],
+              diet_neutral: !!o.diet_neutral,
               active: o.active,
               default_selected: o.default_selected,
               ingredientId: r?.ingredient_id ?? '',
@@ -115,7 +131,7 @@ export function AddonsPage() {
               recipeId: copy ? undefined : r?.$id,
             };
           })
-        : [{ name: '', priceText: toInput(0, decimals), active: true, default_selected: false, ingredientId: '', qtyText: '' }],
+        : [{ name: '', priceText: toInput(0, decimals), active: true, default_selected: false, ingredientId: '', qtyText: '', tags: [], diet_neutral: false }],
     );
     setRemovedOptionIds([]);
     setError(null);
@@ -163,6 +179,8 @@ export function AddonsPage() {
           sort: i + 1,
           default_selected: o.default_selected,
           max_qty: 1,
+          tags: o.tags,
+          diet_neutral: o.diet_neutral,
         };
         const optionId = o.$id
           ? (await db.updateDocument(DB_ID, 'addon_options', o.$id, body)).$id
@@ -347,6 +365,7 @@ export function AddonsPage() {
                   <th>Name</th>
                   <th style={{ width: '7.5rem' }}>Extra cost</th>
                   <th style={{ width: '5rem' }}>Default</th>
+                  <th style={{ width: '15rem' }}>Suitable for</th>
                   <th style={{ width: '10rem' }}>Takes from stock</th>
                   <th style={{ width: '5rem' }} />
                 </tr>
@@ -370,6 +389,44 @@ export function AddonsPage() {
                     </td>
                     <td>
                       <Toggle checked={o.default_selected} onChange={(v) => setOption(i, { default_selected: v })} />
+                    </td>
+                    {/*
+                      What this choice is, so a plate stops claiming what it is
+                      no longer. A vegan bowl with cheese ticked on it is not a
+                      vegan bowl, and until now the menu said it was the whole
+                      way to the pass.
+
+                      Left blank, a choice takes nothing away and the guest is
+                      told plainly that we have not said. That is the state
+                      every choice already in the menu is in, and it is the
+                      only safe default: guessing "suitable" risks somebody's
+                      health, guessing "not" would empty a menu that is right.
+                    */}
+                    <td>
+                      <Toggle
+                        checked={o.diet_neutral}
+                        onChange={(v) => setOption(i, { diet_neutral: v, tags: v ? [] : o.tags })}
+                        label="Not food"
+                      />
+                      {!o.diet_neutral && (
+                        <>
+                          <div className="row row-wrap" style={{ gap: '0.2rem 0.7rem', marginTop: '0.3rem' }}>
+                            {DIETARY_TAGS.map((t) => (
+                              <Toggle
+                                key={t.key}
+                                checked={o.tags.includes(t.key)}
+                                onChange={() => setOption(i, { tags: toggleDietaryTag(o.tags, t.key) })}
+                                label={t.label}
+                              />
+                            ))}
+                          </div>
+                          {!dietAssessed({ name: o.name, tags: o.tags, diet_neutral: o.diet_neutral }) && (
+                            <div className="small dim" style={{ marginTop: '0.2rem' }}>
+                              Not said yet, so this takes nothing away and guests are told to ask.
+                            </div>
+                          )}
+                        </>
+                      )}
                     </td>
                     <td>
                       {ingredients.length === 0 ? (
@@ -442,7 +499,7 @@ export function AddonsPage() {
             onClick={() =>
               setDraftOptions((d) => [
                 ...d,
-                { name: '', priceText: toInput(0, decimals), active: true, default_selected: false, ingredientId: '', qtyText: '' },
+                { name: '', priceText: toInput(0, decimals), active: true, default_selected: false, ingredientId: '', qtyText: '', tags: [], diet_neutral: false },
               ])
             }
           >

@@ -39,6 +39,10 @@ export interface AddonOption extends Doc {
   sort: number;
   default_selected: boolean;
   max_qty: number;
+  /** What this choice is, in a dish's own words. See tagsWithOptions. */
+  tags?: string[];
+  /** Not food: a napkin, "no ice", "well done". Changes no dietary claim. */
+  diet_neutral?: boolean;
 }
 
 export interface MenuItemAddonGroup extends Doc {

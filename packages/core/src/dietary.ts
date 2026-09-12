@@ -228,6 +228,115 @@ export function omissionWords(o: Omission): string {
   return `Leave out ${o.name}.${becomes}`;
 }
 
+/* ------------------------------- what a choice does to what a dish is */
+
+/**
+ * A dish is only as suitable as the last thing added to it.
+ *
+ * A vegan bowl with cheese on it is not a vegan bowl, and until now the menu
+ * would have gone on saying vegan the whole way to the pass. The dish's tags
+ * describe the dish as listed; the moment somebody ticks an option, the plate
+ * is a different plate.
+ *
+ * So an option carries the same tags a dish does — what IT is — and a chosen
+ * one can only take tags away. Nothing an option says can add a diet: cheese
+ * marked vegetarian does not make a beef stew vegetarian, and the intersection
+ * is the only honest arithmetic here.
+ *
+ * Cautions run the other way and are added, not intersected. "Contains nuts"
+ * on a satay sauce is true of any plate it goes on, whatever the plate was
+ * before.
+ */
+export interface OptionDiet {
+  /** Named in the warning, so the guest knows which choice is in question. */
+  name: string;
+  tags?: string[];
+  /**
+   * This choice is not food.
+   *
+   * "Extra napkin", "no ice", "well done". Ticking every dietary box on one of
+   * those would be a lie by a different route, and leaving them all unticked
+   * would strip a dish of everything it is. So they are marked as changing
+   * nothing, and change nothing.
+   */
+  diet_neutral?: boolean;
+}
+
+const isCaution = (key: string): boolean => !!byKey.get(key)?.caution;
+
+/**
+ * Has anybody actually judged this option?
+ *
+ * An option with no tags and no neutral mark has never been looked at, and
+ * every option in an existing menu is in that state. Treating "not assessed"
+ * as "meets nothing" would empty every dish of every claim the first time a
+ * guest ticked anything — so it strips nothing, and is reported instead, to
+ * be said out loud where it matters and listed in Admin so it can be fixed.
+ */
+export const dietAssessed = (o: OptionDiet): boolean =>
+  !!o.diet_neutral || (o.tags ?? []).some((t) => !isCaution(t));
+
+/**
+ * What the plate is, once these options are on it.
+ *
+ * `unknown` names the chosen options nobody has judged yet. They leave the
+ * tags alone, because guessing in either direction is worse: guessing "safe"
+ * risks somebody's health, and guessing "unsafe" would empty a menu that is
+ * perfectly correct until the day its owner gets round to the options.
+ */
+export function tagsWithOptions(
+  tags: readonly string[] | undefined | null,
+  options: OptionDiet[],
+): { tags: string[]; unknown: string[] } {
+  let diets = (tags ?? []).map((t) => t.trim()).filter(Boolean).filter((t) => !isCaution(t));
+  const cautions = new Set((tags ?? []).map((t) => t.trim()).filter(Boolean).filter(isCaution));
+  const unknown: string[] = [];
+
+  for (const o of options) {
+    if (o.diet_neutral) continue;
+    if (!dietAssessed(o)) { unknown.push(o.name); continue; }
+    const its = new Set((o.tags ?? []).map((t) => t.trim()).filter(Boolean));
+    // Only what BOTH are. A choice can never add a diet to a dish.
+    diets = diets.filter((t) => its.has(t));
+    for (const t of its) if (isCaution(t)) cautions.add(t);
+  }
+
+  const all = new Set([...diets, ...cautions]);
+  return {
+    tags: [
+      ...DIETARY_TAGS.map((t) => t.key).filter((k) => all.has(k)),
+      ...[...all].filter((k) => !byKey.has(k)),
+    ],
+    unknown,
+  };
+}
+
+/**
+ * What a choice has cost the dish, in the guest's words.
+ *
+ * Said at the moment of choosing rather than discovered at the table. A vegan
+ * who ticks an option and watches the word "Vegan" disappear has been told
+ * something; one who does not notice has been misled by a screen that knew.
+ */
+export function dietLostWords(before: readonly string[], after: readonly string[]): string {
+  const had = new Set(after);
+  const lost = dietaryLabels(before.filter((t) => !had.has(t))).filter((t) => !t.caution);
+  if (lost.length === 0) return '';
+  const words = lost.map((t) => t.label.toLowerCase());
+  const said = words.length === 1 ? words[0] : `${words.slice(0, -1).join(', ')} or ${words[words.length - 1]}`;
+  return `With what you have chosen, this is no longer ${said}.`;
+}
+
+/** "We cannot say whether Extra cheese is vegan." The honest gap. */
+export function dietUnknownWords(unknown: readonly string[]): string {
+  if (unknown.length === 0) return '';
+  const list = unknown.length === 1
+    ? unknown[0]
+    : `${unknown.slice(0, -1).join(', ')} and ${unknown[unknown.length - 1]}`;
+  return `We have not recorded what ${list} ${unknown.length === 1 ? 'is' : 'are'} suitable for. `
+    + 'Please ask a member of staff if it matters.';
+}
+
 /**
  * Whether a dish belongs under a chip somebody has tapped.
  *

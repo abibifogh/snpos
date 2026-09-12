@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DIETARY_TAGS, isDietaryTag, dietaryLabels, dietarySummary, toggleDietaryTag,
+  DIETARY_TAGS, isDietaryTag, dietaryLabels, dietarySummary, toggleDietaryTag, tagsWithOptions, dietAssessed, dietLostWords, dietUnknownWords,
 } from '../dietary.ts';
 
 test('the words come out in the list order, whatever order they were ticked in', () => {
@@ -54,4 +54,85 @@ test('a dish cannot be nut free and contain nuts at once', () => {
 
 test('a tag from elsewhere survives a tick', () => {
   assert.deepEqual(toggleDietaryTag(['low_sugar'], 'vegan'), ['vegan', 'low_sugar']);
+});
+
+test('a choice can only take a diet away, never grant one', () => {
+  /*
+    The whole point. A vegan bowl with cheese on it is not a vegan bowl, and
+    the menu would have gone on saying vegan the whole way to the pass.
+  */
+  const bowl = ['vegan', 'vegetarian', 'gluten_free', 'nut_free'];
+  const cheese = { name: 'Extra cheese', tags: ['vegetarian', 'gluten_free', 'nut_free'] };
+
+  const got = tagsWithOptions(bowl, [cheese]);
+  assert.equal(got.tags.includes('vegan'), false);
+  assert.equal(got.tags.includes('vegetarian'), true);
+  assert.deepEqual(got.unknown, []);
+
+  // And the other way round is refused: cheese being vegetarian does not make
+  // a beef stew vegetarian.
+  const stew = tagsWithOptions(['gluten_free'], [cheese]);
+  assert.equal(stew.tags.includes('vegetarian'), false);
+  assert.deepEqual(stew.tags, ['gluten_free']);
+});
+
+test('every chosen option has to agree before a tag survives', () => {
+  const dish = ['vegan', 'vegetarian', 'nut_free'];
+  const salad = { name: 'Side salad', tags: ['vegan', 'vegetarian', 'nut_free'] };
+  const satay = { name: 'Satay sauce', tags: ['vegan', 'vegetarian', 'contains_nuts'] };
+
+  assert.deepEqual(tagsWithOptions(dish, [salad]).tags, ['vegetarian', 'vegan', 'nut_free']);
+  // Nut free cannot survive the satay, and the caution it carries comes with it.
+  const both = tagsWithOptions(dish, [salad, satay]).tags;
+  assert.equal(both.includes('nut_free'), false);
+  assert.equal(both.includes('contains_nuts'), true);
+  assert.equal(both.includes('vegan'), true);
+});
+
+test('a choice that is not food changes nothing', () => {
+  /*
+    "Extra napkin" and "well done" have no dietary opinion. Ticking every box
+    on one would be a lie by another route; leaving them all blank would strip
+    the dish of everything it is.
+  */
+  const dish = ['vegan', 'gluten_free'];
+  const napkin = { name: 'Extra napkin', diet_neutral: true };
+  assert.deepEqual(tagsWithOptions(dish, [napkin]).tags, ['vegan', 'gluten_free']);
+  assert.deepEqual(tagsWithOptions(dish, [napkin]).unknown, []);
+  assert.equal(dietAssessed(napkin), true);
+});
+
+test('an option nobody has judged strips nothing, and says so', () => {
+  /*
+    Every option in an existing menu is in this state. Treating "not assessed"
+    as "meets nothing" would empty every dish of every claim the first time a
+    guest ticked anything; guessing "safe" would risk somebody's health. So it
+    is left alone and reported.
+  */
+  const dish = ['vegan', 'gluten_free'];
+  const mystery = { name: 'Extra sauce' };
+  const got = tagsWithOptions(dish, [mystery]);
+  assert.deepEqual(got.tags, ['vegan', 'gluten_free']);
+  assert.deepEqual(got.unknown, ['Extra sauce']);
+  assert.equal(dietAssessed(mystery), false);
+  assert.match(dietUnknownWords(got.unknown), /Extra sauce is suitable for|not recorded what Extra sauce/);
+});
+
+test('a caution on its own is not an assessment', () => {
+  // "Extra chilli" ticked only as spicy has not been judged for any diet, and
+  // stripping every diet off the dish because of it would be wrong.
+  const chilli = { name: 'Extra chilli', tags: ['spicy'] };
+  assert.equal(dietAssessed(chilli), false);
+  const got = tagsWithOptions(['vegan'], [chilli]);
+  assert.deepEqual(got.tags, ['vegan']);
+  assert.deepEqual(got.unknown, ['Extra chilli']);
+});
+
+test('what the choice cost is said in the guest’s words', () => {
+  assert.equal(dietLostWords(['vegan', 'vegetarian'], ['vegan', 'vegetarian']), '');
+  assert.match(dietLostWords(['vegan', 'vegetarian'], ['vegetarian']), /no longer vegan/);
+  assert.match(dietLostWords(['vegan', 'nut_free'], []), /no longer vegan or nut free/);
+  // A caution appearing is not a loss and is not announced as one.
+  assert.equal(dietLostWords(['vegan'], ['vegan', 'contains_nuts']), '');
+  assert.equal(dietUnknownWords([]), '');
 });

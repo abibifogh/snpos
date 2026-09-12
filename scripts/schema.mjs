@@ -780,6 +780,28 @@ export const COLLECTIONS = [
       ['sort', 'i', null, true, 0],
       ['default_selected', 'b', null, true, false],
       ['max_qty', 'i', null, true, 1],
+      /*
+        What this choice is, in the same words a dish uses.
+
+        A vegan bowl with cheese on it is not a vegan bowl. The dish's tags
+        describe the dish as listed; the moment a choice is ticked the plate is
+        a different plate, and a chosen option can only take a diet away —
+        never grant one. See tagsWithOptions.
+
+        Optional, and empty on every option that already exists, which is the
+        state "nobody has judged this yet": it strips nothing and is reported,
+        because guessing safe risks somebody's health and guessing unsafe would
+        empty a menu that is correct until its owner gets round to the options.
+      */
+      ['tags', 's[]', 40, false],
+      /*
+        This choice is not food: "extra napkin", "no ice", "well done".
+
+        Ticking every dietary box on one of those would be a lie by another
+        route, and leaving them all blank would strip a dish of everything it
+        is. So they are marked as changing nothing, and change nothing.
+      */
+      ['diet_neutral', 'b', null, false, false],
     ],
     indexes: [['group', 'key', ['group_id', 'sort']]],
   },
