@@ -45,6 +45,12 @@ jobs:
   # The database first: everything else writes to it or answers events on it.
   provision:
     uses: ./.github/workflows/provision.yml
+    # Merging IS the decision, so no confirmation word is asked for. Said
+    # explicitly because the called workflow cannot otherwise tell a Deploy
+    # started by hand from a provision started by hand: see the note on the
+    # confirmation step there.
+    with:
+      from_deploy: true
     secrets: inherit
 
   # Then the functions, which subscribe to collections provisioning creates.

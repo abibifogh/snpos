@@ -170,7 +170,11 @@ To move from `pos.example.com` to `orders.example.com`:
 1. **DNS.** Add a CNAME record, host `orders`, value `<owner>.github.io`.
    Leave the old record alone.
 2. **`SITE_DOMAIN`.** Change it to `orders.example.com`.
-3. **Deploy.** Merge anything, or run the Deploy workflow by hand.
+3. **Deploy.** Merge anything, or run the Deploy workflow by hand — Actions →
+   Deploy → Run workflow. No confirmation word is asked for there; merging, or
+   choosing to run it, is the decision. (Running **Provision** on its own does
+   ask for one, because that writes to the live database with nothing else
+   going out alongside it.)
 4. Wait for the certificate, then tick **Enforce HTTPS** under Settings → Pages.
 
 ### The old address stops working, and stickers are printed with it
