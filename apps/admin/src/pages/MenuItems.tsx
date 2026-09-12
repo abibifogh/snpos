@@ -823,6 +823,9 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
       // Written even when empty, for the same reason as the tags above:
       // removing the last one has to actually clear it.
       omissions: serialiseOmissions(omissions),
+      // The heading on the group menu, which is not the category the bistro
+      // runs on. See byHeading.
+      group_heading: (editing.group_heading ?? '').trim(),
       // Blank means "wherever its main category goes". `station` is the old
       // built-in enum the database still requires; `station_key` is the one the
       // kitchen screen actually reads.
@@ -1568,6 +1571,41 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
                 <Input type="number" min="0" value={editing.prep_minutes ?? 10} onChange={(e) => setEditing({ ...editing, prep_minutes: Number(e.target.value) })} />
               </Field>
             )}
+            {module === 'kitchen' && (
+              <Field
+                label="Heading on the group menu"
+                hint={
+                  /*
+                    The group menu's own divisions, which are not the bistro's.
+
+                    The categories this business runs on are days of the week —
+                    right for a walk-in, who can only have what is cooked
+                    today, and no use to somebody booking forty covers for a
+                    Tuesday three weeks out. They are counting wraps against
+                    the guests who wanted wraps.
+                  */
+                  (editing.group_heading ?? '').trim()
+                    ? `Group bookings will see this under "${(editing.group_heading ?? '').trim()}".`
+                    : 'Wraps, Sandwiches, Mains — however a party would count their order. '
+                      + 'Left blank it sits under its ordinary category. Only used on the group menu.'
+                }
+              >
+                <Input
+                  list="group-headings"
+                  placeholder="Wraps"
+                  value={editing.group_heading ?? ''}
+                  onChange={(e) => setEditing({ ...editing, group_heading: e.target.value })}
+                />
+                {/* The headings already in use, so the second wrap is filed
+                    under "Wraps" and not under "wraps". */}
+                <datalist id="group-headings">
+                  {[...new Set((items ?? [])
+                    .map((i) => (i.group_heading ?? '').trim())
+                    .filter(Boolean))].sort().map((h) => <option key={h} value={h} />)}
+                </datalist>
+              </Field>
+            )}
+
             {module === 'kitchen' && (
               <Field
                 label="Dietary"

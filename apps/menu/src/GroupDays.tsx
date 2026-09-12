@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button, Field, Modal, Input, Notice } from '@snpos/ui';
 import {
   timesTaken, timeIsTaken, portionsOn, mealMoment, momentProblem, dayInput, timeInput,
-  BOOKING_OPENS, BOOKING_CLOSES, FULFILMENT_WORDS, longDayWords, timeWords,
+  BOOKING_OPENS, BOOKING_CLOSES, mealServiceWords, longDayWords, timeWords,
 } from '@snpos/core';
 import type { GroupMeal } from '@snpos/core';
 import { newMeal } from './GroupSheet';
@@ -107,7 +107,7 @@ export function GroupDays({
                 <span className="group-meal-what">
                   {n === 0 ? 'Nothing on it yet' : `${n} portion${n === 1 ? '' : 's'}`}
                   {' · '}
-                  {FULFILMENT_WORDS[m.fulfilment].toLowerCase()}
+                  {mealServiceWords(m).toLowerCase()}
                 </span>
               </button>
               {/* Plainly a button, plainly next to the meal it removes. It

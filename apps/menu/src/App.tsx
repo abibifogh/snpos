@@ -8,7 +8,7 @@ import {
   featureConfig, previewUrl, humanError,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, screenShouldReset, screenClaim,
   bookingTotals, dietChips, matchesDiet, parseOmissions, dietaryLabels, couldBeWords,
-  needsChoosing, defaultPicks, longDayWords, timeWords, isGroupPath,
+  needsChoosing, defaultPicks, longDayWords, timeWords, isGroupPath, byHeading,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, MenuSection, MenuEntry, CartLine, FeatureMap, Doc, GroupMeal,
@@ -766,11 +766,38 @@ export function App() {
     So the group menu takes every group-only section, whatever the clock says,
     and treats it as open.
   */
-  const onSide = inGroupMode
-    ? menu.sections
+  const groupSections = () => {
+    /*
+      The group menu is divided the way a party counts, not the way the week
+      runs.
+
+      Every group-only dish is gathered under the heading its owner gave it —
+      Wraps, Sandwiches, Mains — rather than under "Monday special", which
+      tells somebody booking a Tuesday three weeks out nothing they can use.
+      A dish with no heading keeps the category it already sits in, so this
+      works from the first heading typed and never leaves a dish homeless.
+
+      The sections it builds are shaped like the menu's own, because the
+      heading strip and the section list read them the same way.
+    */
+    const from = menu.sections
       .filter((sec) => (sec.category.module ?? 'kitchen') === side)
-      .filter((sec) => sec.category.group_only)
-      .map((sec) => ({ ...sec, open: true }))
+      .filter((sec) => sec.category.group_only);
+    const flat = from.flatMap((sec) => sec.entries.map((entry) => ({ entry, fallback: sec.category.name })));
+    return byHeading(flat, (x) => x.entry.item.group_heading || x.fallback).map((g) => ({
+      category: {
+        $id: `gh-${g.heading}`,
+        name: g.heading,
+        sort: 0,
+        active: true,
+      } as MenuSection['category'],
+      open: true,
+      entries: g.entries.map((x) => x.entry),
+    }));
+  };
+
+  const onSide = inGroupMode
+    ? groupSections()
     : visibleSections(menu)
       .filter((sec) => (sec.category.module ?? 'kitchen') === side)
       .filter((sec) => !sec.category.group_only);

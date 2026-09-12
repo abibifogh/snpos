@@ -89,6 +89,8 @@ export interface Order extends Doc {
   group_contact_name?: string;
   /** Which multi-day booking this day belongs to. See group-booking.ts. */
   group_booking_id?: string;
+  /** Plated or buffet, on a group sitting eaten here. See ServiceStyle. */
+  group_service?: string;
   /** What the containers cost, on a takeaway. */
   pack_fee?: number;
   notes?: string;
@@ -331,6 +333,8 @@ export interface CreateOrderInput {
   discount?: number;
   customer?: { name?: string; phone?: string; email?: string };
   fulfilment?: Order['fulfilment'];
+  /** 'plated' or 'buffet', on a group sitting eaten here. */
+  groupService?: string;
   pickupPointId?: string;
   /** Free text for an area with no table number: "by the pool bar, red shirt". */
   seatNote?: string;
@@ -492,6 +496,9 @@ export async function createOrder(
     group_size: input.group?.size ?? 0,
     group_contact_name: input.group?.contactName ?? '',
     group_booking_id: input.group?.bookingId ?? '',
+    // Said on the ticket, because it changes how the whole sitting is cooked
+    // and served, not what is on it.
+    group_service: input.groupService ?? '',
     // Stored as well as folded into the total, so a bill can show what the
     // containers cost and a report can tell packaging from food.
     pack_fee: totals.pack_fee,

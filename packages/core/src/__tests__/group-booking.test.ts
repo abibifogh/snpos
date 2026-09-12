@@ -4,6 +4,7 @@ import {
   packFeeFor, portionsOn, mealTotals, bookingTotals, bookingProblem, mealWords, packWords,
   slotsByDay, timesTaken, timeIsTaken, freeTimesOn, FULFILMENT_WORDS,
   mealMoment, momentProblem, dayInput, timeInput, BOOKING_OPENS, BOOKING_CLOSES,
+  serviceOf, mealServiceWords, SERVICE_WORDS,
 } from '../pricing.ts';
 import type { GroupMeal } from '../pricing.ts';
 
@@ -176,4 +177,22 @@ test('a time that has gone is refused before the booking is sent', () => {
   assert.match(String(momentProblem(mealMoment('2026-11-04', '12:00'), now)), /already gone/);
   // Later the same day is fine: a group can book lunch for this evening.
   assert.equal(momentProblem(mealMoment('2026-11-04', '19:00'), now), null);
+});
+
+test('a sitting eaten here says whether it is plated or a buffet', () => {
+  /*
+    Forty covers plated and forty as a buffet are the same food and two
+    different days of work: forty plates leaving together at a promised time,
+    against chafing dishes set out beforehand and topped up. The kitchen used
+    to find out which when the party arrived.
+  */
+  assert.equal(serviceOf({ fulfilment: 'dine_in', service: 'buffet' }), 'buffet');
+  // Plated unless somebody says otherwise, which is what a restaurant does.
+  assert.equal(serviceOf({ fulfilment: 'dine_in' }), 'plated');
+  // And the question is not asked of food going into boxes.
+  assert.equal(serviceOf({ fulfilment: 'takeaway', service: 'buffet' }), null);
+
+  assert.match(mealServiceWords({ fulfilment: 'dine_in', service: 'buffet' }), /Eating here · buffet/);
+  assert.equal(mealServiceWords({ fulfilment: 'takeaway' }), 'Packed to take away');
+  assert.equal(SERVICE_WORDS.plated, 'Served to each guest');
 });

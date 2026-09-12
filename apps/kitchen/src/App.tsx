@@ -1418,6 +1418,18 @@ function Ticket({
             <div className="where">
               <span className="pill">Group{order.group_size ? ` · ${order.group_size}` : ''}</span>
               {order.group_reference && ` ${order.group_reference}`}
+              {/*
+                Plated or buffet, said on the ticket.
+
+                Forty covers either way is the same food and two different
+                days of work: forty plates leaving together at a promised
+                time, against chafing dishes set out beforehand and topped up.
+                The pass used to learn which when the party walked in. Buffet
+                is the one that changes the plan, so it is the one marked.
+              */}
+              {order.group_service === 'buffet' && (
+                <span className="pill" style={{ marginLeft: '0.35rem' }}>Buffet</span>
+              )}
             </div>
           )}
         </div>

@@ -472,6 +472,8 @@ export interface GroupMeal {
   /** The moment this food is wanted, ISO. Two meals may share a date. */
   at: string;
   fulfilment: Fulfilment;
+  /** Plated or buffet, on a sitting eaten here. See ServiceStyle. */
+  service?: ServiceStyle;
   lines: CartLine[];
 }
 
@@ -479,6 +481,45 @@ export const FULFILMENT_WORDS: Record<Fulfilment, string> = {
   dine_in: 'Eating here',
   takeaway: 'Packed to take away',
 };
+
+/**
+ * How a sitting is served, which the kitchen has to be told.
+ *
+ * Forty covers plated and forty covers as a buffet are the same food and two
+ * different days of work: one is forty plates going out together at a time
+ * somebody has promised, the other is chafing dishes set out beforehand and
+ * topped up. Crockery, staffing and the shape of the service all follow from
+ * it, and until now the kitchen learnt which it was when the party arrived.
+ *
+ * Only asked of a sitting being eaten here. Food packed to take away is packed
+ * to take away, and offering the choice would be asking a question with one
+ * answer.
+ */
+export type ServiceStyle = 'plated' | 'buffet';
+
+export const SERVICE_WORDS: Record<ServiceStyle, string> = {
+  plated: 'Served to each guest',
+  buffet: 'Buffet, set out to share',
+};
+
+/** The longer sentence, where there is room to say what each one means. */
+export const SERVICE_HINTS: Record<ServiceStyle, string> = {
+  plated: 'Each portion comes out as its own plate.',
+  buffet: 'Set out in dishes for the group to help themselves.',
+};
+
+/** How this sitting is served, or nothing where the question does not apply. */
+export function serviceOf(meal: { fulfilment: Fulfilment; service?: ServiceStyle }): ServiceStyle | null {
+  return meal.fulfilment === 'dine_in' ? (meal.service ?? 'plated') : null;
+}
+
+/** "Eating here · buffet, set out to share" — one line for a ticket or a tab. */
+export function mealServiceWords(meal: { fulfilment: Fulfilment; service?: ServiceStyle }): string {
+  const style = serviceOf(meal);
+  return style
+    ? `${FULFILMENT_WORDS[meal.fulfilment]} · ${SERVICE_WORDS[style].toLowerCase()}`
+    : FULFILMENT_WORDS[meal.fulfilment];
+}
 
 /** How many portions are on a meal. Add-ons ride along with their dish and are not packed separately. */
 export const portionsOn = (meal: { lines: CartLine[] }): number =>

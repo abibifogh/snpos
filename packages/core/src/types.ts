@@ -190,6 +190,8 @@ export interface MenuItem extends Doc {
   station_key?: string;
   tags?: string[];
   /** What can be left out, and what the dish becomes without it. JSON; see dietary.ts. */
+  /** The heading this dish sits under on the group menu. See byHeading. */
+  group_heading?: string;
   omissions?: string;
   sort: number;
   track_stock: boolean;

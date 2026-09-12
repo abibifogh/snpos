@@ -597,6 +597,16 @@ export const COLLECTIONS = [
       // Only shown on the group-order menu. A hotel party ordering platters
       // does not want the à la carte list, and vice versa.
       ['group_only', 'b', null, false, false],
+      /*
+        The heading this dish sits under on the group menu, and nowhere else.
+
+        The ordinary menu is divided the way the kitchen's week is — "Monday
+        special" — which is right for a walk-in and useless to somebody booking
+        forty covers three weeks out, who is counting wraps against the guests
+        who wanted wraps. Blank falls back to the category the dish is already
+        in, so this starts working the moment the first heading is typed.
+      */
+      ['group_heading', 's', 80, false],
       ['tags', 's[]', 40, false],
       /*
         What can be left out, and what the dish becomes without it.
@@ -947,6 +957,16 @@ export const COLLECTIONS = [
         bookings by the same party would share a reference and not a stay.
       */
       ['group_booking_id', 's', 64, false],
+      /*
+        Plated or buffet, on a sitting being eaten here.
+
+        Forty covers plated and forty as a buffet are the same food and two
+        different days of work: forty plates leaving together at a promised
+        time, against chafing dishes set out beforehand and topped up. The
+        kitchen used to learn which it was when the party arrived. Blank on
+        anything that is not a group booking eaten here.
+      */
+      ['group_service', 'e', ['plated', 'buffet'], false],
       /*
         What the containers cost on this order.
 
