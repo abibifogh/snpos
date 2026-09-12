@@ -738,9 +738,28 @@ export function App() {
   // menu and are the only thing shown on the group one, a hotel party
   // ordering platters does not want the a la carte list, and a walk-in
   // should not be offered a set meal for twenty.
-  const onSide = visibleSections(menu)
-    .filter((sec) => (sec.category.module ?? 'kitchen') === side)
-    .filter((sec) => (inGroupMode ? sec.category.group_only : !sec.category.group_only));
+  /*
+    A group's menu is not on a timetable either.
+
+    `visibleSections` hides a category outside its serving window and marks
+    the rest closed, which greys their dishes out and prints "Not available
+    right now" over them. That is right for a walk-in, who can only be served
+    what is being cooked now — and wrong for a booking, where the whole point
+    is a sitting on another day. A group looking at Tuesday's set menu on a
+    Friday would find it greyed out and unaddable with no way to say when they
+    meant.
+
+    So the group menu takes every group-only section, whatever the clock says,
+    and treats it as open.
+  */
+  const onSide = inGroupMode
+    ? menu.sections
+      .filter((sec) => (sec.category.module ?? 'kitchen') === side)
+      .filter((sec) => sec.category.group_only)
+      .map((sec) => ({ ...sec, open: true }))
+    : visibleSections(menu)
+      .filter((sec) => (sec.category.module ?? 'kitchen') === side)
+      .filter((sec) => !sec.category.group_only);
 
   /*
     The chips, and what they hide.
@@ -809,7 +828,9 @@ export function App() {
             : (
               <>
                 {inGroupMode ? 'Group ordering' : table ? `Table ${table.label}` : 'Takeaway'}
-                {venueOpen ? ' · Open now' : ' · Closed'}
+                {/* Whether the doors are open this minute is the walk-in's
+                    question, not the group's. See the banner below. */}
+                {!inGroupMode && (venueOpen ? ' · Open now' : ' · Closed')}
               </>
             )}
           {/* The way back to an order already placed. Only shown when there is
@@ -923,7 +944,17 @@ export function App() {
         />
       )}
 
-      {!venueOpen && (
+      {/*
+        Opening hours say nothing to a group.
+
+        A party books a sitting for a Tuesday three weeks out, agreed with the
+        kitchen, which opens for it. Telling them "We're closed right now,
+        next open Saturday 13:00" is answering a question they did not ask
+        about a day they are not booking, and it reads as a refusal — somebody
+        holding a link for a booking in November was being told the doors are
+        shut this evening.
+      */}
+      {!venueOpen && !inGroupMode && (
         <div className={canOrderNow ? 'banner' : 'banner banner-info'}>
           {canOrderNow ? (
             <>
