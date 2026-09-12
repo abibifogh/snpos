@@ -134,7 +134,9 @@ export function GroupSheet({
           packFee: totals.packFee,
           scheduledFor: new Date(meal.at),
           slotCapacity,
-          openingHours: venue.opening_hours,
+          /* No opening hours. A sitting is agreed with the kitchen, which
+             opens for it; what the doors are doing this evening has nothing
+             to say about a booking three weeks out. */
         });
         booked.push({ id: order.$id, orderNo: order.order_no, at: meal.at });
       }

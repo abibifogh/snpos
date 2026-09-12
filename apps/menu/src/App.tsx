@@ -8,7 +8,7 @@ import {
   featureConfig, previewUrl, humanError,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, screenShouldReset, screenClaim,
   bookingTotals, dietChips, matchesDiet, parseOmissions, dietaryLabels, couldBeWords,
-  needsChoosing, defaultPicks,
+  needsChoosing, defaultPicks, longDayWords, timeWords,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, MenuSection, MenuEntry, CartLine, FeatureMap, Doc, GroupMeal,
@@ -18,6 +18,7 @@ import { DietTags } from './DietTags';
 import { CartSheet } from './CartSheet';
 import { GroupSheet } from './GroupSheet';
 import { GroupDays } from './GroupDays';
+import { BasketPanel } from './BasketPanel';
 import { OrderStatus } from './OrderStatus';
 import { ScreenThanks } from './ScreenThanks';
 import { ScreenAttract } from './ScreenAttract';
@@ -738,9 +739,28 @@ export function App() {
   // menu and are the only thing shown on the group one, a hotel party
   // ordering platters does not want the a la carte list, and a walk-in
   // should not be offered a set meal for twenty.
-  const onSide = visibleSections(menu)
-    .filter((sec) => (sec.category.module ?? 'kitchen') === side)
-    .filter((sec) => (inGroupMode ? sec.category.group_only : !sec.category.group_only));
+  /*
+    A group's menu is not on a timetable either.
+
+    `visibleSections` hides a category outside its serving window and marks
+    the rest closed, which greys their dishes out and prints "Not available
+    right now" over them. That is right for a walk-in, who can only be served
+    what is being cooked now — and wrong for a booking, where the whole point
+    is a sitting on another day. A group looking at Tuesday's set menu on a
+    Friday would find it greyed out and unaddable with no way to say when they
+    meant.
+
+    So the group menu takes every group-only section, whatever the clock says,
+    and treats it as open.
+  */
+  const onSide = inGroupMode
+    ? menu.sections
+      .filter((sec) => (sec.category.module ?? 'kitchen') === side)
+      .filter((sec) => sec.category.group_only)
+      .map((sec) => ({ ...sec, open: true }))
+    : visibleSections(menu)
+      .filter((sec) => (sec.category.module ?? 'kitchen') === side)
+      .filter((sec) => !sec.category.group_only);
 
   /*
     The chips, and what they hide.
@@ -769,6 +789,10 @@ export function App() {
   const preordersOn = isEnabled(features, 'preorders');
   const allowWhenClosed = featureConfig(features, 'preorders', 'allow_when_closed', true);
   const canOrderNow = venueOpen || (preordersOn && allowWhenClosed);
+
+  /* The sitting a tapped dish goes into, which is what the basket beside the
+     menu has to show. Null until a meal is chosen. */
+  const openMeal = groupMeals.find((m) => m.key === activeMeal) ?? null;
 
   const dish = openDish ? menu.byId[openDish] : null;
   // Guests get only the chapters written for them, and only if the restaurant
@@ -809,7 +833,9 @@ export function App() {
             : (
               <>
                 {inGroupMode ? 'Group ordering' : table ? `Table ${table.label}` : 'Takeaway'}
-                {venueOpen ? ' · Open now' : ' · Closed'}
+                {/* Whether the doors are open this minute is the walk-in's
+                    question, not the group's. See the banner below. */}
+                {!inGroupMode && (venueOpen ? ' · Open now' : ' · Closed')}
               </>
             )}
           {/* The way back to an order already placed. Only shown when there is
@@ -923,7 +949,17 @@ export function App() {
         />
       )}
 
-      {!venueOpen && (
+      {/*
+        Opening hours say nothing to a group.
+
+        A party books a sitting for a Tuesday three weeks out, agreed with the
+        kitchen, which opens for it. Telling them "We're closed right now,
+        next open Saturday 13:00" is answering a question they did not ask
+        about a day they are not booking, and it reads as a refusal — somebody
+        holding a link for a booking in November was being told the doors are
+        shut this evening.
+      */}
+      {!venueOpen && !inGroupMode && (
         <div className={canOrderNow ? 'banner' : 'banner banner-info'}>
           {canOrderNow ? (
             <>
@@ -973,6 +1009,15 @@ export function App() {
         </div>
       )}
 
+      {/*
+        Menu on the left, basket on the right — above a tablet's width.
+
+        Below it the aside is hidden by CSS and the bar at the foot of the
+        page takes over, which is the only thing that works in one column.
+        Both read the same state, so they cannot disagree. See BasketPanel.
+      */}
+      <div className="menu-layout">
+      <div className="menu-col">
       <nav className="cat-nav">
         {sections.map((s) => (
           <button
@@ -1012,20 +1057,80 @@ export function App() {
           </Notice>
         </div>
       )}
+      </div>
 
+      {/* On a group booking the panel shows the sitting being filled, which is
+          the one a tapped dish is going into. The others are a tab away in the
+          sheet, and are named on the strip above the menu. */}
+      {inGroupMode ? (
+        <BasketPanel
+          title="This booking"
+          subtitle={openMeal
+            ? `${longDayWords(openMeal.at)}, ${timeWords(openMeal.at)}`
+            : 'No meal chosen yet'}
+          lines={openMeal?.lines ?? []}
+          settings={settings}
+          total={booking.total}
+          totalLabel={`${groupMeals.length} sitting${groupMeals.length === 1 ? '' : 's'}`}
+          actionLabel={`See the booking · ${formatMoney(booking.total, settings)}`}
+          onAction={() => setShowCart(true)}
+          onQty={(lineKey, qty) => setGroupMeals((all) => all.map((m) => (m.key === activeMeal
+            ? { ...m, lines: m.lines.map((l) => (l.key === lineKey ? { ...l, qty } : l)).filter((l) => l.qty > 0) }
+            : m)))}
+          empty={openMeal
+            ? 'Nothing on this sitting yet. Tap Add beside a dish.'
+            : 'Add a meal above, then choose the food for it.'}
+        />
+      ) : (
+        <BasketPanel
+          title="Your order"
+          lines={cart}
+          settings={settings}
+          total={totals?.total ?? 0}
+          totalLabel="Total"
+          actionLabel="Check the order"
+          onAction={() => setShowCart(true)}
+          onQty={(lineKey, qty) => setCart((c) => c
+            .map((l) => (l.key === lineKey ? { ...l, qty } : l))
+            .filter((l) => l.qty > 0))}
+          empty="Nothing yet. Tap Add beside a dish."
+        />
+      )}
+      </div>
+
+      {/*
+        The phone's basket: a bar across the foot of the page that opens it.
+
+        Hidden above the breakpoint, where the panel beside the menu is the
+        basket instead. It says what is in there rather than only what it
+        costs — "2 sittings · 16 portions" is the thing somebody checks
+        against the guests in front of them, and a figure alone is not.
+      */}
       {inGroupMode ? groupMeals.length > 0 && (
         <div className="cart-bar">
-          <Button variant="primary" onClick={() => setShowCart(true)}>
-            See the booking · {groupMeals.length} meal{groupMeals.length === 1 ? '' : 's'} ·{' '}
-            {formatMoney(booking.total, settings)}
-          </Button>
+          <button type="button" className="cart-bar-btn" onClick={() => setShowCart(true)}>
+            <span className="cart-bar-what">
+              <strong>See the booking</strong>
+              <span className="cart-bar-sub">
+                {groupMeals.length} sitting{groupMeals.length === 1 ? '' : 's'} · {booking.portions} portion
+                {booking.portions === 1 ? '' : 's'}
+              </span>
+            </span>
+            <span className="cart-bar-money">{formatMoney(booking.total, settings)}</span>
+          </button>
         </div>
       ) : cart.length > 0 && totals && (
         <div className="cart-bar">
-          <Button variant="primary" onClick={() => setShowCart(true)}>
-            View order · {cart.reduce((n, l) => n + l.qty, 0)} item
-            {cart.reduce((n, l) => n + l.qty, 0) === 1 ? '' : 's'} · {formatMoney(totals.total, settings)}
-          </Button>
+          <button type="button" className="cart-bar-btn" onClick={() => setShowCart(true)}>
+            <span className="cart-bar-what">
+              <strong>View your order</strong>
+              <span className="cart-bar-sub">
+                {cart.reduce((n, l) => n + l.qty, 0)} item
+                {cart.reduce((n, l) => n + l.qty, 0) === 1 ? '' : 's'}
+              </span>
+            </span>
+            <span className="cart-bar-money">{formatMoney(totals.total, settings)}</span>
+          </button>
         </div>
       )}
 

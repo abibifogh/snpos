@@ -539,7 +539,15 @@ export async function createOrder(
     // the kitchen counts down to the whole figure, the customer is shown the
     // door wait plus a capped kitchen share, and the split has to be recorded
     // rather than re-derived, because the doors get closer while it sits there.
-    opening_wait_minutes: doorWait,
+    /*
+      Nought on anything booked for later.
+
+      The eta above already ignores the door wait for a scheduled order, and
+      this was still stamping it: a group booking sent on a Sunday evening
+      carried "the doors open in 15 hours" as a fact about a sitting three
+      weeks away. The doors will have opened and shut twenty times by then.
+    */
+    opening_wait_minutes: input.scheduledFor ? 0 : doorWait,
     // Which side of the business rang this up, so the two sets of books can be
     // read apart afterwards.
     module: input.module ?? 'kitchen',
