@@ -34,6 +34,15 @@ const newToken = (): string => {
 
 /** Where the customer menu is served. Set VITE_MENU_URL for production. */
 const menuBase = (import.meta.env.VITE_MENU_URL as string | undefined) ?? 'http://localhost:5173';
+/**
+ * Where the site itself starts, for the short group address.
+ *
+ * The group link is published twice — at /group and at /menu/group — and the
+ * short one is what a front desk reads down a telephone. Falls back to the
+ * menu's own base, which is right in development and on any host that has not
+ * been told where its root is.
+ */
+const siteBase = (import.meta.env.VITE_SITE_URL as string | undefined) ?? menuBase;
 
 export function TablesPage() {
   const { settings } = useSession();
@@ -209,7 +218,7 @@ export function TablesPage() {
     The token link stays — it is the private way in, and anybody already given
     one keeps working — but it is no longer the thing a front desk copies.
   */
-  const tidyUrl = groupLink(menuBase);
+  const tidyUrl = groupLink(siteBase);
   const groupUrl = (v: VenueRow) => (v.group_token ? `${menuBase}/?g=${v.group_token}` : null);
 
   const makeGroupLink = async (v: VenueRow, replacing = false) => {
