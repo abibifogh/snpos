@@ -159,6 +159,33 @@ export function parseOmissions(raw?: string | null): Omission[] {
 }
 
 /**
+ * What may be left out, on the menu doing the asking.
+ *
+ * The switches are for the GROUP menu and nowhere else, and this is where
+ * that is decided rather than in a component, so it is one rule with one
+ * answer and can be read without opening an app.
+ *
+ * The reason is the situation, not the software. A party books days ahead for
+ * people it cannot ask: the hotel knows somebody in the twelve is vegan, it
+ * cannot check plate by plate, and the kitchen has a week's notice to shop
+ * and cook accordingly. A walk-in at a counter screen is standing in the
+ * room. Give them the same switches and a plate reaches the pass mid-service
+ * with an ingredient quietly removed, agreed with nobody, from a dish that
+ * may have been batched that morning — and the guest is at their table before
+ * anyone could say no. They can ask, and a person answers.
+ *
+ * Everything downstream follows: the switches inside the dish, the pill on
+ * the card, the diet chips and what they filter all ask this, so off the
+ * group menu a dish simply has nothing removable, which is the truth there.
+ */
+export function removableFor(
+  raw: string | null | undefined,
+  where: { group: boolean },
+): Omission[] {
+  return where.group ? parseOmissions(raw) : [];
+}
+
+/**
  * What is stopping these being saved, in the owner's words.
  *
  * `serialiseOmissions` drops a row with no name, and it has to — a switch on

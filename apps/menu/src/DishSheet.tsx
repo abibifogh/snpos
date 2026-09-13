@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button, Modal, Textarea, FormError, Notice } from '@snpos/ui';
 import {
-  formatMoney, previewUrl, parseOmissions, omissionWords, tagsWithout,
+  formatMoney, previewUrl, removableFor, omissionWords, tagsWithout,
   tagsWithOptions, dietLostWords, dietUnknownWords,
 } from '@snpos/core';
 import type { MenuEntry, Settings, CartLine, CartAddon } from '@snpos/core';
@@ -16,6 +16,7 @@ export function DishSheet({
   entry,
   settings,
   showDiet,
+  canLeaveOut,
   onClose,
   onAdd,
 }: {
@@ -23,6 +24,16 @@ export function DishSheet({
   settings: Settings;
   /** Say what this dish is safe for. See DietTags. */
   showDiet?: boolean;
+  /**
+   * Offer the switches that take an ingredient out. Group menu only.
+   *
+   * A party booking days ahead for people it cannot ask is the situation
+   * these were built for, and the kitchen has notice enough to cook that way.
+   * A walk-in at the counter is standing in the room: they can ask, a person
+   * answers, and a plate that reaches the pass mid-service with something
+   * quietly left out was agreed with nobody. See removableIn in App.
+   */
+  canLeaveOut?: boolean;
   onClose: () => void;
   onAdd: (line: CartLine) => void;
 }) {
@@ -46,7 +57,7 @@ export function DishSheet({
     is what already reaches the kitchen ticket, the bill and the order history
     — so "no momoni" prints beside the dish with nothing new plumbed for it.
   */
-  const omissions = parseOmissions(entry.item.omissions);
+  const omissions = removableFor(entry.item.omissions, { group: !!canLeaveOut });
   const [without, setWithout] = useState<string[]>([]);
   const withoutTags = tagsWithout(entry.item.tags, omissions, without);
 

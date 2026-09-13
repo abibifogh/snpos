@@ -1893,22 +1893,31 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
             */}
             {module === 'kitchen' && (
               <Field
-                label="Can be made without"
+                label="Can be made without (group bookings only)"
                 hint={
                   /*
-                    The result, said back where it was set.
+                    The result, said back where it was set — and WHERE it
+                    applies, which is not everywhere.
 
                     Somebody filling this in has no way to know it took: the
                     effect is on a menu they are not looking at, two apps away.
                     So the pill the guest will see is echoed here as it is
                     ticked, and "nothing yet" says plainly that it is not
                     working rather than leaving them to wonder.
+
+                    And it says group menu, because these switches are on the
+                    group menu alone. A party books days ahead for people it
+                    cannot ask and the kitchen has notice to cook that way; a
+                    walk-in at the counter is standing in the room and can
+                    ask a person. Left unsaid, this field reads as a promise
+                    to every customer.
                   */
                   couldBeWords(editing.tags, omissions)
-                    ? `Guests will see this dish marked “${couldBeWords(editing.tags, omissions)}”.`
-                    : "Each of these becomes one switch on the customer's menu, and the dish is marked as one "
-                      + 'they can open and make that way. Nothing is marked yet. Leave empty for a dish nothing '
-                      + 'can come out of.'
+                    ? `On the group menu this dish will be marked “${couldBeWords(editing.tags, omissions)}”. `
+                      + 'The ordinary and counter menus do not offer it — a walk-in asks a member of staff.'
+                    : 'Each of these becomes one switch on the GROUP menu, and the dish is marked there as one '
+                      + 'that can be made that way. It changes nothing on the ordinary or counter menus. '
+                      + 'Nothing is marked yet. Leave empty for a dish nothing can come out of.'
                 }
               >
                 <div className="stack" style={{ gap: '0.6rem', marginTop: '0.2rem' }}>

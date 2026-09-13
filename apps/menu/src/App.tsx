@@ -7,7 +7,8 @@ import {
   articlesFor, HELP_AREAS,
   featureConfig, previewUrl, humanError,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, screenShouldReset, screenClaim,
-  bookingTotals, dietChips, matchesDiet, parseOmissions, dietaryLabels, couldBeWords,
+  bookingTotals, dietChips, matchesDiet, removableFor, dietaryLabels, couldBeWords,
+  type Omission,
   needsChoosing, defaultPicks, longDayWords, timeWords, isGroupPath, byHeading, openNow,
 } from '@snpos/core';
 import type {
@@ -503,6 +504,30 @@ export function App() {
   */
   const inGroupMode = groupMode && isEnabled(boot?.features ?? {}, 'group_orders');
 
+  /**
+   * What can be left out of a dish — on the group menu, and nowhere else.
+   *
+   * The switches exist for a party that is ordering for people it cannot ask:
+   * a hotel booking for twelve knows somebody is vegan and cannot check dish
+   * by dish, and days of notice mean the kitchen can actually cook it that
+   * way. That is a different situation from the one at the counter.
+   *
+   * A walk-in at a screen is standing in the room. Give them the same
+   * switches and a plate goes to the pass mid-service with an ingredient
+   * quietly removed, agreed with nobody, from a recipe that may be batched
+   * that morning — and the guest who ticked it is halfway to their table
+   * before anybody could say no. They can ask, and a person answers.
+   *
+   * So it is one function rather than a flag threaded through five places:
+   * the switches in the dish, the pill on the card, the diet chips and what
+   * they filter all read this, and off the group menu they all see a dish
+   * with nothing removable, which is the truth there.
+   */
+  const removableIn = useCallback(
+    (item: { omissions?: string }) => removableFor(item.omissions, { group: inGroupMode }),
+    [inGroupMode],
+  );
+
   const addLine = useCallback((line: CartLine) => {
     if (inGroupMode) {
       if (!activeMeal) { toast('Pick a meal first'); return; }
@@ -930,14 +955,14 @@ export function App() {
   const chips = dietChips(
     onSide.flatMap((sec) => sec.entries.map((e) => ({
       tags: e.item.tags,
-      omissions: parseOmissions(e.item.omissions),
+      omissions: removableIn(e.item),
     }))),
   );
 
   const byDiet = !diet ? onSide : onSide
     .map((sec) => ({
       ...sec,
-      entries: sec.entries.filter((e) => matchesDiet(e.item.tags, parseOmissions(e.item.omissions), diet)),
+      entries: sec.entries.filter((e) => matchesDiet(e.item.tags, removableIn(e.item), diet)),
     }))
     .filter((sec) => sec.entries.length > 0);
 
@@ -1253,6 +1278,7 @@ export function App() {
           key={section.category.$id}
           section={section}
           settings={settings}
+          removableIn={removableIn}
           onPick={(id) => setOpenDish(id)}
           onQuickAdd={quickAdd}
         />
@@ -1360,6 +1386,7 @@ export function App() {
           entry={dish}
           settings={settings}
           showDiet
+          canLeaveOut={inGroupMode}
           onClose={() => setOpenDish(null)}
           onAdd={addLine}
         />
@@ -1453,11 +1480,16 @@ export function App() {
  * ticket with a hole in it. See needsChoosing.
  */
 function Dish({
-  entry, settings, unavailable, onOpen, onQuickAdd,
+  entry, settings, unavailable, removable, onOpen, onQuickAdd,
 }: {
   entry: MenuEntry;
   settings: Settings;
   unavailable: boolean;
+  /**
+   * What can be left out of this dish, as the menu showing it is allowed to
+   * offer. Empty off the group menu — see removableIn.
+   */
+  removable: Omission[];
   onOpen: () => void;
   onQuickAdd: (entry: MenuEntry) => void;
 }) {
@@ -1484,12 +1516,15 @@ function Dish({
       <div className="body">
         <div className="name">{entry.item.name}</div>
         {entry.item.description && <div className="desc">{entry.item.description}</div>}
-        {/* Shown on every menu, not only the group one. A guest at a table has
-            the same question a hotel booker does, and until now the ordinary
-            menu never answered it. */}
+        {/* What the dish IS is shown on every menu: a guest at a table has the
+            same question a hotel booker does, and until now the ordinary menu
+            never answered it. What it could be MADE INTO is offered only
+            where the switches are, which is the group menu. Saying "open to
+            make it vegan" on a screen that has no such switch would be a
+            promise the page cannot keep. */}
         <DietTags
           tags={entry.item.tags}
-          couldBe={couldBeWords(entry.item.tags, parseOmissions(entry.item.omissions))}
+          couldBe={couldBeWords(entry.item.tags, removable)}
         />
         <div className="price">
           {formatMoney(entry.price, settings)}
@@ -1525,12 +1560,15 @@ function Section({
   settings,
   onPick,
   onQuickAdd,
+  removableIn,
 }: {
   section: MenuSection;
   settings: Settings;
   onPick: (id: string) => void;
   /** Straight into the basket, for a dish with nothing to decide. */
   onQuickAdd: (entry: MenuEntry) => void;
+  /** What may be left out of a dish here — nothing off the group menu. */
+  removableIn: (item: { omissions?: string }) => Omission[];
 }) {
   const windows = parseWindows(section.category.availability);
   const next = section.open ? null : nextAvailable(windows);
@@ -1551,6 +1589,7 @@ function Section({
           entry={entry}
           settings={settings}
           unavailable={!section.open || entry.soldOut}
+          removable={removableIn(entry.item)}
           onOpen={() => onPick(entry.item.$id)}
           onQuickAdd={onQuickAdd}
         />
