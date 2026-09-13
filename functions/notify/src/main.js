@@ -2,6 +2,7 @@ import { Client, Databases, Query, Users } from 'node-appwrite';
 import nodemailer from 'nodemailer';
 import { receiptPdf } from './receipt-pdf.js';
 import { bookingSittings, bookingSheetPdf } from './booking-sheet.js';
+import { ordersForSide, shelfCheckSummary } from './shift-shape.js';
 import { tradeWords, offSubject } from './words.js';
 import { dailyDigest, nightlyBackup, deliveryFrom } from './daily.js';
 import { ensureLogin, revokeLogin } from './staff.js';
@@ -1532,7 +1533,9 @@ export default async ({ req, res, log, error }) => {
       const openedAt = doc.opened_at;
       const closedAt = doc.closed_at || new Date().toISOString();
 
-      const [ingredients, waste, expenses, subs, offItems, inWindow, settledHere, payments, staff] = await Promise.all([
+      const [
+        ingredients, waste, expenses, subs, offItems, inWindow, settledHere, payments, staff, shelfChecks,
+      ] = await Promise.all([
         db.listDocuments(DB_ID, 'ingredients', [Query.equal('venue_id', doc.venue_id), Query.limit(500)]),
         db.listDocuments(DB_ID, 'waste_log', [Query.equal('shift_id', doc.$id), Query.limit(100)]),
         db.listDocuments(DB_ID, 'shift_expenses', [Query.equal('shift_id', doc.$id), Query.limit(100)]),
@@ -1562,13 +1565,36 @@ export default async ({ req, res, log, error }) => {
           Query.equal('shift_id', doc.$id), Query.limit(500),
         ]).catch(() => ({ documents: [] })),
         db.listDocuments(DB_ID, 'staff_profiles', [Query.limit(200)]).catch(() => ({ documents: [] })),
+        /*
+          What somebody actually saw on the shelves as they closed up.
+
+          The stock table below this only ever lists what is LOW or OUT, so a
+          shift where everything was fine printed no stock section at all —
+          which on the page is indistinguishable from the section being
+          broken, or from nobody having been asked. Two very different things,
+          one silence. This is the check itself: OK, LOW and OUT as they were
+          tapped, counted from the rows the close wrote.
+        */
+        db.listDocuments(DB_ID, 'shift_stock_checks', [
+          Query.equal('shift_id', doc.$id),
+          Query.equal('phase', 'close'),
+          Query.limit(500),
+        ]).catch(() => ({ documents: [] })),
       ]);
 
-      // Created during the shift, or settled by it. Merged by id so an order
-      // that is both is still one order.
-      const orders = { documents: [...new Map(
-        [...inWindow.documents, ...settledHere.documents].map((o) => [o.$id, o]),
-      ).values()] };
+      /**
+       * Which trade this shift is. The bistro, the bar and the craft shop each
+       * open and close their own, and one closing says nothing about another.
+       */
+      const side = doc.module || 'kitchen';
+
+      /*
+        Created during the shift, or settled by it — this side's only.
+
+        The window query asks for every order at the venue between two times,
+        and the bar is open during the bistro's hours. See ordersForSide.
+      */
+      const orders = { documents: ordersForSide(inWindow.documents, settledHere.documents, side) };
 
       // The two stock sections, kept apart on purpose: a first-time flag is
       // routine restocking, the same item low for the fourth shift running is
@@ -1587,7 +1613,6 @@ export default async ({ req, res, log, error }) => {
         existed carry no value for it, so asking the database for
         module = kitchen would miss the entire original larder.
       */
-      const side = doc.module || 'kitchen';
       const low = ingredients.documents
         .filter((i) => (i.module || 'kitchen') === side)
         .filter((i) => i.active && (i.consecutive_low_count || 0) > 0)
@@ -1600,6 +1625,35 @@ export default async ({ req, res, log, error }) => {
         });
       const fresh = low.filter((i) => (i.consecutive_low_count || 0) === 1);
       const persistent = low.filter((i) => (i.consecutive_low_count || 0) >= threshold);
+
+      /*
+        The shelves as they were reported, counted.
+
+        Said whatever the answer is, including "everything was fine", because
+        the table below only prints exceptions and an empty exceptions table
+        is silence. An owner cannot tell a good night from a broken report
+        from a check nobody was asked to do, and all three were printing the
+        same nothing.
+
+        Built from the rows the close actually wrote rather than from the
+        ingredients table, so it says what a person tapped that night and not
+        what the running figures imply today.
+      */
+      const shelf = shelfCheckSummary(
+        shelfChecks.documents,
+        new Map(ingredients.documents.map((i) => [i.$id, i.name])),
+      );
+      const shelfLine = shelf.total === 0
+        ? '<p style="margin:0;font-size:14px;color:#5d6b7a">No shelf check was filed with this close, so '
+          + 'nothing here says what was on the shelves. It is asked for on the closing screen.</p>'
+        : `<p style="margin:0;font-size:14px">
+             <strong>${shelf.total}</strong> item${shelf.total === 1 ? '' : 's'} checked ·
+             <span style="color:#12805c">${shelf.ok} ok</span> ·
+             <span style="color:${shelf.low ? '#b26a00' : '#5d6b7a'}">${shelf.low} low</span> ·
+             <span style="color:${shelf.out ? '#b42318' : '#5d6b7a'};font-weight:${shelf.out ? 700 : 400}">${shelf.out} out</span>
+           </p>
+           ${shelf.outNames.length ? `<p style="margin:6px 0 0;font-size:14px"><strong>Out:</strong> ${shelf.outNames.join(', ')}</p>` : ''}
+           ${shelf.lowNames.length ? `<p style="margin:6px 0 0;font-size:14px;color:#5d6b7a"><strong>Low:</strong> ${shelf.lowNames.join(', ')}</p>` : ''}`;
 
       const variance = Object.values(JSON.parse(doc.variance || '{}')).reduce((a, b) => a + b, 0);
       const wasteValue = waste.documents.reduce((a, w) => a + (w.value || 0), 0);
@@ -1687,6 +1741,8 @@ export default async ({ req, res, log, error }) => {
            ${row('Cash difference', variance === 0 ? 'Balanced' : `${variance > 0 ? '+' : ''}${money(variance, settings)}`, variance !== 0)}
          </table>
          ${section('Who did what', staffRows)}
+         <h3 style="margin:20px 0 6px;font-size:15px">Shelves at close</h3>
+         ${shelfLine}
          ${stockTable(low, threshold, settings)}
          ${section(
            'Taken off the menu during this shift',
