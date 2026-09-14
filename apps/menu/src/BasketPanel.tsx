@@ -10,7 +10,7 @@ import type { CartLine, Settings } from '@snpos/core';
  * copying does it — a column on the right that fills as things are tapped, so
  * a hotel booking forty covers can see the order growing and check it against
  * the guests in front of them without opening anything. A single button at the
- * bottom of the page reading "See the booking · 2 meals" tells them a figure
+ * bottom of the page reading "See the booking · 2 sittings" tells them a figure
  * and hides everything the figure is made of.
  *
  * It is NOT the answer on a phone, and this is the part people get wrong. A

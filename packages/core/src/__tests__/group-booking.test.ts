@@ -67,7 +67,17 @@ test('a booking says the one thing stopping it, earliest first', () => {
     reference: 'R1', needReference: true, referenceLabel: 'Booking ref',
     minSize: 6, contactName: 'Ama', email: 'ama@example.com',
   };
-  assert.match(String(bookingProblem([], ok)), /Add a meal/);
+  /*
+    Never the word "meal" for a sitting.
+
+    The button used to say "Add a meal", and the first person outside this
+    office to try the page read it the way anybody would — as "add a meal from
+    the menu" — tapped a dish, was told to add a meal, and reported the button
+    as broken. The occasion is a time the group will eat; the food is the only
+    thing a customer calls a meal.
+  */
+  assert.match(String(bookingProblem([], ok)), /Add a time the group will eat/);
+  assert.doesNotMatch(String(bookingProblem([], ok)), /\bmeals?\b/i);
 
   const some = [meal('2026-09-14T12:00:00Z', 'dine_in'), meal('2026-09-15T12:00:00Z', 'dine_in', [])];
   assert.match(String(bookingProblem(some, ok)), /has nothing on it/);

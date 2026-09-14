@@ -530,7 +530,21 @@ export function App() {
 
   const addLine = useCallback((line: CartLine) => {
     if (inGroupMode) {
-      if (!activeMeal) { toast('Pick a meal first'); return; }
+      /*
+        Named for the step they have NOT done, not for one that does not exist.
+
+        This said "Pick a meal first", which is wrong twice over. There is
+        nothing to pick — the sitting has to be created — and "meal" is what a
+        customer calls the food, so the sentence read as "add a meal from the
+        menu", which is exactly what they had just tried to do. The person who
+        reported this was following the instruction.
+      */
+      if (!activeMeal) {
+        toast(groupMeals.length === 0
+          ? 'Add a time the group will eat first — the green button above the menu.'
+          : 'Tap the sitting you are ordering for, above the menu.');
+        return;
+      }
       setGroupMeals((all) => all.map((d) => {
         if (d.key !== activeMeal) return d;
         // Same dish, same options, same day merges rather than stacking.
@@ -548,7 +562,10 @@ export function App() {
         };
       }));
       setOpenDish(null);
-      toast('Added to that meal');
+      // Named, so a party ordering for four sittings can see which one it
+      // went into without opening the booking to check.
+      const into = groupMeals.find((m) => m.key === activeMeal);
+      toast(into ? `Added to ${longDayWords(into.at)}, ${timeWords(into.at)}` : 'Added');
       return;
     }
     setCart((c) => {
@@ -565,7 +582,7 @@ export function App() {
     });
     setOpenDish(null);
     toast('Added to your order');
-  }, [toast, inGroupMode, activeMeal]);
+  }, [toast, inGroupMode, activeMeal, groupMeals]);
 
   /**
    * One of something, straight from the row, with no sheet in between.
@@ -1273,16 +1290,31 @@ export function App() {
         ))}
       </nav>
 
-      {sections.map((section) => (
-        <Section
-          key={section.category.$id}
-          section={section}
-          settings={settings}
-          removableIn={removableIn}
-          onPick={(id) => setOpenDish(id)}
-          onQuickAdd={quickAdd}
-        />
-      ))}
+      {/*
+        THE MENU LOOKS UNAVAILABLE UNTIL THERE IS A SITTING TO PUT FOOD IN.
+
+        Every dish was listed, priced, with a working-looking Add button, and
+        nothing on the page said any of it was inert. So the first person
+        outside this office to try it pressed Add, was refused by a message in
+        the corner, and concluded the page was broken — which, from where they
+        were sitting, was the only conclusion on offer.
+
+        Dimmed rather than disabled. A dead button that does nothing at all is
+        the same silence in a different coat; these still answer, and what
+        they answer is why they cannot work yet.
+      */}
+      <div className={inGroupMode && groupMeals.length === 0 ? 'menu-waiting' : undefined}>
+        {sections.map((section) => (
+          <Section
+            key={section.category.$id}
+            section={section}
+            settings={settings}
+            removableIn={removableIn}
+            onPick={(id) => setOpenDish(id)}
+            onQuickAdd={quickAdd}
+          />
+        ))}
+      </div>
 
       {sections.length === 0 && (
         <div style={{ padding: '2rem 1rem' }}>
@@ -1314,7 +1346,7 @@ export function App() {
           title="This booking"
           subtitle={openMeal
             ? `${longDayWords(openMeal.at)}, ${timeWords(openMeal.at)}`
-            : 'No meal chosen yet'}
+            : 'No sitting chosen yet'}
           lines={openMeal?.lines ?? []}
           settings={settings}
           total={booking.total}
@@ -1326,7 +1358,7 @@ export function App() {
             : m)))}
           empty={openMeal
             ? 'Nothing on this sitting yet. Tap Add beside a dish.'
-            : 'Add a meal above, then choose the food for it.'}
+            : 'Add a time the group will eat, above, then choose their food.'}
         />
       ) : (
         <BasketPanel
@@ -1387,6 +1419,12 @@ export function App() {
           settings={settings}
           showDiet
           canLeaveOut={inGroupMode}
+          blocked={inGroupMode && !activeMeal
+            ? (groupMeals.length === 0
+              ? 'Before you can choose food, say when the group will eat. Close this and press '
+                + '\u201c+ Add a time the group will eat\u201d above the menu.'
+              : 'Close this and tap the sitting you are ordering for, above the menu.')
+            : undefined}
           onClose={() => setOpenDish(null)}
           onAdd={addLine}
         />

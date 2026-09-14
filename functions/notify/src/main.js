@@ -1199,7 +1199,7 @@ export default async ({ req, res, log, error }) => {
              ${row('Booked by', doc.contact_name || '-')}
              ${row('Reference', doc.reference || '-')}
              ${row('About', KINDS[doc.kind] || doc.kind)}
-             ${row('First meal', doc.first_at ? new Date(doc.first_at).toLocaleString() : '-')}
+             ${row('First sitting', doc.first_at ? new Date(doc.first_at).toLocaleString() : '-')}
            </table>
            <p style="margin:14px 0 4px;font-weight:600">What they asked for</p>
            <p style="margin:0;white-space:pre-wrap">${String(doc.note || '')

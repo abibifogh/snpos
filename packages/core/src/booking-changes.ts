@@ -49,7 +49,7 @@ export function changeProblem(
   if (!Number.isFinite(left)) return 'This booking has no date on it, so it cannot be changed here.';
   if (left < 0) return 'This booking has already started. Please speak to the restaurant.';
   if (left < cutoffDays) {
-    return `Changes close ${cutoffDays} days before the first meal, and that has passed. `
+    return `Changes close ${cutoffDays} days before the first sitting, and that has passed. `
       + 'The food is already being shopped for. Please ring the restaurant and ask.';
   }
   return null;
@@ -64,7 +64,7 @@ export function changeWindowWords(
   const at = firstAt instanceof Date ? firstAt : new Date(firstAt);
   if (!Number.isFinite(at.getTime())) return '';
   const closes = new Date(at.getTime() - cutoffDays * DAY_MS);
-  return `Changes can be asked for until ${dateWords(closes)}, ${cutoffDays} days before the first meal.`;
+  return `Changes can be asked for until ${dateWords(closes)}, ${cutoffDays} days before the first sitting.`;
 }
 
 export type ChangeKind = 'numbers' | 'timing' | 'food' | 'dietary' | 'cancel' | 'other';

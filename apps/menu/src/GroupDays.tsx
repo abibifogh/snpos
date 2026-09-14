@@ -11,13 +11,22 @@ import { newMeal } from './GroupSheet';
 const todayInput = () => dayInput(new Date());
 
 /**
- * Which meal of the stay is being ordered for.
+ * Which sitting of the stay is being ordered for.
  *
  * A party staying four nights eats eight times, and every dish tapped has to
  * belong to one particular sitting. Lunch on the terrace and dinner in the
  * restaurant on the same Tuesday are two of them: cooked hours apart, and one
  * may be packed for an excursion while the other is not. So the same date can
  * appear twice and only the same TIME twice is refused.
+ *
+ * NOT CALLED A "MEAL" ANYWHERE A GUEST CAN READ IT, and that is not fussiness.
+ * The button said "Add a meal", and the first person outside this office to
+ * try the page read it the way anybody would — as "add a meal from the menu"
+ * — tapped a dish, was told to add a meal, and wrote in to say the button did
+ * not work. They were obeying the instruction in the only sense the word has
+ * for a customer. So the occasion is "a time the group will eat" where
+ * something is being asked for, and a "sitting" where one is being counted;
+ * the food is the only thing left that could be called a meal.
  *
  * Written as a list of what has been booked so far, rather than as a row of
  * chips. The chips were compact and read as decoration — the button that adds
@@ -117,36 +126,47 @@ export function GroupDays({
           );
         })}
 
+        {/* THE EXPLANATION COMES BEFORE THE BUTTON, because people read before
+            they press. It sat underneath, so the eye landed on a green button
+            reading "Add a meal" with the food directly below it, and the
+            sentence that would have explained the page was never reached. */}
+        {meals.length === 0 && (
+          <Notice tone="info">
+            <strong>Booking for a group.</strong> First say when the group will eat — the day and the time.
+            Then choose their food from the menu below. Lunch and dinner on the same day are two separate
+            sittings.
+          </Notice>
+        )}
+
         {/* Full width and primary. This is the first thing anybody has to do
             and it used to look like one more tab in a row of tabs. */}
         <Button variant="primary" onClick={open} style={{ width: '100%' }}>
-          + Add {ordered.length === 0 ? 'a meal' : 'another meal'}
+          {ordered.length === 0 ? '+ Add a time the group will eat' : '+ Add another time'}
         </Button>
       </div>
 
-      {meals.length === 0 && (
-        <Notice tone="info">
-          <strong>Booking for a group.</strong> Add a meal and say when the group will eat it, then choose
-          their food from the menu below. Lunch and dinner on the same day are two meals.
-        </Notice>
-      )}
-
-      {/* Said above the menu, because a dish tapped with no meal chosen has
-          nowhere to go and the reason has to be obvious before it happens. */}
-      {active && (
+      {/* Said above the menu, because a dish tapped with nowhere to go is the
+          fault this page keeps having, and the reason has to be on screen
+          BEFORE it happens rather than in a message afterwards. */}
+      {active ? (
         <div className="banner banner-info">
           <strong>Choosing food for {longDayWords(active.at)}, {timeWords(active.at)}.</strong>{' '}
-          Tap another meal above to order for that one instead.
+          Tap another sitting above to order for that one instead.
+        </div>
+      ) : (
+        <div className="banner banner-warn">
+          <strong>The menu is not ready yet.</strong>{' '}
+          Add a time the group will eat, above, and the food below will open up.
         </div>
       )}
 
       {adding && (
         <Modal
-          title="Add a meal"
+          title="When will the group eat?"
           onClose={() => setAdding(false)}
           footer={
             <Button variant="primary" onClick={add} disabled={!!wrong} style={{ width: '100%' }}>
-              Add this meal
+              Add this time
             </Button>
           }
         >
@@ -160,7 +180,7 @@ export function GroupDays({
           </Field>
           <Field
             label="What time?"
-            hint={`Any time between ${BOOKING_OPENS} and ${BOOKING_CLOSES}. Add the same day again for a second sitting: lunch and dinner are two meals.`}
+            hint={`Any time between ${BOOKING_OPENS} and ${BOOKING_CLOSES}. Add the same day again for a second sitting: lunch and dinner are two sittings.`}
           >
             <Input
               type="time"

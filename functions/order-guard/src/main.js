@@ -935,7 +935,7 @@ async function cancelForCustomer({ db, DB_ID, doc, log }) {
     if (daysLeft < CANCEL_BOOKING_DAYS) {
       await settle(
         'refused',
-        `A booking can only be cancelled ${CANCEL_BOOKING_DAYS} days or more before the first meal, and that `
+        `A booking can only be cancelled ${CANCEL_BOOKING_DAYS} days or more before the first sitting, and that `
         + 'has passed. The food is already being shopped for. Please ring the restaurant.',
       );
       return { ok: true, refused: 'too close' };
@@ -945,7 +945,7 @@ async function cancelForCustomer({ db, DB_ID, doc, log }) {
       status: 'CANCELLED',
       rejected_at: new Date().toISOString(),
       reject_reason_code: 'customer_request',
-      reject_reason_note: `Group booking cancelled by the customer, ${daysLeft} days before the first meal.`,
+      reject_reason_note: `Group booking cancelled by the customer, ${daysLeft} days before the first sitting.`,
     });
     // The place it was holding in a capped slot goes back, or the slot stays
     // full of a party that is not coming.
@@ -980,7 +980,7 @@ async function cancelForCustomer({ db, DB_ID, doc, log }) {
         await db.updateDocument(DB_ID, 'group_bookings', order.group_booking_id, {
           status: 'cancelled',
           decided_at: new Date().toISOString(),
-          decided_note: `Cancelled by the party, ${daysLeft} days before the first meal.`,
+          decided_note: `Cancelled by the party, ${daysLeft} days before the first sitting.`,
         }).catch((e) => log(`Could not mark booking ${order.group_booking_id} cancelled: ${e.message}`));
       }
     }

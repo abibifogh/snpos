@@ -255,7 +255,7 @@ export function GroupSheet({
         : humanError(e) || 'Could not send the booking. Please try again.';
       const done = booked.length;
       setProblem(done > 0
-        ? `${message} ${done} meal${done === 1 ? '' : 's'} of the booking went through before this; the rest have not. Please tell the front desk.`
+        ? `${message} ${done} sitting${done === 1 ? '' : 's'} of the booking went through before this; the rest have not. Please tell the front desk.`
         : message);
       onError(message);
     } finally {
@@ -296,7 +296,7 @@ export function GroupSheet({
 
       {meals.length === 0 ? (
         <Notice tone="info">
-          Nothing booked yet. Close this, add a meal above the menu, and choose what the group would like to
+          Nothing booked yet. Close this, add a time the group will eat above the menu, and choose what they would like to
           eat at it. Lunch and dinner on the same day are two meals.
         </Notice>
       ) : (
@@ -376,7 +376,7 @@ export function GroupSheet({
                   have ordered. */}
               {shown.meal.lines.length === 0 ? (
                 <p className="meta" style={{ margin: '0.6rem 0' }}>
-                  Nothing on this meal yet. Close this and choose from the menu.
+                  Nothing on this sitting yet. Close this and choose from the menu.
                 </p>
               ) : shown.meal.lines.map((line: CartLine) => (
                 <div className="line" key={line.key}>
@@ -411,7 +411,7 @@ export function GroupSheet({
                     setTab(WHO);
                   }}
                 >
-                  Remove this meal
+                  Remove this sitting
                 </Button>
               </div>
             </>
@@ -478,7 +478,7 @@ export function GroupSheet({
               </div>
 
               <p className="meta">
-                Each meal is sent to the kitchen as its own order, in time to cook it and not before, so nothing
+                Each sitting is sent to the kitchen as its own order, in time to cook it and not before, so nothing
                 is made early. They all carry your reference.
               </p>
             </div>

@@ -17,6 +17,7 @@ export function DishSheet({
   settings,
   showDiet,
   canLeaveOut,
+  blocked,
   onClose,
   onAdd,
 }: {
@@ -34,6 +35,20 @@ export function DishSheet({
    * quietly left out was agreed with nobody. See removableIn in App.
    */
   canLeaveOut?: boolean;
+  /**
+   * Why this dish cannot be added yet, if it cannot. In the guest's words.
+   *
+   * On a group booking a dish needs a sitting to go into, and until one
+   * exists Add can do nothing. It used to do nothing SILENTLY: the sheet
+   * stayed open, the button gave no sign, and a message appeared in the
+   * bottom corner and went away again. The first person outside this office
+   * to try the page wrote in to say the button was broken, and they were
+   * right about what they saw.
+   *
+   * So the reason is stated at the top of the sheet and the button is plainly
+   * off, before anybody presses it.
+   */
+  blocked?: string;
   onClose: () => void;
   onAdd: (line: CartLine) => void;
 }) {
@@ -109,6 +124,7 @@ export function DishSheet({
   const unsure = dietUnknownWords(withOptions.unknown);
 
   const add = () => {
+    if (blocked) { setError(blocked); return; }
     for (const { group } of entry.groups) {
       const picked = (chosen[group.$id] ?? []).length;
       if (group.required && picked < Math.max(1, group.min_select)) {
@@ -147,13 +163,15 @@ export function DishSheet({
       footer={
         <div className="spread" style={{ width: '100%' }}>
           <QtyBox qty={qty} onChange={setQty} label={entry.item.name} />
-          <Button variant="primary" onClick={add}>
+          <Button variant="primary" onClick={add} disabled={!!blocked}>
             Add · {formatMoney(unitPrice * qty, settings)}
           </Button>
         </div>
       }
     >
       <FormError message={error} />
+      {/* Before the dish, not after the disappointment. */}
+      {blocked && <Notice tone="warn">{blocked}</Notice>}
       {img && (
         <img
           src={img}
