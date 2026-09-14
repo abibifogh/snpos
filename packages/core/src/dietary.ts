@@ -112,7 +112,7 @@ export function toggleDietaryTag(tags: readonly string[] | undefined | null, key
  *
  * So an ingredient can be marked as one that may be left out, and told what
  * the dish becomes without it. That single fact does all the work: the card
- * can say "vegetarian on request" before anybody opens it, the dish itself
+ * can say "open to make it vegetarian" before anybody opens it, the dish itself
  * offers one switch, and the filter at the top of the menu can count a dish
  * as vegetarian-if-asked without pretending it already is.
  *
@@ -156,6 +156,33 @@ export function parseOmissions(raw?: string | null): Omission[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * What may be left out, on the menu doing the asking.
+ *
+ * The switches are for the GROUP menu and nowhere else, and this is where
+ * that is decided rather than in a component, so it is one rule with one
+ * answer and can be read without opening an app.
+ *
+ * The reason is the situation, not the software. A party books days ahead for
+ * people it cannot ask: the hotel knows somebody in the twelve is vegan, it
+ * cannot check plate by plate, and the kitchen has a week's notice to shop
+ * and cook accordingly. A walk-in at a counter screen is standing in the
+ * room. Give them the same switches and a plate reaches the pass mid-service
+ * with an ingredient quietly removed, agreed with nobody, from a dish that
+ * may have been batched that morning — and the guest is at their table before
+ * anyone could say no. They can ask, and a person answers.
+ *
+ * Everything downstream follows: the switches inside the dish, the pill on
+ * the card, the diet chips and what they filter all ask this, so off the
+ * group menu a dish simply has nothing removable, which is the truth there.
+ */
+export function removableFor(
+  raw: string | null | undefined,
+  where: { group: boolean },
+): Omission[] {
+  return where.group ? parseOmissions(raw) : [];
 }
 
 /**
@@ -232,11 +259,21 @@ export function tagsWithout(
   return [...has];
 }
 
-/** "Vegetarian on request", or nothing. The pill on the card. */
+/**
+ * "Open to make it vegan", or nothing. The pill on the card.
+ *
+ * It said "Vegan on request", which is what a menu printed on paper says and
+ * is wrong on a screen. "On request" tells a guest to ask somebody — so they
+ * looked for a box to type it in, or waited to tell a waiter who was never
+ * coming, when the thing they had to do was tap the dish and turn a switch on.
+ *
+ * So it names the action instead of describing the outcome: open it, and the
+ * switch is in there.
+ */
 export function couldBeWords(tags: readonly string[] | undefined | null, omissions: Omission[]): string {
   const labels = dietaryLabels(couldBe(tags, omissions)).filter((t) => !t.caution);
   if (labels.length === 0) return '';
-  return `${labels.map((t) => t.label).join(' or ')} on request`;
+  return `Open to make it ${labels.map((t) => t.label.toLowerCase()).join(' or ')}`;
 }
 
 /**

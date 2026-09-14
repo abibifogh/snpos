@@ -37,8 +37,10 @@ export interface GroupBookingDoc {
   order_nos?: string;
   first_at?: string;
   last_at?: string;
-  status?: 'pending' | 'approved' | 'refused';
+  status?: 'pending' | 'approved' | 'refused' | 'cancelled';
   decided_note?: string;
+  /** Anything the party said about the booking as a whole. See the schema. */
+  note?: string;
 }
 
 export async function recordGroupBooking(input: {
@@ -57,6 +59,8 @@ export async function recordGroupBooking(input: {
   orderNos: string[];
   firstAt: string;
   lastAt: string;
+  /** Anything they want said about the whole booking, in their own words. */
+  note?: string;
 }): Promise<void> {
   await db.createDocument(DB_ID, 'group_bookings', input.bookingId, {
     venue_id: input.venueId,
@@ -73,6 +77,9 @@ export async function recordGroupBooking(input: {
     order_nos: input.orderNos.join(', ').slice(0, 400),
     first_at: input.firstAt,
     last_at: input.lastAt,
+    // Capped to what the column holds, like the order numbers above it: a
+    // booking must not lose its whole row to somebody pasting an itinerary.
+    note: (input.note ?? '').trim().slice(0, 1000),
     // Waiting, until somebody here agrees to it. See the schema note.
     status: 'pending',
   });

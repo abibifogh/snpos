@@ -12,9 +12,11 @@ export function DietTags({ tags, couldBe }: {
   /**
    * What the dish is not yet but could be, if something were left out.
    *
-   * A quieter pill than the rest, and worded as an offer rather than a fact:
-   * "Vegetarian on request" is a different promise from "Vegetarian", and a
-   * guest who cannot eat fish has to be able to tell them apart at a glance.
+   * A quieter pill than the rest, and worded as an instruction rather than a
+   * fact: "Open to make it vegetarian" is a different promise from
+   * "Vegetarian", and a guest who cannot eat fish has to be able to tell them
+   * apart at a glance — and to know that the second one needs them to do
+   * something. See couldBeWords.
    */
   couldBe?: string;
 }) {

@@ -14,30 +14,14 @@
  */
 
 import { splitTax, parseLevies, vatBpOf, taxWords, showsTaxParts } from './books.js';
+// One spelling of the Latin-1 rule for every PDF this function writes, so the
+// cedi is a currency code on a receipt and on a booking sheet alike. It used
+// to live here, with a mangled em dash in the table that quietly turned every
+// one of them into a question mark.
+import { latin1, esc } from './pdf-doc.js';
 
 /** Courier is 600/1000 em wide at every size, the only reason this is easy. */
 const CHAR_W = 0.6;
-
-const LATIN1_SAFE = {
-  '₵': 'GHS', // cedi
-  '₦': 'NGN', // naira
-  '’': "'", '‘': "'", '“': '"', '”': '"',
-  '–': '-', ', ': '-', '…': '...', '·': '-',
-  '×': 'x', '−': '-',
-};
-
-/** Anything a built-in font cannot draw becomes something it can. */
-function latin1(text) {
-  let out = '';
-  for (const ch of String(text ?? '')) {
-    if (LATIN1_SAFE[ch] !== undefined) out += LATIN1_SAFE[ch];
-    else if (ch.charCodeAt(0) <= 0xff) out += ch;
-    else out += '?';
-  }
-  return out;
-}
-
-const esc = (s) => latin1(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
 
 /**
  * The page, built as a list of lines before anything is measured.

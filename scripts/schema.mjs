@@ -911,6 +911,19 @@ export const COLLECTIONS = [
       ['first_at', 'd', null, false],
       ['last_at', 'd', null, false],
       /*
+        Anything the party wants said about the booking as a whole.
+
+        Not a dish note — those belong on the line they are about, and there
+        is a box for them on every dish. This is the sentence that has nowhere
+        else to go: "we will need a high chair", "the coach leaves at two, so
+        we cannot run late", "one of the party is in a wheelchair". It used to
+        arrive by telephone, if at all, to whoever picked up.
+
+        On the booking rather than on an order, because it is true of all of
+        them, and printed on the sheet where the kitchen will read it.
+      */
+      ['note', 's', 1000, false],
+      /*
         Whether the restaurant has agreed to it.
 
         A party of forty is a planning decision, not a ticket: the shopping,
@@ -924,7 +937,17 @@ export const COLLECTIONS = [
         cooked, which is a worse failure than cooking for a party that was
         always coming. What approval changes is what the guest is told.
       */
-      ['status', 'e', ['pending', 'approved', 'refused'], true, 'pending'],
+      /*
+        'cancelled' is written by the server, never by a page.
+
+        A party calling the whole thing off cancels its sittings one at a
+        time — that is how a cancellation is settled, and a guest cannot write
+        to this row in any case. So order-guard marks the booking once the
+        LAST sitting has gone, which is also what sends the message: notify
+        watches this collection, so one booking is one email to the party and
+        one to the house rather than one per sitting, or, as it was, none.
+      */
+      ['status', 'e', ['pending', 'approved', 'refused', 'cancelled'], true, 'pending'],
       ['decided_by', 's', 64, false],
       ['decided_at', 'd', null, false],
       ['decided_note', 's', 1000, false],

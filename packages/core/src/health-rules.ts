@@ -57,6 +57,15 @@ export interface HealthFacts {
   /** Emails that failed in the last week. */
   failedReceipts: number;
   failedSummaries: number;
+  /**
+   * Group booking notices that did not reach the house.
+   *
+   * Its own count rather than folded into the receipts, because it is a
+   * different kind of failure: a receipt that fails annoys one customer who
+   * already has their food, while a booking notice that fails means a party
+   * of forty believes the restaurant knows and the restaurant does not.
+   */
+  failedBookingNotices: number;
   /** When each background job last left a trace. Absent is never. */
   lastHealthRun?: string;
   lastBackup?: string;
@@ -231,6 +240,17 @@ export function healthFindings(f: HealthFacts, w: HealthWords): HealthFinding[] 
   out.push(failedMail > 0
     ? { key: 'mail', level: 'info', title: 'Emails that failed this week', count: failedMail, detail: [f.failedReceipts > 0 ? plural(f.failedReceipts, 'receipt', 'receipts') : '', f.failedSummaries > 0 ? plural(f.failedSummaries, 'report', 'reports') : ''].filter(Boolean).join(', ') + '. Each row says why under Reports.', goto: '/reports', action: 'Open reports' }
     : none('mail', 'Emails that failed this week'));
+  /*
+    Warn, not info.
+
+    A booking notice that did not arrive is a party expecting food from a
+    kitchen that has never heard of them. The commonest cause is that no
+    admin or manager has an email address on their staff profile, so that is
+    what the line says to go and check.
+  */
+  out.push(f.failedBookingNotices > 0
+    ? { key: 'booking_mail', level: 'warn', title: 'Group bookings nobody here was told about', count: f.failedBookingNotices, detail: `${plural(f.failedBookingNotices, 'booking notice', 'booking notices')} did not get through this week. The usual cause is that no admin or manager has an email address on their staff profile. You can also name an address under Features, Group ordering.`, goto: '/staff', action: 'Open staff' }
+    : none('booking_mail', 'Group bookings nobody here was told about'));
 
   return out;
 }

@@ -707,7 +707,7 @@ export function longDayWords(at: string | Date): string {
  */
 export function tabLabel(at: string | Date): string {
   const d = at instanceof Date ? at : new Date(at);
-  if (!Number.isFinite(d.getTime())) return 'A meal';
+  if (!Number.isFinite(d.getTime())) return 'A sitting';
   const two = (n: number) => String(n).padStart(2, '0');
   return `${LONG_DAYS[d.getDay()].slice(0, 3)} ${d.getDate()} · ${two(d.getHours())}:${two(d.getMinutes())}`;
 }
@@ -734,12 +734,12 @@ export const portionsAtBiggest = (meals: GroupMeal[]): number =>
   meals.reduce((most, m) => Math.max(most, portionsOn(m)), 0);
 
 export function bookingProblem(meals: GroupMeal[], check: BookingCheck): string | null {
-  if (meals.length === 0) return 'Add a meal, and what the group would like to eat at it.';
+  if (meals.length === 0) return 'Add a time the group will eat, and what they would like at it.';
   const empty = [...meals].sort((a, b) => a.at.localeCompare(b.at)).find((m) => portionsOn(m) === 0);
   if (empty) {
     // Named by day AND time: a stay with lunch and dinner on the same Tuesday
     // has two meals that a date alone cannot tell apart.
-    return `${mealLabel(empty.at)} has nothing on it. Add something, or take that meal off the booking.`;
+    return `${mealLabel(empty.at)} has nothing on it. Add something, or take that sitting off the booking.`;
   }
   if (!check.contactName.trim()) return 'Please give a name for the booking, so the kitchen knows whose it is.';
   if (check.needReference && !check.reference.trim()) return `Please enter the ${check.referenceLabel.toLowerCase()}.`;

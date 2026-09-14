@@ -54,6 +54,24 @@
   color: var(--warn);
 }
 .banner-info { background: var(--surface-2); color: var(--text-dim); }
+.banner-warn { background: var(--warn-bg); color: var(--warn); }
+
+/*
+  The menu before there is anywhere to put the food.
+
+  A group booking needs a sitting before a dish has anywhere to go. The menu
+  was fully lit and fully priced with working-looking Add buttons all the
+  same, so the first person outside this office to try the page pressed one,
+  was refused by a message in the corner, and reported the button as broken.
+  From where they sat, nothing else was available to conclude.
+
+  Dimmed, not disabled. `pointer-events: none` would be the same silence in a
+  different coat: a tap that produces nothing teaches nothing. These still
+  answer, and what they answer is the reason they cannot work yet.
+*/
+.menu-waiting { opacity: 0.45; filter: saturate(0.4); transition: opacity 0.2s; }
+.menu-waiting .dish { cursor: default; }
+.menu-waiting .dish .btn { border-style: dashed; }
 
 .cat-nav {
   position: sticky; top: 0; z-index: 10;

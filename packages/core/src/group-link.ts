@@ -37,14 +37,44 @@ export const GROUP_PATH = 'group';
  * holding the old 404 in its cache, or from any link somebody saved in that
  * form. It is the same address and it opens the same menu.
  *
- * There is no ambiguity to worry about: this app's hash means one other thing,
- * which is #/order/<id>.
+ * Matched on the FIRST segment of the hash rather than on the whole of it,
+ * because the group menu is a place a guest stays rather than a page they
+ * pass through: they open an order they have just placed, come back out of
+ * it, and must land where they were. So #/group/order/<id> is still the group
+ * menu, with an order open on top of it. See orderHash.
  */
 export function isGroupPath(pathname: string, hash: string = ''): boolean {
   const parts = (pathname || '').split('/').filter(Boolean);
   if (parts[parts.length - 1] === GROUP_PATH) return true;
   const routed = (hash || '').replace(/^#\/?/, '').split('/').filter(Boolean);
-  return routed.length === 1 && routed[0] === GROUP_PATH;
+  return routed[0] === GROUP_PATH;
+}
+
+/**
+ * The address to write when a guest opens an order, or comes back out of one.
+ *
+ * The group segment is kept through both, which it was not: opening an order
+ * from the group menu wrote #/order/<id> over the top of #/group, and coming
+ * back out wrote #/ — so the back arrow landed a hotel that had just booked
+ * forty covers on the ordinary dinner menu, with no way back to their own
+ * prices but to be sent the link again.
+ *
+ * The path is checked as well as the hash because the group menu is served at
+ * a real address too (/menu/group). Where the path already says it, the hash
+ * has nothing to add and saying it twice would be noise in somebody's address
+ * bar.
+ */
+export function orderHash(id: string | null, pathname: string, hash: string = ''): string {
+  const parts = (pathname || '').split('/').filter(Boolean);
+  const onPath = parts[parts.length - 1] === GROUP_PATH;
+  const prefix = !onPath && isGroupPath(pathname, hash) ? `/${GROUP_PATH}` : '';
+  return id ? `#${prefix}/order/${id}` : `#${prefix}/`;
+}
+
+/** The order an address is asking for, wherever the group segment sits. */
+export function orderIdInHash(hash: string): string | null {
+  const match = new RegExp(`^#(?:/${GROUP_PATH})?/order/([A-Za-z0-9_-]+)`).exec(hash || '');
+  return match ? match[1] : null;
 }
 
 /**

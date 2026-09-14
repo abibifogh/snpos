@@ -16,6 +16,22 @@
  * requires a rebuild.
  */
 :root {
+  /*
+   * What the BROWSER should draw its own things in.
+   *
+   * The tokens below cover everything this stylesheet paints. They do not
+   * cover the parts of a control the browser draws itself: the calendar
+   * button inside a date field, the clock inside a time field, the panel
+   * either of them opens, a select's dropdown list, the scrollbars. Those
+   * follow this property and nothing else, so on the dark theme the little
+   * calendar was a black glyph on a near-black field — invisible, on the one
+   * control a group booking cannot be made without.
+   *
+   * Set on both themes rather than only on dark, so that choosing "always
+   * light" on a phone set to dark gets light controls too.
+   */
+  color-scheme: light;
+
   --brand: #0f766e;
   --brand-ink: #ffffff;
   --accent: #f59e0b;
@@ -51,6 +67,8 @@
  */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
+    /* The browser's own controls too. See the note on :root. */
+    color-scheme: dark;
     --bg: #11161c;
     --surface: #171d25;
     --surface-2: #1e262f;
@@ -64,6 +82,7 @@
 }
 
 :root[data-theme='dark'] {
+  color-scheme: dark;
   --bg: #11161c;
   --surface: #171d25;
   --surface-2: #1e262f;

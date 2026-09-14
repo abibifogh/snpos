@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  parseOmissions, serialiseOmissions, couldBe, tagsWithout, couldBeWords,
+  parseOmissions, serialiseOmissions, couldBe, tagsWithout, couldBeWords, removableFor,
   omissionWords, matchesDiet, dietChips,
 } from '../dietary.ts';
 import type { Omission } from '../dietary.ts';
@@ -37,8 +37,13 @@ test('nothing removable means nothing changes', () => {
 });
 
 test('the pill reads as a possibility, and never as a warning', () => {
-  assert.equal(couldBeWords([], [momoni]), 'Vegetarian on request');
-  assert.equal(couldBeWords([], [momoni, egg]), 'Vegetarian or Vegan on request');
+  /*
+    It says what to DO, not what could be. "Vegetarian on request" sent guests
+    looking for a box to type a request into, or waiting to tell a waiter;
+    the thing they had to do was tap the dish and turn a switch on.
+  */
+  assert.equal(couldBeWords([], [momoni]), 'Open to make it vegetarian');
+  assert.equal(couldBeWords([], [momoni, egg]), 'Open to make it vegetarian or vegan');
   // A caution is not something to offer somebody: nobody asks for it spicy
   // by having something left out.
   assert.equal(couldBeWords([], [{ key: 'x', name: 'chilli', earns: ['spicy'] }]), '');
@@ -90,4 +95,29 @@ test('a blank or broken list is no list, never a crash', () => {
   // A row with no name is not an omission anybody could act on.
   assert.deepEqual(parseOmissions('[{"name":"  ","earns":[]}]'), []);
   assert.equal(serialiseOmissions([{ key: 'k', name: '   ', earns: [] }]), '[]');
+});
+
+test('the switches are the group menu\u2019s and nobody else\u2019s', () => {
+  /*
+    A party books days ahead for people it cannot ask, and the kitchen has
+    notice to shop and cook that way. A walk-in at a counter screen is
+    standing in the room: give them the same switches and a plate reaches the
+    pass mid-service with an ingredient quietly removed, agreed with nobody.
+    They can ask, and a person answers.
+  */
+  const raw = serialiseOmissions([momoni, egg]);
+
+  assert.equal(removableFor(raw, { group: true }).length, 2);
+  assert.deepEqual(removableFor(raw, { group: false }), []);
+
+  // And everything downstream follows from that one answer, so off the group
+  // menu the pill, the chips and the filter all see a dish with nothing to
+  // take out — which is the truth there.
+  assert.equal(couldBeWords([], removableFor(raw, { group: false })), '');
+  assert.deepEqual(couldBe([], removableFor(raw, { group: false })), []);
+  assert.equal(matchesDiet([], removableFor(raw, { group: false }), 'vegetarian'), null);
+  assert.equal(matchesDiet([], removableFor(raw, { group: true }), 'vegetarian'), 'could');
+
+  // A dish that IS the diet is unaffected: what it is, it is on every menu.
+  assert.equal(matchesDiet(['vegan'], removableFor(raw, { group: false }), 'vegan'), 'is');
 });

@@ -297,6 +297,20 @@ export function WaitingPage() {
                 {b.email ? ` · ${b.email}` : ''}
                 {b.order_nos ? ` · ${b.order_nos}` : ''}
               </div>
+              {/* What they said about the booking as a whole, on the screen
+                  where somebody agrees to it. A high chair or a coach to catch
+                  can be the reason the answer is no. */}
+              {b.note?.trim() && (
+                <div
+                  className="small"
+                  style={{
+                    marginTop: '0.35rem', paddingLeft: '0.6rem',
+                    borderLeft: '3px solid var(--brand)', whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  “{b.note.trim()}”
+                </div>
+              )}
               <div className="row" style={{ gap: '0.5rem', marginTop: '0.4rem' }}>
                 <Input
                   placeholder="A line to the group (optional)"

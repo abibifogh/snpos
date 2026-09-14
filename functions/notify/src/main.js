@@ -1,6 +1,8 @@
 import { Client, Databases, Query, Users } from 'node-appwrite';
 import nodemailer from 'nodemailer';
 import { receiptPdf } from './receipt-pdf.js';
+import { bookingSittings, bookingSheetPdf } from './booking-sheet.js';
+import { ordersForSide, shelfCheckSummary } from './shift-shape.js';
 import { tradeWords, offSubject } from './words.js';
 import { dailyDigest, nightlyBackup, deliveryFrom } from './daily.js';
 import { ensureLogin, revokeLogin } from './staff.js';
@@ -651,6 +653,45 @@ export default async ({ req, res, log, error }) => {
     }
   };
 
+  /**
+   * The booking sheet, as a real PDF, for whichever email is going out.
+   *
+   * An email body can hold a summary and no more: sittings, portions, a
+   * total. What a party of forty actually consists of — every dish, every
+   * choice ticked, everything left out, the notes in the guests' own words
+   * and what each plate is then suitable for — is a document, and the kitchen
+   * needs it on paper by the pass. See booking-sheet.js.
+   *
+   * Undefined on any failure, never a throw. A booking notice that arrives
+   * without its attachment is worth far more than one that never arrives
+   * because building a PDF went wrong.
+   */
+  const bookingSheet = async (label) => {
+    if (!doc?.$id) return undefined;
+    try {
+      const [sittings, venue] = await Promise.all([
+        bookingSittings({ db, DB_ID, Query, booking: doc }),
+        db.getDocument(DB_ID, 'venues', doc.venue_id).catch(() => null),
+      ]);
+      if (sittings.length === 0) {
+        error(`Booking ${doc.$id} has no orders to write a sheet from.`);
+        return undefined;
+      }
+      const stem = String(doc.reference || doc.contact_name || doc.$id)
+        .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'booking';
+      return [{
+        filename: `group-booking-${stem}.pdf`,
+        content: bookingSheetPdf({
+          settings, venue, booking: doc, sittings, label, accent: brand,
+        }),
+        contentType: 'application/pdf',
+      }];
+    } catch (e) {
+      error(`Group booking sheet failed for ${doc.$id}, sending without it: ${e.message}`);
+      return undefined;
+    }
+  };
+
   // ---------------------------------------------- hourly sweep (no document)
   // Nothing arrived, so this is the timer. The only thing worth checking on a
   // clock is the absence of an event: a dish taken off the menu that nobody
@@ -819,7 +860,28 @@ export default async ({ req, res, log, error }) => {
         Query.limit(50),
       ]).catch(() => ({ documents: [] }));
       const admins = staff.documents.map((p) => p.email).filter(Boolean);
-      const houseTo = [...new Set([...configured, ...admins])];
+      /*
+        And the restaurant's own address, when neither of those produced one.
+
+        An email address is optional on a staff profile, so a place whose
+        owner signed in without one — or who was set up before the field
+        existed — has an admin list of nobody. The booking then reached the
+        guest and nobody here, which is the failure that matters: the party
+        believes the restaurant knows, and the restaurant does not.
+
+        The from-address is the safe fallback because it is the one address
+        the mail provider has already verified for this business, so it is
+        certain to exist and certain to be read. Named in the log, so it is
+        clear this is a stopgap and that somebody should put a real address on
+        their profile or under group ordering.
+      */
+      let houseTo = [...new Set([...configured, ...admins])];
+      if (houseTo.length === 0 && settings.email_from_address) {
+        houseTo = [settings.email_from_address];
+        log('No admin or manager has an email address on their staff profile and no address is set under '
+          + `group ordering, so the booking notice went to ${settings.email_from_address} instead. `
+          + 'Set one on the staff profile, or under Admin, Features, Group ordering.');
+      }
 
       const money = (n) => `${doc.currency_code || ''}${((n || 0) / 100).toFixed(2)}`;
       const when = (iso) => {
@@ -827,6 +889,7 @@ export default async ({ req, res, log, error }) => {
         return Number.isFinite(d.getTime()) ? d.toLocaleString() : '';
       };
       const label = await featureConfig('group_orders', 'reservation_label', 'Reservation');
+      const sheet = await bookingSheet(label);
       const spread = doc.first_at === doc.last_at
         ? when(doc.first_at)
         : `${when(doc.first_at)} to ${when(doc.last_at)}`;
@@ -840,14 +903,54 @@ export default async ({ req, res, log, error }) => {
            ${row('Total', money(doc.total))}
          </table>`;
 
-      await db.createDocument(DB_ID, 'order_notices', 'unique()', {
+      /*
+        What the party said about the booking as a whole, in their own words.
+
+        Its own block rather than a table row: "the coach leaves at two, so we
+        cannot run late" is a sentence, and a sentence in a value column is a
+        sentence nobody reads. Headed differently for the two readers, because
+        quoting somebody's own note back at them as "they said" is strange.
+      */
+      const saidIt = String(doc.note || '').trim();
+      const noteBlock = (heading) => (saidIt
+        ? `<p style="margin:14px 0 4px;font-weight:600">${heading}</p>
+           <p style="margin:0;padding:2px 0 2px 12px;border-left:3px solid ${brand};white-space:pre-wrap">${
+             saidIt.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</p>`
+        : '');
+
+      /*
+        The record, and afterwards what actually happened to it.
+
+        It used to be written once as "queued" and never touched again, so a
+        notice that was refused by the mail provider sat in the database
+        looking exactly like one that arrived. The only account of the failure
+        was a line in the function's log, which is not somewhere anybody
+        looks — and "the admins did not get the email" is then a report with
+        nothing to check it against.
+      */
+      const notice = await db.createDocument(DB_ID, 'order_notices', 'unique()', {
         venue_id: doc.venue_id,
         order_id: doc.$id,
         stage: 'group_placed',
-        to_email: [...houseTo, doc.email].filter(Boolean).join(','),
+        // The column holds 160 characters; a long admin list must not lose
+        // the whole row, which is what happened before it was cut.
+        to_email: [...houseTo, doc.email].filter(Boolean).join(',').slice(0, 160),
         status: transport ? 'queued' : 'failed',
         last_error: transport ? '' : 'No SMTP configured on the function.',
-      }).catch(() => undefined);
+      }).catch((e) => {
+        error(`Could not record the group booking notice: ${e.message}`);
+        return null;
+      });
+
+      /** What went wrong, in the words somebody would need to act on it. */
+      const wrong = [];
+      const settle = async () => {
+        if (!notice) return;
+        await db.updateDocument(DB_ID, 'order_notices', notice.$id, {
+          status: wrong.length ? 'failed' : 'sent',
+          last_error: wrong.join(' ').slice(0, 500),
+        }).catch(() => undefined);
+      };
 
       if (!transport) {
         log('A group booked, but no SMTP is configured on the function, so nobody was told.');
@@ -861,10 +964,25 @@ export default async ({ req, res, log, error }) => {
           from,
           to: houseTo.join(','),
           subject: `Group booking · ${doc.contact_name || 'a party'}${doc.size ? ` · ${doc.size} people` : ''}`,
-          html: shell('A group has booked', facts),
-        }).catch((e) => error(`Group notice to the house failed: ${e.message}`));
+          html: shell(
+            'A group has booked',
+            facts + noteBlock('They also said') + (sheet
+              ? `<p style="margin:16px 0 0;color:#5d6b7a;font-size:14px">Attached is the full sheet: every
+                 sitting, every choice, everything left out, the notes in the guests' own words, and what each
+                 plate is suitable for. Print it for the pass.</p>`
+              : ''),
+          ),
+          attachments: sheet,
+        }).catch((e) => {
+          error(`Group notice to the house failed: ${e.message}`);
+          wrong.push(`The notice to ${houseTo.join(', ')} was refused: ${e.message}`);
+        });
       } else {
-        log('A group booked and no admin has an email address on their staff profile, so only the guest was told.');
+        const why = 'Nobody here was told: no admin or manager has an email address on their staff profile, '
+          + 'nothing is set under Admin, Features, Group ordering, and the restaurant has no from-address '
+          + 'either.';
+        log(why);
+        wrong.push(why);
       }
 
       if (doc.email) {
@@ -874,11 +992,16 @@ export default async ({ req, res, log, error }) => {
           subject: `Your group booking${doc.reference ? ` · ${doc.reference}` : ''}`,
           html: shell(
             'Your booking is with us',
-            `<p style="margin:0 0 10px">Thank you. We will look at this and come back to you — a group booking is
-             checked before it is confirmed, so the kitchen can be sure of the shopping and the room. You will be
-             emailed as soon as it is approved.</p>
+            `<p style="margin:0 0 10px">Thank you for your group order. Our bistro will check your order and
+             revert. As soon as it is approved you will be emailed.</p>
              <p style="margin:0 0 10px">Here is the whole booking, so you have it on the day.</p>
              ${facts}
+             ${noteBlock('Your note to us')}
+             ${sheet
+               ? `<p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">The attached sheet lists every sitting
+                  in full — each dish, the choices made, anything left out, your notes, and what each plate is
+                  suitable for. Please check it and tell us if anything is wrong.</p>`
+               : ''}
              <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">Each sitting reaches the kitchen in time to
              cook it and not before.</p>
              ${(process.env.APP_URL || '')
@@ -886,10 +1009,20 @@ export default async ({ req, res, log, error }) => {
                     style="color:#0f766e;font-weight:600">Need to change something?</a></p>`
                : '<p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">If anything needs to change, ring us.</p>'}`,
           ),
-        }).catch((e) => error(`Group confirmation to the guest failed: ${e.message}`));
+          attachments: sheet,
+        }).catch((e) => {
+          error(`Group confirmation to the guest failed: ${e.message}`);
+          wrong.push(`The confirmation to ${doc.email} was refused: ${e.message}`);
+        });
       }
 
-      return res.json({ sent: true, booking: doc.$id, to: houseTo.length + (doc.email ? 1 : 0) });
+      await settle();
+      return res.json({
+        sent: wrong.length === 0,
+        booking: doc.$id,
+        to: houseTo.length + (doc.email ? 1 : 0),
+        ...(wrong.length ? { problems: wrong } : {}),
+      });
     }
 
     /*
@@ -902,6 +1035,83 @@ export default async ({ req, res, log, error }) => {
     */
     if (events.some((e) => e.includes('collections.group_bookings'))
         && events.some((e) => e.endsWith('.update'))) {
+      /*
+        A booking called off, which the HOUSE has to hear about above all.
+
+        Written by order-guard once the last sitting has actually gone, so
+        this fires once for the booking rather than once per sitting. Nobody
+        was told at all before: the party pressed cancel, the sittings
+        disappeared from the Orders page, and the only way anybody here found
+        out was by noticing their absence.
+
+        The house first, because a table held and a shop still to do are
+        theirs; the party second, as a receipt for what they asked for.
+      */
+      if (doc.status === 'cancelled') {
+        if (!transport) {
+          log(`Booking ${doc.$id} was cancelled but no SMTP is configured, so nobody was told.`);
+          return res.json({ sent: false });
+        }
+        const off = await featureConfig('group_orders', 'notify_emails', '');
+        const crew = await db.listDocuments(DB_ID, 'staff_profiles', [
+          Query.equal('role', ['admin', 'manager']),
+          Query.limit(50),
+        ]).catch(() => ({ documents: [] }));
+        const tell = [...new Set([
+          ...String(off || '').split(/[,;\s]+/).filter(Boolean),
+          ...crew.documents.map((p) => p.email).filter(Boolean),
+        ])];
+        if (tell.length === 0 && settings.email_from_address) tell.push(settings.email_from_address);
+
+        const when = (iso) => {
+          const d = new Date(iso);
+          return Number.isFinite(d.getTime()) ? d.toLocaleString() : '';
+        };
+        const gone = `<table style="width:100%;border-collapse:collapse;font-size:15px">
+             ${row('Booked by', doc.contact_name || '-')}
+             ${row('Reference', doc.reference || '-')}
+             ${row('Was for', when(doc.first_at) || '-')}
+             ${row('Sittings', `${doc.sittings || 0} · ${doc.portions || 0} portions`)}
+             ${row('Orders', doc.order_nos || '-')}
+             ${row('Was worth', `${doc.currency_code || ''}${((doc.total || 0) / 100).toFixed(2)}`)}
+           </table>`;
+
+        if (tell.length) {
+          await transport.sendMail({
+            from,
+            to: tell.join(','),
+            subject: `Group booking CANCELLED · ${doc.contact_name || doc.reference || 'a party'}`,
+            html: shell(
+              'A group has cancelled',
+              `<p style="margin:0 0 10px">This booking is off. Every sitting under it has been cancelled and
+               the kitchen's list no longer has them.</p>
+               ${gone}
+               <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">Anything held for them — a room, a
+               table, a shop already done — is yours to release.</p>`,
+            ),
+          }).catch((e) => error(`Cancellation notice to the house failed: ${e.message}`));
+        }
+
+        if (doc.email) {
+          await transport.sendMail({
+            from,
+            to: doc.email,
+            subject: `Your group booking is cancelled${doc.reference ? ` · ${doc.reference}` : ''}`,
+            html: shell(
+              'Your booking is cancelled',
+              `<p style="margin:0 0 10px">That is done — every sitting under this booking has been cancelled
+               and nothing will be cooked. Nothing is owed.</p>
+               ${gone}
+               <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">If this was a mistake, please ring us.
+               It cannot be undone from the link.</p>`,
+            ),
+          }).catch((e) => error(`Cancellation notice to the guest failed: ${e.message}`));
+        }
+
+        log(`Booking ${doc.$id} cancelled; told ${tell.length + (doc.email ? 1 : 0)}`);
+        return res.json({ sent: true, booking: doc.$id, status: 'cancelled' });
+      }
+
       if (doc.status !== 'approved' && doc.status !== 'refused') return res.json({ ok: true, skipped: 'still waiting' });
       if (!doc.email) {
         log(`Booking ${doc.$id} was ${doc.status} but carries no email address, so nobody was told.`);
@@ -915,6 +1125,12 @@ export default async ({ req, res, log, error }) => {
       const said = String(doc.decided_note || '').replace(/[<>&]/g, (c) => (
         { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
       const yes = doc.status === 'approved';
+      // The confirmed sheet, so the party holds the same document the kitchen
+      // is working to. Only on a yes: attaching a full menu to "we cannot
+      // take this booking" would be a strange thing to receive.
+      const agreed = yes
+        ? await bookingSheet(await featureConfig('group_orders', 'reservation_label', 'Reservation'))
+        : undefined;
       await transport.sendMail({
         from,
         to: doc.email,
@@ -927,6 +1143,10 @@ export default async ({ req, res, log, error }) => {
             ? `<p style="margin:0 0 10px">Good news — we have your booking and the kitchen has it in hand.
                ${doc.sittings || 0} sitting${doc.sittings === 1 ? '' : 's'}, ${doc.portions || 0} portions.</p>
                ${said ? `<p style="margin:0 0 10px">${said}</p>` : ''}
+               ${agreed
+                 ? `<p style="margin:0 0 10px;color:#5d6b7a;font-size:14px">The attached sheet is what the
+                    kitchen is working to — every sitting, every choice and every dietary note.</p>`
+                 : ''}
                <p style="margin:0;color:#5d6b7a;font-size:14px">Orders ${doc.order_nos || ''}. Nothing is owed
                until the day.</p>`
             : `<p style="margin:0 0 10px">We are sorry — we are not able to take this booking.</p>
@@ -934,6 +1154,7 @@ export default async ({ req, res, log, error }) => {
                <p style="margin:0;color:#5d6b7a;font-size:14px">Please ring us if you would like to talk about
                another date.</p>`,
         ),
+        attachments: agreed,
       }).catch((e) => error(`Booking decision notice failed: ${e.message}`));
 
       return res.json({ sent: true, booking: doc.$id, status: doc.status });
@@ -978,7 +1199,7 @@ export default async ({ req, res, log, error }) => {
              ${row('Booked by', doc.contact_name || '-')}
              ${row('Reference', doc.reference || '-')}
              ${row('About', KINDS[doc.kind] || doc.kind)}
-             ${row('First meal', doc.first_at ? new Date(doc.first_at).toLocaleString() : '-')}
+             ${row('First sitting', doc.first_at ? new Date(doc.first_at).toLocaleString() : '-')}
            </table>
            <p style="margin:14px 0 4px;font-weight:600">What they asked for</p>
            <p style="margin:0;white-space:pre-wrap">${String(doc.note || '')
@@ -1312,7 +1533,9 @@ export default async ({ req, res, log, error }) => {
       const openedAt = doc.opened_at;
       const closedAt = doc.closed_at || new Date().toISOString();
 
-      const [ingredients, waste, expenses, subs, offItems, inWindow, settledHere, payments, staff] = await Promise.all([
+      const [
+        ingredients, waste, expenses, subs, offItems, inWindow, settledHere, payments, staff, shelfChecks,
+      ] = await Promise.all([
         db.listDocuments(DB_ID, 'ingredients', [Query.equal('venue_id', doc.venue_id), Query.limit(500)]),
         db.listDocuments(DB_ID, 'waste_log', [Query.equal('shift_id', doc.$id), Query.limit(100)]),
         db.listDocuments(DB_ID, 'shift_expenses', [Query.equal('shift_id', doc.$id), Query.limit(100)]),
@@ -1342,13 +1565,36 @@ export default async ({ req, res, log, error }) => {
           Query.equal('shift_id', doc.$id), Query.limit(500),
         ]).catch(() => ({ documents: [] })),
         db.listDocuments(DB_ID, 'staff_profiles', [Query.limit(200)]).catch(() => ({ documents: [] })),
+        /*
+          What somebody actually saw on the shelves as they closed up.
+
+          The stock table below this only ever lists what is LOW or OUT, so a
+          shift where everything was fine printed no stock section at all —
+          which on the page is indistinguishable from the section being
+          broken, or from nobody having been asked. Two very different things,
+          one silence. This is the check itself: OK, LOW and OUT as they were
+          tapped, counted from the rows the close wrote.
+        */
+        db.listDocuments(DB_ID, 'shift_stock_checks', [
+          Query.equal('shift_id', doc.$id),
+          Query.equal('phase', 'close'),
+          Query.limit(500),
+        ]).catch(() => ({ documents: [] })),
       ]);
 
-      // Created during the shift, or settled by it. Merged by id so an order
-      // that is both is still one order.
-      const orders = { documents: [...new Map(
-        [...inWindow.documents, ...settledHere.documents].map((o) => [o.$id, o]),
-      ).values()] };
+      /**
+       * Which trade this shift is. The bistro, the bar and the craft shop each
+       * open and close their own, and one closing says nothing about another.
+       */
+      const side = doc.module || 'kitchen';
+
+      /*
+        Created during the shift, or settled by it — this side's only.
+
+        The window query asks for every order at the venue between two times,
+        and the bar is open during the bistro's hours. See ordersForSide.
+      */
+      const orders = { documents: ordersForSide(inWindow.documents, settledHere.documents, side) };
 
       // The two stock sections, kept apart on purpose: a first-time flag is
       // routine restocking, the same item low for the fourth shift running is
@@ -1367,7 +1613,6 @@ export default async ({ req, res, log, error }) => {
         existed carry no value for it, so asking the database for
         module = kitchen would miss the entire original larder.
       */
-      const side = doc.module || 'kitchen';
       const low = ingredients.documents
         .filter((i) => (i.module || 'kitchen') === side)
         .filter((i) => i.active && (i.consecutive_low_count || 0) > 0)
@@ -1380,6 +1625,35 @@ export default async ({ req, res, log, error }) => {
         });
       const fresh = low.filter((i) => (i.consecutive_low_count || 0) === 1);
       const persistent = low.filter((i) => (i.consecutive_low_count || 0) >= threshold);
+
+      /*
+        The shelves as they were reported, counted.
+
+        Said whatever the answer is, including "everything was fine", because
+        the table below only prints exceptions and an empty exceptions table
+        is silence. An owner cannot tell a good night from a broken report
+        from a check nobody was asked to do, and all three were printing the
+        same nothing.
+
+        Built from the rows the close actually wrote rather than from the
+        ingredients table, so it says what a person tapped that night and not
+        what the running figures imply today.
+      */
+      const shelf = shelfCheckSummary(
+        shelfChecks.documents,
+        new Map(ingredients.documents.map((i) => [i.$id, i.name])),
+      );
+      const shelfLine = shelf.total === 0
+        ? '<p style="margin:0;font-size:14px;color:#5d6b7a">No shelf check was filed with this close, so '
+          + 'nothing here says what was on the shelves. It is asked for on the closing screen.</p>'
+        : `<p style="margin:0;font-size:14px">
+             <strong>${shelf.total}</strong> item${shelf.total === 1 ? '' : 's'} checked ·
+             <span style="color:#12805c">${shelf.ok} ok</span> ·
+             <span style="color:${shelf.low ? '#b26a00' : '#5d6b7a'}">${shelf.low} low</span> ·
+             <span style="color:${shelf.out ? '#b42318' : '#5d6b7a'};font-weight:${shelf.out ? 700 : 400}">${shelf.out} out</span>
+           </p>
+           ${shelf.outNames.length ? `<p style="margin:6px 0 0;font-size:14px"><strong>Out:</strong> ${shelf.outNames.join(', ')}</p>` : ''}
+           ${shelf.lowNames.length ? `<p style="margin:6px 0 0;font-size:14px;color:#5d6b7a"><strong>Low:</strong> ${shelf.lowNames.join(', ')}</p>` : ''}`;
 
       const variance = Object.values(JSON.parse(doc.variance || '{}')).reduce((a, b) => a + b, 0);
       const wasteValue = waste.documents.reduce((a, w) => a + (w.value || 0), 0);
@@ -1467,6 +1741,8 @@ export default async ({ req, res, log, error }) => {
            ${row('Cash difference', variance === 0 ? 'Balanced' : `${variance > 0 ? '+' : ''}${money(variance, settings)}`, variance !== 0)}
          </table>
          ${section('Who did what', staffRows)}
+         <h3 style="margin:20px 0 6px;font-size:15px">Shelves at close</h3>
+         ${shelfLine}
          ${stockTable(low, threshold, settings)}
          ${section(
            'Taken off the menu during this shift',

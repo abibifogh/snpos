@@ -81,7 +81,7 @@ export function BookingChange({ bookingId, onClose }: { bookingId: string; onClo
       setCancelled(await bookingIsCancelled(bookingId));
       if (!(await bookingIsCancelled(bookingId))) {
         setProblem(
-          'The restaurant has not accepted the cancellation. That usually means the first meal is now inside '
+          'The restaurant has not accepted the cancellation. That usually means the first sitting is now inside '
           + 'five days. Please ring them.',
         );
       }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Button, Modal, Input, Field, Notice, Select, FormError, Badge } from '@snpos/ui';
+import { Button, Modal, Input, Field, Notice, Select, FormError, Badge, Textarea } from '@snpos/ui';
 import { QtyBox } from './QtyBox';
 import {
   formatMoney, lineTotal, createOrder, featureConfig, isProvisionalOrderNo,
@@ -69,6 +69,16 @@ export function GroupSheet({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [groupRef, setGroupRef] = useState('');
+  /**
+   * Anything true of the whole booking rather than of one dish.
+   *
+   * Every dish already has its own box for "no pepper on this one". What had
+   * nowhere to go was the sentence about the arrangement: the coach that
+   * leaves at two, the high chair, the guest in a wheelchair, the cake to be
+   * brought out at the end. It arrived by telephone, to whoever picked up, or
+   * it did not arrive.
+   */
+  const [note, setNote] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -212,6 +222,7 @@ export function GroupSheet({
         orderNos: settled.map((b) => b.orderNo),
         firstAt: booking.meals[0]?.meal.at ?? '',
         lastAt: booking.meals[booking.meals.length - 1]?.meal.at ?? '',
+        note: note.trim(),
       })
         .then(() => { recorded = true; })
         .catch((e) => {
@@ -244,7 +255,7 @@ export function GroupSheet({
         : humanError(e) || 'Could not send the booking. Please try again.';
       const done = booked.length;
       setProblem(done > 0
-        ? `${message} ${done} meal${done === 1 ? '' : 's'} of the booking went through before this; the rest have not. Please tell the front desk.`
+        ? `${message} ${done} sitting${done === 1 ? '' : 's'} of the booking went through before this; the rest have not. Please tell the front desk.`
         : message);
       onError(message);
     } finally {
@@ -285,7 +296,7 @@ export function GroupSheet({
 
       {meals.length === 0 ? (
         <Notice tone="info">
-          Nothing booked yet. Close this, add a meal above the menu, and choose what the group would like to
+          Nothing booked yet. Close this, add a time the group will eat above the menu, and choose what they would like to
           eat at it. Lunch and dinner on the same day are two meals.
         </Notice>
       ) : (
@@ -365,7 +376,7 @@ export function GroupSheet({
                   have ordered. */}
               {shown.meal.lines.length === 0 ? (
                 <p className="meta" style={{ margin: '0.6rem 0' }}>
-                  Nothing on this meal yet. Close this and choose from the menu.
+                  Nothing on this sitting yet. Close this and choose from the menu.
                 </p>
               ) : shown.meal.lines.map((line: CartLine) => (
                 <div className="line" key={line.key}>
@@ -400,7 +411,7 @@ export function GroupSheet({
                     setTab(WHO);
                   }}
                 >
-                  Remove this meal
+                  Remove this sitting
                 </Button>
               </div>
             </>
@@ -430,6 +441,22 @@ export function GroupSheet({
                 />
               </Field>
 
+              {/* Not a dish note — every dish has its own box for those. This
+                  is for what is true of the whole booking, which until now
+                  had nowhere to go but a telephone call. */}
+              <Field
+                label="Anything else we should know?"
+                hint="About the booking as a whole — a high chair, a wheelchair, a coach to catch, a cake at the
+                      end. For one dish, use the box on that dish. Optional."
+              >
+                <Textarea
+                  rows={3}
+                  maxLength={1000}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                />
+              </Field>
+
               {/* The whole booking, priced, on the tab where somebody is about
                   to send it. Packing and service are only worth a line where
                   they come to something. */}
@@ -451,7 +478,7 @@ export function GroupSheet({
               </div>
 
               <p className="meta">
-                Each meal is sent to the kitchen as its own order, in time to cook it and not before, so nothing
+                Each sitting is sent to the kitchen as its own order, in time to cook it and not before, so nothing
                 is made early. They all carry your reference.
               </p>
             </div>
