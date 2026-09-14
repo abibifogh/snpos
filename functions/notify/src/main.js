@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer';
 import { receiptPdf } from './receipt-pdf.js';
 import { bookingSittings, bookingSheetPdf } from './booking-sheet.js';
 import { ordersForSide, shelfCheckSummary } from './shift-shape.js';
+import { houseRecipients } from './house.js';
 import { tradeWords, offSubject } from './words.js';
 import { dailyDigest, nightlyBackup, deliveryFrom } from './daily.js';
 import { ensureLogin, revokeLogin } from './staff.js';
@@ -654,6 +655,27 @@ export default async ({ req, res, log, error }) => {
   };
 
   /**
+   * Everyone here who should hear about a group, worked out one way.
+   *
+   * Three messages need this list — a booking, a change asked for, a booking
+   * called off — and each used to build it for itself. All three could come
+   * out empty, and all three did: the guest got every confirmation and nobody
+   * here got anything, because `email` is optional on a staff profile and the
+   * script that creates the first admin never wrote one. See house.js, which
+   * now also reads the address off the sign-in account when the profile has
+   * none, so nothing has to be edited for this to start working.
+   */
+  const houseList = async () => houseRecipients({
+    db,
+    users: new Users(client),
+    DB_ID,
+    Query,
+    configured: await featureConfig('group_orders', 'notify_emails', ''),
+    fallback: settings.email_from_address,
+    log,
+  });
+
+  /**
    * The booking sheet, as a real PDF, for whichever email is going out.
    *
    * An email body can hold a summary and no more: sittings, portions, a
@@ -852,36 +874,9 @@ export default async ({ req, res, log, error }) => {
         owns the business. The configured list is added, not substituted, so
         naming an events address does not quietly stop the owner hearing.
       */
-      const configured = String(await featureConfig('group_orders', 'notify_emails', '') || '')
-        .split(/[,;\s]+/)
-        .filter(Boolean);
-      const staff = await db.listDocuments(DB_ID, 'staff_profiles', [
-        Query.equal('role', ['admin', 'manager']),
-        Query.limit(50),
-      ]).catch(() => ({ documents: [] }));
-      const admins = staff.documents.map((p) => p.email).filter(Boolean);
-      /*
-        And the restaurant's own address, when neither of those produced one.
-
-        An email address is optional on a staff profile, so a place whose
-        owner signed in without one — or who was set up before the field
-        existed — has an admin list of nobody. The booking then reached the
-        guest and nobody here, which is the failure that matters: the party
-        believes the restaurant knows, and the restaurant does not.
-
-        The from-address is the safe fallback because it is the one address
-        the mail provider has already verified for this business, so it is
-        certain to exist and certain to be read. Named in the log, so it is
-        clear this is a stopgap and that somebody should put a real address on
-        their profile or under group ordering.
-      */
-      let houseTo = [...new Set([...configured, ...admins])];
-      if (houseTo.length === 0 && settings.email_from_address) {
-        houseTo = [settings.email_from_address];
-        log('No admin or manager has an email address on their staff profile and no address is set under '
-          + `group ordering, so the booking notice went to ${settings.email_from_address} instead. `
-          + 'Set one on the staff profile, or under Admin, Features, Group ordering.');
-      }
+      const house = await houseList();
+      const houseTo = house.to;
+      log(`Group booking ${doc.$id}: ${house.why}`);
 
       const money = (n) => `${doc.currency_code || ''}${((n || 0) / 100).toFixed(2)}`;
       const when = (iso) => {
@@ -1052,16 +1047,9 @@ export default async ({ req, res, log, error }) => {
           log(`Booking ${doc.$id} was cancelled but no SMTP is configured, so nobody was told.`);
           return res.json({ sent: false });
         }
-        const off = await featureConfig('group_orders', 'notify_emails', '');
-        const crew = await db.listDocuments(DB_ID, 'staff_profiles', [
-          Query.equal('role', ['admin', 'manager']),
-          Query.limit(50),
-        ]).catch(() => ({ documents: [] }));
-        const tell = [...new Set([
-          ...String(off || '').split(/[,;\s]+/).filter(Boolean),
-          ...crew.documents.map((p) => p.email).filter(Boolean),
-        ])];
-        if (tell.length === 0 && settings.email_from_address) tell.push(settings.email_from_address);
+        const called = await houseList();
+        const tell = called.to;
+        log(`Booking ${doc.$id} cancelled: ${called.why}`);
 
         const when = (iso) => {
           const d = new Date(iso);
@@ -1102,8 +1090,8 @@ export default async ({ req, res, log, error }) => {
               `<p style="margin:0 0 10px">That is done — every sitting under this booking has been cancelled
                and nothing will be cooked. Nothing is owed.</p>
                ${gone}
-               <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">If this was a mistake, please ring us.
-               It cannot be undone from the link.</p>`,
+               <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">If this was a mistake, please send us an
+               email. It cannot be undone from the link.</p>`,
             ),
           }).catch((e) => error(`Cancellation notice to the guest failed: ${e.message}`));
         }
@@ -1169,18 +1157,22 @@ export default async ({ req, res, log, error }) => {
       reads it as a done thing and stops looking.
     */
     if (events.some((e) => e.includes('collections.booking_changes'))) {
-      const staff = await db.listDocuments(DB_ID, 'staff_profiles', [
-        Query.equal('role', ['admin', 'manager']),
-        Query.limit(50),
-      ]).catch(() => ({ documents: [] }));
-      const configured = String(await featureConfig('group_orders', 'notify_emails', '') || '')
-        .split(/[,;\s]+/)
-        .filter(Boolean);
-      const to = [...new Set([...configured, ...staff.documents.map((p) => p.email).filter(Boolean)])];
+      /*
+        The same list as every other message to the house.
+
+        This built its own, from the same two ingredients, and came out empty
+        for the same reason: a change request reached nobody at all while the
+        guest who asked for it was told their request had gone in. See
+        house.js — the fallback and the account lookup apply here too, because
+        a change asked for and not seen is a party arriving to the wrong food.
+      */
+      const asked = await houseList();
+      const to = asked.to;
+      log(`Change asked for on booking ${doc.booking_id}: ${asked.why}`);
 
       if (!transport || !to.length) {
         log(`A group asked for a change to booking ${doc.booking_id}, but ${
-          !transport ? 'no SMTP is configured' : 'no admin has an email address'}, so nobody was told by email. `
+          !transport ? 'no SMTP is configured' : asked.why}, so nobody was told by email. `
           + 'It is on the Waiting for you page.');
         return res.json({ sent: false });
       }

@@ -65,6 +65,18 @@ if (profiles.total > 0) {
   await db.createDocument(DB_ID, 'staff_profiles', ID.unique(), {
     user_id: user.$id,
     display_name: displayName,
+    /*
+      WRITTEN HERE, not only onto the Appwrite account.
+
+      This was missing, and it cost the owner every email the system sends to
+      the house: a group booked, a group asked for a change, a group cancelled
+      — all three look up admin and manager profiles and read this field, all
+      three came back with nobody, and the guest got their confirmation every
+      time while the restaurant was told nothing. The address was in this
+      script's hand the whole way through; it just went into the account and
+      not onto the profile anybody reads.
+    */
+    email: values.email,
     role: 'admin',
     active: true,
     can_open_shift: true,

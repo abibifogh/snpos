@@ -812,6 +812,26 @@ export const COLLECTIONS = [
         is. So they are marked as changing nothing, and change nothing.
       */
       ['diet_neutral', 'b', null, false, false],
+      /*
+        Offered on the group menu only.
+
+        Note the word: this is the GROUP-BOOKING menu, nothing to do with
+        `group_id` above, which is the add-on group this choice belongs to.
+        Named to match the same flag on categories and dishes, because it
+        means the same thing in the same place.
+
+        Some choices only make sense for a party ordering days ahead — a
+        platter size, a chafing dish, a whole fish for the table, rice by the
+        tray. Offering those to a walk-in at the counter produces a ticket the
+        kitchen cannot cook in the ten minutes somebody is standing there.
+        Others run the other way: a group buying forty covers can have a
+        choice the à la carte menu does not carry.
+
+        A group left with no visible choices disappears with them, so the
+        ordinary menu never shows an empty "choose one" nobody can answer.
+        See choicesWhere.
+      */
+      ['group_only', 'b', null, false, false],
     ],
     indexes: [['group', 'key', ['group_id', 'sort']]],
   },

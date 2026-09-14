@@ -33,6 +33,7 @@ interface AddonOption extends Doc {
   /** What this choice is. See tagsWithOptions; a choice can only take away. */
   tags?: string[];
   diet_neutral?: boolean;
+  group_only?: boolean;
 }
 
 /** A row being edited before it is saved; price is held as typed text. */
@@ -56,6 +57,14 @@ interface DraftOption {
   tags: string[];
   /** Not food — a napkin, "no ice", "well done". Changes no dietary claim. */
   diet_neutral: boolean;
+  /**
+   * Offered on the group-booking menu only.
+   *
+   * A platter size, a chafing dish, rice by the tray: choices that mean
+   * something to a party ordering days ahead and produce a ticket the kitchen
+   * cannot cook for somebody standing at the counter. See choicesWhere.
+   */
+  group_only: boolean;
 }
 
 export function AddonsPage() {
@@ -124,6 +133,7 @@ export function AddonsPage() {
               priceText: toInput(o.price_delta, decimals),
               tags: o.tags ?? [],
               diet_neutral: !!o.diet_neutral,
+              group_only: !!o.group_only,
               active: o.active,
               default_selected: o.default_selected,
               ingredientId: r?.ingredient_id ?? '',
@@ -131,7 +141,7 @@ export function AddonsPage() {
               recipeId: copy ? undefined : r?.$id,
             };
           })
-        : [{ name: '', priceText: toInput(0, decimals), active: true, default_selected: false, ingredientId: '', qtyText: '', tags: [], diet_neutral: false }],
+        : [{ name: '', priceText: toInput(0, decimals), active: true, default_selected: false, ingredientId: '', qtyText: '', tags: [], diet_neutral: false, group_only: false }],
     );
     setRemovedOptionIds([]);
     setError(null);
@@ -181,6 +191,7 @@ export function AddonsPage() {
           max_qty: 1,
           tags: o.tags,
           diet_neutral: o.diet_neutral,
+          group_only: o.group_only,
         };
         const optionId = o.$id
           ? (await db.updateDocument(DB_ID, 'addon_options', o.$id, body)).$id
@@ -403,6 +414,21 @@ export function AddonsPage() {
                       health, guessing "not" would empty a menu that is right.
                     */}
                     <td>
+                      {/*
+                        Where this choice is offered at all, asked before what
+                        it is: a choice the counter never sees does not need
+                        the same care about what a walk-in is told.
+                      */}
+                      <Toggle
+                        checked={o.group_only}
+                        onChange={(v) => setOption(i, { group_only: v })}
+                        label="Group bookings only"
+                      />
+                      <div className="small dim" style={{ margin: '0.1rem 0 0.4rem' }}>
+                        {o.group_only
+                          ? 'Offered on the group menu. The counter and table menus will not show it.'
+                          : 'Offered everywhere this dish is.'}
+                      </div>
                       <Toggle
                         checked={o.diet_neutral}
                         onChange={(v) => setOption(i, { diet_neutral: v, tags: v ? [] : o.tags })}
@@ -499,7 +525,7 @@ export function AddonsPage() {
             onClick={() =>
               setDraftOptions((d) => [
                 ...d,
-                { name: '', priceText: toInput(0, decimals), active: true, default_selected: false, ingredientId: '', qtyText: '', tags: [], diet_neutral: false },
+                { name: '', priceText: toInput(0, decimals), active: true, default_selected: false, ingredientId: '', qtyText: '', tags: [], diet_neutral: false, group_only: false },
               ])
             }
           >
