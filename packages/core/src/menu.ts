@@ -43,6 +43,13 @@ export interface AddonOption extends Doc {
   tags?: string[];
   /** Not food: a napkin, "no ice", "well done". Changes no dietary claim. */
   diet_neutral?: boolean;
+  /**
+   * Offered on the group menu only. See choicesWhere.
+   *
+   * The GROUP-BOOKING menu — nothing to do with `group_id` above, which is
+   * the add-on group this choice belongs to.
+   */
+  group_only?: boolean;
 }
 
 export interface MenuItemAddonGroup extends Doc {

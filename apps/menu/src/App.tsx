@@ -9,7 +9,7 @@ import {
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, screenShouldReset, screenClaim,
   bookingTotals, dietChips, matchesDiet, removableFor, dietaryLabels, couldBeWords,
   type Omission,
-  needsChoosing, defaultPicks, longDayWords, timeWords, isGroupPath, byHeading, openNow,
+  needsChoosing, defaultPicks, choicesWhere, longDayWords, timeWords, isGroupPath, byHeading, openNow,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, MenuSection, MenuEntry, CartLine, FeatureMap, Doc, GroupMeal,
@@ -921,6 +921,21 @@ export function App() {
   */
   const live = openNow(menu.sections, new Date(clock));
 
+  /**
+   * The choices this menu may offer, decided once for the whole page.
+   *
+   * Some options are the group menu's alone — a platter size, a chafing dish,
+   * rice by the tray. Applied HERE rather than in the sheet that shows them,
+   * because four things read a dish's choices: the sheet, the Add button that
+   * skips the sheet when there is nothing to decide, the defaults that ride
+   * along with it, and the check that refuses a dish with a question
+   * unanswered. Filtering in one of those and not the others is how a menu
+   * ends up demanding an answer to a question it never asked. See
+   * choicesWhere.
+   */
+  const askable = (entry: MenuEntry): MenuEntry =>
+    ({ ...entry, groups: choicesWhere(entry.groups, { group: inGroupMode }) });
+
   const groupSections = () => {
     /*
       The group menu is divided the way a party counts, not the way the week
@@ -947,7 +962,7 @@ export function App() {
         active: true,
       } as MenuSection['category'],
       open: true,
-      entries: g.entries.map((x) => x.entry),
+      entries: g.entries.map((x) => askable(x.entry)),
     }));
   };
 
@@ -958,7 +973,8 @@ export function App() {
     : live
       .filter((sec) => sec.open || sec.category.unavailable_display !== 'hide')
       .filter((sec) => (sec.category.module ?? 'kitchen') === side)
-      .filter((sec) => !sec.category.group_only);
+      .filter((sec) => !sec.category.group_only)
+      .map((sec) => ({ ...sec, entries: sec.entries.map(askable) }));
 
   /*
     The chips, and what they hide.
@@ -1010,7 +1026,7 @@ export function App() {
      menu has to show. Null until a meal is chosen. */
   const openMeal = groupMeals.find((m) => m.key === activeMeal) ?? null;
 
-  const dish = openDish ? menu.byId[openDish] : null;
+  const dish = openDish ? (menu.byId[openDish] ? askable(menu.byId[openDish]) : null) : null;
   // Guests get only the chapters written for them, and only if the restaurant
   // wants the link there at all.
   const guestHelp =

@@ -31,6 +31,40 @@ export interface ChoiceOption {
 export type ChoiceSet = { group: ChoiceGroup; options: ChoiceOption[] }[];
 
 /**
+ * The choices this menu is allowed to offer.
+ *
+ * Some options only make sense for a party ordering days ahead: a platter
+ * size, a chafing dish, rice by the tray, a whole fish for the table. Put
+ * those in front of a walk-in and you get a ticket the kitchen cannot cook in
+ * the ten minutes somebody is standing at the counter. Others run the other
+ * way — a group buying forty covers can have a choice the à la carte menu
+ * does not carry at all.
+ *
+ * So an option can be marked for the group menu, and this is the one place
+ * that decides whether it is shown. Everything downstream reads the filtered
+ * set — what the sheet offers, what Add sends straight through, what counts
+ * as an unanswered question — so there is no way for the menu to show a
+ * choice the basket would then reject, or to demand one it never displayed.
+ *
+ * A GROUP LEFT WITH NOTHING IN IT GOES TOO, and that is the part worth being
+ * careful about. "Choose a platter size" with every size hidden is not an
+ * empty list, it is a required question with no possible answer: the sheet
+ * would refuse to add the dish and give a reason nobody can act on. An
+ * invisible group asks nothing.
+ *
+ * Pure, like the rest of this file.
+ */
+export function choicesWhere<G extends ChoiceGroup, O extends ChoiceOption & { group_only?: boolean }>(
+  groups: { group: G; options: O[] }[],
+  where: { group: boolean },
+): { group: G; options: O[] }[] {
+  if (where.group) return groups;
+  return groups
+    .map(({ group, options }) => ({ group, options: options.filter((o) => !o.group_only) }))
+    .filter(({ options }) => options.length > 0);
+}
+
+/**
  * What a dish arrives with before anybody touches it.
  *
  * The options marked as the usual answer. A dish whose one required choice

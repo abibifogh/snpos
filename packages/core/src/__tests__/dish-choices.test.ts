@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { defaultPicks, unmetChoice, unmetChoiceWords, needsChoosing } from '../dish-choices.ts';
+import { defaultPicks, unmetChoice, unmetChoiceWords, needsChoosing, choicesWhere } from '../dish-choices.ts';
 import type { ChoiceSet } from '../dish-choices.ts';
 
 const group = (over: Partial<{ $id: string; name: string; required: boolean; min_select: number }> = {}) => ({
@@ -66,4 +66,69 @@ test('a dish sold in sizes is always asked about', () => {
   // so adding one without asking would add it at a price that is not real.
   assert.equal(needsChoosing([], [{ $id: 'small' }, { $id: 'large' }]), true);
   assert.equal(needsChoosing([], []), false);
+});
+
+/* ------------------------------ choices the group menu alone may offer */
+
+const opt = (id: string, over: Record<string, unknown> = {}) => ({ $id: id, ...over });
+
+test('a choice marked for group bookings is off every other menu', () => {
+  /*
+    A platter size, a chafing dish, rice by the tray. Put those in front of a
+    walk-in and the ticket is one the kitchen cannot cook in the ten minutes
+    somebody is standing at the counter.
+  */
+  const groups = [{
+    group: group({ $id: 'g1', name: 'How it comes' }),
+    options: [opt('o1'), opt('o2', { group_only: true }), opt('o3')],
+  }];
+
+  assert.deepEqual(
+    choicesWhere(groups, { group: false })[0].options.map((o) => o.$id),
+    ['o1', 'o3'],
+  );
+  // On the group menu, everything, untouched.
+  assert.deepEqual(choicesWhere(groups, { group: true }), groups);
+});
+
+test('a group left with nothing in it disappears with its options', () => {
+  /*
+    THE TRAP. "Choose a platter size" with every size hidden is not an empty
+    list — it is a required question with no possible answer. The sheet would
+    refuse to add the dish and give a reason nobody could act on, and Add
+    would send it there rather than adding. An invisible group asks nothing.
+  */
+  const groups: ChoiceSet = [
+    {
+      group: group({ $id: 'g1', name: 'Platter size', required: true, min_select: 1 }),
+      options: [opt('o1', { group_only: true }), opt('o2', { group_only: true })],
+    },
+    { group: group({ $id: 'g2', name: 'Sauce' }), options: [opt('o3')] },
+  ];
+
+  const walkIn = choicesWhere(groups, { group: false });
+  assert.deepEqual(walkIn.map((g) => g.group.$id), ['g2']);
+
+  // And the consequences all follow: nothing to ask, nothing to refuse.
+  assert.equal(needsChoosing(walkIn, []), false);
+  assert.equal(unmetChoice(walkIn, defaultPicks(walkIn)), null);
+  // Where the same dish IS asked about, the question stands.
+  assert.equal(unmetChoice(choicesWhere(groups, { group: true }), {}), 'Platter size');
+});
+
+test('a menu with nothing marked is the menu it always was', () => {
+  const groups = [{ group: group(), options: [opt('o1'), opt('o2')] }];
+  assert.deepEqual(choicesWhere(groups, { group: false }), groups);
+  assert.deepEqual(choicesWhere([], { group: false }), []);
+});
+
+test('the defaults a walk-in gets never include a choice they cannot see', () => {
+  // Otherwise Add would quietly send the kitchen a tray of rice because
+  // somebody had ticked "usually" on a choice meant for parties.
+  const groups = [{
+    group: group({ $id: 'g1' }),
+    options: [opt('o1', { default_selected: true }), opt('o2', { default_selected: true, group_only: true })],
+  }];
+  assert.deepEqual(defaultPicks(choicesWhere(groups, { group: false })), { g1: ['o1'] });
+  assert.deepEqual(defaultPicks(choicesWhere(groups, { group: true })), { g1: ['o1', 'o2'] });
 });
