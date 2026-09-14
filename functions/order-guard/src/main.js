@@ -1,4 +1,5 @@
 import { Client, Databases, Query } from 'node-appwrite';
+import { surplusPayment } from './duplicate-payment.js';
 import {
   totalsFor, rateFor, flatFor, splitSale, queueMinutes, quotedWait,
   parseWindows, waitIncludingOpening, cookTimeOf,
@@ -1052,6 +1053,58 @@ export default async ({ req, res, log, error }) => {
 
   // --------------------------------------------------------- a bill settled
   if (events.some((e) => e.includes('collections.payments'))) {
+    /*
+      THE SAME BILL PAID TWICE, CAUGHT HERE BECAUSE NOTHING ELSE CAN.
+
+      A GH₵270 order arrived with three GH₵270 cash payments on it and the
+      night's takings were over by GH₵540. The till refuses to take more than
+      a bill owes — but to know what it owes it must READ what is already on
+      it, and when that read fails it takes the money anyway, on purpose,
+      because a restaurant has to be able to sell in a power cut. So on a bad
+      connection the check is skipped exactly when somebody is most likely to
+      press the button again.
+
+      This runs on the server, once per payment, with every row already
+      written in front of it. A surplus row is VOIDED rather than deleted:
+      the drawer was counted against these rows, and a row that says money was
+      recorded and taken back out is the only version a person counting can
+      make sense of. See duplicate-payment.js, and voidPayment in core, which
+      does the same thing by hand from the Orders page.
+    */
+    try {
+      const order = doc.order_id
+        ? await db.getDocument(DB_ID, 'orders', doc.order_id).catch(() => null)
+        : null;
+      if (order) {
+        const rows = await db.listDocuments(DB_ID, 'payments', [
+          Query.equal('order_id', doc.order_id),
+          Query.limit(100),
+        ]).then((r) => r.documents).catch(() => []);
+
+        const verdict = surplusPayment({
+          payment: doc,
+          payments: rows,
+          orderTotal: Number(order.total) || 0,
+        });
+
+        if (verdict.surplus) {
+          await db.updateDocument(DB_ID, 'payments', doc.$id, {
+            status: 'voided',
+            reference: `${doc.reference ? `${doc.reference} · ` : ''}duplicate, voided automatically`.slice(0, 120),
+          });
+          error(`Voided a duplicate payment on ${order.order_no || doc.order_id}: ${verdict.why}`);
+          // The order's own status is unchanged and correct: it was already
+          // paid by the row that came first, which is the point.
+          return res.json({ ok: true, voided: doc.$id, reason: 'duplicate', covered: verdict.covered });
+        }
+      }
+    } catch (e) {
+      // Never fatal. A payment that could not be checked is still a payment,
+      // and refusing to credit a consignor because a duplicate check went
+      // wrong would turn a rare bookkeeping fault into a daily one.
+      error(`Duplicate-payment check failed for ${doc.$id}, letting it stand: ${e.message}`);
+    }
+
     try {
       return res.json(await creditConsignors({ db, DB_ID, payment: doc, log }));
     } catch (e) {
