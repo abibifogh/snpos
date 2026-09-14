@@ -19,6 +19,7 @@ const clean: HealthFacts = {
   halfCounts: [],
   staleCounts: 0,
   paidOrdersNoPayment: [],
+  overpaidOrders: [],
   ordersNoLines: [],
   unledgeredPayouts: [],
   unpostedPayouts: [],
@@ -39,7 +40,7 @@ test('a clean night is every question answered "None" and nothing to fix', () =>
   assert.ok(findings.every((f) => f.level === 'ok'), findings.filter((f) => f.level !== 'ok').map((f) => f.key).join(','));
   assert.deepEqual(healthSummary(findings), { blocks: 0, warns: 0, words: 'Everything adds up.' });
   // Every question is asked every time, so the page can show what was checked.
-  assert.equal(findings.length, 19);
+  assert.equal(findings.length, 20);
 });
 
 test('what stops the books being trusted is a block; what is waiting on somebody is a warning', () => {
@@ -144,4 +145,26 @@ test('the nightly check asks the same questions and gives the same answers', () 
     assert.deepEqual(server.healthSummary(theirs), healthSummary(mine));
   }
   assert.deepEqual(server.HEALTH_GRACE, HEALTH_GRACE);
+});
+
+test('a bill paid more than once stops the books being trusted', () => {
+  /*
+    A GH₵270 order with three GH₵270 payments on it put the night's takings
+    over by GH₵540. The server voids these as they arrive now; this is what
+    finds the ones that went through before it did, and it is a BLOCK rather
+    than a warning because a drawer counted against those rows cannot be
+    reconciled until they are dealt with.
+  */
+  const findings = healthFindings(
+    { ...clean, overpaidOrders: [{ orderNo: 'ORD0800', total: 27_000, taken: 81_000 }] },
+    { money },
+  );
+  const found = findings.find((x) => x.key === 'orders_overpaid');
+  assert.equal(found?.level, 'block');
+  assert.equal(found?.count, 1);
+  assert.match(found?.detail ?? '', /ORD0800 took GH₵810\.00 on a GH₵270\.00 bill/);
+  assert.match(found?.detail ?? '', /void the payments that were recorded twice/);
+
+  // And a clean night says so rather than staying silent.
+  assert.equal(healthFindings(clean, { money }).find((x) => x.key === 'orders_overpaid')?.level, 'ok');
 });

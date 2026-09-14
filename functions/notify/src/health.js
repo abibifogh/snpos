@@ -90,6 +90,20 @@ export function healthFindings(f, w) {
     }
     : none('orders_no_payment', 'Orders marked paid with no payment'));
 
+  /*
+    The opposite fault, and the one that inflates a night rather than
+    shortening it. See surplusPayment in order-guard: these are voided as they
+    arrive now, so anything listed here went through before that and is still
+    sitting in somebody's takings.
+  */
+  out.push(f.overpaidOrders.length > 0
+    ? {
+      key: 'orders_overpaid', level: 'block', title: 'Bills paid more than once', count: f.overpaidOrders.length,
+      detail: f.overpaidOrders.slice(0, 4).map((o) => `${o.orderNo} took ${w.money(o.taken)} on a ${w.money(o.total)} bill`).join(', ') + (f.overpaidOrders.length > 4 ? ', …' : '') + '. Open the order and void the payments that were recorded twice.',
+      goto: '/orders', action: 'Open orders',
+    }
+    : none('orders_overpaid', 'Bills paid more than once'));
+
   out.push(f.ordersNoLines.length > 0
     ? {
       key: 'orders_no_lines', level: 'warn', title: 'Orders with no lines', count: f.ordersNoLines.length,
@@ -267,6 +281,14 @@ export async function healthFacts(ctx, venueId, now = new Date()) {
   const payments = await listByIds(ctx, 'payments', 'order_id', paid.map((o) => o.$id)).catch(() => []);
   const paidFor = new Set(payments.filter(isLivePayment).map((p) => p.order_id));
   const paidOrdersNoPayment = paid.filter((o) => !paidFor.has(o.$id)).map((o) => ({ orderNo: o.order_no, total: o.total }));
+  // A bill with more money against it than it came to. See surplusPayment.
+  const takenOn = new Map();
+  for (const p2 of payments.filter(isLivePayment)) {
+    takenOn.set(p2.order_id, (takenOn.get(p2.order_id) ?? 0) + (p2.amount ?? 0));
+  }
+  const overpaidOrders = paid
+    .filter((o) => (takenOn.get(o.$id) ?? 0) > o.total)
+    .map((o) => ({ orderNo: o.order_no, total: o.total, taken: takenOn.get(o.$id) ?? 0 }));
   const orderLines = await listByIds(ctx, 'order_items', 'order_id', real.map((o) => o.$id)).catch(() => []);
   const withItems = new Set(orderLines.map((l) => l.order_id));
   const ordersNoLines = real.filter((o) => !withItems.has(o.$id)).map((o) => ({ orderNo: o.order_no }));
@@ -293,6 +315,7 @@ export async function healthFacts(ctx, venueId, now = new Date()) {
     halfCounts,
     staleCounts: staleShop + staleBar,
     paidOrdersNoPayment,
+    overpaidOrders,
     ordersNoLines,
     unledgeredPayouts,
     unpostedPayouts,
