@@ -8,6 +8,7 @@ import {
   Query, toCsv, downloadCsv, buildReceiptHtml, openPrintable, receiptForOrder,
   settleOrderNumbers, recomputeOrderTotals, cancelOrder, removeOrder, recomputeClosedShift,
   voidPayment, isLivePayment, changePaymentMethod, logPaymentMethodChange,
+  referenceProblem, referenceRequired, referenceWords,
   unrecordedPaid, unrecordedWords, recordPayment,
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, flatten, MODULE_LABELS,
   listByIds, listCreatedBetween, moveOrderToShift, shiftChoices, moveProblem, moveEffects, describeMove,
@@ -49,7 +50,7 @@ interface Payment extends Doc {
  * method and leaving the kind behind would fix the label on the shift screen
  * and leave a card payment printing as cash on the customer's receipt.
  */
-interface PaymentMethod extends Doc { name: string; kind?: string }
+interface PaymentMethod extends Doc { name: string; kind?: string; requires_reference?: boolean }
 
 /**
  * Every order, over a range you choose.
@@ -103,6 +104,8 @@ export function OrdersPage() {
    */
   const [saying, setSaying] = useState<{ order: Order; amount: number } | null>(null);
   const [sayMethod, setSayMethod] = useState('');
+  /** The card machine's number, insisted on for a card like everywhere else. */
+  const [sayRef, setSayRef] = useState('');
   const [sayBusy, setSayBusy] = useState(false);
   const [sayError, setSayError] = useState<string | null>(null);
   const toast = useToast();
@@ -1467,6 +1470,7 @@ export function OrdersPage() {
                   size="sm"
                   style={{ marginTop: '0.5rem' }}
                   onClick={() => {
+                    setSayRef('');
                     setSaying({ order: open, amount: missing });
                     setSayMethod(methods[0]?.$id ?? '');
                     setSayError(null);
@@ -1868,6 +1872,11 @@ export function OrdersPage() {
                 onClick={async () => {
                   const method = methods.find((m) => m.$id === sayMethod);
                   if (!method) { setSayError('Choose how it was paid.'); return; }
+                  // The same rule as every till. A card payment written here
+                  // is as unreconcilable without its trace number as one
+                  // taken at the counter.
+                  const missingRef = referenceProblem(method, sayRef);
+                  if (missingRef) { setSayError(missingRef); return; }
                   setSayBusy(true);
                   setSayError(null);
                   try {
@@ -1897,6 +1906,9 @@ export function OrdersPage() {
                       shiftModule: saying.order.module ?? 'kitchen',
                       methodId: method.$id,
                       methodKind: method.kind ?? '',
+                      methodName: method.name,
+                      requiresReference: method.requires_reference,
+                      reference: sayRef.trim(),
                       amount: saying.amount,
                       takenBy: profile?.user_id ?? profile?.$id ?? user?.$id ?? '',
                     });
@@ -1947,6 +1959,11 @@ export function OrdersPage() {
               {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
             </Select>
           </Field>
+          {referenceRequired(methods.find((m) => m.$id === sayMethod)) && (
+            <Field {...referenceWords(methods.find((m) => m.$id === sayMethod))}>
+              <Input value={sayRef} onChange={(e) => { setSayRef(e.target.value); setSayError(null); }} />
+            </Field>
+          )}
           {/* Once it is a real payment it behaves like every other one: the
               method can be changed again, and it can be voided. */}
           <p className="small dim" style={{ marginBottom: 0 }}>

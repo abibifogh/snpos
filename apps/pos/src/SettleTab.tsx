@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, Field, Input, Modal, Notice, Select, Spinner } from '@snpos/ui';
 import {
   formatMoney, humanError, loadOpenTabs, ordersOnTab, paidOnOrders, loadPaymentMethods, recordPayment,
+  referenceProblem, referenceRequired, referenceWords,
   tabOwing, displayOrderNo, MODULE_LABELS,
 } from '@snpos/core';
 import type { Tab, Order, PaymentMethod, Module } from '@snpos/core';
@@ -82,6 +83,13 @@ export function SettleTab({
     if (!tab) { setError('Choose which tab is being settled.'); return; }
     if (!method) { setError('Choose how they paid.'); return; }
     if (owing <= 0) { setError('Nothing is owed on this tab.'); return; }
+    /*
+      The box here said "if there is one", which for a card is never true.
+      One tender settles every bill on the tab, so a missing trace number
+      loses the lot rather than one sale.
+    */
+    const missingRef = referenceProblem(method, reference);
+    if (missingRef) { setError(missingRef); return; }
     setBusy(true);
     setError(null);
     try {
@@ -105,6 +113,8 @@ export function SettleTab({
           shiftModule: ctx.module,
           methodId: method.$id,
           methodKind: method.kind,
+          methodName: method.name,
+          requiresReference: method.requires_reference,
           amount: due,
           reference: reference.trim(),
           takenBy: ctx.userId,
@@ -192,9 +202,15 @@ export function SettleTab({
                       {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
                     </Select>
                   </Field>
-                  <Field label="Reference" hint="The card machine's or mobile money's number, if there is one.">
-                    <Input value={reference} onChange={(e) => setReference(e.target.value)} />
-                  </Field>
+                  {referenceRequired(method) ? (
+                    <Field {...referenceWords(method)}>
+                      <Input value={reference} onChange={(e) => { setReference(e.target.value); setError(null); }} />
+                    </Field>
+                  ) : (
+                    <Field label="Reference" hint="Optional for this way of paying.">
+                      <Input value={reference} onChange={(e) => setReference(e.target.value)} />
+                    </Field>
+                  )}
                   {/* Said once, here: this pays the bills, it does not close the
                       account. Deciding an account is finished is management's,
                       the same as opening it was. */}

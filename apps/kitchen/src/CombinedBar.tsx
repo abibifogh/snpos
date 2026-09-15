@@ -9,6 +9,7 @@ import {
   db, DB_ID, formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift, loadOpenShift, loadOpenShifts, shiftBlockers, expectedTakings, closeShift, openingFloats,
   recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, shouldWarnLateOrder,
+  referenceProblem, referenceRequired, referenceWords,
   HANDOVER_ENABLED, ownFigure, floatOrigin, floatMethods,
 } from '@snpos/core';
 import type {
@@ -586,6 +587,15 @@ export function SettleModal({
       setError(`That is more than the ${formatMoney(owed, settings)} outstanding. Put the extra in the tip box if it is a tip.`);
       return;
     }
+    /*
+      This screen showed the box and took it empty.
+
+      The till has always insisted; here the same card sale went through with
+      nothing to match it to the bank, so whether a payment could be
+      reconciled came down to which screen somebody happened to be at.
+    */
+    const needsRef = referenceProblem(method, reference);
+    if (needsRef) { setError(needsRef); return; }
     setBusy(true);
     setError(null);
     try {
@@ -598,6 +608,8 @@ export function SettleModal({
         shiftModule: shift.module ?? 'kitchen',
         methodId,
         methodKind: method?.kind ?? 'other',
+        methodName: method?.name,
+        requiresReference: method?.requires_reference,
         amount: paying,
         tip: parseMoney(tipText, decimals) ?? 0,
         // Nothing is handed over on this screen: a cook marking an order
@@ -699,12 +711,11 @@ export function SettleModal({
           {formatMoney(leftAfter, settings)} will still be owed after this.
         </p>
       )}
-      {!nothingOwed && method?.requires_reference && (
-        <Field
-          label="Reference"
-          hint="The number from the card machine or the mobile money message. Without it this payment cannot be matched to your statement."
-        >
-          <Input value={reference} onChange={(e) => setReference(e.target.value)} />
+      {/* Shown whenever one is actually needed, not only where somebody
+          remembered to tick the method's flag. A card always needs it. */}
+      {!nothingOwed && referenceRequired(method) && (
+        <Field {...referenceWords(method)}>
+          <Input value={reference} onChange={(e) => { setReference(e.target.value); setError(null); }} />
         </Field>
       )}
       {!nothingOwed && asksForTip(settings, 'kitchen') && (

@@ -4,6 +4,7 @@ import type { Doc } from './types';
 import type { Order } from './orders';
 // Pure, so the same rule can be checked without a database in front of it.
 import { isLivePayment } from './shift-rules';
+import { referenceProblem } from './payment-reference';
 // Which shift a settled sale is filed under, which is not always the one that
 // took the money. Pure, for the same reason.
 import { shiftStampForPayment } from './shift-move';
@@ -62,6 +63,10 @@ export interface RecordPaymentInput {
   shiftModule?: string;
   methodId: string;
   methodKind: string;
+  /** What the till calls it, for the message when a reference is missing. */
+  methodName?: string;
+  /** The method's own setting. A card insists whatever it says. */
+  requiresReference?: boolean;
   /** What this order's share of the tender was, in minor units. */
   amount: number;
   tip?: number;
@@ -123,6 +128,25 @@ export async function recordPayment(input: RecordPaymentInput): Promise<number> 
       + 'so nobody is paid for it. A genuine extra belongs in the tip box.',
     );
   }
+
+  /*
+    A CARD PAYMENT CARRIES THE MACHINE'S NUMBER, CHECKED HERE TOO.
+
+    Same reasoning as the overpayment guard above: a rule that lives only on
+    the screen is a rule that holds on the screens somebody remembered. This
+    one did not hold on two of them — the kitchen screen showed the box and
+    took it empty, the tab settler called it optional — so whether a card sale
+    could be matched to the bank depended on where the person was standing.
+
+    Refused rather than recorded blank. A card payment with no trace number is
+    a figure that can never be reconciled, and the moment to get it is while
+    the terminal's printout is still in somebody's hand. See referenceProblem.
+  */
+  const missing = referenceProblem(
+    { kind: input.methodKind, name: input.methodName, requires_reference: input.requiresReference },
+    input.reference,
+  );
+  if (missing) throw new Error(missing);
 
   await createOrQueue('payments', ID.unique(), {
     venue_id: input.venueId,

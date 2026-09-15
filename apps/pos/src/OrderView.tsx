@@ -3,6 +3,7 @@ import { Button, Card, Field, Input, Modal, Notice, Select, Badge, Spinner } fro
 import {
   db, DB_ID, ID, Query, listAll, createOrder, computeTotals, lineTotal, formatMoney,
   parseMoney, toInput, isEnabled, featureConfig, visibleSections, recordPayment, asksForTip,
+  referenceProblem, referenceRequired, referenceWords,
   variantPriceRange, shiftUsable, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, sharesFor, shouldWarnLateOrder,
   sellBlockedReason, previewUrl,
   findCode, codeProblem, discountAmount, needsManager, discountLabelFor,
@@ -1609,10 +1610,11 @@ function CounterPaymentModal({
       return;
     }
     for (const m of methods) {
-      if (amountOf(m.$id) > 0 && m.requires_reference && !(refs[m.$id] ?? '').trim()) {
-        setError(`Enter the reference for the ${m.name} payment.`);
-        return;
-      }
+      // A card always, whatever the method's own flag says: the flag is a
+      // setting somebody can forget to tick, and a card sale without its
+      // trace number cannot be matched to the bank however it was set up.
+      const missing = amountOf(m.$id) > 0 ? referenceProblem(m, refs[m.$id] ?? '') : null;
+      if (missing) { setError(missing); return; }
     }
 
     setBusy(true);
@@ -1642,6 +1644,8 @@ function CounterPaymentModal({
             shiftModule: ctx.module,
             methodId: m.$id,
             methodKind: m.kind,
+            methodName: m.name,
+            requiresReference: m.requires_reference,
             amount: share,
             // The tip belongs to the tender, not to each row, so it goes on
             // the first one written rather than once per method per order.
@@ -1712,8 +1716,8 @@ function CounterPaymentModal({
                 <Button size="sm" variant="ghost" onClick={() => restOn(m.$id)}>Rest</Button>
               )}
             </div>
-            {amountOf(m.$id) > 0 && m.requires_reference && (
-              <Field label={`${m.name} reference`} hint="From the card machine or the mobile money message.">
+            {amountOf(m.$id) > 0 && referenceRequired(m) && (
+              <Field {...referenceWords(m)}>
                 <Input value={refs[m.$id] ?? ''} onChange={(e) => setRefs((r) => ({ ...r, [m.$id]: e.target.value }))} />
               </Field>
             )}
@@ -1828,7 +1832,8 @@ function PaymentModal({
       setError('The cash given is less than the amount being paid. Correct one of them.');
       return;
     }
-    if (method?.requires_reference && !reference.trim()) { setError('Enter the reference from the card machine.'); return; }
+    const missingRef = referenceProblem(method, reference);
+    if (missingRef) { setError(missingRef); return; }
 
     setBusy(true);
     setError(null);
@@ -1849,6 +1854,8 @@ function PaymentModal({
           shiftModule: ctx.module,
           methodId,
           methodKind: method?.kind ?? 'cash',
+          methodName: method?.name,
+          requiresReference: method?.requires_reference,
           amount: share,
           // The tip belongs to the tender, not to each order, so it goes on
           // the first row only rather than being counted once per order.
@@ -1952,9 +1959,9 @@ function PaymentModal({
         </Notice>
       )}
 
-      {method?.requires_reference && (
-        <Field label="Reference" hint="From the card machine or mobile money confirmation.">
-          <Input value={reference} onChange={(e) => setReference(e.target.value)} />
+      {referenceRequired(method) && (
+        <Field {...referenceWords(method)}>
+          <Input value={reference} onChange={(e) => { setReference(e.target.value); setError(null); }} />
         </Field>
       )}
 
