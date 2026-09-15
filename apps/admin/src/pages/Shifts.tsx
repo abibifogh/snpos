@@ -15,7 +15,8 @@ import {
   kindOf, countedParts, partLines, partsWords, unexplained,
   shiftCountEntries, countsByPhase, phaseSummary, bothEndsWords, countsGapWords,
   buildReportHtml, openPrintable,
-  tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS, dateWords, timeWords, dateTimeWords } from '@snpos/core';
+  tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS, dateWords, timeWords, dateTimeWords,
+  loadStaffNames } from '@snpos/core';
 import type {
   Module, Doc, CashHandover, MoneyKind, CountedParts, Settings, CountRow, CountEntry, TabOrder,
   Shift as CoreShift, Venue,
@@ -30,6 +31,8 @@ interface Shift extends Doc {
   status: 'open' | 'closing' | 'closed';
   opened_by: string;
   opened_at: string;
+  /** Absent while the shift is still open. See the schema. */
+  closed_by?: string;
   closed_at?: string;
   opening_floats: string;
   /** Where that opening figure came from. See floatOrigin. */
@@ -122,6 +125,20 @@ export function ShiftsPage() {
   const toast = useToast();
   const [rows, setRows] = useState<Shift[] | null>(null);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [staffNames, setStaffNames] = useState<Map<string, string>>(new Map());
+
+  /**
+   * A name for whoever did something, or an honest blank.
+   *
+   * Never "somebody no longer on the staff list". A shift opened before this
+   * screen recorded who closed it, or by an account since removed, is a gap
+   * in the record — and saying so plainly is the only truthful option. See
+   * staff-names for why both kinds of id are asked about.
+   */
+  const whoDid = (id?: string): string => {
+    if (!id) return 'Not recorded';
+    return staffNames.get(id) ?? 'Not recorded';
+  };
   const [expenses, setExpenses] = useState<Expense[]>([]);
 
   /**
@@ -546,6 +563,16 @@ export function ShiftsPage() {
       () => [] as Expense[],
     );
     setRows(s.sort((a, b) => b.opened_at.localeCompare(a.opened_at)));
+    /*
+      Who opened and who closed, by name.
+
+      Keyed under both of a person's ids — the staff profile and the login it
+      belongs to — because a shift carries whichever one the screen that wrote
+      it had to hand. Asking for one kind only is how a panel ends up saying
+      "somebody no longer on the staff list" about a cook who is standing in
+      the kitchen. See nameBook.
+    */
+    setStaffNames(await loadStaffNames());
     setMethods(m);
     setExpenses(e);
     setHandovers(h);
@@ -1063,15 +1090,23 @@ export function ShiftsPage() {
           <div className="grid-2">
             <div>
               <h3>Opened</h3>
-              <p className="small dim">{dateTimeWords(detail.opened_at)}</p>
+              <p className="small dim" style={{ marginBottom: '0.15rem' }}>{dateTimeWords(detail.opened_at)}</p>
+              {/* WHO, not only when. A drawer that is out by forty cedis is a
+                  question for a person, and the two people who can answer it
+                  are the one who counted the float in and the one who counted
+                  it out. Both were on the row and neither was on the screen. */}
+              <p className="small" style={{ margin: 0, fontWeight: 600 }}>{whoDid(detail.opened_by)}</p>
             </div>
             <div>
               <h3>Closed</h3>
-              <p className="small dim" style={{ marginBottom: '0.35rem' }}>
+              <p className="small dim" style={{ marginBottom: '0.15rem' }}>
                 {detail.closed_at ? dateTimeWords(detail.closed_at) : 'Still open'}
                 {detail.closed_at && (
                   <> · {hoursBetween(detail.opened_at, detail.closed_at)} hours</>
                 )}
+              </p>
+              <p className="small" style={{ margin: '0 0 0.35rem', fontWeight: 600 }}>
+                {detail.closed_at ? whoDid(detail.closed_by) : ''}
               </p>
               {/*
                 The commonest wrong figure in the system, and the least
