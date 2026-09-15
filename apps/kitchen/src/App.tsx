@@ -456,6 +456,22 @@ export function App() {
   );
   const level: BusyLevel = busyLevel({ waiting: waitingNow, cfg: busyCfg, override });
   const busyOn = isEnabled(features, 'busy_mode');
+  /*
+    THE RULES RUN; THE PILL IS OPTIONAL.
+
+    Two different questions, and they were one switch. Turning busy mode off
+    to clear the pass of the level pill also stopped the rules: no padded
+    quotes, no holding phone orders at the threshold, nothing. That is a large
+    thing to lose to a tidier header.
+
+    So the header is its own setting. Off — as it is by default now — the pass
+    says nothing about how busy it is and everything underneath carries on:
+    quotes still stretch, phone orders still stop at the number set in Admin.
+    What goes with the button is setting the level BY HAND from the pass,
+    because the button was the only way in; the ticket count is then the only
+    thing that decides. See Features, Kitchen busy mode.
+  */
+  const showBusyPill = busyOn && featureConfig(features, 'busy_mode', 'show_on_pass', false);
 
   const readOverride = useCallback(() => {
     if (!venue) return;
@@ -1088,7 +1104,7 @@ export function App() {
             to ask somebody else to flip is a switch that never gets flipped
             during the service it was for.
           */}
-          {busyOn && (
+          {showBusyPill && (
             <button
               className="kds-help"
               style={{
