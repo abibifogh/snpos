@@ -19,11 +19,14 @@ export {
 import { createOrQueue, isOffline } from './offline';
 import { claimPlace, releasePlace } from './slot-booking';
 import { computeTotals, lineUnitPrice, lineTotal } from './pricing';
+import { formatMoney } from './money';
 // Pure, and the reason a bar can ring up a sale at all. See order-numbers.
 import { nextInRun, formatOrderNo, prefixFor } from './order-numbers';
 // Pure, and the same rule the shift close reads. A payment that is not live is
 // not money in a drawer, wherever the question is asked from.
 import { isLivePayment } from './shift-rules';
+import { paidOnOrders } from './tab-store';
+import { paymentStatusAfter } from './order-edit';
 /*
   A bar's and a kitchen's stock leaves through the recipe, not off the item
   itself, so putting it back needs the same machinery the pour used. Runtime
@@ -858,6 +861,147 @@ export async function recomputeOrderTotals(
     total: totals.total,
   });
   return { from: order.total, to: totals.total };
+}
+
+/**
+ * Take a discount off a bill that has already been rung up.
+ *
+ * The till discounts a basket before it becomes an order, which is the right
+ * moment for a walk-in and the wrong one for the pass: by the time somebody at
+ * the kitchen screen decides a bill should come down — the wait was long, a
+ * dish went out wrong, a regular is owed something — the order exists, the
+ * food is cooked, and the only tool on that screen was to take the money in
+ * full or not at all. So it was settled in full and made up for out of the
+ * drawer, off the record.
+ *
+ * Everything is worked out again from the LINES AS THEY WERE SOLD. Their own
+ * stored totals, not today's menu: a bill discounted tonight must not quietly
+ * reprice itself against a menu that changed since. Tax and service follow the
+ * new subtotal, which is the whole reason this cannot be a subtraction from
+ * the total — taking 10% off a figure that already has tax and service inside
+ * it gives a different, wrong answer, and the books would never balance
+ * against the lines.
+ *
+ * Refused where it would take the bill below what has already been paid. That
+ * is not a discount, it is a refund, and a refund is a decision with a
+ * different name, a different button and money leaving a drawer. See
+ * moneyEffect.
+ */
+export async function discountPlacedOrder(input: {
+  order: Pick<Order, '$id' | 'venue_id' | 'order_no' | 'total' | 'discount_total'>;
+  /** In minor units, off the subtotal. Nought takes the discount away again. */
+  amount: number;
+  /** What it is called on the bill: "Staff 20%", "Long wait". */
+  label: string;
+  /** The offer this came from, where it came from one. */
+  discountId?: string;
+  settings: Settings;
+  /** Who decided, for the audit log. */
+  by: string;
+  byRole?: string;
+}): Promise<{ from: number; to: number; taken: number }> {
+  const { order, settings } = input;
+  const amount = Math.max(0, Math.round(input.amount));
+
+  const lines = await orderItemsFor(order.$id);
+  const live = lines.filter((l) => l.status !== 'void');
+  if (live.length === 0) throw new Error('This order has nothing on it to discount.');
+
+  // Each stored line total taken whole, exactly as recomputeOrderTotals does
+  // it, so the two can never disagree about what a bill comes to.
+  const priced = (off: number) => computeTotals({
+    lines: live.map((l) => ({
+      key: l.$id,
+      menu_item_id: l.menu_item_id,
+      name: l.name_snapshot,
+      unit_price: l.line_total,
+      qty: 1,
+      addons: [],
+    })),
+    discount: off,
+    settings,
+  });
+
+  const full = priced(0);
+  if (amount > full.subtotal) {
+    throw new Error('That is more than the bill comes to. A bill cannot be discounted below nothing.');
+  }
+
+  const totals = priced(amount);
+
+  /*
+    MONEY ALREADY TAKEN IS THE FLOOR.
+
+    A bill part-settled by one of four people at a table can still be
+    discounted, and the remaining share simply drops. Below what is already in
+    the drawer it stops being a discount and becomes a refund — which takes
+    money back out, needs somebody to hand it over, and is not this button.
+  */
+  const taken = Object.values(await paidOnOrders([order.$id]).catch(() => ({})))
+    .reduce((a, b) => a + b, 0);
+  if (taken > totals.total) {
+    throw new Error(
+      `${formatMoney(taken, settings)} has already been paid on this bill and the discount would bring it `
+      + `to ${formatMoney(totals.total, settings)}. The difference has to be refunded rather than discounted.`,
+    );
+  }
+
+  await db.updateDocument(DB_ID, 'orders', order.$id, {
+    subtotal: totals.subtotal,
+    discount_total: totals.discount_total,
+    /*
+      NO LABEL COLUMN, and that is not an oversight to correct here.
+
+      An order has never carried the words for its discount — the till does
+      not write them either. They live on the redemption row and on the
+      receipt. Writing a field the collection does not have would not fail
+      quietly: Appwrite refuses the WHOLE document, which is how one such
+      line once stopped every order in the building being placed.
+    */
+    service_total: totals.service_total,
+    tax_total: totals.tax_total,
+    total: totals.total,
+    ...(paymentStatusAfter(taken, totals.total)
+      ? { payment_status: paymentStatusAfter(taken, totals.total) }
+      : {}),
+  });
+
+  /*
+    The offer's own counter, and the record of who decided.
+
+    Never fatal: a discount that was agreed with a customer and applied to
+    their bill must not be undone because a counter could not be written.
+  */
+  if (input.discountId && amount > 0) {
+    await db.createDocument(DB_ID, 'discount_redemptions', ID.unique(), {
+      venue_id: order.venue_id,
+      discount_id: input.discountId,
+      code_snapshot: input.label,
+      order_id: order.$id,
+      amount,
+      stage: 'staff_post_accept',
+      applied_by: input.by,
+      status: 'applied',
+    }).catch(() => undefined);
+    await db.getDocument(DB_ID, 'discounts', input.discountId)
+      .then((d) => db.updateDocument(DB_ID, 'discounts', input.discountId as string, {
+        used_count: ((d as unknown as { used_count?: number }).used_count ?? 0) + 1,
+      }))
+      .catch(() => undefined);
+  }
+
+  await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
+    venue_id: order.venue_id,
+    actor_id: input.by,
+    actor_role: input.byRole ?? '',
+    action: amount > 0 ? 'order_discounted' : 'order_discount_removed',
+    entity_type: 'orders',
+    entity_id: order.$id,
+    before: JSON.stringify({ order_no: order.order_no, total: order.total, discount: order.discount_total ?? 0 }),
+    after: JSON.stringify({ total: totals.total, discount: amount, label: input.label }),
+  }).catch(() => undefined);
+
+  return { from: order.total, to: totals.total, taken };
 }
 
 /* ------------------------------------------------ putting an order right */
