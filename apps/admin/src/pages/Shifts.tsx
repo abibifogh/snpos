@@ -631,7 +631,7 @@ export function ShiftsPage() {
     is a comforting number and a useless one. See shift-totals.
   */
   const totals = rangeTotals({ shifts: shown, methods, expenses });
-  const kinds = kindsWorthShowing(totals.counted);
+  const kinds = kindsWorthShowing(totals.counted, totals.expected);
 
   const saveSeal = async (shift: Shift, sealed: boolean) => {
     setSealBusy(true);
@@ -692,21 +692,45 @@ export function ShiftsPage() {
               shows the arithmetic first and the sales second. See
               counted-breakdown.
             */}
-            {kinds.map((k) => (
-              <div key={k}>
-                <div className="dim small">{KIND_LABELS[k]} counted</div>
-                <button
-                  type="button"
-                  className="linky"
-                  aria-expanded={openKind === k}
-                  onClick={() => void openTotals(k)}
-                  style={{ fontSize: '1.3rem', fontWeight: 650 }}
-                >
-                  {settings ? formatMoney(totals.counted[k], settings) : totals.counted[k]}
-                  <span className="dim small">{' '}{openKind === k ? '▾' : '▸'}</span>
-                </button>
-              </div>
-            ))}
+            {kinds.map((k) => {
+              /*
+                WHAT THE RECORDS SAY, under what the hand found.
+
+                Only the counted figure was here, and a counted figure is a
+                fact that no later edit can reach: an admin moving a payment
+                from cash to card — the commonest correction there is —
+                changes what was EXPECTED, and the page showed nothing that
+                could move. The correction looked like it had failed.
+
+                So both are shown, and where they differ the difference is
+                named rather than left to be worked out from two numbers.
+              */
+              const off = totals.counted[k] - totals.expected[k];
+              return (
+                <div key={k}>
+                  <div className="dim small">{KIND_LABELS[k]} counted</div>
+                  <button
+                    type="button"
+                    className="linky"
+                    aria-expanded={openKind === k}
+                    onClick={() => void openTotals(k)}
+                    style={{ fontSize: '1.3rem', fontWeight: 650 }}
+                  >
+                    {settings ? formatMoney(totals.counted[k], settings) : totals.counted[k]}
+                    <span className="dim small">{' '}{openKind === k ? '▾' : '▸'}</span>
+                  </button>
+                  <div className="dim small" style={{ marginTop: '0.1rem' }}>
+                    Records say {settings ? formatMoney(totals.expected[k], settings) : totals.expected[k]}
+                    {off !== 0 && (
+                      <span style={{ color: 'var(--warn)', fontWeight: 600 }}>
+                        {' · '}{off > 0 ? 'over ' : 'short '}
+                        {settings ? formatMoney(Math.abs(off), settings) : Math.abs(off)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
             <div>
               <div className="dim small">Everything counted</div>
               <div style={{ fontSize: '1.3rem', fontWeight: 650 }}>
@@ -729,9 +753,10 @@ export function ShiftsPage() {
           </div>
 
           <p className="small dim" style={{ margin: '0.9rem 0 0' }}>
-            These are the amounts <strong>counted</strong> at each close, not what the records expected — adding
-            up the expected figures would give a week that always balances, which is a comforting number and a
-            useless one.
+            The big figures are what was <strong>counted</strong> at each close — somebody's hand in the
+            drawer. Underneath is what the <strong>records</strong> say should have been there. Correcting how
+            a payment was made moves the records; it never moves a count, because what was in the drawer that
+            night is a fact and no later edit reaches back and changes it.
             {totals.open > 0 && (
               <>
                 {' '}
