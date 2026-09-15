@@ -10,10 +10,13 @@ import {
   loadPaymentMethods, openShift, loadOpenShift, loadOpenShifts, shiftBlockers, expectedTakings, closeShift, openingFloats,
   recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, shouldWarnLateOrder,
   referenceProblem, referenceRequired, referenceWords,
+  discountPlacedOrder, findCode, codeProblem, needsManager, discountAmount, discountLabelFor,
+  listAll, Query,
   HANDOVER_ENABLED, ownFigure, floatOrigin, floatMethods,
 } from '@snpos/core';
 import type {
   PaymentMethod, Shift, Settings, Venue, StaffProfile, FeatureMap, Order, FloatSource,
+  DiscountRow, Doc,
 } from '@snpos/core';
 
 /**
@@ -519,6 +522,25 @@ export function SettleModal({
   const [owed, setOwed] = useState(order.total);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /*
+    Taking a bill down, at the pass.
+
+    By the time somebody here decides a bill should come down — the wait was
+    long, a dish went out wrong, a regular is owed something — the order
+    exists and the food is cooked. The only tools on this screen were to take
+    the money in full or not at all, so it was taken in full and made up out
+    of the drawer, off the record.
+
+    What one person may authorise is their own ceiling, the same one the till
+    reads. A cook with none does not see the button, because a button that
+    refuses everything it is asked is worse than no button.
+  */
+  const [discounting, setDiscounting] = useState(false);
+  const [discountRows, setDiscountRows] = useState<(DiscountRow & Doc)[] | null>(null);
+  const [code, setCode] = useState('');
+  const [discountNote, setDiscountNote] = useState<string | null>(null);
+  const ceilingBp = who?.can_discount_up_to_bp ?? 0;
+  const mayDiscount = ceilingBp > 0;
 
   const decimals = settings.currency_decimals ?? 2;
   const method = methods.find((m) => m.$id === methodId);
@@ -540,6 +562,11 @@ export function SettleModal({
       setMethodId(m[0]?.$id ?? '');
       setShift(s);
       setOwed(out);
+      if (mayDiscount) {
+        listAll<DiscountRow & Doc>('discounts', [Query.equal('active', true)])
+          .then(setDiscountRows)
+          .catch(() => setDiscountRows([]));
+      }
     })().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [venueId, order.$id]);
@@ -574,6 +601,50 @@ export function SettleModal({
       onDone(`${order.order_no} collected, nothing to pay`, { settled: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not mark that collected.');
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Put the discount on the bill, then read back what is left to pay.
+   *
+   * Read back rather than subtracted: the discount comes off the SUBTOTAL and
+   * tax and service follow it down, so what is owed afterwards is not the old
+   * figure minus the discount. Working it out here by subtraction would give a
+   * number that disagrees with the order, and the disagreement would be money.
+   */
+  const applyDiscount = async () => {
+    setError(null);
+    const found = findCode(discountRows ?? [], code);
+    const full = order.subtotal ?? order.total;
+    const ctxFor = { subtotal: full, at: new Date(), ceilingBp };
+
+    const wrong = codeProblem(found, ctxFor);
+    if (wrong || !found) { setError(wrong); return; }
+    const senior = needsManager(found, ctxFor);
+    if (senior) { setError(senior); return; }
+
+    const off = discountAmount(found, full);
+    if (off <= 0) { setError('That code takes nothing off this bill.'); return; }
+
+    setBusy(true);
+    try {
+      const { to } = await discountPlacedOrder({
+        order,
+        amount: off,
+        label: discountLabelFor(found),
+        discountId: found.$id,
+        settings,
+        by: who?.user_id || who?.$id || '',
+        byRole: who?.role ?? '',
+      });
+      setOwed(await amountOutstanding({ ...order, total: to }));
+      setDiscountNote(`${discountLabelFor(found)} · ${formatMoney(off, settings)} off`);
+      setDiscounting(false);
+      setCode('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not apply that discount.');
+    } finally {
       setBusy(false);
     }
   };
@@ -683,6 +754,41 @@ export function SettleModal({
             ? `Still to pay, of ${formatMoney(order.total, settings)}. The guest pays you as usual; this records which way.`
             : 'The guest pays you as usual. This records which way they paid.'}
       </p>
+      {/*
+        Taking the bill down, before taking the money.
+
+        Above the payment boxes because it changes what they are for: a
+        discount decided after the amount has been typed means typing it
+        again. Only where this person may authorise one — a button that
+        refuses everything it is asked is worse than no button.
+      */}
+      {discountNote && (
+        <Notice tone="ok">{discountNote}. The bill has been brought down.</Notice>
+      )}
+      {mayDiscount && !nothingOwed && !discountNote && !discounting && (
+        <Button size="sm" onClick={() => { setDiscounting(true); setError(null); }}>
+          Take something off this bill
+        </Button>
+      )}
+      {discounting && (
+        <Field
+          label="Discount"
+          hint={`The code for it. You can authorise up to ${(ceilingBp / 100).toFixed(0)}%.`}
+        >
+          <div className="row" style={{ gap: '0.4rem' }}>
+            <Input
+              value={code}
+              autoFocus
+              placeholder="STAFF20"
+              onChange={(e) => { setCode(e.target.value); setError(null); }}
+            />
+            <Button variant="primary" onClick={applyDiscount} loading={busy}>Apply</Button>
+            <Button variant="ghost" onClick={() => { setDiscounting(false); setCode(''); setError(null); }}>
+              Cancel
+            </Button>
+          </div>
+        </Field>
+      )}
       {/* Nothing about how they paid is asked when there is nothing to pay.
           Every one of these boxes would be a question with no answer, and a
           form full of those is a form people learn to guess at. */}
