@@ -97,6 +97,32 @@ export function countedByKind(shifts: TotalledShift[], methods: KindedMethod[]):
   return out;
 }
 
+/**
+ * What the records say each drawer should have held, split the same way.
+ *
+ * The counterpart to the figure above, and it exists because a correction had
+ * nowhere to show. An admin who moves a payment from cash to card — the
+ * commonest correction there is, and the reason changePaymentMethod exists at
+ * all — changes what was EXPECTED, never what was counted: the money in the
+ * drawer at close is a fact, and no later edit reaches back and changes what
+ * somebody held in their hand.
+ *
+ * So the page showed one number that by design never moves, the admin made a
+ * correction, nothing happened, and they reported it as broken. It was not,
+ * but a page that only shows a figure no correction can touch is a page that
+ * cannot be checked. Both are shown now, and the difference between them is
+ * the whole point of counting.
+ */
+export function expectedByKind(shifts: TotalledShift[], methods: KindedMethod[]): ByKind {
+  const out = emptyByKind();
+  for (const s of shifts) {
+    for (const [methodId, amount] of Object.entries(parseMap(s.expected))) {
+      out[kindOf(methodId, methods)] += amount;
+    }
+  }
+  return out;
+}
+
 export interface RangeTotals {
   /** Every shift in the range, including any still open. */
   shifts: number;
@@ -107,6 +133,13 @@ export interface RangeTotals {
   counted: ByKind;
   /** Every kind added together. */
   countedTotal: number;
+  /**
+   * What the records say should have been there, by kind.
+   *
+   * The figure a correction moves. See expectedByKind.
+   */
+  expected: ByKind;
+  expectedTotal: number;
   sales: number;
   expenses: number;
   /** Counted minus expected, summed. Negative is short. */
@@ -130,6 +163,7 @@ export function rangeTotals(opts: {
   const { shifts, methods, expenses } = opts;
   const closed = shifts.filter((s) => s.status === 'closed');
   const counted = countedByKind(closed, methods);
+  const expected = expectedByKind(closed, methods);
 
   const ids = new Set(shifts.map((s) => s.$id));
   const spend = expenses
@@ -147,6 +181,8 @@ export function rangeTotals(opts: {
     open: shifts.length - closed.length,
     counted,
     countedTotal: MONEY_KINDS.reduce((a, k) => a + counted[k], 0),
+    expected,
+    expectedTotal: MONEY_KINDS.reduce((a, k) => a + expected[k], 0),
     sales: closed.reduce((a, s) => a + (s.sales_total ?? 0), 0),
     expenses: spend,
     variance,
@@ -160,7 +196,15 @@ export function rangeTotals(opts: {
  * reading nought for ever — it is a permanent blank that makes the row harder
  * to read and answers a question nobody asked. Cash always shows: a total
  * without it looks broken rather than empty.
+ *
+ * A kind the RECORDS know about counts as well as one that was counted, and
+ * that is not a nicety. Correct a payment from cash to card on a night where
+ * no card was ever counted and the whole card column would be missing — so
+ * the money would have moved into a bucket with nowhere on screen to show it,
+ * which is the same invisible correction this was meant to fix.
  */
-export function kindsWorthShowing(counted: ByKind): MoneyKind[] {
-  return MONEY_KINDS.filter((k) => k === 'cash' || counted[k] !== 0);
+export function kindsWorthShowing(counted: ByKind, expected?: ByKind): MoneyKind[] {
+  return MONEY_KINDS.filter(
+    (k) => k === 'cash' || counted[k] !== 0 || (expected?.[k] ?? 0) !== 0,
+  );
 }

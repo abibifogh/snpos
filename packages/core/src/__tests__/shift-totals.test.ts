@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  kindOf, countedByKind, rangeTotals, kindsWorthShowing, MONEY_KINDS,
+  kindOf, countedByKind, expectedByKind, rangeTotals, kindsWorthShowing, MONEY_KINDS,
   type TotalledShift, type KindedMethod,
 } from '../shift-totals.ts';
 
@@ -116,4 +116,58 @@ test('columns nobody uses are not shown, but cash always is', () => {
     ['cash', 'mobile_money'],
   );
   assert.equal(MONEY_KINDS.length, 4);
+});
+
+/* ------------------------------- what the records say, beside what was found */
+
+const methodsCC = [{ $id: 'm-cash', kind: 'cash' }, { $id: 'm-card', kind: 'card' }];
+
+test('the records are totalled as well as the count', () => {
+  /*
+    Only the count was, and a count is a fact no later edit can reach. So an
+    admin moving a payment from cash to card — the commonest correction there
+    is — changed what was EXPECTED, the page showed nothing that could move,
+    and the correction was reported as not working.
+  */
+  const shifts = [{
+    $id: 's1',
+    status: 'closed',
+    counted: JSON.stringify({ 'm-cash': 1_255_00, 'm-card': 1_030_00 }),
+    expected: JSON.stringify({ 'm-cash': 1_525_00, 'm-card': 760_00 }),
+  }];
+
+  const totals = rangeTotals({ shifts, methods: methodsCC, expenses: [] });
+  assert.equal(totals.counted.cash, 1_255_00);
+  assert.equal(totals.expected.cash, 1_525_00, 'what the records thought was in the drawer');
+  assert.equal(totals.counted.card, 1_030_00);
+  assert.equal(totals.expected.card, 760_00);
+  assert.equal(totals.expectedTotal, 2_285_00);
+  // The two totals agree even where the split does not, which is exactly what
+  // a mis-tagged payment looks like: the right money, in the wrong column.
+  assert.equal(totals.countedTotal, totals.expectedTotal);
+});
+
+test('a shift with nothing expected recorded reads as nought, not as broken', () => {
+  assert.deepEqual(
+    expectedByKind([{ $id: 's1', status: 'closed' }], methodsCC),
+    { cash: 0, card: 0, mobile_money: 0, other: 0 },
+  );
+  assert.deepEqual(
+    expectedByKind([{ $id: 's1', status: 'closed', expected: 'not json' }], methodsCC),
+    { cash: 0, card: 0, mobile_money: 0, other: 0 },
+  );
+});
+
+test('a kind the records know about gets a column even if none was counted', () => {
+  /*
+    Correct a payment onto a card on a night where no card was counted and the
+    whole card column would be missing — the money moved into a bucket with
+    nowhere on screen to show it, which is the same invisible correction this
+    was meant to fix.
+  */
+  const counted = { cash: 500, card: 0, mobile_money: 0, other: 0 };
+  const expected = { cash: 200, card: 300, mobile_money: 0, other: 0 };
+  assert.deepEqual(kindsWorthShowing(counted, expected), ['cash', 'card']);
+  // And with no records to go on it behaves exactly as it always did.
+  assert.deepEqual(kindsWorthShowing(counted), ['cash']);
 });
