@@ -3927,6 +3927,16 @@ export const FEATURES = [
       pause_pending_threshold: 20,
       busy_extra_minutes: 15,
       hold_qr_orders_when_paused: true,
+      /*
+        Whether the PASS says anything about it. The rules run either way.
+
+        Off, because the level pill was the only way to turn the whole feature
+        off and people did — losing the padded quotes and the holding with it,
+        which is a large thing to give up for a tidier header. Switching this
+        on puts the pill back, and with it the ability to set the level by
+        hand from the kitchen screen.
+      */
+      show_on_pass: false,
       message_to_guest: 'The kitchen is very busy, your order may take a little longer.',
       // How long a level set by hand holds before the ticket count takes over
       // again. Somebody pausing on a Friday night and going home would

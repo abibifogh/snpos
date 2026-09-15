@@ -16,6 +16,16 @@ function configNumber(flag: FeatureFlag, option: string, fallback: number): numb
   }
 }
 
+/** One yes-or-no out of a feature's config text, or the fallback if it says nothing. */
+function configFlag(flag: FeatureFlag, option: string, fallback: boolean): boolean {
+  try {
+    const v = (JSON.parse(flag.config || '{}') as Record<string, unknown>)[option];
+    return typeof v === 'boolean' ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 /**
  * Plain-language labels. The keys come from scripts/schema.mjs.
  *
@@ -149,6 +159,27 @@ const NUMBERS: Record<string, {
   ],
 };
 
+/**
+ * The settings that are a yes or a no rather than a number.
+ *
+ * Same idea as NUMBERS above and kept apart from it because the control is
+ * different: a switch, not a box. Only settings an owner would actually reach
+ * for; the rest of each feature's config stays where it is.
+ */
+const SWITCHES: Record<string, { option: string; label: string; hint: string; fallback: boolean }[]> = {
+  busy_mode: [
+    {
+      option: 'show_on_pass',
+      label: 'Show the busy level on the kitchen screen',
+      hint: 'Off means the pass says nothing about how busy it is and everything below still happens — quotes '
+        + 'still get longer, phone orders still stop at the number set above. The only thing lost is the '
+        + 'button, and with it the ability to set the level BY HAND from the pass: switched off, the ticket '
+        + 'count is the only thing that decides.',
+      fallback: false,
+    },
+  ],
+};
+
 export function FeaturesPage() {
   const toast = useToast();
   const { settings } = useSession();
@@ -214,7 +245,7 @@ export function FeaturesPage() {
   };
 
   /** One number inside a feature's config, saved on its own. */
-  const setNumber = async (flag: FeatureFlag, option: string, value: number) => {
+  const setOption = async (flag: FeatureFlag, option: string, value: unknown) => {
     let config: Record<string, unknown> = {};
     try {
       config = flag.config ? (JSON.parse(flag.config) as Record<string, unknown>) : {};
@@ -284,6 +315,18 @@ export function FeaturesPage() {
                       </Notice>
                     </div>
                   ))}
+                  {/* Same rule as the numbers below: a setting that governs
+                      something switched off is a question with no answer. */}
+                  {f.enabled && (SWITCHES[f.key] ?? []).map((w) => (
+                    <div key={w.option} style={{ marginTop: '0.6rem', maxWidth: '30rem' }}>
+                      <Toggle
+                        checked={configFlag(f, w.option, w.fallback)}
+                        onChange={(v) => void setOption(f, w.option, v)}
+                        label={w.label}
+                      />
+                      <div className="small dim" style={{ marginTop: '0.2rem' }}>{w.hint}</div>
+                    </div>
+                  ))}
                   {/* Only while the feature is on: a number that governs
                       something switched off is a question with no answer. */}
                   {f.enabled && (NUMBERS[f.key] ?? []).map((n) => (
@@ -306,7 +349,7 @@ export function FeaturesPage() {
                               : Math.round(Number(e.target.value) || 0);
                             if (raw === null) return;
                             const v = Math.max(n.min ?? 0, raw);
-                            if (v !== configNumber(f, n.option, n.fallback)) void setNumber(f, n.option, v);
+                            if (v !== configNumber(f, n.option, n.fallback)) void setOption(f, n.option, v);
                           }}
                         />
                       </Field>
