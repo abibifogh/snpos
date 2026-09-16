@@ -208,3 +208,118 @@ test('a change request reaches the same people', async () => {
   assert.ok(to.includes('owner@bistro.com'));
   assert.ok(to.includes('chef@bistro.com'));
 });
+
+/* ---------------------------------- sending a revision, and hearing back */
+
+test('a revision goes to the party, and only to the party', async () => {
+  /*
+    The house is not copied. They already know — somebody here made the change
+    and pressed the button — and the guest must never be shown who else is on
+    a message about their own booking.
+  */
+  reset([{ $id: 'p1', role: 'admin', email: 'owner@bistro.com', active: true }]);
+  bookings.bk1.approval_send_at = '2026-09-16T10:00:00.000Z';
+  bookings.bk1.approval_note = 'Thursday lunch is now Thursday dinner.';
+
+  await run({ ...bookings.bk1 }, 'databases.snpos.collections.group_bookings.documents.bk1.update');
+
+  const to = outbox.map((m) => m.to);
+  assert.deepEqual(to, ['ama@example.com'], `only the party, got ${JSON.stringify(to)}`);
+  assert.match(outbox[0].subject, /check your group booking/i);
+  assert.match(outbox[0].html, /Thursday lunch is now Thursday dinner/, 'it says what changed');
+});
+
+test('the request is cleared, so it does not fire on every later save', async () => {
+  reset([{ $id: 'p1', role: 'admin', email: 'owner@bistro.com', active: true }]);
+  bookings.bk1.approval_send_at = '2026-09-16T10:00:00.000Z';
+  await run({ ...bookings.bk1 }, 'databases.snpos.collections.group_bookings.documents.bk1.update');
+
+  const cleared = updates.find((u) => u.table === 'group_bookings' && u.data.approval_send_at === null);
+  assert.ok(cleared, 'the asking is cleared');
+  // And the stamp that means "the party is waiting" is written, because it went.
+  const stamped = updates.find((u) => u.table === 'group_bookings' && u.data.approval_requested_at);
+  assert.ok(stamped, 'stamped as actually sent');
+});
+
+test('a revision that could not be sent is not recorded as waiting on the party', async () => {
+  /*
+    The whole reason the job stamps this rather than the page. A row reading
+    "waiting on the party" about an email that never left sends somebody to
+    chase a guest who was never written to.
+  */
+  reset([{ $id: 'p1', role: 'admin', email: 'owner@bistro.com', active: true }]);
+  bookings.bk1.email = 'gone@old.example';
+  bookings.bk1.approval_send_at = '2026-09-16T10:00:00.000Z';
+
+  await run({ ...bookings.bk1 }, 'databases.snpos.collections.group_bookings.documents.bk1.update');
+
+  assert.equal(
+    updates.some((u) => u.table === 'group_bookings' && u.data.approval_requested_at),
+    false,
+    'never stamped as sent',
+  );
+  const failed = notices.find((n) => n.status === 'failed');
+  assert.ok(failed, 'and it is recorded as a failure');
+});
+
+test('the party agreeing stamps the booking and tells the house', async () => {
+  reset([
+    { $id: 'p1', role: 'admin', email: 'owner@bistro.com', active: true },
+    { $id: 'p2', role: 'manager', email: 'chef@bistro.com', active: true },
+  ]);
+
+  await run(
+    {
+      $id: 'ch1', venue_id: 'v1', booking_id: 'bk1', kind: 'approved',
+      contact_name: 'Ama Mensah', reference: 'REG-1', email: 'ama@example.com',
+      note: 'All correct, thank you.', status: 'open',
+    },
+    'databases.snpos.collections.booking_changes.documents.ch1.create',
+  );
+
+  // The stamp, which is the only thing a browser can read to know it happened.
+  const stamped = updates.find((u) => u.table === 'group_bookings' && u.data.approval_given_at);
+  assert.ok(stamped, 'the booking is stamped as agreed');
+
+  const to = outbox.map((m) => m.to);
+  assert.ok(to.includes('owner@bistro.com'), `admin told, got ${JSON.stringify(to)}`);
+  assert.ok(to.includes('chef@bistro.com'), 'manager told');
+  // Never the guest: they pressed the button, they know.
+  assert.equal(to.includes('ama@example.com'), false, 'the party is not told what they just did');
+  assert.match(outbox[0].subject, /agreed/i);
+  assert.match(outbox[0].html, /All correct, thank you/, 'and what they said comes with it');
+});
+
+test('an approval is settled rather than left waiting on somebody', async () => {
+  // Left open it sits on the Waiting for you page as a job to do, and the job
+  // is done: the party agreed, and there is nothing here to decide.
+  reset([{ $id: 'p1', role: 'admin', email: 'owner@bistro.com', active: true }]);
+  await run(
+    { $id: 'ch1', venue_id: 'v1', booking_id: 'bk1', kind: 'approved', note: 'Fine.', status: 'open' },
+    'databases.snpos.collections.booking_changes.documents.ch1.create',
+  );
+  const closed = updates.find((u) => u.table === 'booking_changes' && u.data.status === 'done');
+  assert.ok(closed, 'marked done');
+});
+
+test('an ordinary change request is still a change request', async () => {
+  /*
+    The approval branch runs first and must not swallow the thing it sits in
+    front of: a party asking for eight more covers is not an approval, and
+    stamping the booking for one would report agreement nobody gave.
+  */
+  reset([{ $id: 'p1', role: 'admin', email: 'owner@bistro.com', active: true }]);
+  await run(
+    {
+      $id: 'ch2', venue_id: 'v1', booking_id: 'bk1', kind: 'numbers',
+      note: 'Eight more for Tuesday.', status: 'open',
+    },
+    'databases.snpos.collections.booking_changes.documents.ch2.create',
+  );
+  assert.equal(
+    updates.some((u) => u.table === 'group_bookings' && u.data.approval_given_at),
+    false,
+    'no agreement was stamped',
+  );
+  assert.match(outbox[0].subject, /change asked for/i);
+});

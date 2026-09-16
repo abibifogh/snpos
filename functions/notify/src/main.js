@@ -4,6 +4,7 @@ import { receiptPdf } from './receipt-pdf.js';
 import { bookingSittings, bookingSheetPdf } from './booking-sheet.js';
 import { ordersForSide, shelfCheckSummary } from './shift-shape.js';
 import { houseRecipients, sendToEach } from './house.js';
+import { isApproval } from './booking-approval.js';
 import { tradeWords, offSubject } from './words.js';
 import { dailyDigest, nightlyBackup, deliveryFrom } from './daily.js';
 import { ensureLogin, revokeLogin } from './staff.js';
@@ -68,7 +69,31 @@ function mailer() {
   });
 }
 
-const shell = (title, body, brand) => `<!doctype html>
+/**
+ * Somebody's own words, safe to drop into an email.
+ *
+ * A guest's note and an admin's "what changed" both end up inside HTML, and
+ * both are typed by a person. An ampersand in a hotel's name is enough to
+ * mangle the rest of a message without this.
+ */
+const esc = (s) => String(s ?? '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+
+/**
+ * The page a guest opens to answer something about their booking.
+ *
+ * Empty where the site's address was never configured, so a caller can put a
+ * sentence in place of a button rather than send a link to nowhere. One
+ * builder, because two would drift and a guest following a stale link is a
+ * guest who rings instead.
+ */
+const bookingLink = (booking) => {
+  const base = (process.env.APP_URL || '').replace(/\/+$/, '');
+  return base && booking?.$id ? `${base}/menu/?change=${booking.$id}` : '';
+};
+
+// Defaulted, because several callers pass two arguments and every one of them
+// was rendering "background:undefined" behind the heading.
+const shell = (title, body, brand = '#0f766e') => `<!doctype html>
 <html><body style="margin:0;background:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#16202b">
 <div style="max-width:520px;margin:24px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e3e7ec">
 <div style="background:${brand};color:#fff;padding:18px 22px"><h1 style="margin:0;font-size:19px">${title}</h1></div>
@@ -1040,8 +1065,8 @@ export default async ({ req, res, log, error }) => {
                : ''}
              <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">Each sitting reaches the kitchen in time to
              cook it and not before.</p>
-             ${(process.env.APP_URL || '')
-               ? `<p style="margin:14px 0 0"><a href="${(process.env.APP_URL || '').replace(/\/+$/, '')}/menu/?change=${doc.$id}"
+             ${bookingLink(doc)
+               ? `<p style="margin:14px 0 0"><a href="${bookingLink(doc)}"
                     style="color:#0f766e;font-weight:600">Need to change something?</a></p>`
                : '<p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">If anything needs to change, ring us.</p>'}`,
           ),
@@ -1154,6 +1179,99 @@ export default async ({ req, res, log, error }) => {
           failed: again.failed,
           guest: toGuest,
         });
+      }
+
+      /*
+        A REVISION GOING TO THE PARTY TO BE AGREED TO.
+
+        A booking changed here is no longer the thing the party has a copy of.
+        They are holding a sheet that is now wrong, and until they say
+        otherwise nobody knows whether the change is what they asked for or
+        merely what somebody here typed. A party of forty arriving to find
+        Thursday lunch became Thursday dinner without their agreeing to it is
+        a worse failure than the change never having been made.
+
+        The request is CLEARED FIRST, like the resend above it, so a failure
+        cannot leave a field set that fires this every time the row is touched
+        afterwards. The stamp that says the party is waiting is written only
+        once the email has actually gone: a row reading "waiting on the party"
+        about a message that never left sends somebody to chase a guest who
+        was never written to.
+      */
+      if (doc.approval_send_at) {
+        await db.updateDocument(DB_ID, 'group_bookings', doc.$id, { approval_send_at: null })
+          .catch((e) => error(`Could not clear the approval request on ${doc.$id}: ${e.message}`));
+
+        if (!transport) {
+          log(`Asked to send booking ${doc.$id} for approval, but no SMTP is configured.`);
+          return res.json({ sent: false, reason: 'no smtp' });
+        }
+        if (!doc.email) {
+          error(`Booking ${doc.$id} has no address to send a revision to.`);
+          return res.json({ sent: false, reason: 'no address' });
+        }
+
+        const { facts, noteBlock, label } = await bookingFacts(doc);
+        const sheet = await bookingSheet(label);
+        const said = String(doc.approval_note || '').trim();
+
+        const gone = await transport.sendMail({
+          from,
+          to: doc.email,
+          subject: `Please check your group booking${doc.reference ? ` · ${doc.reference}` : ''}`,
+          html: shell(
+            'We have changed your booking — please check it',
+            `<p style="margin:0 0 10px">We have made a change to your booking. Nothing is settled until you
+             tell us it is right, so please look it over and let us know.</p>`
+            + (said
+              ? `<p style="margin:0 0 12px;padding:10px 12px;background:#fff7ed;border-radius:6px">
+                 <strong>What changed:</strong> ${esc(said)}</p>`
+              : '')
+            + facts
+            + noteBlock('Your note to us')
+            + (sheet
+              ? `<p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">The attached sheet lists every
+                 sitting in full — each dish, the choices made, anything left out, your notes, and what each
+                 plate is suitable for. This is what the kitchen will cook from once you agree to it.</p>`
+              : '')
+            + (bookingLink(doc)
+              ? `<p style="margin:18px 0 0"><a href="${bookingLink(doc)}" style="background:${brand};color:#fff;
+                 padding:10px 16px;border-radius:6px;text-decoration:none;display:inline-block">
+                 Check it and tell us</a></p>
+                 <p style="margin:10px 0 0;color:#5d6b7a;font-size:13px">If anything is wrong, the same page
+                 lets you ask us to change it again.</p>`
+              : `<p style="margin:18px 0 0;color:#5d6b7a;font-size:14px">Please reply to this email to tell us
+                 whether it is right.</p>`),
+          ),
+          attachments: sheet,
+        }).then(() => true).catch((e) => {
+          error(`Approval request to the guest failed: ${e.message}`);
+          return false;
+        });
+
+        /*
+          Stamped only on success, which is what makes the status honest: it
+          records that the party WAS ASKED, not that somebody here pressed a
+          button. A failure leaves the booking where it was, and the button can
+          be pressed again.
+        */
+        if (gone) {
+          await db.updateDocument(DB_ID, 'group_bookings', doc.$id, {
+            approval_requested_at: new Date().toISOString(),
+          }).catch((e) => error(`Could not stamp the approval request on ${doc.$id}: ${e.message}`));
+        }
+
+        await db.createDocument(DB_ID, 'order_notices', 'unique()', {
+          venue_id: doc.venue_id,
+          order_id: doc.$id,
+          stage: 'group_placed',
+          to_email: String(doc.email).slice(0, 160),
+          status: gone ? 'sent' : 'failed',
+          last_error: gone ? '' : 'The revision could not be sent to the party.',
+        }).catch(() => undefined);
+
+        log(`Booking ${doc.$id} sent for approval: ${gone ? 'gone' : 'refused'}.`);
+        return res.json({ sent: gone, approvalRequested: true, to: gone ? [doc.email] : [] });
       }
 
       /*
@@ -1283,6 +1401,73 @@ export default async ({ req, res, log, error }) => {
       reads it as a done thing and stops looking.
     */
     if (events.some((e) => e.includes('collections.booking_changes'))) {
+      /*
+        THE PARTY AGREEING TO A REVISION, which is an answer rather than a
+        request and is handled first.
+
+        It arrives here because a guest cannot write to a booking row and
+        should not be able to: a link that could edit a booking is a link that
+        could empty a pass. So the answer comes in as a message, and this —
+        which holds a server key — is what stamps the booking. That stamp is
+        the only thing a browser can read to know where a revision has got to.
+
+        Told to the house as its own message. "They have agreed" is the end of
+        something somebody here started and has been waiting on; folding it in
+        with the change requests would bury the one message that closes a loop
+        among the ones that open them.
+      */
+      if (isApproval(doc)) {
+        await db.updateDocument(DB_ID, 'group_bookings', doc.booking_id, {
+          approval_given_at: new Date().toISOString(),
+        }).catch((e) => error(`Could not stamp the approval on ${doc.booking_id}: ${e.message}`));
+
+        /*
+          Settled as it is read, because it is not waiting on anybody.
+
+          Left open it would sit on the Waiting for you page as a job to do,
+          and the job is done: the party agreed, and there is nothing for
+          anybody here to decide.
+        */
+        await db.updateDocument(DB_ID, 'booking_changes', doc.$id, {
+          status: 'done',
+          decided_at: new Date().toISOString(),
+        }).catch(() => undefined);
+
+        const house = await houseList();
+        log(`Booking ${doc.booking_id} agreed to by the party: ${house.why}`);
+        if (!transport || house.to.length === 0) {
+          return res.json({ sent: false, approved: true, reason: !transport ? 'no smtp' : house.why });
+        }
+
+        const said = String(doc.note || '').trim();
+        const outcome = await sendToEach({
+          to: house.to,
+          log,
+          send: (address) => transport.sendMail({
+            from,
+            to: address,
+            subject: `Group booking agreed · ${doc.contact_name || doc.reference || doc.booking_id}`,
+            html: shell(
+              'The party has agreed to the revised booking',
+              `<table style="width:100%;border-collapse:collapse;font-size:15px">
+                 ${row('Booked by', doc.contact_name || '-')}
+                 ${row('Reference', doc.reference || '-')}
+                 ${row('First sitting', doc.first_at ? new Date(doc.first_at).toLocaleString() : '-')}
+               </table>
+               <p style="margin:14px 0 0">They have agreed to the booking as it now stands. The kitchen can
+               work to the revised sheet.</p>`
+              + (said
+                ? `<p style="margin:14px 0 4px;font-weight:600">They also said</p>
+                   <p style="margin:0;white-space:pre-wrap">${esc(said)}</p>`
+                : ''),
+              brand,
+            ),
+          }),
+        });
+
+        return res.json({ sent: outcome.sent.length > 0, approved: true, to: outcome.sent, failed: outcome.failed });
+      }
+
       /*
         The same list as every other message to the house.
 
