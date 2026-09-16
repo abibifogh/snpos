@@ -797,9 +797,11 @@ export default async ({ req, res, log, error }) => {
         .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'booking';
       return [{
         filename: `group-booking-${stem}.pdf`,
-        content: bookingSheetPdf({
+        // The builder returns bytes so the same one can run in a browser;
+        // nodemailer wants a Buffer, and this is the only place that cares.
+        content: Buffer.from(bookingSheetPdf({
           settings, venue, booking: doc, sittings, label, accent: brand,
-        }),
+        })),
         contentType: 'application/pdf',
       }];
     } catch (e) {
@@ -1094,6 +1096,46 @@ export default async ({ req, res, log, error }) => {
         }
 
         const again = await tellTheHouse(doc, { again: true });
+
+        /*
+          AND THE PARTY, because a resend is usually a revision.
+
+          The first notice went to both. A booking is sent again either
+          because nobody here got it, or because something on it changed —
+          and in the second case the guest is holding a sheet that is now
+          wrong. Sending them the current one costs nothing and is the whole
+          point of "the revised orders, by email, like the first".
+
+          Its own send rather than another address on the house's message: it
+          says something different, and a guest must never be shown who else
+          was told.
+        */
+        let toGuest = null;
+        if (doc.email) {
+          const { facts, noteBlock, label } = await bookingFacts(doc);
+          const sheet = await bookingSheet(label);
+          toGuest = await transport.sendMail({
+            from,
+            to: doc.email,
+            subject: `Your group booking, updated${doc.reference ? ` · ${doc.reference}` : ''}`,
+            html: shell(
+              'Your booking, as it stands now',
+              `<p style="margin:0 0 10px">Here is your booking as we have it today. If anything on it has
+               changed since you last heard from us, this is the version the kitchen is working to.</p>
+               ${facts}
+               ${noteBlock('Your note to us')}
+               ${sheet
+                 ? `<p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">The attached sheet lists every
+                    sitting in full — each dish, the choices made, anything left out, your notes, and what
+                    each plate is suitable for. Please check it and tell us if anything is wrong.</p>`
+                 : ''}`,
+            ),
+            attachments: sheet,
+          }).then(() => true).catch((e) => {
+            error(`Updated booking to the guest failed: ${e.message}`);
+            return false;
+          });
+        }
         await db.createDocument(DB_ID, 'order_notices', 'unique()', {
           venue_id: doc.venue_id,
           order_id: doc.$id,
@@ -1103,8 +1145,15 @@ export default async ({ req, res, log, error }) => {
           last_error: (again.to.length === 0 ? again.why : again.failed.map((f) => `${f.address}: ${f.why}`).join('; ')).slice(0, 500),
         }).catch(() => undefined);
 
-        log(`Booking ${doc.$id} sent again: ${again.why}`);
-        return res.json({ sent: again.sent.length > 0, resent: true, to: again.sent, failed: again.failed });
+        log(`Booking ${doc.$id} sent again: ${again.why}${
+          toGuest === null ? '' : ` Guest: ${toGuest ? 'told' : 'refused'}.`}`);
+        return res.json({
+          sent: again.sent.length > 0 || toGuest === true,
+          resent: true,
+          to: again.sent,
+          failed: again.failed,
+          guest: toGuest,
+        });
       }
 
       /*

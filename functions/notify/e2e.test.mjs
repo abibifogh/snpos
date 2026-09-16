@@ -144,11 +144,37 @@ test('asking again sends again, and clears the request', async () => {
   await run(asked, 'databases.snpos.collections.group_bookings.documents.bk1.update');
 
   const to = outbox.map((m) => m.to);
-  assert.deepEqual(to, ['owner@bistro.com'], 'the house, and not the guest again');
-  assert.match(String(outbox[0].subject), /sent again/i);
+  assert.ok(to.includes('owner@bistro.com'), 'the house');
+  assert.match(String(outbox.find((m) => m.to === 'owner@bistro.com').subject), /sent again/i);
 
   const cleared = updates.find((u) => u.table === 'group_bookings' && u.data.notice_resend_at === null);
   assert.ok(cleared, 'the request is cleared so it cannot fire for ever');
+});
+
+test('a booking sent again reaches the party too, worded as an update', async () => {
+  /*
+    A resend is usually a revision: something on the booking changed and the
+    guest is holding a sheet that is now wrong. Sending them the current one
+    is the whole point of "the revised orders, by email, like the first".
+  */
+  reset([{ $id: 'p1', role: 'admin', email: 'owner@bistro.com', active: true }]);
+  const asked = { ...BOOKING, notice_resend_at: '2026-09-16T10:00:00.000Z' };
+  bookings.bk1 = asked;
+  await run(asked, 'databases.snpos.collections.group_bookings.documents.bk1.update');
+
+  const guest = outbox.find((m) => m.to === 'ama@example.com');
+  assert.ok(guest, 'the party is told');
+  assert.match(String(guest.subject), /updated/i, 'and it does not read as a new booking');
+  // Its own message, so the guest never sees who else was told.
+  assert.equal(String(guest.to), 'ama@example.com');
+});
+
+test('a booking sent again still goes out when the party has no email', async () => {
+  reset([{ $id: 'p1', role: 'admin', email: 'owner@bistro.com', active: true }]);
+  const asked = { ...BOOKING, email: '', notice_resend_at: '2026-09-16T10:00:00.000Z' };
+  bookings.bk1 = asked;
+  await run(asked, 'databases.snpos.collections.group_bookings.documents.bk1.update');
+  assert.deepEqual(outbox.map((m) => m.to), ['owner@bistro.com']);
 });
 
 test('a resend with a new address reaches the person added since', async () => {

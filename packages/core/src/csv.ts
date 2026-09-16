@@ -41,6 +41,28 @@ export function downloadCsv(filename: string, csv: string): void {
 }
 
 /**
+ * Hand the browser any file to save.
+ *
+ * The same six lines as above with the type and extension left open, because
+ * a CSV is no longer the only thing this system gives somebody to keep: a
+ * group booking sheet is a PDF, and copying this to do it would be two
+ * versions of a fiddly little dance with object URLs to leak from.
+ */
+export function downloadFile(filename: string, bytes: BlobPart, type: string): void {
+  const url = URL.createObjectURL(new Blob([bytes], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoked, or every download leaves its file held in memory for the life of
+  // the tab — which on a page somebody works through is every booking they
+  // looked at.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
  * Read a CSV back, the way a spreadsheet actually writes one.
  *
  * Hand-rolled rather than split(',') because every real file breaks that on

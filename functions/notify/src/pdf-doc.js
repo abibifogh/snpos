@@ -320,21 +320,39 @@ function assemble(pages, width, height) {
       + '/Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> '
       + `/Contents ${streamNo} 0 R >>`;
     objects[streamNo - 1] =
-      `<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}endstream`;
+      `<< /Length ${content.length} >>\nstream\n${content}endstream`;
   });
   objects[1] = `<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${pages.length} >>`;
 
   let out = '%PDF-1.4\n';
   const offsets = [];
   objects.forEach((bodyText, i) => {
-    offsets.push(Buffer.byteLength(out, 'latin1'));
+    offsets.push(out.length);
     out += `${i + 1} 0 obj\n${bodyText}\nendobj\n`;
   });
 
-  const xrefAt = Buffer.byteLength(out, 'latin1');
+  const xrefAt = out.length;
   out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
   for (const off of offsets) out += `${String(off).padStart(10, '0')} 00000 n \n`;
   out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF`;
 
-  return Buffer.from(out, 'latin1');
+  return latin1Bytes(out);
+}
+
+/**
+ * The string as bytes, without Buffer.
+ *
+ * NO BUFFER ANYWHERE IN THIS FILE, which is what lets the same builder run on
+ * the server that emails the sheet and in the browser that downloads it. Two
+ * generators would drift, and the drift would be the worst kind: a download
+ * that quietly says something different from the copy the kitchen was sent.
+ *
+ * Every character here has already been through latin1(), so each one is a
+ * single byte and the offsets counted above in characters are byte offsets —
+ * which a PDF's cross-reference table requires them to be.
+ */
+function latin1Bytes(text) {
+  const bytes = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
+  return bytes;
 }

@@ -3,9 +3,20 @@ import { Card, Badge, Button, Notice, Spinner, Input, useToast } from '@snpos/ui
 import { humanError } from '../lib';
 import {
   groupBookingsBetween, resendBookingNotice, resendPendingFor,
-  formatMoney, dateTimeWords,
+  formatMoney, dateTimeWords, downloadFile, db, DB_ID, Query,
 } from '@snpos/core';
 import type { GroupBookingDoc } from '@snpos/core';
+/*
+  THE SAME BUILDER THE EMAIL USES, not a second one that looks like it.
+
+  A download that quietly says something different from the copy the kitchen
+  was sent is the worst possible version of this feature: two documents about
+  one party, both plausible, and no way to tell which the kitchen cooked from.
+  So the browser runs the generator the notify job runs — it takes its
+  database as an argument and carries no Buffer, which is what makes that
+  possible. See functions/notify/src/booking-sheet.js.
+*/
+import { bookingSittings, bookingSheetPdf } from '../../../../functions/notify/src/booking-sheet.js';
 import { useSession } from '../session';
 
 /** The last thirty days, as the date boxes want them. */
@@ -68,6 +79,45 @@ export function GroupBookingsPage() {
       */
       setAsked((s) => new Set(s).add(b.$id));
       toast('Asked for it to go to the team again. It goes out in the next minute.');
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /**
+   * The sheet, built here, from the orders as they stand right now.
+   *
+   * Which is what makes one button serve two jobs: the booking as it came in,
+   * and the booking after somebody changed it. There is no stored copy to go
+   * stale — the sheet is made from the orders every time, so a download after
+   * a revision IS the revised sheet.
+   */
+  const download = async (b: GroupBookingDoc) => {
+    setBusy(b.$id);
+    try {
+      const sittings = await bookingSittings({ db, DB_ID, Query, booking: b });
+      if (sittings.length === 0) {
+        toast('That booking has no orders behind it to print.', 'err');
+        return;
+      }
+      const stem = String(b.reference || b.contact_name || b.$id)
+        .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'booking';
+      downloadFile(
+        `group-booking-${stem}.pdf`,
+        bookingSheetPdf({
+          settings: settings ?? {},
+          // The masthead falls back to the restaurant's name, which is the
+          // same thing on a business with one venue and is what the emailed
+          // copy says anyway.
+          venue: null,
+          booking: b,
+          sittings,
+          accent: settings?.primary_color ?? '#0f766e',
+        }),
+        'application/pdf',
+      );
     } catch (e) {
       toast(humanError(e), 'err');
     } finally {
@@ -139,17 +189,24 @@ export function GroupBookingsPage() {
                     <td>
                       {/* Pending from the moment it is asked for until the job
                           clears it, so pressing twice does not send twice. */}
-                      {asked.has(b.$id) || resendPendingFor(b) ? (
-                        <span className="small dim">Going out…</span>
-                      ) : (
-                        <Button
-                          size="sm"
-                          loading={busy === b.$id}
-                          onClick={() => void sendAgain(b)}
-                        >
-                          Send to the team again
+                      <div className="row" style={{ gap: '0.35rem', justifyContent: 'flex-end' }}>
+                        {/* Built from the orders as they stand, so this is the
+                            revised sheet the moment anything is revised. */}
+                        <Button size="sm" variant="ghost" loading={busy === b.$id} onClick={() => void download(b)}>
+                          Download
                         </Button>
-                      )}
+                        {asked.has(b.$id) || resendPendingFor(b) ? (
+                          <span className="small dim">Going out…</span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            loading={busy === b.$id}
+                            onClick={() => void sendAgain(b)}
+                          >
+                            Send again
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
