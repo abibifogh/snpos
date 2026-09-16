@@ -8,6 +8,7 @@ import {
   db, DB_ID, Query, listAll, listByIds, loadOpenOrders, subscribeCollection, isCreate,
   verifyPin, pinChecksWork, pinUnavailableWords, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
+  cookNowProblem, isGroupSitting,
   itemsAvailableNow, dueMinutes, ticketLines, linesComplete, isOverdue, minutesOver, seatFor, amountOutstanding,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, addonNames, addonsUnreadable,
   formatWait, giveTheMoneyBack, wakesScreen, latestMovement,
@@ -709,9 +710,23 @@ export function App() {
       ...((o.total ?? 0) <= 0 ? { payment_status: 'paid' as const } : {}),
     });
 
-  /** Release a booked order to the pass now, ahead of its time. */
-  const fireNow = (o: Order) =>
-    patch(o, { status: 'PENDING', fired_at: new Date().toISOString() });
+  /**
+   * Release a booked order to the pass now, ahead of its time.
+   *
+   * Checked here and not only on the button, because the button is one of a
+   * row of small ones the whole shift walks past and this is a one-way door:
+   * SCHEDULED does not come back, and the only way out of an early release is
+   * to reject the order, which loses the booking. See cookNowProblem.
+   */
+  const fireNow = (o: Order) => {
+    const why = cookNowProblem(o, who);
+    if (why) {
+      setToast(why);
+      window.setTimeout(() => setToast(null), 4000);
+      return Promise.resolve();
+    }
+    return patch(o, { status: 'PENDING', fired_at: new Date().toISOString() });
+  };
 
   const reject = async () => {
     if (!rejecting) return;
@@ -1176,14 +1191,33 @@ export function App() {
       {scheduled.length > 0 && (
         <div className="kds-coming">
           <span className="kds-coming-label">Booked for later</span>
-          {scheduled.map((o) => (
-            <button key={o.$id} className="kds-coming-item" onClick={() => fireNow(o)} title="Send to the pass now">
-              <b>{o.fire_at ? new Date(o.fire_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'no time'}</b>
-              <span>{displayOrderNo(o.order_no)}</span>
-              <span className="dim">{(items[o.$id] ?? []).reduce((a, i) => a + i.qty, 0) || '·'} items</span>
-              <span className="kds-coming-go">Cook now</span>
-            </button>
-          ))}
+          {scheduled.map((o) => {
+            /*
+              A group sitting is forty covers, and starting it early puts the
+              whole party's food on the pass hours before the party is in the
+              building. It stays a cook's own call on an ordinary pre-order and
+              needs an owner or a manager on a booking. See cookNowProblem.
+            */
+            const why = cookNowProblem(o, who);
+            return (
+              <button
+                key={o.$id}
+                className="kds-coming-item"
+                onClick={() => void fireNow(o)}
+                title={why ?? 'Send to the pass now'}
+              >
+                <b>{o.fire_at ? new Date(o.fire_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'no time'}</b>
+                <span>{displayOrderNo(o.order_no)}</span>
+                {isGroupSitting(o) && <span className="pill">Group</span>}
+                <span className="dim">{(items[o.$id] ?? []).reduce((a, i) => a + i.qty, 0) || '·'} items</span>
+                {/* Said rather than hidden: a cook who cannot do it still needs
+                    to know the booking is there and who to ask. */}
+                <span className={why ? 'kds-coming-go dim' : 'kds-coming-go'}>
+                  {why ? 'Manager only' : 'Cook now'}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
 
