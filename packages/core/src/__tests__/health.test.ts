@@ -20,6 +20,7 @@ const clean: HealthFacts = {
   staleCounts: 0,
   paidOrdersNoPayment: [],
   overpaidOrders: [],
+  ordersNotAddingUp: [],
   ordersNoLines: [],
   unledgeredPayouts: [],
   unpostedPayouts: [],
@@ -40,7 +41,7 @@ test('a clean night is every question answered "None" and nothing to fix', () =>
   assert.ok(findings.every((f) => f.level === 'ok'), findings.filter((f) => f.level !== 'ok').map((f) => f.key).join(','));
   assert.deepEqual(healthSummary(findings), { blocks: 0, warns: 0, words: 'Everything adds up.' });
   // Every question is asked every time, so the page can show what was checked.
-  assert.equal(findings.length, 20);
+  assert.equal(findings.length, 21);
 });
 
 test('what stops the books being trusted is a block; what is waiting on somebody is a warning', () => {

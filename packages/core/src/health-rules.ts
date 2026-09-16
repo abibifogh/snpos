@@ -48,6 +48,7 @@ export interface HealthFacts {
    * this is looking for the ones that went through before it did.
    */
   overpaidOrders: { orderNo: string; total: number; taken: number }[];
+  ordersNotAddingUp: { orderNo: string; subtotal: number; lines: number }[];
   /** Orders with no lines on them. */
   ordersNoLines: { orderNo: string }[];
   /** Payouts recorded and never reaching the maker's ledger, or the books. */
@@ -206,6 +207,28 @@ export function healthFindings(f: HealthFacts, w: HealthWords): HealthFinding[] 
       goto: '/orders', action: 'Open orders',
     }
     : none('orders_overpaid', 'Bills paid more than once'));
+
+  /*
+    A bill that does not add up to its own items.
+
+    ORD0866: a quesadilla at 90 and a kelewele at 40, charged as 90. The server
+    reprices every line and used to SKIP any line whose dish it could not read,
+    so the line stayed on the bill with its price beside it and left the total.
+    Nothing said so, and nobody adds a bill up by hand when every item on it
+    already shows a price.
+
+    It cannot drop a line now — see reprice.js — but every order it already
+    happened to is still there, undercharged, and this is the only thing that
+    finds them. A block rather than a warning: it is money that was not taken.
+  */
+  out.push(f.ordersNotAddingUp.length > 0
+    ? {
+      key: 'orders_not_adding_up', level: 'block', title: 'Bills that do not add up to their items',
+      count: f.ordersNotAddingUp.length,
+      detail: f.ordersNotAddingUp.slice(0, 4).map((o) => `${o.orderNo} charged ${w.money(o.subtotal)} on ${w.money(o.lines)} of items`).join(', ') + (f.ordersNotAddingUp.length > 4 ? ', …' : '') + '. Open each one and press "Recheck total".',
+      goto: '/orders', action: 'Open orders',
+    }
+    : none('orders_not_adding_up', 'Bills that do not add up to their items'));
 
   out.push(f.ordersNoLines.length > 0
     ? {
