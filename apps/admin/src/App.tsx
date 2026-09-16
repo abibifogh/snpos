@@ -14,6 +14,7 @@ import { HelpPage } from './pages/Help';
 import { AddonsPage } from './pages/Addons';
 import { ExpensesPage } from './pages/Expenses';
 import { WaitingPage } from './pages/Waiting';
+import { GroupBookingsPage } from './pages/GroupBookings';
 import { HealthPage } from './pages/Health';
 import { CataloguePage } from './pages/Catalogue';
 import { ImprestPage } from './pages/Imprest';
@@ -90,6 +91,7 @@ export function App() {
         <Route path="/menu/options" element={guard('menu_options', <AddonsPage />)} />
         <Route path="/expenses" element={guard('expenses', <ExpensesPage />)} />
         <Route path="/waiting" element={guard('waiting', <WaitingPage />)} />
+        <Route path="/group-bookings" element={guard('group_bookings', <GroupBookingsPage />)} />
         <Route path="/health" element={guard('health', <HealthPage />)} />
         <Route path="/imprest" element={guard('imprest', <ImprestPage />)} />
         <Route path="/customers" element={guard('customers', <CustomersPage />)} />

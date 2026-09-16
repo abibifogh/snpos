@@ -39,6 +39,9 @@ export interface GroupBookingDoc {
   last_at?: string;
   status?: 'pending' | 'approved' | 'refused' | 'cancelled';
   decided_note?: string;
+  /** Set when somebody has asked for the team's notice to go again. */
+  notice_resend_at?: string | null;
+  $createdAt?: string;
   /** Anything the party said about the booking as a whole. See the schema. */
   note?: string;
 }
@@ -199,6 +202,44 @@ export async function bookingIsCancelled(bookingId: string): Promise<boolean> {
     .catch(() => []);
   return orders.length > 0 && orders.every((o) => ['CANCELLED', 'REJECTED'].includes(o.status));
 }
+
+/**
+ * Every booking in a window, newest first.
+ *
+ * `pendingGroupBookings` below answers "what is waiting for me", which is the
+ * right question for the Waiting page and the only question anything could
+ * ask: a booking that had been approved, refused or cancelled was reachable
+ * from no screen in the system. So when the notice to the team failed — and
+ * it did — there was nothing to open and nothing to press.
+ */
+export async function groupBookingsBetween(fromIso: string, toIso: string): Promise<GroupBookingDoc[]> {
+  const rows = await listAll<GroupBookingDoc>('group_bookings', [
+    Query.greaterThanEqual('$createdAt', fromIso),
+    Query.lessThanEqual('$createdAt', toIso),
+  ]).catch(() => [] as GroupBookingDoc[]);
+  return rows.sort((a, b) => (b.$createdAt ?? '').localeCompare(a.$createdAt ?? ''));
+}
+
+/**
+ * Ask for the team's notice to go out again.
+ *
+ * A request, not a send. Nothing in a browser may write to order_notices —
+ * it is the record of what was sent, and a screen able to edit it could
+ * rewrite history — and the booking is already a row the background job
+ * watches, so asking here needs no new trigger and no new permission. The
+ * same shape as asking for a shift summary again.
+ *
+ * The job clears the field once it has gone, so a value here means somebody
+ * is waiting rather than that somebody once asked.
+ */
+export async function resendBookingNotice(bookingId: string): Promise<void> {
+  await db.updateDocument(DB_ID, 'group_bookings', bookingId, {
+    notice_resend_at: new Date().toISOString(),
+  });
+}
+
+/** Whether a resend is still waiting to go out. For the button to say so. */
+export const resendPendingFor = (b: GroupBookingDoc): boolean => !!b.notice_resend_at;
 
 /** Bookings nobody has agreed to yet, soonest first. */
 export async function pendingGroupBookings(): Promise<GroupBookingDoc[]> {

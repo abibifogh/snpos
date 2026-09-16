@@ -3,7 +3,7 @@ import nodemailer from 'nodemailer';
 import { receiptPdf } from './receipt-pdf.js';
 import { bookingSittings, bookingSheetPdf } from './booking-sheet.js';
 import { ordersForSide, shelfCheckSummary } from './shift-shape.js';
-import { houseRecipients } from './house.js';
+import { houseRecipients, sendToEach } from './house.js';
 import { tradeWords, offSubject } from './words.js';
 import { dailyDigest, nightlyBackup, deliveryFrom } from './daily.js';
 import { ensureLogin, revokeLogin } from './staff.js';
@@ -676,6 +676,100 @@ export default async ({ req, res, log, error }) => {
   });
 
   /**
+   * Everything a booking notice needs saying about a booking, built once.
+   *
+   * Both the notice sent when a booking arrives and the one an admin asks for
+   * again read the same booking and describe it the same way. Two copies of
+   * this would agree today and drift the first time one was edited, and the
+   * drift would be invisible: a resent notice that quietly says less than the
+   * original is worse than no resend at all.
+   */
+  const bookingFacts = async (booking) => {
+    const money = (n) => `${booking.currency_code || ''}${((n || 0) / 100).toFixed(2)}`;
+    const when = (iso) => {
+      const d = new Date(iso);
+      return Number.isFinite(d.getTime()) ? d.toLocaleString() : '';
+    };
+    const label = await featureConfig('group_orders', 'reservation_label', 'Reservation');
+    const spread = booking.first_at === booking.last_at
+      ? when(booking.first_at)
+      : `${when(booking.first_at)} to ${when(booking.last_at)}`;
+
+    const facts = `<table style="width:100%;border-collapse:collapse;font-size:15px">
+         ${row('Booked by', booking.contact_name || '-')}
+         ${row(label, booking.reference || '-')}
+         ${row('People', String(booking.size || '-'))}
+         ${row('Sittings', `${booking.sittings || 0} · ${booking.portions || 0} portions`)}
+         ${row('When', spread)}
+         ${row('Orders', booking.order_nos || '-')}
+         ${row('Total', money(booking.total))}
+       </table>`;
+
+    /*
+      What the party said about the booking as a whole, in their own words.
+
+      Its own block rather than a table row: "the coach leaves at two, so we
+      cannot run late" is a sentence, and a sentence in a value column is a
+      sentence nobody reads. Headed differently for the two readers, because
+      quoting somebody's own note back at them as "they said" is strange.
+    */
+    const saidIt = String(booking.note || '').trim();
+    const noteBlock = (heading) => (saidIt
+      ? `<p style="margin:14px 0 4px;font-weight:600">${heading}</p>
+         <p style="margin:0;padding:2px 0 2px 12px;border-left:3px solid ${brand};white-space:pre-wrap">${
+           saidIt.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</p>`
+      : '');
+
+    return { facts, noteBlock, label };
+  };
+
+  /**
+   * Tell the house about a booking, one recipient at a time.
+   *
+   * ONE MESSAGE EACH, not one message addressed to everybody. Sending to a
+   * joined list is all-or-nothing at the provider: one address it dislikes
+   * and the whole thing is refused, so every other person loses a message
+   * because of somebody else's typo. See sendToEach.
+   *
+   * Used by the notice a booking sends when it arrives and by the one an
+   * admin asks for again, so a resend is the same message and reaches the
+   * same people by the same rules.
+   */
+  const tellTheHouse = async (booking, { again = false } = {}) => {
+    const { facts, noteBlock, label } = await bookingFacts(booking);
+    const house = await houseList();
+    log(`Group booking ${booking.$id}: ${house.why}`);
+    if (!transport) return { ...house, sent: [], failed: [], why: 'No SMTP is configured on the function.' };
+    if (house.to.length === 0) return { ...house, sent: [], failed: [] };
+
+    const sheet = await bookingSheet(label);
+    const outcome = await sendToEach({
+      to: house.to,
+      log,
+      send: (address) => transport.sendMail({
+        from,
+        to: address,
+        subject: `${again ? 'Group booking (sent again)' : 'Group booking'} · ${
+          booking.contact_name || 'a party'}${booking.size ? ` · ${booking.size} people` : ''}`,
+        html: shell(
+          again ? 'A group booked — sending this again' : 'A group has booked',
+          (again
+            ? '<p style="margin:0 0 10px;color:#5d6b7a;font-size:14px">Asked for again from Admin. The booking '
+              + 'itself has not changed.</p>'
+            : '')
+          + facts + noteBlock('They also said') + (sheet
+            ? `<p style="margin:16px 0 0;color:#5d6b7a;font-size:14px">Attached is the full sheet: every
+               sitting, every choice, everything left out, the notes in the guests' own words, and what each
+               plate is suitable for. Print it for the pass.</p>`
+            : ''),
+        ),
+        attachments: sheet,
+      }),
+    });
+    return { ...house, ...outcome };
+  };
+
+  /**
    * The booking sheet, as a real PDF, for whichever email is going out.
    *
    * An email body can hold a summary and no more: sittings, portions, a
@@ -874,55 +968,22 @@ export default async ({ req, res, log, error }) => {
         owns the business. The configured list is added, not substituted, so
         naming an events address does not quietly stop the owner hearing.
       */
-      const house = await houseList();
-      const houseTo = house.to;
-      log(`Group booking ${doc.$id}: ${house.why}`);
-
-      const money = (n) => `${doc.currency_code || ''}${((n || 0) / 100).toFixed(2)}`;
-      const when = (iso) => {
-        const d = new Date(iso);
-        return Number.isFinite(d.getTime()) ? d.toLocaleString() : '';
-      };
-      const label = await featureConfig('group_orders', 'reservation_label', 'Reservation');
+      const { facts, noteBlock, label } = await bookingFacts(doc);
       const sheet = await bookingSheet(label);
-      const spread = doc.first_at === doc.last_at
-        ? when(doc.first_at)
-        : `${when(doc.first_at)} to ${when(doc.last_at)}`;
-      const facts = `<table style="width:100%;border-collapse:collapse;font-size:15px">
-           ${row('Booked by', doc.contact_name || '-')}
-           ${row(label, doc.reference || '-')}
-           ${row('People', String(doc.size || '-'))}
-           ${row('Sittings', `${doc.sittings || 0} · ${doc.portions || 0} portions`)}
-           ${row('When', spread)}
-           ${row('Orders', doc.order_nos || '-')}
-           ${row('Total', money(doc.total))}
-         </table>`;
-
-      /*
-        What the party said about the booking as a whole, in their own words.
-
-        Its own block rather than a table row: "the coach leaves at two, so we
-        cannot run late" is a sentence, and a sentence in a value column is a
-        sentence nobody reads. Headed differently for the two readers, because
-        quoting somebody's own note back at them as "they said" is strange.
-      */
-      const saidIt = String(doc.note || '').trim();
-      const noteBlock = (heading) => (saidIt
-        ? `<p style="margin:14px 0 4px;font-weight:600">${heading}</p>
-           <p style="margin:0;padding:2px 0 2px 12px;border-left:3px solid ${brand};white-space:pre-wrap">${
-             saidIt.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</p>`
-        : '');
 
       /*
         The record, and afterwards what actually happened to it.
 
         It used to be written once as "queued" and never touched again, so a
-        notice that was refused by the mail provider sat in the database
-        looking exactly like one that arrived. The only account of the failure
-        was a line in the function's log, which is not somewhere anybody
-        looks — and "the admins did not get the email" is then a report with
-        nothing to check it against.
+        notice refused by the mail provider sat in the database looking
+        exactly like one that arrived. The only account of the failure was a
+        line in the function's log, which is not somewhere anybody looks — and
+        "the admins did not get the email" is then a report with nothing to
+        check it against.
       */
+      const told = await tellTheHouse(doc);
+      const houseTo = told.to;
+
       const notice = await db.createDocument(DB_ID, 'order_notices', 'unique()', {
         venue_id: doc.venue_id,
         order_id: doc.$id,
@@ -939,6 +1000,12 @@ export default async ({ req, res, log, error }) => {
 
       /** What went wrong, in the words somebody would need to act on it. */
       const wrong = [];
+      if (!houseTo.length) {
+        log(told.why);
+        wrong.push(told.why);
+      }
+      for (const f of told.failed) wrong.push(`${f.address} refused it: ${f.why}`);
+
       const settle = async () => {
         if (!notice) return;
         await db.updateDocument(DB_ID, 'order_notices', notice.$id, {
@@ -950,34 +1017,6 @@ export default async ({ req, res, log, error }) => {
       if (!transport) {
         log('A group booked, but no SMTP is configured on the function, so nobody was told.');
         return res.json({ sent: false, reason: 'no smtp' });
-      }
-
-      // The house first, and the guest even if the house list is empty: the
-      // person who booked is the one who cannot ask anybody what they ordered.
-      if (houseTo.length) {
-        await transport.sendMail({
-          from,
-          to: houseTo.join(','),
-          subject: `Group booking · ${doc.contact_name || 'a party'}${doc.size ? ` · ${doc.size} people` : ''}`,
-          html: shell(
-            'A group has booked',
-            facts + noteBlock('They also said') + (sheet
-              ? `<p style="margin:16px 0 0;color:#5d6b7a;font-size:14px">Attached is the full sheet: every
-                 sitting, every choice, everything left out, the notes in the guests' own words, and what each
-                 plate is suitable for. Print it for the pass.</p>`
-              : ''),
-          ),
-          attachments: sheet,
-        }).catch((e) => {
-          error(`Group notice to the house failed: ${e.message}`);
-          wrong.push(`The notice to ${houseTo.join(', ')} was refused: ${e.message}`);
-        });
-      } else {
-        const why = 'Nobody here was told: no admin or manager has an email address on their staff profile, '
-          + 'nothing is set under Admin, Features, Group ordering, and the restaurant has no from-address '
-          + 'either.';
-        log(why);
-        wrong.push(why);
       }
 
       if (doc.email) {
@@ -1030,6 +1069,44 @@ export default async ({ req, res, log, error }) => {
     */
     if (events.some((e) => e.includes('collections.group_bookings'))
         && events.some((e) => e.endsWith('.update'))) {
+      /*
+        SOMEBODY ASKING FOR THE NOTICE AGAIN, first of all.
+
+        The first notice can fail, and did: a bad address in the staff list, a
+        provider refusing one message, a manager added to the team after the
+        booking came in. Until now there was no second chance — the message
+        went once, to whoever it happened to reach, and a party of forty could
+        be in the diary with nobody here having heard of it. The only fix was
+        to go and look for a booking nobody could see.
+
+        Handled before the decision branches below because it is not a
+        decision: the booking has not changed, somebody simply wants telling
+        again. The request is CLEARED first, so a failure cannot leave a field
+        set that fires this every time the row is touched afterwards.
+      */
+      if (doc.notice_resend_at) {
+        await db.updateDocument(DB_ID, 'group_bookings', doc.$id, { notice_resend_at: null })
+          .catch((e) => error(`Could not clear the resend request on ${doc.$id}: ${e.message}`));
+
+        if (!transport) {
+          log(`Asked to send booking ${doc.$id} again, but no SMTP is configured.`);
+          return res.json({ sent: false, reason: 'no smtp' });
+        }
+
+        const again = await tellTheHouse(doc, { again: true });
+        await db.createDocument(DB_ID, 'order_notices', 'unique()', {
+          venue_id: doc.venue_id,
+          order_id: doc.$id,
+          stage: 'group_placed',
+          to_email: again.to.join(',').slice(0, 160),
+          status: again.failed.length || again.to.length === 0 ? 'failed' : 'sent',
+          last_error: (again.to.length === 0 ? again.why : again.failed.map((f) => `${f.address}: ${f.why}`).join('; ')).slice(0, 500),
+        }).catch(() => undefined);
+
+        log(`Booking ${doc.$id} sent again: ${again.why}`);
+        return res.json({ sent: again.sent.length > 0, resent: true, to: again.sent, failed: again.failed });
+      }
+
       /*
         A booking called off, which the HOUSE has to hear about above all.
 

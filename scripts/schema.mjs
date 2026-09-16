@@ -968,6 +968,24 @@ export const COLLECTIONS = [
         one to the house rather than one per sitting, or, as it was, none.
       */
       ['status', 'e', ['pending', 'approved', 'refused', 'cancelled'], true, 'pending'],
+      /*
+        An admin asking for the booking notice to go to the team again.
+
+        The same shape as `summary_resend_at` on a shift, and for the same
+        reason: nobody can write to order_notices from a browser, the booking
+        is already a row the background job watches, so asking here needs no
+        new trigger and no new permission.
+
+        It exists because the first notice can fail — a bad address in the
+        staff list, SMTP down for a minute, a manager added after the booking
+        came in — and until now there was no second chance: the message went
+        once, to whoever it reached, and a party of forty could be in the
+        diary with nobody here having heard of it.
+
+        Cleared by the job once the notice has gone, so the field is a request
+        rather than a setting: present means somebody is waiting for an email.
+      */
+      ['notice_resend_at', 'd', null, false],
       ['decided_by', 's', 64, false],
       ['decided_at', 'd', null, false],
       ['decided_note', 's', 1000, false],
