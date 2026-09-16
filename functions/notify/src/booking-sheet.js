@@ -188,13 +188,31 @@ function when(iso) {
  * @param {{ order: Record<string, any>, lines: Record<string, any>[] }[]} input.sittings
  * @param {string} [input.label]
  * @param {string} [input.accent]
+ * @param {boolean} [input.prices] false for the kitchen's copy. See below.
  */
 export function bookingSheetPdf({
   settings = {}, venue = null, booking, sittings, label = 'Reservation', accent = '#0f766e',
+  prices = true,
 }) {
   const decimals = settings.currency_decimals ?? 2;
   const code = booking.currency_code || settings.currency_code || '';
   const money = (n) => `${code} ${((n || 0) / 10 ** decimals).toFixed(decimals)}`.trim();
+
+  /*
+    THE KITCHEN'S COPY CARRIES NO MONEY.
+
+    One generator, one option, rather than a second builder — two would agree
+    on the day they were written and drift the first time a dietary rule
+    changed, leaving the pass cooking from a sheet that no longer matched the
+    one the office holds.
+
+    What a cook needs is the dishes, the choices, the omissions, the notes and
+    the tags. What a price on that sheet does is put the party's bill on a
+    wall in a working kitchen, where it is read by everyone who passes and
+    settles nothing: nobody at the pass decides anything by it, and a cook who
+    can see that table is paying GH₵14,185 is holding information that is the
+    office's business and the party's, not theirs.
+  */
 
   const doc = new Doc();
 
@@ -203,7 +221,12 @@ export function bookingSheetPdf({
   doc.gap(-14);
   doc.text(clean(venue?.name) || clean(settings.restaurant_name) || 'Group booking',
     { size: 19, font: 'bold' });
-  doc.text('Group booking sheet — every choice, note and dietary tag', { size: 10, colour: QUIET });
+  doc.text(
+    prices
+      ? 'Group booking sheet — every choice, note and dietary tag'
+      : 'Kitchen sheet — every choice, note and dietary tag',
+    { size: 10, colour: QUIET },
+  );
   doc.rule({ colour: accent, thickness: 1.4, above: 8, below: 12 });
 
   /* ------------------------------------------------------------ the booking */
@@ -219,7 +242,7 @@ export function bookingSheetPdf({
     ['First sitting', when(booking.first_at) || '-'],
     ['Last sitting', when(booking.last_at) || '-'],
     ['Orders', clean(booking.order_nos) || '-'],
-    ['Total', money(booking.total)],
+    ...(prices ? [['Total', money(booking.total)]] : []),
   ];
   factTable(doc, facts, { accent });
 
@@ -283,22 +306,28 @@ export function bookingSheetPdf({
       return;
     }
 
-    for (const line of sitting.lines) dishBlock(doc, line, money);
+    for (const line of sitting.lines) dishBlock(doc, line, prices ? money : null);
 
-    doc.rule({ colour: LINE, above: 6, below: 4 });
-    doc.pair('Sitting total', money(order.total), {
-      size: 10, font: 'bold', valueFont: 'bold',
-    });
+    if (prices) {
+      doc.rule({ colour: LINE, above: 6, below: 4 });
+      doc.pair('Sitting total', money(order.total), {
+        size: 10, font: 'bold', valueFont: 'bold',
+      });
+    }
   });
 
   /* ------------------------------------------------------ the whole booking */
   doc.gap(10);
   doc.need(40);
   doc.rule({ colour: accent, thickness: 1.2, above: 2, below: 8 });
-  doc.pair('Booking total', money(booking.total), { size: 13, font: 'bold', valueFont: 'bold' });
-  doc.gap(4);
+  if (prices) {
+    doc.pair('Booking total', money(booking.total), { size: 13, font: 'bold', valueFont: 'bold' });
+    doc.gap(4);
+  }
   doc.text(
-    'Each sitting reaches the kitchen in time to cook it and not before. Nothing is owed until the day.',
+    prices
+      ? 'Each sitting reaches the kitchen in time to cook it and not before. Nothing is owed until the day.'
+      : 'Each sitting reaches the kitchen in time to cook it and not before.',
     { size: 9, colour: QUIET },
   );
 
@@ -402,8 +431,10 @@ function dishBlock(doc, line, money) {
   }
   doc.need(height + 4);
 
-  doc.pair(`${line.qty} \u00d7  ${line.name}${line.variant ? ` (${line.variant})` : ''}`,
-    money(line.total), { size: 10.5, font: 'bold', valueFont: 'bold' });
+  const heading = `${line.qty} \u00d7  ${line.name}${line.variant ? ` (${line.variant})` : ''}`;
+  // No money on the kitchen's copy, so the dish takes the whole width.
+  if (money) doc.pair(heading, money(line.total), { size: 10.5, font: 'bold', valueFont: 'bold' });
+  else doc.text(heading, { size: 10.5, font: 'bold' });
 
   for (const [head, words, colour, font] of under) {
     doc.text(`${head}: ${words}`, { size: 9, colour, font, x: indent, width: detail });

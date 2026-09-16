@@ -33,7 +33,7 @@ export async function healthFacts(venueId: string, now: Date = new Date()): Prom
     listAll<{ $id: string; amount: number; kind?: string; approval_status?: string; $createdAt: string }>('shift_expenses', [Query.greaterThanEqual('$createdAt', ago(30 * 24))]),
     listAll<{ $id: string; counted_at: string; status: string }>('stock_counts', [Query.equal('status', 'pending')]).catch(() => []),
     listAll<{ shift_id?: string; phase?: string; $createdAt: string; rejected_at?: string | null }>('shift_stock_checks', [Query.equal('applied', false)]).catch(() => []),
-    listAll<{ $id: string; order_no: string; status: string; payment_status?: string; total: number }>('orders', [Query.equal('venue_id', venueId), Query.greaterThanEqual('$createdAt', ago(7 * 24))]),
+    listAll<{ $id: string; order_no: string; status: string; payment_status?: string; total: number; subtotal?: number }>('orders', [Query.equal('venue_id', venueId), Query.greaterThanEqual('$createdAt', ago(7 * 24))]),
     listAll<{ $id: string; reference: string; amount: number; status: string; $createdAt: string }>('consignor_payouts', [Query.greaterThanEqual('$createdAt', ago(30 * 24))]).catch(() => []),
     listAll<{ $id: string; value: number; $createdAt: string }>('waste_log', [Query.greaterThanEqual('$createdAt', ago(30 * 24))]).catch(() => []),
     listAll<{ kind: string; $createdAt: string; delivery_status: string }>('summary_reports', [Query.greaterThanEqual('$createdAt', ago(60 * 24))]).catch(() => []),
@@ -112,9 +112,37 @@ export async function healthFacts(venueId: string, now: Date = new Date()): Prom
   const overpaidOrders = paid
     .filter((o) => (takenOn.get(o.$id) ?? 0) > o.total)
     .map((o) => ({ orderNo: o.order_no, total: o.total, taken: takenOn.get(o.$id) ?? 0 }));
-  const orderLines = await listByIds<{ order_id: string }>('order_items', 'order_id', real.map((o) => o.$id)).catch(() => []);
+  const orderLines = await listByIds<{ order_id: string; line_total?: number; status?: string }>('order_items', 'order_id', real.map((o) => o.$id)).catch(() => []);
   const withItems = new Set(orderLines.map((l) => l.order_id));
   const ordersNoLines = real.filter((o) => !withItems.has(o.$id)).map((o) => ({ orderNo: o.order_no }));
+  /*
+    A bill that does not add up to its own items.
+
+    ORD0866: a quesadilla at 90 and a kelewele at 40, total 90. The server
+    reprices every line and used to SKIP any line whose dish it could not
+    read — the line stayed on the bill, kept its price on screen, and left the
+    total. Nothing said so, and nobody would look at a bill whose items each
+    have a price beside them.
+
+    Dropping a line cannot happen now, but every order it already happened to
+    is still sitting there undercharged, and the only way to find one was to
+    add a column up by hand.
+  */
+  const soldOn = new Map<string, number>();
+  for (const l of orderLines) {
+    if (l.status === 'void') continue;
+    soldOn.set(l.order_id, (soldOn.get(l.order_id) ?? 0) + (l.line_total ?? 0));
+  }
+  const ordersNotAddingUp = real
+    /*
+      Only where there is a figure to compare against. An order with no
+      subtotal at all is a different and louder problem than one whose subtotal
+      disagrees with its lines, and reading "missing" as nought would report
+      every such row as underpriced by its whole value.
+    */
+    .filter((o) => withItems.has(o.$id) && typeof o.subtotal === 'number'
+      && (soldOn.get(o.$id) ?? 0) !== o.subtotal)
+    .map((o) => ({ orderNo: o.order_no, subtotal: o.subtotal ?? 0, lines: soldOn.get(o.$id) ?? 0 }));
 
   // --- payouts and waste
   const recorded = payouts.filter((p) => p.status === 'recorded' && olderThan(p.$createdAt, 1));
@@ -142,6 +170,7 @@ export async function healthFacts(venueId: string, now: Date = new Date()): Prom
     paidOrdersNoPayment,
     overpaidOrders,
     ordersNoLines,
+    ordersNotAddingUp,
     unledgeredPayouts,
     unpostedPayouts,
     unpostedWaste,

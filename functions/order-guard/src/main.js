@@ -1,5 +1,6 @@
 import { Client, Databases, Query } from 'node-appwrite';
 import { surplusPayment } from './duplicate-payment.js';
+import { linePrice, linePrep, isVoid } from './reprice.js';
 import {
   totalsFor, rateFor, flatFor, splitSale, queueMinutes, quotedWait,
   parseWindows, waitIncludingOpening, cookTimeOf,
@@ -1318,59 +1319,45 @@ export default async ({ req, res, log, error }) => {
     let prepTotal = 0;
     const corrections = [];
 
+    /*
+      EVERY LIVE LINE CONTRIBUTES SOMETHING. See reprice.js.
+
+      A line that adds nothing here does not vanish from the order — it still
+      shows on the bill, the kitchen still cooks it, the customer still eats
+      it — it simply stops being charged for, and the total is rewritten as
+      though it were never there. This dropped any line whose dish could not be
+      read, and a read that fails and a dish that was deleted are the same null.
+    */
     for (const item of items.documents) {
-      if (item.status === 'void') continue;
+      if (isVoid(item)) continue;
 
       const menuItem = await db.getDocument(DB_ID, 'menu_items', item.menu_item_id).catch(() => null);
-      if (!menuItem) {
-        corrections.push(`${item.name_snapshot}: no longer on the menu`);
-        continue;
-      }
+      prepTotal += linePrep(item, menuItem);
 
-      // Counted once per line, not per portion: three of the same thing goes in
-      // one pan, and multiplying produces a number nobody believes.
-      prepTotal += menuItem.prep_minutes ?? 15;
-
-      /*
-        A price somebody with permission changed at the till stands.
-
-        This repricing exists because a customer's phone sends its own
-        figures and must never be trusted. A member of staff standing at the
-        counter is not that: a chipped piece, a maker's price for a friend, a
-        display item going for less than a new one. Without this the guard
-        would quietly put the line back to the shelf price a second after the
-        sale, and the till would appear to forget what it had just been told.
-
-        `list_price` is only ever set by the till, which checks the permission
-        first, and it carries what the line SHOULD have cost, so the decision
-        stays readable afterwards.
-      */
-      if (typeof item.list_price === 'number') {
-        subtotal += item.line_total;
-        continue;
-      }
-
-      const base = overrideFor.get(item.menu_item_id)?.price_override ?? menuItem.price;
-
-      // Add-ons are priced from the database too, not from what was sent.
+      // Add-ons are priced from the database too, not from what was sent. Only
+      // where the dish itself was readable: with no dish the line keeps what it
+      // was sold for, add-ons and all, so pricing them again would double them.
       let addonTotal = 0;
-      const addons = item.addons ? JSON.parse(item.addons) : [];
-      for (const a of addons) {
-        const option = await db.getDocument(DB_ID, 'addon_options', a.option_id).catch(() => null);
-        addonTotal += option?.price_delta ?? 0;
+      if (menuItem) {
+        const addons = item.addons ? JSON.parse(item.addons) : [];
+        for (const a of addons) {
+          const option = await db.getDocument(DB_ID, 'addon_options', a.option_id).catch(() => null);
+          addonTotal += option?.price_delta ?? 0;
+        }
       }
 
-      const trueUnit = base + addonTotal;
-      const trueLine = trueUnit * item.qty;
+      const priced = linePrice({
+        item,
+        menuItem,
+        overridePrice: overrideFor.get(item.menu_item_id)?.price_override,
+        addonTotal,
+      });
 
-      if (trueLine !== item.line_total) {
-        corrections.push(`${item.name_snapshot}: sent ${item.line_total}, actual ${trueLine}`);
-        await db.updateDocument(DB_ID, 'order_items', item.$id, {
-          unit_price: trueUnit,
-          line_total: trueLine,
-        });
+      if (priced.correction) corrections.push(priced.correction);
+      if (priced.rewrite) {
+        await db.updateDocument(DB_ID, 'order_items', item.$id, priced.rewrite);
       }
-      subtotal += trueLine;
+      subtotal += priced.amount;
     }
 
     // Discounts are only honoured if a matching redemption exists.

@@ -108,7 +108,7 @@ export function GroupBookingsPage() {
    * stale — the sheet is made from the orders every time, so a download after
    * a revision IS the revised sheet.
    */
-  const download = async (b: GroupBookingDoc) => {
+  const download = async (b: GroupBookingDoc, prices = true) => {
     setBusy(b.$id);
     try {
       const sittings = await bookingSittings({ db, DB_ID, Query, booking: b });
@@ -119,7 +119,7 @@ export function GroupBookingsPage() {
       const stem = String(b.reference || b.contact_name || b.$id)
         .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'booking';
       downloadFile(
-        `group-booking-${stem}.pdf`,
+        `group-booking-${stem}${prices ? '' : '-kitchen'}.pdf`,
         bookingSheetPdf({
           settings: settings ?? {},
           // The masthead falls back to the restaurant's name, which is the
@@ -129,6 +129,13 @@ export function GroupBookingsPage() {
           booking: b,
           sittings,
           accent: settings?.primary_color ?? '#0f766e',
+          /*
+            The kitchen's copy carries no money. A price on a sheet pinned by
+            the pass settles nothing a cook decides and puts the party's bill
+            on a wall everybody walks past. Same generator, one option — two
+            builders would drift the first time a dietary rule changed.
+          */
+          prices,
         }),
         'application/pdf',
       );
@@ -165,11 +172,7 @@ export function GroupBookingsPage() {
   const move = async (b: GroupBookingDoc, s: BookingSitting) => {
     const typed = moveTo[s.$id] ?? '';
     const when = typed ? new Date(typed) : null;
-    const why = sittingMoveProblem({
-      sitting: s,
-      to: when,
-      daysAhead: featureConfig(features, 'preorders', 'max_days_ahead', 0),
-    });
+    const why = sittingMoveProblem({ sitting: s, to: when });
     if (why) { toast(why, 'err'); return; }
 
     setBusy(s.$id);
@@ -274,7 +277,6 @@ export function GroupBookingsPage() {
               const why = sittingMoveProblem({
                 sitting: s,
                 to: moveTo[s.$id] ? new Date(moveTo[s.$id] as string) : null,
-                daysAhead: featureConfig(features, 'preorders', 'max_days_ahead', 0),
               });
               return (
                 <tr key={s.$id}>
@@ -405,6 +407,10 @@ export function GroupBookingsPage() {
                             revised sheet the moment anything is revised. */}
                         <Button size="sm" variant="ghost" loading={busy === b.$id} onClick={() => void download(b)}>
                           Download
+                        </Button>
+                        {/* The one that gets pinned up by the pass. */}
+                        <Button size="sm" variant="ghost" loading={busy === b.$id} onClick={() => void download(b, false)}>
+                          Kitchen copy
                         </Button>
                         {/* Primary once the diary has been changed: everybody
                             is holding a sheet that is now wrong, and the party

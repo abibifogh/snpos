@@ -41,6 +41,15 @@ export interface Sitting {
  */
 export const MOVABLE = 'SCHEDULED';
 
+/**
+ * How far ahead a sitting may be moved: a typo guard, not a booking policy.
+ *
+ * Generous on purpose. Anything a restaurant would really book falls well
+ * inside it, so this only ever catches a wrong year.
+ */
+export const MOVE_LIMIT_YEARS = 2;
+const MOVE_LIMIT_MS = MOVE_LIMIT_YEARS * 365 * 86_400_000;
+
 /** Already off. Not a refusal to move it, there is nothing there to move. */
 const OFF = ['CANCELLED', 'REJECTED'];
 
@@ -79,8 +88,6 @@ export function sittingMoveProblem(opts: {
   sitting: Sitting;
   to: Date | null;
   now?: Date;
-  /** The furthest ahead a booking may be moved, in days. Zero means no limit. */
-  daysAhead?: number;
 }): string | null {
   const { sitting, to } = opts;
   const now = opts.now ?? new Date();
@@ -106,9 +113,25 @@ export function sittingMoveProblem(opts: {
     return `The kitchen would have had to start at ${when} for that. Pick a later time.`;
   }
 
-  const limit = opts.daysAhead ?? 0;
-  if (limit > 0 && to.getTime() - now.getTime() > limit * 86_400_000) {
-    return `Bookings are only taken ${limit} days ahead. Pick a nearer time.`;
+  /*
+    A mistyped year, and nothing else.
+
+    This is NOT the pre-order window. That limit — seven days, or whatever the
+    picker is set to — exists to stop a walk-in guest booking a collection
+    months out, and applying it here blocked every real move: a group books
+    weeks ahead by definition, the sitting is ALREADY in the diary at that
+    date, and re-timing something already accepted is not the same act as
+    accepting something new. It refused a party of 195 whose October sittings
+    were sitting right there on the screen, and the reason it gave was about a
+    rule that had nothing to do with them.
+
+    What is worth catching is 2126 typed for 2026 in a date box, which is one
+    keystroke and silently puts a booking a century out. So: a bound no real
+    booking will ever reach, and it says to check the year rather than quoting
+    a policy.
+  */
+  if (to.getTime() - now.getTime() > MOVE_LIMIT_MS) {
+    return `That is more than ${MOVE_LIMIT_YEARS} years away. Check the year.`;
   }
 
   if (sitting.scheduled_for && Math.abs(Date.parse(sitting.scheduled_for) - to.getTime()) < 60_000) {

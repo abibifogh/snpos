@@ -104,6 +104,25 @@ export function healthFindings(f, w) {
     }
     : none('orders_overpaid', 'Bills paid more than once'));
 
+  /*
+    A bill that does not add up to its own items. ORD0866: a quesadilla at 90
+    and a kelewele at 40, charged as 90, because repricing skipped a line whose
+    dish it could not read. It cannot drop a line now, but every order it
+    already happened to is still there, undercharged.
+
+    A DELIBERATE COPY of the rule in packages/core/src/health-rules.ts. A
+    function is deployed on its own and cannot import the workspace; a parity
+    test holds the two together.
+  */
+  out.push(f.ordersNotAddingUp.length > 0
+    ? {
+      key: 'orders_not_adding_up', level: 'block', title: 'Bills that do not add up to their items',
+      count: f.ordersNotAddingUp.length,
+      detail: f.ordersNotAddingUp.slice(0, 4).map((o) => `${o.orderNo} charged ${w.money(o.subtotal)} on ${w.money(o.lines)} of items`).join(', ') + (f.ordersNotAddingUp.length > 4 ? ', …' : '') + '. Open each one and press "Recheck total".',
+      goto: '/orders', action: 'Open orders',
+    }
+    : none('orders_not_adding_up', 'Bills that do not add up to their items'));
+
   out.push(f.ordersNoLines.length > 0
     ? {
       key: 'orders_no_lines', level: 'warn', title: 'Orders with no lines', count: f.ordersNoLines.length,
@@ -292,6 +311,25 @@ export async function healthFacts(ctx, venueId, now = new Date()) {
   const orderLines = await listByIds(ctx, 'order_items', 'order_id', real.map((o) => o.$id)).catch(() => []);
   const withItems = new Set(orderLines.map((l) => l.order_id));
   const ordersNoLines = real.filter((o) => !withItems.has(o.$id)).map((o) => ({ orderNo: o.order_no }));
+  /*
+    A bill that does not add up to its own items. See the finding above, and
+    packages/core/src/health.ts, which this mirrors.
+  */
+  const soldOn = new Map();
+  for (const l of orderLines) {
+    if (l.status === 'void') continue;
+    soldOn.set(l.order_id, (soldOn.get(l.order_id) ?? 0) + (l.line_total ?? 0));
+  }
+  const ordersNotAddingUp = real
+    /*
+      Only where there is a figure to compare against. An order with no
+      subtotal at all is a different and louder problem than one whose subtotal
+      disagrees with its lines, and reading "missing" as nought would report
+      every such row as underpriced by its whole value.
+    */
+    .filter((o) => withItems.has(o.$id) && typeof o.subtotal === 'number'
+      && (soldOn.get(o.$id) ?? 0) !== o.subtotal)
+    .map((o) => ({ orderNo: o.order_no, subtotal: o.subtotal ?? 0, lines: soldOn.get(o.$id) ?? 0 }));
 
   const recorded = payouts.filter((p) => p.status === 'recorded' && olderThan(p.$createdAt, 1));
   const ledger = await listByIds(ctx, 'consignor_ledger', 'payout_id', recorded.map((p) => p.$id)).catch(() => []);
@@ -317,6 +355,7 @@ export async function healthFacts(ctx, venueId, now = new Date()) {
     paidOrdersNoPayment,
     overpaidOrders,
     ordersNoLines,
+    ordersNotAddingUp,
     unledgeredPayouts,
     unpostedPayouts,
     unpostedWaste,

@@ -408,3 +408,83 @@ test('the cross-reference offsets are byte offsets, which is what a reader follo
   assert.ok(Number.isFinite(first));
   assert.equal(text.slice(first, first + 7), '1 0 obj');
 });
+
+/* ------------------------------------------------- the copy for the pass */
+
+/*
+  The kitchen's sheet carries no money.
+
+  A price on a sheet pinned up by the pass settles nothing a cook decides, and
+  puts the party's bill on a wall in a working kitchen where everybody who
+  walks past reads it. What a cook needs is the dishes, the choices, the
+  omissions, the notes and the tags — which is everything else on it.
+
+  One generator with an option rather than a second builder: two would agree on
+  the day they were written and drift the first time a dietary rule changed,
+  leaving the pass cooking from a sheet that no longer matched the office's.
+*/
+
+const kitchen = () => asText(bookingSheetPdf({
+  settings: { restaurant_name: 'SN Bistro', currency_code: 'GHS', currency_decimals: 2 },
+  venue: { name: 'SN Bistro' },
+  booking,
+  sittings,
+  prices: false,
+}));
+
+/**
+ * The words actually DRAWN on the page, not the whole file.
+ *
+ * A PDF's content stream is full of numbers that are positions — "44.00" is a
+ * coordinate on nearly every page — so searching the raw bytes for a figure
+ * finds the layout and calls it a price. Only the parenthesised text operands
+ * are what a person reads.
+ */
+const drawn = (pdf: string): string =>
+  (pdf.match(/\(((?:\\.|[^\\)])*)\)\s*Tj/g) ?? []).join('\n');
+
+test('no money reaches the kitchen copy at all', () => {
+  const words = drawn(kitchen());
+  assert.ok(words.length > 0, 'something was drawn, or this proves nothing');
+  // Not merely hidden — no figure is printed anywhere on the page.
+  assert.doesNotMatch(words, /GHS/, 'no currency anywhere');
+  assert.doesNotMatch(words, /\d+\.\d{2}/, 'and no money-shaped figure at all');
+  assert.doesNotMatch(words, /Booking total/, 'and no label left standing with nothing beside it');
+  assert.doesNotMatch(words, /Sitting total/);
+});
+
+test('everything a cook actually needs is still on it', () => {
+  const pdf = kitchen();
+  assert.match(pdf, /Jollof rice/, 'the dishes');
+  assert.match(pdf, /Grilled tilapia/);
+  assert.match(pdf, /Waakye/);
+  assert.match(pdf, /4 \\u00d7|Ama Mensah/, 'who it is for');
+  assert.match(pdf, /Hotel Reg 4471/, 'and the reference the kitchen calls it by');
+  assert.match(pdf, /Kitchen sheet/, 'and it says which copy it is');
+});
+
+test('the priced copy still carries its money', () => {
+  // The other half of the option: turning it off must not turn it off for the
+  // sheet the office and the guest hold.
+  const pdf = asText(bookingSheetPdf({
+    settings: { restaurant_name: 'SN Bistro', currency_code: 'GHS', currency_decimals: 2 },
+    venue: { name: 'SN Bistro' },
+    booking,
+    sittings,
+  }));
+  const words = drawn(pdf);
+  assert.match(words, /GHS/);
+  assert.match(words, /Booking total/);
+  assert.match(words, /240\.00/, 'the booking total is really printed on it');
+});
+
+test('both copies open as real PDFs with sound offsets', () => {
+  for (const bytes of [
+    bookingSheetPdf({ settings: {}, booking, sittings, prices: false }),
+    bookingSheetPdf({ settings: {}, booking, sittings }),
+  ]) {
+    const text = asText(bytes);
+    assert.match(text, /^%PDF-1\.4/);
+    assert.match(text, /%%EOF\s*$/);
+  }
+});
