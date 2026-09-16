@@ -4,6 +4,7 @@ import { humanError } from '../lib';
 import {
   groupBookingsBetween, resendBookingNotice, resendPendingFor,
   sittingsOf, moveSitting, sittingMoveProblem, sittingIsMovable,
+  sendBookingForApproval, approvalState, approvalWords, approvalRequestProblem,
   loadFeatures, featureConfig,
   formatMoney, dateTimeWords, forDateTimeInput, downloadFile, db, DB_ID, Query,
 } from '@snpos/core';
@@ -198,6 +199,45 @@ export function GroupBookingsPage() {
     }
   };
 
+  /**
+   * Send the booking as it now stands to the party, to be agreed to.
+   *
+   * Asked for, not sent from here — the job builds the revised sheet and
+   * sends it, the same way the first notice went, so the party's copy and the
+   * kitchen's copy can never be built by two different pieces of code.
+   *
+   * What changed is typed rather than worked out. A machine-written diff of a
+   * booking reads as "sitting 2: 12:30 → 19:00", which is true and tells a
+   * hotel manager nothing; "your Thursday lunch is now Thursday dinner, as
+   * agreed on the phone" is the sentence that stops them ringing to ask.
+   */
+  const sendForApproval = async (b: GroupBookingDoc) => {
+    const why = approvalRequestProblem(b);
+    if (why) { toast(why, 'err'); return; }
+
+    const said = window.prompt(
+      'What changed? The party reads this, so say it in a sentence. Leave it blank to send the booking with no note.',
+      '',
+    );
+    // Cancelled, as opposed to deliberately left empty.
+    if (said === null) return;
+
+    setBusy(b.$id);
+    try {
+      await sendBookingForApproval({ bookingId: b.$id, note: said });
+      toast('Sent to the party to be agreed to. It goes out in the next minute.');
+      setMoved((m) => { const n = new Set(m); n.delete(b.$id); return n; });
+      await load().catch(() => undefined);
+      // The job answers in seconds; one look, so the row settles itself
+      // rather than sitting on "Sending…" until somebody reloads.
+      window.setTimeout(() => { void load().catch(() => undefined); }, 8_000);
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const money = (n?: number) => (settings ? formatMoney(n ?? 0, settings) : String(n ?? 0));
 
   const tone = (s?: string) => {
@@ -223,8 +263,9 @@ export function GroupBookingsPage() {
       <div style={{ padding: '0.4rem 0' }}>
         {moved.has(b.$id) && (
           <Notice tone="warn">
-            The diary has changed. Nobody has been told yet — press Send again when the times are right,
-            and the party and the team both get the new sheet.
+            The diary has changed and nobody has been told. Press <strong>Send for approval</strong> when the
+            times are right: the party gets the revised sheet and agrees to it, and the team is told once
+            they have. <strong>Send again</strong> tells the team without asking the party.
           </Notice>
         )}
         <table className="data" style={{ margin: '0.4rem 0 0' }}>
@@ -317,6 +358,7 @@ export function GroupBookingsPage() {
                   <th>Sittings</th>
                   <th className="num">Total</th>
                   <th>State</th>
+                  <th>Party agreed?</th>
                   <th />
                 </tr>
               </thead>
@@ -337,6 +379,21 @@ export function GroupBookingsPage() {
                     </td>
                     <td className="num" style={{ fontWeight: 650 }}>{money(b.total)}</td>
                     <td><Badge tone={tone(b.status)}>{b.status ?? 'pending'}</Badge></td>
+                    {/* Where a revision has got to, which is a different
+                        question from whether the house agreed to the booking
+                        in the first place. Both are shown, because a booking
+                        can be approved here and not yet agreed to there. */}
+                    <td className="small">
+                      <Badge tone={approvalWords(approvalState(b)).tone === 'default'
+                        ? undefined
+                        : approvalWords(approvalState(b)).tone}
+                      >
+                        {approvalWords(approvalState(b)).label}
+                      </Badge>
+                      {approvalState(b) === 'approved' && b.approval_given_at && (
+                        <div className="dim">{dateTimeWords(b.approval_given_at)}</div>
+                      )}
+                    </td>
                     <td>
                       {/* Pending from the moment it is asked for until the job
                           clears it, so pressing twice does not send twice. */}
@@ -348,6 +405,17 @@ export function GroupBookingsPage() {
                             revised sheet the moment anything is revised. */}
                         <Button size="sm" variant="ghost" loading={busy === b.$id} onClick={() => void download(b)}>
                           Download
+                        </Button>
+                        {/* Primary once the diary has been changed: everybody
+                            is holding a sheet that is now wrong, and the party
+                            has not agreed to what replaced it. */}
+                        <Button
+                          size="sm"
+                          variant={moved.has(b.$id) ? 'primary' : 'ghost'}
+                          loading={busy === b.$id}
+                          onClick={() => void sendForApproval(b)}
+                        >
+                          Send for approval
                         </Button>
                         {asked.has(b.$id) || resendPendingFor(b) ? (
                           <span className="small dim">Going out…</span>
@@ -369,7 +437,7 @@ export function GroupBookingsPage() {
                   </tr>,
                   open === b.$id ? (
                     <tr key={`${b.$id}-sittings`}>
-                      <td colSpan={6} style={{ background: 'var(--surface-2, rgba(127,127,127,0.06))' }}>
+                      <td colSpan={7} style={{ background: 'var(--surface-2, rgba(127,127,127,0.06))' }}>
                         {sittingRows(b)}
                       </td>
                     </tr>

@@ -1,6 +1,7 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
 import { claimPlace, releasePlace } from './slot-booking';
 import { fireAtFor, sittingMoveProblem, spanOf } from './sitting-move';
+import { APPROVAL_KIND } from './booking-approval';
 import type { Sitting } from './sitting-move';
 
 /**
@@ -44,6 +45,17 @@ export interface GroupBookingDoc {
   decided_note?: string;
   /** Set when somebody has asked for the team's notice to go again. */
   notice_resend_at?: string | null;
+  /*
+    A revision sent to the party, and their answer to it. Two stamps rather
+    than a flag, so "agreed to, and then changed again" is legible — which
+    looks exactly like agreement and is not. See approvalState.
+  */
+  /** Asked for and not yet sent; the job clears it. */
+  approval_send_at?: string | null;
+  approval_requested_at?: string | null;
+  approval_given_at?: string | null;
+  /** What changed, in the words of whoever changed it. The party reads this. */
+  approval_note?: string;
   $createdAt?: string;
   /** Anything the party said about the booking as a whole. See the schema. */
   note?: string;
@@ -381,4 +393,64 @@ export async function moveSitting(input: {
   }).catch(() => undefined);
 
   return { firstAt: span?.firstAt, lastAt: span?.lastAt };
+}
+
+/* --------------------------------- sending a revision back to be agreed to */
+
+/**
+ * Send the booking as it now stands to the party, to be agreed to.
+ *
+ * A request written on the row, not a message sent from here. The background
+ * job watches this collection, builds the revised sheet and sends it — the
+ * same route the first notice takes, so the party's copy and the kitchen's
+ * copy can never be built by two different pieces of code.
+ *
+ * What is written is the ASKING. The job clears it and stamps when the email
+ * actually went, so the row can never say "waiting on the party" about a
+ * message that never left — which would send somebody to chase a guest who was
+ * never written to.
+ *
+ * The old answer is left where it is rather than wiped, because the pair of
+ * stamps is what carries the meaning: sent today, agreed to last week, so it is
+ * waiting. Clearing would lose the fact that they ever agreed to anything, and
+ * a row reading "party agreed" about a booking they have never seen is the
+ * precise failure this exists to prevent either way. See approvalState.
+ */
+export async function sendBookingForApproval(input: {
+  bookingId: string;
+  /** What changed, in the words of whoever changed it. The party reads this. */
+  note?: string;
+}): Promise<void> {
+  await db.updateDocument(DB_ID, 'group_bookings', input.bookingId, {
+    approval_send_at: new Date().toISOString(),
+    approval_note: (input.note ?? '').trim().slice(0, 1000),
+  });
+}
+
+/**
+ * The party agreeing to the revision, from the link they were sent.
+ *
+ * Written as a change request rather than onto the booking, because a guest
+ * cannot write to a booking row and should not be able to: a link that could
+ * edit a booking is a link that could empty a pass. The job reads this, stamps
+ * the booking, and tells the house. See APPROVAL_KIND.
+ */
+export async function approveBookingRevision(input: {
+  booking: GroupBookingDoc;
+  /** Anything they want to say along with it. */
+  note?: string;
+}): Promise<void> {
+  await db.createDocument(DB_ID, 'booking_changes', ID.unique(), {
+    venue_id: input.booking.venue_id,
+    booking_id: input.booking.$id,
+    contact_name: input.booking.contact_name ?? '',
+    reference: input.booking.reference ?? '',
+    email: input.booking.email ?? '',
+    kind: APPROVAL_KIND,
+    // Never empty: the column is required, and "they pressed the button" is
+    // the honest content of an approval with nothing typed on it.
+    note: (input.note ?? '').trim().slice(0, 2000) || 'Agreed to the revised booking.',
+    ...(input.booking.first_at ? { first_at: input.booking.first_at } : {}),
+    status: 'open',
+  });
 }

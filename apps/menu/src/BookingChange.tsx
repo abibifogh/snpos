@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { Button, Field, Input, Notice, Select, Spinner, Textarea } from '@snpos/ui';
 import {
   loadGroupBooking, requestBookingChange, changeProblem, changeWindowWords, requestProblem,
-  CHANGE_KIND_WORDS, humanError, ensureGuestSession, dateWords,
+  CHANGE_KIND_WORDS, humanError, ensureGuestSession, dateWords, dateTimeWords,
   cancelGroupBooking, bookingIsCancelled,
+  approvalState, approveBookingRevision,
 } from '@snpos/core';
 import type { GroupBookingDoc } from '@snpos/core';
 
@@ -29,6 +30,14 @@ export function BookingChange({ bookingId, onClose }: { bookingId: string; onClo
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [cancelled, setCancelled] = useState(false);
+  /** Set the moment they press Agree, so the page answers before the job has. */
+  const [agreed, setAgreed] = useState(false);
+  /*
+    They were asked to check a revision and it is wrong. Sends them to the
+    ordinary change form rather than leaving the telephone as the only way to
+    disagree with something they were told to check.
+  */
+  const [disagree, setDisagree] = useState(false);
 
   useEffect(() => {
     void ensureGuestSession().catch(() => undefined);
@@ -107,6 +116,35 @@ export function BookingChange({ bookingId, onClose }: { bookingId: string; onClo
     }
   };
 
+  /**
+   * Agreeing to a revision the restaurant has made and sent.
+   *
+   * A message, like everything else a guest sends from this page: nothing here
+   * writes to the booking, because a link that could edit a booking is a link
+   * that could empty a pass. The job reads it, stamps the booking and tells
+   * the restaurant. See approveBookingRevision.
+   */
+  const agree = async () => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await approveBookingRevision({ booking, note });
+      setAgreed(true);
+    } catch (e) {
+      setProblem(humanError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /*
+    Whether the restaurant has changed this booking and is waiting to hear
+    that it is right. Asked of the stamps rather than of a flag, so a booking
+    agreed to once and changed again reads as waiting — which is the state
+    that looks exactly like agreement and is not. See approvalState.
+  */
+  const waitingOnThem = approvalState(booking) === 'awaiting' && !agreed && !disagree;
+
   return (
     <div className="status-page">
       <h1>Your booking</h1>
@@ -127,6 +165,69 @@ export function BookingChange({ bookingId, onClose }: { bookingId: string; onClo
           {booking.email ? ` at ${booking.email}` : ''}. Nothing has changed on the booking yet — the kitchen is
           still working to what you ordered until it is agreed.
         </Notice>
+      ) : agreed ? (
+        <Notice tone="ok">
+          <strong>Thank you — that is agreed.</strong> We have told the restaurant, and the kitchen will work
+          to the booking as you have just seen it. Nothing more is needed from you.
+        </Notice>
+      ) : waitingOnThem ? (
+        /*
+          FIRST, and instead of the change form, because it is the thing they
+          were asked here to do. Somebody at the restaurant changed this
+          booking and is waiting to hear that it is right; burying that under
+          a form headed "what would you like to change?" would leave them
+          answering a question nobody asked.
+        */
+        <>
+          <Notice tone="warn">
+            <strong>We have changed your booking, and we need you to check it.</strong> Nothing is settled
+            until you tell us it is right.
+            {booking.approval_requested_at
+              ? ` We sent you the details on ${dateTimeWords(booking.approval_requested_at)}.`
+              : ''}
+          </Notice>
+
+          {booking.approval_note && (
+            <Field label="What we changed">
+              <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{booking.approval_note}</p>
+            </Field>
+          )}
+
+          <p className="meta">
+            The full sheet is attached to the email we sent you — every sitting, every dish, the choices and
+            anything left out. Please check it against what you expect.
+          </p>
+
+          <Field label="Anything to add?" hint="Not required. Press the button below if it is all correct.">
+            <Textarea
+              rows={3}
+              value={note}
+              onChange={(e) => { setNote(e.target.value); setProblem(null); }}
+              placeholder="All correct, thank you."
+            />
+          </Field>
+
+          {problem && <Notice tone="warn">{problem}</Notice>}
+
+          <Button variant="primary" loading={busy} onClick={() => void agree()} style={{ width: '100%' }}>
+            Yes, that is right — I agree to it
+          </Button>
+
+          {/* The other answer, and it must be on the same screen. Somebody
+              told "check this" who finds it wrong needs somewhere to say so,
+              or the only way to disagree is the telephone. */}
+          <p className="meta" style={{ margin: '1.2rem 0 0.4rem' }}>
+            Not right? Tell us what is wrong instead and we will change it again.
+          </p>
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onClick={() => { setProblem(null); setKind('other'); setDisagree(true); }}
+            style={{ width: '100%' }}
+          >
+            Something is wrong with it
+          </Button>
+        </>
       ) : shut ? (
         <Notice tone="warn">{shut}</Notice>
       ) : (

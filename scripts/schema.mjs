@@ -986,6 +986,44 @@ export const COLLECTIONS = [
         rather than a setting: present means somebody is waiting for an email.
       */
       ['notice_resend_at', 'd', null, false],
+      /*
+        Sending a REVISED booking back to the party to be agreed to.
+
+        A booking that has been changed here — a sitting moved, numbers
+        adjusted, a dish swapped — is no longer the thing the party has a copy
+        of. They are holding a sheet that is now wrong, and until they say
+        otherwise nobody knows whether the change is what they wanted or
+        merely what somebody here typed. A party of forty arriving to find
+        Thursday lunch was moved to Thursday dinner without their agreeing to
+        it is a worse failure than the change never being made.
+
+        So: asked for, and answered. `approval_requested_at` is stamped when
+        somebody here sends the revision out; `approval_given_at` when the
+        party agrees to it. Both are kept rather than one flag, because the
+        pair is what makes a SECOND revision legible — asked again today,
+        agreed to last week, so it is waiting. The same arithmetic as a
+        sign-in link, see inviteState.
+
+        The party's answer arrives as a booking_changes row of kind
+        'approved', because a guest cannot write to this row and should not be
+        able to. The job stamps it here, where a browser can read it.
+      */
+      /*
+        The ASKING, cleared by the job once it has gone — the same shape as
+        notice_resend_at above it. Present means somebody pressed the button
+        and the email has not left yet.
+      */
+      ['approval_send_at', 'd', null, false],
+      /*
+        Stamped by the job when the revision ACTUALLY went to the party, never
+        when it was merely asked for. A row that says "waiting on the party"
+        about an email that never left sends somebody to chase a guest who was
+        never written to; the same reasoning as login_link_sent_at.
+      */
+      ['approval_requested_at', 'd', null, false],
+      ['approval_given_at', 'd', null, false],
+      /** What changed, in the words of whoever changed it. Shown to the party. */
+      ['approval_note', 's', 1000, false],
       ['decided_by', 's', 64, false],
       ['decided_at', 'd', null, false],
       ['decided_note', 's', 1000, false],
@@ -1020,7 +1058,14 @@ export const COLLECTIONS = [
       ['contact_name', 's', 120, false],
       ['reference', 's', 80, false],
       ['email', 's', 160, false],
-      ['kind', 'e', ['numbers', 'timing', 'food', 'dietary', 'cancel', 'other'], true],
+      /*
+        'approved' is the party agreeing to a revision somebody here made, and
+        it is the one kind that is an ANSWER rather than a request. It lands
+        here because a guest cannot write to the booking row itself — the job
+        reads this and stamps the booking, which is the only way round that
+        does not hand a link the power to edit a booking.
+      */
+      ['kind', 'e', ['numbers', 'timing', 'food', 'dietary', 'cancel', 'other', 'approved'], true],
       ['note', 's', 2000, true],
       /** The first sitting, so the cutoff can be checked again server-side. */
       ['first_at', 'd', null, false],
