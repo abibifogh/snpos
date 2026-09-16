@@ -165,11 +165,7 @@ export function GroupBookingsPage() {
   const move = async (b: GroupBookingDoc, s: BookingSitting) => {
     const typed = moveTo[s.$id] ?? '';
     const when = typed ? new Date(typed) : null;
-    const why = sittingMoveProblem({
-      sitting: s,
-      to: when,
-      daysAhead: featureConfig(features, 'preorders', 'max_days_ahead', 0),
-    });
+    const why = sittingMoveProblem({ sitting: s, to: when });
     if (why) { toast(why, 'err'); return; }
 
     setBusy(s.$id);
@@ -274,7 +270,6 @@ export function GroupBookingsPage() {
               const why = sittingMoveProblem({
                 sitting: s,
                 to: moveTo[s.$id] ? new Date(moveTo[s.$id] as string) : null,
-                daysAhead: featureConfig(features, 'preorders', 'max_days_ahead', 0),
               });
               return (
                 <tr key={s.$id}>

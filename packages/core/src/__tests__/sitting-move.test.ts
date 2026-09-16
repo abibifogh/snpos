@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sittingMoveProblem, sittingIsMovable, leadMs, fireAtFor, spanOf, moveWords } from '../sitting-move.ts';
+import {
+  sittingMoveProblem, sittingIsMovable, leadMs, fireAtFor, spanOf, moveWords, MOVE_LIMIT_YEARS,
+} from '../sitting-move.ts';
 import type { Sitting } from '../sitting-move.ts';
 
 /*
@@ -78,11 +80,33 @@ test('moving it to the time it is already booked for is not a move', () => {
   assert.match(String(why), /already booked for/i);
 });
 
-test('further ahead than bookings are taken is refused where a limit is set', () => {
-  const far = at('2026-06-01T12:30:00Z');
-  assert.match(String(sittingMoveProblem({ sitting: sitting(), to: far, now: NOW, daysAhead: 7 })), /7 days ahead/);
-  // No limit set means no limit applied.
-  assert.equal(sittingMoveProblem({ sitting: sitting(), to: far, now: NOW }), null);
+test('a booking weeks out can be moved, because that is what group bookings ARE', () => {
+  /*
+    REPORTED. Every Move on a real booking was refused with "Bookings are only
+    taken 7 days ahead", quoting the PRE-ORDER picker's window — the rule that
+    stops a walk-in guest booking a collection months out. It has nothing to do
+    with re-timing a sitting already accepted and already in the diary, and a
+    group books weeks ahead by definition. A party of 195 had four October
+    sittings on screen and not one of them could be touched.
+  */
+  const october = at('2026-10-11T19:00:00Z');   // 25 days out
+  assert.equal(sittingMoveProblem({ sitting: sitting(), to: october, now: NOW }), null);
+
+  const months = at('2026-06-01T12:30:00Z');
+  assert.equal(sittingMoveProblem({ sitting: sitting(), to: months, now: NOW }), null);
+
+  const nextYear = at('2027-03-01T12:30:00Z');
+  assert.equal(sittingMoveProblem({ sitting: sitting(), to: nextYear, now: NOW }), null);
+});
+
+test('a mistyped year is caught, and the message says so', () => {
+  // One keystroke — 2126 for 2026 — silently puts a booking a century out.
+  const century = at('2126-03-12T12:30:00Z');
+  const why = String(sittingMoveProblem({ sitting: sitting(), to: century, now: NOW }));
+  assert.match(why, /Check the year/i);
+  assert.match(why, new RegExp(`${MOVE_LIMIT_YEARS} years`));
+  // And it says nothing about a booking policy, because it is not one.
+  assert.doesNotMatch(why, /Bookings are only taken/i);
 });
 
 /* ------------------------------------------------------- the lead it keeps */
