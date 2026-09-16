@@ -136,3 +136,44 @@ export function meanwhile(p: InviteProfile): string {
     ? 'They already have a PIN, so they can sign in on the shared terminal now. The link is only needed for the admin dashboard on their own device.'
     : 'Give them a PIN in the meantime — edit them and set one. That gets them working on the shared terminal today; the link is only for the admin dashboard on their own device.';
 }
+
+/* ------------------------------------------- who already has a way in */
+
+/**
+ * Whether this profile is attached to a real sign-in account.
+ *
+ * Not the same question as "has an email". A profile can carry an address
+ * with no account behind it yet — somebody invited a minute ago, or somebody
+ * whose invitation never arrived — and those two need opposite treatment: one
+ * is finished and must not be disturbed, the other is still waiting and can be
+ * asked for again.
+ *
+ * A profile whose user_id is its own id has no account either. That is the
+ * placeholder written for somebody who signs in with a PIN alone.
+ */
+export const hasSignIn = (p: { $id?: string; user_id?: string }): boolean =>
+  !!p.user_id && p.user_id !== p.$id;
+
+/**
+ * Whether saving this profile should also ask for a sign-in link.
+ *
+ * Only while there is no account yet. Somebody already signing in gets one
+ * every time their profile is saved otherwise, so ticking a permission for a
+ * manager posts them a link they did not ask for and did not need — and a link
+ * that arrives out of nowhere is the kind people are told to report as
+ * phishing. Sending one to somebody already set up is a deliberate act with
+ * its own button.
+ *
+ * It answers for a NEW person and an existing one alike, which is the point:
+ * a login used to be decidable only in the thirty seconds somebody was first
+ * added, and anybody entered without one could never be given one.
+ */
+export function invitationWanted(opts: {
+  wantsLogin: boolean;
+  email?: string;
+  profile: { $id?: string; user_id?: string };
+}): boolean {
+  if (!opts.wantsLogin) return false;
+  if (!(opts.email ?? '').trim()) return false;
+  return !hasSignIn(opts.profile);
+}

@@ -3,7 +3,8 @@ import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Togg
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   encodePin, pinProblem, modulesOf, sidesOf, legacySide, MODULE_LABELS,
-  inviteState, inviteWords, stuckInvites, meanwhile, INVITE_CHECKS, bpWords } from '@snpos/core';
+  inviteState, inviteWords, stuckInvites, meanwhile, INVITE_CHECKS, bpWords,
+  hasSignIn, invitationWanted } from '@snpos/core';
 import type { StaffProfile, Module } from '@snpos/core';
 import type { Doc } from '@snpos/core';
 import { useSession } from '../session';
@@ -23,16 +24,6 @@ const DEFAULTS: Record<StaffProfile['role'], Partial<StaffProfile>> = {
   manager: { can_open_shift: true, can_close_shift: true, can_void: true, can_discount_up_to_bp: 2000, can_mark_paid: true, can_record_waste: true },
   admin: { can_open_shift: true, can_close_shift: true, can_void: true, can_discount_up_to_bp: 10000, can_mark_paid: true, can_record_waste: true },
 };
-
-/**
- * Whether a profile is joined to a real account yet.
- *
- * Not simply "has a user_id": on a database that still insists on one, a
- * profile with no account points at itself, so the field is set but nothing is
- * behind it. Someone invited yesterday should read as Invited until they have
- * actually signed in.
- */
-const linked = (p: Pick<StaffProfile, '$id' | 'user_id'>) => !!p.user_id && p.user_id !== p.$id;
 
 /**
  * Save a profile against whatever shape the database actually has.
@@ -149,13 +140,21 @@ export function StaffPage() {
       return;
     }
 
-    // The one case where "edit their existing profile instead" is both true and
-    // useful: somebody on this list already has that address. Caught here,
-    // before anything is written, so the message names the person to go and
-    // edit rather than leaving the admin to hunt for them.
+    /*
+      Somebody on this list already has that address. Caught here, before
+      anything is written, so the message names the person to go and edit
+      rather than leaving the admin to hunt for them.
+
+      Checked on an edit as well as on a create, because an existing person can
+      now be given a login they did not have — which is a second way to type an
+      address somebody else already holds. Themselves excluded, or saving a
+      person without touching their email would report them as their own clash.
+    */
     const typed = (editing.email ?? '').trim().toLowerCase();
-    if (!editing.$id && typed) {
-      const clash = (rows ?? []).find((r) => (r.email ?? '').trim().toLowerCase() === typed);
+    if (typed) {
+      const clash = (rows ?? []).find(
+        (r) => r.$id !== editing.$id && (r.email ?? '').trim().toLowerCase() === typed,
+      );
       if (clash) {
         setError(`${clash.display_name} already has a profile with that email address. Edit theirs rather than adding a second one.`);
         return;
@@ -177,6 +176,18 @@ export function StaffPage() {
       setError('Choose at least one side of the business for them to work on.');
       return;
     }
+
+    /*
+      Whether this save is also an invitation. One decision, because the field
+      that asks for the link and the sentence that reports it must never
+      disagree: a save that says a link is on its way and did not ask for one
+      sends somebody to wait by an inbox for nothing.
+    */
+    const askingForLink = invitationWanted({
+      wantsLogin,
+      email: editing.email,
+      profile: editing as StaffProfile,
+    });
 
     setBusy(true);
     setError(null);
@@ -225,7 +236,15 @@ export function StaffPage() {
         // server key; a browser is not allowed to, which is exactly why the
         // old version saved the profile and then quietly failed to invite
         // anybody.
-        ...(wantsLogin && editing.email?.trim() ? { login_link_requested_at: new Date().toISOString() } : {}),
+        //
+        // Asked for only while there is no account yet. Somebody who already
+        // signs in has one every time their profile is saved otherwise, so
+        // ticking a permission for a manager posts them a sign-in link they
+        // did not ask for and did not need — and a link that arrives out of
+        // nowhere is the kind people are told to report as phishing. Sending
+        // one to a person who is already set up is a deliberate act with its
+        // own button: "Send reset link", on their row.
+        ...(askingForLink ? { login_link_requested_at: new Date().toISOString() } : {}),
       };
 
       const id = editing.$id ?? ID.unique();
@@ -265,7 +284,7 @@ export function StaffPage() {
         why an invitation that never arrived looked like a mail problem rather
         than a setup one. The row now shows whether it actually went.
       */
-      const outcome = !(wantsLogin && payload.email)
+      const outcome = !askingForLink
         ? pin ? 'Saved, PIN set' : 'Saved'
         : dropped.includes('login_link_requested_at')
           ? 'Saved, but no sign-in link can be asked for yet. Run "Provision Appwrite" in GitHub Actions, then use "Send sign-in link" on their row.'
@@ -453,7 +472,7 @@ export function StaffPage() {
                         one does not arrive. The sign-in state and the account
                         state are now separate lines.
                       */}
-                      {linked(p) ? (
+                      {hasSignIn(p) ? (
                         p.active ? <Badge tone="ok">Active</Badge> : <Badge>Disabled</Badge>
                       ) : (
                         (() => {
@@ -472,7 +491,7 @@ export function StaffPage() {
                     <td className="num">
                       {p.email && (
                         <Button size="sm" variant="ghost" onClick={() => sendLink(p)}>
-                          {linked(p) ? 'Send reset link' : 'Send sign-in link'}
+                          {hasSignIn(p) ? 'Send reset link' : 'Send sign-in link'}
                         </Button>
                       )}
                       <Button size="sm" variant="ghost" onClick={() => open(p)}>Edit</Button>
@@ -494,7 +513,11 @@ export function StaffPage() {
             <>
               <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
               <Button variant="primary" onClick={save} loading={busy}>
-                {!editing.$id && wantsLogin ? 'Add and send invitation' : 'Save'}
+                {/* An existing person being given a login for the first time is
+                    an invitation too, and the button should say so. */}
+                {wantsLogin && !hasSignIn(editing as StaffProfile)
+                  ? (editing.$id ? 'Save and send invitation' : 'Add and send invitation')
+                  : 'Save'}
               </Button>
             </>
           }
@@ -580,10 +603,35 @@ export function StaffPage() {
               onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
             />
           </Field>
-          <Field hint="Only needed for people who use the admin dashboard on their own device. Cooks and waiters do not need one.">
+          {/*
+            Locked once a login EXISTS, not merely because the person does.
+
+            It used to be locked on `editing.$id` — on being an existing
+            profile at all — which made a login something that could only be
+            decided in the thirty seconds somebody was first added. Anybody
+            entered without one could never be given one: the toggle would not
+            move, the email box was sealed, and "Send sign-in link" on their
+            row does nothing without an address to send to. The only way out
+            was to delete the person and add them again, losing the profile
+            their shifts and discounts are recorded against.
+
+            That is also why admins and managers were sitting here with no
+            address on their profiles while the group-booking notice had
+            nobody to reach.
+
+            What genuinely cannot be changed here is the address of an account
+            that already exists: the login is keyed to it, and editing the
+            profile would not move the account, leaving the row saying one
+            thing and the sign-in page accepting another. So that stays shut,
+            and says why.
+          */}
+          <Field hint={hasSignIn(editing as StaffProfile)
+            ? 'They already sign in with the address below. It cannot be changed here — remove them and add them again to move a login to a different address.'
+            : 'Only needed for people who use the admin dashboard on their own device. Cooks and waiters do not need one.'}
+          >
             <Toggle
               checked={wantsLogin}
-              disabled={!!editing.$id}
+              disabled={hasSignIn(editing as StaffProfile)}
               onChange={setWantsLogin}
               label="Also give them an email login"
             />
@@ -596,7 +644,7 @@ export function StaffPage() {
               <Input
                 type="email"
                 value={editing.email ?? ''}
-                disabled={!!editing.$id}
+                disabled={hasSignIn(editing as StaffProfile)}
                 onChange={(e) => setEditing({ ...editing, email: e.target.value })}
               />
             </Field>

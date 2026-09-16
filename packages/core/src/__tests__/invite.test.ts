@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   inviteState, inviteWords, stuckInvites, meanwhile, STUCK_AFTER_MS,
+  hasSignIn, invitationWanted,
   type InviteProfile,
 } from '../invite.ts';
 
@@ -88,4 +89,79 @@ test('the advice is about the person in front of you, not the mail server', () =
   // What an admin needs first is that this person can still work today.
   assert.match(meanwhile(profile({ pin_hash: 'x' })), /can sign in on the shared terminal now/);
   assert.match(meanwhile(profile()), /Give them a PIN/);
+});
+
+/* --------------------------------------------- giving somebody a login later */
+
+/*
+  REPORTED: "Also give them an email login" could not be switched on.
+
+  It was locked on being an existing profile at all, so a login could only be
+  decided in the thirty seconds somebody was first added. Anybody entered
+  without one could never be given one — the toggle would not move, the email
+  box was sealed, and "Send sign-in link" on their row does nothing without an
+  address to send to. The only way out was to delete the person and add them
+  again, losing the profile their shifts and discounts are recorded against.
+
+  It is also how admins and managers ended up here with no address on their
+  profiles while a group booking's notice had nobody to reach.
+*/
+
+test('a profile with no account is not signed in, whatever else it carries', () => {
+  assert.equal(hasSignIn({ $id: 'p1' }), false);
+  // An address with nothing behind it yet: invited, or never arrived.
+  assert.equal(hasSignIn({ $id: 'p1', user_id: '' }), false);
+  // The placeholder written for somebody who signs in with a PIN alone.
+  assert.equal(hasSignIn({ $id: 'p1', user_id: 'p1' }), false);
+});
+
+test('a profile joined to a real account is signed in', () => {
+  assert.equal(hasSignIn({ $id: 'p1', user_id: 'auth-abc' }), true);
+});
+
+test('an existing person with no login can be given one', () => {
+  // The whole report. This was false before, for no reason but the lock.
+  assert.equal(invitationWanted({
+    wantsLogin: true,
+    email: 'michael@bistro.com',
+    profile: { $id: 'p1' },
+  }), true);
+});
+
+test('a brand new person with a login still gets their invitation', () => {
+  assert.equal(invitationWanted({
+    wantsLogin: true,
+    email: 'new@bistro.com',
+    profile: {},
+  }), true);
+});
+
+test('somebody who already signs in is not posted a link for being edited', () => {
+  /*
+    Every save used to ask for one, so ticking a permission for a manager sent
+    them a sign-in link out of nowhere — which is the kind people are told to
+    report as phishing. Sending one to somebody set up is its own button.
+  */
+  assert.equal(invitationWanted({
+    wantsLogin: true,
+    email: 'owner@bistro.com',
+    profile: { $id: 'p1', user_id: 'auth-abc' },
+  }), false);
+});
+
+test('an invitation waiting to arrive can be asked for again', () => {
+  // Has the address, has no account: still reachable, which is what makes a
+  // second attempt worth having.
+  assert.equal(invitationWanted({
+    wantsLogin: true,
+    email: 'waiting@bistro.com',
+    profile: { $id: 'p1' },
+  }), true);
+});
+
+test('no address and no wish for one are both no invitation', () => {
+  assert.equal(invitationWanted({ wantsLogin: false, email: 'a@b.com', profile: {} }), false);
+  assert.equal(invitationWanted({ wantsLogin: true, email: '', profile: {} }), false);
+  assert.equal(invitationWanted({ wantsLogin: true, email: '   ', profile: {} }), false);
+  assert.equal(invitationWanted({ wantsLogin: true, profile: {} }), false);
 });
