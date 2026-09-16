@@ -5,6 +5,16 @@ import { bookingSheetPdf, bookingSittings } from '../../../../functions/notify/s
 import * as fnDiet from '../../../../functions/notify/src/diet.js';
 import { DIETARY_TAGS, tagsWithOptions, tagsWithout, parseOmissions } from '../dietary.ts';
 
+/**
+ * The bytes as text, for reading what a page says.
+ *
+ * The builder returns a Uint8Array rather than a Buffer so the same generator
+ * can run in the browser that downloads the sheet as well as on the server
+ * that emails it. Every byte is Latin-1 by construction — see latin1Bytes.
+ */
+const asText = (bytes: Uint8Array): string =>
+  Array.from(bytes, (b) => String.fromCharCode(b)).join('');
+
 /* ------------------------------------------------------- the drawing itself */
 
 test('the cedi becomes a currency code rather than a black diamond', () => {
@@ -38,7 +48,7 @@ test('text that runs past the bottom starts a second page', () => {
   const doc = new Doc();
   for (let i = 0; i < 120; i++) doc.text(`Line ${i}`, { size: 11 });
   const bytes = doc.build({ foot: (page, total) => `page ${page} of ${total}` });
-  const pdf = bytes.toString('latin1');
+  const pdf =asText(bytes);
 
   assert.ok(pdf.startsWith('%PDF-1.4'));
   assert.ok(pdf.endsWith('%%EOF'));
@@ -57,7 +67,7 @@ test('a bracket in a dish name does not break the document', () => {
   */
   const doc = new Doc();
   doc.text('Kelewele (spiced) \\ half');
-  const pdf = doc.build().toString('latin1');
+  const pdf =asText(doc.build());
   assert.ok(pdf.includes('Kelewele \\(spiced\\) \\\\ half'));
 });
 
@@ -111,12 +121,12 @@ const sittings = [
 ];
 
 test('the sheet carries every choice, every omission, every note and every tag', () => {
-  const pdf = bookingSheetPdf({
+  const pdf =asText(bookingSheetPdf({
     settings: { restaurant_name: 'SN Bistro', currency_code: 'GHS', currency_decimals: 2 },
     venue: { name: 'SN Bistro' },
     booking,
     sittings,
-  }).toString('latin1');
+  }));
 
   for (const words of [
     'Ama Mensah', 'Hotel Reg 4471', 'ama@example.com',
@@ -142,9 +152,9 @@ test('what the party said about the whole booking is on the sheet, whole', () =>
   */
   const said = 'The coach leaves at two, so we cannot run late. One guest is in a wheelchair. '
     + 'Please bring the cake out at the end of the second sitting.';
-  const pdf = bookingSheetPdf({
+  const pdf =asText(bookingSheetPdf({
     settings: {}, booking: { ...booking, note: said }, sittings,
-  }).toString('latin1');
+  }));
 
   assert.ok(pdf.includes('A note from the party'));
   // Every sentence of it, not a summary and not a truncation.
@@ -157,14 +167,13 @@ test('what the party said about the whole booking is on the sheet, whole', () =>
 
 test('a booking with nothing to add prints no note block', () => {
   for (const note of [undefined, '', '   ']) {
-    const pdf = bookingSheetPdf({ settings: {}, booking: { ...booking, note }, sittings })
-      .toString('latin1');
+    const pdf = asText(bookingSheetPdf({ settings: {}, booking: { ...booking, note }, sittings }));
     assert.ok(!pdf.includes('A note from the party'));
   }
 });
 
 test('what would ruin the service is pulled to the front', () => {
-  const pdf = bookingSheetPdf({ settings: {}, booking, sittings }).toString('latin1');
+  const pdf =asText(bookingSheetPdf({ settings: {}, booking, sittings }));
   const notice = pdf.indexOf('What the kitchen must know');
   const firstSitting = pdf.indexOf('Sitting 1 of 2');
   assert.ok(notice > 0 && notice < firstSitting, 'the warnings come before the sittings');
@@ -180,7 +189,7 @@ test('a booking with nothing worrying on it prints no warning band', () => {
       notes: '', diets: ['Vegan'], cautions: [], unknown: [], lost: false,
     }],
   }];
-  const pdf = bookingSheetPdf({ settings: {}, booking, sittings: quiet }).toString('latin1');
+  const pdf =asText(bookingSheetPdf({ settings: {}, booking, sittings: quiet }));
   assert.ok(!pdf.includes('What the kitchen must know'));
 });
 
@@ -192,7 +201,7 @@ test('a dish taken off the menu says so instead of saying nothing', () => {
       notes: '', diets: [], cautions: [], unknown: [], lost: true,
     }],
   }];
-  const pdf = bookingSheetPdf({ settings: {}, booking, sittings: gone }).toString('latin1');
+  const pdf =asText(bookingSheetPdf({ settings: {}, booking, sittings: gone }));
   assert.ok(pdf.includes('no longer on the menu'));
   assert.ok(!pdf.includes('Nothing recorded on this dish'), 'one explanation, not two');
 });
@@ -210,7 +219,7 @@ test('a party of forty runs to more than one page and every page is numbered', (
       diets: ['Vegetarian', 'Gluten free'], cautions: ['Spicy'], unknown: [], lost: false,
     })),
   }));
-  const pdf = bookingSheetPdf({ settings: {}, booking, sittings: many }).toString('latin1');
+  const pdf =asText(bookingSheetPdf({ settings: {}, booking, sittings: many }));
   const count = Number(/\/Count (\d+)/.exec(pdf)?.[1] ?? 0);
   assert.ok(count >= 3, `nine sittings is more than two pages, got ${count}`);
   for (let p = 1; p <= count; p++) assert.ok(pdf.includes(`page ${p} of ${count}`));
@@ -354,4 +363,48 @@ test('the copied arithmetic answers the same as the original', () => {
     fnDiet.tagsWithout(['gluten_free'], fnDiet.parseOmissions(raw), ['a']),
     tagsWithout(['gluten_free'], parseOmissions(raw), ['a']),
   );
+});
+
+/* ---------------------------------- the same sheet, in a browser */
+
+test('the sheet is bytes, not a Buffer, so a browser can make it too', () => {
+  /*
+    THE DOWNLOAD AND THE EMAILED COPY ARE THE SAME DOCUMENT, and that is only
+    true because there is one generator. Two would agree on the day they were
+    written and drift afterwards — leaving two plausible sheets about one
+    party and no way to tell which the kitchen cooked from.
+
+    What stood in the way was Buffer, which exists on the server and not in a
+    browser. Every character has already been through latin1(), so each is one
+    byte and a plain Uint8Array carries them exactly.
+  */
+  const bytes = bookingSheetPdf({ settings: {}, booking, sittings });
+  assert.ok(bytes instanceof Uint8Array, 'a Uint8Array, which both can hold');
+  // Not a Buffer. A Buffer IS a Uint8Array, so the check above would pass for
+  // one — and a browser has no Buffer to make it with.
+  assert.equal(bytes.constructor.name, 'Uint8Array');
+
+  // Still a real PDF: the header, the trailer, and every byte in range.
+  const text = asText(bytes);
+  assert.ok(text.startsWith('%PDF-1.4'));
+  assert.ok(text.endsWith('%%EOF'));
+  assert.ok(bytes.every((b) => b >= 0 && b <= 255));
+});
+
+test('the cross-reference offsets are byte offsets, which is what a reader follows', () => {
+  /*
+    The one thing that would have broken quietly when Buffer.byteLength became
+    String.length. They agree only because every character is a single byte —
+    if one ever were not, the xref table would point into the middle of an
+    object and readers would reject the file with nothing to explain why.
+  */
+  const text = asText(bookingSheetPdf({ settings: {}, booking, sittings }));
+  const startxref = Number(/startxref\s+(\d+)/.exec(text)?.[1]);
+  assert.ok(Number.isFinite(startxref));
+  assert.equal(text.slice(startxref, startxref + 4), 'xref', 'the offset lands exactly on the table');
+
+  // And the first object offset in the table lands on that object.
+  const first = Number(/xref\n0 \d+\n0{10} 65535 f \n(\d{10})/.exec(text)?.[1]);
+  assert.ok(Number.isFinite(first));
+  assert.equal(text.slice(first, first + 7), '1 0 obj');
 });

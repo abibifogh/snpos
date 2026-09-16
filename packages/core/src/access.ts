@@ -183,6 +183,15 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'shop_items', label: 'Menu & products · shop', path: '/catalogue/items', group: 'Sell', module: 'craft' },
   { key: 'bar_items', label: 'Menu & products · bar', path: '/catalogue/items', group: 'Sell', module: 'bar' },
   { key: 'menu_options', label: 'Options', path: '/menu/options', group: 'Sell', module: 'kitchen' },
+  /*
+    Group bookings, which had no page at all.
+
+    A booking was reachable only while it was WAITING: once agreed, refused or
+    called off it existed in the database and on nobody's screen. That was
+    fine until the notice to the team failed — and when it did there was
+    nothing to open, nothing to check and nothing to press.
+  */
+  { key: 'group_bookings', label: 'Group bookings', path: '/group-bookings', group: 'Sell', module: 'kitchen' },
   { key: 'tables', label: 'Tables & QR', path: '/tables', group: 'Sell' },
   { key: 'vouchers', label: 'Discount vouchers', path: '/vouchers', group: 'Sell' },
   { key: 'stock', label: 'Ingredients · bistro', path: '/stock', group: 'Stock', module: 'kitchen' },
@@ -290,7 +299,7 @@ export const DEFAULT_ACCESS: Record<string, string[]> = {
     // a floor decision made while somebody is standing there, and an owner who
     // has to be rung at eleven at night to open one is an owner who gets rung.
     'dashboard', 'orders', 'reports', 'shifts', 'expenses', 'vouchers', 'tabs', 'waiting',
-    'menu_items', 'stock', 'waste', 'stations',
+    'menu_items', 'stock', 'waste', 'stations', 'group_bookings',
     // A shop manager runs the intake desk and needs to see who is owed what.
     'shop_categories', 'shop_items', 'consignors', 'intake', 'stocktake', 'payouts',
     'bar_categories', 'bar_items', 'bar_stock', 'bar_counts', 'locations',

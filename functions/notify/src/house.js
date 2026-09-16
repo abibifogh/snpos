@@ -200,3 +200,50 @@ export async function houseRecipients({
 
   return houseEmails({ configured, profiles: filled, fallback });
 }
+
+/* --------------------------------------------------- sending it to them */
+
+/**
+ * One message each, rather than one message to everybody.
+ *
+ * `to: list.join(',')` is how this was sent, and it is all-or-nothing at the
+ * provider: ONE address it dislikes — a typo, a name pasted in, a mailbox that
+ * has been closed, a domain that no longer resolves — and the whole message is
+ * refused. Every other recipient loses it, and the log says one thing went
+ * wrong rather than "three people were not told".
+ *
+ * That is the wrong trade for a message about money and a party of forty. So
+ * each address is sent its own copy and each is reported on its own: one bad
+ * address costs that address and nobody else.
+ *
+ * The cost is real and small — four recipients is four sends rather than one,
+ * on a job with a sixty-second timeout and nothing else to do.
+ *
+ * @param {object} input
+ * @param {string[]} input.to
+ * @param {(address: string) => Promise<unknown>} input.send
+ * @param {(message: string) => unknown} [input.log]
+ * @returns {Promise<{ sent: string[], failed: { address: string, why: string }[], why: string }>}
+ */
+export async function sendToEach({ to = [], send, log = () => {} }) {
+  const sent = [];
+  const failed = [];
+
+  for (const address of to) {
+    try {
+      await send(address);
+      sent.push(address);
+    } catch (e) {
+      const why = e instanceof Error ? e.message : String(e);
+      failed.push({ address, why });
+      log(`Could not send to ${address}: ${why}`);
+    }
+  }
+
+  const why = failed.length === 0
+    ? `Sent to ${sent.length} ${sent.length === 1 ? 'address' : 'addresses'}.`
+    : `Sent to ${sent.length} of ${to.length}. Refused: ${
+      failed.map((f) => `${f.address} (${f.why})`).join('; ')}`;
+
+  return { sent, failed, why };
+}

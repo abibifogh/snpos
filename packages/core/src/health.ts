@@ -92,9 +92,26 @@ export async function healthFacts(venueId: string, now: Date = new Date()): Prom
   // --- orders
   const real = orders.filter((o) => o.status !== 'CANCELLED');
   const paid = real.filter((o) => o.payment_status === 'paid');
-  const payments = await listByIds<{ order_id: string; status?: string }>('payments', 'order_id', paid.map((o) => o.$id)).catch(() => []);
+  const payments = await listByIds<{ order_id: string; status?: string; amount?: number }>('payments', 'order_id', paid.map((o) => o.$id)).catch(() => []);
   const paidFor = new Set(payments.filter(isLivePayment).map((p) => p.order_id));
   const paidOrdersNoPayment = paid.filter((o) => !paidFor.has(o.$id)).map((o) => ({ orderNo: o.order_no, total: o.total }));
+  /*
+    A bill with more money against it than it came to.
+
+    The same order paid twice, which is what a till that fails open on a bad
+    connection produces: the balance cannot be read, the sale goes through
+    anyway — correctly, a restaurant must be able to sell in a power cut —
+    and the cashier presses again because nothing on screen moved. The server
+    voids these as they arrive now, but anything that went through before
+    that is sitting in a night's takings with nothing pointing at it.
+  */
+  const takenOn = new Map<string, number>();
+  for (const p of payments.filter(isLivePayment)) {
+    takenOn.set(p.order_id, (takenOn.get(p.order_id) ?? 0) + (p.amount ?? 0));
+  }
+  const overpaidOrders = paid
+    .filter((o) => (takenOn.get(o.$id) ?? 0) > o.total)
+    .map((o) => ({ orderNo: o.order_no, total: o.total, taken: takenOn.get(o.$id) ?? 0 }));
   const orderLines = await listByIds<{ order_id: string }>('order_items', 'order_id', real.map((o) => o.$id)).catch(() => []);
   const withItems = new Set(orderLines.map((l) => l.order_id));
   const ordersNoLines = real.filter((o) => !withItems.has(o.$id)).map((o) => ({ orderNo: o.order_no }));
@@ -123,6 +140,7 @@ export async function healthFacts(venueId: string, now: Date = new Date()): Prom
     halfCounts,
     staleCounts: staleShop + staleBar,
     paidOrdersNoPayment,
+    overpaidOrders,
     ordersNoLines,
     unledgeredPayouts,
     unpostedPayouts,

@@ -968,6 +968,24 @@ export const COLLECTIONS = [
         one to the house rather than one per sitting, or, as it was, none.
       */
       ['status', 'e', ['pending', 'approved', 'refused', 'cancelled'], true, 'pending'],
+      /*
+        An admin asking for the booking notice to go to the team again.
+
+        The same shape as `summary_resend_at` on a shift, and for the same
+        reason: nobody can write to order_notices from a browser, the booking
+        is already a row the background job watches, so asking here needs no
+        new trigger and no new permission.
+
+        It exists because the first notice can fail — a bad address in the
+        staff list, SMTP down for a minute, a manager added after the booking
+        came in — and until now there was no second chance: the message went
+        once, to whoever it reached, and a party of forty could be in the
+        diary with nobody here having heard of it.
+
+        Cleared by the job once the notice has gone, so the field is a request
+        rather than a setting: present means somebody is waiting for an email.
+      */
+      ['notice_resend_at', 'd', null, false],
       ['decided_by', 's', 64, false],
       ['decided_at', 'd', null, false],
       ['decided_note', 's', 1000, false],
@@ -3927,6 +3945,16 @@ export const FEATURES = [
       pause_pending_threshold: 20,
       busy_extra_minutes: 15,
       hold_qr_orders_when_paused: true,
+      /*
+        Whether the PASS says anything about it. The rules run either way.
+
+        Off, because the level pill was the only way to turn the whole feature
+        off and people did — losing the padded quotes and the holding with it,
+        which is a large thing to give up for a tidier header. Switching this
+        on puts the pill back, and with it the ability to set the level by
+        hand from the kitchen screen.
+      */
+      show_on_pass: false,
       message_to_guest: 'The kitchen is very busy, your order may take a little longer.',
       // How long a level set by hand holds before the ticket count takes over
       // again. Somebody pausing on a Friday night and going home would

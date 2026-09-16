@@ -41,6 +41,13 @@ export interface HealthFacts {
   staleCounts: number;
   /** Paid orders with no payment row behind them. */
   paidOrdersNoPayment: { orderNo: string; total: number }[];
+  /**
+   * Bills with more money against them than they came to.
+   *
+   * The same order paid twice. The server voids these as they arrive now, so
+   * this is looking for the ones that went through before it did.
+   */
+  overpaidOrders: { orderNo: string; total: number; taken: number }[];
   /** Orders with no lines on them. */
   ordersNoLines: { orderNo: string }[];
   /** Payouts recorded and never reaching the maker's ledger, or the books. */
@@ -185,6 +192,20 @@ export function healthFindings(f: HealthFacts, w: HealthWords): HealthFinding[] 
       goto: '/orders', action: 'Open orders',
     }
     : none('orders_no_payment', 'Orders marked paid with no payment'));
+
+  /*
+    The opposite fault, and the one that inflates a night rather than
+    shortening it. See surplusPayment in order-guard: these are voided as they
+    arrive now, so anything listed here went through before that and is still
+    sitting in somebody's takings.
+  */
+  out.push(f.overpaidOrders.length > 0
+    ? {
+      key: 'orders_overpaid', level: 'block', title: 'Bills paid more than once', count: f.overpaidOrders.length,
+      detail: f.overpaidOrders.slice(0, 4).map((o) => `${o.orderNo} took ${w.money(o.taken)} on a ${w.money(o.total)} bill`).join(', ') + (f.overpaidOrders.length > 4 ? ', …' : '') + '. Open the order and void the payments that were recorded twice.',
+      goto: '/orders', action: 'Open orders',
+    }
+    : none('orders_overpaid', 'Bills paid more than once'));
 
   out.push(f.ordersNoLines.length > 0
     ? {

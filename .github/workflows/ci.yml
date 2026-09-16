@@ -59,6 +59,15 @@ jobs:
       - name: Run the logic tests
         run: npm test
 
+      # The email job itself, driven the way Appwrite drives it.
+      #
+      # Twice a group booking went in and nobody here was told, and both times
+      # the RULES were right and the wiring was not — which no test of a pure
+      # module can see. This loads the function as it ships and watches who
+      # ends up in the `to` line. See functions/notify/e2e.test.mjs.
+      - name: Run the notify job checks
+        run: npm run test:notify
+
       # The whole path, not the rules on their own.
       #
       # Every other test here is of a pure module, which is the right shape for

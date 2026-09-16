@@ -15,7 +15,8 @@ import {
   kindOf, countedParts, partLines, partsWords, unexplained,
   shiftCountEntries, countsByPhase, phaseSummary, bothEndsWords, countsGapWords,
   buildReportHtml, openPrintable,
-  tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS, dateWords, timeWords, dateTimeWords } from '@snpos/core';
+  tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS, dateWords, timeWords, dateTimeWords,
+  loadStaffNames, forDateTimeInput } from '@snpos/core';
 import type {
   Module, Doc, CashHandover, MoneyKind, CountedParts, Settings, CountRow, CountEntry, TabOrder,
   Shift as CoreShift, Venue,
@@ -30,6 +31,8 @@ interface Shift extends Doc {
   status: 'open' | 'closing' | 'closed';
   opened_by: string;
   opened_at: string;
+  /** Absent while the shift is still open. See the schema. */
+  closed_by?: string;
   closed_at?: string;
   opening_floats: string;
   /** Where that opening figure came from. See floatOrigin. */
@@ -122,6 +125,20 @@ export function ShiftsPage() {
   const toast = useToast();
   const [rows, setRows] = useState<Shift[] | null>(null);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [staffNames, setStaffNames] = useState<Map<string, string>>(new Map());
+
+  /**
+   * A name for whoever did something, or an honest blank.
+   *
+   * Never "somebody no longer on the staff list". A shift opened before this
+   * screen recorded who closed it, or by an account since removed, is a gap
+   * in the record — and saying so plainly is the only truthful option. See
+   * staff-names for why both kinds of id are asked about.
+   */
+  const whoDid = (id?: string): string => {
+    if (!id) return 'Not recorded';
+    return staffNames.get(id) ?? 'Not recorded';
+  };
   const [expenses, setExpenses] = useState<Expense[]>([]);
 
   /**
@@ -189,21 +206,10 @@ export function ShiftsPage() {
   const [closeReason, setCloseReason] = useState('');
   const [closeBusy, setCloseBusy] = useState(false);
 
-  /*
-    A datetime-local box wants the browser's own local wall clock, with no
-    zone and no seconds. Building it from the ISO string directly would show
-    UTC, and a bar in Accra correcting a 1am close would be handed midnight.
-  */
-  const forInput = (iso?: string): string => {
-    const at = iso ? new Date(iso) : new Date();
-    if (Number.isNaN(at.getTime())) return '';
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`
-      + `T${pad(at.getHours())}:${pad(at.getMinutes())}`;
-  };
-
   const startCloseEdit = (shift: Shift) => {
-    setCloseAt(forInput(shift.closed_at));
+    // A datetime-local box wants the browser's own local wall clock, with no
+    // zone and no seconds. See forDateTimeInput.
+    setCloseAt(forDateTimeInput(shift.closed_at ?? new Date()));
     setCloseReason('');
     setCloseEdit(shift);
   };
@@ -546,6 +552,16 @@ export function ShiftsPage() {
       () => [] as Expense[],
     );
     setRows(s.sort((a, b) => b.opened_at.localeCompare(a.opened_at)));
+    /*
+      Who opened and who closed, by name.
+
+      Keyed under both of a person's ids — the staff profile and the login it
+      belongs to — because a shift carries whichever one the screen that wrote
+      it had to hand. Asking for one kind only is how a panel ends up saying
+      "somebody no longer on the staff list" about a cook who is standing in
+      the kitchen. See nameBook.
+    */
+    setStaffNames(await loadStaffNames());
     setMethods(m);
     setExpenses(e);
     setHandovers(h);
@@ -604,7 +620,7 @@ export function ShiftsPage() {
     is a comforting number and a useless one. See shift-totals.
   */
   const totals = rangeTotals({ shifts: shown, methods, expenses });
-  const kinds = kindsWorthShowing(totals.counted);
+  const kinds = kindsWorthShowing(totals.counted, totals.expected);
 
   const saveSeal = async (shift: Shift, sealed: boolean) => {
     setSealBusy(true);
@@ -665,21 +681,45 @@ export function ShiftsPage() {
               shows the arithmetic first and the sales second. See
               counted-breakdown.
             */}
-            {kinds.map((k) => (
-              <div key={k}>
-                <div className="dim small">{KIND_LABELS[k]} counted</div>
-                <button
-                  type="button"
-                  className="linky"
-                  aria-expanded={openKind === k}
-                  onClick={() => void openTotals(k)}
-                  style={{ fontSize: '1.3rem', fontWeight: 650 }}
-                >
-                  {settings ? formatMoney(totals.counted[k], settings) : totals.counted[k]}
-                  <span className="dim small">{' '}{openKind === k ? '▾' : '▸'}</span>
-                </button>
-              </div>
-            ))}
+            {kinds.map((k) => {
+              /*
+                WHAT THE RECORDS SAY, under what the hand found.
+
+                Only the counted figure was here, and a counted figure is a
+                fact that no later edit can reach: an admin moving a payment
+                from cash to card — the commonest correction there is —
+                changes what was EXPECTED, and the page showed nothing that
+                could move. The correction looked like it had failed.
+
+                So both are shown, and where they differ the difference is
+                named rather than left to be worked out from two numbers.
+              */
+              const off = totals.counted[k] - totals.expected[k];
+              return (
+                <div key={k}>
+                  <div className="dim small">{KIND_LABELS[k]} counted</div>
+                  <button
+                    type="button"
+                    className="linky"
+                    aria-expanded={openKind === k}
+                    onClick={() => void openTotals(k)}
+                    style={{ fontSize: '1.3rem', fontWeight: 650 }}
+                  >
+                    {settings ? formatMoney(totals.counted[k], settings) : totals.counted[k]}
+                    <span className="dim small">{' '}{openKind === k ? '▾' : '▸'}</span>
+                  </button>
+                  <div className="dim small" style={{ marginTop: '0.1rem' }}>
+                    Records say {settings ? formatMoney(totals.expected[k], settings) : totals.expected[k]}
+                    {off !== 0 && (
+                      <span style={{ color: 'var(--warn)', fontWeight: 600 }}>
+                        {' · '}{off > 0 ? 'over ' : 'short '}
+                        {settings ? formatMoney(Math.abs(off), settings) : Math.abs(off)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
             <div>
               <div className="dim small">Everything counted</div>
               <div style={{ fontSize: '1.3rem', fontWeight: 650 }}>
@@ -702,9 +742,10 @@ export function ShiftsPage() {
           </div>
 
           <p className="small dim" style={{ margin: '0.9rem 0 0' }}>
-            These are the amounts <strong>counted</strong> at each close, not what the records expected — adding
-            up the expected figures would give a week that always balances, which is a comforting number and a
-            useless one.
+            The big figures are what was <strong>counted</strong> at each close — somebody's hand in the
+            drawer. Underneath is what the <strong>records</strong> say should have been there. Correcting how
+            a payment was made moves the records; it never moves a count, because what was in the drawer that
+            night is a fact and no later edit reaches back and changes it.
             {totals.open > 0 && (
               <>
                 {' '}
@@ -1063,15 +1104,23 @@ export function ShiftsPage() {
           <div className="grid-2">
             <div>
               <h3>Opened</h3>
-              <p className="small dim">{dateTimeWords(detail.opened_at)}</p>
+              <p className="small dim" style={{ marginBottom: '0.15rem' }}>{dateTimeWords(detail.opened_at)}</p>
+              {/* WHO, not only when. A drawer that is out by forty cedis is a
+                  question for a person, and the two people who can answer it
+                  are the one who counted the float in and the one who counted
+                  it out. Both were on the row and neither was on the screen. */}
+              <p className="small" style={{ margin: 0, fontWeight: 600 }}>{whoDid(detail.opened_by)}</p>
             </div>
             <div>
               <h3>Closed</h3>
-              <p className="small dim" style={{ marginBottom: '0.35rem' }}>
+              <p className="small dim" style={{ marginBottom: '0.15rem' }}>
                 {detail.closed_at ? dateTimeWords(detail.closed_at) : 'Still open'}
                 {detail.closed_at && (
                   <> · {hoursBetween(detail.opened_at, detail.closed_at)} hours</>
                 )}
+              </p>
+              <p className="small" style={{ margin: '0 0 0.35rem', fontWeight: 600 }}>
+                {detail.closed_at ? whoDid(detail.closed_by) : ''}
               </p>
               {/*
                 The commonest wrong figure in the system, and the least
