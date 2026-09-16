@@ -1,4 +1,7 @@
 import { db, DB_ID, ID, Query, listAll } from './client';
+import { claimPlace, releasePlace } from './slot-booking';
+import { fireAtFor, sittingMoveProblem, spanOf } from './sitting-move';
+import type { Sitting } from './sitting-move';
 
 /**
  * One record for a whole group booking.
@@ -267,4 +270,115 @@ export async function decideGroupBooking(input: {
     decided_at: new Date().toISOString(),
     decided_note: (input.note ?? '').slice(0, 1000),
   });
+}
+
+/* ------------------------------------------------- moving a sitting's hour */
+
+/** One sitting of a booking, with enough of its order to show and to move. */
+export interface BookingSitting extends Sitting {
+  order_no?: string;
+  venue_id: string;
+  guest_count?: number;
+  total?: number;
+  pickup_point_id?: string;
+}
+
+/** The sittings behind one booking, in the order they will be cooked. */
+export async function sittingsOf(bookingId: string): Promise<BookingSitting[]> {
+  const rows = await listAll<BookingSitting>('orders', [
+    Query.equal('group_booking_id', bookingId),
+  ]).catch(() => [] as BookingSitting[]);
+  return rows.sort((a, b) => String(a.scheduled_for ?? '').localeCompare(String(b.scheduled_for ?? '')));
+}
+
+/**
+ * Move one sitting to a different hour.
+ *
+ * THE PLACE IS TAKEN BEFORE THE OLD ONE IS GIVEN BACK, and that order matters
+ * more than it looks. Release first and a slot that fills in the half second
+ * between the two leaves this party holding neither time — their own hour gone
+ * and the new one taken by somebody else, from a button that was meant to
+ * help. Claim first and the worst case is one place held twice for an instant,
+ * which costs nothing and gives itself back.
+ *
+ * The times on the booking row are then worked out again from the sittings, so
+ * "first_at" is whatever the earliest sitting now is rather than whatever it
+ * was when the party ordered. See spanOf.
+ *
+ * What it does NOT do is tell anybody. A move is usually one of several — a
+ * coach is late and all four sittings shift — and a message per move would
+ * reach the party four times with three of them wrong. Sending is its own
+ * button, pressed once the diary is right. See resendBookingNotice.
+ */
+export async function moveSitting(input: {
+  booking: GroupBookingDoc;
+  sitting: BookingSitting;
+  to: Date;
+  /** Places per slot, from the preorders feature. Zero means uncapped. */
+  slotCapacity?: number;
+  /** Who moved it, for the audit log. */
+  by: string;
+  byRole?: string;
+}): Promise<{ firstAt?: string; lastAt?: string }> {
+  const { booking, sitting, to } = input;
+
+  /*
+    Checked here as well as on the form. The form's clock is the browser's and
+    its copy of the sitting is however old the page is, so a rule enforced only
+    there is a rule anybody with a stale tab can walk through.
+  */
+  const problem = sittingMoveProblem({ sitting, to });
+  if (problem) throw new Error(problem);
+
+  const capacity = input.slotCapacity ?? 0;
+  const seat = capacity > 0
+    ? await claimPlace({
+      venueId: sitting.venue_id,
+      pickupPointId: sitting.pickup_point_id,
+      at: to,
+      capacity,
+    })
+    : null;
+
+  const was = sitting.scheduled_for;
+  try {
+    await db.updateDocument(DB_ID, 'orders', sitting.$id, {
+      scheduled_for: to.toISOString(),
+      fire_at: fireAtFor(sitting, to).toISOString(),
+      ...(capacity > 0 ? { preorder_seat_id: seat ?? '' } : {}),
+    });
+  } catch (e) {
+    // The order did not move, so the new place must not be kept: holding it
+    // would quietly shrink a slot nobody is booked into.
+    await releasePlace(seat);
+    throw e;
+  }
+
+  // Only now, once the move is a fact.
+  if (capacity > 0) await releasePlace(sitting.preorder_seat_id);
+
+  const span = spanOf(
+    (await sittingsOf(booking.$id)).map((s) => (s.$id === sitting.$id
+      ? { ...s, scheduled_for: to.toISOString() }
+      : s)),
+  );
+  if (span && (span.firstAt !== booking.first_at || span.lastAt !== booking.last_at)) {
+    await db.updateDocument(DB_ID, 'group_bookings', booking.$id, {
+      first_at: span.firstAt,
+      last_at: span.lastAt,
+    }).catch(() => undefined);
+  }
+
+  await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
+    venue_id: sitting.venue_id,
+    actor_id: input.by,
+    actor_role: input.byRole ?? '',
+    action: 'sitting_moved',
+    entity_type: 'orders',
+    entity_id: sitting.$id,
+    before: JSON.stringify({ order_no: sitting.order_no, scheduled_for: was }),
+    after: JSON.stringify({ order_no: sitting.order_no, scheduled_for: to.toISOString() }),
+  }).catch(() => undefined);
+
+  return { firstAt: span?.firstAt, lastAt: span?.lastAt };
 }

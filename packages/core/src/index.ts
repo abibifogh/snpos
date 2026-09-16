@@ -115,6 +115,7 @@ export * from './quantity';
 export * from './group-link';
 export * from './group-menu';
 export * from './group-bookings';
+export * from './sitting-move';
 export * from './booking-changes';
 export * from './health-rules';
 export * from './health';

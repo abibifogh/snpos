@@ -16,7 +16,7 @@ import {
   shiftCountEntries, countsByPhase, phaseSummary, bothEndsWords, countsGapWords,
   buildReportHtml, openPrintable,
   tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS, dateWords, timeWords, dateTimeWords,
-  loadStaffNames } from '@snpos/core';
+  loadStaffNames, forDateTimeInput } from '@snpos/core';
 import type {
   Module, Doc, CashHandover, MoneyKind, CountedParts, Settings, CountRow, CountEntry, TabOrder,
   Shift as CoreShift, Venue,
@@ -206,21 +206,10 @@ export function ShiftsPage() {
   const [closeReason, setCloseReason] = useState('');
   const [closeBusy, setCloseBusy] = useState(false);
 
-  /*
-    A datetime-local box wants the browser's own local wall clock, with no
-    zone and no seconds. Building it from the ISO string directly would show
-    UTC, and a bar in Accra correcting a 1am close would be handed midnight.
-  */
-  const forInput = (iso?: string): string => {
-    const at = iso ? new Date(iso) : new Date();
-    if (Number.isNaN(at.getTime())) return '';
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`
-      + `T${pad(at.getHours())}:${pad(at.getMinutes())}`;
-  };
-
   const startCloseEdit = (shift: Shift) => {
-    setCloseAt(forInput(shift.closed_at));
+    // A datetime-local box wants the browser's own local wall clock, with no
+    // zone and no seconds. See forDateTimeInput.
+    setCloseAt(forDateTimeInput(shift.closed_at ?? new Date()));
     setCloseReason('');
     setCloseEdit(shift);
   };

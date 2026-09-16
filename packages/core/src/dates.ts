@@ -43,3 +43,23 @@ export function dateTimeWords(at: At, fallback = '—'): string {
   const d = parse(at);
   return d ? `${dateWords(d)}, ${timeWords(d)}` : fallback;
 }
+
+/**
+ * The same moment as a datetime-local box wants it: local wall clock, no zone.
+ *
+ * Handing the box an ISO string directly shows UTC, so a bar in Accra
+ * correcting a 1am close is offered midnight — an hour it did not ask for, in
+ * a box that looks like it is merely repeating what is already stored. Two
+ * screens needed this and each would have written its own; this is that line,
+ * once.
+ *
+ * Empty for a time that cannot be read, because a half-built string in a date
+ * box is silently ignored by the browser and leaves somebody pressing a button
+ * that does nothing.
+ */
+export function forDateTimeInput(at: At): string {
+  const d = parse(at);
+  if (!d) return '';
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`
+    + `T${two(d.getHours())}:${two(d.getMinutes())}`;
+}
