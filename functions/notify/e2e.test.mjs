@@ -87,7 +87,19 @@ process.env.SMTP_USER = 'u';
 process.env.SMTP_PASS = 'p';
 process.env.DB_ID = 'snpos';
 
-const { default: handler } = await import('/home/user/snpos/functions/notify/src/main.js');
+/*
+  Relative to THIS FILE, never to where the test was started from, and never
+  to an absolute path off one machine — a checkout lives somewhere different
+  on every machine that has one, so an absolute path here passes for the
+  person who wrote it and fails for everybody else, which is the opposite of
+  what a test is for.
+
+  It must also come after the two mock.module calls above: the mocks have to
+  be registered before the module that imports them is loaded, which is why
+  this is a dynamic import at the foot of the setup rather than an import at
+  the top.
+*/
+const { default: handler } = await import('./src/main.js');
 
 const run = async (doc, event) => {
   const res = { json: (b) => b };
