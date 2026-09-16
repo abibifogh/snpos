@@ -524,6 +524,50 @@ export function canEditCatalogue(profile: StaffProfile | null): boolean {
   return profile?.role === 'admin' || profile?.role === 'manager';
 }
 
+/* --------------------------------------- releasing a booked sitting early */
+
+/** Whether this order is one sitting of a group booking. */
+export const isGroupSitting = (
+  order: { is_group?: boolean; group_booking_id?: string },
+): boolean => !!order.group_booking_id || !!order.is_group;
+
+/**
+ * Why this person cannot send that booked order to the pass now, or null.
+ *
+ * "Cook now" is on the pass so a kitchen can start something early when it
+ * suits them — the party rang ahead, the room is empty, the oven is free. On
+ * an ordinary pre-order that is a cook's own call about their own night and it
+ * stays theirs.
+ *
+ * A GROUP SITTING IS NOT THAT. It is forty covers, and releasing it early does
+ * not move one ticket up the board — it puts the whole party's food on the
+ * pass hours before the party is in the building, cooked, plated and then
+ * sitting. It cannot be taken back: SCHEDULED is a one-way door, and the only
+ * way out is to reject the order, which loses the booking. It is also exactly
+ * the shape of a mis-tap, because the strip it lives on is a row of small
+ * buttons the whole shift walks past.
+ *
+ * So a group sitting needs somebody who carries that decision. An owner or a
+ * manager, the same pair who may reprice the board — not because a cook cannot
+ * be trusted with the food, but because this one is a commitment to a customer
+ * rather than a choice about the kitchen.
+ */
+export function cookNowProblem(
+  order: { is_group?: boolean; group_booking_id?: string },
+  profile: StaffProfile | null,
+): string | null {
+  if (!isGroupSitting(order)) return null;
+  if (profile?.role === 'admin' || profile?.role === 'manager') return null;
+  if (!profile) return 'Sign in to send a group booking to the pass early.';
+  return 'Only an owner or a manager can start a group booking early. Ask one of them.';
+}
+
+/** The plain form of the above, for hiding a control rather than explaining it. */
+export const canCookNow = (
+  order: { is_group?: boolean; group_booking_id?: string },
+  profile: StaffProfile | null,
+): boolean => cookNowProblem(order, profile) === null;
+
 /**
  * May permanently remove something from the catalogue.
  *
