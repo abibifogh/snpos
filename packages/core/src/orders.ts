@@ -26,6 +26,7 @@ import { nextInRun, formatOrderNo, prefixFor } from './order-numbers';
 // not money in a drawer, wherever the question is asked from.
 import { isLivePayment } from './shift-rules';
 import { paidOnOrders } from './tab-store';
+import { takenOn, billStatus } from './due';
 import { paymentStatusAfter } from './order-edit';
 /*
   A bar's and a kitchen's stock leaves through the recipe, not off the item
@@ -828,9 +829,9 @@ export async function queueAheadFor(venueId: string, module: Module = 'kitchen')
  * caller can say "nothing to fix" rather than claiming to have fixed it.
  */
 export async function recomputeOrderTotals(
-  order: Pick<Order, '$id' | 'subtotal' | 'total' | 'discount_total'>,
+  order: Pick<Order, '$id' | 'subtotal' | 'total' | 'discount_total'> & { payment_status?: string },
   settings: Settings,
-): Promise<{ from: number; to: number } | null> {
+): Promise<{ from: number; to: number; status?: string } | null> {
   const lines = await orderItemsFor(order.$id);
   if (lines.length === 0) return null;
 
@@ -851,16 +852,45 @@ export async function recomputeOrderTotals(
     settings,
   });
 
-  if (totals.subtotal === order.subtotal && totals.total === order.total) return null;
+  const movedTotals = totals.subtotal !== order.subtotal || totals.total !== order.total;
+
+  /*
+    AND THE BILL'S OWN STATUS, put back in step with its payments.
+
+    ORD0889 read "partial" on GH₵210 paid in full, and this was the button
+    somebody would reach for — but it only ever looked at the LINES, so it
+    answered "nothing to fix" about an order whose totals were perfectly
+    right and whose payment status was not. Reporting a fault with no way to
+    put it right is worse than not reporting it.
+
+    Only where the payments could actually be read. A read that failed is what
+    caused this in the first place, and doing it again from silence would write
+    the same wrong answer a second time. A refunded bill is left alone: the
+    money went back deliberately and somebody recorded that.
+  */
+  const rows = await listAll<{ amount?: number; status?: string }>(
+    'payments', [Query.equal('order_id', order.$id)],
+  ).catch(() => null);
+  const shouldBe = rows === null || order.payment_status === 'refunded'
+    ? null
+    : billStatus(totals.total, takenOn(rows, isLivePayment));
+  const movedStatus = !!shouldBe && shouldBe !== order.payment_status;
+
+  if (!movedTotals && !movedStatus) return null;
 
   await db.updateDocument(DB_ID, 'orders', order.$id, {
-    subtotal: totals.subtotal,
-    discount_total: totals.discount_total,
-    service_total: totals.service_total,
-    tax_total: totals.tax_total,
-    total: totals.total,
+    ...(movedTotals ? {
+      subtotal: totals.subtotal,
+      discount_total: totals.discount_total,
+      service_total: totals.service_total,
+      tax_total: totals.tax_total,
+      total: totals.total,
+    } : {}),
+    ...(movedStatus ? { payment_status: shouldBe } : {}),
   });
-  return { from: order.total, to: totals.total };
+  // What actually moved, so a caller can say it rather than reporting a total
+  // "corrected" from a figure to the same figure.
+  return { from: order.total, to: totals.total, ...(movedStatus ? { status: shouldBe } : {}) };
 }
 
 /**

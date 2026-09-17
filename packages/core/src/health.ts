@@ -92,7 +92,15 @@ export async function healthFacts(venueId: string, now: Date = new Date()): Prom
   // --- orders
   const real = orders.filter((o) => o.status !== 'CANCELLED');
   const paid = real.filter((o) => o.payment_status === 'paid');
-  const payments = await listByIds<{ order_id: string; status?: string; amount?: number }>('payments', 'order_id', paid.map((o) => o.$id)).catch(() => []);
+  /*
+    Every real order's payments, not only those already marked paid.
+
+    It used to fetch them for the PAID ones alone, which can answer "is this
+    bill's money missing" and cannot answer the opposite — a bill whose money
+    is all there and which says partial anyway. That is ORD0889, and looking
+    only where the answer was already known is why nothing found it.
+  */
+  const payments = await listByIds<{ order_id: string; status?: string; amount?: number }>('payments', 'order_id', real.map((o) => o.$id)).catch(() => []);
   const paidFor = new Set(payments.filter(isLivePayment).map((p) => p.order_id));
   const paidOrdersNoPayment = paid.filter((o) => !paidFor.has(o.$id)).map((o) => ({ orderNo: o.order_no, total: o.total }));
   /*
@@ -112,6 +120,24 @@ export async function healthFacts(venueId: string, now: Date = new Date()): Prom
   const overpaidOrders = paid
     .filter((o) => (takenOn.get(o.$id) ?? 0) > o.total)
     .map((o) => ({ orderNo: o.order_no, total: o.total, taken: takenOn.get(o.$id) ?? 0 }));
+  /*
+    A bill whose money is all there, still reading as owed for.
+
+    ORD0889: GH₵210, paid in full, showing "partial". The till works this out
+    by reading every payment back the moment it records one, and a read that
+    failed came back as an empty list — indistinguishable from a bill nobody
+    has paid a penny on. It wrote that down, and nothing ever asked again.
+
+    The server settles this on every payment now, so it cannot happen again;
+    this is what finds the ones it already happened to. A block, because the
+    money is in the drawer and the bill says it is not.
+  */
+  const settledOnPaper = real.filter(
+    (o) => o.payment_status !== 'paid'
+      && o.payment_status !== 'refunded'
+      && (o.total ?? 0) > 0
+      && (takenOn.get(o.$id) ?? 0) >= (o.total ?? 0),
+  ).map((o) => ({ orderNo: o.order_no, total: o.total, taken: takenOn.get(o.$id) ?? 0 }));
   const orderLines = await listByIds<{ order_id: string; line_total?: number; status?: string }>('order_items', 'order_id', real.map((o) => o.$id)).catch(() => []);
   const withItems = new Set(orderLines.map((l) => l.order_id));
   const ordersNoLines = real.filter((o) => !withItems.has(o.$id)).map((o) => ({ orderNo: o.order_no }));
@@ -169,6 +195,7 @@ export async function healthFacts(venueId: string, now: Date = new Date()): Prom
     staleCounts: staleShop + staleBar,
     paidOrdersNoPayment,
     overpaidOrders,
+    settledOnPaper,
     ordersNoLines,
     ordersNotAddingUp,
     unledgeredPayouts,

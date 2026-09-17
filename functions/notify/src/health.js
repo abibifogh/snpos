@@ -105,6 +105,26 @@ export function healthFindings(f, w) {
     : none('orders_overpaid', 'Bills paid more than once'));
 
   /*
+    A bill whose money is all there, still reading as owed for.
+
+    ORD0889: GH₵210, paid in full, showing "partial". The money is in the
+    drawer and the bill says it is not — which overstates what is still owed,
+    holds an order on the pass that is finished, and blocks a shift close for a
+    debt nobody has.
+
+    A block rather than a warning, and not because anything is missing: it is
+    the books disagreeing with the drawer, and the drawer is right.
+  */
+  out.push(f.settledOnPaper.length > 0
+    ? {
+      key: 'orders_settled_on_paper', level: 'block', title: 'Bills paid in full but not marked paid',
+      count: f.settledOnPaper.length,
+      detail: f.settledOnPaper.slice(0, 4).map((o) => `${o.orderNo} took ${w.money(o.taken)} on a ${w.money(o.total)} bill`).join(', ') + (f.settledOnPaper.length > 4 ? ', …' : '') + '. Open each one and press “Recheck total”: it puts the bill back in step with the money already against it.',
+      goto: '/orders', action: 'Open orders',
+    }
+    : none('orders_settled_on_paper', 'Bills paid in full but not marked paid'));
+
+  /*
     A bill that does not add up to its own items. ORD0866: a quesadilla at 90
     and a kelewele at 40, charged as 90, because repricing skipped a line whose
     dish it could not read. It cannot drop a line now, but every order it
@@ -297,7 +317,9 @@ export async function healthFacts(ctx, venueId, now = new Date()) {
 
   const real = orders.filter((o) => o.status !== 'CANCELLED');
   const paid = real.filter((o) => o.payment_status === 'paid');
-  const payments = await listByIds(ctx, 'payments', 'order_id', paid.map((o) => o.$id)).catch(() => []);
+  // Every real order's payments, not only those already marked paid. See the
+  // note in packages/core/src/health.ts, which this mirrors.
+  const payments = await listByIds(ctx, 'payments', 'order_id', real.map((o) => o.$id)).catch(() => []);
   const paidFor = new Set(payments.filter(isLivePayment).map((p) => p.order_id));
   const paidOrdersNoPayment = paid.filter((o) => !paidFor.has(o.$id)).map((o) => ({ orderNo: o.order_no, total: o.total }));
   // A bill with more money against it than it came to. See surplusPayment.
@@ -308,6 +330,16 @@ export async function healthFacts(ctx, venueId, now = new Date()) {
   const overpaidOrders = paid
     .filter((o) => (takenOn.get(o.$id) ?? 0) > o.total)
     .map((o) => ({ orderNo: o.order_no, total: o.total, taken: takenOn.get(o.$id) ?? 0 }));
+  /*
+    A bill whose money is all there, still reading as owed for. ORD0889. See
+    packages/core/src/health.ts, which this mirrors.
+  */
+  const settledOnPaper = real.filter(
+    (o) => o.payment_status !== 'paid'
+      && o.payment_status !== 'refunded'
+      && (o.total ?? 0) > 0
+      && (takenOn.get(o.$id) ?? 0) >= (o.total ?? 0),
+  ).map((o) => ({ orderNo: o.order_no, total: o.total, taken: takenOn.get(o.$id) ?? 0 }));
   const orderLines = await listByIds(ctx, 'order_items', 'order_id', real.map((o) => o.$id)).catch(() => []);
   const withItems = new Set(orderLines.map((l) => l.order_id));
   const ordersNoLines = real.filter((o) => !withItems.has(o.$id)).map((o) => ({ orderNo: o.order_no }));
@@ -354,6 +386,7 @@ export async function healthFacts(ctx, venueId, now = new Date()) {
     staleCounts: staleShop + staleBar,
     paidOrdersNoPayment,
     overpaidOrders,
+    settledOnPaper,
     ordersNoLines,
     ordersNotAddingUp,
     unledgeredPayouts,

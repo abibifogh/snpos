@@ -1,6 +1,7 @@
 import { Client, Databases, Query } from 'node-appwrite';
 import { surplusPayment } from './duplicate-payment.js';
 import { linePrice, linePrep, isVoid } from './reprice.js';
+import { settleBill } from './settle-bill.js';
 import {
   totalsFor, rateFor, flatFor, splitSale, queueMinutes, quotedWait,
   parseWindows, waitIncludingOpening, cookTimeOf,
@@ -1094,8 +1095,17 @@ export default async ({ req, res, log, error }) => {
             reference: `${doc.reference ? `${doc.reference} · ` : ''}duplicate, voided automatically`.slice(0, 120),
           });
           error(`Voided a duplicate payment on ${order.order_no || doc.order_id}: ${verdict.why}`);
-          // The order's own status is unchanged and correct: it was already
-          // paid by the row that came first, which is the point.
+          /*
+            And the bill is settled from what is left, not assumed.
+
+            This used to say the order's status was "unchanged and correct:
+            it was already paid by the row that came first". That holds only
+            if the till got it right when that first row landed — and the
+            whole reason ORD0889 read partial on a bill paid in full is that
+            it sometimes cannot. See settleBill.
+          */
+          await settleBill({ db, DB_ID, Query, orderId: doc.order_id, log, error })
+            .catch((e) => error(`Could not settle ${doc.order_id}: ${e.message}`));
           return res.json({ ok: true, voided: doc.$id, reason: 'duplicate', covered: verdict.covered });
         }
       }
@@ -1105,6 +1115,22 @@ export default async ({ req, res, log, error }) => {
       // wrong would turn a rare bookkeeping fault into a daily one.
       error(`Duplicate-payment check failed for ${doc.$id}, letting it stand: ${e.message}`);
     }
+
+    /*
+      WHAT THE BILL NOW READS, before anything else is decided from it.
+
+      The till writes this too, the moment it records the payment, so the
+      screen moves at once — but it works it out by reading every payment back,
+      and a read that fails comes back empty, which is indistinguishable from
+      "nothing has ever been paid". Here every row is already written and
+      visible. See settleBill.
+
+      Its own step rather than folded into the consignor credit below, which
+      returns early on a part-paid bill: a bill going from unpaid to partial is
+      exactly the case that must still be recorded.
+    */
+    await settleBill({ db, DB_ID, Query, orderId: doc.order_id, log, error })
+      .catch((e) => error(`Could not settle ${doc.order_id}: ${e.message}`));
 
     try {
       return res.json(await creditConsignors({ db, DB_ID, payment: doc, log }));
