@@ -48,6 +48,7 @@ export interface HealthFacts {
    * this is looking for the ones that went through before it did.
    */
   overpaidOrders: { orderNo: string; total: number; taken: number }[];
+  settledOnPaper: { orderNo: string; total: number; taken: number }[];
   ordersNotAddingUp: { orderNo: string; subtotal: number; lines: number }[];
   /** Orders with no lines on them. */
   ordersNoLines: { orderNo: string }[];
@@ -207,6 +208,26 @@ export function healthFindings(f: HealthFacts, w: HealthWords): HealthFinding[] 
       goto: '/orders', action: 'Open orders',
     }
     : none('orders_overpaid', 'Bills paid more than once'));
+
+  /*
+    A bill whose money is all there, still reading as owed for.
+
+    ORD0889: GH₵210, paid in full, showing "partial". The money is in the
+    drawer and the bill says it is not — which overstates what is still owed,
+    holds an order on the pass that is finished, and blocks a shift close for a
+    debt nobody has.
+
+    A block rather than a warning, and not because anything is missing: it is
+    the books disagreeing with the drawer, and the drawer is right.
+  */
+  out.push(f.settledOnPaper.length > 0
+    ? {
+      key: 'orders_settled_on_paper', level: 'block', title: 'Bills paid in full but not marked paid',
+      count: f.settledOnPaper.length,
+      detail: f.settledOnPaper.slice(0, 4).map((o) => `${o.orderNo} took ${w.money(o.taken)} on a ${w.money(o.total)} bill`).join(', ') + (f.settledOnPaper.length > 4 ? ', …' : '') + '. Open each one and press “Recheck total”: it puts the bill back in step with the money already against it.',
+      goto: '/orders', action: 'Open orders',
+    }
+    : none('orders_settled_on_paper', 'Bills paid in full but not marked paid'));
 
   /*
     A bill that does not add up to its own items.

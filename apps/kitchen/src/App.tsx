@@ -8,7 +8,7 @@ import {
   db, DB_ID, Query, listAll, listByIds, loadOpenOrders, subscribeCollection, isCreate,
   verifyPin, pinChecksWork, pinUnavailableWords, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
-  cookNowProblem, isGroupSitting,
+  cookNowProblem, isGroupSitting, passTakesPayment, passHoldsCash,
   itemsAvailableNow, dueMinutes, ticketLines, linesComplete, isOverdue, minutesOver, seatFor, amountOutstanding,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, addonNames, addonsUnreadable,
   formatWait, giveTheMoneyBack, wakesScreen, latestMovement,
@@ -607,7 +607,13 @@ export function App() {
    * Escalation is driven by the oldest unacknowledged ticket, not by each one
    * separately; three quiet alarms are less useful than one loud one.
    */
-  const combined = isEnabled(features, 'combined_mode');
+  /*
+    Two questions, not one switch: whether this pass settles bills, and whether
+    it has a drawer to count. See pass-shape.ts — they were the same flag, and
+    that is why the kitchen's float could only be counted on the till.
+  */
+  const combined = passTakesPayment(features);
+  const holdsCash = passHoldsCash(features);
   const sla = settings?.kitchen_ack_sla_seconds ?? 60;
 
   /**
@@ -1175,12 +1181,15 @@ export function App() {
         </div>
       </div>
 
-      {combined && venue && settings && (
+      {holdsCash && venue && settings && (
         <CombinedBar
           venue={venue}
           settings={settings}
           features={features}
           who={who}
+          // Whether this pass can settle a bill, which decides what the bar
+          // says is lost while no shift is open.
+          takesPayment={combined}
           onToast={(m) => { setToast(m); window.setTimeout(() => setToast(null), 4000); }}
         />
       )}

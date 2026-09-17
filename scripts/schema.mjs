@@ -3930,6 +3930,32 @@ export const FEATURES = [
       allow_cook_to_mark_paid: true,
     },
   },
+  /*
+    The kitchen's drawer, counted by the kitchen.
+
+    A kitchen that sells anything holds cash: the change for a takeaway, the
+    gas money, what somebody paid at the hatch. That drawer already had a
+    shift, a float and a close — but the only screen that could open or close
+    it was the TILL, so the counting was done by whoever happened to be on the
+    till, for money they had not touched all night, and the cooks who did hold
+    it had no way to say what was in it.
+
+    It was reachable from the kitchen screen only with "One screen for kitchen
+    and front of house" switched on, which is a much larger decision: that one
+    turns the pass into a till that takes payment. Holding a float and counting
+    it is a different question from settling bills, and tying the two meant a
+    kitchen could not do the first without also doing the second.
+
+    Who may actually open or close one is still the permission on the person,
+    not this switch. A cook without it sees the shift and cannot act on it,
+    which is the right way round.
+  */
+  {
+    key: 'kitchen_cash',
+    label: 'The kitchen counts its own cash',
+    enabled: true,
+    config: {},
+  },
   {
     key: 'overdue_alerts',
     label: 'Ping when an order runs late',

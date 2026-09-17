@@ -9,7 +9,7 @@ import { referenceProblem } from './payment-reference';
 // took the money. Pure, for the same reason.
 import { shiftStampForPayment } from './shift-move';
 // What a bill still owes, and what counts as paying more than that. Pure.
-import { overpaying } from './due';
+import { overpaying, takenOn, billStatus } from './due';
 
 export { isLivePayment };
 
@@ -28,13 +28,32 @@ interface PaymentRow extends Doc {
  * that prove it. Tips are excluded; a tip is not part of what was owed.
  */
 export async function amountOutstanding(order: Pick<Order, '$id' | 'total'>): Promise<number> {
-  const paid = await listAll<PaymentRow>('payments', [Query.equal('order_id', order.$id)]).catch(
-    () => [] as PaymentRow[],
-  );
-  const taken = paid
-    .filter(isLivePayment)
-    .reduce((sum, p) => sum + (p.amount ?? 0), 0);
-  return Math.max(0, order.total - taken);
+  return (await outstandingOn(order)).outstanding;
+}
+
+/**
+ * The same question, plus whether the answer is worth anything.
+ *
+ * A READ THAT FAILED IS NOT AN EMPTY DRAWER, and treating it as one is how a
+ * bill paid in full came to read "partial". The list was fetched with a catch
+ * that turned any failure into no payments at all — indistinguishable from a
+ * bill nobody has paid a penny on — and the caller then WROTE that conclusion
+ * onto the order. A weak connection at the counter is the ordinary case, and
+ * it happens precisely while somebody is settling a bill.
+ *
+ * So the failure is carried out rather than swallowed. `outstanding` still
+ * answers as before for anything that only wants a figure to show; `known`
+ * says whether anything may be decided from it.
+ */
+export async function outstandingOn(
+  order: Pick<Order, '$id' | 'total'>,
+): Promise<{ outstanding: number; taken: number; known: boolean }> {
+  const paid = await listAll<PaymentRow>('payments', [Query.equal('order_id', order.$id)])
+    .catch(() => null);
+  if (paid === null) return { outstanding: Math.max(0, order.total), taken: 0, known: false };
+
+  const taken = takenOn(paid, isLivePayment);
+  return { outstanding: Math.max(0, order.total - taken), taken, known: true };
 }
 
 /**
@@ -167,11 +186,25 @@ export async function recordPayment(input: RecordPaymentInput): Promise<number> 
   // Read back after writing, so two people settling different halves at the
   // same moment both see the true remaining balance rather than the one they
   // started from.
-  const remaining = await amountOutstanding(input.order);
-  const settled = remaining <= 0;
+  const { outstanding: remaining, taken, known } = await outstandingOn(input.order);
+  /*
+    Settled if what is on the bill covers it — and if the read failed, settled
+    if THIS payment alone does.
+
+    Never "partial" on the strength of a question that was not answered. That
+    is what marked a bill paid in full as part-paid and left it there: the
+    till could not read the payments, read the silence as nothing-ever-paid,
+    and wrote it down. Where the read worked this is exactly as before; where
+    it did not, the one figure actually known — the money just handed over —
+    decides, and the server settles it properly a moment later from every row
+    it can see. See settleBill in order-guard.
+  */
+  const counted = known ? taken : Math.max(taken, input.amount);
+  const status = billStatus(input.order.total, counted);
+  const settled = status === 'paid';
 
   await updateOrQueue('orders', input.order.$id, {
-    payment_status: settled ? 'paid' : 'partial',
+    payment_status: status,
     // A part-paid order keeps its place: still on the pass, still blocking the
     // shift close, still visibly owed. Only a cleared bill moves on.
     ...(settled

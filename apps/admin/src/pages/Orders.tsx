@@ -470,8 +470,18 @@ export function OrdersPage() {
     setFixing(true);
     try {
       const changed = await recomputeOrderTotals(order, settings);
-      if (!changed) { toast('That total already matches its items.'); return; }
-      toast(`Total corrected from ${money(changed.from)} to ${money(changed.to)}`);
+      if (!changed) { toast('That bill already matches its items and its payments.'); return; }
+      /*
+        Said as what moved. This button now puts two things right — the total
+        against the lines, and the paid status against the payments — and a
+        bill whose total was always correct would otherwise be reported as
+        "corrected from GH₵210.00 to GH₵210.00".
+      */
+      const moved = [
+        changed.from !== changed.to ? `Total corrected from ${money(changed.from)} to ${money(changed.to)}` : '',
+        changed.status ? `Marked ${changed.status}, to match the money against it` : '',
+      ].filter(Boolean);
+      toast(moved.join('. '));
       await load();
     } catch (e) {
       toast(humanError(e), 'err');

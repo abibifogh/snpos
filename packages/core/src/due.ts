@@ -102,3 +102,48 @@ export function unrungProblem(cartItems: number, cartTotal: number, money: (n: n
 export function overpaying(due: number, taking: number): number {
   return Math.max(0, taking - due);
 }
+
+/* ------------------------------------------- what the bill should now read */
+
+/**
+ * Everything taken against a bill, from the rows that prove it.
+ *
+ * Tips are left out: a tip was never owed, so counting it against the bill
+ * leaves the bill short by the tip and asks the next person to pay it again.
+ * Voided and refunded rows are money that went back out.
+ */
+export function takenOn(
+  payments: TakenPayment[],
+  live: (p: { status?: string }) => boolean = (p) => p.status !== 'voided' && p.status !== 'refunded',
+): number {
+  return payments.filter(live).reduce((sum, p) => sum + (p.amount ?? 0), 0);
+}
+
+/**
+ * What a bill's payment status should read, given what has been taken.
+ *
+ * ORD0889: GH₵210, paid in full, showing "partial".
+ *
+ * The till decides this the moment it records a payment, by writing the row
+ * and then READING every payment back to see what the bill now stands at. That
+ * read can fail — a weak connection at the counter is the ordinary case, and
+ * it is exactly when somebody is settling a bill — and a failed read came back
+ * as an empty list, which is indistinguishable from "nothing has ever been
+ * paid on this bill". So the order was marked part-paid on the strength of a
+ * question that was never answered, and nothing ever asked again.
+ *
+ * So this is worked out on the SERVER too, on every payment, where every row
+ * is already in front of it. A till's answer is a convenience; this one is the
+ * record. See order-guard.
+ */
+export function billStatus(total: number, taken: number): 'unpaid' | 'partial' | 'paid' {
+  /*
+    A bill that came to nothing is settled. Nothing is owed and nothing ever
+    will be, so leaving it unpaid makes it look like money still to come — on
+    the shift close, on the reports, and to whoever is asked about it a week
+    later.
+  */
+  if ((total ?? 0) <= 0) return 'paid';
+  if (taken <= 0) return 'unpaid';
+  return taken >= total ? 'paid' : 'partial';
+}

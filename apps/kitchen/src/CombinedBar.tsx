@@ -34,12 +34,22 @@ export function CombinedBar({
   features,
   who,
   onToast,
+  takesPayment = true,
 }: {
   venue: Venue;
   settings: Settings;
   features: FeatureMap;
   who: StaffProfile | null;
   onToast: (m: string, tone?: 'ok' | 'err') => void;
+  /**
+   * Whether this pass settles bills as well as holding a drawer.
+   *
+   * The two used to be the same thing, because this bar only ever appeared
+   * with combined mode on. A kitchen that merely counts its own cash is told
+   * what an unopened shift actually costs IT — nothing can be recorded against
+   * it — rather than being told about payment it does not take.
+   */
+  takesPayment?: boolean;
 }) {
   const [shift, setShift] = useState<Shift | null>(null);
   /** Other shifts open on this side. Should be none; occasionally is not. */
@@ -298,7 +308,9 @@ export function CombinedBar({
           </>
         ) : (
           <span className="small" style={{ color: 'var(--warn)' }}>
-            No shift open; nothing can be marked paid until one is.
+            {takesPayment
+              ? 'No shift open; nothing can be marked paid until one is.'
+              : 'No shift open; count the float and open one before service.'}
           </span>
         )}
         <span style={{ flex: 1 }} />
