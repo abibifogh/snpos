@@ -608,6 +608,32 @@ export function App() {
    * separately; three quiet alarms are less useful than one loud one.
    */
   /*
+    The staff list, looked at again while the "nobody has a PIN" gate is up.
+
+    That gate is shown when no active profile has a PIN, and the thing anybody
+    does about it is go and set some. But the list is read once when this
+    screen starts, and a pass display stays on the same page for DAYS — so the
+    PINs are set, somebody walks back to the kitchen, and the screen still says
+    nobody has one. It reads as the setting not having worked.
+
+    The keypad already looks again when a PIN is refused, for exactly this
+    reason. This is the same courtesy for the screen where there is no keypad
+    to type into: the moment a PIN exists, the keypad appears by itself.
+
+    Only while that gate is actually up, so a running pass is not polling a
+    staff list all night.
+  */
+  useEffect(() => {
+    if (ready || staff.length > 0) return undefined;
+    const look = async () => {
+      const fresh = await listAll<StaffProfile>('staff_profiles').catch(() => null);
+      if (fresh) setStaff(fresh.filter((p) => p.active && p.pin_hash));
+    };
+    const timer = window.setInterval(() => { void look(); }, 15_000);
+    return () => window.clearInterval(timer);
+  }, [ready, staff.length]);
+
+  /*
     Two questions, not one switch: whether this pass settles bills, and whether
     it has a drawer to count. See pass-shape.ts — they were the same flag, and
     that is why the kitchen's float could only be counted on the till.
