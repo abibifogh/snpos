@@ -7,7 +7,7 @@ import {
   expenseMethodsFor, mayComeFromShift, recomputeClosedShift, recordHandover, handoversForShift, HANDOVER_DESTINATIONS, destinationLabel,
   fromTakings, settleBoxSpend, listAll, Query, spendKind, spendSource,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
-  loadFloats, balancesFor, recordBoxSpend, boxOverdrawn,
+  loadFloats, balancesFor, recordBoxSpend, boxOverdrawn, boxHeadroom,
   checkPurchase, raiseAlerts, FLAG_WORDS,
 } from '@snpos/core';
 import type {
@@ -398,6 +398,17 @@ export function ExpenseModal({
     : fromDrawer || noBox ? null : boxes.find((b) => b.$id === boxId) ?? boxes[0] ?? null;
   /** What is being spent, as the form currently stands, for the warning below. */
   const boxSpend = parseMoney(amountText, settings.currency_decimals ?? 2) ?? 0;
+  /*
+    What this tin can cover, for the warning below.
+
+    A spend already charged to this box has already been taken out of its
+    balance, so on a correction the full amount must not be measured against
+    it a second time. Only for the box it is already on. See boxHeadroom.
+  */
+  const boxRoom = boxHeadroom(
+    chosenBox ? boxBalances[chosenBox.$id] ?? 0 : 0,
+    editing && chosenBox && editing.imprest_float_id === chosenBox.$id ? editing.amount ?? 0 : 0,
+  );
 
   const filledLines = stocks ? lines.filter((l) => l.ingredientId && Number(l.qtyText) > 0) : [];
 
@@ -1084,7 +1095,25 @@ export function ExpenseModal({
         there actually needs, because a box cannot pay out what it does not
         hold.
       */}
-      {!fromFloatId && !fromDrawer && !noBox && !editing && boxes.length > 0 && (
+      {/*
+        ASKED ON A CORRECTION TOO, which it was not.
+
+        The source question above — drawer, tin, or somebody's own money — has
+        always been editable. Only WHICH tin was locked to the moment the spend
+        was first recorded, so an admin correcting one could move it out of the
+        petty cash box and back in again, and never say which box. Two things
+        followed. A spend charged to the wrong tin could not be moved to the
+        right one at all, which is the only way a box that has been counted
+        ever comes right. And switching an existing drawer spend to petty cash
+        silently charged whichever tin happened to be first in the list, with
+        nothing on screen naming it.
+
+        Nothing downstream needed changing: settleBoxSpend already puts back
+        what the old box was charged and takes it from the new one, and the
+        books repost when where the money came from has changed. The only
+        thing missing was the question.
+      */}
+      {!fromFloatId && !fromDrawer && !noBox && boxes.length > 0 && (
         <Field
           label={boxes.length > 1 ? 'Which petty cash box' : 'The petty cash box'}
           hint={
@@ -1094,7 +1123,11 @@ export function ExpenseModal({
           }
         >
           {boxes.length > 1 ? (
-            <Select value={boxId} onChange={(e) => setBoxId(e.target.value)}>
+            // The chosen box rather than the raw state, so the name on screen
+            // is the tin that will actually be charged. They differ on a spend
+            // being corrected onto a box it never had, where the state is
+            // still empty and the fallback has already picked the first tin.
+            <Select value={chosenBox?.$id ?? ''} onChange={(e) => setBoxId(e.target.value)}>
               {boxes.map((b) => (
                 <option key={b.$id} value={b.$id}>
                   {b.name} — {formatMoney(boxBalances[b.$id] ?? 0, settings)}
@@ -1119,7 +1152,7 @@ export function ExpenseModal({
       )}
       {/* Judged on the box rather than on the drawer question, which is not
           asked at all when the box was chosen for us. */}
-      {chosenBox && boxOverdrawn(boxSpend, boxBalances[chosenBox.$id] ?? 0) && (
+      {chosenBox && boxOverdrawn(boxSpend, boxRoom) && (
         <Notice tone="warn">
           That is more than {chosenBox.name} holds ({formatMoney(boxBalances[chosenBox.$id] ?? 0, settings)}).
           It will be recorded anyway and the box will show as overdrawn until somebody tops it up or corrects it.

@@ -197,6 +197,23 @@ export function needsExplaining(variance: number, tolerance = IMPREST_TOLERANCE)
  */
 export const boxOverdrawn = (amount: number, balance: number): boolean => amount > balance;
 
+/**
+ * What a tin can cover, when the spend being typed is already charged to it.
+ *
+ * A box's balance is the sum of its movements, so a spend already recorded
+ * against it has ALREADY been taken out. Correcting that spend and comparing
+ * its full amount against the balance charges it twice: a GH₵60 spend from a
+ * GH₵100 tin leaves GH₵40, and re-saving it without changing a thing warns
+ * that 60 is more than the tin holds. It is not — it is the money this very
+ * spend took out of it.
+ *
+ * So what was already charged goes back on before the comparison. Only for
+ * the box the spend is already on: moving it to a DIFFERENT tin is a fresh
+ * charge on that one, which has never seen this money.
+ */
+export const boxHeadroom = (balance: number, alreadyCharged = 0): number =>
+  balance + Math.abs(alreadyCharged || 0);
+
 /* ------------------------------------------- what belongs to which count */
 
 export interface CountedPeriod {
