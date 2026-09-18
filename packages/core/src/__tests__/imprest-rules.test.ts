@@ -4,7 +4,7 @@ import {
   boxBalance, spentSince, topUpNeeded, overBy, healthOf, countBox, countProblem,
   needsExplaining, boxOverdrawn, withoutReceipt, IMPREST_LOW_BP, IMPREST_TOLERANCE,
   holdsBox, canFundBoxes, canUseBox, canCountBox, boxesFor,
-  movementsFor, movementsSince, latestCount, coversFrom, spendCorrections,
+  movementsFor, movementsSince, latestCount, coversFrom, spendCorrections, boxHeadroom,
   type ImprestMovement,
 } from '../imprest-rules.ts';
 
@@ -379,4 +379,53 @@ test('a box already corrected once is not corrected again', () => {
     { float_id: 'tin', amount: -1_500 },
   ];
   assert.deepEqual(spendCorrections(already, { boxId: 'tin', amount: 6_000 }), []);
+});
+
+/* --------------------------- correcting a spend onto a different tin */
+
+/*
+  An admin could correct every part of a spend EXCEPT which petty cash box it
+  came out of: that question was asked once, when the spend was first recorded,
+  and never again. So a spend charged to the wrong tin could not be moved to
+  the right one — which is the only way a box that has been counted ever comes
+  right — and switching an existing drawer spend to petty cash silently charged
+  whichever tin happened to be first in the list.
+
+  The arithmetic was ready for it; only the question was missing.
+*/
+
+test('a spend already charged to a tin is not charged against it twice', () => {
+  /*
+    A box's balance is the sum of its movements, so a spend recorded against
+    it has ALREADY been taken out. A GH₵60 spend from a GH₵100 tin leaves 40,
+    and re-saving that spend unchanged would otherwise warn that 60 is more
+    than the tin holds. It is not — it is the money this very spend took out.
+  */
+  assert.equal(boxHeadroom(4_000, 6_000), 10_000);
+  assert.equal(boxOverdrawn(6_000, boxHeadroom(4_000, 6_000)), false, 'no warning on an unchanged re-save');
+});
+
+test('moving a spend to a different tin is a fresh charge on that one', () => {
+  // The new box has never seen this money, so nothing is added back to it.
+  assert.equal(boxHeadroom(2_000, 0), 2_000);
+  assert.equal(boxOverdrawn(6_000, boxHeadroom(2_000, 0)), true, 'and it says the tin cannot cover it');
+});
+
+test('raising a corrected spend past what the tin can find still warns', () => {
+  // 60 already out of a 100 tin, corrected up to 130: 40 left plus the 60 it
+  // already took is 100, and 130 is more than that.
+  assert.equal(boxOverdrawn(13_000, boxHeadroom(4_000, 6_000)), true);
+});
+
+test('headroom survives the shapes a form hands it', () => {
+  assert.equal(boxHeadroom(5_000), 5_000, 'nothing charged yet');
+  assert.equal(boxHeadroom(5_000, 0), 5_000);
+  // A movement is stored negative; the amount on the expense is positive.
+  // Either way it is money to put back.
+  assert.equal(boxHeadroom(5_000, -6_000), 11_000);
+});
+
+test('a box emptied by the spend being corrected still covers it', () => {
+  // The commonest real case: a tin at nought because this one spend cleared it.
+  assert.equal(boxOverdrawn(10_000, boxHeadroom(0, 10_000)), false);
 });
