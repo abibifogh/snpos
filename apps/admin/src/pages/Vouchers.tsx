@@ -1,8 +1,19 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, FormError, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
-import { formatMoney, parseMoney, toInput, dateWords } from '@snpos/core';
+import {
+  formatMoney, parseMoney, toInput, dateWords, downloadFile,
+  voucherHeadline, voucherValidity, voucherTerms, voucherCodeWords, voucherHasCode, voucherPrintProblem,
+} from '@snpos/core';
 import type { Doc } from '@snpos/core';
+/*
+  THE SAME PDF TOOLKIT THE BOOKING SHEET USES, not a second one.
+
+  A voucher is a designed object and this builds it from the primitives in
+  pdf-doc.js, so a voucher attached to an email later runs this very generator
+  rather than a copy that drifts. See functions/notify/src/voucher-pdf.js.
+*/
+import { voucherPdf } from '../../../../functions/notify/src/voucher-pdf.js';
 import { useSession } from '../session';
 
 interface Voucher extends Doc {
@@ -216,6 +227,60 @@ export function VouchersPage() {
     }
   };
 
+  /**
+   * A voucher as a thing you can print and hand over.
+   *
+   * Everything a customer needs to know is worked out here, by the same
+   * functions, whether one voucher is being printed or twenty — see
+   * voucher-words.ts. The generator only draws; what a voucher SAYS is a rule,
+   * and rules belong somewhere they can be checked.
+   */
+  const download = async (list: Voucher[], stem: string) => {
+    if (!settings) return;
+    if (list.length === 0) { toast('Nothing to print.', 'err'); return; }
+
+    /*
+      Said before it prints, not after somebody hands it over. A voucher that
+      has ended or been used up would be refused at the till, and the customer
+      finds that out at the counter with somebody here having to explain it.
+      One is refused outright; a batch simply leaves them out and says so.
+    */
+    if (list.length === 1) {
+      const why = voucherPrintProblem(list[0] as never);
+      if (why) { toast(why, 'err'); return; }
+    }
+    const printable = list.length === 1 ? list : list.filter((v) => !voucherPrintProblem(v as never));
+    if (printable.length === 0) { toast('None of those can be handed out — they have ended or been used up.', 'err'); return; }
+
+    const money = (n: number) => formatMoney(n, settings);
+    try {
+      downloadFile(
+        `voucher-${stem}.pdf`,
+        voucherPdf({
+          settings,
+          venue: null,
+          vouchers: printable,
+          accent: settings.primary_color || '#0f766e',
+          headline: (v: Voucher) => voucherHeadline(v as never, money),
+          validity: (v: Voucher) => voucherValidity(v as never, (d: string) => dateWords(d)),
+          terms: (v: Voucher) => voucherTerms(v as never, money),
+          codeWords: (v: Voucher) => voucherCodeWords(v as never),
+          hasCode: (v: Voucher) => voucherHasCode(v as never),
+        }),
+        'application/pdf',
+      );
+      if (printable.length < list.length) {
+        toast(`${list.length - printable.length} left out: they have ended or been used up.`);
+      }
+    } catch (e) {
+      toast(humanError(e), 'err');
+    }
+  };
+
+  /** A filename somebody can find again, from the code or the name. */
+  const stemOf = (v: Voucher) => String(v.code || v.name || v.$id)
+    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).toLowerCase() || 'voucher';
+
   const worth = (v: Voucher) =>
     v.kind === 'percent'
       ? `${(v.value / 100).toFixed(v.value % 100 === 0 ? 0 : 1)}%${v.max_discount_amount ? ` · max ${formatMoney(v.max_discount_amount, settings!)}` : ''}`
@@ -259,7 +324,15 @@ export function VouchersPage() {
           Create one when you want to run an offer. Give it an end date so it stops on its own.
         </Empty>
       ) : (
-        <Card title={`${rows.length} voucher${rows.length === 1 ? '' : 's'}`}>
+        <Card
+          title={`${rows.length} voucher${rows.length === 1 ? '' : 's'}`}
+          /* One sheet of everything worth handing out, for the counter. */
+          actions={(
+            <Button size="sm" variant="ghost" onClick={() => void download(rows, 'all')}>
+              Download all
+            </Button>
+          )}
+        >
           <div className="table-wrap">
             <table className="data">
               <thead>
@@ -280,6 +353,9 @@ export function VouchersPage() {
                       <td>{v.used_count}{v.usage_limit_total ? ` / ${v.usage_limit_total}` : ''}</td>
                       <td><Badge tone={s.tone}>{s.label}</Badge></td>
                       <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <Button size="sm" variant="ghost" onClick={() => void download([v], stemOf(v))}>
+                          Download
+                        </Button>{' '}
                         <Button size="sm" onClick={() => open(v)}>Edit</Button>{' '}
                         <Button size="sm" variant="ghost" onClick={() => void remove(v)}>Delete</Button>
                       </td>
