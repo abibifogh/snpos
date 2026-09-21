@@ -5,6 +5,10 @@ import { bookingSittings, bookingSheetPdf } from './booking-sheet.js';
 import { ordersForSide, shelfCheckSummary } from './shift-shape.js';
 import { houseRecipients, sendToEach } from './house.js';
 import { isApproval } from './booking-approval.js';
+import { voucherPdf } from './voucher-pdf.js';
+import {
+  voucherHeadline, voucherValidity, voucherTerms, voucherCodeWords, voucherHasCode, voucherPrintProblem,
+} from './voucher-words.js';
 import { tradeWords, offSubject } from './words.js';
 import { dailyDigest, nightlyBackup, deliveryFrom } from './daily.js';
 import { ensureLogin, revokeLogin } from './staff.js';
@@ -915,6 +919,106 @@ export default async ({ req, res, log, error }) => {
     if (events.some((e) => e.includes('collections.approval_notices'))
       && events.some((e) => e.endsWith('.create'))) {
       return res.json(await noticeSent({ db, DB_ID, settings, transport, from, doc, log, error }));
+    }
+
+    /*
+      A VOUCHER ON ITS WAY TO A CUSTOMER.
+
+      Asked for on the Vouchers page as a row per address — never one row
+      carrying a list, because a message addressed to several people is
+      all-or-nothing at the provider and one bad address would lose it for
+      everybody. Each row is sent on its own and records what happened to it,
+      so the screen can say which ones arrived rather than "it went".
+
+      The slip is built by the same generator Admin downloads from, so what
+      lands in an inbox is the voucher that page showed. See voucher-pdf.js.
+    */
+    if (events.some((e) => e.includes('collections.voucher_sends'))
+        && events.some((e) => e.endsWith('.create'))) {
+      const fail = async (why) => {
+        error(`Voucher to ${doc.to_email} not sent: ${why}`);
+        await db.updateDocument(DB_ID, 'voucher_sends', doc.$id, {
+          status: 'failed', last_error: String(why).slice(0, 500),
+        }).catch(() => undefined);
+        return res.json({ sent: false, why });
+      };
+
+      if (!transport) return fail('no SMTP is configured on the function');
+
+      const v = await db.getDocument(DB_ID, 'discounts', doc.discount_id).catch(() => null);
+      if (!v) return fail('that voucher no longer exists');
+
+      /*
+        Checked again here, not only on the page that asked.
+
+        A voucher can end, be switched off or be used up between somebody
+        pressing send and the job reaching the row — and a voucher that would
+        be refused at the till is worse than no voucher: the customer finds out
+        at the counter, and somebody here has to explain it.
+      */
+      const unusable = voucherPrintProblem(v);
+      if (unusable) return fail(unusable);
+
+      const cash = (n) => money(n, settings);
+      const day = (iso) => new Date(iso).toLocaleDateString('en-GB', {
+        day: 'numeric', month: 'short', year: 'numeric',
+      });
+
+      let slip;
+      try {
+        slip = [{
+          filename: `voucher-${String(v.code || v.name || v.$id).replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).toLowerCase() || 'voucher'}.pdf`,
+          content: Buffer.from(voucherPdf({
+            settings,
+            venue: null,
+            vouchers: [v],
+            accent: brand,
+            headline: (x) => voucherHeadline(x, cash),
+            validity: (x) => voucherValidity(x, day),
+            terms: (x) => voucherTerms(x, cash),
+            codeWords: voucherCodeWords,
+            hasCode: voucherHasCode,
+          })),
+          contentType: 'application/pdf',
+        }];
+      } catch (e) {
+        return fail(`the voucher could not be drawn: ${e.message}`);
+      }
+
+      const headline = voucherHeadline(v, cash);
+      const hello = doc.to_name ? `Hello ${esc(doc.to_name)},` : 'Hello,';
+      const gone = await transport.sendMail({
+        from,
+        to: doc.to_email,
+        subject: `${headline} at ${settings.restaurant_name || 'our place'}`,
+        html: shell(
+          `${headline} — with our compliments`,
+          `<p style="margin:0 0 10px">${hello}</p>
+           <p style="margin:0 0 12px">Here is a voucher for <strong>${esc(v.name)}</strong>. It is attached,
+           and you can show it on your phone — there is no need to print it.</p>`
+          + (voucherHasCode(v)
+            ? `<p style="margin:0 0 12px;padding:12px;background:#f4f6f8;border-radius:6px;text-align:center">
+               <span style="color:#66727f;font-size:12px">USE THIS CODE</span><br>
+               <strong style="font-size:22px;letter-spacing:2px">${esc(voucherCodeWords(v))}</strong></p>`
+            : '<p style="margin:0 0 12px">Just mention it to a member of staff.</p>')
+          + `<p style="margin:0 0 6px;color:#5d6b7a;font-size:14px"><strong>${esc(voucherValidity(v, day))}</strong></p>`
+          + `<p style="margin:10px 0 0;color:#5d6b7a;font-size:13px">${
+            voucherTerms(v, cash).map((t) => esc(t)).join('<br>')}</p>`,
+          brand,
+        ),
+        attachments: slip,
+      }).then(() => true).catch((e) => {
+        error(`Voucher to ${doc.to_email} was refused: ${e.message}`);
+        return e.message;
+      });
+
+      if (gone !== true) return fail(gone);
+
+      await db.updateDocument(DB_ID, 'voucher_sends', doc.$id, {
+        status: 'sent', sent_at: new Date().toISOString(), last_error: '',
+      }).catch(() => undefined);
+      log(`Voucher ${v.code || v.name} sent to ${doc.to_email}.`);
+      return res.json({ sent: true, to: doc.to_email });
     }
 
     if (events.some((e) => e.includes('collections.item_availability')) && events.some((e) => e.endsWith('.create'))) {
