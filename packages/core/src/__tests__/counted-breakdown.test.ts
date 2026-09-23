@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   countedParts, partLines, partsWords, unexplained,
-  drawerMakeup, makeupWords, driftWords,
+  drawerMakeup, makeupWords, driftWords, spendSplit, splitWords,
   type SpendRow,
 } from '../counted-breakdown.ts';
 import type { MoneyKind, TotalledShift } from '../shift-totals.ts';
@@ -352,4 +352,82 @@ test('a read that worked and found nothing still says so plainly', () => {
   });
   assert.equal(m.known, true, 'absent means the read worked');
   assert.match(makeupWords(m, money, 'Cash'), /nothing paid out of it/);
+});
+
+/* ------------------------- the whole spending list, split by which purse */
+
+const nameOf = (id: string) => (id === 'm-cash' ? 'Cash' : id === 'm-card' ? 'Card' : 'A method no longer listed');
+
+test('the spending list is totalled by purse, because the two behave differently', () => {
+  /*
+    Read as one list they cannot be told apart: money out of the till makes a
+    drawer's expected figure smaller, petty cash makes no count anywhere
+    smaller. Somebody looking for the figure that shrank a drawer adds every
+    row and gets a number matching nothing on the screen above — which is
+    worse than no total, because it looks like an answer.
+  */
+  const split = spendSplit([
+    spend({ amount: 12_000 }),
+    spend({ amount: 6_300 }),
+    spend({ amount: 4_000, from_takings: false }),
+  ]);
+  assert.equal(split.outOfTakings, 18_300);
+  assert.equal(split.ownMoney, 4_000);
+  assert.equal(split.total, 22_300);
+});
+
+test('each drawer is totalled separately, since one figure would explain neither', () => {
+  const split = spendSplit([
+    spend({ amount: 3_000, paid_from_method_id: 'm-cash' }),
+    spend({ amount: 9_000, paid_from_method_id: 'm-card' }),
+    spend({ amount: 2_000, paid_from_method_id: 'm-cash' }),
+  ]);
+  // Biggest first: the drawer somebody is most likely asking about.
+  assert.deepEqual(split.drawers.map((d) => [d.methodId, d.amount, d.count]), [
+    ['m-card', 9_000, 1],
+    ['m-cash', 5_000, 2],
+  ]);
+});
+
+test('a spend out of takings that names no drawer is still counted', () => {
+  // A row left out of a total is a row nobody notices is missing, and this
+  // one is the difference between a drawer that adds up and one that does not.
+  const split = spendSplit([spend({ amount: 5_000, paid_from_method_id: undefined })]);
+  assert.equal(split.outOfTakings, 5_000);
+  assert.equal(split.drawers[0]?.methodId, '');
+});
+
+test('the sentence ties the list back to the figures above it', () => {
+  const words = splitWords(
+    spendSplit([spend({ amount: 18_300 }), spend({ amount: 4_000, from_takings: false })]),
+    money,
+    nameOf,
+  );
+  assert.match(words, /GHS 183\.00 came out of the Cash drawer/);
+  assert.match(words, /expected figure above is that much less than what was taken/);
+  // And the other half said as spending rather than as a shortage, which is
+  // the distinction that stops people quietly not recording petty cash.
+  assert.match(words, /GHS 40\.00 came from petty cash/);
+  assert.match(words, /it is spending, not a shortage/);
+});
+
+test('two drawers are not described as one', () => {
+  // Naming either would be a sentence that is wrong about the other.
+  const words = splitWords(
+    spendSplit([spend({ amount: 3_000 }), spend({ amount: 9_000, paid_from_method_id: 'm-card' })]),
+    money,
+    nameOf,
+  );
+  assert.match(words, /GHS 120\.00 came out of the takings/);
+  assert.equal(/Cash drawer/.test(words), false);
+});
+
+test('a shift that spent nothing says so, rather than showing an empty total', () => {
+  assert.match(splitWords(spendSplit([]), money, nameOf), /no drawer is short anything/);
+});
+
+test('spending that could not be read is not totalled as nothing', () => {
+  const split = spendSplit([], false);
+  assert.equal(split.known, false);
+  assert.match(splitWords(split, money, nameOf), /could not be read/);
 });

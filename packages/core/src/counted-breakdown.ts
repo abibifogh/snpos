@@ -343,3 +343,110 @@ export function driftWords(
     + 'so something on this shift changed after it closed — a spend recorded or refiled, or a payment moved '
     + 'onto it. The difference against the count was worked out from the stored figure.';
 }
+
+/* --------------------------------- the whole list of spending, split by purse */
+
+/**
+ * WHAT A SHIFT PAID OUT, SPLIT BY WHETHER IT CAME OUT OF A DRAWER.
+ *
+ * The list of a shift's spending is one table with no total on it, and the two
+ * kinds of row in it behave completely differently. Money taken out of the
+ * till reduces what that drawer should hold at close; money from a petty cash
+ * box is real spending the shift never held, and it changes no count anywhere.
+ *
+ * Read as one list they cannot be told apart, so somebody looking for the
+ * figure that made a drawer's expected total smaller adds up every row and
+ * gets a number that matches nothing on the screen above. Which is worse than
+ * no total at all: it looks like an answer.
+ *
+ * So the rows are added up by purse, and by drawer within the purse — a shift
+ * running a cash drawer and a card float has two, and one combined figure
+ * would explain neither.
+ *
+ * Pure.
+ */
+export interface SpendGroup {
+  /** Empty where a spend names no method. See below. */
+  methodId: string;
+  amount: number;
+  count: number;
+}
+
+export interface SpendSplit {
+  /** What left a drawer, by drawer, biggest first. */
+  drawers: SpendGroup[];
+  /** Everything that left a drawer. The figure the expected totals are short by. */
+  outOfTakings: number;
+  /** Real spending the shift never held. Changes no count. */
+  ownMoney: number;
+  total: number;
+  /** False where the spending could not be read. Same reasoning as above. */
+  known: boolean;
+}
+
+export function spendSplit(spends: SpendRow[], known = true): SpendSplit {
+  const by = new Map<string, SpendGroup>();
+  let outOfTakings = 0;
+  let ownMoney = 0;
+
+  for (const s of spends) {
+    if (s.from_takings === false) { ownMoney += s.amount; continue; }
+    outOfTakings += s.amount;
+    /*
+      A spend out of takings that names no method still came out of a drawer.
+      Grouped under a blank rather than dropped: a row left out of a total is
+      a row nobody notices is missing, and this one is the difference between
+      a drawer that adds up and one that does not.
+    */
+    const key = s.paid_from_method_id ?? '';
+    const g = by.get(key) ?? { methodId: key, amount: 0, count: 0 };
+    g.amount += s.amount;
+    g.count += 1;
+    by.set(key, g);
+  }
+
+  return {
+    drawers: [...by.values()].sort((a, b) => b.amount - a.amount),
+    outOfTakings,
+    ownMoney,
+    total: outOfTakings + ownMoney,
+    known,
+  };
+}
+
+/**
+ * The split as a sentence, tying it back to the figures above it.
+ *
+ * Its whole job is to connect this list to the expected totals at the top of
+ * the panel, because that is the question somebody is holding it up to answer.
+ */
+export function splitWords(
+  split: SpendSplit,
+  money: (n: number) => string,
+  nameOf: (methodId: string) => string,
+): string {
+  if (!split.known) return 'What this shift paid out could not be read.';
+  if (split.total === 0) return 'Nothing was paid out on this shift, so no drawer is short anything.';
+
+  const parts: string[] = [];
+
+  if (split.outOfTakings > 0) {
+    // Named where there is one drawer to name. Two or more and the figure is
+    // a sum across them, so naming either would be wrong about the other.
+    const one = split.drawers.length === 1 ? split.drawers[0] : undefined;
+    const where = one?.methodId ? `the ${nameOf(one.methodId)} drawer` : 'the takings';
+    parts.push(
+      `${money(split.outOfTakings)} came out of ${where}, which is why the expected figure above is that `
+      + 'much less than what was taken',
+    );
+  }
+
+  if (split.ownMoney > 0) {
+    parts.push(
+      `${money(split.ownMoney)} came from petty cash rather than a drawer this shift held, so it reduces `
+      + 'no count here — it is spending, not a shortage',
+    );
+  }
+
+  return `${parts.join('. ')}.`;
+}

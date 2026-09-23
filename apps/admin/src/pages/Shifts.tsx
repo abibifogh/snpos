@@ -14,7 +14,7 @@ import {
   settlementBacklog, backlogSummary, stateWords, needsSettling, agedWords,
   rangeTotals, kindsWorthShowing, KIND_LABELS, MODULE_LABELS, canOpen, floatOrigin,
   kindOf, countedParts, partLines, partsWords, unexplained,
-  drawerMakeup, makeupWords, driftWords,
+  drawerMakeup, makeupWords, driftWords, spendSplit, splitWords,
   shiftCountEntries, countsByPhase, phaseSummary, bothEndsWords, countsGapWords,
   buildReportHtml, openPrintable,
   tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS, dateWords, timeWords, dateTimeWords,
@@ -1821,16 +1821,20 @@ export function ShiftsPage() {
             undoes a decision made elsewhere. An owner sets it under
             Settings, "Who can see what".
           */}
-          {maySeeExpenses && <>
+          {maySeeExpenses && (() => {
+          const mySpends = expenses.filter((e) => e.shift_id === detail.$id);
+          const split = spendSplit(mySpends, expensesRead);
+          return <>
           <h3 style={{ marginTop: '1rem' }}>Expenses in this shift</h3>
-          {expenses.filter((e) => e.shift_id === detail.$id).length === 0 ? (
-            <p className="small dim">None recorded.</p>
+          {mySpends.length === 0 ? (
+            <p className="small dim">
+              {expensesRead ? 'None recorded.' : 'What this shift paid out could not be read.'}
+            </p>
           ) : (
             <div className="table-wrap">
               <table className="data">
                 <tbody>
-                  {expenses
-                    .filter((e) => e.shift_id === detail.$id)
+                  {mySpends
                     .map((e) => (
                       <tr key={e.$id}>
                         <td>
@@ -1848,11 +1852,54 @@ export function ShiftsPage() {
                         </td>
                       </tr>
                     ))}
+                  {/*
+                    THE FOOT OF THE LIST, split by purse.
+
+                    One table with no total on it, holding two kinds of row
+                    that behave completely differently: money out of the till
+                    makes that drawer's expected figure smaller, petty cash
+                    makes no count anywhere smaller. Added up as one they give
+                    a figure matching nothing on the screen above — which is
+                    worse than no total, because it looks like an answer. See
+                    spendSplit.
+                  */}
+                  {split.outOfTakings > 0 && (
+                    <tr>
+                      <td style={{ fontWeight: 550 }}>
+                        Out of the takings
+                        {split.drawers.length > 1 && (
+                          <div className="small dim">
+                            {split.drawers
+                              .map((d) => `${methodName(d.methodId)} ${money(d.amount)}`)
+                              .join(' · ')}
+                          </div>
+                        )}
+                      </td>
+                      <td className="num" style={{ fontWeight: 550 }}>{money(split.outOfTakings)}</td>
+                      <td />
+                    </tr>
+                  )}
+                  {/* Kept on its own line rather than folded into the total.
+                      It is real spending and belongs in the books; what it is
+                      not is money missing from a drawer. */}
+                  {split.ownMoney > 0 && (
+                    <tr className="dim">
+                      <td>Petty cash, not out of a drawer</td>
+                      <td className="num">{money(split.ownMoney)}</td>
+                      <td />
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
           )}
-          </>}
+          {mySpends.length > 0 && (
+            <p className="small dim" style={{ marginTop: '0.4rem' }}>
+              {splitWords(split, money, methodName)}
+            </p>
+          )}
+          </>;
+          })()}
         </Modal>
       )}
 
