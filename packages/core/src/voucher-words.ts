@@ -155,3 +155,71 @@ export function voucherPrintProblem(v: PrintableVoucher, now: Date = new Date())
   }
   return null;
 }
+
+/* ------------------------------------------------- sending one to somebody */
+
+/** Enough of a customer to decide whether an offer may go to them. */
+export interface Marketable {
+  name?: string;
+  email?: string;
+  marketing_opt_in?: boolean;
+}
+
+/**
+ * The shape of an address, checked before a row is written rather than after
+ * a send has failed.
+ *
+ * Deliberately loose. This is not trying to decide whether a mailbox exists —
+ * nothing can, short of writing to it — only to catch the typed mistakes worth
+ * catching before somebody waits an hour for a voucher that went nowhere.
+ */
+export const looksLikeEmail = (s?: string): boolean =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((s ?? '').trim());
+
+/**
+ * Several addresses out of one box, however they were separated.
+ *
+ * People paste lists. Commas, semicolons, spaces and new lines all turn up,
+ * and a box that only understood one of them would silently treat the rest as
+ * one long broken address.
+ */
+export const splitAddresses = (text: string): string[] =>
+  [...new Set(
+    String(text ?? '')
+      .split(/[,;\s]+/)
+      .map((a) => a.trim().toLowerCase())
+      .filter(Boolean),
+  )];
+
+/**
+ * Why this voucher cannot be emailed to this person, or null.
+ *
+ * A VOUCHER IS MARKETING, and that is the whole of the second rule. Somebody
+ * who gave an address to get a receipt has not asked to be sent offers, and
+ * sending them one anyway is the thing that makes a restaurant's mail get
+ * marked as spam — after which the receipts stop arriving too. Typing an
+ * address by hand is a different act: that is somebody being given a voucher
+ * they asked for, and it is not this function's business.
+ */
+export function voucherEmailProblem(to: Marketable): string | null {
+  if (!looksLikeEmail(to.email)) return 'That does not look like an email address.';
+  if (to.marketing_opt_in === false) {
+    return `${to.name || to.email} has not agreed to be sent offers.`;
+  }
+  return null;
+}
+
+/** Customers an offer may actually be sent to, in name order. */
+export const mayBeOffered = <T extends Marketable>(rows: T[]): T[] =>
+  rows
+    .filter((r) => looksLikeEmail(r.email) && r.marketing_opt_in === true)
+    .sort((a, b) => String(a.name ?? a.email).localeCompare(String(b.name ?? b.email)));
+
+/** Where a voucher's send got to, for the row that asked for it. */
+export type VoucherSendState = 'queued' | 'sent' | 'failed';
+
+export function voucherSendWords(state: VoucherSendState): { label: string; tone: 'ok' | 'warn' | 'default' } {
+  if (state === 'sent') return { label: 'Sent', tone: 'ok' };
+  if (state === 'failed') return { label: 'Not sent', tone: 'warn' };
+  return { label: 'Sending…', tone: 'default' };
+}

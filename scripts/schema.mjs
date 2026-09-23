@@ -3384,6 +3384,48 @@ export const COLLECTIONS = [
       ['active', 'key', ['active']],
     ],
   },
+  /*
+    A voucher on its way to somebody's inbox.
+
+    A REQUEST, not a send. The browser cannot post mail — the mail settings and
+    the provider live on the server — so asking is a row here and the
+    background job picks it up, builds the voucher and sends it. Exactly the
+    shape of a sign-in link or a booking notice, and for the same reason.
+
+    ONE ROW PER ADDRESS, never one row carrying a list. A message addressed to
+    several people is all-or-nothing at the provider: one address it dislikes
+    loses it for everybody on the line, and the log records one failure rather
+    than naming who was not told. That fault has already cost this system a
+    group booking's notice once. Per address it is also the only way a screen
+    can say which ones arrived.
+  */
+  {
+    id: 'voucher_sends',
+    name: 'Vouchers sent to customers',
+    perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['discount_id', 's', 64, true],
+      ['to_email', 's', 160, true],
+      ['to_name', 's', 160, false],
+      /** Copied so a list reads without fetching the voucher for every row. */
+      ['voucher_name', 's', 120, false],
+      /*
+        'queued' until the job has been, then what actually happened. Never
+        written as sent by the page that asked: a screen saying a voucher went
+        out is a screen nobody checks, and the whole point of the per-address
+        row is that the truth about each one is recorded.
+      */
+      ['status', 'e', ['queued', 'sent', 'failed'], true, 'queued'],
+      ['last_error', 's', 500, false],
+      ['requested_by', 's', 64, false],
+      ['sent_at', 'd', null, false],
+    ],
+    indexes: [
+      ['by_voucher', 'key', ['discount_id']],
+      ['by_status', 'key', ['status']],
+    ],
+  },
   {
     // Every application, including ones later reversed; this is the audit
     // trail for the single easiest way to steal from a restaurant.

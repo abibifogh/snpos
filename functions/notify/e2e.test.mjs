@@ -21,6 +21,7 @@ const outbox = [];
 let bookings = {};
 let staff = [];
 let notices = [];
+let vouchers = {};
 const updates = [];
 
 mock.module('nodemailer', {
@@ -40,6 +41,7 @@ class FakeDatabases {
   async getDocument(_db, table, id) {
     if (table === 'settings') return { restaurant_name: 'SN Bistro', email_from_address: 'pos@bistro.com', currency_code: 'GHS', currency_decimals: 2, primary_color: '#0f766e' };
     if (table === 'group_bookings') return bookings[id];
+    if (table === 'discounts') return vouchers[id];
     if (table === 'venues') return { name: 'SN Bistro' };
     throw new Error('no such document');
   }
@@ -123,6 +125,12 @@ const reset = (profiles) => {
   outbox.length = 0; notices.length = 0; updates.length = 0;
   staff = profiles;
   bookings = { bk1: { ...BOOKING } };
+  vouchers = { d1: { ...VOUCHER } };
+};
+
+const VOUCHER = {
+  $id: 'd1', name: 'Friends & Family', code: 'fandf30', kind: 'percent', value: 3000,
+  min_order_total: 5_000, ends_at: '2026-12-31', active: true, used_count: 0,
 };
 
 test('a booking tells the house and the guest', async () => {
@@ -322,4 +330,89 @@ test('an ordinary change request is still a change request', async () => {
     'no agreement was stamped',
   );
   assert.match(outbox[0].subject, /change asked for/i);
+});
+
+/* ------------------------------------------- a voucher on its way to somebody */
+
+test('a voucher reaches the one address its row names, with the slip attached', async () => {
+  reset([{ $id: 'p1', role: 'admin', email: 'owner@bistro.com', active: true }]);
+
+  const out = await run(
+    {
+      $id: 's1', venue_id: 'v1', discount_id: 'd1', to_email: 'ama@example.com',
+      to_name: 'Ama', voucher_name: 'Friends & Family', status: 'queued',
+    },
+    'databases.snpos.collections.voucher_sends.documents.s1.create',
+  );
+
+  const to = outbox.map((m) => m.to);
+  assert.deepEqual(to, ['ama@example.com'], `only the customer, got ${JSON.stringify(to)}`);
+  assert.equal(out.sent, true);
+  // The house is not copied on a customer's voucher, and one address never
+  // sees another: that is the whole reason a row carries one address.
+  assert.equal(to.includes('owner@bistro.com'), false);
+
+  const mail = outbox[0];
+  assert.match(mail.subject, /30% OFF/);
+  assert.match(mail.html, /FANDF30/, 'the code is in the body as well as the slip');
+  assert.equal(mail.attachments.length, 1);
+  assert.match(mail.attachments[0].filename, /\.pdf$/);
+  assert.ok(mail.attachments[0].content.length > 500, 'and the slip has something in it');
+});
+
+test('a sent voucher is stamped sent, so a screen can say which ones arrived', async () => {
+  reset([]);
+  await run(
+    { $id: 's1', venue_id: 'v1', discount_id: 'd1', to_email: 'ama@example.com', status: 'queued' },
+    'databases.snpos.collections.voucher_sends.documents.s1.create',
+  );
+  const done = updates.find((u) => u.table === 'voucher_sends' && u.data.status === 'sent');
+  assert.ok(done, 'stamped sent');
+  assert.ok(done.data.sent_at, 'and when');
+});
+
+test('a refused address is recorded as failed rather than looking sent', async () => {
+  /*
+    The row IS the record. A send that quietly did nothing leaves a screen
+    saying a customer has their voucher when nobody wrote to them.
+  */
+  reset([]);
+  const out = await run(
+    { $id: 's1', venue_id: 'v1', discount_id: 'd1', to_email: 'gone@old.example', status: 'queued' },
+    'databases.snpos.collections.voucher_sends.documents.s1.create',
+  );
+  assert.equal(out.sent, false);
+  const failed = updates.find((u) => u.table === 'voucher_sends' && u.data.status === 'failed');
+  assert.ok(failed, 'marked failed');
+  assert.match(String(failed.data.last_error), /550|mailbox/i, 'and says why');
+});
+
+test('a voucher that has ended is not sent, however it was asked for', async () => {
+  /*
+    Checked again here, not only on the page. A voucher can end between
+    somebody pressing send and this row being reached — and one that would be
+    refused at the till is worse than none: the customer finds out at the
+    counter and somebody here has to explain it.
+  */
+  reset([]);
+  vouchers.d1 = { ...VOUCHER, ends_at: '2020-01-01' };
+  const out = await run(
+    { $id: 's1', venue_id: 'v1', discount_id: 'd1', to_email: 'ama@example.com', status: 'queued' },
+    'databases.snpos.collections.voucher_sends.documents.s1.create',
+  );
+  assert.equal(out.sent, false);
+  assert.equal(outbox.length, 0, 'nothing left the building');
+  const failed = updates.find((u) => u.table === 'voucher_sends' && u.data.status === 'failed');
+  assert.match(String(failed.data.last_error), /already ended/i);
+});
+
+test('a voucher that has been deleted since fails rather than throwing', async () => {
+  reset([]);
+  vouchers = {};
+  const out = await run(
+    { $id: 's1', venue_id: 'v1', discount_id: 'gone', to_email: 'ama@example.com', status: 'queued' },
+    'databases.snpos.collections.voucher_sends.documents.s1.create',
+  );
+  assert.equal(out.sent, false);
+  assert.match(String(out.why), /no longer exists/i);
 });

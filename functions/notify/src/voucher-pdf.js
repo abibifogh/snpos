@@ -8,10 +8,17 @@
  * only as a row on an admin screen, and the only way to tell a customer about
  * it was to say the code out loud.
  *
- * ONE PER PAGE, and a sheet when several are asked for, so a page is a thing
- * you can print and hand over rather than a list to be cut up.
+ * RECEIPT WIDTH, because that is what a restaurant has a printer for. It was
+ * A4 at first, which is a sheet of paper somebody has to find a printer for,
+ * cut down, and then explain. 80mm comes off the roll already sitting on the
+ * counter, and the page is as tall as the voucher needs and no taller, so it
+ * tears off as one slip. It reads better on a phone for the same reason: a
+ * narrow page is a page that does not need pinching about.
  *
- * WHY IT LOOKS LIKE THIS. The headline is the largest thing on the page
+ * ONE PER PAGE, and several pages when several are asked for, so a page is a
+ * thing you hand over rather than a list to be cut up.
+ *
+ * WHY IT LOOKS LIKE THIS. The headline is the largest thing on the slip
  * because a voucher on a counter has to be readable by somebody walking past.
  * The code is in a panel of its own because it is the one part a customer has
  * to copy, and it is set wide and bold so it survives a phone photograph. And
@@ -56,119 +63,172 @@ function headlineSize(text, room, start = 46, floor = 20) {
   return size;
 }
 
+/* ------------------------------------------------------------ the paper */
+
 /**
- * One voucher, drawn as a card, with everything it needs inside its own edge.
+ * 80mm, the roll nearly every counter printer takes, in points.
  *
- * SELF-CONTAINED ON PURPOSE. The card has a border, which makes it read as
- * something to cut out and carry — so anything left outside that border is
- * something a customer loses the moment they do. The small print went below
- * it at first, which meant the conditions this whole file argues for reaching
- * the holder were the first thing thrown away.
- *
- * Its height is measured from its own contents rather than fixed, because the
- * conditions are what vary: a voucher with a minimum spend, days, hours, a cap
- * and a usage limit carries twice the lines of a plain one. A fixed card either
- * overflows the long one or leaves the short one half empty.
+ * The page is that wide and as tall as the voucher turns out to be — there is
+ * no fixed height to design into, because a roll has none either.
  */
-function card(doc, v, {
-  headline, code, hasCode, validity, venueName, accent, terms, foot,
-}) {
-  const pad = 26;
-  const left = doc.left;
-  const width = doc.inner;
-  const room = width - pad * 2;
-  const bandH = 54;
+const ROLL_WIDTH = 226.77;
+const ROLL_MARGIN = 9;
 
-  const hSize = headlineSize(headline, room);
-  const noteLines = clean(v.description) ? doc.wrap(clean(v.description), 9.5, false, room - 30).slice(0, 2) : [];
-  const termLines = terms.flatMap((t) => doc.wrap(`\u00b7  ${t}`, 8.5, false, room - 6));
+/** Every measurement on the slip, named once so measuring and drawing agree. */
+const L = {
+  band: 44,
+  pad: 12,
+  afterBand: 16,
+  afterHeadline: 16,
+  afterName: 4,
+  noteLine: 11,
+  beforeCode: 14,
+  code: 42,
+  afterCode: 15,
+  afterValidity: 11,
+  beforeTerms: 13,
+  termLine: 9.5,
+  beforeFoot: 12,
+  footLine: 9,
+  tail: 12,
+};
 
-  // Measured, then drawn. Every gap below is counted here in the same order.
-  const height = bandH + 24 + hSize + 26 + 6 + noteLines.length * 13
-    + 22 + 54 + 16 + 14 + 18 + termLines.length * 11.5 + (foot ? 20 : 6) + 14;
+/**
+ * Everything the slip will say, wrapped once.
+ *
+ * Wrapping is the expensive part and the part that must not differ between
+ * measuring and drawing, so it happens here and both passes read these same
+ * arrays. How TALL it comes to is not worked out here at all — see below.
+ */
+function plan(scratch, v, { headline, code, hasCode, validity, terms, foot }) {
+  const room = ROLL_WIDTH - ROLL_MARGIN * 2 - L.pad * 2;
+  return {
+    v,
+    headline,
+    hSize: headlineSize(headline, room, 28, 11),
+    code,
+    hasCode,
+    validity,
+    room,
+    note: clean(v.description) ? scratch.wrap(clean(v.description), 8, false, room).slice(0, 3) : [],
+    nameLines: scratch.wrap(clean(v.name), 10.5, true, room),
+    termLines: terms.flatMap((t) => scratch.wrap(`\u00b7 ${t}`, 7, false, room - 4)),
+    footLines: foot ? scratch.wrap(foot, 7, false, room) : [],
+  };
+}
 
-  /*
-    Centred down the page rather than pinned to the top.
+/**
+ * The words of one slip, down the page from `top`. Returns where it ended.
+ *
+ * MEASURING IS DRAWING. The height of the slip has to be known before the page
+ * is made, and the obvious way — adding the gaps up in a list beside the code
+ * that consumes them — is two things that must agree and will not. It already
+ * did not: the first version budgeted a full headline where it consumed
+ * three-quarters of one, and left a thumb of blank card under every voucher.
+ *
+ * So this runs twice. Once onto a scratch page nobody keeps, purely to learn
+ * where it stops; then again, for real, on a page cut to that answer. The
+ * wrapped lines come from `plan` so the two passes cannot lay out differently,
+ * and there is no second list of constants to drift.
+ */
+function contents(doc, p, { top, accent }) {
+  const inset = doc.left + L.pad;
+  let cy = top - L.band - L.afterBand;
 
-    A card at the top of a sheet with half a page of nothing under it reads as
-    a document that ran out; centred, it reads as the thing the page is for.
-    It also puts the fold of a sheet folded in half clear of the card.
-  */
-  const bottom = Math.max(doc.margin + 30, (doc.height - height) / 2);
-  const top = bottom + height;
+  // What it is worth, as large as the slip allows.
+  cy -= p.hSize * 0.74;
+  centre(doc, p.headline, cy, { size: p.hSize, font: 'bold', colour: accent });
+  cy -= L.afterHeadline;
 
-  /*
-    The border is a filled rectangle with a smaller one on top of it. There is
-    no stroke in this toolkit and a voucher wants an edge, which is the one
-    thing that makes it read as something to be cut out and carried.
-  */
-  doc.fill(left, bottom, width, height, accent);
-  doc.fill(left + 1.2, bottom + 1.2, width - 2.4, height - 2.4, '#ffffff');
-
-  // The masthead, in the house colour, with the business's name on it.
-  doc.fill(left + 1.2, top - bandH, width - 2.4, bandH - 1.2, accent);
-  doc.put(clean(venueName) || 'Voucher', left + pad, top - 34, { size: 15, font: 'bold', colour: '#ffffff' });
-  const tag = 'DISCOUNT VOUCHER';
-  doc.put(tag, doc.right - pad - widthOf(tag, 9, true), top - 32, { size: 9, font: 'bold', colour: '#ffffff' });
-
-  let cy = top - bandH - 24;
-
-  // What it is worth, as large as the card allows.
-  cy -= hSize * 0.74;
-  centre(doc, headline, cy, { size: hSize, font: 'bold', colour: accent });
-  cy -= 26;
-
-  // What the offer is called, under the figure. The gap is measured from the
-  // BASELINE, so it has to clear the descender of a headline set at 46pt.
-  centre(doc, v.name, cy, { size: 13, font: 'bold', colour: INK });
-  cy -= 6;
-
-  for (const line of noteLines) {
+  for (const line of p.nameLines) {
     cy -= 13;
-    centre(doc, line, cy, { size: 9.5, colour: QUIET });
+    centre(doc, line, cy, { size: 10.5, font: 'bold', colour: INK });
+  }
+  cy -= L.afterName;
+
+  for (const line of p.note) {
+    cy -= L.noteLine;
+    centre(doc, line, cy, { size: 8, colour: QUIET });
   }
 
   /*
     The code, in a panel of its own.
 
-    The one thing on the page a customer has to reproduce exactly, so it is
-    given the most contrast on the card and set wide enough to read off a
-    photograph. A voucher with no code says what to do instead, rather than
-    showing an empty box to hunt in.
+    The one thing on the slip a customer has to reproduce exactly, so it is
+    given the most contrast and set as wide as it will go — wide enough to read
+    off a phone photograph. A voucher with no code says what to do instead,
+    rather than showing an empty box to hunt in.
   */
-  cy -= 22 + 54;
-  doc.fill(left + pad, cy, room, 54, PANEL);
-  centre(doc, hasCode ? 'USE THIS CODE' : 'HOW TO USE IT', cy + 37, { size: 8, font: 'bold', colour: QUIET });
-  centre(doc, code, cy + 14, {
-    size: hasCode ? headlineSize(code, room - 40, 26, 12) : 13, font: 'bold', colour: INK,
+  cy -= L.beforeCode + L.code;
+  doc.fill(inset, cy, p.room, L.code, PANEL);
+  centre(doc, p.hasCode ? 'USE THIS CODE' : 'HOW TO USE IT', cy + 29, { size: 6.5, font: 'bold', colour: QUIET });
+  centre(doc, p.code, cy + 10, {
+    size: p.hasCode ? headlineSize(p.code, p.room - 12, 18, 8) : 9.5, font: 'bold', colour: INK,
   });
 
   // When it runs.
-  cy -= 16;
-  centre(doc, validity, cy, { size: 10.5, font: 'bold', colour: INK });
+  cy -= L.afterCode;
+  centre(doc, p.validity, cy, { size: 9, font: 'bold', colour: INK });
 
   // And the conditions, inside the edge, where they survive the scissors.
-  cy -= 14;
-  doc.fill(left + pad, cy, room, 0.7, LINE);
-  cy -= 18;
-  centre(doc, 'THE SMALL PRINT', cy, { size: 7.5, font: 'bold', colour: QUIET });
-  for (const line of termLines) {
-    cy -= 11.5;
-    doc.put(line, left + pad + 3, cy, { size: 8.5, colour: QUIET });
+  cy -= L.afterValidity;
+  doc.fill(inset, cy, p.room, 0.6, LINE);
+  cy -= L.beforeTerms;
+  centre(doc, 'THE SMALL PRINT', cy, { size: 6.5, font: 'bold', colour: QUIET });
+  for (const line of p.termLines) {
+    cy -= L.termLine;
+    doc.put(line, inset + 2, cy, { size: 7, colour: QUIET });
   }
 
-  if (foot) {
-    cy -= 20;
-    centre(doc, foot, cy, { size: 8.5, colour: QUIET });
+  if (p.footLines.length) {
+    cy -= L.beforeFoot;
+    for (const line of p.footLines) {
+      centre(doc, line, cy, { size: 7, colour: QUIET });
+      cy -= L.footLine;
+    }
   }
+  return cy;
+}
 
-  // Nothing flows under it; the card is the page.
-  doc.y = bottom - 20;
+/**
+ * One voucher, drawn as a slip, with everything it needs inside its own edge.
+ *
+ * SELF-CONTAINED ON PURPOSE. The slip has a border, which makes it read as
+ * something to tear off and carry — so anything left outside that border is
+ * something a customer loses the moment they do. The small print went below it
+ * at first, which meant the conditions this whole file argues for reaching the
+ * holder were the first thing thrown away.
+ */
+function draw(doc, p, { venueName, accent }) {
+  const left = doc.left;
+  const width = doc.inner;
+  const top = doc.height - ROLL_MARGIN;
+  const height = doc.height - ROLL_MARGIN * 2;
+  const bottom = top - height;
+
+  /*
+    The border is a filled rectangle with a smaller one on top of it. There is
+    no stroke in this toolkit and a voucher wants an edge, which is the one
+    thing that makes it read as something to be torn off and carried.
+  */
+  doc.fill(left, bottom, width, height, accent);
+  doc.fill(left + 1, bottom + 1, width - 2, height - 2, '#ffffff');
+
+  /*
+    The masthead. Stacked rather than set left and right against each other,
+    because at 80mm there is no room to put two things on one line and a name
+    of any length would run into the label.
+  */
+  doc.fill(left + 1, top - L.band, width - 2, L.band - 1, accent);
+  centre(doc, venueName, top - 20, { size: 11.5, font: 'bold', colour: '#ffffff' });
+  centre(doc, 'DISCOUNT VOUCHER', top - 33, { size: 6.5, font: 'bold', colour: '#ffffff' });
+
+  contents(doc, p, { top, accent });
   return doc;
 }
 
 /**
- * The bytes of a voucher sheet: one page per voucher.
+ * The bytes of a voucher, or of several, one slip per page.
  *
  * @param {object} input
  * @param {Record<string, any>} [input.settings]
@@ -185,31 +245,46 @@ export function voucherPdf({
   settings = {}, venue = null, vouchers, accent = '#0f766e',
   headline, validity, terms, codeWords, hasCode,
 }) {
-  const doc = new Doc();
   const venueName = clean(venue?.name) || clean(settings.restaurant_name) || 'Voucher';
+  // Once, on the slip. It was printed there AND under it, which on a thing
+  // meant to be torn off is the same address twice and then none at all.
+  const foot = [clean(settings.address), clean(settings.phone)].filter(Boolean).join(' \u00b7 ');
 
-  vouchers.forEach((v, i) => {
+  /*
+    Measured on a scratch page first, because a page has to be given its height
+    when it is made and a voucher's height is whatever its conditions come to.
+    Wrapping does not care how tall the page is, so a tall stand-in serves.
+  */
+  const scratch = new Doc({ width: ROLL_WIDTH, height: 4000, margin: ROLL_MARGIN });
+  const plans = vouchers.map((v) => plan(scratch, v, {
+    headline: headline(v),
+    code: codeWords(v),
+    hasCode: hasCode(v),
+    validity: validity(v),
+    terms: terms(v),
+    foot,
+  }));
+
+  /*
+    One height for every page, because a document carries one page size.
+    The tallest wins: a roll printer feeds a little extra paper on the shorter
+    slips, which costs a few millimetres, where cropping the tallest would cost
+    somebody their conditions.
+  */
+  const measured = plans.map((p) => {
+    const sheet = new Doc({ width: ROLL_WIDTH, height: 4000, margin: ROLL_MARGIN });
+    const from = sheet.height - ROLL_MARGIN;
+    return from - contents(sheet, p, { top: from, accent }) + L.tail;
+  });
+  const tallest = Math.max(...measured);
+  const doc = new Doc({ width: ROLL_WIDTH, height: tallest + ROLL_MARGIN * 2, margin: ROLL_MARGIN });
+
+  plans.forEach((p, i) => {
     if (i > 0) doc.newPage();
-
-    card(doc, v, {
-      headline: headline(v),
-      code: codeWords(v),
-      hasCode: hasCode(v),
-      validity: validity(v),
-      terms: terms(v),
-      venueName,
-      accent,
-      // Once, on the card. It was printed here AND under it, which on a thing
-      // meant to be cut out is the same address twice and then none at all.
-      foot: [clean(settings.address), clean(settings.phone)].filter(Boolean).join(' \u00b7 '),
-    });
-
+    draw(doc, p, { venueName, accent });
   });
 
-  const stamp = new Date().toLocaleString('en-GB', { dateStyle: 'medium' });
-  return doc.build({
-    foot: (page, total) => (total > 1
-      ? `${venueName} · printed ${stamp} · voucher ${page} of ${total}`
-      : `${venueName} · printed ${stamp}`),
-  });
+  // No page footer: at this width there is no room under the slip for one, and
+  // a voucher's own dates are what a holder actually needs.
+  return doc.build();
 }

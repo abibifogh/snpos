@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   voucherHeadline, voucherDays, voucherHours, voucherTerms,
   voucherValidity, voucherCodeWords, voucherHasCode, voucherPrintProblem,
+  voucherEmailProblem, looksLikeEmail, mayBeOffered, splitAddresses,
 } from '../voucher-words.ts';
 import type { PrintableVoucher } from '../voucher-words.ts';
 
@@ -159,4 +160,89 @@ test('an unreadable end date does not stop a voucher printing', () => {
   // print a perfectly good voucher over a typo in a field nobody looks at.
   const now = new Date('2026-09-21T10:00:00Z');
   assert.equal(voucherPrintProblem(voucher({ ends_at: 'not a date' }), now), null);
+});
+
+/* ------------------------------------------ who an offer may be sent to */
+
+test('an offer only goes to somebody who agreed to be sent offers', () => {
+  /*
+    A VOUCHER IS MARKETING. Somebody who gave an address to get a receipt has
+    not asked for offers, and sending them one anyway is what gets a
+    restaurant's mail marked as spam — after which the receipts stop arriving
+    too.
+  */
+  assert.match(
+    String(voucherEmailProblem({ name: 'Ama', email: 'ama@x.com', marketing_opt_in: false })),
+    /has not agreed to be sent offers/,
+  );
+  assert.equal(voucherEmailProblem({ email: 'ama@x.com', marketing_opt_in: true }), null);
+});
+
+test('a nonsense address is caught before a row is written', () => {
+  assert.match(String(voucherEmailProblem({ email: 'ama at example', marketing_opt_in: true })), /email address/);
+  assert.match(String(voucherEmailProblem({ marketing_opt_in: true })), /email address/);
+  assert.equal(looksLikeEmail('ama@example.com'), true);
+  assert.equal(looksLikeEmail('ama@example'), false, 'no dot is not an address');
+  assert.equal(looksLikeEmail(''), false);
+});
+
+test('the customer list offers only those who may be written to', () => {
+  const rows = [
+    { name: 'Zoe', email: 'zoe@x.com', marketing_opt_in: true },
+    { name: 'Ama', email: 'ama@x.com', marketing_opt_in: true },
+    { name: 'Kofi', email: 'kofi@x.com', marketing_opt_in: false },
+    { name: 'Nobody', marketing_opt_in: true },
+    // Never agreed either way, which is not agreement.
+    { name: 'Quiet', email: 'quiet@x.com' },
+  ];
+  assert.deepEqual(mayBeOffered(rows).map((r) => r.name), ['Ama', 'Zoe'], 'opted in only, in name order');
+});
+
+test('a pasted list comes apart however it was separated', () => {
+  // People paste. Commas, semicolons, spaces and new lines all turn up.
+  assert.deepEqual(
+    splitAddresses('ama@x.com, kofi@x.com;  zoe@x.com\nyaw@x.com'),
+    ['ama@x.com', 'kofi@x.com', 'zoe@x.com', 'yaw@x.com'],
+  );
+  assert.deepEqual(splitAddresses('  '), []);
+  // The same person twice is one message.
+  assert.deepEqual(splitAddresses('Ama@X.com, ama@x.com'), ['ama@x.com']);
+});
+
+/* --------------------------------------- the copy the mail job actually runs */
+
+/*
+  The notify job cannot import this file: a function is deployed on its own
+  with no workspace around it. So functions/notify/src/voucher-words.js is a
+  deliberate hand copy, and if the two drift a voucher a customer is EMAILED
+  says something different from the one this page PRINTED — a difference
+  discovered at the counter, where it is somebody else's problem.
+*/
+test('the mail job says exactly what the printed voucher says', async () => {
+  const job = await import('../../../../functions/notify/src/voucher-words.js');
+  const cases: PrintableVoucher[] = [
+    voucher(),
+    voucher({ kind: 'amount', value: 5_000 }),
+    voucher({ kind: 'free_delivery' }),
+    voucher({ kind: 'free_item' }),
+    voucher({ value: 1_250 }),
+    voucher({
+      min_order_total: 5_000, max_discount_amount: 10_000, days_of_week: ['mon', 'tue'],
+      time_start: '12:00', time_end: '16:00', first_order_only: true,
+      usage_limit_per_customer: 2, usage_limit_total: 50, used_count: 48, requires_manager: true,
+    }),
+    voucher({ code: 'fandf30' }),
+    voucher({ starts_at: '2026-10-01', ends_at: '2026-12-31' }),
+  ];
+  for (const v of cases) {
+    assert.equal(job.voucherHeadline(v, money), voucherHeadline(v, money), v.kind);
+    assert.deepEqual(job.voucherTerms(v, money), voucherTerms(v, money));
+    assert.equal(job.voucherValidity(v, dateWords), voucherValidity(v, dateWords));
+    assert.equal(job.voucherCodeWords(v), voucherCodeWords(v));
+    assert.equal(job.voucherHasCode(v), voucherHasCode(v));
+  }
+  const now = new Date('2026-09-21T10:00:00Z');
+  for (const v of [voucher({ active: false }), voucher({ ends_at: '2026-09-01' }), voucher()]) {
+    assert.equal(job.voucherPrintProblem(v, now), voucherPrintProblem(v, now));
+  }
 });

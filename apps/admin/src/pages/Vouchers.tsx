@@ -4,6 +4,7 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, dateWords, downloadFile,
   voucherHeadline, voucherValidity, voucherTerms, voucherCodeWords, voucherHasCode, voucherPrintProblem,
+  sendVoucherTo, splitAddresses, looksLikeEmail, mayBeOffered,
 } from '@snpos/core';
 import type { Doc } from '@snpos/core';
 /*
@@ -20,6 +21,8 @@ interface Voucher extends Doc {
   name: string;
   code?: string;
   description?: string;
+  /** Empty means every venue. See the schema. */
+  venue_ids?: string[];
   kind: 'percent' | 'amount' | 'free_item' | 'item_percent' | 'free_delivery';
   value: number;
   scope: string;
@@ -63,6 +66,12 @@ export function VouchersPage() {
   const [capText, setCapText] = useState('');
   const [minText, setMinText] = useState('');
   const [error, setError] = useState<string | null>(null);
+  /** The voucher being emailed, and who to. */
+  const [emailing, setEmailing] = useState<Voucher | null>(null);
+  const [typed, setTyped] = useState('');
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [audience, setAudience] = useState<{ $id: string; name?: string; email?: string }[]>([]);
+  const [sending, setSending] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
@@ -277,6 +286,84 @@ export function VouchersPage() {
     }
   };
 
+  /**
+   * Email this voucher to somebody.
+   *
+   * ONE ROW PER ADDRESS, never one carrying a list: a message addressed to
+   * several people is all-or-nothing at the provider, and one address it
+   * dislikes would lose the voucher for everybody on the line. Per address,
+   * one bad one costs that one — and each row records what became of it.
+   *
+   * The browser does not send anything. It writes the rows and the background
+   * job builds the voucher and posts it, the same route a sign-in link takes.
+   */
+  const startEmail = async (v: Voucher) => {
+    const why = voucherPrintProblem(v as never);
+    if (why) { toast(why, 'err'); return; }
+    setEmailing(v);
+    setTyped('');
+    setPicked(new Set());
+    /*
+      Only customers who have agreed to be sent offers. Somebody who gave an
+      address to get a receipt has not asked for marketing, and sending it
+      anyway is what gets a restaurant's mail marked as spam — after which the
+      receipts stop arriving too.
+    */
+    const all = await listAll<{ $id: string; name?: string; email?: string; marketing_opt_in?: boolean }>('customers')
+      .catch(() => []);
+    setAudience(mayBeOffered(all));
+  };
+
+  const doEmail = async () => {
+    if (!emailing) return;
+    const byHand = splitAddresses(typed);
+    const bad = byHand.find((a) => !looksLikeEmail(a));
+    if (bad) { toast(`${bad} does not look like an email address.`, 'err'); return; }
+
+    const chosen = audience.filter((c) => picked.has(c.$id));
+    const to: { email: string; name?: string }[] = [
+      ...chosen.map((c) => ({ email: String(c.email), name: c.name })),
+      // Typed by hand beats the list, and a duplicate is not sent twice.
+      ...byHand.filter((a) => !chosen.some((c) => String(c.email).toLowerCase() === a)).map((a) => ({ email: a })),
+    ];
+    if (to.length === 0) { toast('Nobody to send it to yet.', 'err'); return; }
+
+    setSending(true);
+    let sent = 0;
+    const failed: string[] = [];
+    for (const person of to) {
+      try {
+        await sendVoucherTo({
+          // A voucher can run across every venue — an empty list means all of
+          // them — so a send is filed against the first it names, or the
+          // default when it names none.
+          venueId: emailing.venue_ids?.[0] || 'main',
+          voucherId: emailing.$id,
+          voucherName: emailing.name,
+          email: person.email,
+          name: person.name,
+          by: user?.$id ?? '',
+        });
+        sent += 1;
+      } catch {
+        // Named, not counted. "One failed" sends somebody hunting through a
+        // list; the address is the thing they need.
+        failed.push(person.email);
+      }
+    }
+    setSending(false);
+    setEmailing(null);
+    /*
+      Asked for, not sent. The job posts it a moment later, and a screen that
+      promises "sent" for something that has not left yet is the kind of
+      reassurance that stops people checking.
+    */
+    toast(failed.length
+      ? `Asked for ${sent}. These could not be queued: ${failed.join(', ')}.`
+      : `Asked for it to go to ${sent} ${sent === 1 ? 'person' : 'people'}. It goes out in the next minute.`,
+      failed.length ? 'err' : undefined);
+  };
+
   /** A filename somebody can find again, from the code or the name. */
   const stemOf = (v: Voucher) => String(v.code || v.name || v.$id)
     .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).toLowerCase() || 'voucher';
@@ -356,6 +443,7 @@ export function VouchersPage() {
                         <Button size="sm" variant="ghost" onClick={() => void download([v], stemOf(v))}>
                           Download
                         </Button>{' '}
+                        <Button size="sm" variant="ghost" onClick={() => void startEmail(v)}>Email</Button>{' '}
                         <Button size="sm" onClick={() => open(v)}>Edit</Button>{' '}
                         <Button size="sm" variant="ghost" onClick={() => void remove(v)}>Delete</Button>
                       </td>
@@ -366,6 +454,71 @@ export function VouchersPage() {
             </table>
           </div>
         </Card>
+      )}
+
+      {emailing && (
+        <Modal
+          title={`Email "${emailing.name}"`}
+          onClose={() => setEmailing(null)}
+          footer={(
+            <>
+              <Button variant="ghost" onClick={() => setEmailing(null)}>Cancel</Button>
+              <Button variant="primary" loading={sending} onClick={() => void doEmail()}>
+                Send it
+              </Button>
+            </>
+          )}
+        >
+          <p className="dim small" style={{ marginTop: 0 }}>
+            Each person gets their own message with the voucher attached, so one bad address costs that address
+            and nobody else. The voucher is sent by the server a moment after you press send.
+          </p>
+
+          <Field
+            label="Email addresses"
+            hint="One or several — separate them with commas, spaces or new lines."
+          >
+            <Textarea
+              rows={3}
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder="ama@example.com, kofi@example.com"
+            />
+          </Field>
+
+          {/* Only people who have agreed to be sent offers. Somebody who gave
+              an address for a receipt has not asked for marketing, and sending
+              it anyway is what gets a restaurant's mail marked as spam. */}
+          {audience.length > 0 && (
+            <Field
+              label="Or pick from your customers"
+              hint="Only those who have agreed to be sent offers are listed."
+            >
+              <div style={{ maxHeight: '13rem', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 6 }}>
+                {audience.map((c) => (
+                  <label
+                    key={c.$id}
+                    style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0.4rem 0.6rem' }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={picked.has(c.$id)}
+                      onChange={(e) => setPicked((was) => {
+                        const next = new Set(was);
+                        if (e.target.checked) next.add(c.$id); else next.delete(c.$id);
+                        return next;
+                      })}
+                    />
+                    <span>
+                      {c.name || c.email}
+                      {c.name && <span className="dim small"> · {c.email}</span>}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </Field>
+          )}
+        </Modal>
       )}
 
       {editing && (
