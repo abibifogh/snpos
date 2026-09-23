@@ -10,6 +10,7 @@ import {
   changeOpeningFloat, floatProblem, describeFloatChange, parseMoney, toInput,
   requestSummaryResend, resendPending,
   listCreatedBetween, listByIds, setShiftSealed, isSealed, describeSeal, lockedProblem,
+  sealProblem, bulkSealPlan, bulkSealProblem, bulkSealWords, bulkSealOutcome,
   settlementBacklog, backlogSummary, stateWords, needsSettling, agedWords,
   rangeTotals, kindsWorthShowing, KIND_LABELS, MODULE_LABELS, canOpen, floatOrigin,
   kindOf, countedParts, partLines, partsWords, unexplained,
@@ -19,7 +20,7 @@ import {
   loadStaffNames, forDateTimeInput } from '@snpos/core';
 import type {
   Module, Doc, CashHandover, MoneyKind, CountedParts, Settings, CountRow, CountEntry, TabOrder,
-  Shift as CoreShift, Venue,
+  Shift as CoreShift, Venue, BulkSealPlan, SealResult,
 } from '@snpos/core';
 import { useSession, useMoney } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
@@ -453,6 +454,21 @@ export function ShiftsPage() {
   const [sealBusy, setSealBusy] = useState(false);
 
   /**
+   * The shifts somebody has ticked, for settling several at once.
+   *
+   * Held as ids rather than as the rows themselves, because the list behind
+   * them is reloaded after every write: keeping the rows would mean ticks that
+   * point at a copy of a shift as it was before somebody else touched it.
+   */
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
+  /** Null when nothing is being settled in bulk; the plan while it is. */
+  const [bulk, setBulk] = useState<BulkSealPlan<Shift> | null>(null);
+  const [bulkReason, setBulkReason] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
+  /** How far through a run we are, because a run of thirty is not instant. */
+  const [bulkDone, setBulkDone] = useState(0);
+
+  /**
    * The kind of money whose headline somebody has pressed, and the sales
    * behind it across the whole range.
    *
@@ -637,6 +653,74 @@ export function ShiftsPage() {
     }
   };
 
+  /* ------------------------------------------------------ settling several */
+
+  /** Every shift on screen that could be ticked, whichever table it is in. */
+  const tickable = shown.filter((s) => isAdmin && sealProblem(s) === null);
+  const chosen = shown.filter((s) => ticked.has(s.$id));
+
+  const tick = (id: string, on: boolean) => setTicked((was) => {
+    const next = new Set(was);
+    if (on) next.add(id); else next.delete(id);
+    return next;
+  });
+
+  /**
+   * Open the confirmation for everything ticked.
+   *
+   * The plan is worked out HERE rather than inside the modal, so what is
+   * confirmed is what was true when somebody pressed the button — and so a
+   * run with nothing in it refuses before a modal opens rather than after.
+   */
+  const startBulk = () => {
+    const plan = bulkSealPlan(chosen);
+    const why = bulkSealProblem(plan);
+    if (why) { toast(why, 'err'); return; }
+    setBulkReason('');
+    setBulkDone(0);
+    setBulk(plan);
+  };
+
+  /**
+   * Settle them, one at a time, oldest first.
+   *
+   * One at a time and not in parallel: each write is a document update and an
+   * audit entry, and thirty of those at once is how a burst gets rate-limited
+   * half way through — which would leave the backlog pocked with settled and
+   * unsettled nights rather than simply shorter.
+   *
+   * A failure does not stop the run. The shift that failed is kept and named
+   * afterwards; abandoning the other twenty because one of them would not
+   * write is a worse answer than finishing and saying so.
+   */
+  const runBulk = async () => {
+    if (!bulk) return;
+    setBulkBusy(true);
+    const results: SealResult[] = [];
+    // Kept by id as the run goes, rather than matched back by code afterwards:
+    // a code is a label, and two shifts sharing one would silently untick the
+    // wrong night.
+    const stillFailing = new Set<string>();
+    for (const shift of bulk.ready) {
+      try {
+        await setShiftSealed({ shift, sealed: true, userId: user?.$id ?? '', reason: bulkReason.trim() });
+        results.push({ code: shift.code, ok: true });
+      } catch (e) {
+        results.push({ code: shift.code, ok: false, why: humanError(e) });
+        stillFailing.add(shift.$id);
+      }
+      setBulkDone(results.length);
+    }
+    setBulkBusy(false);
+    setBulk(null);
+    // Only the ones that went through lose their tick. What failed stays
+    // ticked, so trying again is one press rather than finding them again.
+    setTicked(stillFailing);
+    await load();
+    const out = bulkSealOutcome(results);
+    toast(out.message, out.tone);
+  };
+
   if (error) return <Notice>{error}</Notice>;
 
   return (
@@ -793,12 +877,29 @@ export function ShiftsPage() {
             <table className="data">
               <thead>
                 <tr>
+                  {isAdmin && <th style={{ width: '2rem' }} />}
                   <th>Shift</th><th>Closed</th><th>Waiting</th><th>Why it is here</th><th />
                 </tr>
               </thead>
               <tbody>
                 {backlog.map((r) => (
                   <tr key={r.shift.$id} style={{ background: 'var(--danger-bg, #fef2f2)' }}>
+                    {/* Ticked here as well as in the list below, because this
+                        is the table somebody actually works through. The two
+                        share one set of ticks, so a shift cannot be ticked
+                        twice or counted twice. */}
+                    {isAdmin && (
+                      <td>
+                        {sealProblem(r.shift) === null && (
+                          <input
+                            type="checkbox"
+                            aria-label={`Settle ${r.shift.code}`}
+                            checked={ticked.has(r.shift.$id)}
+                            onChange={(e) => tick(r.shift.$id, e.target.checked)}
+                          />
+                        )}
+                      </td>
+                    )}
                     <td style={{ fontWeight: 550 }}>
                       {r.shift.code}
                       {side === 'all' && (
@@ -844,9 +945,53 @@ export function ShiftsPage() {
           </Empty>
         ) : (
           <div className="table-wrap">
+            {/*
+              THE BAR, and it is only here once something is ticked.
+
+              A toolbar that is always on screen with nothing selected is a
+              control somebody has to read past every time they come to look at
+              last week's takings. It appears when it has something to do.
+            */}
+            {isAdmin && chosen.length > 0 && (
+              <div
+                className="row row-wrap"
+                style={{
+                  gap: '0.6rem', alignItems: 'center', padding: '0.6rem 0.9rem',
+                  borderBottom: '1px solid var(--border)', background: 'var(--surface-2, #f6f8fa)',
+                }}
+              >
+                <strong>{chosen.length} {chosen.length === 1 ? 'shift' : 'shifts'} ticked</strong>
+                <Button size="sm" variant="primary" onClick={startBulk}>
+                  Settle {chosen.length === 1 ? 'it' : 'them'}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setTicked(new Set())}>Clear</Button>
+              </div>
+            )}
             <table className="data">
               <thead>
                 <tr>
+                  {isAdmin && (
+                    <th style={{ width: '2rem' }}>
+                      {/*
+                        Ticks every shift on screen that CAN be settled — not
+                        every row. A box that ticks rows the next button will
+                        then refuse is a box that teaches people to ignore it.
+
+                        It follows the filters deliberately: what is ticked is
+                        what is shown, so narrowing to one side and ticking
+                        everything settles that side and nothing else.
+                      */}
+                      <input
+                        type="checkbox"
+                        aria-label="Tick every shift that can be settled"
+                        disabled={tickable.length === 0}
+                        checked={tickable.length > 0 && tickable.every((s) => ticked.has(s.$id))}
+                        onChange={(e) => setTicked(e.target.checked
+                          ? new Set(tickable.map((s) => s.$id))
+                          : new Set())}
+                      />
+                    </th>
+                  )}
                   <th>Shift</th>
                   <th>Opened</th>
                   <th>Closed</th>
@@ -862,6 +1007,21 @@ export function ShiftsPage() {
                   const diff = totalVariance(s);
                   return (
                     <tr key={s.$id}>
+                      {isAdmin && (
+                        <td>
+                          {/* Only where there is something to settle. An open
+                              shift and an already-settled one both have a box
+                              that could only ever be refused. */}
+                          {sealProblem(s) === null && (
+                            <input
+                              type="checkbox"
+                              aria-label={`Settle ${s.code}`}
+                              checked={ticked.has(s.$id)}
+                              onChange={(e) => tick(s.$id, e.target.checked)}
+                            />
+                          )}
+                        </td>
+                      )}
                       <td style={{ fontWeight: 550 }}>{s.code}</td>
                       <td className="dim small">{dateTimeWords(s.opened_at)}</td>
                       <td className="dim small">{s.closed_at ? dateTimeWords(s.closed_at) : '-'}</td>
@@ -993,6 +1153,69 @@ export function ShiftsPage() {
 
           <Field label="Why" hint="Optional, and worth it. Kept on the record with your name against it.">
             <Textarea rows={2} value={sealReason} onChange={(e) => setSealReason(e.target.value)} />
+          </Field>
+        </Modal>
+      )}
+
+      {bulk && (
+        <Modal
+          title={`Settle ${bulk.ready.length} ${bulk.ready.length === 1 ? 'shift' : 'shifts'}`}
+          onClose={() => { if (!bulkBusy) setBulk(null); }}
+          footer={
+            <>
+              <Button variant="ghost" disabled={bulkBusy} onClick={() => setBulk(null)}>Cancel</Button>
+              <Button variant="primary" onClick={() => void runBulk()} loading={bulkBusy}>
+                {bulkBusy
+                  ? `Settling ${bulkDone + 1} of ${bulk.ready.length}`
+                  : `Settle ${bulk.ready.length === 1 ? 'it' : 'them all'}`}
+              </Button>
+            </>
+          }
+        >
+          <p className="small dim" style={{ marginTop: 0 }}>{bulkSealWords(bulk)}</p>
+
+          {/*
+            NAMED, not counted. "4 shifts" is a number somebody has to trust;
+            the codes are the thing they can check against what they ticked,
+            and this is the last moment before the writes happen.
+          */}
+          <div className="table-wrap" style={{ maxHeight: '14rem', overflowY: 'auto' }}>
+            <table className="data">
+              <tbody>
+                {bulk.ready.map((s) => (
+                  <tr key={s.$id}>
+                    <td style={{ fontWeight: 550 }}>{s.code}</td>
+                    <td className="dim small">{s.closed_at ? dateTimeWords(s.closed_at) : '-'}</td>
+                    <td className="dim small">{MODULE_LABELS[s.module ?? 'kitchen']}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* What was ticked and will NOT be settled, with the reason. Leaving
+              these out silently is how somebody walks away believing a night
+              was dealt with when it was passed over. */}
+          {bulk.refused.length > 0 && (
+            <Notice tone="warn">
+              <div>These were ticked and are being left alone:</div>
+              <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.1rem' }}>
+                {bulk.refused.map((r) => <li key={r.shift.$id} className="small">{r.why}</li>)}
+              </ul>
+            </Notice>
+          )}
+
+          <Notice tone="info">
+            Settling says a night is <strong>finished</strong>: its close time, its orders, its payments and its
+            spending can no longer be changed. An admin can reopen any of them one at a time, and that is
+            recorded too.
+          </Notice>
+
+          <Field
+            label="Why"
+            hint="Optional. The same words are kept against every one of them, with your name."
+          >
+            <Textarea rows={2} value={bulkReason} onChange={(e) => setBulkReason(e.target.value)} />
           </Field>
         </Modal>
       )}
