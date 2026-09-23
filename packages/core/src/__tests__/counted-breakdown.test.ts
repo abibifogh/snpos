@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   countedParts, partLines, partsWords, unexplained,
+  drawerMakeup, makeupWords, driftWords,
   type SpendRow,
 } from '../counted-breakdown.ts';
 import type { MoneyKind, TotalledShift } from '../shift-totals.ts';
@@ -204,4 +205,151 @@ test('a list that falls short of its own total says so', () => {
   assert.equal(unexplained(parts, 100_000), 0);
   assert.equal(unexplained(parts, 74_400), 25_600);
   assert.equal(unexplained(parts, 100_001), -1);
+});
+
+/* -------------------------------- one drawer, on one shift, term by term */
+
+const spend = (over: Partial<SpendRow> = {}): SpendRow =>
+  ({ amount: 5_000, paid_from_method_id: 'm-cash', ...over });
+
+test('the gap between what was taken and what was expected is named, not left to be noticed', () => {
+  /*
+    The real shift this was written for. Twelve cash sales adding to GH₵835,
+    an expected figure of GH₵652, and a sentence saying "anything paid out of
+    it comes off again" without saying how much — which asks the reader to
+    spot a gap of 183, guess what it is, and take it on trust.
+  */
+  const m = drawerMakeup({
+    methodId: 'm-cash',
+    float: 0,
+    taken: 83_500,
+    expected: 65_200,
+    spends: [spend({ amount: 12_000 }), spend({ amount: 6_300 })],
+  });
+  assert.equal(m.paidOut, 18_300);
+  assert.equal(m.works, 65_200, 'float + taken − paid out is the expected figure');
+  assert.equal(m.drift, 0);
+  assert.equal(m.spends.length, 2, 'and the rows behind it, so it can be checked rather than believed');
+});
+
+test('only what came out of this drawer comes off this drawer', () => {
+  /*
+    Petty cash is money the shift never took. Deducting it would make the
+    drawer look short by an amount that was never in it — the accusation that
+    stops people recording expenses at all. Another method's spending is not
+    this drawer's either.
+  */
+  const m = drawerMakeup({
+    methodId: 'm-cash',
+    float: 0,
+    taken: 10_000,
+    expected: 7_000,
+    spends: [
+      spend({ amount: 3_000 }),
+      spend({ amount: 4_000, from_takings: false }),
+      spend({ amount: 9_000, paid_from_method_id: 'm-card' }),
+    ],
+  });
+  assert.equal(m.paidOut, 3_000);
+  assert.equal(m.works, 7_000);
+});
+
+test('a row written before the question existed is money out of the drawer', () => {
+  // Absent means yes. Every one of them was, and has been counted that way.
+  const m = drawerMakeup({
+    methodId: 'm-cash', float: 0, taken: 10_000, expected: 5_000, spends: [spend({ amount: 5_000 })],
+  });
+  assert.equal(m.paidOut, 5_000);
+});
+
+test('a float is part of the drawer and not part of the takings', () => {
+  const m = drawerMakeup({
+    methodId: 'm-cash', float: 20_000, taken: 50_000, expected: 65_000, spends: [spend()],
+  });
+  assert.equal(m.works, 65_000);
+  assert.match(makeupWords(m, money, 'Cash'), /float of GHS 200\.00/);
+});
+
+test('a stored figure that no longer matches the rows is said, not papered over', () => {
+  /*
+    The close stored what it knew at the time and that figure never moves on
+    its own, so the two drifting apart is a real event — a spend recorded or
+    refiled after the close, a payment moved onto the shift. Showing an
+    equation that does not add up and leaving the reader to pick a side is
+    worse than saying which is which.
+  */
+  const m = drawerMakeup({
+    methodId: 'm-cash', float: 0, taken: 50_000, expected: 45_000, spends: [spend({ amount: 3_000 })],
+  });
+  assert.equal(m.works, 47_000);
+  assert.equal(m.drift, -2_000);
+  const words = String(driftWords(m, money));
+  assert.match(words, /stored GHS 450\.00/);
+  assert.match(words, /GHS 20\.00 less/);
+  assert.match(words, /changed after it closed/);
+  // And which figure the difference against the count was built from, since
+  // that is the reader's next question.
+  assert.match(words, /worked out from the stored figure/);
+});
+
+test('a shift nobody has touched since says nothing about drift', () => {
+  const m = drawerMakeup({
+    methodId: 'm-cash', float: 0, taken: 50_000, expected: 50_000, spends: [],
+  });
+  assert.equal(driftWords(m, money), null);
+});
+
+test('a card drawer with nothing in either term says so rather than listing noughts', () => {
+  /*
+    "No float and nothing paid out" is the answer to why taken and expected
+    are the same number. A reader who cannot see that has to take it on trust.
+  */
+  const m = drawerMakeup({ methodId: 'm-card', float: 0, taken: 40_000, expected: 40_000, spends: [] });
+  const words = makeupWords(m, money, 'Card');
+  assert.match(words, /no float and nothing paid out/);
+  assert.match(words, /GHS 400\.00 expected in it at close/);
+  assert.equal(/less GHS 0/.test(words), false, 'a nought term is noise');
+});
+
+test('the sentence carries every term it mentions', () => {
+  const m = drawerMakeup({
+    methodId: 'm-cash', float: 10_000, taken: 83_500, expected: 75_200, spends: [spend({ amount: 18_300 })],
+  });
+  const words = makeupWords(m, money, 'Cash');
+  assert.match(words, /GHS 835\.00 taken through Cash/);
+  assert.match(words, /float of GHS 100\.00/);
+  assert.match(words, /less GHS 183\.00 paid out of the drawer/);
+  assert.match(words, /GHS 752\.00 expected/);
+});
+
+test('spending that could not be read is not reported as nothing paid out', () => {
+  /*
+    THE BUG CLASS THIS SYSTEM KEEPS MEETING. A failed read and a shift that
+    spent nothing arrive as the same empty list. "Nothing was paid out of this
+    drawer" and "I could not find out" are different claims about somebody's
+    money, and only one of them is safe to make confidently.
+  */
+  const m = drawerMakeup({
+    methodId: 'm-cash', float: 0, taken: 83_500, expected: 65_200, spends: [], spendsKnown: false,
+  });
+  assert.equal(m.known, false);
+  const words = makeupWords(m, money, 'Cash');
+  assert.match(words, /could not be read/);
+  assert.equal(/nothing paid out/.test(words), false);
+  // The stored figure is still quoted, because it is the one thing that IS
+  // known — it just cannot be broken down.
+  assert.match(words, /GHS 652\.00 expected/);
+
+  // And no drift is claimed. Worked out from an unasked nought it would be
+  // the size of the spending, reported as somebody having changed the shift.
+  assert.equal(m.drift, 0);
+  assert.equal(driftWords(m, money), null);
+});
+
+test('a read that worked and found nothing still says so plainly', () => {
+  const m = drawerMakeup({
+    methodId: 'm-cash', float: 0, taken: 50_000, expected: 50_000, spends: [],
+  });
+  assert.equal(m.known, true, 'absent means the read worked');
+  assert.match(makeupWords(m, money, 'Cash'), /nothing paid out of it/);
 });

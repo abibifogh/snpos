@@ -14,6 +14,7 @@ import {
   settlementBacklog, backlogSummary, stateWords, needsSettling, agedWords,
   rangeTotals, kindsWorthShowing, KIND_LABELS, MODULE_LABELS, canOpen, floatOrigin,
   kindOf, countedParts, partLines, partsWords, unexplained,
+  drawerMakeup, makeupWords, driftWords,
   shiftCountEntries, countsByPhase, phaseSummary, bothEndsWords, countsGapWords,
   buildReportHtml, openPrintable,
   tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS, dateWords, timeWords, dateTimeWords,
@@ -141,6 +142,8 @@ export function ShiftsPage() {
     return staffNames.get(id) ?? 'Not recorded';
   };
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  /** Whether the spending above was actually read. See the load. */
+  const [expensesRead, setExpensesRead] = useState(true);
 
   /**
    * Where an expense was paid from, which is two questions and not one.
@@ -564,9 +567,18 @@ export function ShiftsPage() {
       the morning after a late close belongs to that night rather than to the
       day it was typed.
     */
+    /*
+      Whether that read WORKED, kept apart from what it returned.
+
+      A failed read and a shift that spent nothing are the same empty list,
+      and the drawer breakdown builds a sentence about somebody's money out of
+      it: "nothing was paid out of this drawer" and "I could not find out" are
+      different claims, and only one of them is safe to make confidently.
+    */
     const e = await listByIds<Expense>('shift_expenses', 'shift_id', s.map((x) => x.$id)).catch(
-      () => [] as Expense[],
+      () => null,
     );
+    setExpensesRead(e !== null);
     setRows(s.sort((a, b) => b.opened_at.localeCompare(a.opened_at)));
     /*
       Who opened and who closed, by name.
@@ -579,7 +591,7 @@ export function ShiftsPage() {
     */
     setStaffNames(await loadStaffNames());
     setMethods(m);
-    setExpenses(e);
+    setExpenses(e ?? []);
     setHandovers(h);
   };
 
@@ -1453,6 +1465,23 @@ export function ShiftsPage() {
                   const live = mine.filter((p) => p.status !== 'voided' && p.status !== 'refunded');
                   const taken = live.reduce((n, p) => n + p.amount + (p.tip ?? 0), 0);
                   const showing = openMethod === id;
+                  /*
+                    The term that was named but never given.
+
+                    This panel said "anything paid out of it comes off again to
+                    give the expected figure" — true, and useless. A drawer
+                    showing 835 taken against 652 expected asked the reader to
+                    notice a gap of 183, guess what it was, and take it on
+                    trust. See drawerMakeup.
+                  */
+                  const makeup = drawerMakeup({
+                    methodId: id,
+                    float: parseMap(detail.opening_floats)[id] ?? 0,
+                    taken,
+                    expected: parseMap(detail.expected)[id] ?? 0,
+                    spends: expenses.filter((e) => e.shift_id === detail.$id),
+                    spendsKnown: expensesRead,
+                  });
                   return (
                     <Fragment key={id}>
                     <tr>
@@ -1491,8 +1520,14 @@ export function ShiftsPage() {
                             <span className="small dim">Reading the sales…</span>
                           ) : mine.length === 0 ? (
                             <span className="small dim">
-                              Nothing was taken by {methodName(id)} on this shift. The expected figure is the
-                              float alone, less anything paid out of it.
+                              Nothing was taken by {methodName(id)} on this shift, so the expected figure is
+                              the float alone
+                              {!makeup.known
+                                ? ', less whatever was paid out of it — which could not be read'
+                                : makeup.paidOut > 0
+                                  ? `, less the ${money(makeup.paidOut)} paid out of it`
+                                  : ', with nothing paid out of it'}
+                              .
                             </span>
                           ) : (
                             <>
@@ -1544,17 +1579,64 @@ export function ShiftsPage() {
                                   </tbody>
                                 </table>
                               </div>
-                              {/* How the figure above is built, said rather than
-                                  left to be worked out: this list adds up to the
-                                  taken half of it and nothing else. */}
+                              {/* How the figure above is built, with every term
+                                  in it: this list adds up to the taken half and
+                                  nothing else, and the rest is said below. */}
                               <p className="small dim" style={{ margin: '0.5rem 0 0' }}>
-                                {settings ? formatMoney(taken, settings) : taken} taken through{' '}
-                                {methodName(id)}
-                                {(parseMap(detail.opening_floats)[id] ?? 0) > 0
-                                  && `, on top of a float of ${settings
-                                    ? formatMoney(parseMap(detail.opening_floats)[id] ?? 0, settings) : 0}`}
-                                . Anything paid out of it comes off again to give the expected figure.
+                                {makeupWords(makeup, money, methodName(id))}
                               </p>
+
+                              {/*
+                                THE MONEY THAT LEFT THIS DRAWER, itemised.
+
+                                A figure alone would still have to be believed.
+                                These are the rows it is made of, and whoever is
+                                querying the shortage is querying exactly these.
+                                Only for somebody who may see what a shift paid
+                                out; the figure itself is arithmetic on the
+                                drawer and is shown either way.
+                              */}
+                              {makeup.paidOut > 0 && maySeeExpenses && (
+                                <div className="table-wrap" style={{ marginTop: '0.4rem' }}>
+                                  <table className="data">
+                                    <thead>
+                                      <tr>
+                                        <th>Paid out of this drawer</th>
+                                        <th>To</th>
+                                        <th className="num">Amount</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {makeup.spends.map((e) => (
+                                        <tr key={e.$id}>
+                                          <td className="small">
+                                            {e.category_key || e.category}
+                                            {e.note && <span className="dim"> · {e.note}</span>}
+                                          </td>
+                                          <td className="small dim">{e.payee || '—'}</td>
+                                          <td className="num">
+                                            {settings ? formatMoney(e.amount, settings) : e.amount}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                      <tr>
+                                        <td colSpan={2} style={{ fontWeight: 550 }}>Paid out</td>
+                                        <td className="num" style={{ fontWeight: 550 }}>
+                                          {settings ? formatMoney(makeup.paidOut, settings) : makeup.paidOut}
+                                        </td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+
+                              {/* The stored figure and the arithmetic no longer
+                                  agreeing is a real event, not a rounding. */}
+                              {driftWords(makeup, money) && (
+                                <div style={{ marginTop: '0.5rem' }}>
+                                  <Notice tone="warn">{driftWords(makeup, money)}</Notice>
+                                </div>
+                              )}
                             </>
                           )}
                         </td>
