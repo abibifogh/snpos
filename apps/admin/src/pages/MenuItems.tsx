@@ -18,6 +18,7 @@ import {
   headingsInUse, headingProblem, itemsUnder, renameWords,
   reviewMenu, reviewSummary, dietsClaimed,
   nameBook, nameFrom,
+  menuCsv, menuSections, menuFileStem, menuExportProblem, toCsv, downloadCsv, downloadFile,
 } from '@snpos/core';
 import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice, WaitingChange, StaffProfile, ProductVariant, Omission } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
@@ -31,6 +32,14 @@ import { RecipeEditor, draftFrom, type DraftRecipe } from '../components/RecipeE
 import { StationPicker, useStations, legacyStationFor } from '../components/StationPicker';
 import { StockUpload } from '../components/StockUpload';
 import { DrinkUpload } from '../components/DrinkUpload';
+/*
+  THE SAME PDF TOOLKIT THE VOUCHER AND THE BOOKING SHEET USE.
+
+  A printed price list that disagrees with the one attached to an email is two
+  documents about one menu with no way to tell which is current, so there is
+  one builder. See functions/notify/src/menu-pdf.js.
+*/
+import { menuPdf } from '../../../../functions/notify/src/menu-pdf.js';
 import { useSession } from '../session';
 
 interface ItemCategory extends Doc { menu_item_id: string; category_id: string; sort: number; active: boolean }
@@ -370,6 +379,58 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     [visible, sorts],
   );
   const tree = useMemo(() => groupRows(ordered, groups, groupValue), [ordered, groups, consignors]);
+
+  /**
+   * The catalogue, out of the system and into a file.
+   *
+   * WHAT IS ON SCREEN, not everything there is. Somebody who has filtered to
+   * one category and hidden the archived rows has already said what they want
+   * a list of, and handing them the whole catalogue instead throws that away —
+   * they would only filter it again in a spreadsheet.
+   *
+   * Both formats are built from the same facts, so a price list read by an
+   * accountant and a menu pinned in the office cannot disagree about what a
+   * dish costs. See menu-export.ts.
+   */
+  const forExport = () => ordered.map((i) => ({
+    ...i,
+    categoryName: i.categoryName ?? '',
+    consignorName: ownerName(i.consignor_id),
+  }));
+
+  const exportCsv = () => {
+    const rows = forExport();
+    const why = menuExportProblem(rows);
+    if (why) { toast(why, 'err'); return; }
+    const { headers, rows: body } = menuCsv(rows, {
+      currency: settings?.currency_code,
+      decimals: settings?.currency_decimals ?? 2,
+      craft: module === 'craft',
+    });
+    downloadCsv(`${menuFileStem(module)}.csv`, toCsv(headers, body));
+  };
+
+  const exportPdf = () => {
+    const rows = forExport();
+    const why = menuExportProblem(rows);
+    if (why) { toast(why, 'err'); return; }
+    try {
+      downloadFile(
+        `${menuFileStem(module)}.pdf`,
+        menuPdf({
+          settings: settings ?? {},
+          venue: null,
+          sections: menuSections(rows),
+          money: (n: number) => (settings ? formatMoney(n, settings) : String(n)),
+          title: `${W.title} \u00b7 price list`,
+          accent: settings?.primary_color ?? '#0f766e',
+        }),
+        'application/pdf',
+      );
+    } catch (e) {
+      toast(humanError(e), 'err');
+    }
+  };
 
   /** Every category a dish belongs to: its primary, plus any extra links. */
   const categoriesFor = (item: MenuItem): string[] => {
@@ -1246,6 +1307,13 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
               Count sizes separately
             </Button>
           )}
+          {/* What is on screen, in a file. Both read the same facts. */}
+          <Button onClick={exportPdf} title={`Print the ${W.many} as they are filtered now`}>
+            Export PDF
+          </Button>
+          <Button onClick={exportCsv} title="A spreadsheet of everything on screen">
+            Export CSV
+          </Button>
           {mayEdit && (
             <Button variant="primary" onClick={() => open()} disabled={categories.length === 0}>
               Add {W.one}

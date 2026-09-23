@@ -116,6 +116,7 @@ export * from './group-link';
 export * from './group-menu';
 export * from './group-bookings';
 export * from './pass-shape';
+export * from './menu-export';
 export * from './voucher-words';
 export * from './voucher-send';
 export * from './sitting-move';
