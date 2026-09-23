@@ -4,7 +4,7 @@ import { shiftPrefix } from '../shift-rules.ts';
 import {
   modulesOf, modulesForStaff, parseAccess, canOpen, inTrade, sectionsFor,
   canEditCatalogue, selfOrderModule, ADMIN_SECTIONS, DEFAULT_ACCESS, areasOf, sidesOf, legacySide,
-  navFor, catalogueSides, sidebarSides,
+  navFor, catalogueSides, sidebarSides, shopCountsOn, unavailableWords,
   canRepriceLine, MODULE_LABELS,
 } from '../access.ts';
 import type { Settings, StaffProfile } from '../types.ts';
@@ -81,6 +81,65 @@ test('a section belonging to a side that is switched off is not offered', () => 
   assert.equal(inTrade(consignors, kitchenOnly), false);
   assert.equal(canOpen('consignors', staff({ role: 'admin' }), kitchenOnly), false,
     'not even an owner, because there is nothing behind it');
+});
+
+/* ------------------------------------------- the shop's stocktake, switched off */
+
+test('a shop that has never answered still counts its shelves', () => {
+  /*
+    The whole care in this setting. A settings row written before it existed,
+    or one that failed to load, must not take a working page away from a shop
+    that was using it — so only somebody deliberately saying no switches it
+    off.
+  */
+  const shop = settings({ kitchen_enabled: false, craft_enabled: true });
+  assert.equal(shopCountsOn(shop), true);
+  assert.equal(shopCountsOn(null), true);
+  assert.equal(shopCountsOn(settings({ craft_counts_enabled: true })), true);
+  assert.equal(shopCountsOn(settings({ craft_counts_enabled: false })), false);
+  assert.ok(canOpen('stocktake', staff({ role: 'admin' }), shop));
+});
+
+test('switched off, the stocktake goes for everybody including the owner', () => {
+  // Not a permission. There is nothing behind the page, and an admin who
+  // turned it off should not then find it in their own sidebar.
+  const off = settings({ kitchen_enabled: false, craft_enabled: true, craft_counts_enabled: false });
+  assert.equal(canOpen('stocktake', staff({ role: 'admin' }), off), false);
+  assert.equal(canOpen('stocktake', staff({ role: 'manager' }), off), false);
+  const labels = navFor(staff({ role: 'admin' }), off).flatMap((g) => g.links.map((l) => l.label));
+  assert.equal(labels.includes('Shop stocktake'), false);
+});
+
+test('switching the count off leaves the rest of the shop alone', () => {
+  // It is a count, not the shop. Goods received, makers and payouts are how
+  // the shelf moves in the ordinary way and none of them is in question.
+  const off = settings({ kitchen_enabled: false, craft_enabled: true, craft_counts_enabled: false });
+  for (const key of ['intake', 'consignors', 'payouts', 'shop_items']) {
+    assert.ok(canOpen(key, staff({ role: 'admin' }), off), `${key} is untouched`);
+  }
+});
+
+test('a page that is switched off says so rather than blaming the account', () => {
+  /*
+    Two different facts that were said as one sentence. "Ask an admin if you
+    think it should" is right for a permission and wrong for a page with
+    nothing behind it — an owner reading it on their own account would go
+    hunting for a checkbox that does not exist.
+  */
+  const off = settings({ kitchen_enabled: false, craft_enabled: true, craft_counts_enabled: false });
+  const words = unavailableWords('stocktake', staff({ role: 'admin' }), off);
+  assert.match(words, /switched off/);
+  assert.match(words, /Settings/);
+  // And it says where a count already submitted went, because it did not go
+  // anywhere: it is still waiting, holding its pieces frozen.
+  assert.match(words, /Waiting for you/);
+
+  const kitchenOnly = settings({ kitchen_enabled: true, craft_enabled: false });
+  assert.match(unavailableWords('consignors', staff({ role: 'admin' }), kitchenOnly), /not switched on/);
+
+  // A genuine permission still reads as one.
+  const both = settings({ kitchen_enabled: true, craft_enabled: true });
+  assert.match(unavailableWords('settings', staff({ role: 'waiter' }), both), /does not have access/);
 });
 
 test('an owner can always open what the business does run', () => {

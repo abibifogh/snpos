@@ -45,6 +45,7 @@ const FIELD_LABELS: Record<string, string> = {
   stock_count_decimals: 'Part amounts in the stock count',
   bar_count_skippable: 'Letting staff skip the bar count',
   imprest_custodian_counts: 'Letting a petty cash holder count their own box',
+  craft_counts_enabled: 'Whether the shop counts its shelves',
   expense_paid_from: 'What money spent during a shift can come out of',
   kitchen_enabled: 'The kitchen side',
   craft_enabled: 'The craft shop side',
@@ -287,6 +288,9 @@ export function SettingsPage() {
         stock_count_decimals: form.stock_count_decimals !== false,
         bar_count_skippable: form.bar_count_skippable === true,
         imprest_custodian_counts: form.imprest_custodian_counts === true,
+        // Written as "on unless switched off", matching how it is read. See
+        // shopCountsOn: a blank must never take the page away.
+        craft_counts_enabled: form.craft_counts_enabled !== false,
         expense_paid_from: form.expense_paid_from ?? 'cash_only',
         kitchen_enabled: mods.kitchen,
         craft_enabled: mods.craft,
@@ -800,6 +804,43 @@ export function SettingsPage() {
             </p>
           </>
         )}
+        {/* Only where there is a shop. A stocktake of one-off consigned
+            pieces is a different proposition from a shelf of identical mugs,
+            and some shops do not want it at all. */}
+        {mods.craft && (
+          <>
+            <h3 style={{ marginTop: '1.6rem' }}>The shop&rsquo;s stocktake</h3>
+            <p className="small dim" style={{ marginTop: 0 }}>
+              Somebody walks the shelves, writes down what is actually there, and an admin agrees it before
+              anything moves. It is the only thing that can take a piece off the shelf with no sale behind it,
+              which is how a piece that broke, walked, or went back to its maker ever comes off.
+            </p>
+            <Toggle
+              checked={form.craft_counts_enabled !== false}
+              onChange={(v) => set('craft_counts_enabled', v)}
+              label="The shop counts its shelves"
+            />
+            <p className="small dim" style={{ marginBottom: 0 }}>
+              {form.craft_counts_enabled === false ? (
+                <>
+                  <strong>Off.</strong> <strong>Shop stocktake</strong> is gone from the sidebar and no new count
+                  can be started. The shelf still moves on goods received and on a sale — what stops is the only
+                  way to correct it, so a piece that breaks or goes back to its maker will sit on the shelf
+                  saying it is still there. Anything already submitted is <em>not</em> thrown away: it stays
+                  under <strong>Waiting for you</strong> until it is agreed or refused, because a count that is
+                  waiting holds its pieces frozen and abandoning it would freeze them for good.
+                </>
+              ) : (
+                <>
+                  <strong>On, which is the setting to keep</strong> for a shop holding stock it is answerable
+                  for. Turn it off for a shop of one-off pieces that are looked at rather than counted, where
+                  the sheet is a form somebody fills in to say what everybody can already see.
+                </>
+              )}
+            </p>
+          </>
+        )}
+
         <h3 style={{ marginTop: '1.6rem' }}>Petty cash counts</h3>
         <p className="small dim" style={{ marginTop: 0 }}>
           A petty cash box is counted against what its records say should be in it. That count is the check on

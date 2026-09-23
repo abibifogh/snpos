@@ -434,6 +434,11 @@ export const COLLECTIONS = [
       // a count is the check ON the custodian and catches nothing when the
       // person answerable for the money is the one answering. See canCountBox.
       ['imprest_custodian_counts', 'b', null, false, false],
+      // Whether the shop counts its shelves at all. ON, and absent means on —
+      // a setting nobody has answered must not switch a page off. A shop of
+      // one-off pieces that are looked at rather than counted can turn the
+      // stocktake off entirely. See shopCountsOn.
+      ['craft_counts_enabled', 'b', null, false, true],
       ['stock_variance_threshold_bp', 'i', null, true, 1000],
       ['stock_variance_value_floor', 'i', null, true, 2000],
       ['expense_approval_threshold', 'i', null, true, 20000],

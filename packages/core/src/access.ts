@@ -377,6 +377,28 @@ export function parseAccess(settings: Settings | null): Record<string, string[]>
 }
 
 /**
+ * Whether the shop counts its shelves at all.
+ *
+ * A stocktake is a question worth asking of a shelf of identical mugs, where
+ * the number is the only record of what is there. It is a different
+ * proposition in a shop of one-off consigned pieces that are looked at rather
+ * than counted, and where the shelf already moves on intake and on sale — for
+ * those, the count is a form somebody fills in to say what everybody can see.
+ *
+ * ABSENT MEANS ON, and that is the whole care in this function. A settings row
+ * that failed to load, or one written before this setting existed, must not
+ * take a working page away from a shop that was using it — so only somebody
+ * deliberately answering false switches it off.
+ *
+ * This stops NEW counts being taken. It cannot un-submit the ones already
+ * waiting: a pending count freezes the pieces it names (see frozenPieces), so
+ * stranding the queue would freeze those pieces for ever. They stay decidable
+ * under Waiting for you until somebody has agreed or refused them.
+ */
+export const shopCountsOn = (settings: Settings | null): boolean =>
+  settings?.craft_counts_enabled !== false;
+
+/**
  * Does this section belong to the trade this business is in?
  *
  * Asked separately from permission, and before it. A restaurant hiding the
@@ -389,6 +411,15 @@ export function inTrade(
   settings: Settings | null,
   profile: StaffProfile | null = null,
 ): boolean {
+  /*
+    Switched off outright, even where the side it belongs to runs. The same
+    kind of statement as the one below — there is nothing behind the page —
+    rather than a permission, which is why it is answered here and not in
+    parseAccess. An admin who turns the shop's stocktake off should not then
+    find it in their own sidebar.
+  */
+  if (section.key === 'stocktake' && !shopCountsOn(settings)) return false;
+
   if (!section.module) return true;
   // What the business runs, narrowed by what this person works on. Somebody
   // marked kitchen-only has no use for a consignor statement, and somebody
@@ -416,6 +447,32 @@ export function canOpen(section: string, profile: StaffProfile | null, settings:
   if (meta && !inTrade(meta, settings, profile)) return false;
   if (profile.role === 'admin') return true;
   return (parseAccess(settings)[profile.role] ?? []).includes(section);
+}
+
+/**
+ * Why a page will not open, in the words to put on it.
+ *
+ * Two different facts, and they were being said as one. "Ask an admin if you
+ * think it should" is right for a permission and wrong for a page that is
+ * switched off, where there is nothing behind it to be granted — an owner who
+ * turned the stocktake off and then read that sentence on their own account
+ * would go looking for a checkbox that does not exist.
+ */
+export function unavailableWords(
+  section: string,
+  profile: StaffProfile | null,
+  settings: Settings | null,
+): string {
+  const meta = ADMIN_SECTIONS.find((s) => s.key === section);
+  if (section === 'stocktake' && !shopCountsOn(settings)) {
+    return 'The shop\'s stocktake is switched off, so there is nothing here. An admin can turn it back on '
+      + 'under Settings, in Stock. Any count already submitted is still under Waiting for you.';
+  }
+  if (meta && !inTrade(meta, settings, profile)) {
+    return 'This page belongs to a side of the business that is not switched on. Nothing is being kept from '
+      + 'you — there is nothing behind it.';
+  }
+  return 'Your account does not have access to this page. Ask an admin if you think it should.';
 }
 
 /**
