@@ -10,6 +10,7 @@ import {
   voidPayment, isLivePayment, changePaymentMethod, logPaymentMethodChange,
   referenceProblem, referenceRequired, referenceWords,
   unrecordedPaid, unrecordedWords, recordPayment,
+  placeByHand, canPlaceByHand, placeByHandWords, methodProblem,
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, flatten, MODULE_LABELS,
   listByIds, listCreatedBetween, moveOrderToShift, shiftChoices, moveProblem, moveEffects, describeMove,
   shiftDay, shiftsOnDay, dayMoveProblem, openShiftForDay,
@@ -108,6 +109,17 @@ export function OrdersPage() {
   const [sayRef, setSayRef] = useState('');
   const [sayBusy, setSayBusy] = useState(false);
   const [sayError, setSayError] = useState<string | null>(null);
+
+  /**
+   * The same two facts, asked on the Change screen at the moment the word
+   * "paid" is written rather than afterwards.
+   *
+   * The warning that used to sit here told somebody to come back and do a
+   * second thing later, and a second thing later is a second thing that does
+   * not happen. See placeByHand.
+   */
+  const [payMethod, setPayMethod] = useState('');
+  const [payRef, setPayRef] = useState('');
   const toast = useToast();
 
   /*
@@ -824,8 +836,23 @@ export function OrdersPage() {
     setNewStatus(o.status);
     setNewPayment(o.payment_status);
     setReason('');
+    setPayMethod('');
+    setPayRef('');
     setError(null);
   };
+
+  /**
+   * What marking this bill paid would mean for the money, live as the picker
+   * is changed. Zero amount means there is nothing to write.
+   */
+  const placing = editing
+    ? placeByHand({
+      order: editing,
+      payments: payments.filter((p) => p.order_id === editing.$id),
+      nextStatus: newPayment,
+    })
+    : { amount: 0, shiftId: '', problem: null };
+  const asking = canPlaceByHand(placing);
 
   const applyEdit = async () => {
     if (!editing) return;
@@ -833,13 +860,83 @@ export function OrdersPage() {
       setError('Say why you are changing it. This is the only record of the correction.');
       return;
     }
+
+    /*
+      THE MONEY IS WRITTEN DOWN IN THE SAME STEP.
+
+      Setting the word alone writes no payment row, and a row is what the rest
+      of the system runs on: it carries the method, so a shift knows whether
+      the money is in a drawer or on a card machine, and the shift, so the
+      night can be counted. It is also what the books are posted from.
+
+      Where it cannot be placed — a bill on a tab, an order on no shift — the
+      word is still written and the reason said. Marking a bill paid is
+      sometimes the only honest option, and refusing the correction because
+      the money has nowhere tidy to go would be the screen choosing its own
+      convenience over the truth of the figure.
+    */
+    const method = methods.find((m) => m.$id === payMethod);
+    if (asking) {
+      const noMethod = methodProblem(payMethod);
+      if (noMethod || !method) { setError(noMethod ?? 'Choose how it was paid.'); return; }
+      // The same rule as every till: a card payment written here is as
+      // unreconcilable without its trace number as one taken at the counter.
+      const missingRef = referenceProblem(method, payRef);
+      if (missingRef) { setError(missingRef); return; }
+    }
+
     setBusy(true);
     setError(null);
     try {
-      await db.updateDocument(DB_ID, 'orders', editing.$id, {
-        status: newStatus,
-        payment_status: newPayment,
-      });
+      if (asking && method) {
+        /*
+          recordPayment writes the row and settles the order from it, so the
+          status is handed to it rather than written separately — two writes
+          racing to set the same field is how one of them wins silently.
+        */
+        await recordPayment({
+          venueId: editing.venue_id,
+          order: editing,
+          shiftId: placing.shiftId,
+          shiftModule: editing.module ?? 'kitchen',
+          methodId: method.$id,
+          methodKind: method.kind ?? '',
+          methodName: method.name,
+          requiresReference: method.requires_reference,
+          reference: payRef.trim(),
+          amount: placing.amount,
+          /*
+            A settled bill moves on, and this says where to. It only knows the
+            two a settlement can land on; anything else the admin chose is
+            written afterwards rather than fought over — see below.
+          */
+          orderStatus: newStatus === 'SERVED' ? 'SERVED' : 'CLOSED',
+          takenBy: profile?.user_id ?? profile?.$id ?? user?.$id ?? '',
+        });
+        /*
+          The admin's own choice of status wins, and is written AFTER rather
+          than alongside. Two writes racing to set one field is how one of
+          them wins silently; this one simply happens second, so an order
+          marked paid but deliberately left on the pass stays on the pass.
+        */
+        if (newStatus !== 'SERVED' && newStatus !== 'CLOSED') {
+          await db.updateDocument(DB_ID, 'orders', editing.$id, { status: newStatus });
+        }
+        /*
+          A closed shift stored what it expected at the moment it closed, and
+          that figure never moves on its own — so without this the payment
+          would be written, the order would read correctly, and the night's
+          cash and card totals would carry on saying what they said before.
+          A no-op on an open shift.
+        */
+        await recomputeClosedShift(placing.shiftId).catch(() => null);
+      } else {
+        await db.updateDocument(DB_ID, 'orders', editing.$id, {
+          status: newStatus,
+          payment_status: newPayment,
+        });
+      }
+
       // Written to the audit log rather than silently: an order whose status
       // was changed by hand is exactly the one somebody will ask about.
       await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
@@ -850,13 +947,22 @@ export function OrdersPage() {
         entity_type: 'orders',
         entity_id: editing.$id,
         before: JSON.stringify({ status: editing.status, payment_status: editing.payment_status }),
-        after: JSON.stringify({ status: newStatus, payment_status: newPayment }),
+        after: JSON.stringify({
+          status: newStatus,
+          payment_status: newPayment,
+          // The method goes on the record too. "Marked paid" and "marked paid
+          // as cash, into Friday's drawer" are different claims, and the
+          // second is the one somebody will be checking against a count.
+          ...(asking && method ? { paid_by: method.name, amount: placing.amount } : {}),
+        }),
         reason: reason.trim(),
       });
 
       setEditing(null);
       await load();
-      toast(`${editing.order_no} updated`);
+      toast(asking && method
+        ? `${editing.order_no} marked paid, recorded as ${method.name}`
+        : `${editing.order_no} updated`);
     } catch (e) {
       setError(humanError(e));
     } finally {
@@ -2020,7 +2126,51 @@ export function OrdersPage() {
             />
           </Field>
           {/*
-            The warning that used to be a dead end.
+            ASKED WHERE THE GAP IS MADE, rather than found afterwards.
+
+            This used to be a warning that told somebody to come back and use
+            "Say how it was paid" on the order's details. A second step later
+            is a second step that does not happen — so the one missing fact is
+            asked for here, and the payment is written in the same save. See
+            placeByHand.
+          */}
+          {asking && (
+            <>
+              <p className="small dim">{placeByHandWords(placing.amount, money)}</p>
+              <div className="grid-2">
+                <Field label="Where the money went">
+                  <Select
+                    value={payMethod}
+                    onChange={(e) => { setPayMethod(e.target.value); setError(null); }}
+                  >
+                    <option value="">Choose a method…</option>
+                    {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
+                  </Select>
+                </Field>
+                {referenceRequired(methods.find((m) => m.$id === payMethod)) && (
+                  <Field {...referenceWords(methods.find((m) => m.$id === payMethod))}>
+                    <Input value={payRef} onChange={(e) => { setPayRef(e.target.value); setError(null); }} />
+                  </Field>
+                )}
+              </div>
+              <p className="small dim">
+                After this it is an ordinary payment — the method can be changed again, and it can be voided
+                from the order&rsquo;s details.
+              </p>
+            </>
+          )}
+
+          {/*
+            And where it cannot be placed, the word is still written and the
+            reason said. A bill on a tab, or an order on no shift: both are
+            real, neither has anywhere honest to put the money, and refusing
+            the correction over it would be the screen preferring its own
+            tidiness to the truth of the figure.
+          */}
+          {placing.problem && <Notice tone="warn">{placing.problem}</Notice>}
+
+          {/*
+            The other direction, and the warning that used to be a dead end.
 
             It said to fix the payment separately, and there was no separately:
             nothing in the system could reverse a payment. So it named a step
@@ -2028,22 +2178,6 @@ export function OrdersPage() {
             unpaid with money it never received still sitting in the takings.
             Now the step exists, and this says where it is.
           */}
-          {/*
-            Said where the gap is MADE, not only where it is found.
-
-            Setting this to paid writes one word and no payment row, and a row
-            is what carries the method and the shift. Nothing stops an admin
-            doing it — sometimes it is the only honest option, and the money
-            really did arrive — but they should know a second step is waiting
-            rather than discover it when a drawer reads over.
-          */}
-          {newPayment === 'paid' && editing.payment_status !== 'paid' && (
-            <Notice tone="warn">
-              Marking it paid does not record HOW it was paid. Until you say, the money is in no method and no
-              shift, so it never reaches the cash or card totals. Open this order afterwards and use
-              &ldquo;Say how it was paid&rdquo;.
-            </Notice>
-          )}
           {newPayment !== 'paid' && editing.payment_status === 'paid' && (
             <Notice tone="warn">
               This order has payment records against it. Changing the status here does not touch them, so the money

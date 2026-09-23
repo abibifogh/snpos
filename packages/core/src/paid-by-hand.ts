@@ -41,6 +41,8 @@ export interface PaidOrder {
   payment_status: string;
   /** Set where the bill went onto a running account. Not a gap; see below. */
   tab_id?: string;
+  /** The night it was rung up on. Where the money has to be counted. */
+  shift_id?: string;
 }
 
 /**
@@ -100,3 +102,110 @@ export function unrecordedWords(
  */
 export const canRecordMissing = (order: PaidOrder, payments: RecordedPayment[]): boolean =>
   unrecordedPaid(order, payments) > 0;
+
+/* --------------------------------------------- asking at the moment of marking */
+
+/**
+ * ASKED WHERE THE GAP IS MADE, rather than found afterwards.
+ *
+ * Everything above is a cleanup: it finds a bill already marked paid with
+ * nothing behind it and offers to fill in the missing fact. That is the right
+ * shape for the ones already in the system and the wrong shape for the next
+ * one, because it relies on somebody coming back — the screen that made the
+ * gap said "open this order afterwards and say how it was paid", and an
+ * instruction to do a second thing later is a second thing that does not
+ * happen.
+ *
+ * So the one question is asked at the moment the word is written, and the
+ * payment is recorded in the same breath. Nothing about the answer changes:
+ * the same method, the same reference rule, the same shift, the same row.
+ * Only when it is asked.
+ */
+export interface HandPlacement {
+  /**
+   * What a payment row here would be for. Zero means there is nothing to
+   * write — either this change does not claim money, or rows already cover it.
+   */
+  amount: number;
+  /** The shift the money belongs to: the SALE's, never today's. */
+  shiftId: string;
+  /**
+   * Why it cannot be placed, when it cannot. Not a refusal of the status
+   * change — an admin may still mark a bill paid, because sometimes that is
+   * the only honest option. It is the sentence that says what is left over.
+   */
+  problem: string | null;
+}
+
+/**
+ * What writing the money down would mean, given the change being made.
+ *
+ * The shift is the sale's own. The money arrived on the night the order was
+ * rung up, and putting it into whichever shift happens to be open now would
+ * make tonight's drawer read over and that night's still read short — two
+ * wrong figures where there was one.
+ */
+export function placeByHand(input: {
+  order: PaidOrder;
+  payments: RecordedPayment[];
+  /** What the payment status is being set to. */
+  nextStatus: string;
+}): HandPlacement {
+  const none: HandPlacement = { amount: 0, shiftId: '', problem: null };
+  // Only the moment a bill starts claiming to be settled in full. Going the
+  // other way takes money back out, which is a void and has its own screen.
+  if (input.nextStatus !== 'paid' || input.order.payment_status === 'paid') return none;
+
+  const amount = Math.max(0, input.order.total - recordedTotal(input.payments));
+  // Already explained by rows somebody has taken. Nothing missing, so nothing
+  // to ask — writing a second row would be charging the bill twice.
+  if (amount <= 0) return none;
+
+  /*
+    A BILL ON A TAB IS NOT THIS. It is unpaid on purpose, the account carries
+    it, and settling it is the tab's job — inventing a payment here would take
+    the bill off the account with money nobody handed over. See tabs.ts.
+  */
+  if (input.order.tab_id) {
+    return {
+      amount: 0,
+      shiftId: '',
+      problem: 'This bill is on a tab, so the account carries it. Settle the tab to record the money — a '
+        + 'payment written here would clear the bill without anybody having paid it.',
+    };
+  }
+
+  const shiftId = input.order.shift_id ?? '';
+  /*
+    The one case with nowhere honest to put it. Said rather than guessed: a
+    payment has to be counted in some night, and choosing one for it would put
+    real money into a drawer that never held it.
+  */
+  if (!shiftId) {
+    return {
+      amount,
+      shiftId: '',
+      problem: 'This order is not on any shift, so there is no night to count the money in. It will be marked '
+        + 'paid with nothing behind it. Move it onto a shift from its details, then say how it was paid.',
+    };
+  }
+
+  return { amount, shiftId, problem: null };
+}
+
+/** Whether the question can actually be asked here. */
+export const canPlaceByHand = (p: HandPlacement): boolean => p.amount > 0 && !p.problem;
+
+/** What to say above the picker, so the figure is not a surprise. */
+export const placeByHandWords = (
+  amount: number,
+  format: (amount: number) => string,
+): string =>
+  `${format(amount)} is about to be marked paid. Say where the money went and it is recorded properly in the `
+  + 'same step — into the shift this order was sold on, not today\'s, so the night it belongs to is the night '
+  + 'that counts it.';
+
+/** The refusal when no method was picked. */
+export const methodProblem = (methodId: string | undefined): string | null =>
+  (methodId ? null : 'Say where the money went. A payment with no method is in no drawer and on no card '
+    + 'machine, which is the gap this is here to close.');
