@@ -86,7 +86,8 @@
         "databases.snpos.collections.approval_notices.documents.*.create",
         "databases.snpos.collections.group_bookings.documents.*.create",
         "databases.snpos.collections.booking_changes.documents.*.create",
-        "databases.snpos.collections.group_bookings.documents.*.update"
+        "databases.snpos.collections.group_bookings.documents.*.update",
+        "databases.snpos.collections.voucher_sends.documents.*.create"
       ],
       "schedule": "0 * * * *",
       "timeout": 60,
