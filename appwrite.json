@@ -87,7 +87,9 @@
         "databases.snpos.collections.group_bookings.documents.*.create",
         "databases.snpos.collections.booking_changes.documents.*.create",
         "databases.snpos.collections.group_bookings.documents.*.update",
-        "databases.snpos.collections.voucher_sends.documents.*.create"
+        "databases.snpos.collections.voucher_sends.documents.*.create",
+        "databases.snpos.collections.push_subscriptions.documents.*.create",
+        "databases.snpos.collections.push_subscriptions.documents.*.update"
       ],
       "schedule": "0 * * * *",
       "timeout": 60,

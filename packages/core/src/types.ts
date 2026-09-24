@@ -87,6 +87,8 @@ export interface Settings extends Doc {
    * has answered must not take a page away. See shopCountsOn.
    */
   craft_counts_enabled?: boolean;
+  /** This server's public push key, for a browser to subscribe with. Written by provisioning. */
+  push_public_key?: string;
   /** What a shift expense may be paid out of. Cash only, or any method. */
   expense_paid_from?: 'cash_only' | 'any';
   /** Older setups said what they were. Read only as a fallback, see modulesOf. */

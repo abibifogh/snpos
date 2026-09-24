@@ -21,6 +21,14 @@
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png" />
     <link rel="apple-touch-icon" href="icon-192.png" />
+    <!--
+      A manifest, so an iPhone can add Admin to its Home Screen — the only way
+      Apple lets a web app show notifications. Written at build time; see
+      scripts/sync-sw.mjs. Changes nothing for anybody using a browser tab.
+    -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Admin" />
     <title>NiceOps POS, Admin</title>
   </head>
   <body>

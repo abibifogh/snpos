@@ -23,6 +23,14 @@ let staff = [];
 let notices = [];
 let vouchers = {};
 const updates = [];
+// The push half: held count rows, devices, this server's key, and what the
+// fake push services were asked to deliver.
+let checks = [];
+let shopCounts = [];
+let devices = [];
+let pushKeys = null;
+const deleted = [];
+const pushed = [];
 
 mock.module('nodemailer', {
   namedExports: {},
@@ -39,10 +47,11 @@ mock.module('nodemailer', {
 
 class FakeDatabases {
   async getDocument(_db, table, id) {
-    if (table === 'settings') return { restaurant_name: 'SN Bistro', email_from_address: 'pos@bistro.com', currency_code: 'GHS', currency_decimals: 2, primary_color: '#0f766e' };
+    if (table === 'settings') return { restaurant_name: 'SN Bistro', email_from_address: 'pos@bistro.com', currency_code: 'GHS', currency_symbol: 'GH₵', currency_decimals: 2, primary_color: '#0f766e' };
     if (table === 'group_bookings') return bookings[id];
     if (table === 'discounts') return vouchers[id];
     if (table === 'venues') return { name: 'SN Bistro' };
+    if (table === 'push_keys' && pushKeys) return pushKeys;
     throw new Error('no such document');
   }
   async listDocuments(_db, table) {
@@ -50,6 +59,9 @@ class FakeDatabases {
     if (table === 'order_notices') return { documents: notices, total: notices.length };
     if (table === 'feature_flags') return { documents: [{ key: 'group_orders', enabled: true, config: '{}' }], total: 1 };
     if (table === 'orders') return { documents: [], total: 0 };
+    if (table === 'shift_stock_checks') return { documents: checks, total: checks.length };
+    if (table === 'stock_counts') return { documents: shopCounts, total: shopCounts.length };
+    if (table === 'push_subscriptions') return { documents: devices, total: devices.length };
     return { documents: [], total: 0 };
   }
   async createDocument(_db, table, _id, data) {
@@ -69,6 +81,10 @@ class FakeDatabases {
     }
     return bookings[id] ?? { $id: id, ...data };
   }
+  async deleteDocument(_db, table, id) {
+    deleted.push({ table, id });
+    if (table === 'push_subscriptions') devices = devices.filter((d) => d.$id !== id);
+  }
 }
 
 mock.module('node-appwrite', {
@@ -76,7 +92,10 @@ mock.module('node-appwrite', {
     Client: class { setEndpoint() { return this; } setProject() { return this; } setKey() { return this; } },
     Databases: FakeDatabases,
     Users: class { async get() { throw new Error('no account'); } },
-    Query: { equal: () => 'eq', limit: () => 'lim', greaterThanEqual: () => 'gte', lessThanEqual: () => 'lte', orderDesc: () => 'od' },
+    Query: {
+      equal: () => 'eq', limit: () => 'lim', greaterThanEqual: () => 'gte', lessThanEqual: () => 'lte',
+      orderDesc: () => 'od', isNull: () => 'null', lessThan: () => 'lt', offset: () => 'off',
+    },
     ID: { unique: () => 'id' },
     Teams: class { async list() { return { teams: [] }; } async createMembership() { return {}; } },
     Permission: { read: () => 'r', update: () => 'u' },
@@ -415,4 +434,207 @@ test('a voucher that has been deleted since fails rather than throwing', async (
   );
   assert.equal(out.sent, false);
   assert.match(String(out.why), /no longer exists/i);
+});
+
+/* ----------------------------------------- a stock count left waiting a day */
+
+import { createECDH, createDecipheriv, hkdfSync } from 'node:crypto';
+const { makeKeys, b64u } = await import('./src/webpush.js');
+
+/**
+ * A browser, as far as a push service is concerned: its key pair, and a way
+ * to read what it was sent. Written from RFC 8291 so the test reads the
+ * message the way the phone would, not the way the sender meant it.
+ */
+function device(id, userId, endpoint = `https://fcm.googleapis.com/fcm/send/${id}`) {
+  const ecdh = createECDH('prime256v1');
+  ecdh.generateKeys();
+  const auth = Buffer.alloc(16, id.length);
+  const row = { $id: id, user_id: userId, endpoint, p256dh: b64u(ecdh.getPublicKey()), auth: b64u(auth) };
+  const read = (body) => {
+    const salt = body.subarray(0, 16);
+    const asPublic = body.subarray(21, 86);
+    const rec = body.subarray(86);
+    const shared = ecdh.computeSecret(asPublic);
+    const info = Buffer.concat([Buffer.from('WebPush: info\0'), ecdh.getPublicKey(), asPublic]);
+    const ikm = Buffer.from(hkdfSync('sha256', shared, auth, info, 32));
+    const cek = Buffer.from(hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: aes128gcm\0'), 16));
+    const nonce = Buffer.from(hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: nonce\0'), 12));
+    const d = createDecipheriv('aes-128-gcm', cek, nonce);
+    d.setAuthTag(rec.subarray(rec.length - 16));
+    const out = Buffer.concat([d.update(rec.subarray(0, rec.length - 16)), d.final()]);
+    return JSON.parse(out.subarray(0, out.length - 1).toString());
+  };
+  return { row, read };
+}
+
+/** Push services, faked at the network: 410 for an endpoint ending "dead". */
+globalThis.fetch = async (url, init) => {
+  pushed.push({ url, init });
+  return new Response('', { status: String(url).endsWith('dead') ? 410 : 201 });
+};
+
+const tick = () => handler({
+  req: { bodyJson: null, body: '', headers: { 'x-appwrite-trigger': 'schedule' } },
+  res: { json: (b) => b },
+  log: () => {},
+  error: () => {},
+});
+
+const dayAndAHalfAgo = () => new Date(Date.now() - 36 * 3_600_000).toISOString();
+
+const OWNER = { $id: 'p-owner', user_id: 'u-owner', role: 'admin', active: true, email: 'owner@bistro.com', display_name: 'Owner' };
+const MANAGER = { $id: 'p-mgr', user_id: 'u-mgr', role: 'manager', active: true, email: 'mgr@bistro.com', display_name: 'Kofi' };
+const BARTENDER = { $id: 'p-bar', user_id: 'u-bar', role: 'cashier', active: true, email: '', display_name: 'Ama' };
+
+const heldCola = () => ({
+  $id: 'chk-cola', shift_id: 'sh-day1', phase: 'close', applied: false, variance_qty: -2, variance_value: 2_000,
+  ingredient_id: 'cola', checked_by: 'p-bar', $createdAt: dayAndAHalfAgo(), alerted_at: dayAndAHalfAgo(),
+});
+
+const resetCounts = () => {
+  reset([OWNER, MANAGER, BARTENDER]);
+  checks = [heldCola()];
+  shopCounts = [];
+  devices = [];
+  pushKeys = { public_key: '', private_key: '' };
+  const k = makeKeys();
+  pushKeys = { public_key: k.publicKey, private_key: k.privateKey };
+  deleted.length = 0;
+  pushed.length = 0;
+  process.env.SMTP_HOST = 'smtp.test';
+};
+
+const overdueMail = () => outbox.filter((m) => /over a day/.test(m.subject));
+const stampedOverdue = () => updates.filter((u) => u.table === 'shift_stock_checks' && u.data.overdue_alerted_at);
+
+test('a count held over a day is emailed to the admins, not the managers', async () => {
+  resetCounts();
+  await tick();
+  const mail = overdueMail();
+  assert.equal(mail.length, 1);
+  assert.equal(mail[0].to, 'owner@bistro.com');
+  assert.match(mail[0].html, /Why a day matters/);
+});
+
+test('and it reaches the admin\'s phone, readable, and nobody else\'s', async () => {
+  resetCounts();
+  const phone = device('owner-phone', 'u-owner');
+  const other = device('mgr-phone', 'u-mgr');
+  devices = [phone.row, other.row];
+  await tick();
+
+  const toOwner = pushed.filter((p) => p.url === phone.row.endpoint);
+  assert.equal(toOwner.length, 1, 'the admin\'s phone was sent it');
+  assert.equal(pushed.filter((p) => p.url === other.row.endpoint).length, 0, 'the manager\'s was not');
+
+  // What the phone would actually show, decrypted as the phone decrypts it.
+  const shown = phone.read(toOwner[0].init.body);
+  assert.match(shown.title, /Bar count, counting out waiting 1 day/);
+  assert.match(shown.body, /GH₵20\.00 in differences/);
+  assert.equal(shown.url, '#/waiting?show=count');
+  assert.match(toOwner[0].init.headers.Authorization, /^vapid t=.+, k=/);
+});
+
+test('once told, the count is stamped so it is not said again', async () => {
+  resetCounts();
+  await tick();
+  assert.deepEqual(stampedOverdue().map((u) => u.id), ['chk-cola']);
+
+  // The next hour: the row now carries the stamp, and nothing more is sent.
+  checks = [{ ...heldCola(), overdue_alerted_at: new Date().toISOString() }];
+  outbox.length = 0; pushed.length = 0;
+  await tick();
+  assert.equal(overdueMail().length, 0);
+  assert.equal(pushed.length, 0);
+});
+
+test('a count waiting less than a day is left for later', async () => {
+  resetCounts();
+  checks = [{ ...heldCola(), $createdAt: new Date(Date.now() - 3 * 3_600_000).toISOString() }];
+  devices = [device('owner-phone', 'u-owner').row];
+  await tick();
+  assert.equal(overdueMail().length, 0);
+  assert.equal(pushed.length, 0);
+});
+
+test('a phone that has gone is removed, and the email still counts as telling somebody', async () => {
+  resetCounts();
+  devices = [device('dead', 'u-owner', 'https://fcm.googleapis.com/fcm/send/dead').row];
+  await tick();
+  assert.deepEqual(deleted, [{ table: 'push_subscriptions', id: 'dead' }]);
+  assert.equal(overdueMail().length, 1);
+  assert.equal(stampedOverdue().length, 1);
+});
+
+test('with no email set up, the phone alone is enough', async () => {
+  // Two independent channels: one missing must not silence the other.
+  resetCounts();
+  delete process.env.SMTP_HOST;
+  const phone = device('owner-phone', 'u-owner');
+  devices = [phone.row];
+  await tick();
+  assert.equal(overdueMail().length, 0);
+  assert.equal(pushed.filter((p) => p.url === phone.row.endpoint).length, 1);
+  assert.equal(stampedOverdue().length, 1, 'told, so stamped');
+  process.env.SMTP_HOST = 'smtp.test';
+});
+
+test('when nobody could be told, nothing is stamped and the next hour tries again', async () => {
+  /*
+    The alternative is a count marked as escalated to nobody, which is exactly
+    the silence this exists to break.
+  */
+  resetCounts();
+  delete process.env.SMTP_HOST;
+  devices = [];
+  await tick();
+  assert.equal(stampedOverdue().length, 0);
+  process.env.SMTP_HOST = 'smtp.test';
+});
+
+test('with no push key yet, email still goes and the gap is not papered over', async () => {
+  resetCounts();
+  pushKeys = null;
+  devices = [device('owner-phone', 'u-owner').row];
+  await tick();
+  assert.equal(pushed.length, 0, 'nothing signed with a key made up on the spot');
+  assert.equal(overdueMail().length, 1);
+});
+
+/* ----------------------------------------- a device turning notifications on */
+
+test('turning a device on is answered by a notification on that device', async () => {
+  resetCounts();
+  const phone = device('new-phone', 'u-owner');
+  const out = await run(
+    { ...phone.row, test_requested_at: new Date().toISOString() },
+    'databases.snpos.collections.push_subscriptions.documents.new-phone.create',
+  );
+  assert.equal(out.outcome, 'sent');
+  assert.equal(pushed.length, 1);
+  assert.equal(phone.read(pushed[0].init.body).title, 'Notifications are on');
+  // The request is cleared, so the function's own write-back does not send again.
+  const cleared = updates.find((u) => u.table === 'push_subscriptions' && u.id === 'new-phone');
+  assert.equal(cleared?.data.test_requested_at, null);
+});
+
+test('an update with no test asked for sends nothing', async () => {
+  resetCounts();
+  const phone = device('p', 'u-owner');
+  const out = await run(phone.row, 'databases.snpos.collections.push_subscriptions.documents.p.update');
+  assert.deepEqual(out, { nothing: true });
+  assert.equal(pushed.length, 0);
+});
+
+test('turning a device on before the server has a key says so on the device\'s row', async () => {
+  resetCounts();
+  pushKeys = null;
+  const phone = device('p', 'u-owner');
+  await run(
+    { ...phone.row, test_requested_at: new Date().toISOString() },
+    'databases.snpos.collections.push_subscriptions.documents.p.create',
+  );
+  const row = updates.find((u) => u.table === 'push_subscriptions' && u.id === 'p');
+  assert.match(row?.data.last_error ?? '', /Run Provision Appwrite/);
 });
