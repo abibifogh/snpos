@@ -349,6 +349,7 @@ export function LocationsPage() {
         <MadeHere
           module={module}
           userId={user?.$id ?? ''}
+          hasPlace={mine.length > 0}
           onDone={async () => { await load(); if (fromId) setLines(await transferSheet('main', module, fromId)); }}
         />
       )}
