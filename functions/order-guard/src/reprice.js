@@ -56,8 +56,9 @@ const soldFor = (item) => Number(item?.line_total) || 0;
  * @param {any} [opts.menuItem] the dish, or null where it could not be read
  * @param {number} [opts.overridePrice] this venue's own price, where it has one
  * @param {number} [opts.addonTotal] what the choices on this line add per unit
+ * @param {any} [opts.variant] the size or variant the line was sold as, or null where it could not be read
  */
-export function linePrice({ item, menuItem = null, overridePrice, addonTotal = 0 }) {
+export function linePrice({ item, menuItem = null, overridePrice, addonTotal = 0, variant = null }) {
   if (isVoid(item)) return { amount: 0, rewrite: null, correction: null };
 
   /*
@@ -88,7 +89,34 @@ export function linePrice({ item, menuItem = null, overridePrice, addonTotal = 0
     return { amount: soldFor(item), rewrite: null, correction: null };
   }
 
-  const base = typeof overridePrice === 'number' ? overridePrice : menuItem.price;
+  /*
+    A SIZE IS PRICED AS ITSELF, NOT AS THE DRINK.
+
+    The till charges a size its own full price — a large Club is GH₵30, not
+    the plain Club's GH₵25 plus something. This used to price every line from
+    the drink alone, so a large Club rung up at 30 was rewritten to 25 a
+    second after the sale, and every size that cost more than its drink was
+    undercharged on a bill that looked right line by line.
+
+    A size that cannot be read is treated like a dish that cannot be read:
+    the line keeps what it was sold for. Falling back to the drink's price is
+    exactly the mistake this replaces.
+  */
+  if (item.variant_id) {
+    if (!variant) {
+      return {
+        amount: soldFor(item),
+        rewrite: null,
+        correction: `${item.name_snapshot || 'a line'}: its size could not be read, kept at what it was sold for`,
+      };
+    }
+  }
+
+  // The size's own price where there is one, which is what the till charged;
+  // otherwise this venue's price for the drink, then the menu's.
+  const base = item.variant_id && variant
+    ? variant.price
+    : typeof overridePrice === 'number' ? overridePrice : menuItem.price;
   const unit = (Number(base) || 0) + (Number(addonTotal) || 0);
   const line = unit * (Number(item.qty) || 0);
 

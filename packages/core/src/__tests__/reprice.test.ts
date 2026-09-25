@@ -151,3 +151,64 @@ test('cooking time comes from the line when the dish cannot be read', () => {
   assert.equal(linePrep(item(), null), 15, 'and a sane default where neither says');
   assert.equal(linePrep(item({ prep_minutes: 0 }), null), 15, 'nought minutes is missing, not instant');
 });
+
+/* ------------------------------------------------------------ sizes */
+
+test('a size is charged its own price, not the drink\'s', () => {
+  /*
+    The real one: Club is GH₵25, a large Club GH₵30. The till charged 30 and
+    the server rewrote it to 25 a second later, because it priced every line
+    from the drink alone.
+  */
+  const club = { price: 2_500 };
+  const large = { price: 3_000 };
+  const line = { name_snapshot: 'Club · Large', variant_id: 'v-large', qty: 1, unit_price: 3_000, line_total: 3_000 };
+  const priced = linePrice({ item: line, menuItem: club, variant: large });
+  assert.equal(priced.amount, 3_000);
+  assert.equal(priced.rewrite, null, 'nothing to correct: the till had it right');
+  assert.equal(priced.correction, null);
+});
+
+test('a size sent at the wrong price is corrected to the size\'s price', () => {
+  // The guard still does its job: a phone claiming less is put right — to
+  // the SIZE's price.
+  const line = { name_snapshot: 'Club · Large', variant_id: 'v-large', qty: 2, unit_price: 100, line_total: 200 };
+  const priced = linePrice({ item: line, menuItem: { price: 2_500 }, variant: { price: 3_000 } });
+  assert.equal(priced.amount, 6_000);
+  assert.deepEqual(priced.rewrite, { unit_price: 3_000, line_total: 6_000 });
+});
+
+test('a size costing LESS than the drink is not overcharged either', () => {
+  const line = { name_snapshot: 'Club · Small', variant_id: 'v-small', qty: 1, unit_price: 2_000, line_total: 2_000 };
+  assert.equal(linePrice({ item: line, menuItem: { price: 2_500 }, variant: { price: 2_000 } }).amount, 2_000);
+});
+
+test('choices go on top of the size\'s price, as the till adds them', () => {
+  const line = { name_snapshot: 'Club · Large', variant_id: 'v', qty: 1, unit_price: 3_000, line_total: 3_500 };
+  const priced = linePrice({ item: line, menuItem: { price: 2_500 }, variant: { price: 3_000 }, addonTotal: 500 });
+  assert.equal(priced.amount, 3_500);
+  assert.equal(priced.rewrite, null);
+});
+
+test('a venue\'s own price for the drink does not override a size', () => {
+  // The till charges the size's price whatever the venue charges for the
+  // plain drink, so the guard must agree with it.
+  const line = { name_snapshot: 'Club · Large', variant_id: 'v', qty: 1, unit_price: 3_000, line_total: 3_000 };
+  const priced = linePrice({ item: line, menuItem: { price: 2_500 }, overridePrice: 2_700, variant: { price: 3_000 } });
+  assert.equal(priced.amount, 3_000);
+});
+
+test('a size that cannot be read keeps what it was sold for, never the drink\'s price', () => {
+  // Falling back to the drink's price is exactly the mistake this replaces.
+  const line = { name_snapshot: 'Club · Large', variant_id: 'v-gone', qty: 1, unit_price: 3_000, line_total: 3_000 };
+  const priced = linePrice({ item: line, menuItem: { price: 2_500 }, variant: null });
+  assert.equal(priced.amount, 3_000);
+  assert.equal(priced.rewrite, null);
+  assert.match(String(priced.correction), /size could not be read/);
+});
+
+test('a line with no size is priced from the drink as it always was', () => {
+  const line = { name_snapshot: 'Club', qty: 1, unit_price: 2_500, line_total: 2_500 };
+  assert.equal(linePrice({ item: line, menuItem: { price: 2_500 } }).amount, 2_500);
+  assert.equal(linePrice({ item: line, menuItem: { price: 2_500 }, overridePrice: 2_700 }).amount, 2_700);
+});
