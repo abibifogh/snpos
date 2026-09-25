@@ -2139,6 +2139,44 @@ export const COLLECTIONS = [
     ],
   },
   {
+    /**
+     * A batch of something made here: sobolo, ginger beer, a house punch.
+     *
+     * The record of one making — what was made, how much, where it was put,
+     * and what went into it at what each was worth. The stock movements are
+     * written from it, and the books are posted from it by the server when
+     * what went in came from another side's stock: see batchLines. It is also
+     * what the next batch of the same drink starts from, so a recipe that is
+     * made every week never has to be typed twice.
+     *
+     * Never edited. A batch recorded wrongly is corrected by a count, the same
+     * as any other stock that is not what the book says.
+     */
+    id: 'production_batches',
+    name: 'Production batches',
+    perms: { read: ALL_STAFF, create: MGMT, update: [], delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      // Which side's stock it joins. The books need it to know which
+      // inventory the value moves into.
+      ['module', 'e', ['kitchen', 'craft', 'bar'], true, 'bar'],
+      ['made_item_id', 's', 64, true],
+      ['made_name', 's', 160, true],
+      ['made_qty', 'f', null, true, 0],
+      ['unit', 's', 20, false],
+      ['location_id', 's', 64, true],
+      // JSON: [{ ingredient_id, name, unit, qty, location_id, module, unit_cost }].
+      ['inputs', 's', 4000, false],
+      ['cost_total', 'i', null, true, 0],
+      ['unit_cost', 'i', null, true, 0],
+      ['made_by', 's', 64, false],
+      ['note', 's', 300, false],
+    ],
+    indexes: [
+      ['made_item', 'key', ['made_item_id', '$createdAt']],
+    ],
+  },
+  {
     id: 'stock_movements',
     name: 'Stock movements',
     // A movement is something that happened. It is never edited; a mistake is
@@ -2148,7 +2186,14 @@ export const COLLECTIONS = [
     perms: { read: ALL_STAFF, create: ALL_STAFF, update: [], delete: ADMIN },
     attributes: [
       ['ingredient_id', 's', 64, true],
-      ['type', 'e', ['purchase', 'sale_depletion', 'waste', 'adjustment', 'count_correction', 'transfer'], true],
+      /*
+        'made' is a drink made here arriving on a shelf; 'used_to_make' is
+        what went into it leaving one. Always written together, from one batch
+        — see production_batches — so neither half exists without the other.
+      */
+      ['type', 'e', [
+        'purchase', 'sale_depletion', 'waste', 'adjustment', 'count_correction', 'transfer', 'made', 'used_to_make',
+      ], true],
       /**
        * Where it happened, and for a transfer, the other end.
        *

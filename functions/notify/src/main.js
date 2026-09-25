@@ -18,7 +18,7 @@ import {
   fromBarChecks, fromShopCounts, fromExpenses, worthSending, approvalSubject, approvalBody,
   countLines, countSubject, countBody,
 } from './approvals.js';
-import { postShiftClose, postSpend, postPayoutRow, postWasteRow, sweepBooks } from './books-post.js';
+import { postShiftClose, postSpend, postPayoutRow, postWasteRow, postBatchRow, sweepBooks } from './books-post.js';
 import { nightlyReconcile } from './health-night.js';
 import { send as pushSend } from './webpush.js';
 import {
@@ -42,6 +42,7 @@ import {
  *   item_availability.*.create → a dish has run out, tell an admin now
  *   approval_notices.*.create  → a count found a difference, tell an admin now
  *   push_subscriptions.*.create/update → a device turned notifications on, prove it works
+ *   production_batches.*.create → a drink made here from another side's stock, on the books
  *   shifts.*.update            → the shift's takings, costs and drawer, on the books
  *   shift_expenses.*.create/update → the spend on the books, corrected, or reversed if refused
  *   consignor_payouts.*.create/update → the payout on the shop's books
@@ -1138,6 +1139,11 @@ export default async ({ req, res, log, error }) => {
     }
     if (events.some((e) => e.includes('collections.waste_log'))) {
       return res.json(await postWasteRow(books, doc));
+    }
+    // A batch made here from another side's stock moves value between
+    // inventories. See postBatchRow.
+    if (events.some((e) => e.includes('collections.production_batches'))) {
+      return res.json(await postBatchRow(books, doc));
     }
 
     // -------------------------------------------------- a dish has run out

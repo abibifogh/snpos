@@ -11,6 +11,7 @@ import type {
 } from '@snpos/core';
 import { useSession } from '../session';
 import { LevelUpload } from '../components/LevelUpload';
+import { MadeHere } from '../components/MadeHere';
 
 /**
  * Where stock sits, and moving it between places.
@@ -341,6 +342,16 @@ export function LocationsPage() {
           </div>
         )}
       </Card>
+
+      {/* Managers and admins, who may write a batch. A batch takes stock off
+          shelves and puts it on others, which is the same trust as a transfer. */}
+      {isAdmin && places && (
+        <MadeHere
+          module={module}
+          userId={user?.$id ?? ''}
+          onDone={async () => { await load(); if (fromId) setLines(await transferSheet('main', module, fromId)); }}
+        />
+      )}
 
       {mine.length > 1 && (
         <>
