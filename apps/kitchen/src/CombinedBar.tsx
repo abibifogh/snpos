@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Badge, Button, Field, FormError, Input, Modal, Notice, Select, ShiftCloseForm,
-  ShiftHistory, ExpenseModal, HandoverModal,
+  ShiftHistory, ExpenseModal, HandoverModal, BarCountModal,
 } from '@snpos/ui';
 import type { BlockerRow, CountRow, StockRow, ShiftFlow } from '@snpos/ui';
 import { resolveCounts } from '@snpos/ui';
@@ -12,7 +12,7 @@ import {
   referenceProblem, referenceRequired, referenceWords,
   discountPlacedOrder, findCode, codeProblem, needsManager, discountAmount, discountLabelFor,
   listAll, Query,
-  HANDOVER_ENABLED, ownFigure, floatOrigin, floatMethods,
+  HANDOVER_ENABLED, ownFigure, floatOrigin, floatMethods, hasOpeningCount,
 } from '@snpos/core';
 import type {
   PaymentMethod, Shift, Settings, Venue, StaffProfile, FeatureMap, Order, FloatSource,
@@ -56,6 +56,14 @@ export function CombinedBar({
   const [alsoOpen, setAlsoOpen] = useState<Shift[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [opening, setOpening] = useState(false);
+  /*
+    Counting the kitchen in: asked for the moment a shift is opened here, and
+    offered until it is done. A difference is held for an admin and emailed
+    at once, the same as the bar's. Never a wall — see openingCountOptional.
+  */
+  const [countingIn, setCountingIn] = useState(false);
+  /** Whether this shift has been counted in. Unknown until asked; a failed read stays unknown. */
+  const [countedIn, setCountedIn] = useState<boolean | null>(null);
   const [closing, setClosing] = useState(false);
   const [spending, setSpending] = useState(false);
   const [handingOver, setHandingOver] = useState(false);
@@ -112,6 +120,13 @@ export function CombinedBar({
 
   useEffect(() => { void reload(); }, [reload]);
 
+  useEffect(() => {
+    if (!shift) { setCountedIn(null); return; }
+    // Unknown is not "no": a read that failed offers nothing rather than
+    // asking somebody to count a shelf they may already have counted.
+    void hasOpeningCount(shift.$id).then(setCountedIn).catch(() => setCountedIn(null));
+  }, [shift?.$id]);
+
   const startOpen = async () => {
     const m = await loadPaymentMethods(venue.$id);
     setMethods(m);
@@ -154,6 +169,9 @@ export function CombinedBar({
       await reload();
       setOpening(false);
       onToast('Shift opened');
+      // Straight into the count, while nothing has been cooked from the shelf.
+      setCountedIn(false);
+      setCountingIn(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not open the shift.');
     } finally {
@@ -327,6 +345,9 @@ export function CombinedBar({
             )}
           </>
         )}
+        {shift && countedIn === false && (
+          <Button size="sm" onClick={() => setCountingIn(true)}>Count the kitchen in</Button>
+        )}
         {shift ? (
           <Button size="sm" onClick={startClose} loading={busy && !closing} disabled={!who?.can_close_shift}>
             Close shift
@@ -383,6 +404,23 @@ export function CombinedBar({
           who={who}
           onClose={() => setHistory(false)}
           onToast={onToast}
+        />
+      )}
+
+      {countingIn && shift && (
+        <BarCountModal
+          module="kitchen"
+          venueId={venue.$id}
+          shiftId={shift.$id}
+          phase="open"
+          userId={who?.user_id || who?.$id || ''}
+          settings={settings}
+          isManager={who?.role === 'admin' || who?.role === 'manager'}
+          dismissLabel="Not now"
+          // Nothing set up to count, so nothing to be reminded of.
+          onEmpty={() => setCountedIn(true)}
+          onClose={() => setCountingIn(false)}
+          onDone={(m) => { setCountingIn(false); setCountedIn(true); onToast(m); }}
         />
       )}
 

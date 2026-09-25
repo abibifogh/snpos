@@ -10,7 +10,7 @@ import { relinkPlan } from './shelf-relink';
 import type { RelinkPlan, LinkRow, LinkSize, LinkItem, ShelfRow, SoldLink } from './shelf-relink';
 import {
   variancesIn, wasCountedBar, shiftCounted, countable, countableBy, filedCounts, undoDeltas, undoProblem,
-  movesOnItsOwn, storeCountId, isStoreCount, STORE_COUNT_PREFIX, isPending, approveDeltas,
+  movesOnItsOwn, storeCountId, isStoreCount, STORE_COUNT_PREFIX, isPending, approveDeltas, countSide,
 } from './bar-count';
 import type { FiledCheck } from './bar-count';
 import { levelFor, transferQty, transferMovements, purchaseLocation, saleLocation } from './locations';
@@ -586,6 +586,11 @@ export async function barCountSheet(
    * screens that know who is holding the clipboard say so.
    */
   isManager = true,
+  /**
+   * Whose shelf. The bar's, unless the kitchen is counting in — the same
+   * sheet, the same rules about what is counted when, a different larder.
+   */
+  module: Module = 'bar',
 ): Promise<BarCountLine[]> {
   const [ingredients, locations] = await Promise.all([loadIngredients(venueId), loadLocations(venueId)]);
   /*
@@ -601,7 +606,7 @@ export async function barCountSheet(
     be counted as part of the bar could not be counted at all: its stock would
     show up as an enormous surplus against the counter's expected level.
   */
-  const counter = locations.find((l) => l.$id === locationId) ?? saleLocation(locations, 'bar');
+  const counter = locations.find((l) => l.$id === locationId) ?? saleLocation(locations, module);
   const levels = counter ? await loadLevels([counter.$id]) : [];
 
   /*
@@ -622,7 +627,7 @@ export async function barCountSheet(
     "count everything" whenever nothing had been marked for the shift. See
     countable.
   */
-  const onShelf = countable(ingredients.filter((i) => i.active && (i.module ?? 'kitchen') === 'bar'));
+  const onShelf = countable(ingredients.filter((i) => i.active && (i.module ?? 'kitchen') === module));
   const rows = counter?.kind === 'store' ? onShelf : shiftCounted(onShelf);
   /*
     And then who is holding the clipboard.
@@ -675,13 +680,21 @@ export async function saveBarCount(opts: {
   phase: 'open' | 'close';
   lines: BarCountLine[];
   userId: string;
+  /** Whose shelf was counted. The bar's unless said otherwise. */
+  module?: Module;
 }): Promise<{
   written: number; shortValue: number; failed: number; pending: number;
   /** Counts that applied at once because the approval column is not there yet. */
   unheld: number;
 }> {
   const places = await loadLocations(opts.venueId);
-  const counter = places.find((l) => l.$id === opts.locationId) ?? saleLocation(places, 'bar');
+  const side: Module = opts.module ?? 'bar';
+  /*
+    This side's place, or none. The kitchen may have no places set up at all,
+    in which case its one running figure is what is counted and moved — never
+    the bar's counter, which is what falling back to 'bar' here used to mean.
+  */
+  const counter = places.find((l) => l.$id === opts.locationId) ?? saleLocation(places, side);
   const variances = variancesIn(opts.lines);
   const shortValue = variances.filter((v) => v.delta < 0).reduce((s, v) => s + v.value, 0);
   let written = 0;
@@ -763,6 +776,8 @@ export async function saveBarCount(opts: {
         checked_by: opts.userId,
         note: line.note ?? '',
         applied: !held,
+        // So approving it later moves this side's shelf. See countSide.
+        module: side,
       }));
     } catch {
       wrote = false;
@@ -912,9 +927,12 @@ export async function approveBarCount(opts: {
   if (count.pending === 0) throw new Error('Nothing on that count is waiting to be applied.');
 
   const places = await loadLocations(opts.venueId);
-  // A store room's count names its room in the id; a shift's count is the bar.
+  // A store room's count names its room in the id; a shift's count is the
+  // counter of the side it was taken on — the bar's, or the kitchen's, or no
+  // place at all where the kitchen keeps one figure. See countSide.
   const roomId = isStoreCount(opts.shiftId) ? opts.shiftId.slice(STORE_COUNT_PREFIX.length) : opts.locationId;
-  const counter = places.find((l) => l.$id === roomId) ?? saleLocation(places, 'bar');
+  const counter = places.find((l) => l.$id === roomId)
+    ?? saleLocation(places, countSide(count.lines) as Module);
   const when = new Date().toISOString();
 
   let applied = 0;
@@ -1457,7 +1475,9 @@ export async function undoBarCount(opts: {
   if (problem || !count) throw new Error(problem ?? 'That count could not be found.');
 
   const places = await loadLocations(opts.venueId);
-  const counter = places.find((l) => l.$id === opts.locationId) ?? saleLocation(places, 'bar');
+  // Back onto the shelf it came off: this count's own side. See countSide.
+  const counter = places.find((l) => l.$id === opts.locationId)
+    ?? saleLocation(places, countSide(count.lines) as Module);
   const when = new Date().toISOString();
 
   let put_back = 0;

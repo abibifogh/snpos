@@ -9,7 +9,7 @@ import {
   loadPaymentMethods, openShift as createShift, shiftBlockers, expectedTakings, closeShift,
   tabOrdersOnShift, releaseWords, closeCodeProblem, spendCloseCode, humanError, liveOrders,
   openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, HANDOVER_ENABLED,
-  countsAtBothEnds, askForOpeningCount, hasOpeningCount, shiftCountPhases, ownFigure, floatOrigin, floatMethods,
+  countsAtBothEnds, countsInAtOpen, askForOpeningCount, hasOpeningCount, shiftCountPhases, ownFigure, floatOrigin, floatMethods,
 } from '@snpos/core';
 import type { PaymentMethod, Shift, FloatSource, TabOrder } from '@snpos/core';
 import type { PosContext } from './App';
@@ -89,6 +89,13 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
     first's answer.
   */
   const countsShelves = countsAtBothEnds(ctx.module);
+  /*
+    The kitchen counts IN, and only in: its close is still the larder check on
+    the closing screen. Asked for when the shift opens and can be done later;
+    a difference is held and emailed exactly as the bar's is. See
+    countsInAtOpen.
+  */
+  const kitchenCountsIn = !countsShelves && countsInAtOpen(ctx.module);
   const shiftId = ctx.shift?.$id;
   /*
     THE SHEET BELONGS TO THE SIDE THAT COUNTS, AND GOES WITH IT.
@@ -138,7 +145,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   const shopCounts = ctx.module === 'craft';
 
   useEffect(() => {
-    if (!countsShelves || !shiftId) { setCountedIn(undefined); return; }
+    if ((!countsShelves && !kitchenCountsIn) || !shiftId) { setCountedIn(undefined); return; }
     let live = true;
     let timer: number | undefined;
     /*
@@ -278,7 +285,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         five drinks later it is a count of a shift already under way, and it
         will be the next person who pays for the difference.
       */
-      if (countsShelves) { setCountedIn(false); setBarCount('open'); }
+      if (countsShelves || kitchenCountsIn) { setCountedIn(false); setBarCount('open'); }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not open the shift.');
     } finally {
@@ -603,18 +610,27 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         to close it. The overdue notice below already says that; two demands
         at once, one of them pointless, is how people learn to ignore both.
       */}
-      {ctx.shift && askForOpeningCount({ countsIn: countsShelves, counted: countedIn, canStillSell: !age.over }) && (
+      {ctx.shift && askForOpeningCount({
+        countsIn: countsShelves || kitchenCountsIn, counted: countedIn, canStillSell: !age.over,
+      }) && (
         <div style={{ padding: '0.5rem 1rem 0' }}>
-          <Notice tone="warn">
-            <strong>{shopCounts ? 'The shop' : 'The bar'} has not been counted in.</strong>
+          {/* The kitchen's is a reminder, not a warning: it is asked for, and
+              nothing waits on it. */}
+          <Notice tone={kitchenCountsIn ? 'info' : 'warn'}>
+            <strong>
+              {shopCounts ? 'The shop' : kitchenCountsIn ? 'The kitchen' : 'The bar'} has not been counted in.
+            </strong>
             <div className="small" style={{ marginTop: '0.3rem' }}>
-              Until it is, tonight&rsquo;s handover is measured against whatever the last shift left rather than
-              against what you accepted.
+              {kitchenCountsIn
+                ? 'Counting now puts any difference from the books in front of an admin today, rather than at '
+                  + 'close with a whole shift to have happened on.'
+                : 'Until it is, tonight’s handover is measured against whatever the last shift left rather than '
+                  + 'against what you accepted.'}
               {mustCount && ' The sheet could not be loaded a moment ago; open it again once you have a connection.'}
             </div>
             <div style={{ marginTop: '0.45rem' }}>
               <Button size="sm" variant="primary" onClick={() => setBarCount('open')}>
-                {shopCounts ? 'Count the shop in' : 'Count the bar in'}
+                {shopCounts ? 'Count the shop in' : kitchenCountsIn ? 'Count the kitchen in' : 'Count the bar in'}
               </Button>
             </div>
           </Notice>
@@ -705,11 +721,14 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
 
       {/* `countsShelves` as well as the sheet itself, so a side that does not
           count shelves cannot be shown one however this state was reached. */}
-      {barCount && countsShelves && !shopCounts && ctx.shift && (
+      {/* The kitchen's opening count is the same sheet on its own larder, and
+          only ever the opening one — its close is the check below. */}
+      {barCount && ((countsShelves && !shopCounts) || (kitchenCountsIn && barCount === 'open')) && ctx.shift && (
         <BarCountModal
           venueId={ctx.venue.$id}
           shiftId={ctx.shift.$id}
           phase={barCount}
+          module={kitchenCountsIn ? 'kitchen' : 'bar'}
           userId={ctx.userId}
           settings={ctx.settings}
           /* Whoever is actually at the till, which after a PIN unlock is not

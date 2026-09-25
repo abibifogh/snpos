@@ -221,9 +221,13 @@ export function BarCountsPage() {
     });
 
   const loadDecisions = async () => {
+    // The bar's own. The kitchen counts in on the same sheet and its counts
+    // are decided under Waiting for you, where they are named as the kitchen's.
+    const barsOnly = <T extends { module?: string | null }>(rows: T[]) =>
+      rows.filter((r) => (r.module ?? 'bar') !== 'kitchen');
     const [waiting, filed] = await Promise.all([
-      pendingBarChecks(),
-      barCountHistory(Date.now() - 90 * 86_400_000),
+      pendingBarChecks().then(barsOnly),
+      barCountHistory(Date.now() - 90 * 86_400_000).then(barsOnly),
     ]);
     // Shift codes for the titles, read once for every shift the rows mention.
     const ids = [...new Set([...waiting, ...filed].map((r) => r.shift_id ?? '').filter((id) => id && !isStoreCount(id)))];

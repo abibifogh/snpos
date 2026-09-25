@@ -62,6 +62,11 @@ class FakeDatabases {
     if (table === 'shift_stock_checks') return { documents: checks, total: checks.length };
     if (table === 'stock_counts') return { documents: shopCounts, total: shopCounts.length };
     if (table === 'push_subscriptions') return { documents: devices, total: devices.length };
+    // Who gets count and stock emails: the report list, as a live business has it.
+    if (table === 'report_subscriptions') {
+      const subs = [{ $id: 'rs1', channel: 'email', active: true, destination: 'reports@bistro.com', events: [] }];
+      return { documents: subs, total: subs.length };
+    }
     return { documents: [], total: 0 };
   }
   async createDocument(_db, table, _id, data) {
@@ -637,4 +642,46 @@ test('turning a device on before the server has a key says so on the device\'s r
   );
   const row = updates.find((u) => u.table === 'push_subscriptions' && u.id === 'p');
   assert.match(row?.data.last_error ?? '', /Run Provision Appwrite/);
+});
+
+/* ------------------------- a count found a difference, told the moment it is filed */
+
+const noticeFor = (phase) => ({
+  $id: `notice-${phase}`, venue_id: 'main', kind: 'bar_count', shift_id: 'sh-bar', phase,
+  lines: 1, short_value: 2_000, counted_by: 'p-bar',
+});
+const heldAt = (phase) => ({
+  $id: `chk-${phase}`, shift_id: 'sh-bar', phase, applied: false, variance_qty: -2, variance_value: 2_000,
+  ingredient_id: 'cola', counted_qty: 10, theoretical_qty: 12, checked_by: 'p-bar',
+  $createdAt: new Date().toISOString(),
+});
+const countMail = () => outbox.filter((m) => /on the bar count/.test(m.subject));
+
+for (const [phase, words, end] of [
+  ['close', 'counting out', 'out at the end of the shift'],
+  ['open', 'counting in', 'in at the start of the shift'],
+]) {
+  test(`a difference found ${words} is emailed the moment it is filed`, async () => {
+    resetCounts();
+    checks = [heldAt(phase)];
+    await run(noticeFor(phase), 'databases.snpos.collections.approval_notices.documents.n.create');
+    const mail = countMail();
+    assert.equal(mail.length, 1, `one email for the ${phase} count`);
+    assert.match(mail[0].subject, new RegExp(`\\(${words}\\)`));
+    assert.match(mail[0].html, new RegExp(end));
+    assert.match(mail[0].html, /2 short/);
+  });
+}
+
+test('a difference found counting the KITCHEN in is emailed as the kitchen\'s', async () => {
+  // The kitchen counts in on the bar's sheet; its rows say whose shelf it was.
+  resetCounts();
+  checks = [{ ...heldAt('open'), shift_id: 'sh-kit', ingredient_id: 'rice', module: 'kitchen' }];
+  await run({ ...noticeFor('open'), shift_id: 'sh-kit' },
+    'databases.snpos.collections.approval_notices.documents.n.create');
+  const mail = outbox.filter((m) => /on the kitchen count/.test(m.subject));
+  assert.equal(mail.length, 1);
+  assert.match(mail[0].subject, /\(counting in\)/);
+  assert.match(mail[0].html, /The kitchen was counted in at the start of the shift/);
+  assert.match(mail[0].html, /A kitchen count needs your approval/);
 });

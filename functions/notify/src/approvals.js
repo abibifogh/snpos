@@ -49,7 +49,19 @@ export const APPROVAL_GRACE_MS = 15 * 60 * 1000;
  * @property {number} lines       How many rows it covers. One for a single thing.
  */
 
-/** Bar and store-room counts: many rows to one count, so they are grouped. */
+/**
+ * Which shelf a count was of, in a sentence. Rows from before sides were
+ * recorded are the bar's — it was the only side that counted this way.
+ * Mirrors countSide and countName in packages/core/src/bar-count.ts.
+ */
+export const countPlace = (side) => (side === 'kitchen' ? 'kitchen' : side === 'craft' ? 'shop' : 'bar');
+
+export function countWhat(side, phase) {
+  const place = countPlace(side);
+  return `${place[0].toUpperCase()}${place.slice(1)} count, ${phase === 'open' ? 'counting in' : 'counting out'}`;
+}
+
+/** Bar, kitchen and store-room counts: many rows to one count, so they are grouped. */
 export function fromBarChecks(rows, names = {}) {
   /** @type {Map<string, Waiting>} */
   const byCount = new Map();
@@ -63,7 +75,7 @@ export function fromBarChecks(rows, names = {}) {
     const at = byCount.get(key) ?? {
       id: key,
       queue: 'bar_count',
-      what: `Bar count, ${r.phase === 'open' ? 'counting in' : 'counting out'}`,
+      what: countWhat(r.module, r.phase),
       who: names[r.checked_by] || '',
       value: 0,
       since: r.$createdAt || '',
@@ -250,7 +262,7 @@ export function countLines(rows, shelves = {}) {
 export function countSubject(opts) {
   const where = opts.phase === 'open' ? 'counting in' : 'counting out';
   const n = opts.lines;
-  return `${n} ${n === 1 ? 'difference' : 'differences'} on the bar count (${where})`
+  return `${n} ${n === 1 ? 'difference' : 'differences'} on the ${countPlace(opts.side)} count (${where})`
     + `${opts.shortValue > 0 ? `, ${opts.money(opts.shortValue)} short` : ''}`;
 }
 
@@ -276,7 +288,8 @@ export function countBody(opts) {
     })
     .join('');
 
-  return `<p style="margin:0 0 12px">${opts.who ? `${opts.who} counted the bar` : 'The bar was counted'}`
+  const place = countPlace(opts.side);
+  return `<p style="margin:0 0 12px">${opts.who ? `${opts.who} counted the ${place}` : `The ${place} was counted`}`
     + `${opts.phase === 'open' ? ' in at the start of the shift' : ' out at the end of the shift'}`
     + ' and found these differences:</p>'
     + `<ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.7">${lis}</ul>`

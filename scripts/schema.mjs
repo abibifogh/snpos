@@ -1907,6 +1907,14 @@ export const COLLECTIONS = [
        * they were.
        */
       ['phase', 'e', ['open', 'close'], false, 'close'],
+      /*
+        Which side's shelf this count was of. The kitchen counts in at the
+        start of a shift on the same sheet the bar does, and approving a held
+        difference has to move THAT side's shelf — the bar's place is only the
+        right answer for the bar. Absent on rows from before the kitchen
+        counted in, which were all the bar's. See countSide.
+      */
+      ['module', 'e', ['kitchen', 'craft', 'bar'], false],
       /**
        * Whether this line has actually moved the shelf.
        *

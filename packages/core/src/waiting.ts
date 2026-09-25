@@ -65,6 +65,8 @@ export interface WaitingBarCount {
   changed: number;
   pending: number;
   countedBy?: string;
+  /** Whose shelf: the bar's, or the kitchen's counted in at opening. Absent is the bar. */
+  side?: string;
 }
 
 export interface WaitingShopCount {
@@ -147,7 +149,8 @@ export function waitingList(input: WaitingInput): WaitingItem[] {
     const store = c.shiftId.startsWith(STORE_PREFIX) ? c.shiftId.slice(STORE_PREFIX.length) : null;
     const where = store
       ? `${input.storeNames?.[store] ?? 'Store room'} count`
-      : `Bar count, ${c.phase === 'open' ? 'counted in' : 'counted out'}${input.shiftCodes?.[c.shiftId] ? ` on ${input.shiftCodes[c.shiftId]}` : ''}`;
+      : `${c.side === 'kitchen' ? 'Kitchen' : 'Bar'} count, ${c.phase === 'open' ? 'counted in' : 'counted out'}`
+        + `${input.shiftCodes?.[c.shiftId] ? ` on ${input.shiftCodes[c.shiftId]}` : ''}`;
     items.push({
       id: `bar:${c.shiftId}:${c.phase}`,
       kind: 'count',
