@@ -16,7 +16,7 @@ import { handleReports } from './reports.js';
 import { handleSso } from './sso.js';
 import {
   fromBarChecks, fromShopCounts, fromExpenses, worthSending, approvalSubject, approvalBody,
-  countLines, countSubject, countBody,
+  countLines, countSubject, countBody, countPlace,
 } from './approvals.js';
 import { postShiftClose, postSpend, postPayoutRow, postWasteRow, postBatchRow, sweepBooks } from './books-post.js';
 import { nightlyReconcile } from './health-night.js';
@@ -295,15 +295,18 @@ async function noticeSent({ db, DB_ID, settings, transport, from, doc, log, erro
   }
 
   const shortValue = lines.reduce((sum, l) => sum + (l.variance < 0 ? l.value : 0), 0);
+  // Whose shelf: the kitchen counts in on the same sheet as the bar. From the
+  // rows, which say; rows from before they did are the bar's.
+  const side = held.documents.find((r) => r.module)?.module || 'bar';
   await transport.sendMail({
     from,
     to: to.join(','),
     subject: countSubject({
-      phase: doc.phase, lines: lines.length, shortValue, money: (n) => money(n, settings),
+      phase: doc.phase, lines: lines.length, shortValue, side, money: (n) => money(n, settings),
     }),
     html: shell(
-      'A bar count needs your approval',
-      countBody({ lines, who, phase: doc.phase, money: (n) => money(n, settings) }),
+      `A ${countPlace(side)} count needs your approval`,
+      countBody({ lines, who, phase: doc.phase, side, money: (n) => money(n, settings) }),
       settings.primary_color || '#0f766e',
     ),
   });
@@ -322,7 +325,7 @@ async function noticeSent({ db, DB_ID, settings, transport, from, doc, log, erro
     await db.updateDocument(DB_ID, 'shift_stock_checks', r.$id, { alerted_at: now }).catch(() => undefined);
   }
 
-  log(`Told ${to.length} recipient(s) about ${lines.length} differences on a bar count.`);
+  log(`Told ${to.length} recipient(s) about ${lines.length} differences on a ${countPlace(side)} count.`);
   return { alerted: lines.length };
 }
 

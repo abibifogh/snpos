@@ -26,10 +26,18 @@ type Item = Ingredient & Doc & { module?: string };
 export function MadeHere({
   module,
   userId,
+  hasPlace,
   onDone,
 }: {
   module: Module;
   userId: string;
+  /**
+   * Whether this side has a store room or a bar to put a batch in, as the page
+   * already knows. NOT worked out from this card's own list of places: that
+   * list is only read when the button is pressed, so asking it first meant an
+   * empty list, a disabled button, and a button that could never be pressed.
+   */
+  hasPlace: boolean;
   onDone: () => Promise<void> | void;
 }) {
   const toast = useToast();
@@ -190,8 +198,8 @@ export function MadeHere({
           For drinks made in the house — sobolo, ginger beer, a punch. Record a batch once it is made and bottled:
           it goes into the store room or the bar, and whatever went into it comes off its own shelf.
         </p>
-        <Button onClick={() => void start()} disabled={mine.length === 0}>Record a batch</Button>
-        {mine.length === 0 && (
+        <Button onClick={() => void start()} disabled={!hasPlace}>Record a batch</Button>
+        {!hasPlace && (
           <p className="small dim" style={{ marginBottom: 0 }}>Add a store room or a bar above first, so it has somewhere to go.</p>
         )}
       </Card>

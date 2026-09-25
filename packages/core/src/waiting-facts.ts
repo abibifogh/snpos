@@ -1,6 +1,6 @@
 import { listAll, Query } from './client';
 import { pendingBarChecks, loadLocations } from './stock';
-import { filedCounts } from './bar-count';
+import { filedCounts, countSide } from './bar-count';
 import { pendingCounts, pendingShelfLines } from './consignment';
 import { loadOpenShifts } from './shifts';
 import { tabExposure } from './tab-store';
@@ -45,7 +45,8 @@ export async function loadWaiting(venueId: string, money: (minor: number) => str
   const names = nameBook(staff);
 
   // A bar count is named by the shift it was taken on, which the rows do not carry.
-  const barCounts = filedCounts(checks);
+  // Each count says whose shelf it was, so a kitchen count is not listed as the bar's.
+  const barCounts = filedCounts(checks).map((c) => ({ ...c, side: countSide(c.lines) }));
   const shiftIds = [...new Set(barCounts.map((c) => c.shiftId).filter((id) => id && !id.startsWith('store:')))];
   const shifts = shiftIds.length > 0
     ? await listAll<Shift>('shifts', [Query.equal('$id', shiftIds)]).catch(() => [] as Shift[])

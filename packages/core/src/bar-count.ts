@@ -141,6 +141,42 @@ export const countsAtBothEnds = (module?: string): boolean =>
   (module ?? 'kitchen') === 'bar' || (module ?? 'kitchen') === 'craft';
 
 /**
+ * Does this side count its shelf IN when a shift opens?
+ *
+ * The bar and the shop, which count at both ends — and the kitchen, which
+ * checks its larder at close and now also counts in at the start. Its
+ * opening count is the same sheet and the same path as the bar's: a
+ * difference is held for an admin and emailed the moment it is filed.
+ *
+ * Unlike the bar's, the kitchen's is never a wall. A kitchen opens at six in
+ * the morning with deliveries arriving, and a till that will not take an
+ * order until forty ingredients are counted is a till that gets a count
+ * typed to make it go away. It is asked for, and can be done later.
+ */
+export const countsInAtOpen = (module?: string): boolean =>
+  countsAtBothEnds(module) || (module ?? 'kitchen') === 'kitchen';
+
+/** Whether the opening count may be left for later. Always, on the kitchen. */
+export const openingCountOptional = (module?: string): boolean => (module ?? 'kitchen') === 'kitchen';
+
+/**
+ * Which side a filed count belongs to, from its rows.
+ *
+ * Rows written before sides were recorded are the bar's: the bar was the only
+ * side that filed counts this way, so that is not a guess. Approving one moves
+ * the bar's shelf exactly as it always did.
+ */
+export function countSide(rows: { module?: string | null }[]): string {
+  return rows.find((r) => r.module)?.module ?? 'bar';
+}
+
+/** What a count is called, on a list or in an email. */
+export function countName(side: string, phase: 'open' | 'close' = 'close'): string {
+  const what = side === 'kitchen' ? 'Kitchen count' : side === 'craft' ? 'Shop count' : 'Bar count';
+  return `${what}, ${phase === 'open' ? 'counting in' : 'counting out'}`;
+}
+
+/**
  * Should somebody be asked to count this shift IN?
  *
  * Three conditions, and the third is the one that was missing.
@@ -470,6 +506,8 @@ export interface FiledCheck {
   approved_at?: string | null;
   rejected_by?: string | null;
   rejected_at?: string | null;
+  /** Which side's shelf was counted. Absent on rows from before the kitchen counted in. */
+  module?: string | null;
 }
 
 /* ------------------------------------------------- held until agreed */

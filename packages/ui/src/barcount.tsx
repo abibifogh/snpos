@@ -6,9 +6,9 @@ import {
   countDraftKey, readCountDraft, saveCountDraft, restoreCount, draftFromCount, clearCountDraft,
   countRestoredWords, countDraftLines, clearAllWarning,
   type DraftStore,
-  formatMoney, loadLocations, saleLocation,
+  formatMoney, loadLocations, saleLocation, openingCountOptional,
 } from '@snpos/core';
-import type { BarCountLine, Settings, StockLocation } from '@snpos/core';
+import type { BarCountLine, Settings, StockLocation, Module } from '@snpos/core';
 
 /**
  * The bar's bottles, counted at the till.
@@ -37,6 +37,12 @@ export interface BarCountModalProps {
    */
   isManager?: boolean;
   settings: Settings;
+  /**
+   * Whose shelf. The bar's unless the kitchen is counting in at the start of
+   * its shift: the same sheet, the same held differences and the same email,
+   * a different larder. See countsInAtOpen.
+   */
+  module?: Module;
   /** Dismissed without finishing. The count is not saved; nothing is written. */
   /**
    * Leave the sheet.
@@ -71,8 +77,10 @@ export interface BarCountModalProps {
 type Sheet = { lines: BarCountLine[]; failed: boolean } | null;
 
 export function BarCountModal({
-  venueId, shiftId, phase, userId, settings, isManager, onClose, dismissLabel, onEmpty, onDone,
+  venueId, shiftId, phase, userId, settings, isManager, onClose, dismissLabel, onEmpty, onDone, module = 'bar',
 }: BarCountModalProps) {
+  /** What the place is called in a sentence. */
+  const place = module === 'kitchen' ? 'kitchen' : 'bar';
   const [sheet, setSheet] = useState<Sheet>(null);
   const lines = sheet?.lines ?? null;
   const [places, setPlaces] = useState<StockLocation[]>([]);
@@ -113,7 +121,7 @@ export function BarCountModal({
     void (async () => {
       try {
         const where = await loadLocations(venueId).catch(() => [] as StockLocation[]);
-        const bar = where.filter((l) => (l.module ?? 'kitchen') === 'bar' && l.active !== false);
+        const bar = where.filter((l) => (l.module ?? 'kitchen') === module && l.active !== false);
         setPlaces(bar);
         /*
           A bartender's sheet, so the manager-only rows are not on it.
@@ -122,7 +130,7 @@ export function BarCountModal({
           till can fill reports itself unfinished for ever and can never be
           sent, which would block every close on the bar.
         */
-        const rows = await barCountSheet(venueId, saleLocation(bar, 'bar')?.$id, isManager === true);
+        const rows = await barCountSheet(venueId, saleLocation(bar, module)?.$id, isManager === true, module);
         /*
           WHAT WAS ALREADY TYPED, PUT BACK.
 
@@ -135,7 +143,11 @@ export function BarCountModal({
           so a bottle added this morning still appears and one taken off is
           still gone. See restoreCount.
         */
-        const key = countDraftKey(shiftId, phase, saleLocation(bar, 'bar')?.$id);
+        // The bar's key exactly as it always was, so a count half typed before
+        // this change is still found; the kitchen's can never collide with it.
+        const key = countDraftKey(
+          shiftId, phase, saleLocation(bar, module)?.$id ?? (module === 'bar' ? undefined : module),
+        );
         setDraftKey(key);
         const kept = readCountDraft(draftStore(), key);
         setSheet({ lines: restoreCount(rows, kept), failed: false });
@@ -207,9 +219,16 @@ export function BarCountModal({
   */
   const gate = useMemo(
     () => (sheet
-      ? countGate({ lines: sheet.lines, phase, skippable: settings.bar_count_skippable, loadFailed: sheet.failed })
+      ? countGate({
+        lines: sheet.lines,
+        phase,
+        // The kitchen's opening count is asked for, never a wall. See
+        // openingCountOptional.
+        skippable: settings.bar_count_skippable || (phase === 'open' && openingCountOptional(module)),
+        loadFailed: sheet.failed,
+      })
       : { maySkip: true, maySave: false }),
-    [sheet, phase, settings.bar_count_skippable],
+    [sheet, phase, settings.bar_count_skippable, module],
   );
 
   const save = async () => {
@@ -219,10 +238,11 @@ export function BarCountModal({
       const { written, shortValue, failed } = await saveBarCount({
         venueId,
         shiftId,
-        locationId: saleLocation(places, 'bar')?.$id,
+        locationId: saleLocation(places, module)?.$id,
         phase,
         lines: lines ?? [],
         userId,
+        module,
       });
       /*
         Stopped here rather than waved through with a cheerful message.
@@ -257,9 +277,9 @@ export function BarCountModal({
       clearCountDraft(draftStore(), draftKey);
       onDone(
         phase === 'open'
-          ? `${written} line${written === 1 ? '' : 's'} counted in. The bar is yours.`
+          ? `${written} line${written === 1 ? '' : 's'} counted in. The ${place} is yours.`
           : shortValue > 0
-            ? `Counted out. ${money(shortValue)} short — an admin can see it under Bar counts.`
+            ? `Counted out. ${money(shortValue)} short — an admin can see it under Waiting for you.`
             : 'Counted out, and it balances.',
       );
     } catch (e) {
@@ -269,11 +289,11 @@ export function BarCountModal({
     }
   };
 
-  const counting = phase === 'open' ? 'Count the bar in' : 'Count the bar out';
+  const counting = phase === 'open' ? `Count the ${place} in` : `Count the ${place} out`;
 
   return (
     <Modal
-      title={phase === 'open' ? 'Count the bar in' : 'Count the bar out'}
+      title={counting}
       wide
       onClose={() => onClose(gate.maySkip)}
       /*
@@ -325,7 +345,11 @@ export function BarCountModal({
       {recovered && <Notice tone="info">{recovered}</Notice>}
 
       <p className="small dim" style={{ marginTop: 0 }}>
-        {phase === 'open'
+        {phase === 'open' && module === 'kitchen'
+          ? 'Count what is actually in the kitchen before service starts. Anything that differs from what the '
+            + 'books say goes to an admin straight away — usually a delivery nobody recorded, or something used '
+            + 'overnight. You can leave it and count later.'
+          : phase === 'open'
           ? 'Count what is actually behind the bar before service starts. It is usually what last night left, '
             + 'and the times it is not — a delivery overnight, a bottle taken for a function — are exactly the '
             + 'times a shortage gets argued about later.'
@@ -347,13 +371,16 @@ export function BarCountModal({
         <Spinner />
       ) : sheet?.failed ? (
         <Notice tone="warn">
-          The count sheet could not be loaded, so the shift is not being held up over it. Try again from Bar
-          counts once the connection is back.
+          The count sheet could not be loaded, so the shift is not being held up over it. Try again once the
+          connection is back.
         </Notice>
       ) : lines.length === 0 ? (
         <Notice tone="info">
-          Nothing is set up for the bar to count yet. An admin adds bottles and mixers under Bar, Bottles &amp;
-          mixers, and ticks the ones counted every shift.
+          {module === 'kitchen'
+            ? 'Nothing is set up for the kitchen to count yet. An admin adds ingredients under Stock, and ticks '
+              + 'the ones counted every shift.'
+            : 'Nothing is set up for the bar to count yet. An admin adds bottles and mixers under Bar, Bottles & '
+              + 'mixers, and ticks the ones counted every shift.'}
         </Notice>
       ) : (
         <>
