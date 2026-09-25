@@ -92,3 +92,55 @@ self.addEventListener('fetch', (event) => {
     );
   }
 });
+
+/*
+  A NOTIFICATION FROM THE SERVER, shown whatever the page is doing.
+
+  Browsers require every push to put something on screen — a push that shows
+  nothing is treated as abuse, and after a few the browser takes the
+  permission away. So something is always shown, even when the message could
+  not be read: a generic line is better than losing notifications for good.
+
+  The tag means a second alert of the same kind replaces the first on the
+  lock screen rather than stacking a pile of them.
+*/
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = {};
+  }
+  const title = data.title || 'Something needs your attention';
+  event.waitUntil(self.registration.showNotification(title, {
+    body: data.body || '',
+    tag: data.tag || undefined,
+    renotify: !!data.tag,
+    icon: new URL('icon-192.png', self.registration.scope).href,
+    badge: new URL('icon-192.png', self.registration.scope).href,
+    data: { url: data.url || '' },
+  }));
+});
+
+/*
+  Tapping it goes to the page it is about.
+
+  An Admin tab already open is brought forward and moved there, rather than a
+  second copy of the app being opened beside it — two tabs of the same admin
+  is how somebody approves a count in one and is looking at the stale list in
+  the other.
+*/
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || '', self.registration.scope).href;
+  event.waitUntil((async () => {
+    const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const mine = open.find((c) => c.url.startsWith(self.registration.scope));
+    if (mine) {
+      await mine.focus();
+      if ('navigate' in mine) await mine.navigate(target).catch(() => undefined);
+      return;
+    }
+    await self.clients.openWindow(target);
+  })());
+});

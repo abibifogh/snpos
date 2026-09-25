@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Button, Card, Field, Input, Notice, useToast } from '@snpos/ui';
 import { account, humanError } from '../lib';
 import { useSession } from '../session';
+import { PushCard } from '../components/PushCard';
 
 /** Appwrite's own minimum. Stated up front rather than discovered on submit. */
 const MIN_PASSWORD = 8;
@@ -73,6 +74,8 @@ export function AccountPage() {
   return (
     <>
       <h1>Your account</h1>
+
+      <PushCard />
 
       <Card title="Password">
         <p className="small dim" style={{ marginTop: 0 }}>

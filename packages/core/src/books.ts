@@ -208,6 +208,28 @@ export function wasteLines(w: { value: number; module?: string }): BookLine[] {
 }
 
 /**
+ * A batch made here, where what went in came from another side's stock.
+ *
+ * Kitchen sugar made into a bar drink leaves the kitchen's inventory and joins
+ * the bar's. One pair per side it crossed from; nothing at all for inputs from
+ * the drink's own side, which move within one account. Without this the bar's
+ * inventory is credited, drink by drink as each sells, for value it was never
+ * given, and runs below nothing. See crossSideValue.
+ */
+export function batchLines(b: { madeModule?: string; crossing: { module: string; value: number }[] }): BookLine[] {
+  const to = inventoryAccount((b.madeModule ?? 'bar') as Module);
+  return b.crossing
+    .filter((c) => c.value > 0 && inventoryAccount((c.module ?? 'kitchen') as Module) !== to)
+    .flatMap((c) => [
+      { account_code: to, debit: c.value, credit: 0, memo: 'Made here' },
+      {
+        account_code: inventoryAccount((c.module ?? 'kitchen') as Module),
+        debit: 0, credit: c.value, memo: 'Used to make it',
+      },
+    ]);
+}
+
+/**
  * The key an event's entry carries, so it is posted once however many times
  * the event arrives. The browser's corrections look entries up by the same
  * keys, so the two sides find each other's work.

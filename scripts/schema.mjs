@@ -259,6 +259,13 @@ export const COLLECTIONS = [
       */
       ['schema_version', 's', 40, false],
       ['schema_applied_at', 'd', null, false],
+      /*
+        The public half of this server's push key, which a browser needs in
+        order to subscribe. Public by design — it is in every subscription
+        request a browser makes. The private half is in push_keys, which no
+        browser can read. Written by provisioning, once. See webpush.js.
+      */
+      ['push_public_key', 's', 200, false],
       ['service_charge_bp', 'i', null, true, 0],
       // What a shift starts with in the drawer.
       //   zero       nothing carried over; count it in each time
@@ -434,6 +441,11 @@ export const COLLECTIONS = [
       // a count is the check ON the custodian and catches nothing when the
       // person answerable for the money is the one answering. See canCountBox.
       ['imprest_custodian_counts', 'b', null, false, false],
+      // Whether the shop counts its shelves at all. ON, and absent means on —
+      // a setting nobody has answered must not switch a page off. A shop of
+      // one-off pieces that are looked at rather than counted can turn the
+      // stocktake off entirely. See shopCountsOn.
+      ['craft_counts_enabled', 'b', null, false, true],
       ['stock_variance_threshold_bp', 'i', null, true, 1000],
       ['stock_variance_value_floor', 'i', null, true, 2000],
       ['expense_approval_threshold', 'i', null, true, 20000],
@@ -1921,6 +1933,11 @@ export const COLLECTIONS = [
         becomes noise that gets filtered.
       */
       ['alerted_at', 'd', null, false],
+      // The SECOND word: set once a difference has waited more than a day and
+      // the admins have been told again, by email and on their devices. Kept
+      // apart from alerted_at so being told at filing does not count as
+      // having been told a day later. See overdue-counts.js.
+      ['overdue_alerted_at', 'd', null, false],
       ['rejected_at', 'd', null, false],
       ['opening_qty', 'f', null, true, 0],
       ['theoretical_qty', 'f', null, true, 0],
@@ -2122,6 +2139,44 @@ export const COLLECTIONS = [
     ],
   },
   {
+    /**
+     * A batch of something made here: sobolo, ginger beer, a house punch.
+     *
+     * The record of one making — what was made, how much, where it was put,
+     * and what went into it at what each was worth. The stock movements are
+     * written from it, and the books are posted from it by the server when
+     * what went in came from another side's stock: see batchLines. It is also
+     * what the next batch of the same drink starts from, so a recipe that is
+     * made every week never has to be typed twice.
+     *
+     * Never edited. A batch recorded wrongly is corrected by a count, the same
+     * as any other stock that is not what the book says.
+     */
+    id: 'production_batches',
+    name: 'Production batches',
+    perms: { read: ALL_STAFF, create: MGMT, update: [], delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      // Which side's stock it joins. The books need it to know which
+      // inventory the value moves into.
+      ['module', 'e', ['kitchen', 'craft', 'bar'], true, 'bar'],
+      ['made_item_id', 's', 64, true],
+      ['made_name', 's', 160, true],
+      ['made_qty', 'f', null, true, 0],
+      ['unit', 's', 20, false],
+      ['location_id', 's', 64, true],
+      // JSON: [{ ingredient_id, name, unit, qty, location_id, module, unit_cost }].
+      ['inputs', 's', 4000, false],
+      ['cost_total', 'i', null, true, 0],
+      ['unit_cost', 'i', null, true, 0],
+      ['made_by', 's', 64, false],
+      ['note', 's', 300, false],
+    ],
+    indexes: [
+      ['made_item', 'key', ['made_item_id', '$createdAt']],
+    ],
+  },
+  {
     id: 'stock_movements',
     name: 'Stock movements',
     // A movement is something that happened. It is never edited; a mistake is
@@ -2131,7 +2186,14 @@ export const COLLECTIONS = [
     perms: { read: ALL_STAFF, create: ALL_STAFF, update: [], delete: ADMIN },
     attributes: [
       ['ingredient_id', 's', 64, true],
-      ['type', 'e', ['purchase', 'sale_depletion', 'waste', 'adjustment', 'count_correction', 'transfer'], true],
+      /*
+        'made' is a drink made here arriving on a shelf; 'used_to_make' is
+        what went into it leaving one. Always written together, from one batch
+        — see production_batches — so neither half exists without the other.
+      */
+      ['type', 'e', [
+        'purchase', 'sale_depletion', 'waste', 'adjustment', 'count_correction', 'transfer', 'made', 'used_to_make',
+      ], true],
       /**
        * Where it happened, and for a transfer, the other end.
        *
@@ -2198,6 +2260,63 @@ export const COLLECTIONS = [
       ['venue_status', 'key', ['venue_id', 'status']],
       ['status_name', 'key', ['status', 'name']],
     ],
+  },
+  {
+    /**
+     * Devices that have asked to be told things, one row per browser.
+     *
+     * A row is what a browser hands over when somebody presses "Turn on" and
+     * says yes to the permission prompt: an address at that browser's push
+     * service and the two keys that encrypt a message to it alone. Nothing
+     * here can be used by anybody else — a push service only accepts messages
+     * for it signed by THIS server's key, and only the browser can read them.
+     *
+     * Admins only, because the only thing sent this way is a stock count left
+     * waiting for an admin's decision. Kept per user so that an alert goes to
+     * the devices of the people it is for, and so a device can be switched off
+     * without switching off anybody else's.
+     */
+    id: 'push_subscriptions',
+    name: 'Push subscriptions',
+    perms: { read: ADMIN, create: ADMIN, update: ADMIN, delete: ADMIN },
+    attributes: [
+      ['user_id', 's', 64, true],
+      ['endpoint', 's', 1000, true],
+      ['p256dh', 's', 200, true],
+      ['auth', 's', 64, true],
+      // "Chrome on Mac", so a list of devices can be told apart.
+      ['device_label', 's', 120, false],
+      /*
+        Set by the page to ask for a test; the function answers on the update
+        event and clears it. Also how a device that has just subscribed gets
+        its first message, which is the only proof the whole chain works.
+      */
+      ['test_requested_at', 'd', null, false],
+      ['last_sent_at', 'd', null, false],
+      ['last_error', 's', 300, false],
+    ],
+    indexes: [
+      ['user', 'key', ['user_id']],
+    ],
+  },
+  {
+    /**
+     * This server's push key pair. NO browser can read this collection.
+     *
+     * Generated once by provisioning and never again: every device that has
+     * turned notifications on is bound to the public half, and a new pair
+     * would silently orphan all of them. Only the notify function, holding the
+     * project's API key, reads it — the same trust as the SMTP password the
+     * function already holds.
+     */
+    id: 'push_keys',
+    name: 'Push keys',
+    perms: { read: [], create: [], update: [], delete: [] },
+    attributes: [
+      ['public_key', 's', 200, true],
+      ['private_key', 's', 100, true],
+    ],
+    indexes: [],
   },
   {
     /**
@@ -2317,6 +2436,8 @@ export const COLLECTIONS = [
         becomes noise that gets filtered.
       */
       ['alerted_at', 'd', null, false],
+      // The day-later escalation. See the same field on shift_stock_checks.
+      ['overdue_alerted_at', 'd', null, false],
       // Totals as counted, so the list of pending counts reads without
       // fetching every line of every one of them.
       ['line_count', 'i', null, true, 0],

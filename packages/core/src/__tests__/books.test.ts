@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  shiftEntries, takingsByKind, cashVarianceOf, payoutLines, wasteLines, BOOK_KEYS, BOOK_ACCOUNTS,
+  shiftEntries, takingsByKind, cashVarianceOf, payoutLines, wasteLines, batchLines, BOOK_KEYS, BOOK_ACCOUNTS,
 } from '../books.ts';
 import { ACCOUNTS, salesAccount, cogsAccount, inventoryAccount, payoutAccount } from '../accounts.ts';
 import { spendDebits, spendPostingLines, sameDebits } from '../spend-posting.ts';
@@ -11,6 +11,7 @@ import {
 import { makersShareOf, splitSale, rateFor, flatFor } from '../consignment-math.ts';
 import { isLocked } from '../ledger-math.ts';
 import * as server from '../../../../functions/notify/src/books.js';
+import { storedInputs, crossSideValue } from '../batch-rules.ts';
 
 const balanced = (lines: { debit: number; credit: number }[]) =>
   lines.reduce((s, l) => s + l.debit, 0) === lines.reduce((s, l) => s + l.credit, 0);
@@ -95,6 +96,51 @@ test('a payout and a write-off each make one balanced pair', () => {
   assert.deepEqual(wasteLines({ value: -5 }), []);
   assert.equal(BOOK_KEYS.expense('e1'), 'expense:e1');
   assert.equal(BOOK_KEYS.shift('sh1'), 'sh1');
+});
+
+test('a batch made from another side\'s stock moves the value between inventories', () => {
+  // Kitchen sugar and hibiscus, GH₵116, made into bar sobolo.
+  assert.deepEqual(
+    batchLines({ madeModule: 'bar', crossing: [{ module: 'kitchen', value: 11_600 }] })
+      .map((l) => [l.account_code, l.debit, l.credit]),
+    [['1210', 11_600, 0], ['1200', 0, 11_600]],
+  );
+  // From the bar's own stock: one account, nothing to post.
+  assert.deepEqual(batchLines({ madeModule: 'bar', crossing: [{ module: 'bar', value: 500 }] }), []);
+  assert.deepEqual(batchLines({ madeModule: 'bar', crossing: [] }), []);
+  // Every pair balances.
+  const lines = batchLines({ madeModule: 'bar', crossing: [{ module: 'kitchen', value: 700 }, { module: 'craft', value: 300 }] });
+  assert.equal(lines.reduce((s, l) => s + l.debit - l.credit, 0), 0);
+});
+
+test('the server reads a stored batch to the same crossing the browser worked out', () => {
+  /*
+    The browser computes what crossed sides from the form; the server only
+    has the stored row, and works it out again. The two must agree, or the
+    books post a different figure from the one the screen showed.
+  */
+  const inputs = [
+    { ingredientId: 'sugar', name: 'Sugar', unit: 'kg', module: 'kitchen', locationId: 'k', available: 9, unitCost: 1_200, qtyText: '3' },
+    { ingredientId: 'hib', name: 'Hibiscus', unit: 'kg', module: 'kitchen', locationId: 'k', available: 9, unitCost: 4_000, qtyText: '2.5' },
+    { ingredientId: 'rum', name: 'Rum', unit: 'bottle', module: 'bar', locationId: 'b', available: 9, unitCost: 9_000, qtyText: '1' },
+    { ingredientId: 'old', name: 'Older row', unit: 'kg', module: undefined, locationId: 'k', available: 9, unitCost: 333, qtyText: '1.5' },
+    { ingredientId: 'blank', name: 'Unused', unit: 'kg', module: 'kitchen', locationId: 'k', available: 9, unitCost: 99, qtyText: '' },
+  ];
+  for (const made of ['bar', 'kitchen']) {
+    assert.deepEqual(server.crossingFromStored(storedInputs(inputs), made), crossSideValue(inputs, made), made);
+  }
+  assert.deepEqual(server.crossingFromStored('not json', 'bar'), []);
+  assert.deepEqual(server.crossingFromStored(undefined, 'bar'), []);
+});
+
+test('a batch posts identically from the browser and the server', () => {
+  for (const b of [
+    { madeModule: 'bar', crossing: [{ module: 'kitchen', value: 11_600 }] },
+    { madeModule: 'kitchen', crossing: [{ module: 'bar', value: 900 }, { module: 'kitchen', value: 50 }] },
+    { madeModule: 'bar', crossing: [] },
+  ]) {
+    assert.deepEqual(server.batchLines(b), batchLines(b));
+  }
 });
 
 /* ------------------------------------------------- the server's copy */

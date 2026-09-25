@@ -158,6 +158,39 @@ export function wasteLines(w) {
   ];
 }
 
+/**
+ * What crossed from another side's stock, read from a batch as it is stored.
+ *
+ * The browser works this out from the form (crossSideValue); the server has
+ * only the stored row, so it works it out again from that. A test holds the
+ * two to the same answer for the same batch.
+ */
+export function crossingFromStored(inputsJson, madeModule) {
+  let rows = [];
+  try { rows = JSON.parse(inputsJson || '[]'); } catch { rows = []; }
+  if (!Array.isArray(rows)) return [];
+  const by = new Map();
+  for (const r of rows) {
+    const side = r.module || 'kitchen';
+    if (side === (madeModule || 'bar')) continue;
+    by.set(side, (by.get(side) || 0) + (Number(r.qty) || 0) * (Number(r.unit_cost) || 0));
+  }
+  return [...by.entries()]
+    .map(([module, value]) => ({ module, value: Math.round(value) }))
+    .filter((v) => v.value > 0);
+}
+
+/** Mirrors batchLines in packages/core/src/books.ts. */
+export function batchLines(b) {
+  const to = inventoryAccount(b.madeModule || 'bar');
+  return (b.crossing || [])
+    .filter((c) => c.value > 0 && inventoryAccount(c.module || 'kitchen') !== to)
+    .flatMap((c) => [
+      { account_code: to, debit: c.value, credit: 0, memo: 'Made here' },
+      { account_code: inventoryAccount(c.module || 'kitchen'), debit: 0, credit: c.value, memo: 'Used to make it' },
+    ]);
+}
+
 /* --------------------------------------------------------------- spends */
 
 /** Mirrors spendDebits in packages/core/src/spend-posting.ts. */

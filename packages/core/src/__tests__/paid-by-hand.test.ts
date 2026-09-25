@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   recordedTotal, unrecordedPaid, canRecordMissing, unrecordedWords,
+  placeByHand, canPlaceByHand, placeByHandWords, methodProblem,
 } from '../paid-by-hand.ts';
 
 const cash = (n: number) => `GH₵${(n / 100).toFixed(2)}`;
@@ -86,4 +87,97 @@ test('the message asks for the missing fact without an accusation', () => {
   assert.match(words, /in no shift and no method/);
   assert.match(words, /reads as over/);
   assert.match(words, /Say how it was paid/);
+});
+
+/* ----------------------------------------- asked at the moment of marking */
+
+const marking = (over: Record<string, unknown> = {}) => ({
+  order: { total: 9000, payment_status: 'unpaid', shift_id: 'sh1', ...over } as Parameters<typeof placeByHand>[0]['order'],
+  payments: [] as { amount: number; status?: string }[],
+  nextStatus: 'paid',
+});
+
+test('marking a bill paid offers to write the money down there and then', () => {
+  /*
+    The cleanup above relies on somebody coming back: the screen that made the
+    gap said "open this order afterwards and say how it was paid", and a
+    second step later is a second step that does not happen. So the question
+    is asked where the word is written.
+  */
+  const p = placeByHand(marking());
+  assert.equal(p.amount, 9000);
+  assert.equal(p.shiftId, 'sh1');
+  assert.equal(p.problem, null);
+  assert.equal(canPlaceByHand(p), true);
+});
+
+test('a part-paid bill being settled claims only what is left', () => {
+  // Not the total. Writing the whole bill again over a deposit already taken
+  // charges the customer twice in the figures.
+  const p = placeByHand({
+    ...marking({ payment_status: 'partial' }),
+    payments: [{ amount: 4000 }],
+  });
+  assert.equal(p.amount, 5000);
+});
+
+test('a voided payment does not explain anything', () => {
+  // Money the business does not hold. The same rule every other total uses.
+  const p = placeByHand({ ...marking(), payments: [{ amount: 9000, status: 'voided' }] });
+  assert.equal(p.amount, 9000);
+});
+
+test('nothing is asked when the rows already cover the bill', () => {
+  // A second row here would charge the bill twice.
+  const p = placeByHand({ ...marking(), payments: [{ amount: 9000 }] });
+  assert.equal(p.amount, 0);
+  assert.equal(canPlaceByHand(p), false);
+  assert.equal(p.problem, null, 'nothing missing is not a problem to report');
+});
+
+test('going the other way is a void, not a question', () => {
+  // Taking money back out has its own screen and its own record.
+  assert.equal(placeByHand({ ...marking({ payment_status: 'paid' }), nextStatus: 'unpaid' }).amount, 0);
+  assert.equal(placeByHand({ ...marking(), nextStatus: 'partial' }).amount, 0);
+  // Already paid and staying paid claims nothing new here.
+  assert.equal(placeByHand(marking({ payment_status: 'paid' })).amount, 0);
+});
+
+test('a bill on a tab is refused rather than invented', () => {
+  /*
+    It is unpaid on purpose and the account carries it. A payment written
+    here would clear the bill without anybody having handed money over.
+  */
+  const p = placeByHand(marking({ tab_id: 't1' }));
+  assert.equal(p.amount, 0);
+  assert.match(String(p.problem), /on a tab/);
+  assert.match(String(p.problem), /Settle the tab/);
+  assert.equal(canPlaceByHand(p), false);
+});
+
+test('an order on no shift says where the money cannot go, and still lets the word be written', () => {
+  /*
+    A payment has to be counted in some night, and picking one for it would
+    put real money into a drawer that never held it. So it is said rather
+    than guessed — and it does not refuse the status change, because marking
+    a bill paid is sometimes the only honest option available.
+  */
+  const p = placeByHand(marking({ shift_id: undefined }));
+  assert.equal(p.shiftId, '');
+  assert.equal(canPlaceByHand(p), false);
+  assert.match(String(p.problem), /not on any shift/);
+  assert.match(String(p.problem), /marked paid with nothing behind it/);
+  assert.equal(p.amount, 9000, 'the figure is still known, and still missing');
+});
+
+test('the words carry the figure and which night it lands in', () => {
+  const words = placeByHandWords(9000, cash);
+  assert.match(words, /GH₵90\.00/);
+  assert.match(words, /not today/);
+});
+
+test('a payment with no method is refused', () => {
+  assert.match(String(methodProblem('')), /Say where the money went/);
+  assert.match(String(methodProblem(undefined)), /in no drawer/);
+  assert.equal(methodProblem('m1'), null);
 });

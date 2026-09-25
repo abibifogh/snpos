@@ -79,6 +79,16 @@ export interface Settings extends Doc {
    * is why this exists at all.
    */
   imprest_custodian_counts?: boolean;
+  /**
+   * Whether the shop counts its shelves at all.
+   *
+   * Absent or true means it does, which is what every shop has done until
+   * now. Only an explicit false switches the stocktake off — a setting nobody
+   * has answered must not take a page away. See shopCountsOn.
+   */
+  craft_counts_enabled?: boolean;
+  /** This server's public push key, for a browser to subscribe with. Written by provisioning. */
+  push_public_key?: string;
   /** What a shift expense may be paid out of. Cash only, or any method. */
   expense_paid_from?: 'cash_only' | 'any';
   /** Older setups said what they were. Read only as a fallback, see modulesOf. */

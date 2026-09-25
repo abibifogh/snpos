@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Spinner, Notice } from '@snpos/ui';
-import { canOpen, NAV_MERGES } from '@snpos/core';
+import { canOpen, unavailableWords, NAV_MERGES } from '@snpos/core';
 import type { ReactElement } from 'react';
 import { useSession } from './session';
 import { Login } from './pages/Login';
@@ -61,9 +61,10 @@ export function App() {
     canOpen(section, profile, settings) ? element : (
       <>
         <h1>Not available</h1>
-        <Notice>
-          Your account does not have access to this page. Ask an admin if you think it should.
-        </Notice>
+        {/* Which of the two reasons it is. A page switched off and a page not
+            granted are different facts, and saying the second about the first
+            sends somebody hunting for a checkbox that does not exist. */}
+        <Notice>{unavailableWords(section, profile, settings)}</Notice>
       </>
     );
 

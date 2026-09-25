@@ -15,6 +15,9 @@ import {
   SYSTEM_ACCOUNT_CODES,
 } from './schema.mjs';
 import { schemaFingerprint } from './schema-fingerprint.mjs';
+// The same code the function signs with, so the key made here is the key
+// that works there. It imports nothing but node:crypto.
+import { makeKeys } from '../functions/notify/src/webpush.js';
 
 const { APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY } = process.env;
 if (!APPWRITE_ENDPOINT || !APPWRITE_PROJECT_ID || !APPWRITE_API_KEY) {
@@ -637,6 +640,37 @@ async function main() {
       }),
     );
   }
+  /*
+    THIS SERVER'S PUSH KEY PAIR, made once and never again.
+
+    Every device that turns notifications on is bound to the public half. A
+    second pair would not fail loudly — it would silently orphan every one of
+    those devices, and the alerts would simply stop arriving on phones that
+    still show notifications as on. So it is created only when there is none,
+    and read back afterwards rather than trusting the copy made here: if two
+    runs raced, the one in the database is the one browsers will be using.
+
+    Made here rather than asked for as a secret because nobody who runs this
+    business should have to generate an elliptic-curve key to get a
+    notification on their phone. The private half goes where no browser can
+    read it; see push_keys.
+  */
+  await waitForAttributes('push_keys', ['public_key', 'private_key']);
+  const pushKeys = await db.getDocument(DB_ID, 'push_keys', 'vapid').catch((e) => {
+    if (e?.code === 404) return null;
+    throw new Error(`push keys (checking): ${e.message}`);
+  });
+  if (!pushKeys) {
+    const fresh = makeKeys();
+    await ensure('push key pair', () => db.createDocument(DB_ID, 'push_keys', 'vapid', {
+      public_key: fresh.publicKey,
+      private_key: fresh.privateKey,
+    }));
+  }
+  const pushPublic = (pushKeys ?? await retry(() => db.getDocument(DB_ID, 'push_keys', 'vapid'), 'read push keys'))
+    .public_key;
+  await retry(() => db.updateDocument(DB_ID, 'settings', 'main', { push_public_key: pushPublic }), 'push public key');
+
   log('✓', 'Seed data');
 
   /*

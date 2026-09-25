@@ -18,8 +18,12 @@ import {
   fromBarChecks, fromShopCounts, fromExpenses, worthSending, approvalSubject, approvalBody,
   countLines, countSubject, countBody,
 } from './approvals.js';
-import { postShiftClose, postSpend, postPayoutRow, postWasteRow, sweepBooks } from './books-post.js';
+import { postShiftClose, postSpend, postPayoutRow, postWasteRow, postBatchRow, sweepBooks } from './books-post.js';
 import { nightlyReconcile } from './health-night.js';
+import { send as pushSend } from './webpush.js';
+import {
+  overdueCounts, rowsToStamp, adminRecipients, overdueSubject, overduePush, overdueBody, OVERDUE_MS,
+} from './overdue-counts.js';
 
 /**
  * Everything that sends an email.
@@ -37,6 +41,8 @@ import { nightlyReconcile } from './health-night.js';
  *   staff_profiles.*.delete  → cancel that person's login
  *   item_availability.*.create → a dish has run out, tell an admin now
  *   approval_notices.*.create  → a count found a difference, tell an admin now
+ *   push_subscriptions.*.create/update → a device turned notifications on, prove it works
+ *   production_batches.*.create → a drink made here from another side's stock, on the books
  *   shifts.*.update            → the shift's takings, costs and drawer, on the books
  *   shift_expenses.*.create/update → the spend on the books, corrected, or reversed if refused
  *   consignor_payouts.*.create/update → the payout on the shop's books
@@ -427,6 +433,218 @@ async function sweepApprovals({ db, DB_ID, settings, transport, from, log, error
   return { alerted: items.length };
 }
 
+/* ---------------------------------------------------------------- push */
+
+/**
+ * This server's push key pair, or null when there is none yet.
+ *
+ * Made once by provisioning. Null means Provision has not run since push was
+ * added — said by the caller, never guessed around: signing with a key made
+ * up here would produce messages no subscription accepts.
+ */
+async function loadPushKeys({ db, DB_ID }) {
+  const row = await db.getDocument(DB_ID, 'push_keys', 'vapid').catch(() => null);
+  return row?.public_key && row?.private_key
+    ? { publicKey: row.public_key, privateKey: row.private_key }
+    : null;
+}
+
+/** Who a push service reaches if this server misbehaves: the app, or the house mailbox. */
+const pushSubject = (settings) => {
+  const base = (process.env.APP_URL || '').replace(/\/+$/, '');
+  if (base.startsWith('https://')) return base;
+  return settings.email_from_address ? `mailto:${settings.email_from_address}` : undefined;
+};
+
+/**
+ * Send one notification to every device of the given people.
+ *
+ * Each device on its own and each result kept: a subscription that has GONE
+ * (the browser was reset, or the permission taken away) is deleted, because
+ * it will never work again and would otherwise be tried first on every alert
+ * for ever. One that merely FAILED is kept — a push service having a bad hour
+ * is not a reason to make somebody turn notifications on again.
+ */
+async function pushToUsers({ db, DB_ID, settings, userIds, payload, keys, log, error }) {
+  const out = { sent: 0, gone: 0, failed: 0, devices: 0 };
+  if (!keys || userIds.length === 0) return out;
+
+  const subs = await db.listDocuments(DB_ID, 'push_subscriptions', [
+    Query.equal('user_id', userIds), Query.limit(100),
+  ]).catch((e) => { error(`Could not read push subscriptions: ${e.message}`); return { documents: [] }; });
+
+  /*
+    Narrowed again here, not only in the query. What is sent is about the
+    business's stock and money, and whether it reaches a phone that is not an
+    admin's should not rest on one query being built correctly.
+  */
+  const mine = subs.documents.filter((s) => userIds.includes(s.user_id));
+  out.devices = mine.length;
+  for (const sub of mine) {
+    const r = await pushSend({ subscription: sub, payload, keys, subject: pushSubject(settings) });
+    out[r.outcome] += 1;
+    if (r.outcome === 'gone') {
+      await db.deleteDocument(DB_ID, 'push_subscriptions', sub.$id).catch(() => undefined);
+      log(`Removed a device that no longer accepts notifications (${r.status}).`);
+    } else {
+      await db.updateDocument(DB_ID, 'push_subscriptions', sub.$id, r.outcome === 'sent'
+        ? { last_sent_at: new Date().toISOString(), last_error: '' }
+        : { last_error: `${r.status || 'network'}: ${r.detail || 'no reason given'}`.slice(0, 300) })
+        .catch(() => undefined);
+      if (r.outcome === 'failed') error(`Push to a device failed (${r.status}): ${r.detail || ''}`);
+    }
+  }
+  return out;
+}
+
+/**
+ * Stock counts that have held a difference for more than a day.
+ *
+ * The second word, after the one sent when the count was filed, and to the
+ * admins specifically: agreeing or refusing a count is theirs to do. By email
+ * and on every device an admin has turned notifications on for. See
+ * overdue-counts.js for what is overdue, what is said and why a day.
+ *
+ * STAMPED ONLY ONCE SOMETHING GOT THROUGH. If neither the email nor a single
+ * device took it, nothing is marked, and the next hour tries again — the
+ * alternative is a count marked as escalated to nobody, which is exactly the
+ * silence this exists to break.
+ */
+async function sweepOverdueCounts({ db, DB_ID, settings, transport, from, log, error }) {
+  const cutoff = new Date(Date.now() - OVERDUE_MS).toISOString();
+  const [checks, shopCounts, staff] = await Promise.all([
+    db.listDocuments(DB_ID, 'shift_stock_checks', [
+      Query.equal('applied', false),
+      Query.isNull('overdue_alerted_at'),
+      Query.lessThan('$createdAt', cutoff),
+      Query.limit(500),
+    ]).catch(() => ({ documents: [] })),
+    db.listDocuments(DB_ID, 'stock_counts', [
+      Query.equal('status', 'pending'), Query.isNull('overdue_alerted_at'), Query.limit(100),
+    ]).catch(() => ({ documents: [] })),
+    db.listDocuments(DB_ID, 'staff_profiles', [Query.limit(200)]).catch(() => ({ documents: [] })),
+  ]);
+
+  const names = {};
+  for (const p of staff.documents) names[p.$id] = p.display_name || '';
+
+  const items = overdueCounts({ checks: checks.documents, shopCounts: shopCounts.documents, names });
+  if (items.length === 0) return { nothing: true };
+
+  const admins = adminRecipients(staff.documents);
+  const say = (n) => money(n, settings);
+
+  /* ---- email: to the admins; to the count list only if no admin has an address */
+  let emailed = false;
+  let to = admins.emails;
+  if (to.length === 0) {
+    to = await alertRecipients({ db, DB_ID, configured: '' });
+    if (to.length) log('No admin has an email address on their staff profile, so this went to the count alert list.');
+  }
+  if (transport && to.length > 0) {
+    const base = (process.env.APP_URL || '').replace(/\/+$/, '');
+    try {
+      await transport.sendMail({
+        from,
+        to: to.join(','),
+        subject: overdueSubject(items),
+        html: shell(
+          'Still waiting for your decision',
+          overdueBody(items, say, Date.now(), base ? `${base}/admin/#/waiting?show=count` : ''),
+          settings.primary_color || '#0f766e',
+        ),
+      });
+      emailed = true;
+    } catch (e) {
+      error(`Overdue count email failed: ${e.message}`);
+    }
+  }
+
+  /* ---- push: every device of every admin */
+  const keys = await loadPushKeys({ db, DB_ID });
+  if (!keys) log('No push key yet, so no devices were notified. Run Provision Appwrite once to make one.');
+  const pushed = await pushToUsers({
+    db, DB_ID, settings, userIds: admins.userIds, payload: overduePush(items, say), keys, log, error,
+  });
+
+  if (!emailed && pushed.sent === 0) {
+    error(`${items.length} stock count(s) waiting over a day, but nobody could be told: `
+      + `${!transport ? 'no SMTP' : to.length === 0 ? 'no recipients' : 'the email failed'}, and `
+      + `${pushed.devices === 0 ? 'no admin device has notifications on' : `${pushed.devices} device(s) refused it`}.`
+      + ' Trying again next hour.');
+    return { ok: false, waiting: items.length };
+  }
+
+  const stamp = rowsToStamp(items, { checks: checks.documents, shopCounts: shopCounts.documents });
+  const now = new Date().toISOString();
+  let marked = 0;
+  for (const [collection, ids] of [['shift_stock_checks', stamp.checks], ['stock_counts', stamp.shopCounts]]) {
+    for (const id of ids) {
+      const ok = await db.updateDocument(DB_ID, collection, id, { overdue_alerted_at: now })
+        .then(() => true).catch(() => false);
+      if (ok) marked += 1;
+    }
+  }
+  const total = stamp.checks.length + stamp.shopCounts.length;
+  if (marked < total) {
+    error(`Escalated ${items.length} overdue count(s) but could only mark ${marked} of ${total} rows. `
+      + 'Run Provision Appwrite so overdue_alerted_at exists, or this will repeat every hour.');
+  }
+
+  log(`Overdue counts: ${items.length}. Emailed: ${emailed ? to.length : 0}. `
+    + `Devices: ${pushed.sent} sent, ${pushed.gone} gone, ${pushed.failed} failed.`);
+  return { escalated: items.length, emailed, pushed };
+}
+
+/**
+ * A device has just turned notifications on, or asked for a test.
+ *
+ * The first message a device gets is the proof the whole chain works — the
+ * key, the subscription, the push service and the service worker that shows
+ * it. Sent on the create, so pressing "Turn on" is answered by a notification
+ * within seconds rather than by a wait for a count to go stale.
+ *
+ * Answered only while a test is actually asked for. The function's own write
+ * back to the row is an update event too, and clearing the request is what
+ * stops that update from sending a second message.
+ */
+async function answerDevice({ db, DB_ID, settings, doc, log, error }) {
+  if (!doc?.test_requested_at) return { nothing: true };
+  const keys = await loadPushKeys({ db, DB_ID });
+  if (!keys) {
+    const why = 'This server has no push key yet. Run Provision Appwrite once, then turn notifications on again.';
+    await db.updateDocument(DB_ID, 'push_subscriptions', doc.$id, { test_requested_at: null, last_error: why })
+      .catch(() => undefined);
+    error(why);
+    return { ok: false, error: why };
+  }
+
+  const r = await pushSend({
+    subscription: doc,
+    keys,
+    subject: pushSubject(settings),
+    payload: {
+      title: 'Notifications are on',
+      body: 'This device will be told when a stock count has waited more than a day for your decision.',
+      url: '#/account',
+      tag: 'push-test',
+    },
+  });
+
+  if (r.outcome === 'gone') {
+    await db.deleteDocument(DB_ID, 'push_subscriptions', doc.$id).catch(() => undefined);
+  } else {
+    await db.updateDocument(DB_ID, 'push_subscriptions', doc.$id, {
+      test_requested_at: null,
+      ...(r.outcome === 'sent'
+        ? { last_sent_at: new Date().toISOString(), last_error: '' }
+        : { last_error: `${r.status || 'network'}: ${r.detail || 'no reason given'}`.slice(0, 300) }),
+    }).catch(() => undefined);
+  }
+  (r.outcome === 'sent' ? log : error)(`Test notification: ${r.outcome} (${r.status}).`);
+  return { outcome: r.outcome };
+}
+
 /**
  * Shifts that have been open longer than a day.
  *
@@ -645,6 +863,22 @@ export default async ({ req, res, log, error }) => {
 
   const transport = mailer();
   const settings = await db.getDocument(DB_ID, 'settings', 'main');
+
+  /*
+    A DEVICE TURNING NOTIFICATIONS ON, before the email check below.
+
+    It sends no email, so a business that has not finished setting up its
+    mail should not find that its phones cannot be told anything either. The
+    two are independent channels and the second must not wait on the first.
+  */
+  if (trigger === 'event' && events.some((e) => e.includes('collections.push_subscriptions'))) {
+    try {
+      return res.json(await answerDevice({ db, DB_ID, settings, doc, log, error }));
+    } catch (e) {
+      error(`Device test failed: ${e.message}`);
+      return res.json({ ok: false, error: e.message });
+    }
+  }
   // No silent fallback to SMTP_USER. On Brevo that login is something like
   // 9a1b2c001@smtp-brevo.com, never a verified sender, so falling back to it
   // produces mail the provider accepts and then drops, which looks like
@@ -860,6 +1094,9 @@ export default async ({ req, res, log, error }) => {
       ['availability', () => sweepUnavailable({ db, DB_ID, settings, transport, from, log, error })],
       ['stale_shifts', () => sweepStaleShifts({ db, DB_ID, settings, transport, from, shell, log, error })],
       ['approvals', () => sweepApprovals({ db, DB_ID, settings, transport, from, log, error })],
+      // After the first word, so a count filed an hour ago is never escalated
+      // before it has been announced. See overdue-counts.js.
+      ['overdue_counts', () => sweepOverdueCounts({ db, DB_ID, settings, transport, from, log, error })],
       ['daily', () => dailyDigest({ db, DB_ID, settings, transport, from, shell, row, money, log, error })],
       ['backup', () => nightlyBackup({ db, DB_ID, settings, transport, from, shell, log, error })],
       // Last, after the books have been swept: what is still wrong once everything that can be filled has been.
@@ -902,6 +1139,11 @@ export default async ({ req, res, log, error }) => {
     }
     if (events.some((e) => e.includes('collections.waste_log'))) {
       return res.json(await postWasteRow(books, doc));
+    }
+    // A batch made here from another side's stock moves value between
+    // inventories. See postBatchRow.
+    if (events.some((e) => e.includes('collections.production_batches'))) {
+      return res.json(await postBatchRow(books, doc));
     }
 
     // -------------------------------------------------- a dish has run out

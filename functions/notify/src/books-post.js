@@ -1,5 +1,5 @@
 import {
-  ACCOUNTS, shiftEntries, takingsByKind, cashVarianceOf, payoutLines, wasteLines,
+  ACCOUNTS, shiftEntries, takingsByKind, cashVarianceOf, payoutLines, wasteLines, batchLines, crossingFromStored,
   debitsForSpend, spendPostingLines, sameDebits, parseLevies, splitTax, vatBpOf, makersShareOf, isLocked,
 } from './books.js';
 
@@ -425,6 +425,35 @@ export async function postWasteRow(ctx, waste) {
   }
 }
 
+/**
+ * A batch made here, where what went in came from another side's stock.
+ *
+ * Only then is there anything to post: value moving within one side's
+ * inventory changes no account. Keyed on the batch, so an event arriving
+ * twice and the hourly sweep after it post it once between them.
+ */
+export async function postBatchRow(ctx, batch) {
+  const venueId = batch.venue_id || 'main';
+  const lines = batchLines({
+    madeModule: batch.module || 'bar',
+    crossing: crossingFromStored(batch.inputs, batch.module || 'bar'),
+  });
+  if (lines.length === 0) return { skipped: 'nothing crosses sides' };
+  const key = `batch:${batch.$id}`;
+  if (await entryFor(ctx, venueId, key)) return { skipped: 'already posted' };
+  try {
+    const entry = await postEntry(ctx, {
+      venueId, date: batch.$createdAt, source: 'adjustment', sourceId: key,
+      memo: `Made here: ${batch.made_qty} ${batch.unit || ''} ${batch.made_name || ''}`.replace(/\s+/g, ' ').trim(),
+      postedBy: batch.made_by,
+    }, lines);
+    return { ok: true, posted: true, entryId: entry.$id };
+  } catch (e) {
+    if (e.locked) return { skipped: 'locked', through: e.through };
+    throw e;
+  }
+}
+
 /* ---------------------------------------------------------------- sweep */
 
 /**
@@ -438,7 +467,7 @@ export async function postWasteRow(ctx, waste) {
  */
 export async function sweepBooks(ctx, now = Date.now()) {
   const since = new Date(now - 7 * 86_400_000).toISOString();
-  const out = { shifts: 0, spends: 0, payouts: 0, waste: 0, locked: 0, errors: [] };
+  const out = { shifts: 0, spends: 0, payouts: 0, waste: 0, batches: 0, locked: 0, errors: [] };
 
   const attempt = async (kind, fn) => {
     try {
@@ -464,7 +493,11 @@ export async function sweepBooks(ctx, now = Date.now()) {
     await attempt('waste', () => postWasteRow(ctx, w));
   }
 
-  const filled = out.shifts + out.spends + out.payouts + out.waste;
+  for (const b of await listAll(ctx, 'production_batches', [ctx.Query.greaterThanEqual('$createdAt', since)]).catch(() => [])) {
+    await attempt('batches', () => postBatchRow(ctx, b));
+  }
+
+  const filled = out.shifts + out.spends + out.payouts + out.waste + out.batches;
   if (filled || out.errors.length) ctx.log(`Books sweep: filled ${filled}, locked ${out.locked}, errors ${out.errors.length}.`);
   return { ok: out.errors.length === 0, ...out };
 }

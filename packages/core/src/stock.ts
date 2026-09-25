@@ -24,6 +24,8 @@ import type { StockLocation, LocationStock, TransferLine } from './locations';
 import type { LevelRow } from './level-import';
 import type { BarCountLine } from './bar-count';
 import { weightedUnitCost } from './unit-cost';
+import { usedInputs, batchCost, batchUnitCost, batchQty, storedInputs } from './batch-rules';
+import type { BatchInput, PastBatch } from './batch-rules';
 import type { Doc } from './types';
 import type { OrderItem } from './orders';
 
@@ -1154,6 +1156,149 @@ export async function transferStock(opts: {
   }
 
   return { moved, failed };
+}
+
+/**
+ * Record a batch made here, and receive it into stock.
+ *
+ * THE RECORD FIRST, then the movements. The batch is what the books are
+ * posted from and what the next batch starts from; if it could not be written
+ * nothing has moved and nothing is claimed. Once it exists, each shelf is
+ * moved on its own and a line that fails is counted and named rather than
+ * abandoning the rest — somebody has just made twenty-four bottles, and
+ * losing the whole record over one ingredient would mean making it all up.
+ *
+ * The drink's cost is folded in the way a delivery's price is: the weighted
+ * average of what was on the shelf and what arrived. A batch with nothing
+ * listed arrives at no cost and leaves the average alone, as a gift would.
+ */
+export async function recordBatch(opts: {
+  venueId: string;
+  madeId: string;
+  madeQty: number;
+  locationId: string;
+  inputs: BatchInput[];
+  userId: string;
+  note?: string;
+}): Promise<{ batchId: string; moved: number; failed: string[]; total: number; unitCost: number }> {
+  const made = await db.getDocument(DB_ID, 'ingredients', opts.madeId) as unknown as Ingredient & Doc;
+  const used = usedInputs(opts.inputs);
+  const total = batchCost(used);
+  const each = batchUnitCost(total, opts.madeQty);
+  const madeModule = (made as { module?: string }).module ?? 'bar';
+
+  const batch = await db.createDocument(DB_ID, 'production_batches', ID.unique(), {
+    venue_id: opts.venueId,
+    module: madeModule,
+    made_item_id: opts.madeId,
+    made_name: made.name,
+    made_qty: opts.madeQty,
+    unit: made.unit ?? '',
+    location_id: opts.locationId,
+    inputs: storedInputs(used),
+    cost_total: total,
+    unit_cost: each,
+    made_by: opts.userId,
+    note: (opts.note ?? '').trim().slice(0, 300),
+  });
+
+  const failed: string[] = [];
+  let moved = 0;
+  const base = { venue_id: opts.venueId, ref_type: 'batch', ref_id: batch.$id, created_by: opts.userId };
+
+  // What went in, off the shelf it was taken from.
+  for (const i of used) {
+    const qty = batchQty(i.qtyText) ?? 0;
+    const ok = await tryWrite(db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
+      ...base,
+      ingredient_id: i.ingredientId,
+      type: 'used_to_make',
+      qty_delta: -qty,
+      unit_cost: i.unitCost,
+      location_id: i.locationId,
+      note: `Used to make ${made.name}`,
+    }));
+    if (!ok) { failed.push(i.name); continue; }
+    if (i.locationId) {
+      await adjustLevel({ ingredientId: i.ingredientId, locationId: i.locationId, delta: -qty });
+    } else {
+      /*
+        A side with no places set up keeps one figure per thing — a kitchen
+        that has never heard of a store room. Taken off that figure directly,
+        the same way an approved count is, rather than inventing a place.
+      */
+      const now = await db.getDocument(DB_ID, 'ingredients', i.ingredientId).catch(() => null) as
+        { current_qty?: number } | null;
+      await tryWrite(db.updateDocument(DB_ID, 'ingredients', i.ingredientId, {
+        current_qty: Number(((now?.current_qty ?? 0) - qty).toFixed(4)),
+      }));
+    }
+    moved += 1;
+  }
+
+  /*
+    The cost, read BEFORE the drink's own level moves: the average is what
+    was on the shelf at its old worth plus what arrived at the batch's worth,
+    and reading the shelf after would count the new bottles twice.
+  */
+  const costing = each > 0
+    ? {
+        base_unit_cost: weightedUnitCost({
+          onHand: made.current_qty ?? 0,
+          currentCost: made.base_unit_cost ?? 0,
+          boughtQty: opts.madeQty,
+          boughtCost: each,
+        }),
+        last_unit_cost: each,
+      }
+    : null;
+
+  // And what came out, into the place it was put.
+  const landed = await tryWrite(db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
+    ...base,
+    ingredient_id: opts.madeId,
+    type: 'made',
+    qty_delta: opts.madeQty,
+    unit_cost: each,
+    location_id: opts.locationId,
+    note: `Made here${used.length ? `, from ${used.length} ingredient${used.length === 1 ? '' : 's'}` : ''}`,
+  }));
+  if (landed) {
+    await adjustLevel({ ingredientId: opts.madeId, locationId: opts.locationId, delta: opts.madeQty });
+    if (costing) await tryWrite(db.updateDocument(DB_ID, 'ingredients', opts.madeId, costing));
+  } else {
+    failed.push(made.name);
+  }
+
+  return { batchId: batch.$id, moved, failed, total, unitCost: each };
+}
+
+/** The last batch of one drink, for the next to start from. Null when there is none, or it cannot be read. */
+export async function lastBatchOf(madeId: string): Promise<PastBatch | null> {
+  const rows = await db.listDocuments(DB_ID, 'production_batches', [
+    Query.equal('made_item_id', madeId), Query.orderDesc('$createdAt'), Query.limit(1),
+  ]).catch(() => null);
+  return (rows?.documents[0] as unknown as PastBatch | undefined) ?? null;
+}
+
+/**
+ * Everything a batch could use or make, with what each place holds.
+ *
+ * Every side's stock, not only this one's: sobolo is a bar drink made from
+ * the kitchen's sugar, and a list narrowed to the bar would hide the one
+ * thing it is made from.
+ */
+export async function batchSheet(venueId: string): Promise<{
+  items: (Ingredient & Doc)[];
+  levels: LocationStock[];
+  places: StockLocation[];
+}> {
+  const [items, levels, places] = await Promise.all([
+    loadIngredients(venueId),
+    loadLevels(),
+    loadLocations(venueId),
+  ]);
+  return { items: (items as (Ingredient & Doc)[]).filter((i) => i.active !== false), levels, places };
 }
 
 /**

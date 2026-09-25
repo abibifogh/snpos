@@ -196,3 +196,257 @@ export function partsWords(parts: CountedParts, money: (n: number) => string): s
   return `${money(parts.counted)} was counted; ${joined}. That leaves ${money(parts.taken)} taken on the `
     + 'sales below.';
 }
+
+/* ------------------------------------ one drawer, on one shift, term by term */
+
+/**
+ * THE OTHER HALF OF THE SAME PROBLEM, and the one somebody actually hits.
+ *
+ * Everything above explains a week's counted headline. This explains one
+ * drawer on one night, which is the figure people argue about — and it had
+ * exactly the fault this file was written to stop.
+ *
+ * Opening a method on a shift listed the payments and said "anything paid out
+ * of it comes off again to give the expected figure". True, and useless: it
+ * named a term without giving it. So a cash drawer showing 835 taken and 652
+ * expected asked the reader to notice a gap of 183, guess what it was, and
+ * take it on trust. The sentence explaining why two numbers differ has to
+ * carry the number, or it is the same two unexplained figures with a sentence
+ * between them.
+ *
+ * The same arithmetic as above, run the way the close itself runs it:
+ *
+ *     float  +  taken  −  paid out of this drawer  =  expected
+ *
+ * Only spending that came out of THIS drawer, by THIS method. Petty cash
+ * (`from_takings: false`) is money the shift never took, so it never reduced
+ * this drawer; deducting it would make the drawer look short by an amount that
+ * was never in it, which is the accusation that stops people recording
+ * expenses at all.
+ *
+ * Pure.
+ */
+export interface DrawerMakeup<T extends SpendRow> {
+  float: number;
+  taken: number;
+  /** What left this drawer, and the rows behind it. */
+  paidOut: number;
+  spends: T[];
+  /**
+   * Whether the spending could be read at all.
+   *
+   * A failed read and a shift that spent nothing are the same empty list, and
+   * telling them apart matters more here than almost anywhere: the second is
+   * "nothing came out of this drawer", the first is "I do not know", and
+   * saying the first when you mean the second is a confident sentence about
+   * somebody's money that happens to be wrong.
+   */
+  known: boolean;
+  /** float + taken − paidOut. What the stored figure ought to be. */
+  works: number;
+  /** The stored figure, as the close wrote it. */
+  expected: number;
+  /**
+   * Stored minus worked-out. Nought on a shift nobody has touched since.
+   *
+   * Anything else is a real event: a spend recorded or reclassified after the
+   * close, a payment moved onto the shift, a method deleted. The close stored
+   * what it knew at the time and that figure never moves on its own, so the
+   * two drifting apart is worth saying rather than papering over — the reader
+   * would otherwise be shown an equation that does not add up and left to
+   * decide which side to believe.
+   */
+  drift: number;
+}
+
+export function drawerMakeup<T extends SpendRow>(input: {
+  methodId: string;
+  float: number;
+  taken: number;
+  expected: number;
+  /** Every spend on this shift. Narrowed here so no caller has to remember how. */
+  spends: T[];
+  /** False where the spending could not be read. Absent means it could. */
+  spendsKnown?: boolean;
+}): DrawerMakeup<T> {
+  const known = input.spendsKnown !== false;
+  const spends = input.spends.filter(
+    (s) => s.paid_from_method_id === input.methodId && s.from_takings !== false,
+  );
+  const paidOut = spends.reduce((n, s) => n + s.amount, 0);
+  const works = input.float + input.taken - paidOut;
+  return {
+    float: input.float,
+    taken: input.taken,
+    paidOut,
+    spends,
+    known,
+    works,
+    expected: input.expected,
+    // Unknowable while the spending is unread. A drift worked out from a
+    // paid-out figure of nought would be the size of the spending, reported as
+    // if somebody had changed the shift.
+    drift: known ? input.expected - works : 0,
+  };
+}
+
+/**
+ * The arithmetic as a sentence, with every term in it.
+ *
+ * Written so the figures can be checked against each other by eye. The terms
+ * that are nought are left out — "a float of nothing, and nothing paid out"
+ * is noise on the overwhelming majority of card drawers — except when they are
+ * all nought, where saying so plainly is the answer to why taken and expected
+ * are the same number.
+ */
+export function makeupWords(
+  m: DrawerMakeup<SpendRow>,
+  money: (n: number) => string,
+  methodName: string,
+): string {
+  const bits: string[] = [`${money(m.taken)} taken through ${methodName}`];
+  if (m.float !== 0) bits.push(`on top of a float of ${money(m.float)}`);
+
+  /*
+    Unread spending is said as unread. The arithmetic is not offered at all
+    here, because the only figure it could be built from is a nought that
+    means "not asked" — and the sentence would read as "nothing was paid out
+    of this drawer", which is a different claim entirely.
+  */
+  if (!m.known) {
+    return `${bits.join(', ')}. What was paid out of it could not be read, so the ${money(m.expected)} `
+      + 'expected at close cannot be broken down here.';
+  }
+
+  if (m.paidOut !== 0) bits.push(`less ${money(m.paidOut)} paid out of the drawer`);
+
+  const head = m.paidOut === 0 && m.float === 0
+    ? `${bits[0]}, with no float and nothing paid out of it`
+    : bits.join(', ');
+
+  return `${head}. That is the ${money(m.works)} expected in it at close.`;
+}
+
+/**
+ * What to say when the stored figure and the arithmetic disagree, or nothing.
+ *
+ * Named rather than hidden, and it names the likeliest cause, because the
+ * reader's next question is always "so which one is right?".
+ */
+export function driftWords(
+  m: DrawerMakeup<SpendRow>,
+  money: (n: number) => string,
+): string | null {
+  if (m.drift === 0) return null;
+  return `The close stored ${money(m.expected)} as expected, which is ${money(Math.abs(m.drift))} `
+    + `${m.drift > 0 ? 'more' : 'less'} than these figures come to. A stored figure does not move on its own, `
+    + 'so something on this shift changed after it closed — a spend recorded or refiled, or a payment moved '
+    + 'onto it. The difference against the count was worked out from the stored figure.';
+}
+
+/* --------------------------------- the whole list of spending, split by purse */
+
+/**
+ * WHAT A SHIFT PAID OUT, SPLIT BY WHETHER IT CAME OUT OF A DRAWER.
+ *
+ * The list of a shift's spending is one table with no total on it, and the two
+ * kinds of row in it behave completely differently. Money taken out of the
+ * till reduces what that drawer should hold at close; money from a petty cash
+ * box is real spending the shift never held, and it changes no count anywhere.
+ *
+ * Read as one list they cannot be told apart, so somebody looking for the
+ * figure that made a drawer's expected total smaller adds up every row and
+ * gets a number that matches nothing on the screen above. Which is worse than
+ * no total at all: it looks like an answer.
+ *
+ * So the rows are added up by purse, and by drawer within the purse — a shift
+ * running a cash drawer and a card float has two, and one combined figure
+ * would explain neither.
+ *
+ * Pure.
+ */
+export interface SpendGroup {
+  /** Empty where a spend names no method. See below. */
+  methodId: string;
+  amount: number;
+  count: number;
+}
+
+export interface SpendSplit {
+  /** What left a drawer, by drawer, biggest first. */
+  drawers: SpendGroup[];
+  /** Everything that left a drawer. The figure the expected totals are short by. */
+  outOfTakings: number;
+  /** Real spending the shift never held. Changes no count. */
+  ownMoney: number;
+  total: number;
+  /** False where the spending could not be read. Same reasoning as above. */
+  known: boolean;
+}
+
+export function spendSplit(spends: SpendRow[], known = true): SpendSplit {
+  const by = new Map<string, SpendGroup>();
+  let outOfTakings = 0;
+  let ownMoney = 0;
+
+  for (const s of spends) {
+    if (s.from_takings === false) { ownMoney += s.amount; continue; }
+    outOfTakings += s.amount;
+    /*
+      A spend out of takings that names no method still came out of a drawer.
+      Grouped under a blank rather than dropped: a row left out of a total is
+      a row nobody notices is missing, and this one is the difference between
+      a drawer that adds up and one that does not.
+    */
+    const key = s.paid_from_method_id ?? '';
+    const g = by.get(key) ?? { methodId: key, amount: 0, count: 0 };
+    g.amount += s.amount;
+    g.count += 1;
+    by.set(key, g);
+  }
+
+  return {
+    drawers: [...by.values()].sort((a, b) => b.amount - a.amount),
+    outOfTakings,
+    ownMoney,
+    total: outOfTakings + ownMoney,
+    known,
+  };
+}
+
+/**
+ * The split as a sentence, tying it back to the figures above it.
+ *
+ * Its whole job is to connect this list to the expected totals at the top of
+ * the panel, because that is the question somebody is holding it up to answer.
+ */
+export function splitWords(
+  split: SpendSplit,
+  money: (n: number) => string,
+  nameOf: (methodId: string) => string,
+): string {
+  if (!split.known) return 'What this shift paid out could not be read.';
+  if (split.total === 0) return 'Nothing was paid out on this shift, so no drawer is short anything.';
+
+  const parts: string[] = [];
+
+  if (split.outOfTakings > 0) {
+    // Named where there is one drawer to name. Two or more and the figure is
+    // a sum across them, so naming either would be wrong about the other.
+    const one = split.drawers.length === 1 ? split.drawers[0] : undefined;
+    const where = one?.methodId ? `the ${nameOf(one.methodId)} drawer` : 'the takings';
+    parts.push(
+      `${money(split.outOfTakings)} came out of ${where}, which is why the expected figure above is that `
+      + 'much less than what was taken',
+    );
+  }
+
+  if (split.ownMoney > 0) {
+    parts.push(
+      `${money(split.ownMoney)} came from petty cash rather than a drawer this shift held, so it reduces `
+      + 'no count here — it is spending, not a shortage',
+    );
+  }
+
+  return `${parts.join('. ')}.`;
+}

@@ -36,11 +36,22 @@ const APPS = ['admin', 'menu', 'kitchen', 'pos'];
  * from again without hunting for a sticker, and a tablet left on a table is
  * better off without an address bar too.
  *
- * Not the admin app: it is used on somebody's own laptop between other things,
- * and taking the back button away from a page of settings is a nuisance rather
- * than a kiosk.
+ * The admin app is here too, but NOT as a kiosk — see `display` below. It is
+ * used on somebody's own laptop between other things, and taking the back
+ * button away from a page of settings is a nuisance. It has a manifest for one
+ * reason: an iPhone only lets a web app show notifications once it has been
+ * added to the Home Screen, and it cannot be added without one. Nothing
+ * changes for anybody who uses Admin in a browser tab.
  */
 const KIOSK = {
+  admin: {
+    name: 'NiceOps Admin',
+    short: 'Admin',
+    description: 'Run the business: counts, shifts, stock and the books.',
+    // A window of its own with the phone's status bar kept, rather than the
+    // whole screen. It is a tool somebody checks, not a counter display.
+    display: 'standalone',
+  },
   pos: { name: 'NiceOps Till', short: 'Till', description: 'Take orders and record payment.' },
   kitchen: { name: 'NiceOps Kitchen', short: 'Kitchen', description: 'Tickets as they come in.' },
   // Named after the place where one is given, because "Menu" on somebody's
@@ -56,12 +67,10 @@ const KIOSK = {
 /*
   The icons go to EVERY app, not only the three that install.
 
-  The admin app has no manifest and never will — it is a desk tool, and taking
-  the back button off a page of settings is a nuisance rather than a kiosk. It
-  is still a page somebody bookmarks and pins, and a page that names icon files
-  it was never given is worse than one that names none: every browser asks for
-  them, gets a 404, and falls back to exactly the generic mark this is here to
-  replace.
+  Every app is a page somebody bookmarks and pins, whether or not it installs,
+  and a page that names icon files it was never given is worse than one that
+  names none: every browser asks for them, gets a 404, and falls back to
+  exactly the generic mark this is here to replace.
 */
 for (const app of APPS) {
   const dir = join(root, 'apps', app, 'public');
@@ -155,8 +164,10 @@ for (const app of building) {
      * `minimal-ui`. The ladder matters: without it, a browser that does not
      * support the first value silently gives you a browser tab.
      */
-    display: 'fullscreen',
-    display_override: ['fullscreen', 'standalone', 'minimal-ui'],
+    display: meta.display ?? 'fullscreen',
+    display_override: meta.display === 'standalone'
+      ? ['standalone', 'minimal-ui']
+      : ['fullscreen', 'standalone', 'minimal-ui'],
     orientation: 'any',
     background_color: '#f6f7f9',
     theme_color: '#0f766e',

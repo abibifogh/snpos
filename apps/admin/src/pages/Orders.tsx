@@ -10,6 +10,8 @@ import {
   voidPayment, isLivePayment, changePaymentMethod, logPaymentMethodChange,
   referenceProblem, referenceRequired, referenceWords,
   unrecordedPaid, unrecordedWords, recordPayment,
+  placeByHand, canPlaceByHand, placeByHandWords, methodProblem,
+  orderNoMatches, orderNoCandidates, worthLookingUp, lookingWords, foundWords,
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, flatten, MODULE_LABELS,
   listByIds, listCreatedBetween, moveOrderToShift, shiftChoices, moveProblem, moveEffects, describeMove,
   shiftDay, shiftsOnDay, dayMoveProblem, openShiftForDay,
@@ -108,6 +110,17 @@ export function OrdersPage() {
   const [sayRef, setSayRef] = useState('');
   const [sayBusy, setSayBusy] = useState(false);
   const [sayError, setSayError] = useState<string | null>(null);
+
+  /**
+   * The same two facts, asked on the Change screen at the moment the word
+   * "paid" is written rather than afterwards.
+   *
+   * The warning that used to sit here told somebody to come back and do a
+   * second thing later, and a second thing later is a second thing that does
+   * not happen. See placeByHand.
+   */
+  const [payMethod, setPayMethod] = useState('');
+  const [payRef, setPayRef] = useState('');
   const toast = useToast();
 
   /*
@@ -124,6 +137,14 @@ export function OrdersPage() {
   const [to, setTo] = useState(todayStr());
   const [staffId, setStaffId] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  /**
+   * An order number somebody is holding on a receipt.
+   *
+   * Narrows what is loaded, and when that finds nothing goes and asks the
+   * database by number across every date — because somebody searching for an
+   * order number is almost by definition somebody who cannot date it.
+   */
+  const [search, setSearch] = useState('');
   const [side, setSide] = useState<Side>('all');
   /*
     Grouping and sorting, both stacked in the order they were chosen.
@@ -633,16 +654,72 @@ export function OrdersPage() {
         if (!onSide(o, shownSide)) return false;
         if (statusFilter && o.status !== statusFilter) return false;
         if (staffId && !touchedBy(o).includes(staffId)) return false;
+        // Last, so the count beside the box is of orders that pass everything
+        // else too. See order-search.
+        if (!orderNoMatches(o.order_no, search)) return false;
         return true;
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [orders, statusFilter, staffId, payments, shownSide],
+    [orders, statusFilter, staffId, payments, shownSide, search],
   );
 
   // Only what narrows the list counts. The dates are how much was loaded, not
   // a filter over it, so "Clear" leaving them alone is the honest behaviour —
   // clearing them would silently re-read the database.
-  const filtered = !!statusFilter || !!staffId || shownSide !== 'all';
+  const filtered = !!statusFilter || !!staffId || shownSide !== 'all' || !!search.trim();
+
+  /**
+   * LOOKING BEYOND THE LOADED DATES, which is the point of the search.
+   *
+   * Everything below the dates is a view over what came back, so a search
+   * that only filtered that view would work for this week and fail silently
+   * for every other order — "nothing matches" for a bill that exists, which
+   * is worse than no search at all because it answers the question wrongly
+   * rather than not answering it.
+   *
+   * Somebody searching for an order number is almost by definition somebody
+   * who cannot date it. So when the loaded range holds nothing, the number is
+   * asked for directly, across every date. One indexed query on an exact
+   * value; see orderNoCandidates for why it is a short list of guesses rather
+   * than a scan.
+   */
+  const [wider, setWider] = useState<Order[] | null>(null);
+  const [widening, setWidening] = useState(false);
+
+  useEffect(() => {
+    const q = search.trim();
+    setWider(null);
+    if (!worthLookingUp(q) || visible.length > 0 || !orders) return;
+
+    let dropped = false;
+    // A breath, so a query does not go out on every keystroke.
+    const timer = setTimeout(() => {
+      setWidening(true);
+      const nos = orderNoCandidates(q, [
+        settings?.order_number_prefix,
+        settings?.craft_order_prefix,
+        settings?.bar_order_prefix,
+      ], settings?.order_number_padding ?? 4);
+      listAll<Order>('orders', [Query.equal('order_no', nos)])
+        .then((found) => {
+          if (dropped) return;
+          // Only what is NOT already on screen: anything inside the loaded
+          // dates belongs in the list above, not in a second list beside it.
+          const here = new Set((orders ?? []).map((o) => o.$id));
+          setWider(found.filter((o) => !here.has(o.$id) && onSide(o, shownSide)));
+        })
+        /*
+          A failed look is not "no such order". Null means unknown and the
+          screen says nothing rather than telling somebody their bill does not
+          exist because a query timed out.
+        */
+        .catch(() => { if (!dropped) setWider(null); })
+        .finally(() => { if (!dropped) setWidening(false); });
+    }, 350);
+
+    return () => { dropped = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, visible.length, orders, shownSide]);
 
   /** Which quick range the dates currently amount to, if any. */
   const rangeChoice = useMemo(() => {
@@ -824,8 +901,23 @@ export function OrdersPage() {
     setNewStatus(o.status);
     setNewPayment(o.payment_status);
     setReason('');
+    setPayMethod('');
+    setPayRef('');
     setError(null);
   };
+
+  /**
+   * What marking this bill paid would mean for the money, live as the picker
+   * is changed. Zero amount means there is nothing to write.
+   */
+  const placing = editing
+    ? placeByHand({
+      order: editing,
+      payments: payments.filter((p) => p.order_id === editing.$id),
+      nextStatus: newPayment,
+    })
+    : { amount: 0, shiftId: '', problem: null };
+  const asking = canPlaceByHand(placing);
 
   const applyEdit = async () => {
     if (!editing) return;
@@ -833,13 +925,83 @@ export function OrdersPage() {
       setError('Say why you are changing it. This is the only record of the correction.');
       return;
     }
+
+    /*
+      THE MONEY IS WRITTEN DOWN IN THE SAME STEP.
+
+      Setting the word alone writes no payment row, and a row is what the rest
+      of the system runs on: it carries the method, so a shift knows whether
+      the money is in a drawer or on a card machine, and the shift, so the
+      night can be counted. It is also what the books are posted from.
+
+      Where it cannot be placed — a bill on a tab, an order on no shift — the
+      word is still written and the reason said. Marking a bill paid is
+      sometimes the only honest option, and refusing the correction because
+      the money has nowhere tidy to go would be the screen choosing its own
+      convenience over the truth of the figure.
+    */
+    const method = methods.find((m) => m.$id === payMethod);
+    if (asking) {
+      const noMethod = methodProblem(payMethod);
+      if (noMethod || !method) { setError(noMethod ?? 'Choose how it was paid.'); return; }
+      // The same rule as every till: a card payment written here is as
+      // unreconcilable without its trace number as one taken at the counter.
+      const missingRef = referenceProblem(method, payRef);
+      if (missingRef) { setError(missingRef); return; }
+    }
+
     setBusy(true);
     setError(null);
     try {
-      await db.updateDocument(DB_ID, 'orders', editing.$id, {
-        status: newStatus,
-        payment_status: newPayment,
-      });
+      if (asking && method) {
+        /*
+          recordPayment writes the row and settles the order from it, so the
+          status is handed to it rather than written separately — two writes
+          racing to set the same field is how one of them wins silently.
+        */
+        await recordPayment({
+          venueId: editing.venue_id,
+          order: editing,
+          shiftId: placing.shiftId,
+          shiftModule: editing.module ?? 'kitchen',
+          methodId: method.$id,
+          methodKind: method.kind ?? '',
+          methodName: method.name,
+          requiresReference: method.requires_reference,
+          reference: payRef.trim(),
+          amount: placing.amount,
+          /*
+            A settled bill moves on, and this says where to. It only knows the
+            two a settlement can land on; anything else the admin chose is
+            written afterwards rather than fought over — see below.
+          */
+          orderStatus: newStatus === 'SERVED' ? 'SERVED' : 'CLOSED',
+          takenBy: profile?.user_id ?? profile?.$id ?? user?.$id ?? '',
+        });
+        /*
+          The admin's own choice of status wins, and is written AFTER rather
+          than alongside. Two writes racing to set one field is how one of
+          them wins silently; this one simply happens second, so an order
+          marked paid but deliberately left on the pass stays on the pass.
+        */
+        if (newStatus !== 'SERVED' && newStatus !== 'CLOSED') {
+          await db.updateDocument(DB_ID, 'orders', editing.$id, { status: newStatus });
+        }
+        /*
+          A closed shift stored what it expected at the moment it closed, and
+          that figure never moves on its own — so without this the payment
+          would be written, the order would read correctly, and the night's
+          cash and card totals would carry on saying what they said before.
+          A no-op on an open shift.
+        */
+        await recomputeClosedShift(placing.shiftId).catch(() => null);
+      } else {
+        await db.updateDocument(DB_ID, 'orders', editing.$id, {
+          status: newStatus,
+          payment_status: newPayment,
+        });
+      }
+
       // Written to the audit log rather than silently: an order whose status
       // was changed by hand is exactly the one somebody will ask about.
       await db.createDocument(DB_ID, 'audit_log', ID.unique(), {
@@ -850,13 +1012,22 @@ export function OrdersPage() {
         entity_type: 'orders',
         entity_id: editing.$id,
         before: JSON.stringify({ status: editing.status, payment_status: editing.payment_status }),
-        after: JSON.stringify({ status: newStatus, payment_status: newPayment }),
+        after: JSON.stringify({
+          status: newStatus,
+          payment_status: newPayment,
+          // The method goes on the record too. "Marked paid" and "marked paid
+          // as cash, into Friday's drawer" are different claims, and the
+          // second is the one somebody will be checking against a count.
+          ...(asking && method ? { paid_by: method.name, amount: placing.amount } : {}),
+        }),
         reason: reason.trim(),
       });
 
       setEditing(null);
       await load();
-      toast(`${editing.order_no} updated`);
+      toast(asking && method
+        ? `${editing.order_no} marked paid, recorded as ${method.name}`
+        : `${editing.order_no} updated`);
     } catch (e) {
       setError(humanError(e));
     } finally {
@@ -1020,8 +1191,19 @@ export function OrdersPage() {
         shown={visible.length}
         total={orders?.length ?? 0}
         noun="orders"
-        onClear={filtered ? () => { setStatusFilter(''); setStaffId(''); setSide('all'); } : undefined}
+        onClear={filtered
+          ? () => { setStatusFilter(''); setStaffId(''); setSide('all'); setSearch(''); }
+          : undefined}
       >
+        {/* First, because it is the one thing on this bar somebody arrives
+            already knowing they want. */}
+        <FilterField label="Order number">
+          <Input
+            value={search}
+            placeholder="866 or ORD0866"
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </FilterField>
         <SideFilter value={side} onChange={setSide} settings={settings} profile={profile} />
         <FilterField label="Status">
           <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
@@ -1094,7 +1276,68 @@ export function OrdersPage() {
         {!orders ? (
           <div className="card-pad"><Spinner /></div>
         ) : visible.length === 0 ? (
-          <Empty title="Nothing in that range">Widen the dates, or clear the filters.</Empty>
+          /*
+            A SEARCH THAT FOUND NOTHING HERE IS NOT A SEARCH THAT FOUND
+            NOTHING. The dates decide what was loaded, and somebody typing an
+            order number usually cannot date it — so the empty state says
+            which of the two it is rather than letting "nothing matches" stand
+            for a bill that exists.
+          */
+          search.trim() ? (
+            <div className="card-pad">
+              {widening ? (
+                <p className="small dim">{lookingWords(search)}</p>
+              ) : wider === null ? (
+                <Empty title={`Nothing in these dates matches “${search.trim()}”`}>
+                  {worthLookingUp(search)
+                    ? 'The wider look could not be made, so this only rules out the dates above. Widen them and try again.'
+                    : 'Type at least two characters to look through every date.'}
+                </Empty>
+              ) : wider.length === 0 ? (
+                <Empty title={`Nothing matches “${search.trim()}”`}>{foundWords(search, 0)}</Empty>
+              ) : (
+                <>
+                  <Notice tone="info">{foundWords(search, wider.length)}</Notice>
+                  {/* Shown here rather than folded into the list above, which
+                      the dates say cannot contain them. A row appearing in a
+                      list that says it cannot hold it makes somebody distrust
+                      both. */}
+                  <div className="table-wrap" style={{ marginTop: '0.6rem' }}>
+                    <table className="data">
+                      <thead>
+                        <tr>
+                          <th>When</th><th>Order</th><th>Status</th><th>Paid</th>
+                          <th className="num">Total</th><th />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {wider.map((o) => (
+                          <tr key={o.$id}>
+                            <td className="small dim">{dateTimeWords(o.$createdAt)}</td>
+                            <td style={{ fontWeight: 550 }}>{o.order_no}</td>
+                            <td><Badge>{o.status.toLowerCase()}</Badge></td>
+                            <td>
+                              <Badge tone={o.payment_status === 'paid' ? 'ok' : 'warn'}>
+                                {o.payment_status}
+                              </Badge>
+                            </td>
+                            <td className="num">{money(o.total)}</td>
+                            <td className="num">
+                              <Button size="sm" variant="ghost" onClick={() => void openOrder(o)}>
+                                Details
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <Empty title="Nothing in that range">Widen the dates, or clear the filters.</Empty>
+          )
         ) : (
           <div className="table-wrap">
             <table className="data">
@@ -2020,7 +2263,51 @@ export function OrdersPage() {
             />
           </Field>
           {/*
-            The warning that used to be a dead end.
+            ASKED WHERE THE GAP IS MADE, rather than found afterwards.
+
+            This used to be a warning that told somebody to come back and use
+            "Say how it was paid" on the order's details. A second step later
+            is a second step that does not happen — so the one missing fact is
+            asked for here, and the payment is written in the same save. See
+            placeByHand.
+          */}
+          {asking && (
+            <>
+              <p className="small dim">{placeByHandWords(placing.amount, money)}</p>
+              <div className="grid-2">
+                <Field label="Where the money went">
+                  <Select
+                    value={payMethod}
+                    onChange={(e) => { setPayMethod(e.target.value); setError(null); }}
+                  >
+                    <option value="">Choose a method…</option>
+                    {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
+                  </Select>
+                </Field>
+                {referenceRequired(methods.find((m) => m.$id === payMethod)) && (
+                  <Field {...referenceWords(methods.find((m) => m.$id === payMethod))}>
+                    <Input value={payRef} onChange={(e) => { setPayRef(e.target.value); setError(null); }} />
+                  </Field>
+                )}
+              </div>
+              <p className="small dim">
+                After this it is an ordinary payment — the method can be changed again, and it can be voided
+                from the order&rsquo;s details.
+              </p>
+            </>
+          )}
+
+          {/*
+            And where it cannot be placed, the word is still written and the
+            reason said. A bill on a tab, or an order on no shift: both are
+            real, neither has anywhere honest to put the money, and refusing
+            the correction over it would be the screen preferring its own
+            tidiness to the truth of the figure.
+          */}
+          {placing.problem && <Notice tone="warn">{placing.problem}</Notice>}
+
+          {/*
+            The other direction, and the warning that used to be a dead end.
 
             It said to fix the payment separately, and there was no separately:
             nothing in the system could reverse a payment. So it named a step
@@ -2028,22 +2315,6 @@ export function OrdersPage() {
             unpaid with money it never received still sitting in the takings.
             Now the step exists, and this says where it is.
           */}
-          {/*
-            Said where the gap is MADE, not only where it is found.
-
-            Setting this to paid writes one word and no payment row, and a row
-            is what carries the method and the shift. Nothing stops an admin
-            doing it — sometimes it is the only honest option, and the money
-            really did arrive — but they should know a second step is waiting
-            rather than discover it when a drawer reads over.
-          */}
-          {newPayment === 'paid' && editing.payment_status !== 'paid' && (
-            <Notice tone="warn">
-              Marking it paid does not record HOW it was paid. Until you say, the money is in no method and no
-              shift, so it never reaches the cash or card totals. Open this order afterwards and use
-              &ldquo;Say how it was paid&rdquo;.
-            </Notice>
-          )}
           {newPayment !== 'paid' && editing.payment_status === 'paid' && (
             <Notice tone="warn">
               This order has payment records against it. Changing the status here does not touch them, so the money
