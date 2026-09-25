@@ -1372,11 +1372,17 @@ export default async ({ req, res, log, error }) => {
         }
       }
 
+      // The size it was sold as, which is priced as itself. See linePrice.
+      const variant = item.variant_id && menuItem
+        ? await db.getDocument(DB_ID, 'product_variants', item.variant_id).catch(() => null)
+        : null;
+
       const priced = linePrice({
         item,
         menuItem,
         overridePrice: overrideFor.get(item.menu_item_id)?.price_override,
         addonTotal,
+        variant,
       });
 
       if (priced.correction) corrections.push(priced.correction);
