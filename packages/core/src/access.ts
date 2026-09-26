@@ -226,6 +226,11 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     from the other two.
   */
   { key: 'tabs', label: 'Tabs', path: '/tabs', group: 'Money' },
+  /*
+    Count differences charged to a person, until each is paid, taken from pay,
+    found or written off. See staff-charges.ts.
+  */
+  { key: 'staff_owing', label: 'Staff owing', path: '/staff-owing', group: 'Money' },
   { key: 'payouts', label: 'Payouts', path: '/payouts', group: 'Money', module: 'craft' },
   { key: 'reports', label: 'Reports', path: '/reports', group: 'Books' },
   /**
@@ -298,7 +303,7 @@ export const DEFAULT_ACCESS: Record<string, string[]> = {
     // A manager opens tabs. It is the job: deciding who is good for credit is
     // a floor decision made while somebody is standing there, and an owner who
     // has to be rung at eleven at night to open one is an owner who gets rung.
-    'dashboard', 'orders', 'reports', 'shifts', 'expenses', 'vouchers', 'tabs', 'waiting',
+    'dashboard', 'orders', 'reports', 'shifts', 'expenses', 'vouchers', 'tabs', 'waiting', 'staff_owing',
     'menu_items', 'stock', 'waste', 'stations', 'group_bookings',
     // A shop manager runs the intake desk and needs to see who is owed what.
     'shop_categories', 'shop_items', 'consignors', 'intake', 'stocktake', 'payouts',

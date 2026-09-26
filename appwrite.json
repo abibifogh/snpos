@@ -90,7 +90,9 @@
         "databases.snpos.collections.voucher_sends.documents.*.create",
         "databases.snpos.collections.push_subscriptions.documents.*.create",
         "databases.snpos.collections.push_subscriptions.documents.*.update",
-        "databases.snpos.collections.production_batches.documents.*.create"
+        "databases.snpos.collections.production_batches.documents.*.create",
+        "databases.snpos.collections.staff_charges.documents.*.create",
+        "databases.snpos.collections.staff_charge_settlements.documents.*.create"
       ],
       "schedule": "0 * * * *",
       "timeout": 60,

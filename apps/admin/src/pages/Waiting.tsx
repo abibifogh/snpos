@@ -14,6 +14,7 @@ import type {
   WaitingItem, WaitingKind, WaitingSpend, WaitingTabShift, TabOrder, Review, ReviewLine, BookingChangeDoc, GroupBookingDoc,
 } from '@snpos/core';
 import { useSession, useMoney } from '../session';
+import { ChargeLineModal } from '../components/ChargeLine';
 
 type Show = WaitingKind | 'all';
 const SHOWS: Show[] = ['all', 'count', 'spend', 'shelf', 'tab'];
@@ -85,6 +86,8 @@ export function WaitingPage() {
   const [reviewing, setReviewing] = useState(false);
   /** The one line being decided on its own, while it is. */
   const [lineBusy, setLineBusy] = useState<string | null>(null);
+  /** A short line being charged to a person. See ChargeLineModal. */
+  const [charging, setCharging] = useState<{ item: WaitingItem; line: ReviewLine } | null>(null);
 
   const toggle = async (item: WaitingItem) => {
     if (openId === item.id) { setOpenId(null); setReview(null); return; }
@@ -517,6 +520,7 @@ export function WaitingPage() {
                               money={money}
                               // Line by line only where the whole could be decided here.
                               onLine={may && (item.kind === 'count' || item.kind === 'shelf') ? (line, d) => void decideLine(item, line, d) : undefined}
+                              onCharge={isAdmin && (item.kind === 'count' || item.kind === 'shelf') ? (line) => setCharging({ item, line }) : undefined}
                               lineBusy={lineBusy}
                             />
                           )}
@@ -531,6 +535,26 @@ export function WaitingPage() {
           </div>
         )}
       </Card>
+
+      {charging && (
+        <ChargeLineModal
+          refOf={charging.item.ref}
+          line={charging.line}
+          countedBy={charging.item.by}
+          userId={userId}
+          money={money}
+          onClose={() => setCharging(null)}
+          onDone={async (words) => {
+            const { item } = charging;
+            setCharging(null);
+            toast(words);
+            const fresh = await loadReview(item.ref).catch(() => null);
+            setReview(fresh);
+            await load();
+            if (!fresh || fresh.lines.length === 0) { setOpenId(null); setReview(null); }
+          }}
+        />
+      )}
 
       {releasing && (
         <Modal
@@ -627,11 +651,13 @@ export function WaitingPage() {
  * top and abandoned somewhere in the middle, so the one worth arguing about
  * has to be at the top rather than wherever the alphabet put it.
  */
-function ReviewLines({ review, money, onLine, lineBusy }: {
+function ReviewLines({ review, money, onLine, onCharge, lineBusy }: {
   review: Review;
   money: (n: number) => string;
   /** Decide one line on its own. Absent where lines are decided together. */
   onLine?: (line: ReviewLine, decision: 'approve' | 'refuse') => void;
+  /** Charge a short line to a person. Admins only. */
+  onCharge?: (line: ReviewLine) => void;
   lineBusy?: string | null;
 }) {
   if (review.lines.length === 0) {
@@ -721,6 +747,15 @@ function ReviewLines({ review, money, onLine, lineBusy }: {
                         <Button size="sm" variant="ghost" disabled={!!lineBusy} onClick={() => onLine(l, 'refuse')}>
                           Refuse
                         </Button>
+                        {/* Only a shortage has somebody to charge. */}
+                        {onCharge && (l.delta ?? 0) < 0 && (
+                          <>
+                            {' '}
+                            <Button size="sm" variant="ghost" disabled={!!lineBusy} onClick={() => onCharge(l)}>
+                              Charge to…
+                            </Button>
+                          </>
+                        )}
                       </>
                     )}
                   </td>
