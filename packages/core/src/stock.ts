@@ -10,7 +10,7 @@ import { relinkPlan } from './shelf-relink';
 import type { RelinkPlan, LinkRow, LinkSize, LinkItem, ShelfRow, SoldLink } from './shelf-relink';
 import {
   variancesIn, wasCountedBar, shiftCounted, countable, countableBy, filedCounts, undoDeltas, undoProblem,
-  movesOnItsOwn, storeCountId, isStoreCount, STORE_COUNT_PREFIX, isPending, approveDeltas, countSide,
+  movesOnItsOwn, storeCountId, isStoreCount, STORE_COUNT_PREFIX, isPending, approveDeltas, refuseLines, countSide,
 } from './bar-count';
 import type { FiledCheck } from './bar-count';
 import { levelFor, transferQty, transferMovements, purchaseLocation, saleLocation } from './locations';
@@ -920,11 +920,16 @@ export async function approveBarCount(opts: {
   phase: 'open' | 'close';
   userId: string;
   locationId?: string;
+  /** Only these lines. Absent means every line still waiting. See refuseLines. */
+  lineIds?: string[];
 }): Promise<{ applied: number; failed: number }> {
   const all = await countsForShift(opts.shiftId);
   const count = filedCounts(all).find((c) => c.phase === opts.phase);
   if (!count) throw new Error('That count could not be found.');
   if (count.pending === 0) throw new Error('Nothing on that count is waiting to be applied.');
+  if (opts.lineIds && approveDeltas(count, opts.lineIds).length === 0) {
+    throw new Error('That line has already been decided.');
+  }
 
   const places = await loadLocations(opts.venueId);
   // A store room's count names its room in the id; a shift's count is the
@@ -938,7 +943,7 @@ export async function approveBarCount(opts: {
   let applied = 0;
   let failed = 0;
 
-  for (const { checkId, ingredientId, delta } of approveDeltas(count)) {
+  for (const { checkId, ingredientId, delta } of approveDeltas(count, opts.lineIds)) {
     const ing = await db.getDocument(DB_ID, 'ingredients', ingredientId).catch(() => null) as
       { base_unit_cost?: number } | null;
 
@@ -989,13 +994,17 @@ export async function rejectBarCount(opts: {
   shiftId: string;
   phase: 'open' | 'close';
   userId: string;
+  /** Only these lines. Absent means every line still waiting. See refuseLines. */
+  lineIds?: string[];
 }): Promise<number> {
   const all = await countsForShift(opts.shiftId);
   const count = filedCounts(all).find((c) => c.phase === opts.phase);
   if (!count) throw new Error('That count could not be found.');
+  const lines = refuseLines(count, opts.lineIds);
+  if (opts.lineIds && lines.length === 0) throw new Error('That line has already been decided.');
   const when = new Date().toISOString();
   let marked = 0;
-  for (const line of count.lines.filter(isPending)) {
+  for (const line of lines) {
     const ok = await tryWrite(db.updateDocument(DB_ID, 'shift_stock_checks', line.$id, {
       rejected_by: opts.userId,
       rejected_at: when,

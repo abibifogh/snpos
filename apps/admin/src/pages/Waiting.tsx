@@ -4,14 +4,14 @@ import { Badge, Button, Card, Empty, Input, Modal, Notice, Segmented, Spinner, u
 import { humanError } from '../lib';
 import {
   
-  approveBarCount, rejectBarCount, approveCount, rejectCount,
+  approveBarCount, rejectBarCount, approveCount, rejectCount, refuseCountLines,
   tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS,
   decideSpend, loadWaiting, nameFrom, waitingCounts, waitingSummary, waitedWords, refuseSpendWords, WAITING_KIND_WORDS, dateTimeWords,
   loadReview, offWords,
   openBookingChanges, decideBookingChange, CHANGE_KIND_WORDS,
   pendingGroupBookings, decideGroupBooking } from '@snpos/core';
 import type {
-  WaitingItem, WaitingKind, WaitingSpend, WaitingTabShift, TabOrder, Review, BookingChangeDoc, GroupBookingDoc,
+  WaitingItem, WaitingKind, WaitingSpend, WaitingTabShift, TabOrder, Review, ReviewLine, BookingChangeDoc, GroupBookingDoc,
 } from '@snpos/core';
 import { useSession, useMoney } from '../session';
 
@@ -83,6 +83,8 @@ export function WaitingPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [review, setReview] = useState<Review | null>(null);
   const [reviewing, setReviewing] = useState(false);
+  /** The one line being decided on its own, while it is. */
+  const [lineBusy, setLineBusy] = useState<string | null>(null);
 
   const toggle = async (item: WaitingItem) => {
     if (openId === item.id) { setOpenId(null); setReview(null); return; }
@@ -175,6 +177,51 @@ export function WaitingPage() {
       }
       return '';
     });
+  };
+
+  /**
+   * One line, agreed with or refused on its own.
+   *
+   * A count of five differences where four are plainly right and one is a
+   * bottle counted in the wrong row used to be all or nothing. Now the four
+   * are approved and the one refused, and the row stays on this page until
+   * every line is decided. The lines are read again afterwards so what is
+   * left is what is shown.
+   */
+  const decideLine = async (item: WaitingItem, line: ReviewLine, decision: 'approve' | 'refuse') => {
+    const ref = item.ref;
+    if (!line.id) return;
+    setLineBusy(line.id);
+    setError(null);
+    try {
+      if (ref.kind === 'bar_count') {
+        if (decision === 'approve') {
+          const { failed } = await approveBarCount({ venueId: 'main', shiftId: ref.shiftId, phase: ref.phase, userId, lineIds: [line.id] });
+          if (failed > 0) throw new Error(`${line.name} could not be applied. It is still waiting.`);
+        } else {
+          await rejectBarCount({ shiftId: ref.shiftId, phase: ref.phase, userId, lineIds: [line.id] });
+        }
+      } else if (ref.kind === 'shop_count' || ref.kind === 'shelf') {
+        if (decision === 'approve') {
+          const { failed } = await approveCount({ countId: ref.countId, reviewerId: userId, lineIds: [line.id] });
+          if (failed > 0) throw new Error(`${line.name} could not be applied. It is still waiting.`);
+        } else {
+          await refuseCountLines({ countId: ref.countId, lineIds: [line.id], reviewerId: userId });
+        }
+      } else {
+        return;
+      }
+      toast(decision === 'approve' ? `${line.name} applied to the shelf` : `${line.name} refused. The shelf is unchanged.`);
+      const fresh = await loadReview(ref);
+      setReview(fresh);
+      await load();
+      // Nothing left in it: the row has gone from the list, so close the panel.
+      if (fresh.lines.length === 0) { setOpenId(null); setReview(null); }
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setLineBusy(null);
+    }
   };
 
   /*
@@ -464,7 +511,15 @@ export function WaitingPage() {
                             it: the figures being judged stay on screen while
                             the lines that explain them are read. */}
                         <td colSpan={5} style={{ background: 'var(--surface-2, rgba(0,0,0,0.02))' }}>
-                          {reviewing || !review ? <Spinner /> : <ReviewLines review={review} money={money} />}
+                          {reviewing || !review ? <Spinner /> : (
+                            <ReviewLines
+                              review={review}
+                              money={money}
+                              // Line by line only where the whole could be decided here.
+                              onLine={may && (item.kind === 'count' || item.kind === 'shelf') ? (line, d) => void decideLine(item, line, d) : undefined}
+                              lineBusy={lineBusy}
+                            />
+                          )}
                         </td>
                       </tr>
                     )}
@@ -572,7 +627,13 @@ export function WaitingPage() {
  * top and abandoned somewhere in the middle, so the one worth arguing about
  * has to be at the top rather than wherever the alphabet put it.
  */
-function ReviewLines({ review, money }: { review: Review; money: (n: number) => string }) {
+function ReviewLines({ review, money, onLine, lineBusy }: {
+  review: Review;
+  money: (n: number) => string;
+  /** Decide one line on its own. Absent where lines are decided together. */
+  onLine?: (line: ReviewLine, decision: 'approve' | 'refuse') => void;
+  lineBusy?: string | null;
+}) {
   if (review.lines.length === 0) {
     return (
       <div style={{ padding: '0.6rem 0' }}>
@@ -618,11 +679,12 @@ function ReviewLines({ review, money }: { review: Review; money: (n: number) => 
                 </>
               )}
               <th className="num">Worth</th>
+              {onLine && <th />}
             </tr>
           </thead>
           <tbody>
             {review.lines.map((l, i) => (
-              <tr key={i}>
+              <tr key={l.id ?? i}>
                 <td>
                   <div style={{ fontWeight: 550 }}>{l.name}</div>
                   {l.note && <div className="small dim">{l.note}</div>}
@@ -646,17 +708,34 @@ function ReviewLines({ review, money }: { review: Review; money: (n: number) => 
                   </>
                 )}
                 <td className="num">{money(Math.abs(l.worth))}</td>
+                {onLine && (
+                  <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                    {/* This line alone. The buttons on the row above still
+                        decide everything that is left. */}
+                    {l.id && (
+                      <>
+                        <Button size="sm" variant="ghost" loading={lineBusy === l.id} disabled={!!lineBusy} onClick={() => onLine(l, 'approve')}>
+                          Approve
+                        </Button>
+                        {' '}
+                        <Button size="sm" variant="ghost" disabled={!!lineBusy} onClick={() => onLine(l, 'refuse')}>
+                          Refuse
+                        </Button>
+                      </>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
           {spend && (
             <tfoot>
               <tr>
-                <td colSpan={3} style={{ fontWeight: 600 }}>These lines come to</td>
+                <td colSpan={onLine ? 4 : 3} style={{ fontWeight: 600 }}>These lines come to</td>
                 <td className="num" style={{ fontWeight: 600 }}>{money(review.total ?? 0)}</td>
               </tr>
               <tr>
-                <td colSpan={3} className="dim">The spend says</td>
+                <td colSpan={onLine ? 4 : 3} className="dim">The spend says</td>
                 <td className="num dim">{money(review.claimed ?? 0)}</td>
               </tr>
             </tfoot>

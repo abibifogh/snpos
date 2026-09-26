@@ -578,11 +578,18 @@ export interface FiledCount {
  */
 export function countState(count: FiledCount): CountState {
   if (count.undoneAt) return 'undone';
-  if (count.rejectedAt) return 'rejected';
   if (count.pending > 0) return 'pending';
+  // Refused only where nothing on it moved the shelf. A count decided line by
+  // line can be half agreed with: the lines that were are applied, and the
+  // count reads as applied, because the shelf did move because of it.
+  if (count.rejectedAt && !anyMoved(count)) return 'rejected';
   if (count.changed === 0) return 'unchanged';
   return 'applied';
 }
+
+/** Did any difference on this count actually move the shelf? */
+export const anyMoved = (count: Pick<FiledCount, 'lines'>): boolean =>
+  count.lines.some((l) => (l.variance_qty ?? 0) !== 0 && hasMoved(l));
 
 export const countStateLabel = (state: CountState): string =>
   state === 'pending' ? 'Waiting for approval'
@@ -673,10 +680,29 @@ export function undoDeltas(count: FiledCount): { ingredientId: string; delta: nu
  * those sales exactly where they are. The same reasoning as undoDeltas, in the
  * other direction.
  */
-export function approveDeltas(count: FiledCount): { checkId: string; ingredientId: string; delta: number }[] {
+export function approveDeltas(
+  count: FiledCount,
+  /** Only these lines, when a count is being decided one line at a time. */
+  lineIds?: string[],
+): { checkId: string; ingredientId: string; delta: number }[] {
+  const chosen = lineIds ? new Set(lineIds) : null;
   return count.lines
-    .filter((l) => isPending(l) && (l.variance_qty ?? 0) !== 0)
+    .filter((l) => isPending(l) && (l.variance_qty ?? 0) !== 0 && (!chosen || chosen.has(l.$id)))
     .map((l) => ({ checkId: l.$id, ingredientId: l.ingredient_id, delta: l.variance_qty ?? 0 }));
+}
+
+/**
+ * The lines a refusal marks: every one still waiting, or only the ones named.
+ *
+ * One line at a time is the point. A count of five differences where four are
+ * plainly right and one is a bottle counted in the wrong row used to be all
+ * or nothing: approve the lot and move the shelf by a mistake, or refuse the
+ * lot and lose four good corrections. Now the four are approved and the one
+ * is refused, and the count stays on the list until every line is decided.
+ */
+export function refuseLines(count: FiledCount, lineIds?: string[]): FiledCheck[] {
+  const chosen = lineIds ? new Set(lineIds) : null;
+  return count.lines.filter((l) => isPending(l) && (!chosen || chosen.has(l.$id)));
 }
 
 /** What to tell whoever just filed a count that is now waiting. */
@@ -711,9 +737,10 @@ export function undoProblem(count: FiledCount | null | undefined): string | null
   if (count && count.pending > 0) {
     return 'This count is still waiting for approval, so it has not moved anything yet. Refuse it instead.';
   }
-  if (count && count.rejectedAt) return 'This count was refused, so it never moved the shelf.';
   if (!count) return 'That count could not be found.';
   if (count.undoneAt) return 'That count has already been taken back.';
+  // Refused, in whole or in the only lines that differed: nothing moved.
+  if (count.rejectedAt && !anyMoved(count)) return 'This count was refused, so it never moved the shelf.';
   if (count.changed === 0) return 'That count found exactly what was expected, so there is nothing to put back.';
   return null;
 }

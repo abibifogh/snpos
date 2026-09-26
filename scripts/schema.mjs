@@ -2505,6 +2505,9 @@ export const COLLECTIONS = [
       // Set when the movement has been written, so re-approving cannot apply
       // the same difference twice.
       ['applied', 'b', null, false, false],
+      // Refused on its own, with the rest of the count still waiting. A count
+      // is decided line by line; see countOutcome.
+      ['refused', 'b', null, false, false],
     ],
     indexes: [['count', 'key', ['count_id']]],
   },

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   wasCounted, differencesIn, summariseCount, countWarnings, MOVE_FOR_REASON,
-  groupLines, driftedSince, isSelfApproval,
+  groupLines, driftedSince, isSelfApproval, lineUndecided, countOutcome,
   type CountLine,
 } from '../stocktake.ts';
 
@@ -177,4 +177,14 @@ test('one person may sign off their own count, visibly', () => {
   assert.equal(isSelfApproval({ counted_by: 'ama' }, 'kofi'), false);
   // Nobody signing is not self-approval; it is nobody signing.
   assert.equal(isSelfApproval({ counted_by: 'ama' }, ''), false);
+});
+
+test('a shop count is filed only once every line has been decided', () => {
+  // Only the differences are stored as lines, so each one is a decision.
+  assert.equal(countOutcome([{ applied: false }, { applied: true }]), 'open');
+  assert.equal(countOutcome([{ applied: true }, { refused: true }]), 'approved', 'the shelf moved for one of them');
+  assert.equal(countOutcome([{ refused: true }, { refused: true }]), 'rejected');
+  assert.equal(countOutcome([]), 'approved', 'nothing differed and nothing was refused');
+  assert.equal(lineUndecided({}), true);
+  assert.equal(lineUndecided({ refused: true }), false);
 });
