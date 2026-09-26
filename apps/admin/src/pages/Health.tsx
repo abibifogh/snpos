@@ -1,13 +1,25 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Badge, Button, Card, Notice, Spinner } from '@snpos/ui';
+import { Badge, Button, Card, Notice, Spinner, useToast } from '@snpos/ui';
 import { humanError } from '../lib';
-import { healthFacts, healthFindings, healthSummary, lastHealthReport, dateTimeWords } from '@snpos/core';
-import type { HealthFinding } from '@snpos/core';
-import { useMoney } from '../session';
+import {
+  healthFacts, healthFindings, healthSummary, lastHealthReport, dateTimeWords,
+  loadRestorePlan, applyRestorePlan, restoreWords,
+} from '@snpos/core';
+import type { HealthFinding, Restore } from '@snpos/core';
+import { useMoney, useSession } from '../session';
 
 /** The three cards, by which findings belong on them. */
-const RECORDS = ['shifts_unposted', 'entries_broken', 'spends_unposted', 'spends_no_lines', 'counts_half', 'orders_no_payment', 'orders_no_lines', 'payouts', 'waste', 'trial'];
+/*
+  Every order question, listed. Four of them were worked out on every check and
+  never shown — mispriced sizes among them — so the one place that knew about
+  the Club · Large bills could not say so.
+*/
+const RECORDS = [
+  'shifts_unposted', 'entries_broken', 'spends_unposted', 'spends_no_lines', 'counts_half',
+  'orders_no_payment', 'orders_overpaid', 'orders_settled_on_paper', 'orders_not_adding_up', 'sizes_mispriced',
+  'orders_no_lines', 'payouts', 'waste', 'trial',
+];
 const WAITING = ['spends_stale', 'counts_stale', 'shifts_open', 'clearing'];
 const JOBS = ['job_health', 'job_backup', 'mail'];
 
@@ -38,6 +50,40 @@ export function HealthPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [howTo, setHowTo] = useState<'provision' | 'functions' | null>(null);
+  const { settings, profile, user } = useSession();
+  const toast = useToast();
+  /**
+   * Bills that say less than their customer paid. See till-charged.ts.
+   * Null while looking; a failed look is said, never shown as "none".
+   */
+  const [restore, setRestore] = useState<Restore[] | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
+
+  const lookForRestores = () => {
+    setRestoreError(null);
+    loadRestorePlan('main').then(setRestore).catch((e) => { setRestore([]); setRestoreError(humanError(e)); });
+  };
+
+  const putBack = async () => {
+    if (!restore?.length || !settings) return;
+    if (!confirm(`${restoreWords(restore, money)}\n\nPut these bills back to what the till charged?`)) return;
+    setRestoring(true);
+    try {
+      const done = await applyRestorePlan({
+        plan: restore, settings, venueId: 'main',
+        userId: user?.$id ?? '', role: profile?.role ?? '',
+      });
+      toast(`${done.bills} bills put back, ${done.shifts} shifts brought up to date`);
+      for (const n of done.notes) toast(n);
+      lookForRestores();
+      void check();
+    } catch (e) {
+      setRestoreError(humanError(e));
+    } finally {
+      setRestoring(false);
+    }
+  };
 
   const check = async () => {
     setBusy(true);
@@ -56,6 +102,7 @@ export function HealthPage() {
 
   useEffect(() => {
     void check();
+    lookForRestores();
     lastHealthReport('main').then((r) => setNight(r ? { at: r.at, words: r.words } : null)).catch(() => setNight(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -132,6 +179,47 @@ export function HealthPage() {
         <Card><Spinner /></Card>
       ) : (
         <>
+          {(restoreError || (restore && restore.length > 0)) && (
+            <>
+              <Card title="Bills that say less than the customer paid">
+                {restoreError ? (
+                  <Notice>{`Could not look for them: ${restoreError}`}</Notice>
+                ) : restore && (
+                  <>
+                    <p style={{ marginTop: 0 }}>{restoreWords(restore, money)}</p>
+                    <p className="small dim">
+                      The till charged these prices and the customers paid them, then the server rewrote the bills
+                      to a lower figure. It no longer does that to anything rung up at a till. Putting them back
+                      corrects the bills, the item reports and each shift&rsquo;s tax; the takings do not change.
+                    </p>
+                    <div className="table-wrap" style={{ maxHeight: '16rem', overflowY: 'auto' }}>
+                      <table className="data">
+                        <thead><tr><th>Bill</th><th>What</th><th className="num">Says</th><th className="num">Paid</th></tr></thead>
+                        <tbody>
+                          {restore.map((r) => (
+                            <tr key={r.lineId}>
+                              <td>{r.orderNo}</td>
+                              <td>{r.qty}× {r.name}</td>
+                              <td className="num dim">{money(r.from)}</td>
+                              <td className="num">{money(r.to)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {profile?.role === 'admin' ? (
+                      <Button variant="primary" loading={restoring} onClick={() => void putBack()} style={{ marginTop: '0.8rem' }}>
+                        Put them back to what was paid
+                      </Button>
+                    ) : (
+                      <p className="small dim">An admin can put these back.</p>
+                    )}
+                  </>
+                )}
+              </Card>
+              <div style={{ height: '1rem' }} />
+            </>
+          )}
           <Card title={`Records that do not add up${rows(RECORDS).some((f) => f.level !== 'ok') ? '' : ' · none'}`} pad={false}>
             {table(RECORDS)}
           </Card>

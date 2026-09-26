@@ -82,6 +82,8 @@ export * from './order-edit';
 export * from './order-search';
 export * from './size-price';
 export * from './unpaid-bills';
+export * from './till-charged';
+export * from './till-charged-apply';
 export * from './push-device';
 export * from './batch-rules';
 export * from './pour-check';

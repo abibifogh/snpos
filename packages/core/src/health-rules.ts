@@ -358,7 +358,7 @@ export function healthFindings(f: HealthFacts, w: HealthWords): HealthFinding[] 
         + `${over > 0 ? ` and ${w.money(over)} overcharged` : ''}.`
         + (unpaidSizes.length > 0
           ? ` ${plural(unpaidSizes.length, 'bill is', 'bills are')} not paid yet: open each on Orders and press Correct the price.`
-          : ' All of them are paid, so there is nothing left to change; this is what it cost. Fixed for new orders.'),
+          : ' All of them are paid. Where the customers paid the size’s price, put the bills back from the card at the top of this page. Fixed for new orders.'),
       goto: '/orders', action: 'Open orders',
     }
     : none('sizes_mispriced', 'Sizes charged at the plain item’s price'));

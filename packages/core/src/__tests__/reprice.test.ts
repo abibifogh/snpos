@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { linePrice, linePrep, isVoid } from '../../../../functions/order-guard/src/reprice.js';
+import { linePrice, linePrep, isVoid, tillSale, addonsPriced } from '../../../../functions/order-guard/src/reprice.js';
 
 /*
   ORD0866. A quesadilla at GH₵90 and a kelewele at GH₵40, both on the bill,
@@ -211,4 +211,38 @@ test('a line with no size is priced from the drink as it always was', () => {
   const line = { name_snapshot: 'Club', qty: 1, unit_price: 2_500, line_total: 2_500 };
   assert.equal(linePrice({ item: line, menuItem: { price: 2_500 } }).amount, 2_500);
   assert.equal(linePrice({ item: line, menuItem: { price: 2_500 }, overridePrice: 2_700 }).amount, 2_700);
+});
+
+/* ------------------------------------------- what the till charged stands */
+
+test('a bill rung up at the till keeps its price; a phone order is still checked', () => {
+  /*
+    Club · Large: the till charged GH₵30, the customer paid GH₵30, and the
+    server rewrote the line to GH₵25 a second later. A month of sales was
+    understated while every drawer balanced. A till names its shift; a phone
+    cannot, because a guest cannot read the shifts.
+  */
+  const shift = { $id: 'sh1', venue_id: 'main' };
+  const till = { channel: 'counter', shift_id: 'sh1', venue_id: 'main' };
+  assert.equal(tillSale(till, shift), true);
+  assert.equal(tillSale({ ...till, channel: 'waiter' }, shift), true);
+
+  assert.equal(tillSale({ channel: 'qr', shift_id: '', venue_id: 'main' }, null), false, 'a phone at a table');
+  assert.equal(tillSale({ channel: 'takeaway', shift_id: '', venue_id: 'main' }, null), false, 'a phone takeaway');
+  // A phone claiming to be a till, with a shift id it cannot have read.
+  assert.equal(tillSale({ channel: 'counter', shift_id: 'made-up', venue_id: 'main' }, null), false);
+  // A real shift, but the order says it is a phone order.
+  assert.equal(tillSale({ ...till, channel: 'qr' }, shift), false);
+  // A shift from another venue does not vouch for this one.
+  assert.equal(tillSale(till, { $id: 'sh1', venue_id: 'other' }), false);
+  // A till order sent with no shift open is checked like any other.
+  assert.equal(tillSale({ ...till, shift_id: '' }, null), false);
+});
+
+test('a choice picked twice is charged twice, as the till adds it', () => {
+  // "Extra shot × 2" was one shot on the server and two on the till.
+  assert.equal(addonsPriced([{ qty: 2 }, {}], [{ price_delta: 500 }, { price_delta: 300 }]), 1_300);
+  // A choice that could not be read adds nothing rather than a guess.
+  assert.equal(addonsPriced([{ qty: 1 }], [null]), 0);
+  assert.equal(addonsPriced([], []), 0);
 });

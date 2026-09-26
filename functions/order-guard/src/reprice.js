@@ -33,6 +33,61 @@
  */
 
 /**
+ * WAS THIS RUNG UP AT A TILL? Then what the till charged stands.
+ *
+ * Repricing is a guard against a customer's phone, which sends its own figures
+ * and must never be trusted. A till is not a customer's phone: it is staff,
+ * signed in, charging the price on the screen in front of them, and the
+ * customer pays that figure there and then. Rewriting it a second later does
+ * not protect anybody — it makes the record disagree with the money.
+ *
+ * That is exactly what happened to Club · Large. The till charged GH₵30, the
+ * customer paid GH₵30, and this rewrote the line to GH₵25 a second later: 126
+ * bills, a month of sales, understated by GH₵5 a bottle while every drawer
+ * balanced. Whatever the next pricing rule the server gets wrong turns out to
+ * be — a venue price, a size, a choice with a quantity — it must not be able
+ * to do that again to a sale somebody has already been charged for.
+ *
+ * How a till's order is known: it names the shift it was rung up on. A phone
+ * has no shift — a guest cannot read the shifts, so cannot name one — and
+ * never sends one; the till always does when a shift is open. The shift is
+ * read on the server and must exist, in the same venue, so a made-up id does
+ * not count. A till order sent with no shift open is checked like any other.
+ *
+ * A difference is still written down (see the caller), so a till showing a
+ * stale price can be found and put right; it just is not "corrected" onto a
+ * bill somebody has already paid.
+ *
+ * @param {any} order
+ * @param {any} [shift] the shift the order names, read by the server, or null
+ */
+export function tillSale(order, shift = null) {
+  if (!order || !shift) return false;
+  if (order.channel !== 'waiter' && order.channel !== 'counter') return false;
+  if (!order.shift_id || shift.$id !== order.shift_id) return false;
+  return (shift.venue_id || '') === (order.venue_id || '');
+}
+
+/**
+ * What the choices on a line add per unit, priced from the database.
+ *
+ * Each choice counted as many times as it was chosen, the way the till adds
+ * them up. This used to count every choice once, so "extra shot × 2" was
+ * charged one shot by the server and two by the till.
+ *
+ * @param {Array<{ qty?: number }>} chosen what the line says was chosen
+ * @param {Array<{ price_delta?: number } | null>} options each choice as read from the database, same order
+ */
+export function addonsPriced(chosen, options) {
+  let total = 0;
+  chosen.forEach((a, i) => {
+    const qty = Number(a?.qty ?? 1);
+    total += (Number(options[i]?.price_delta) || 0) * (Number.isFinite(qty) && qty > 0 ? qty : 1);
+  });
+  return total;
+}
+
+/**
  * A line that was taken off before anything was cooked. Worth nothing, owed nothing.
  * @param {any} item
  */
