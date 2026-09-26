@@ -1932,6 +1932,8 @@ export const COLLECTIONS = [
       // shelf and wrote a number, and the record of it being disagreed with
       // is worth more than the tidiness of deleting it.
       ['rejected_by', 's', 64, false],
+      // Charged to a person rather than simply approved. See staff_charges.
+      ['charge_id', 's', 64, false],
       /*
         When an admin was told this was waiting.
 
@@ -2182,6 +2184,89 @@ export const COLLECTIONS = [
     ],
     indexes: [
       ['made_item', 'key', ['made_item_id', '$createdAt']],
+    ],
+  },
+  {
+    /**
+     * A count difference charged to a person.
+     *
+     * Some shortages are somebody's to make good: six bottles gone on a shift
+     * one person ran. The shelf is corrected at once — the next count must not
+     * go looking for them again — and what they were worth moves here, owed by
+     * that person, until it is paid, taken from pay, found or written off. See
+     * staff-charges.ts.
+     *
+     * Read by managers, and by the person charged: each row is written readable
+     * by them, so their till can tell them what they owe and nobody else's.
+     */
+    id: 'staff_charges',
+    name: 'Staff charges',
+    perms: { read: MGMT, create: ADMIN, update: ADMIN, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      // Who owes it: the staff profile, and the account behind it so their
+      // till can find it. Blank where the profile has no account yet.
+      ['person_id', 's', 64, true],
+      ['person_user_id', 's', 64, false],
+      ['person_name', 's', 120, true],
+      // Where it came from, so the line and the count can be found again.
+      ['source', 'e', ['bar_count', 'shop_count'], true, 'bar_count'],
+      ['count_ref', 's', 160, false],
+      ['line_id', 's', 64, false],
+      ['module', 'e', ['kitchen', 'craft', 'bar'], true, 'bar'],
+      // What was short, and where it sits, so "found on the shelf" can put it back.
+      ['item_name', 's', 200, true],
+      ['ingredient_id', 's', 64, false],
+      ['location_id', 's', 64, false],
+      ['menu_item_id', 's', 64, false],
+      ['variant_id', 's', 64, false],
+      ['qty', 'f', null, true, 0],
+      ['unit_price', 'i', null, true, 0],
+      ['amount', 'i', null, true, 0],
+      ['price_basis', 'e', ['selling', 'cost', 'custom'], true, 'selling'],
+      ['note', 's', 300, false],
+      ['charged_by', 's', 64, false],
+      ['charged_at', 'd', null, true],
+      // Kept on the row so a list reads without adding up every settlement.
+      ['settled_total', 'i', null, true, 0],
+      ['status', 'e', ['open', 'settled'], true, 'open'],
+    ],
+    indexes: [
+      ['person_status', 'key', ['person_id', 'status']],
+      ['user_status', 'key', ['person_user_id', 'status']],
+      ['venue_status', 'key', ['venue_id', 'status']],
+    ],
+  },
+  {
+    /**
+     * Something done about a staff charge: paid in cash, taken from pay, found
+     * on the shelf, or written off. Several may settle one charge.
+     *
+     * Read by everybody, because cash paid back into a drawer is part of what
+     * that drawer should hold at close, and the till that closes it has to be
+     * able to see it. See expectedTakings.
+     */
+    id: 'staff_charge_settlements',
+    name: 'Staff charge settlements',
+    perms: { read: ALL_STAFF, create: ADMIN, update: [], delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['charge_id', 's', 64, true],
+      ['person_id', 's', 64, true],
+      ['kind', 'e', ['cash', 'pay', 'found', 'written_off'], true, 'cash'],
+      ['amount', 'i', null, true, 0],
+      // For "found": how many turned up and went back on the shelf.
+      ['qty_found', 'f', null, false, 0],
+      // For cash: the shift whose drawer it went into, and the method it counts as.
+      ['shift_id', 's', 64, false],
+      ['method_id', 's', 64, false],
+      ['note', 's', 300, false],
+      ['recorded_by', 's', 64, false],
+      ['recorded_at', 'd', null, true],
+    ],
+    indexes: [
+      ['charge', 'key', ['charge_id']],
+      ['shift', 'key', ['shift_id']],
     ],
   },
   {
@@ -2508,6 +2593,8 @@ export const COLLECTIONS = [
       // Refused on its own, with the rest of the count still waiting. A count
       // is decided line by line; see countOutcome.
       ['refused', 'b', null, false, false],
+      // Charged to a person rather than simply approved. See staff_charges.
+      ['charge_id', 's', 64, false],
     ],
     indexes: [['count', 'key', ['count_id']]],
   },
@@ -4312,6 +4399,9 @@ export const SYSTEM_ACCOUNT_CODES = [
   '2110', '2120', '2130', '2190',
   // Waste is written off the shelf to here by number.
   '6080',
+  // Count differences charged to staff: what they owe, what charging them
+  // recovers, and the pay it is taken from. See staff-charges.ts.
+  '1300', '4910', '6100',
 ];
 
 export const SEED_ACCOUNTS = [
@@ -4332,6 +4422,8 @@ export const SEED_ACCOUNTS = [
   ['1200', 'Inventory - kitchen', 'asset'],
   ['1210', 'Inventory - bar', 'asset'],
   ['1220', 'Inventory - craft shop', 'asset'],
+  // What staff owe for count differences charged to them. See staff_charges.
+  ['1300', 'Owed by staff', 'asset'],
   ['1500', 'Equipment and fittings', 'asset'],
   // A contra-asset: it is an asset account that is normally held the other way
   // round, so it shows as a negative on the balance sheet and reduces what the
@@ -4355,6 +4447,9 @@ export const SEED_ACCOUNTS = [
   ['4010', 'Bar sales', 'revenue'],
   ['4020', 'Craft shop sales', 'revenue'],
   ['4900', 'Discounts given', 'revenue'],
+  // Credited when a shortage is charged to somebody, and debited back if what
+  // they were charged for turns up or is written off.
+  ['4910', 'Shortages charged to staff', 'revenue'],
   ['5000', 'Cost of food sold', 'expense'],
   ['5010', 'Cost of drinks sold', 'expense'],
   ['5020', 'Cost of craft goods sold', 'expense'],
@@ -4368,6 +4463,8 @@ export const SEED_ACCOUNTS = [
   ['6070', 'Payment provider fees', 'expense'],
   ['6080', 'Waste and spoilage', 'expense'],
   ['6090', 'Other expenses', 'expense'],
+  // Pay, where part of it went to settle what somebody owed.
+  ['6100', 'Wages and salaries', 'expense'],
   ['7000', 'Cash over / short', 'expense'],
 ];
 

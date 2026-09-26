@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo, HelpModal, EightySixModal,
-  OfflineBar, SchemaBar, StaleBar, useOfflineQueue, IdleScreen, ThemeButton,
+  OfflineBar, SchemaBar, StaleBar, useOfflineQueue, IdleScreen, ThemeButton, OwedNotice,
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
@@ -1218,6 +1218,10 @@ export function App() {
           takesPayment={combined}
           onToast={(m) => { setToast(m); window.setTimeout(() => setToast(null), 4000); }}
         />
+      )}
+      {/* What whoever is on this pass owes from counts charged to them. */}
+      {holdsCash && settings && who?.user_id && (
+        <OwedNotice userId={who.user_id} money={(n) => formatMoney(n, settings)} />
       )}
 
       {error && <div style={{ padding: '0.6rem 1rem' }}><Notice>{error}</Notice></div>}

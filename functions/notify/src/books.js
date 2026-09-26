@@ -41,6 +41,9 @@ export const ACCOUNTS = {
   equipment: '1500',
   accumDepreciation: '1510',
   depreciation: '6060',
+  owedByStaff: '1300',
+  shortagesCharged: '4910',
+  wages: '6100',
 };
 
 /** Other expenses: where a spend lands when its category points nowhere useful. */
@@ -189,6 +192,30 @@ export function batchLines(b) {
       { account_code: to, debit: c.value, credit: 0, memo: 'Made here' },
       { account_code: inventoryAccount(c.module || 'kitchen'), debit: 0, credit: c.value, memo: 'Used to make it' },
     ]);
+}
+
+/** Mirrors staffChargeLines in packages/core/src/books.ts. */
+export function staffChargeLines(amount) {
+  if (!(amount > 0)) return [];
+  return [
+    { account_code: ACCOUNTS.owedByStaff, debit: amount, credit: 0, memo: 'Owed by staff' },
+    { account_code: ACCOUNTS.shortagesCharged, debit: 0, credit: amount, memo: 'Shortage charged to staff' },
+  ];
+}
+
+/** Mirrors staffSettleLines in packages/core/src/books.ts. */
+export function staffSettleLines(kind, amount) {
+  if (!(amount > 0)) return [];
+  const debit = kind === 'cash' ? ACCOUNTS.cash
+    : kind === 'pay' ? ACCOUNTS.wages
+      : ACCOUNTS.shortagesCharged;
+  const memo = kind === 'cash' ? 'Paid back in cash'
+    : kind === 'pay' ? 'Taken from pay'
+      : kind === 'found' ? 'Found on the shelf' : 'Written off';
+  return [
+    { account_code: debit, debit: amount, credit: 0, memo },
+    { account_code: ACCOUNTS.owedByStaff, debit: 0, credit: amount, memo: 'Owed by staff' },
+  ];
 }
 
 /* --------------------------------------------------------------- spends */

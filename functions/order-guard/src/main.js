@@ -1,6 +1,6 @@
 import { Client, Databases, Query } from 'node-appwrite';
 import { surplusPayment } from './duplicate-payment.js';
-import { linePrice, linePrep, isVoid } from './reprice.js';
+import { linePrice, linePrep, isVoid, tillSale, addonsPriced } from './reprice.js';
 import { settleBill } from './settle-bill.js';
 import {
   totalsFor, rateFor, flatFor, splitSale, queueMinutes, quotedWait,
@@ -1344,6 +1344,15 @@ export default async ({ req, res, log, error }) => {
     let subtotal = 0;
     let prepTotal = 0;
     const corrections = [];
+    /*
+      A bill rung up at a till keeps what the till charged; differences from
+      the menu are written down, not written over it. See tillSale.
+    */
+    const shift = order.shift_id
+      ? await db.getDocument(DB_ID, 'shifts', order.shift_id).catch(() => null)
+      : null;
+    const fromTill = tillSale(order, shift);
+    const differences = [];
 
     /*
       EVERY LIVE LINE CONTRIBUTES SOMETHING. See reprice.js.
@@ -1366,10 +1375,11 @@ export default async ({ req, res, log, error }) => {
       let addonTotal = 0;
       if (menuItem) {
         const addons = item.addons ? JSON.parse(item.addons) : [];
+        const options = [];
         for (const a of addons) {
-          const option = await db.getDocument(DB_ID, 'addon_options', a.option_id).catch(() => null);
-          addonTotal += option?.price_delta ?? 0;
+          options.push(await db.getDocument(DB_ID, 'addon_options', a.option_id).catch(() => null));
         }
+        addonTotal = addonsPriced(addons, options);
       }
 
       // The size it was sold as, which is priced as itself. See linePrice.
@@ -1385,6 +1395,13 @@ export default async ({ req, res, log, error }) => {
         variant,
       });
 
+      if (fromTill) {
+        // What the till charged, and what the customer paid. A difference is
+        // noted for somebody to look at, never written onto the bill.
+        if (priced.correction) differences.push(priced.correction);
+        subtotal += Number(item.line_total) || 0;
+        continue;
+      }
       if (priced.correction) corrections.push(priced.correction);
       if (priced.rewrite) {
         await db.updateDocument(DB_ID, 'order_items', item.$id, priced.rewrite);
@@ -1523,7 +1540,23 @@ export default async ({ req, res, log, error }) => {
       }
     }
 
-    return res.json({ ok: true, subtotal, total, corrections: corrections.length });
+    // Kept as charged, and said. A till whose price disagrees with the menu is
+    // a till showing something stale, or a menu changed mid-shift; either way
+    // somebody should know, and nobody's bill should move because of it.
+    if (differences.length) {
+      await db.createDocument(DB_ID, 'audit_log', 'unique()', {
+        venue_id: order.venue_id,
+        actor_id: order.placed_by || 'staff',
+        actor_role: 'staff',
+        action: 'order_price_differs',
+        entity_type: 'order',
+        entity_id: order.$id,
+        after: JSON.stringify({ order_no: order.order_no, differences }).slice(0, 3900),
+      }).catch(() => undefined);
+      log(`Kept ${order.order_no} as the till charged it: ${differences.join('; ')}`);
+    }
+
+    return res.json({ ok: true, subtotal, total, corrections: corrections.length, kept: differences.length });
   } catch (e) {
     error(`order-guard failed for ${order.$id}: ${e.message}`);
     return res.json({ ok: false, error: e.message }, 500);

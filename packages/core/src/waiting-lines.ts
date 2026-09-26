@@ -33,6 +33,10 @@ export interface ReviewLine {
   unitCost?: number;
   /** What this line is worth, in minor units. Negative is money or stock lost. */
   worth: number;
+  /** For a bar count: the shelf item, so it can be priced to charge to somebody. */
+  ingredientId?: string;
+  /** For a shop count: what one sells for. */
+  unitPrice?: number;
 }
 
 /** Rows sorted so the ones worth arguing about are read first. */
@@ -64,6 +68,7 @@ export function barReviewLines(
 ): ReviewLine[] {
   return worstFirst(checks.map((c) => ({
     id: c.$id,
+    ingredientId: c.ingredient_id,
     name: nameOf(c.ingredient_id) || 'Something no longer on the list',
     expected: c.theoretical_qty ?? 0,
     counted: c.counted_qty ?? 0,
@@ -109,6 +114,7 @@ export function shopReviewLines(rows: ShopCountRow[]): ReviewLine[] {
     counted: r.counted,
     delta: r.delta,
     worth: r.delta * r.unit_price,
+    unitPrice: r.unit_price,
   })));
 }
 

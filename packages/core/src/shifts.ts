@@ -4,6 +4,7 @@ import type { Order, OrderItem } from './orders';
 import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from './stock';
 import { liveOrders } from './orders';
 import { countable } from './bar-count';
+import { repaidByMethod } from './staff-charges';
 import { makersShareOf } from './consignment-math';
 import { splitTax, parseLevies, vatBpOf } from './pricing';
 import { loadConsignors } from './consignment';
@@ -491,6 +492,13 @@ export interface ExpectedTakings {
   salesTotal: number;
   tipsTotal: number;
   payments: ShiftPayment[];
+  /**
+   * Cash paid back into this drawer against what somebody owed, by method.
+   * Already inside byMethod; said on its own so the close can say why the
+   * drawer holds more than the sales. See staff-charges.ts.
+   */
+  repaidByMethod: Record<string, number>;
+  repaidTotal: number;
 }
 
 /**
@@ -511,12 +519,24 @@ export const shiftUsable = (shift: Pick<Shift, 'opened_at'> | null | undefined):
  * figure somebody types in as "expected" is not a check on anything.
  */
 export async function expectedTakings(shift: Shift, methods: PaymentMethod[]): Promise<ExpectedTakings> {
-  const [payments, expenses] = await Promise.all([
+  const [payments, expenses, repaid] = await Promise.all([
     listAll<ShiftPayment>('payments', [Query.equal('shift_id', shift.$id)]),
     listAll<{ amount: number; paid_from_method_id: string; from_takings?: boolean }>('shift_expenses', [
       Query.equal('shift_id', shift.$id),
     ]),
+    /*
+      Money somebody paid back into this drawer for a count charged to them.
+      A database without the table yet has none; any other failure is thrown,
+      because a drawer expected without money that is in it reads as over.
+    */
+    listAll<{ kind: 'cash' | 'pay' | 'found' | 'written_off'; amount: number; method_id?: string }>('staff_charge_settlements', [
+      Query.equal('shift_id', shift.$id),
+    ]).catch((e: unknown) => {
+      if (/not.?found|could not be found/i.test(String((e as { message?: string })?.message ?? e))) return [];
+      throw e;
+    }),
   ]);
+  const repaidBy = repaidByMethod(repaid);
 
   const openingFloats: Record<string, number> = JSON.parse(shift.opening_floats || '{}');
   const takenByMethod: Record<string, number> = {};
@@ -560,7 +580,7 @@ export async function expectedTakings(shift: Shift, methods: PaymentMethod[]): P
       .filter((e) => e.paid_from_method_id === m.$id)
       .reduce((a, e) => a + e.amount, 0);
     if (m.kind === 'cash') cashExpenses += paidOut;
-    byMethod[m.$id] = (openingFloats[m.$id] ?? 0) + (takenByMethod[m.$id] ?? 0) - paidOut;
+    byMethod[m.$id] = (openingFloats[m.$id] ?? 0) + (takenByMethod[m.$id] ?? 0) - paidOut + (repaidBy[m.$id] ?? 0);
   }
 
   // Everything spent, whoever's pocket it came from. This is the P&L figure and
@@ -572,6 +592,8 @@ export async function expectedTakings(shift: Shift, methods: PaymentMethod[]): P
   return {
     byMethod, openingFloats, takenByMethod, cashExpenses, expensesTotal, ownMoneyTotal,
     salesTotal, tipsTotal, payments,
+    repaidByMethod: repaidBy,
+    repaidTotal: Object.values(repaidBy).reduce((a, n) => a + n, 0),
   };
 }
 

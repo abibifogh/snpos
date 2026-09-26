@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Button, Spinner, Card, Field, Input, Notice, useToast, Logo, HelpModal, EightySixModal, Modal, Badge,
-  OfflineBar, SchemaBar, StaleBar, useOfflineQueue, IdleScreen, ThemeButton,
+  OfflineBar, SchemaBar, StaleBar, useOfflineQueue, IdleScreen, ThemeButton, OwedNotice,
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
@@ -1191,6 +1191,9 @@ export function App() {
       )}
 
       <ShiftBar ctx={ctx} onToast={(m, tone) => toast(m, tone)} />
+      {/* What the person at this till owes from counts charged to them. Their
+          own only; nothing when nothing is owed. See staff-charges.ts. */}
+      <OwedNotice userId={ctx.userId} money={(n) => formatMoney(n, ctx.settings)} />
 
       <div className="pos-body">
         {/* A shop counter is not a dining room.

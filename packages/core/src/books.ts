@@ -44,6 +44,9 @@ export const BOOK_ACCOUNTS = {
   craftCogs: '5020',
   waste: '6080',
   cashOverShort: '7000',
+  owedByStaff: '1300',
+  shortagesCharged: '4910',
+  wages: '6100',
 } as const;
 const ACCOUNTS = BOOK_ACCOUNTS;
 
@@ -230,6 +233,39 @@ export function batchLines(b: { madeModule?: string; crossing: { module: string;
 }
 
 /**
+ * A count difference charged to a person: they owe it, and the business has
+ * recovered it. See staff-charges.ts.
+ */
+export function staffChargeLines(amount: number): BookLine[] {
+  if (!(amount > 0)) return [];
+  return [
+    { account_code: ACCOUNTS.owedByStaff, debit: amount, credit: 0, memo: 'Owed by staff' },
+    { account_code: ACCOUNTS.shortagesCharged, debit: 0, credit: amount, memo: 'Shortage charged to staff' },
+  ];
+}
+
+/**
+ * Something done about what somebody owes.
+ *
+ * Cash comes into the drawer; pay is part of their wage kept back; found or
+ * written off takes the recovery back out, because either nothing was lost
+ * after all or the business has decided to bear it.
+ */
+export function staffSettleLines(kind: string, amount: number): BookLine[] {
+  if (!(amount > 0)) return [];
+  const debit = kind === 'cash' ? ACCOUNTS.cash
+    : kind === 'pay' ? ACCOUNTS.wages
+      : ACCOUNTS.shortagesCharged;
+  const memo = kind === 'cash' ? 'Paid back in cash'
+    : kind === 'pay' ? 'Taken from pay'
+      : kind === 'found' ? 'Found on the shelf' : 'Written off';
+  return [
+    { account_code: debit, debit: amount, credit: 0, memo },
+    { account_code: ACCOUNTS.owedByStaff, debit: 0, credit: amount, memo: 'Owed by staff' },
+  ];
+}
+
+/**
  * The key an event's entry carries, so it is posted once however many times
  * the event arrives. The browser's corrections look entries up by the same
  * keys, so the two sides find each other's work.
@@ -239,4 +275,6 @@ export const BOOK_KEYS = {
   expense: (expenseId: string) => `expense:${expenseId}`,
   payout: (payoutId: string) => `payout:${payoutId}`,
   waste: (wasteId: string) => `waste:${wasteId}`,
+  staffCharge: (id: string) => `staffcharge:${id}`,
+  staffSettle: (id: string) => `staffsettle:${id}`,
 } as const;

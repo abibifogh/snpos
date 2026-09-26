@@ -279,7 +279,7 @@ test('the finding blocks while a bill can still be corrected, and says what it c
   const allPaid = healthFindings({ ...clean, sizesMispriced: f.sizesMispriced.filter((s) => s.paid) }, { money })
     .find((x) => x.key === 'sizes_mispriced');
   assert.equal(allPaid?.level, 'warn');
-  assert.match(allPaid?.detail ?? '', /nothing left to change; this is what it cost/);
+  assert.match(allPaid?.detail ?? '', /All of them are paid. Where the customers paid the size’s price, put the bills back/);
 });
 
 test('the server finds the same sizes from the same log', () => {

@@ -94,6 +94,16 @@ export const ACCOUNTS = {
   equipment: '1500',
   accumDepreciation: '1510',
   depreciation: '6060',
+  /**
+   * Count differences charged to staff. What they owe sits as an asset until
+   * it is paid, taken from pay, found or written off; charging them credits
+   * the recovery, and anything found or written off debits it back. The loss
+   * itself never reached the books — count corrections are not posted — so
+   * this pair is the whole of it. See staff-charges.ts.
+   */
+  owedByStaff: '1300',
+  shortagesCharged: '4910',
+  wages: '6100',
 } as const;
 
 /**

@@ -1,5 +1,6 @@
 import {
   ACCOUNTS, shiftEntries, takingsByKind, cashVarianceOf, payoutLines, wasteLines, batchLines, crossingFromStored,
+  staffChargeLines, staffSettleLines,
   debitsForSpend, spendPostingLines, sameDebits, parseLevies, splitTax, vatBpOf, makersShareOf, isLocked,
 } from './books.js';
 
@@ -454,6 +455,47 @@ export async function postBatchRow(ctx, batch) {
   }
 }
 
+/* --------------------------------------------------------- staff charges */
+
+/** A count difference charged to somebody, on the books. Keyed on the charge. */
+export async function postStaffChargeRow(ctx, charge) {
+  const venueId = charge.venue_id || 'main';
+  const lines = staffChargeLines(charge.amount || 0);
+  if (lines.length === 0) return { skipped: 'no value' };
+  const key = `staffcharge:${charge.$id}`;
+  if (await entryFor(ctx, venueId, key)) return { skipped: 'already posted' };
+  try {
+    const entry = await postEntry(ctx, {
+      venueId, date: charge.charged_at || charge.$createdAt, source: 'adjustment', sourceId: key,
+      memo: `Charged to ${charge.person_name || 'staff'}: ${charge.qty} ${charge.item_name || ''}`.trim(),
+      postedBy: charge.charged_by,
+    }, lines);
+    return { ok: true, posted: true, entryId: entry.$id };
+  } catch (e) {
+    if (e.locked) return { skipped: 'locked', through: e.through };
+    throw e;
+  }
+}
+
+/** Something done about a staff charge, on the books. Keyed on the settlement. */
+export async function postStaffSettleRow(ctx, row) {
+  const venueId = row.venue_id || 'main';
+  const lines = staffSettleLines(row.kind, row.amount || 0);
+  if (lines.length === 0) return { skipped: 'no value' };
+  const key = `staffsettle:${row.$id}`;
+  if (await entryFor(ctx, venueId, key)) return { skipped: 'already posted' };
+  try {
+    const entry = await postEntry(ctx, {
+      venueId, date: row.recorded_at || row.$createdAt, source: 'adjustment', sourceId: key,
+      shiftId: row.shift_id || '', memo: lines[0].memo, postedBy: row.recorded_by,
+    }, lines);
+    return { ok: true, posted: true, entryId: entry.$id };
+  } catch (e) {
+    if (e.locked) return { skipped: 'locked', through: e.through };
+    throw e;
+  }
+}
+
 /* ---------------------------------------------------------------- sweep */
 
 /**
@@ -467,7 +509,7 @@ export async function postBatchRow(ctx, batch) {
  */
 export async function sweepBooks(ctx, now = Date.now()) {
   const since = new Date(now - 7 * 86_400_000).toISOString();
-  const out = { shifts: 0, spends: 0, payouts: 0, waste: 0, batches: 0, locked: 0, errors: [] };
+  const out = { shifts: 0, spends: 0, payouts: 0, waste: 0, batches: 0, staff: 0, locked: 0, errors: [] };
 
   const attempt = async (kind, fn) => {
     try {
@@ -497,7 +539,14 @@ export async function sweepBooks(ctx, now = Date.now()) {
     await attempt('batches', () => postBatchRow(ctx, b));
   }
 
-  const filled = out.shifts + out.spends + out.payouts + out.waste + out.batches;
+  for (const c of await listAll(ctx, 'staff_charges', [ctx.Query.greaterThanEqual('$createdAt', since)]).catch(() => [])) {
+    await attempt('staff', () => postStaffChargeRow(ctx, c));
+  }
+  for (const r of await listAll(ctx, 'staff_charge_settlements', [ctx.Query.greaterThanEqual('$createdAt', since)]).catch(() => [])) {
+    await attempt('staff', () => postStaffSettleRow(ctx, r));
+  }
+
+  const filled = out.shifts + out.spends + out.payouts + out.waste + out.batches + out.staff;
   if (filled || out.errors.length) ctx.log(`Books sweep: filled ${filled}, locked ${out.locked}, errors ${out.errors.length}.`);
   return { ok: out.errors.length === 0, ...out };
 }
