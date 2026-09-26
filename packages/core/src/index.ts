@@ -86,6 +86,7 @@ export * from './till-charged';
 export * from './till-charged-apply';
 export * from './staff-charges';
 export * from './staff-charges-store';
+export * from './shelf-trail';
 export * from './push-device';
 export * from './batch-rules';
 export * from './pour-check';

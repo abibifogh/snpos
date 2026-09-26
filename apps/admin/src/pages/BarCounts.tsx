@@ -544,6 +544,7 @@ export function BarCountsPage() {
         userId: user?.$id ?? '',
       });
       await load();
+      void unpouredForShift('main', shift.$id, 'bar').then(setUnpoured).catch(() => undefined);
       /*
         WHAT WAS SKIPPED IS SAID, because silence here reads as success.
 
@@ -933,17 +934,31 @@ export function BarCountsPage() {
       */}
       {unpoured && unpoured.length > 0 && (
         <Card title="Sold, but nothing came off a shelf">
+          {/* Which shift this is about, and a way to open it. */}
+          {shift && (
+            <p className="small" style={{ marginTop: 0 }}>
+              On shift <strong>{shift.code}</strong>
+              {shift.opened_at ? `, opened ${dateTimeWords(shift.opened_at)}` : ''}
+              {' · '}<Link to={`/shifts?open=${shift.$id}`}>Open this shift</Link>
+            </p>
+          )}
           <Notice tone="warn">{unpouredSummary(unpoured)}</Notice>
           <div className="table-wrap">
             <table className="data">
               <thead>
-                <tr><th>What sold</th><th className="num">How many</th><th>Why nothing moved</th></tr>
+                <tr><th>What sold</th><th className="num">How many</th><th>On which bills</th><th>Why nothing moved</th></tr>
               </thead>
               <tbody>
                 {unpoured.map((u) => (
-                  <tr key={`${u.menuItemId}|${u.variantId ?? ''}`}>
+                  <tr key={`${u.menuItemId}|${u.variantId ?? ''}|${u.reason}`}>
                     <td style={{ fontWeight: 550 }}>{u.name}</td>
                     <td className="num"><Badge tone="danger">{u.qty}</Badge></td>
+                    <td className="small">
+                      {/* Each bill opens on Orders, searched for by its number. */}
+                      {u.orders.length === 0 ? '—' : u.orders.map((no, i) => (
+                        <span key={no}>{i > 0 && ', '}<Link to={`/orders?q=${encodeURIComponent(no)}`}>{no}</Link></span>
+                      ))}
+                    </td>
                     <td className="small dim">{unpouredWords(u.reason, u.name)}</td>
                   </tr>
                 ))}

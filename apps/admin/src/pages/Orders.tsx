@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, useToast,
   FilterBar, FilterField, Segmented, PickerMenu, PickerItem, FacetChips, GroupedRows, SortableTh,
@@ -153,7 +154,9 @@ export function OrdersPage() {
    * database by number across every date — because somebody searching for an
    * order number is almost by definition somebody who cannot date it.
    */
-  const [search, setSearch] = useState('');
+  // Opened from a link that names a bill (see Bar counts): search for it.
+  const [linkParams] = useSearchParams();
+  const [search, setSearch] = useState(() => linkParams.get('q') ?? '');
   const [side, setSide] = useState<Side>('all');
   /*
     Grouping and sorting, both stacked in the order they were chosen.

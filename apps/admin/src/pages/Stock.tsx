@@ -10,6 +10,7 @@ import {
   matches, sortStock, stockState, STOCK_SORTS, STOCK_STATES,
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, normaliseName, bpWords, dateWords } from '@snpos/core';
 import { SalesHistory } from '../components/SalesHistory';
+import { ShelfTrailModal } from '../components/ShelfTrail';
 import type {
   StockSort, StockState, Module, Ingredient, Recipe, MenuItem, Doc, Settings, PurchaseRow,
   GroupChoice, SortChoice,
@@ -185,6 +186,8 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
       : { title: 'Stock', add: 'Add ingredient' };
   /** The ingredient whose purchase history is being read. */
   const [historyFor, setHistoryFor] = useState<Ingredient | null>(null);
+  /** The item whose shelf figure is being traced. See ShelfTrailModal. */
+  const [trailFor, setTrailFor] = useState<Ingredient | null>(null);
   /**
    * Which ingredient's SALES history is open, as against its price history.
    *
@@ -782,6 +785,9 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
                           {/* Next to Edit, because "what has this been costing
                               me" is a question somebody has while looking at
                               the row, not one they go to another screen for. */}
+                          <Button size="sm" variant="ghost" onClick={() => setTrailFor(i)} title="Every movement behind the figure in stock">
+                            Shelf
+                          </Button>
                           <Button size="sm" variant="ghost" onClick={() => setHistoryFor(i)}>Prices</Button>
                           {/* And the other half of the same question: what has
                               been going OUT. An ingredient is never rung up
@@ -829,6 +835,10 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
           </div>
         )}
       </Card>
+      )}
+
+      {trailFor && (
+        <ShelfTrailModal ingredient={trailFor} unit={trailFor.unit} onClose={() => setTrailFor(null)} />
       )}
 
       {historyFor && settings && (

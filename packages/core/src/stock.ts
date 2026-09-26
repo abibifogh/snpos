@@ -27,6 +27,7 @@ import { weightedUnitCost } from './unit-cost';
 import { usedInputs, batchCost, batchUnitCost, batchQty, storedInputs } from './batch-rules';
 import type { BatchInput, PastBatch } from './batch-rules';
 import type { Doc } from './types';
+import type { TrailMove, TrailCheck } from './shelf-trail';
 import type { OrderItem } from './orders';
 
 export interface Ingredient extends Doc {
@@ -1027,13 +1028,14 @@ export async function unpouredForShift(
   shiftId: string,
   module: Module = 'bar',
 ): Promise<Unpoured[]> {
-  const orders = await listAll<{ $id: string; module?: string; status?: string }>('orders', [
+  const orders = await listAll<{ $id: string; order_no?: string; module?: string; status?: string; payment_status?: string }>('orders', [
     Query.equal('shift_id', shiftId),
   ]).catch(() => []);
   const mine = orders.filter(
     (o) => (o.module ?? 'kitchen') === module && !['CANCELLED', 'REJECTED'].includes(o.status ?? ''),
   );
   if (mine.length === 0) return [];
+  const orderNos = Object.fromEntries(mine.map((o) => [o.$id, o.order_no ?? '']));
 
   const [lines, recipes, items] = await Promise.all([
     listByIds<SoldRow>('order_items', 'order_id', mine.map((o) => o.$id)).catch(() => [] as SoldRow[]),
@@ -1041,7 +1043,59 @@ export async function unpouredForShift(
     listAll<SoldItem>('menu_items', [Query.equal('venue_id', venueId)]).catch(() => [] as SoldItem[]),
   ]);
 
-  return unpouredSales(lines, recipes as unknown as PourRule[], items);
+  /*
+    What actually came off, not only what should have. A read that fails
+    leaves this out, and only the links are checked: "the server missed it"
+    must never be said because a read did not come back.
+  */
+  const ids = lines.map((l) => l.$id ?? '').filter(Boolean);
+  const moves = ids.length
+    ? await listByIds<{ ref_id?: string; type?: string }>('stock_movements', 'ref_id', ids).catch(() => null)
+    : [];
+  const facts = moves === null ? undefined : {
+    poured: new Set(moves.filter((m) => m.type === 'sale_depletion').map((m) => m.ref_id ?? '')),
+    paidOrders: new Set(mine.filter((o) => o.payment_status === 'paid').map((o) => o.$id)),
+  };
+
+  return unpouredSales(lines, recipes as unknown as PourRule[], items, facts, orderNos);
+}
+
+/**
+ * Everything that made one shelf figure, for the last few weeks.
+ * See shelf-trail.ts for how it is laid out.
+ */
+export async function loadShelfTrail(venueId: string, ingredientId: string, sinceMs: number): Promise<{
+  moves: TrailMove[];
+  checks: TrailCheck[];
+  levels: Record<string, number>;
+  total: number;
+  placeNames: Record<string, string>;
+  shiftCodes: Record<string, string>;
+}> {
+  const since = new Date(sinceMs).toISOString();
+  const [moves, checks, levels, places, ing] = await Promise.all([
+    listAll<TrailMove>('stock_movements', [
+      Query.equal('ingredient_id', ingredientId), Query.greaterThanEqual('$createdAt', since),
+    ]),
+    listAll<TrailCheck>('shift_stock_checks', [
+      Query.equal('ingredient_id', ingredientId), Query.greaterThanEqual('$createdAt', since),
+    ]).catch(() => [] as TrailCheck[]),
+    listAll<LocationStock & Doc>('stock_levels', [Query.equal('ingredient_id', ingredientId)]).catch(() => []),
+    loadLocations(venueId),
+    db.getDocument(DB_ID, 'ingredients', ingredientId) as unknown as Promise<{ current_qty?: number }>,
+  ]);
+  const shiftIds = [...new Set(checks.map((c) => c.shift_id ?? '').filter((id) => id && !isStoreCount(id)))];
+  const shifts = shiftIds.length
+    ? await listByIds<{ $id: string; code?: string }>('shifts', '$id', shiftIds).catch(() => [])
+    : [];
+  return {
+    moves,
+    checks,
+    levels: Object.fromEntries(levels.map((l) => [l.location_id, l.qty])),
+    total: ing.current_qty ?? 0,
+    placeNames: Object.fromEntries(places.map((p) => [p.$id, p.name])),
+    shiftCodes: Object.fromEntries(shifts.map((s) => [s.$id, s.code ?? ''])),
+  };
 }
 
 /**
