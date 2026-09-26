@@ -52,6 +52,8 @@ export interface HealthFacts {
   ordersNotAddingUp: { orderNo: string; subtotal: number; lines: number }[];
   /** Orders with no lines on them. */
   ordersNoLines: { orderNo: string }[];
+  /** Lines sold as a size and rewritten by the server to the plain item's price. See sizesMispricedFrom. */
+  sizesMispriced: SizeMispriced[];
   /** Payouts recorded and never reaching the maker's ledger, or the books. */
   unledgeredPayouts: { reference: string; amount: number }[];
   unpostedPayouts: { reference: string; amount: number }[];
@@ -112,7 +114,84 @@ export const HEALTH_GRACE = {
   shiftHours: 24,
   /** The nightly job, silent. */
   jobHours: 36,
+  /** How far back to look for sizes charged at the plain item's price. */
+  sizeLookbackDays: 90,
 } as const;
+
+/** One line sold as a size and charged the plain item's price instead. */
+export interface SizeMispriced {
+  orderNo: string;
+  /** "Club · Large", as it was sold. */
+  name: string;
+  /** What the server wrote the line to. */
+  charged: number;
+  /** What the till had it at: the size's own price. */
+  shouldBe: number;
+  /** Paid already — nothing left to put right on the bill, only to know about. */
+  paid: boolean;
+}
+
+/**
+ * SIZES CHARGED AT THE PLAIN ITEM'S PRICE, found from the server's own record.
+ *
+ * Until the fix in reprice.js, the server re-priced every new order from the
+ * item alone and never read the size: a large Club rung up at GH₵30 was
+ * rewritten to GH₵25 a second later. Every such rewrite was logged, as
+ * "Club · Large: sent 3000, actual 2500", on an `order_price_corrected`
+ * entry — and that log, not today's menu, is the evidence. A size's price
+ * NOW is no guide to what it was, because a price changed since the sale
+ * would look exactly like this.
+ *
+ * Only lines that were sold as a size count. A correction to a plain item is
+ * the guard doing its job — a phone that claimed the wrong price — and has
+ * nothing to do with this. A line whose price somebody changed by hand at the
+ * till is left out too: that was a decision, not this fault.
+ *
+ * Pure.
+ */
+export function sizesMispricedFrom(input: {
+  audits: { entity_id?: string; after?: string }[];
+  lines: { order_id: string; name_snapshot?: string; variant_id?: string | null; list_price?: number | null; status?: string }[];
+  orders: { $id: string; order_no?: string; payment_status?: string; status?: string }[];
+}): SizeMispriced[] {
+  const orderById = new Map(input.orders.map((o) => [o.$id, o]));
+  const sized = new Set(
+    input.lines
+      .filter((l) => l.variant_id && l.status !== 'void' && typeof l.list_price !== 'number')
+      .map((l) => `${l.order_id}|${l.name_snapshot ?? ''}`),
+  );
+  const out: SizeMispriced[] = [];
+  const seen = new Set<string>();
+
+  for (const a of input.audits) {
+    const orderId = a.entity_id ?? '';
+    const order = orderById.get(orderId);
+    // A cancelled bill was never going to be collected; nothing was lost on it.
+    if (!order || order.status === 'CANCELLED' || order.status === 'REJECTED') continue;
+    let corrections: unknown = [];
+    try { corrections = (JSON.parse(a.after || '{}') as { corrections?: unknown }).corrections ?? []; } catch { corrections = []; }
+    if (!Array.isArray(corrections)) continue;
+
+    for (const c of corrections) {
+      const m = /^(.*): sent (-?\d+), actual (-?\d+)$/.exec(String(c));
+      if (!m) continue;
+      const [, name = '', sent, actual] = m;
+      const key = `${orderId}|${name}`;
+      if (!sized.has(key) || seen.has(key)) continue;
+      if (Number(sent) === Number(actual)) continue;
+      seen.add(key);
+      out.push({
+        orderNo: order.order_no ?? orderId,
+        name,
+        charged: Number(actual),
+        shouldBe: Number(sent),
+        paid: order.payment_status === 'paid',
+      });
+    }
+  }
+  // Still to be paid first: those are the ones that can still be put right.
+  return out.sort((x, y) => Number(x.paid) - Number(y.paid) || x.orderNo.localeCompare(y.orderNo));
+}
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const day = (iso: string) => (iso || '').slice(0, 10);
@@ -250,6 +329,35 @@ export function healthFindings(f: HealthFacts, w: HealthWords): HealthFinding[] 
       goto: '/orders', action: 'Open orders',
     }
     : none('orders_not_adding_up', 'Bills that do not add up to their items'));
+
+  /*
+    Sizes charged at the plain item's price. See sizesMispricedFrom.
+
+    A block while any of them is still unpaid, because that bill can still be
+    put right before the money is taken. Once they are all paid it is a
+    warning: there is nothing left to correct, but the figure is money the
+    business did not take (or took too much of) and somebody should know it.
+  */
+  const sizes = f.sizesMispriced;
+  const under = sizes.reduce((n, s) => n + Math.max(0, s.shouldBe - s.charged), 0);
+  const over = sizes.reduce((n, s) => n + Math.max(0, s.charged - s.shouldBe), 0);
+  const unpaidSizes = sizes.filter((s) => !s.paid);
+  out.push(sizes.length > 0
+    ? {
+      key: 'sizes_mispriced',
+      level: unpaidSizes.length > 0 ? 'block' : 'warn',
+      title: 'Sizes charged at the plain item’s price',
+      count: sizes.length,
+      detail: sizes.slice(0, 4).map((s) => `${s.orderNo} ${s.name} charged ${w.money(s.charged)}, should be ${w.money(s.shouldBe)}${s.paid ? ' (paid)' : ''}`).join('; ')
+        + (sizes.length > 4 ? '; …' : '')
+        + `. In the last ${HEALTH_GRACE.sizeLookbackDays} days: ${w.money(under)} undercharged`
+        + `${over > 0 ? ` and ${w.money(over)} overcharged` : ''}.`
+        + (unpaidSizes.length > 0
+          ? ` ${plural(unpaidSizes.length, 'bill is', 'bills are')} not paid yet — change the price on the till before it is.`
+          : ' All of them are paid, so there is nothing left to change; this is what it cost. Fixed for new orders.'),
+      goto: '/orders', action: 'Open orders',
+    }
+    : none('sizes_mispriced', 'Sizes charged at the plain item’s price'));
 
   out.push(f.ordersNoLines.length > 0
     ? {
