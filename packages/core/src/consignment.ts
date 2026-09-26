@@ -2,7 +2,7 @@ import { db, DB_ID, ID, Query, listAll, listByIds } from './client';
 import { rateFor, flatFor, splitSale } from './consignment-math';
 import type { LedgerKind } from './consignment-math';
 import type { Doc, Settings, MenuItem } from './types';
-import { differencesIn, summariseCount, MOVE_FOR_REASON } from './stocktake';
+import { differencesIn, summariseCount, MOVE_FOR_REASON, lineUndecided, countOutcome } from './stocktake';
 import type { CountLine, PendingCount, PendingCountLine } from './stocktake';
 import type { WaitingChange } from './shelf-approval';
 import { hasShelf } from './craft-services';
@@ -904,13 +904,17 @@ export async function approveCount(opts: {
   countId: string;
   reviewerId: string;
   note?: string;
+  /** Only these lines. Absent means every line still waiting. See countOutcome. */
+  lineIds?: string[];
 }): Promise<{ applied: number; failed: number }> {
   const lines = await countLines(opts.countId);
+  const chosen = opts.lineIds ? new Set(opts.lineIds) : null;
   let applied = 0;
   let failed = 0;
 
   for (const line of lines) {
-    if (line.applied) continue;
+    if (!lineUndecided(line)) continue;
+    if (chosen && !chosen.has(line.$id)) continue;
 
     const variant = line.variant_id
       ? await db.getDocument(DB_ID, 'product_variants', line.variant_id).catch(() => null)
@@ -947,16 +951,51 @@ export async function approveCount(opts: {
 
   // Left pending when anything failed, so it comes back to be finished rather
   // than being filed as done with half of it not done.
-  if (failed === 0) {
-    await db.updateDocument(DB_ID, 'stock_counts', opts.countId, {
-      status: 'approved',
-      reviewed_by: opts.reviewerId,
-      reviewed_at: new Date().toISOString(),
-      review_note: opts.note?.trim() ?? '',
-    });
-  }
+  if (failed === 0) await settleCount(opts.countId, opts.reviewerId, opts.note);
 
   return { applied, failed };
+}
+
+/**
+ * Refuse some of a count's lines and leave the rest waiting.
+ *
+ * The shelf is not touched for them. The count itself is only filed once
+ * every line has been decided one way or the other; see countOutcome.
+ */
+export async function refuseCountLines(opts: {
+  countId: string;
+  lineIds: string[];
+  reviewerId: string;
+}): Promise<number> {
+  const lines = await countLines(opts.countId);
+  const chosen = new Set(opts.lineIds);
+  let marked = 0;
+  for (const line of lines) {
+    if (!chosen.has(line.$id) || !lineUndecided(line)) continue;
+    await db.updateDocument(DB_ID, 'stock_count_lines', line.$id, { refused: true });
+    marked += 1;
+  }
+  if (marked === 0) throw new Error('That line has already been decided.');
+  await settleCount(opts.countId, opts.reviewerId);
+  return marked;
+}
+
+/**
+ * File the count as approved or refused once nothing on it is left to decide.
+ *
+ * Read again rather than worked out from what this call did: two admins
+ * deciding lines of the same count at once must both see the same ending.
+ */
+async function settleCount(countId: string, reviewerId: string, note?: string): Promise<void> {
+  const lines = await countLines(countId);
+  const outcome = countOutcome(lines);
+  if (outcome === 'open') return;
+  await db.updateDocument(DB_ID, 'stock_counts', countId, {
+    status: outcome,
+    reviewed_by: reviewerId,
+    reviewed_at: new Date().toISOString(),
+    review_note: note?.trim() ?? '',
+  });
 }
 
 /**

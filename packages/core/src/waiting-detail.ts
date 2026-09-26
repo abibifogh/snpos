@@ -1,6 +1,7 @@
 import { listAll, listByIds, Query, db, DB_ID } from './client';
 import { pendingBarChecks } from './stock';
 import { countLines } from './consignment';
+import { lineUndecided } from './stocktake';
 import { barReviewLines, shopReviewLines, spendReviewLines, linesAgainst } from './waiting-lines';
 import type { ReviewLine } from './waiting-lines';
 import type { WaitingRef } from './waiting';
@@ -55,8 +56,10 @@ export async function loadReview(ref: WaitingRef): Promise<Review> {
       // where six differ is a list of six things to think about, and putting
       // the other three hundred and ninety-four in front of somebody is how
       // the six get skimmed past.
-      lines: shopReviewLines(rows.filter((r) => r.delta !== 0)),
-      empty: 'Nothing on this count differs from what the shelf expected.',
+      // And only the ones nobody has decided yet, so a count half done
+      // shows what is left of it rather than everything it started with.
+      lines: shopReviewLines(rows.filter((r) => r.delta !== 0 && lineUndecided(r))),
+      empty: 'Every line on this count has already been dealt with.',
     };
   }
 

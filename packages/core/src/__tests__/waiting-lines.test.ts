@@ -88,3 +88,12 @@ test('nothing itemised is nought, not a false accusation', () => {
   assert.equal(none.total, 0);
   assert.equal(none.agrees, true);
 });
+
+test('each count line carries its row, so it can be decided on its own', () => {
+  const [bar] = barReviewLines([{ $id: 'row-1', ingredient_id: 'gin', variance_qty: -1, variance_value: -1_200 }], () => 'Gin');
+  assert.equal(bar?.id, 'row-1');
+  const [shop] = shopReviewLines([{ $id: 'row-2', name_snapshot: 'Basket', expected: 5, counted: 4, delta: -1, unit_price: 1_000 }]);
+  assert.equal(shop?.id, 'row-2');
+  // A spend's lines are decided together and carry no row.
+  assert.equal(spendReviewLines([{ name_snapshot: 'Rice', qty: 1, unit_cost: 100 }])[0]?.id, undefined);
+});

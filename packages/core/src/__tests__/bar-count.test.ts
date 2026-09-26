@@ -561,7 +561,7 @@ test('a manager may spot-check the bar with no shift open', () => {
 
 import {
   movesOnItsOwn, isPending, hasMoved, countState, countStateLabel, approveDeltas, heldWords,
-  storeCountId, isStoreCount,
+  storeCountId, isStoreCount, refuseLines, anyMoved,
 } from '../bar-count.ts';
 
 const line = (over: Record<string, unknown> = {}): FiledCheck => ({
@@ -662,4 +662,53 @@ test('a store room count is named by its room and told apart from a shift', () =
   assert.equal(storeCountId('room1'), 'store:room1');
   assert.equal(isStoreCount('store:room1'), true);
   assert.equal(isStoreCount('BAR20260901-abcd'), false);
+});
+
+test('a count can be decided one line at a time', () => {
+  /*
+    Five differences, four plainly right and one bottle counted in the wrong
+    row. All or nothing meant moving the shelf by a mistake or losing four
+    good corrections. Now each line is its own decision.
+  */
+  const [count] = filedCounts([
+    line({ $id: 'chips', ingredient_id: 'chips', applied: false, variance_qty: 10 }),
+    line({ $id: 'sobolo', ingredient_id: 'sobolo', applied: false, variance_qty: 14 }),
+    line({ $id: 'club', ingredient_id: 'club', applied: false, variance_qty: -6 }),
+  ]);
+  assert.deepEqual(approveDeltas(count, ['chips']), [{ checkId: 'chips', ingredientId: 'chips', delta: 10 }]);
+  assert.deepEqual(refuseLines(count, ['sobolo']).map((l) => l.$id), ['sobolo']);
+  // Nothing named means everything still waiting, as before.
+  assert.equal(approveDeltas(count).length, 3);
+  assert.equal(refuseLines(count).length, 3);
+  // A line already decided is not decided again.
+  const [later] = filedCounts([line({ $id: 'chips', applied: true, variance_qty: 10 })]);
+  assert.deepEqual(approveDeltas(later, ['chips']), []);
+  assert.deepEqual(refuseLines(later, ['chips']), []);
+});
+
+test('a count half agreed with reads as applied, not refused', () => {
+  const at = '2026-09-26T10:00:00.000Z';
+  const mixed = filedCounts([
+    line({ $id: 'a', applied: true, approved_at: at, variance_qty: 10 }),
+    line({ $id: 'b', ingredient_id: 'ing2', applied: false, rejected_at: at, variance_qty: 14 }),
+  ])[0]!;
+  assert.equal(anyMoved(mixed), true);
+  assert.equal(countState(mixed), 'applied');
+  // The shelf moved for one line, so that one can be put back.
+  assert.equal(undoProblem(mixed), null);
+
+  // One refused and one still waiting is still waiting.
+  const half = filedCounts([
+    line({ $id: 'a', applied: false, variance_qty: 10 }),
+    line({ $id: 'b', ingredient_id: 'ing2', applied: false, rejected_at: at, variance_qty: 14 }),
+  ])[0]!;
+  assert.equal(countState(half), 'pending');
+
+  // Every difference refused is a refused count, whatever else matched.
+  const none = filedCounts([
+    line({ $id: 'a', applied: false, rejected_at: at, variance_qty: 10 }),
+    line({ $id: 'b', ingredient_id: 'ing2', variance_qty: 0, variance_value: 0 }),
+  ])[0]!;
+  assert.equal(countState(none), 'rejected');
+  assert.match(undoProblem(none) ?? '', /refused/);
 });

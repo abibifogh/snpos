@@ -15,6 +15,11 @@
  */
 
 export interface ReviewLine {
+  /**
+   * The stored row, so this one line can be approved or refused on its own.
+   * Absent on a spend's lines, which are decided together.
+   */
+  id?: string;
   /** What it is. */
   name: string;
   /** A size, a maker, a reason: anything that belongs under the name. */
@@ -37,6 +42,7 @@ export const worstFirst = (lines: ReviewLine[]): ReviewLine[] =>
 /* ------------------------------------------------------------ bar counts */
 
 export interface BarCheckRow {
+  $id?: string;
   ingredient_id: string;
   counted_qty?: number;
   theoretical_qty?: number;
@@ -57,6 +63,7 @@ export function barReviewLines(
   nameOf: (ingredientId: string) => string,
 ): ReviewLine[] {
   return worstFirst(checks.map((c) => ({
+    id: c.$id,
     name: nameOf(c.ingredient_id) || 'Something no longer on the list',
     expected: c.theoretical_qty ?? 0,
     counted: c.counted_qty ?? 0,
@@ -68,6 +75,7 @@ export function barReviewLines(
 /* ----------------------------------------------------------- shop counts */
 
 export interface ShopCountRow {
+  $id?: string;
   name_snapshot: string;
   variant_label?: string;
   consignor_name?: string;
@@ -88,6 +96,7 @@ export const REASON_WORDS: Record<string, string> = {
 
 export function shopReviewLines(rows: ShopCountRow[]): ReviewLine[] {
   return worstFirst(rows.map((r) => ({
+    id: r.$id,
     name: r.name_snapshot,
     note: [
       r.variant_label,

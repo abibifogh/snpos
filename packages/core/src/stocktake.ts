@@ -320,6 +320,26 @@ export interface PendingCountLine {
   reason: CountReason;
   unit_price: number;
   applied?: boolean;
+  /** Looked at and refused, on its own. The shelf was never moved for it. */
+  refused?: boolean;
+}
+
+/** A line nobody has agreed with or refused yet. */
+export const lineUndecided = (l: Pick<PendingCountLine, 'applied' | 'refused'>): boolean =>
+  !l.applied && !l.refused;
+
+/**
+ * Where a count stands once its lines are decided one at a time.
+ *
+ * Only the differences are stored as lines, so every line is one somebody has
+ * to agree with or refuse. Open while any is left; approved once the shelf
+ * moved for any of them; refused only when every one was refused.
+ */
+export function countOutcome(
+  lines: Pick<PendingCountLine, 'applied' | 'refused'>[],
+): 'open' | 'approved' | 'rejected' {
+  if (lines.some(lineUndecided)) return 'open';
+  return lines.some((l) => l.refused) && !lines.some((l) => l.applied) ? 'rejected' : 'approved';
 }
 
 /**
