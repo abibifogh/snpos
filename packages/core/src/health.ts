@@ -3,7 +3,7 @@ import { hanging } from './ledger';
 import type { JournalEntry, JournalLine } from './ledger';
 import { schemaState } from './schema-status';
 import { SCHEMA_VERSION } from './schema-version';
-import { HEALTH_GRACE } from './health-rules';
+import { HEALTH_GRACE, sizesMispricedFrom } from './health-rules';
 import type { HealthFacts } from './health-rules';
 import { isLivePayment } from './shift-rules';
 
@@ -170,6 +170,27 @@ export async function healthFacts(venueId: string, now: Date = new Date()): Prom
       && (soldOn.get(o.$id) ?? 0) !== o.subtotal)
     .map((o) => ({ orderNo: o.order_no, subtotal: o.subtotal ?? 0, lines: soldOn.get(o.$id) ?? 0 }));
 
+  /*
+    Sizes charged at the plain item's price, from the server's own log of
+    every price it rewrote. Further back than a week, because the fault ran
+    for as long as sizes have been sold, and only the orders it touched are
+    read — the log names them. See sizesMispricedFrom.
+  */
+  const audits = await listAll<{ entity_id?: string; after?: string }>('audit_log', [
+    Query.equal('action', 'order_price_corrected'),
+    Query.equal('venue_id', venueId),
+    Query.greaterThanEqual('$createdAt', ago(HEALTH_GRACE.sizeLookbackDays * 24)),
+  ]).catch(() => []);
+  const corrected = [...new Set(audits.map((a) => a.entity_id ?? '').filter(Boolean))];
+  const [sizeLines, sizeOrders] = await Promise.all([
+    listByIds<{ order_id: string; name_snapshot?: string; variant_id?: string; list_price?: number; status?: string }>(
+      'order_items', 'order_id', corrected,
+    ).catch(() => []),
+    listByIds<{ $id: string; order_no?: string; payment_status?: string; status?: string }>('orders', '$id', corrected)
+      .catch(() => []),
+  ]);
+  const sizesMispriced = sizesMispricedFrom({ audits, lines: sizeLines, orders: sizeOrders });
+
   // --- payouts and waste
   const recorded = payouts.filter((p) => p.status === 'recorded' && olderThan(p.$createdAt, 1));
   const ledger = await listByIds<{ payout_id: string }>('consignor_ledger', 'payout_id', recorded.map((p) => p.$id)).catch(() => []);
@@ -198,6 +219,7 @@ export async function healthFacts(venueId: string, now: Date = new Date()): Prom
     settledOnPaper,
     ordersNoLines,
     ordersNotAddingUp,
+    sizesMispriced,
     unledgeredPayouts,
     unpostedPayouts,
     unpostedWaste,

@@ -14,7 +14,56 @@
  */
 
 /** Mirrors HEALTH_GRACE in packages/core/src/health-rules.ts. */
-export const HEALTH_GRACE = { postingHours: 2, spendDays: 3, countDays: 7, shiftHours: 24, jobHours: 36 };
+export const HEALTH_GRACE = {
+  postingHours: 2, spendDays: 3, countDays: 7, shiftHours: 24, jobHours: 36, sizeLookbackDays: 90,
+};
+
+/**
+ * Mirrors sizesMispricedFrom in packages/core/src/health-rules.ts: lines sold
+ * as a size that the server rewrote to the plain item's price, read from its
+ * own log of every rewrite. See there for why the log and not today's menu.
+ */
+/**
+ * @param {object} input
+ * @param {Array<{ entity_id?: string, after?: string }>} [input.audits]
+ * @param {Array<Record<string, any>>} [input.lines]
+ * @param {Array<Record<string, any>>} [input.orders]
+ */
+export function sizesMispricedFrom({ audits = [], lines = [], orders = [] }) {
+  const orderById = new Map(orders.map((o) => [o.$id, o]));
+  const sized = new Set(
+    lines
+      .filter((l) => l.variant_id && l.status !== 'void' && typeof l.list_price !== 'number')
+      .map((l) => `${l.order_id}|${l.name_snapshot ?? ''}`),
+  );
+  const out = [];
+  const seen = new Set();
+  for (const a of audits) {
+    const orderId = a.entity_id ?? '';
+    const order = orderById.get(orderId);
+    if (!order || order.status === 'CANCELLED' || order.status === 'REJECTED') continue;
+    let corrections = [];
+    try { corrections = JSON.parse(a.after || '{}').corrections ?? []; } catch { corrections = []; }
+    if (!Array.isArray(corrections)) continue;
+    for (const c of corrections) {
+      const m = /^(.*): sent (-?\d+), actual (-?\d+)$/.exec(String(c));
+      if (!m) continue;
+      const [, name = '', sent, actual] = m;
+      const key = `${orderId}|${name}`;
+      if (!sized.has(key) || seen.has(key)) continue;
+      if (Number(sent) === Number(actual)) continue;
+      seen.add(key);
+      out.push({
+        orderNo: order.order_no ?? orderId,
+        name,
+        charged: Number(actual),
+        shouldBe: Number(sent),
+        paid: order.payment_status === 'paid',
+      });
+    }
+  }
+  return out.sort((x, y) => Number(x.paid) - Number(y.paid) || x.orderNo.localeCompare(y.orderNo));
+}
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const day = (iso) => (iso || '').slice(0, 10);
@@ -142,6 +191,28 @@ export function healthFindings(f, w) {
       goto: '/orders', action: 'Open orders',
     }
     : none('orders_not_adding_up', 'Bills that do not add up to their items'));
+
+  // Sizes charged at the plain item's price. Mirrors health-rules.ts.
+  const sizes = f.sizesMispriced || [];
+  const under = sizes.reduce((n, s) => n + Math.max(0, s.shouldBe - s.charged), 0);
+  const over = sizes.reduce((n, s) => n + Math.max(0, s.charged - s.shouldBe), 0);
+  const unpaidSizes = sizes.filter((s) => !s.paid);
+  out.push(sizes.length > 0
+    ? {
+      key: 'sizes_mispriced',
+      level: unpaidSizes.length > 0 ? 'block' : 'warn',
+      title: 'Sizes charged at the plain item’s price',
+      count: sizes.length,
+      detail: sizes.slice(0, 4).map((s) => `${s.orderNo} ${s.name} charged ${w.money(s.charged)}, should be ${w.money(s.shouldBe)}${s.paid ? ' (paid)' : ''}`).join('; ')
+        + (sizes.length > 4 ? '; …' : '')
+        + `. In the last ${HEALTH_GRACE.sizeLookbackDays} days: ${w.money(under)} undercharged`
+        + `${over > 0 ? ` and ${w.money(over)} overcharged` : ''}.`
+        + (unpaidSizes.length > 0
+          ? ` ${plural(unpaidSizes.length, 'bill is', 'bills are')} not paid yet — change the price on the till before it is.`
+          : ' All of them are paid, so there is nothing left to change; this is what it cost. Fixed for new orders.'),
+      goto: '/orders', action: 'Open orders',
+    }
+    : none('sizes_mispriced', 'Sizes charged at the plain item’s price'));
 
   out.push(f.ordersNoLines.length > 0
     ? {
@@ -363,6 +434,19 @@ export async function healthFacts(ctx, venueId, now = new Date()) {
       && (soldOn.get(o.$id) ?? 0) !== o.subtotal)
     .map((o) => ({ orderNo: o.order_no, subtotal: o.subtotal ?? 0, lines: soldOn.get(o.$id) ?? 0 }));
 
+  // Sizes charged at the plain item's price. Mirrors packages/core/src/health.ts.
+  const audits = await listAll(ctx, 'audit_log', [
+    Q.equal('action', 'order_price_corrected'),
+    Q.equal('venue_id', venueId),
+    Q.greaterThanEqual('$createdAt', ago(HEALTH_GRACE.sizeLookbackDays * 24)),
+  ]).catch(() => []);
+  const corrected = [...new Set(audits.map((a) => a.entity_id ?? '').filter(Boolean))];
+  const [sizeLines, sizeOrders] = await Promise.all([
+    listByIds(ctx, 'order_items', 'order_id', corrected).catch(() => []),
+    listByIds(ctx, 'orders', '$id', corrected).catch(() => []),
+  ]);
+  const sizesMispriced = sizesMispricedFrom({ audits, lines: sizeLines, orders: sizeOrders });
+
   const recorded = payouts.filter((p) => p.status === 'recorded' && olderThan(p.$createdAt, 1));
   const ledger = await listByIds(ctx, 'consignor_ledger', 'payout_id', recorded.map((p) => p.$id)).catch(() => []);
   const ledgered = new Set(ledger.map((l) => l.payout_id));
@@ -389,6 +473,7 @@ export async function healthFacts(ctx, venueId, now = new Date()) {
     settledOnPaper,
     ordersNoLines,
     ordersNotAddingUp,
+    sizesMispriced,
     unledgeredPayouts,
     unpostedPayouts,
     unpostedWaste,

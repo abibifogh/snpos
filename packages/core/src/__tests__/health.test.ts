@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { healthFindings, healthSummary, HEALTH_GRACE } from '../health-rules.ts';
+import { healthFindings, healthSummary, HEALTH_GRACE, sizesMispricedFrom } from '../health-rules.ts';
 import type { HealthFacts } from '../health-rules.ts';
 import * as server from '../../../../functions/notify/src/health.js';
 
@@ -22,6 +22,7 @@ const clean: HealthFacts = {
   overpaidOrders: [],
   settledOnPaper: [],
   ordersNotAddingUp: [],
+  sizesMispriced: [],
   ordersNoLines: [],
   unledgeredPayouts: [],
   unpostedPayouts: [],
@@ -42,7 +43,7 @@ test('a clean night is every question answered "None" and nothing to fix', () =>
   assert.ok(findings.every((f) => f.level === 'ok'), findings.filter((f) => f.level !== 'ok').map((f) => f.key).join(','));
   assert.deepEqual(healthSummary(findings), { blocks: 0, warns: 0, words: 'Everything adds up.' });
   // Every question is asked every time, so the page can show what was checked.
-  assert.equal(findings.length, 22);
+  assert.equal(findings.length, 23);
 });
 
 test('what stops the books being trusted is a block; what is waiting on somebody is a warning', () => {
@@ -126,6 +127,10 @@ test('the nightly check asks the same questions and gives the same answers', () 
       halfCounts: [{ id: 'c1', countedAt: '2026-09-02T10:00:00Z', applied: 3, lines: 9 }],
       paidOrdersNoPayment: [{ orderNo: 'ORD-1', total: 100 }, { orderNo: 'ORD-2', total: 200 }, { orderNo: 'ORD-3', total: 300 }, { orderNo: 'ORD-4', total: 400 }, { orderNo: 'ORD-5', total: 500 }],
       ordersNoLines: [{ orderNo: 'ORD-9' }],
+      sizesMispriced: [
+        { orderNo: 'ORD1090', name: 'Club · Large', charged: 2_500, shouldBe: 3_000, paid: false },
+        { orderNo: 'ORD1001', name: 'Club · Small', charged: 2_500, shouldBe: 2_000, paid: true },
+      ],
       unledgeredPayouts: [{ reference: 'PAY-1', amount: 5 }],
       unpostedPayouts: [{ reference: 'PAY-2', amount: 6 }],
       unpostedWaste: 2,
@@ -169,4 +174,115 @@ test('a bill paid more than once stops the books being trusted', () => {
 
   // And a clean night says so rather than staying silent.
   assert.equal(healthFindings(clean, { money }).find((x) => x.key === 'orders_overpaid')?.level, 'ok');
+});
+
+/* ------------------------------------------- sizes charged at the item's price */
+
+/** The server's log entry for one order, as order-guard writes it. */
+const audit = (orderId: string, orderNo: string, corrections: string[]) => ({
+  entity_id: orderId, after: JSON.stringify({ order_no: orderNo, corrections }),
+});
+
+test('a size rewritten to the plain item\'s price is found from the server\'s own log', () => {
+  /*
+    ORD1090: Club is GH₵25, a large Club GH₵30. The till sent 3000; the server
+    wrote 2500 and logged it. The log, not today's menu, is the evidence — a
+    size whose price changed since the sale would look exactly like this.
+  */
+  const found = sizesMispricedFrom({
+    audits: [audit('o1', 'ORD1090', ['Club · Large: sent 3000, actual 2500'])],
+    lines: [{ order_id: 'o1', name_snapshot: 'Club · Large', variant_id: 'v-large' }],
+    orders: [{ $id: 'o1', order_no: 'ORD1090', payment_status: 'unpaid', status: 'PENDING' }],
+  });
+  assert.deepEqual(found, [{ orderNo: 'ORD1090', name: 'Club · Large', charged: 2_500, shouldBe: 3_000, paid: false }]);
+});
+
+test('a correction to a plain item is the guard doing its job, not this fault', () => {
+  // A phone that claimed the wrong price for an unsized dish was right to be
+  // corrected. Only lines sold as a size count here.
+  const found = sizesMispricedFrom({
+    audits: [audit('o1', 'ORD1', ['Kelewele: sent 100, actual 4000'])],
+    lines: [{ order_id: 'o1', name_snapshot: 'Kelewele' }],
+    orders: [{ $id: 'o1', order_no: 'ORD1', payment_status: 'paid' }],
+  });
+  assert.deepEqual(found, []);
+});
+
+test('a price somebody changed by hand, and a cancelled bill, are left out', () => {
+  const found = sizesMispricedFrom({
+    audits: [
+      audit('o1', 'ORD1', ['Club · Large: sent 3000, actual 2500']),
+      audit('o2', 'ORD2', ['Club · Large: sent 3000, actual 2500']),
+    ],
+    lines: [
+      { order_id: 'o1', name_snapshot: 'Club · Large', variant_id: 'v', list_price: 3_000 },
+      { order_id: 'o2', name_snapshot: 'Club · Large', variant_id: 'v' },
+    ],
+    orders: [
+      { $id: 'o1', order_no: 'ORD1', payment_status: 'paid' },
+      { $id: 'o2', order_no: 'ORD2', payment_status: 'unpaid', status: 'CANCELLED' },
+    ],
+  });
+  assert.deepEqual(found, []);
+});
+
+test('the unpaid ones come first, because they can still be put right', () => {
+  const found = sizesMispricedFrom({
+    audits: [
+      audit('o1', 'ORD1', ['Club · Large: sent 3000, actual 2500']),
+      audit('o2', 'ORD2', ['Club · Large: sent 3000, actual 2500']),
+    ],
+    lines: [
+      { order_id: 'o1', name_snapshot: 'Club · Large', variant_id: 'v' },
+      { order_id: 'o2', name_snapshot: 'Club · Large', variant_id: 'v' },
+    ],
+    orders: [
+      { $id: 'o1', order_no: 'ORD1', payment_status: 'paid' },
+      { $id: 'o2', order_no: 'ORD2', payment_status: 'unpaid' },
+    ],
+  });
+  assert.deepEqual(found.map((f) => f.orderNo), ['ORD2', 'ORD1']);
+});
+
+test('a log that cannot be read is skipped, not a crash', () => {
+  assert.deepEqual(sizesMispricedFrom({
+    audits: [{ entity_id: 'o1', after: 'not json' }, { entity_id: 'o1', after: '{"corrections":"x"}' }],
+    lines: [], orders: [{ $id: 'o1', order_no: 'ORD1' }],
+  }), []);
+});
+
+test('the finding blocks while a bill can still be corrected, and says what it cost', () => {
+  const f = { ...clean, sizesMispriced: [
+    { orderNo: 'ORD1090', name: 'Club · Large', charged: 2_500, shouldBe: 3_000, paid: false },
+    { orderNo: 'ORD1001', name: 'Club · Large', charged: 2_500, shouldBe: 3_000, paid: true },
+    { orderNo: 'ORD1002', name: 'Club · Small', charged: 2_500, shouldBe: 2_000, paid: true },
+  ] };
+  const sizes = healthFindings(f, { money }).find((x) => x.key === 'sizes_mispriced');
+  assert.equal(sizes?.level, 'block');
+  assert.equal(sizes?.count, 3);
+  assert.match(sizes?.detail ?? '', /ORD1090 Club · Large charged GH₵25\.00, should be GH₵30\.00/);
+  assert.match(sizes?.detail ?? '', /GH₵10\.00 undercharged and GH₵5\.00 overcharged/);
+  assert.match(sizes?.detail ?? '', /1 bill is not paid yet — change the price on the till/);
+
+  // All paid: nothing left to correct, so a warning, and it says so.
+  const allPaid = healthFindings({ ...clean, sizesMispriced: f.sizesMispriced.filter((s) => s.paid) }, { money })
+    .find((x) => x.key === 'sizes_mispriced');
+  assert.equal(allPaid?.level, 'warn');
+  assert.match(allPaid?.detail ?? '', /nothing left to change; this is what it cost/);
+});
+
+test('the server finds the same sizes from the same log', () => {
+  const input = {
+    audits: [
+      audit('o1', 'ORD1', ['Club · Large: sent 3000, actual 2500', 'Kelewele: sent 1, actual 2']),
+      audit('o2', 'ORD2', ['Basket · Indigo: sent 9000, actual 8000']),
+    ],
+    lines: [
+      { order_id: 'o1', name_snapshot: 'Club · Large', variant_id: 'v' },
+      { order_id: 'o1', name_snapshot: 'Kelewele' },
+      { order_id: 'o2', name_snapshot: 'Basket · Indigo', variant_id: 'w' },
+    ],
+    orders: [{ $id: 'o1', order_no: 'ORD1', payment_status: 'paid' }, { $id: 'o2', order_no: 'ORD2' }],
+  };
+  assert.deepEqual(server.sizesMispricedFrom(input), sizesMispricedFrom(input));
 });
