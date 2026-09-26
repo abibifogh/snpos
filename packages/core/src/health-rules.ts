@@ -353,7 +353,7 @@ export function healthFindings(f: HealthFacts, w: HealthWords): HealthFinding[] 
         + `. In the last ${HEALTH_GRACE.sizeLookbackDays} days: ${w.money(under)} undercharged`
         + `${over > 0 ? ` and ${w.money(over)} overcharged` : ''}.`
         + (unpaidSizes.length > 0
-          ? ` ${plural(unpaidSizes.length, 'bill is', 'bills are')} not paid yet — change the price on the till before it is.`
+          ? ` ${plural(unpaidSizes.length, 'bill is', 'bills are')} not paid yet: cancel each from its details on Orders and ring it up again, which now charges the size's price.`
           : ' All of them are paid, so there is nothing left to change; this is what it cost. Fixed for new orders.'),
       goto: '/orders', action: 'Open orders',
     }

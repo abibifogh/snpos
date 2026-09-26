@@ -262,7 +262,9 @@ test('the finding blocks while a bill can still be corrected, and says what it c
   assert.equal(sizes?.count, 3);
   assert.match(sizes?.detail ?? '', /ORD1090 Club · Large charged GH₵25\.00, should be GH₵30\.00/);
   assert.match(sizes?.detail ?? '', /GH₵10\.00 undercharged and GH₵5\.00 overcharged/);
-  assert.match(sizes?.detail ?? '', /1 bill is not paid yet — change the price on the till/);
+  // Cancel and ring up again: the till cannot change the price of an order
+  // already placed, only of a basket before it is sent.
+  assert.match(sizes?.detail ?? '', /1 bill is not paid yet: cancel each from its details on Orders and ring it up again/);
 
   // All paid: nothing left to correct, so a warning, and it says so.
   const allPaid = healthFindings({ ...clean, sizesMispriced: f.sizesMispriced.filter((s) => s.paid) }, { money })
