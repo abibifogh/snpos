@@ -14,7 +14,7 @@ import { MODULE_LABELS } from './access';
 import type { Module } from './access';
 import {
   shiftAge, shiftCode, mustWaitForNextShift, openShiftsFor, blockerFor, SHIFT_MAX_HOURS, carryOverFloats,
-  lastForSide, resendProblem,
+  lastForSide, resendProblem, takesPayment,
 } from './shift-rules';
 import { lockedProblem, sealProblem, isSealed } from './shift-lock';
 import { belongsToShift, shiftsOnDay, backdatedWindow } from './shift-move';
@@ -82,8 +82,8 @@ export interface ShiftPayment extends Doc {
  */
 export const loadPaymentMethods = async (venueId: string): Promise<PaymentMethod[]> =>
   (await listAll<PaymentMethod>('payment_methods', [Query.equal('venue_id', venueId)]))
-    .filter((m) => m.enabled)
-    .filter((m) => (m as { payouts_only?: boolean }).payouts_only !== true);
+    // One rule for every screen that takes money. See takesPayment.
+    .filter((m) => takesPayment(m as { enabled?: boolean; payouts_only?: boolean }));
 
 /**
  * The ways money can go OUT, which is a longer list than the ways it comes in.

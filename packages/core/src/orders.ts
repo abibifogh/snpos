@@ -37,6 +37,7 @@ import { correctPourFor } from './stock';
 import type { CartLine } from './pricing';
 import type { Settings, Doc } from './types';
 import type { Module } from './access';
+import type { SizePriceFix } from './size-price';
 
 export type OrderStatus =
   | 'SCHEDULED' | 'PENDING' | 'ACCEPTED' | 'PREPARING' | 'READY' | 'SERVED' | 'CLOSED' | 'REJECTED' | 'CANCELLED';
@@ -1439,6 +1440,41 @@ export async function applyQuantityCorrection(input: {
     })
     .catch(() => undefined);
 
+  return totals;
+}
+
+/**
+ * Put the size's price back on the lines the server rewrote, on an unpaid bill.
+ *
+ * See size-price.ts for which lines and why. The lines first, then the totals
+ * through the same recompute every other correction uses, then the log — the
+ * last because the bill is right without it, and it carries every line that
+ * moved for whoever asks in a fortnight.
+ */
+export async function applySizePriceCorrection(input: {
+  order: Pick<Order, '$id' | 'venue_id' | 'order_no' | 'subtotal' | 'total' | 'discount_total'> & { payment_status?: string };
+  fixes: SizePriceFix[];
+  settings: Settings;
+  actor: { id: string; role: string };
+}): Promise<{ from: number; to: number } | null> {
+  if (input.fixes.length === 0) return null;
+  for (const f of input.fixes) {
+    await db.updateDocument(DB_ID, 'order_items', f.lineId, { unit_price: f.toUnit, line_total: f.toTotal });
+  }
+  const totals = await recomputeOrderTotals(input.order, input.settings);
+  await db
+    .createDocument(DB_ID, 'audit_log', ID.unique(), {
+      venue_id: input.order.venue_id,
+      actor_id: input.actor.id,
+      actor_role: input.actor.role,
+      action: 'order_size_price_restored',
+      entity_type: 'orders',
+      entity_id: input.order.$id,
+      before: JSON.stringify({ lines: input.fixes.map((f) => ({ id: f.lineId, name: f.name, line_total: f.fromTotal })), total: input.order.total }),
+      after: JSON.stringify({ lines: input.fixes.map((f) => ({ id: f.lineId, name: f.name, line_total: f.toTotal })), total: totals?.to ?? input.order.total }),
+      reason: 'Size charged at the plain item\'s price by the server; put back to the size\'s price',
+    })
+    .catch(() => undefined);
   return totals;
 }
 

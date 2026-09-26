@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Button, Spinner, Card, Field, Input, Notice, useToast, Logo, HelpModal, EightySixModal,
+  Button, Spinner, Card, Field, Input, Notice, useToast, Logo, HelpModal, EightySixModal, Modal, Badge,
   OfflineBar, SchemaBar, StaleBar, useOfflineQueue, IdleScreen, ThemeButton,
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
@@ -14,6 +14,7 @@ import {
   lockKey, lockProblem, unlockers, subscribeCollection, wakesScreen, latestMovement,
   catalogueStamp, catalogueMoved, worthLooking, CATALOGUE_COLLECTIONS, SETTLE_MS, LOOK_EVERY_MS,
   probeAppwrite, appwriteHost, diagnose, reachWords, reachLabel, isOursToFix,
+  unpaidBillsFor, withBill, billPlace, billWho, unpaidWords, formatMoney, dateTimeWords,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc, Module, Unlocker, Order,
@@ -543,6 +544,44 @@ export function App() {
   const [offBusy, setOffBusy] = useState<string | null>(null);
 
   /**
+   * Every bill on this side still owed on, from every till. See unpaid-bills.ts.
+   *
+   * Nobody parks anything: a sale sent and not paid is on this list because it
+   * is unpaid, and paying it anywhere takes it off everywhere.
+   */
+  const [unpaid, setUnpaid] = useState<Order[]>([]);
+  const [tableLabels, setTableLabels] = useState<Record<string, string>>({});
+  const [tableRows, setTableRows] = useState<TableRow[]>([]);
+  const [showUnpaid, setShowUnpaid] = useState(false);
+  /** The one bill a cashier picked from that list to take the money for. */
+  const [payingBill, setPayingBill] = useState<Order | null>(null);
+  const sideNow = ctx?.module;
+
+  useEffect(() => {
+    if (!venueId || !sideNow) return;
+    let live = true;
+    void (async () => {
+      const [rows, tables] = await Promise.all([
+        listAll<Order>('orders', [
+          Query.equal('venue_id', venueId),
+          Query.equal('payment_status', ['unpaid', 'partial']),
+        ]).catch(() => null),
+        listAll<TableRow>('tables', [Query.equal('venue_id', venueId)]).catch(() => [] as TableRow[]),
+      ]);
+      if (!live) return;
+      // A read that failed keeps what was there rather than saying "none".
+      if (rows) setUnpaid(unpaidBillsFor(rows, sideNow));
+      setTableRows(tables);
+      setTableLabels(Object.fromEntries(tables.map((t) => [t.$id, t.label])));
+    })();
+    const off = subscribeCollection<Order>('orders', (order) => {
+      if (order.venue_id !== venueId) return;
+      setUnpaid((list) => withBill(list, order, sideNow));
+    });
+    return () => { live = false; off(); };
+  }, [venueId, sideNow]);
+
+  /**
    * Which shift is open on this side, asking the server first and this
    * device's memory only when the server cannot be reached.
    *
@@ -844,6 +883,27 @@ export function App() {
   const sidesHere = (['kitchen', 'bar', 'craft'] as Module[])
     .filter((m) => modulesForStaff(ctx.profile, ctx.settings)[m]);
 
+  /*
+    A bill picked from Unpaid, on its own. Its table where it has one; the bar
+    or the shop counter where it was rung up there; otherwise takeaway.
+  */
+  if (payingBill) {
+    const where: TableRow = tableRows.find((t) => t.$id === payingBill.table_id)
+      ?? (payingBill.module === 'bar' ? BAR_COUNTER
+        : payingBill.module === 'craft' ? COUNTER
+        : { ...COUNTER, $id: 'takeaway', venue_id: ctx.venue.$id, label: 'Takeaway' });
+    return (
+      <OrderView
+        key={payingBill.$id}
+        ctx={ctx}
+        table={where}
+        only={payingBill}
+        onBack={() => setPayingBill(null)}
+        onToast={(m, tone) => toast(m, tone)}
+      />
+    );
+  }
+
   if (openTable) {
     return (
       <OrderView
@@ -977,6 +1037,13 @@ export function App() {
               {ctx.module === 'craft' ? 'Sold out' : 'Run out'}
             </Button>
           )}
+          {/* Bills sent and not paid, from every till on this side. Shown
+              whenever there are any, so nobody has to know to look. */}
+          {unpaid.length > 0 && (
+            <Button size="sm" variant="primary" onClick={() => setShowUnpaid(true)} title="Bills sent and not paid yet">
+              Unpaid · {unpaid.length}
+            </Button>
+          )}
           {/* Only with a shift open: the money has to land in one. Without a
               shift there is nothing to press, so nothing is drawn. */}
           {ctx.shift && ctx.profile?.can_mark_paid && (
@@ -1070,6 +1137,41 @@ export function App() {
             }
           }}
         />
+      )}
+
+      {showUnpaid && (
+        <Modal
+          title={`Unpaid · ${MODULE_LABELS[ctx.module]}`}
+          onClose={() => setShowUnpaid(false)}
+          footer={<Button onClick={() => setShowUnpaid(false)}>Close</Button>}
+        >
+          <p className="small dim" style={{ marginTop: 0 }}>
+            {unpaidWords(unpaid, (n) => formatMoney(n, ctx.settings))}. Sent and not paid yet, from every till on this
+            side. Open one to take the money.
+          </p>
+          {unpaid.length === 0 && <p>Nothing is waiting to be paid.</p>}
+          <div className="stack" style={{ display: 'grid', gap: '0.5rem' }}>
+            {unpaid.map((o) => (
+              <button
+                key={o.$id}
+                type="button"
+                className="table-card bill"
+                style={{ textAlign: 'left', width: '100%' }}
+                onClick={() => { setShowUnpaid(false); setPayingBill(o); }}
+              >
+                <div className="row" style={{ justifyContent: 'space-between', gap: '0.5rem' }}>
+                  <strong>{o.order_no}</strong>
+                  <Badge tone="warn">{formatMoney(o.total, ctx.settings)}</Badge>
+                </div>
+                <div className="sub">
+                  {billPlace(o, tableLabels)} · {dateTimeWords(o.$createdAt)}
+                  {billWho(o) && ` · ${billWho(o)}`}
+                  {o.payment_status === 'partial' && ' · part paid'}
+                </div>
+              </button>
+            ))}
+          </div>
+        </Modal>
       )}
 
       {settlingTab && (

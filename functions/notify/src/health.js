@@ -31,10 +31,10 @@ export const HEALTH_GRACE = {
  */
 export function sizesMispricedFrom({ audits = [], lines = [], orders = [] }) {
   const orderById = new Map(orders.map((o) => [o.$id, o]));
-  const sized = new Set(
+  const sized = new Map(
     lines
       .filter((l) => l.variant_id && l.status !== 'void' && typeof l.list_price !== 'number')
-      .map((l) => `${l.order_id}|${l.name_snapshot ?? ''}`),
+      .map((l) => [`${l.order_id}|${l.name_snapshot ?? ''}`, l.line_total]),
   );
   const out = [];
   const seen = new Set();
@@ -52,6 +52,8 @@ export function sizesMispricedFrom({ audits = [], lines = [], orders = [] }) {
       const key = `${orderId}|${name}`;
       if (!sized.has(key) || seen.has(key)) continue;
       if (Number(sent) === Number(actual)) continue;
+      // Already put back to what the till charged.
+      if (sized.get(key) === Number(sent)) continue;
       seen.add(key);
       out.push({
         orderNo: order.order_no ?? orderId,
@@ -208,7 +210,7 @@ export function healthFindings(f, w) {
         + `. In the last ${HEALTH_GRACE.sizeLookbackDays} days: ${w.money(under)} undercharged`
         + `${over > 0 ? ` and ${w.money(over)} overcharged` : ''}.`
         + (unpaidSizes.length > 0
-          ? ` ${plural(unpaidSizes.length, 'bill is', 'bills are')} not paid yet — change the price on the till before it is.`
+          ? ` ${plural(unpaidSizes.length, 'bill is', 'bills are')} not paid yet: open each on Orders and press Correct the price.`
           : ' All of them are paid, so there is nothing left to change; this is what it cost. Fixed for new orders.'),
       goto: '/orders', action: 'Open orders',
     }

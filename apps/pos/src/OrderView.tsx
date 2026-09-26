@@ -10,8 +10,8 @@ import {
   loadRecipes, loadIngredients, pourList, showsRecipe,
   park, unpark, parkProblem, parkKey, describeParked, autoLabel, isStale,
   cartKey, cartWorthHolding, restorableCart, restoredWords,
-  chipColour, showsPicture, inkOn, downloadUrl, isService, canRepriceLine,
-  amountDueOn, unrungProblem, displayOrderNo, humanError,
+  chipColour, showsPicture, inkOn, downloadUrl, isService, canRepriceLine, takesPayment,
+  amountDueOn, unrungProblem, displayOrderNo, humanError, isUnpaidBill, parksAfterSend,
   loadOpenTabs, postOrderToTab, postProblem, tabOwing, ordersOnTab, paidOnOrders, bpWords } from '@snpos/core';
 import type {
   CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, Settings, DiscountRow,
@@ -37,12 +37,17 @@ function priceLabel(entry: MenuEntry, settings: Settings): string {
 interface PaymentMethod extends Doc { name: string; kind: string; enabled: boolean; requires_reference: boolean; venue_id: string }
 
 export function OrderView({
-  ctx, table, onBack, onToast,
+  ctx, table, onBack, onToast, only,
 }: {
   ctx: PosContext;
   table: TableRow;
   onBack: () => void;
   onToast: (m: string, tone?: 'ok' | 'err') => void;
+  /**
+   * One bill picked from Unpaid, shown on its own rather than with everything
+   * else owed where it was rung up. See unpaid-bills.ts.
+   */
+  only?: Order;
 }) {
   // None of these is tied to a seat, and all create counter-channel orders.
   // They are still different places: see COUNTER_TABLE_ID. Leaving the bar out
@@ -402,7 +407,9 @@ export function OrderView({
       const [m] = await Promise.all([
         listAll<PaymentMethod>('payment_methods', [Query.equal('venue_id', ctx.venue.$id)]),
       ]);
-      setMethods(m.filter((x) => x.enabled));
+      // Only what a customer can pay by: Bank transfer is for paying
+      // suppliers and never belongs on this screen. See takesPayment.
+      setMethods(m.filter(takesPayment));
 
       /**
        * What is still owed here.
@@ -420,16 +427,30 @@ export function OrderView({
        * Restaurant takeaway keeps its old behaviour, where each order is
        * started fresh from the takeaway list.
        */
-      if (!isTakeaway || ctx.module === 'craft' || ctx.module === 'bar') {
-        const orders = await listAll<Order>('orders', [
-          Query.equal('venue_id', ctx.venue.$id),
-          Query.equal('table_id', table.$id),
-        ]);
-        const live = orders.filter(
-          (o) => o.payment_status !== 'paid'
-            && !['REJECTED', 'CANCELLED'].includes(o.status)
-            && (o.module ?? 'kitchen') === ctx.module,
-        );
+      /*
+        A counter sale is saved with no table, so asking for the counter's
+        table found nothing: an unpaid bar or shop sale was never brought back
+        here, whatever the note above hoped. It lives on the Unpaid list now,
+        which every till can see, and the counter starts clear for the next
+        customer. A bill picked from that list is read fresh, on its own.
+      */
+      if (only || !isTakeaway) {
+        const orders = only
+          // As the list had it, where the fresh read fails: better the bill
+          // that was tapped than a till stuck on a spinner.
+          ? [await db.getDocument(DB_ID, 'orders', only.$id).then((d) => d as unknown as Order).catch(() => only)]
+          : await listAll<Order>('orders', [
+            Query.equal('venue_id', ctx.venue.$id),
+            Query.equal('table_id', table.$id),
+          ]);
+        const live = only
+          ? orders.filter((o) => isUnpaidBill(o))
+          : orders.filter(
+            (o) => o.payment_status !== 'paid'
+              && !['REJECTED', 'CANCELLED'].includes(o.status)
+              && (o.module ?? 'kitchen') === ctx.module,
+          );
+        if (only && live.length === 0) onToast(`${only.order_no} has already been paid or cancelled.`);
         setExisting(live);
         if (live.length) {
           const rows = await listAll<OrderItem>('order_items', [Query.equal('order_id', live.map((o) => o.$id))]);
@@ -454,7 +475,7 @@ export function OrderView({
       setSectionId(sections[0]?.category.$id ?? null);
       setLoading(false);
     })();
-  }, [ctx.venue.$id, table.$id, isTakeaway, sections]);
+  }, [ctx.venue.$id, table.$id, isTakeaway, sections, only?.$id]);
 
   /**
    * `addons` undefined means the question has not been put yet; an array,
@@ -651,7 +672,14 @@ export function OrderView({
       setDiscountLabel('');
       setDiscountId('');
       if (!isTakeaway) await db.updateDocument(DB_ID, 'tables', table.$id, { status: 'ordered' }).catch(() => undefined);
-      if (counterSale) {
+      if (!only && parksAfterSend({ counterSale, canTakePayment: !!ctx.shift && !!ctx.profile?.can_mark_paid })) {
+        // Nobody here can take the money, so the bill goes to Unpaid on its
+        // own and the counter is clear for the next customer. See
+        // parksAfterSend.
+        setExisting([]);
+        setExistingItems({});
+        onToast(`${order.order_no} rung up. It is under Unpaid for a cashier to take the money.`);
+      } else if (counterSale) {
         // Nothing is being sent anywhere. A counter sale is rung up and paid
         // for in one movement, so the till goes straight to taking the money
         // rather than announcing a kitchen that does not exist.
@@ -675,9 +703,12 @@ export function OrderView({
         {/* The craft till has nowhere to go back to: the counter is the whole
             screen, not one table among several. A back button that leads
             nowhere is a button somebody presses once and distrusts after. */}
-        {!counterSale && <Button variant="ghost" onClick={onBack}>← Tables</Button>}
+        {(only || !counterSale) && (
+          <Button variant="ghost" onClick={onBack}>{only ? '← Unpaid' : '← Tables'}</Button>
+        )}
         <strong>
-          {ctx.module === 'craft' ? 'Counter sale'
+          {only ? `Bill ${displayOrderNo(only.order_no)}`
+            : ctx.module === 'craft' ? 'Counter sale'
             : counterSale ? 'Bar sale'
             : isTakeaway ? 'Takeaway order'
             : `Table ${table.label}`}
@@ -693,6 +724,25 @@ export function OrderView({
           */}
           {counterSale && cart.length > 0 && (
             <Button onClick={() => { setParkLabel(''); setParking(true); }}>Park this sale</Button>
+          )}
+          {/*
+            A counter bill somebody is not paying now. It is already saved, so
+            nothing is lost by clearing the screen: it waits under Unpaid, on
+            every till, until somebody takes the money.
+          */}
+          {counterSale && !only && existing.length > 0 && cart.length === 0 && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                const nos = existing.map((o) => displayOrderNo(o.order_no)).join(', ');
+                setExisting([]);
+                setExistingItems({});
+                setTaken([]);
+                onToast(`${nos} left under Unpaid`);
+              }}
+            >
+              Leave for later
+            </Button>
           )}
           {counterSale && parked.length > 0 && (
             <Button onClick={() => setShowParked(true)}>
@@ -1338,11 +1388,14 @@ export function OrderView({
           onClose: () => setPaying(false),
           onDone: async () => {
             setPaying(false);
-            if (!isTakeaway) await db.updateDocument(DB_ID, 'tables', table.$id, { status: 'dirty' }).catch(() => undefined);
+            // One bill of several at a table being paid is not the table cleared.
+            if (!isTakeaway && !only) await db.updateDocument(DB_ID, 'tables', table.$id, { status: 'dirty' }).catch(() => undefined);
             onToast('Payment recorded');
             // The shop till stays where it is, ready for the next customer.
             // Sending it "back" would land it on a screen that does not exist.
-            if (counterSale) { setCart([]); setExisting([]); setExistingItems({}); } else onBack();
+            // A bill picked from Unpaid goes back to that list.
+            if (only) onBack();
+            else if (counterSale) { setCart([]); setExisting([]); setExistingItems({}); } else onBack();
           },
           onError: (m: string) => onToast(m, 'err'),
         };

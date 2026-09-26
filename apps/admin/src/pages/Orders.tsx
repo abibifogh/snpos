@@ -19,9 +19,11 @@ import {
   quantityEditProblem, lineIsEditable, lineEditProblem, quantityProblem, quantityChanges, moneyEffect,
   removalEffects,
   retotalOrder, applyQuantityCorrection, creditedLineIds, isLivePayment as paymentCounts, dateWords, timeWords, dateTimeWords,
-  nameBook, nameFrom } from '@snpos/core';
+  nameBook, nameFrom, takesPayment,
+  sizePriceFixes, sizePriceProblem, sizePriceWords, sizePriceDelta, rewrittenLines, applySizePriceCorrection,
+} from '@snpos/core';
 import type {
-  Order, OrderItem, StaffProfile, Doc, Venue, Module, GroupChoice, SortChoice, MovableShift,
+  Order, OrderItem, StaffProfile, Doc, Venue, Module, GroupChoice, SortChoice, MovableShift, SizePriceFix,
 } from '@snpos/core';
 import { useSession, useMoney } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
@@ -52,7 +54,7 @@ interface Payment extends Doc {
  * method and leaving the kind behind would fix the label on the shift screen
  * and leave a card payment printing as cash on the customer's receipt.
  */
-interface PaymentMethod extends Doc { name: string; kind?: string; requires_reference?: boolean }
+interface PaymentMethod extends Doc { name: string; kind?: string; requires_reference?: boolean; enabled?: boolean; payouts_only?: boolean | null }
 
 /**
  * Every order, over a range you choose.
@@ -98,6 +100,13 @@ export function OrdersPage() {
   const [qtyError, setQtyError] = useState<string | null>(null);
   /** Lines a maker has already been credited for. Read when the order opens. */
   const [credited, setCredited] = useState<string[]>([]);
+  /**
+   * Lines on the open order the server rewrote from a size's price to the
+   * plain item's, with what each should be. Read when the order opens; see
+   * size-price.ts.
+   */
+  const [sizeFixes, setSizeFixes] = useState<SizePriceFix[]>([]);
+  const [sizeBusy, setSizeBusy] = useState(false);
   /**
    * Filling in how a bill marked paid by hand was actually paid.
    *
@@ -163,6 +172,9 @@ export function OrdersPage() {
   const [items, setItems] = useState<Record<string, OrderItem[]>>({});
   const [payments, setPayments] = useState<Payment[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  // Every method names the payments already made; only these can be chosen
+  // for money coming in (Bank transfer is for paying out).
+  const payable = useMemo(() => methods.filter(takesPayment), [methods]);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [open, setOpen] = useState<Order | null>(null);
@@ -790,10 +802,31 @@ export function OrdersPage() {
     setQtyEdit(null);
     setQtyError(null);
     setCredited([]);
+    setSizeFixes([]);
     let rows = items[o.$id];
     if (!rows) {
       rows = await listAll<OrderItem>('order_items', [Query.equal('order_id', o.$id)]).catch(() => []);
       setItems((m) => ({ ...m, [o.$id]: rows ?? [] }));
+    }
+    /*
+      Sizes the server charged at the plain item's price. Only asked for a bill
+      that could still be put right, and only from the server's own log of
+      what it rewrote — a read that fails offers nothing rather than guessing.
+    */
+    if (!sizePriceProblem(o, takenOn(o.$id)) && (rows ?? []).some((r) => r.variant_id)) {
+      const [log, sizes] = await Promise.all([
+        listAll<{ after?: string }>('audit_log', [
+          Query.equal('action', 'order_price_corrected'),
+          Query.equal('entity_id', o.$id),
+        ]).catch(() => [] as { after?: string }[]),
+        listByIds<{ $id: string; price?: number }>(
+          'product_variants', '$id', [...new Set((rows ?? []).map((r) => r.variant_id ?? '').filter(Boolean))],
+        ).catch(() => [] as { $id: string; price?: number }[]),
+      ]);
+      const prices = Object.fromEntries(
+        sizes.filter((v) => typeof v.price === 'number').map((v) => [v.$id, v.price as number]),
+      );
+      setSizeFixes(sizePriceFixes(rows ?? [], prices, rewrittenLines(log)));
     }
     // Asked before the correction is offered rather than after it is tried. A
     // maker's credit is money already told to somebody, and finding that out
@@ -893,6 +926,48 @@ export function OrdersPage() {
       setQtyError(humanError(e));
     } finally {
       setQtyBusy(false);
+    }
+  };
+
+  /**
+   * Put the size's price back on the lines the server undercharged. Same
+   * follow-through as a quantity correction: an open shift works itself out,
+   * a closed one is recomputed and its books reposted.
+   */
+  const correctSizePrices = async () => {
+    if (!open || !settings || sizeFixes.length === 0) return;
+    setSizeBusy(true);
+    try {
+      const moved = await applySizePriceCorrection({
+        order: open,
+        fixes: sizeFixes,
+        settings,
+        actor: { id: profile?.user_id ?? profile?.$id ?? user?.$id ?? '', role: profile?.role ?? '' },
+      });
+      const notes: string[] = [];
+      if (moved && open.shift_id) {
+        await recomputeClosedShift(open.shift_id).catch(() => null);
+        const done = await repostShiftAccounts({
+          shiftId: open.shift_id,
+          userId: user?.$id ?? '',
+          reason: 'Size price put back on an unpaid bill',
+        }).catch((e) => ({ changed: false, note: humanError(e) }));
+        if (done.note) notes.push(done.note);
+      }
+      setSizeFixes([]);
+      setOpen(null);
+      setItems((m) => {
+        const next = { ...m };
+        delete next[open.$id];
+        return next;
+      });
+      await load();
+      toast(moved ? `${open.order_no} now ${money(moved.to)}` : `Nothing changed on ${open.order_no}`);
+      for (const n of notes) toast(n);
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setSizeBusy(false);
     }
   };
 
@@ -1474,6 +1549,24 @@ export function OrdersPage() {
                   )}
                 </div>
 
+                {/* Sizes the server charged at the plain item's price, on a
+                    bill nobody has paid yet. See size-price.ts. */}
+                {!editing && sizeFixes.length > 0 && (
+                  <div className="card" style={{ padding: '0.8rem 1rem', margin: '0 0 0.8rem' }}>
+                    <strong>Charged below the size's price</strong>
+                    <p className="small dim" style={{ margin: '0.3rem 0' }}>
+                      The server charged {sizeFixes.length === 1 ? 'this size' : 'these sizes'} at the plain
+                      item's price. Nobody has paid yet, so the bill can be put right:
+                    </p>
+                    <ul className="small" style={{ margin: '0.3rem 0 0.6rem', paddingLeft: '1.2rem' }}>
+                      {sizeFixes.map((f) => <li key={f.lineId}>{sizePriceWords(f, money)}</li>)}
+                    </ul>
+                    <Button size="sm" variant="primary" disabled={sizeBusy} onClick={() => void correctSizePrices()}>
+                      {sizeBusy ? 'Correcting…' : `Correct the price (+${money(sizePriceDelta(sizeFixes))})`}
+                    </Button>
+                  </div>
+                )}
+
                 {/* Said as a reason rather than a missing button. A screen that
                     refuses without explaining sends somebody to ask a question
                     the screen already knew the answer to. */}
@@ -1725,7 +1818,7 @@ export function OrdersPage() {
                   onClick={() => {
                     setSayRef('');
                     setSaying({ order: open, amount: missing });
-                    setSayMethod(methods[0]?.$id ?? '');
+                    setSayMethod(payable[0]?.$id ?? '');
                     setSayError(null);
                   }}
                 >
@@ -1792,7 +1885,7 @@ export function OrdersPage() {
                             actually be here, or that sentence is another door
                             that does not open.
                           */}
-                          {canVoid && !voided && methods.length > 1 && (
+                          {canVoid && !voided && payable.some((m) => m.$id !== p.method_id) && (
                             <Button size="sm" variant="ghost" onClick={() => setRepaying(p)}>
                               Change method
                             </Button>
@@ -1988,7 +2081,7 @@ export function OrdersPage() {
             worked out again, so the drawer it is counted against moves with it. Recorded against your name.
           </p>
           <div className="row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
-            {methods
+            {payable
               .filter((m) => m.$id !== repaying.method_id)
               .map((m) => (
                 <Button key={m.$id} variant="primary" disabled={repayBusy} onClick={() => void moveMethod(m)}>
@@ -2209,7 +2302,7 @@ export function OrdersPage() {
           <Field label="How it was paid">
             <Select value={sayMethod} onChange={(e) => { setSayMethod(e.target.value); setSayError(null); }}>
               <option value="">Choose a method…</option>
-              {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
+              {payable.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
             </Select>
           </Field>
           {referenceRequired(methods.find((m) => m.$id === sayMethod)) && (
@@ -2281,7 +2374,7 @@ export function OrdersPage() {
                     onChange={(e) => { setPayMethod(e.target.value); setError(null); }}
                   >
                     <option value="">Choose a method…</option>
-                    {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
+                    {payable.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
                   </Select>
                 </Field>
                 {referenceRequired(methods.find((m) => m.$id === payMethod)) && (
