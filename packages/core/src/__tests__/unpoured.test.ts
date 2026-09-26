@@ -165,3 +165,29 @@ test('soldInShift and soldName agree on every shape, and are kept that way', () 
     assert.equal(line.name, soldName(shape), `disagreed on ${JSON.stringify(shape)}`);
   }
 });
+
+test('linked but nothing came off: not paid yet, or paid and missed, with the bills named', () => {
+  /*
+    The links are fine and the drink still took nothing off. Either the bill
+    is not paid in full — a bar drink comes off when it is settled — or it
+    was paid and the server never heard. Each row names the bills it came from
+    so they can be opened.
+  */
+  const recipes = [{ menu_item_id: 'malt', ingredient_id: 'malt', qty_per_unit: 1 }];
+  const items = [{ $id: 'malt', name: 'Malt', module: 'bar' }];
+  const lines = [
+    { $id: 'l1', order_id: 'o1', menu_item_id: 'malt', name_snapshot: 'Malt', qty: 1 },
+    { $id: 'l2', order_id: 'o2', menu_item_id: 'malt', name_snapshot: 'Malt', qty: 2 },
+    { $id: 'l3', order_id: 'o3', menu_item_id: 'malt', name_snapshot: 'Malt', qty: 1 },
+  ];
+  const facts = { poured: new Set(['l3']), paidOrders: new Set(['o2', 'o3']) };
+  const rows = unpouredSales(lines, recipes, items, facts, { o1: 'ORD1101', o2: 'ORD1102', o3: 'ORD1103' });
+  assert.deepEqual(
+    rows.map((r) => [r.reason, r.qty, r.orders]),
+    [['paid-not-poured', 2, ['ORD1102']], ['not-paid-yet', 1, ['ORD1101']]],
+  );
+  assert.match(unpouredWords('not-paid-yet', 'Malt'), /not paid for yet/);
+  assert.match(unpouredWords('paid-not-poured', 'Malt'), /Bring the shelves up to date/);
+  // Without knowing what moved, only the links are judged, as before.
+  assert.deepEqual(unpouredSales(lines, recipes, items), []);
+});

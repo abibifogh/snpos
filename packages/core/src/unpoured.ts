@@ -26,6 +26,8 @@
 
 /** A sold line, as far as this question is concerned. */
 export interface SoldRow {
+  $id?: string;
+  order_id?: string;
   menu_item_id: string;
   variant_id?: string;
   name_snapshot?: string;
@@ -64,7 +66,19 @@ export type UnpouredReason =
    */
   | 'sold-without-a-size'
   /** The drink is not on the bar's side, so the bar's pour skips it. */
-  | 'not-on-the-bar';
+  | 'not-on-the-bar'
+  /**
+   * Everything is linked, but the bill is not paid in full yet. A bar drink
+   * comes off the shelf when its bill is settled, so until then the shelf
+   * still counts it — and a count taken meanwhile reads it as missing.
+   */
+  | 'not-paid-yet'
+  /**
+   * Linked, paid in full, and still nothing came off. The server missed it —
+   * a payment recorded while it was down, or a bill marked paid a way it
+   * never heard about. "Bring the shelves up to date" puts it through.
+   */
+  | 'paid-not-poured';
 
 export interface Unpoured {
   /** Drink and size together, as it reads on a receipt. */
@@ -74,6 +88,8 @@ export interface Unpoured {
   /** So a fix can be offered against the right rows. */
   menuItemId: string;
   variantId?: string;
+  /** The bills it was sold on, by number, so each can be opened. */
+  orders: string[];
 }
 
 /**
@@ -121,6 +137,15 @@ export function unpouredSales(
   lines: SoldRow[],
   recipes: PourRule[],
   items: SoldItem[],
+  /**
+   * What actually happened, where it could be read: the lines a pour was
+   * written for, and the bills paid in full. With these, a drink whose links
+   * are all fine but which still took nothing off is reported too, with why.
+   * Without them only the links are checked, as before.
+   */
+  facts?: { poured: Set<string>; paidOrders: Set<string> },
+  /** Order id to its number, so each row can say which bills it was sold on. */
+  orderNos: Record<string, string> = {},
 ): Unpoured[] {
   const byId = new Map(items.map((i) => [i.$id, i]));
   const out = new Map<string, Unpoured>();
@@ -133,28 +158,35 @@ export function unpouredSales(
     // A drink that is not on the bar's side is skipped by the bar's pour
     // before recipes are even looked at, so that is the reason to give.
     const onTheBar = item?.module === 'bar';
-    if (onTheBar && poursSomething(line, recipes)) continue;
+    let reason: UnpouredReason;
+    if (onTheBar && poursSomething(line, recipes)) {
+      if (!facts || !line.$id || facts.poured.has(line.$id)) continue;
+      reason = line.order_id && facts.paidOrders.has(line.order_id) ? 'paid-not-poured' : 'not-paid-yet';
+    } else {
+      const mine = recipes.filter(
+        (r) => r.menu_item_id === line.menu_item_id && !r.addon_option_id && (r.qty_per_unit ?? 0) > 0,
+      );
+      reason = !onTheBar && item
+        ? 'not-on-the-bar'
+        : mine.length === 0
+          ? 'no-recipe'
+          // Every row it has is tied to a size. Whether that is this size's
+          // fault or the drink's depends on whether a size was sold at all.
+          : line.variant_id ? 'size-has-no-recipe' : 'sold-without-a-size';
+    }
 
-    const mine = recipes.filter(
-      (r) => r.menu_item_id === line.menu_item_id && !r.addon_option_id && (r.qty_per_unit ?? 0) > 0,
-    );
-    const reason: UnpouredReason = !onTheBar && item
-      ? 'not-on-the-bar'
-      : mine.length === 0
-        ? 'no-recipe'
-        // Every row it has is tied to a size. Whether that is this size's
-        // fault or the drink's depends on whether a size was sold at all.
-        : line.variant_id ? 'size-has-no-recipe' : 'sold-without-a-size';
-
-    const key = `${line.menu_item_id}|${line.variant_id ?? ''}`;
+    const key = `${line.menu_item_id}|${line.variant_id ?? ''}|${reason}`;
     const at = out.get(key) ?? {
       name: soldName(line),
       qty: 0,
       reason,
       menuItemId: line.menu_item_id,
       variantId: line.variant_id || undefined,
+      orders: [],
     };
     at.qty += line.qty ?? 0;
+    const no = line.order_id ? orderNos[line.order_id] ?? '' : '';
+    if (no && !at.orders.includes(no)) at.orders.push(no);
     out.set(key, at);
   }
 
@@ -171,6 +203,13 @@ export function unpouredWords(reason: UnpouredReason, name: string): string {
       return `${name} has no sizes, but everything saying what it pours is still tied to a size it used to `
         + 'have — so a plain sale matches nothing and no bottle comes off. Press "Reconnect the shelves" '
         + 'below, which hands the link back to the drink.';
+    case 'not-paid-yet':
+      return `${name} is not paid for yet. A bar drink comes off the shelf when its bill is paid in full, so the `
+        + 'shelf still counts it and a count taken now reads it as missing. Take the money from Unpaid on the '
+        + 'till, or press "Bring the shelves up to date with this shift" above if it has gone out.';
+    case 'paid-not-poured':
+      return `${name} is linked and paid for, but nothing came off the shelf for it. Press "Bring the shelves `
+        + 'up to date with this shift" above to put it through.';
     case 'size-has-no-recipe':
       return `${name} has sizes, and this size is not linked to a shelf — the drink's other sizes are, so `
         + 'there is nothing for it to fall back on. This happens on its own when a size is switched off and '

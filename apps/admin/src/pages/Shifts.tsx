@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Card, Empty, Notice, Spinner, Badge, Modal, Button, Field, Input, Textarea, useToast,
   FilterBar, FilterField, ShiftHistory,
 } from '@snpos/ui';
-import { listAll, humanError, Query } from '../lib';
+import { listAll, humanError, Query, db, DB_ID } from '../lib';
 import {
   formatMoney, byStaff, destinationLabel, fromTakings,
   changeShiftClose, closeTimeProblem, closeTimeEffects, describeCloseChange, hoursBetween, SHIFT_MAX_HOURS,
@@ -600,6 +601,21 @@ export function ShiftsPage() {
     void load().catch((err) => setError(humanError(err)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to]);
+
+  /*
+    Opened from a link that names a shift (see Bar counts): open its details,
+    whatever dates the list is showing. Read by id, because the shift being
+    asked about is usually not in this week's list.
+  */
+  const [linkParams] = useSearchParams();
+  useEffect(() => {
+    const id = linkParams.get('open');
+    if (!id) return;
+    db.getDocument(DB_ID, 'shifts', id)
+      .then((s) => openDetail(s as unknown as Shift))
+      .catch((e) => setError(humanError(e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkParams]);
 
   /*
     The method's name, never its id.
