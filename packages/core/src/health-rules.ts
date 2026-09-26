@@ -151,14 +151,16 @@ export interface SizeMispriced {
  */
 export function sizesMispricedFrom(input: {
   audits: { entity_id?: string; after?: string }[];
-  lines: { order_id: string; name_snapshot?: string; variant_id?: string | null; list_price?: number | null; status?: string }[];
+  lines: { order_id: string; name_snapshot?: string; variant_id?: string | null; list_price?: number | null; status?: string; line_total?: number }[];
   orders: { $id: string; order_no?: string; payment_status?: string; status?: string }[];
 }): SizeMispriced[] {
   const orderById = new Map(input.orders.map((o) => [o.$id, o]));
-  const sized = new Set(
+  // What each such line is charged now, so one already put right (see
+  // size-price.ts) stops being reported.
+  const sized = new Map(
     input.lines
       .filter((l) => l.variant_id && l.status !== 'void' && typeof l.list_price !== 'number')
-      .map((l) => `${l.order_id}|${l.name_snapshot ?? ''}`),
+      .map((l) => [`${l.order_id}|${l.name_snapshot ?? ''}`, l.line_total]),
   );
   const out: SizeMispriced[] = [];
   const seen = new Set<string>();
@@ -179,6 +181,8 @@ export function sizesMispricedFrom(input: {
       const key = `${orderId}|${name}`;
       if (!sized.has(key) || seen.has(key)) continue;
       if (Number(sent) === Number(actual)) continue;
+      // Already put back to what the till charged.
+      if (sized.get(key) === Number(sent)) continue;
       seen.add(key);
       out.push({
         orderNo: order.order_no ?? orderId,
@@ -353,7 +357,7 @@ export function healthFindings(f: HealthFacts, w: HealthWords): HealthFinding[] 
         + `. In the last ${HEALTH_GRACE.sizeLookbackDays} days: ${w.money(under)} undercharged`
         + `${over > 0 ? ` and ${w.money(over)} overcharged` : ''}.`
         + (unpaidSizes.length > 0
-          ? ` ${plural(unpaidSizes.length, 'bill is', 'bills are')} not paid yet: cancel each from its details on Orders and ring it up again, which now charges the size's price.`
+          ? ` ${plural(unpaidSizes.length, 'bill is', 'bills are')} not paid yet: open each on Orders and press Correct the price.`
           : ' All of them are paid, so there is nothing left to change; this is what it cost. Fixed for new orders.'),
       goto: '/orders', action: 'Open orders',
     }

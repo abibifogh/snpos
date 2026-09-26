@@ -80,6 +80,7 @@ export * from './offline-shift';
 export * from './to-settle';
 export * from './order-edit';
 export * from './order-search';
+export * from './size-price';
 export * from './push-device';
 export * from './batch-rules';
 export * from './pour-check';

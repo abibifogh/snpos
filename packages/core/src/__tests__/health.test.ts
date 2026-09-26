@@ -197,6 +197,15 @@ test('a size rewritten to the plain item\'s price is found from the server\'s ow
   assert.deepEqual(found, [{ orderNo: 'ORD1090', name: 'Club · Large', charged: 2_500, shouldBe: 3_000, paid: false }]);
 });
 
+test('a line already put back to its size\'s price stops being reported', () => {
+  const found = sizesMispricedFrom({
+    audits: [audit('o1', 'ORD1090', ['Club · Large: sent 3000, actual 2500'])],
+    lines: [{ order_id: 'o1', name_snapshot: 'Club · Large', variant_id: 'v-large', line_total: 3_000 }],
+    orders: [{ $id: 'o1', order_no: 'ORD1090', payment_status: 'unpaid', status: 'PENDING' }],
+  });
+  assert.deepEqual(found, []);
+});
+
 test('a correction to a plain item is the guard doing its job, not this fault', () => {
   // A phone that claimed the wrong price for an unsized dish was right to be
   // corrected. Only lines sold as a size count here.
@@ -264,7 +273,7 @@ test('the finding blocks while a bill can still be corrected, and says what it c
   assert.match(sizes?.detail ?? '', /GH₵10\.00 undercharged and GH₵5\.00 overcharged/);
   // Cancel and ring up again: the till cannot change the price of an order
   // already placed, only of a basket before it is sent.
-  assert.match(sizes?.detail ?? '', /1 bill is not paid yet: cancel each from its details on Orders and ring it up again/);
+  assert.match(sizes?.detail ?? '', /1 bill is not paid yet: open each on Orders and press Correct the price/);
 
   // All paid: nothing left to correct, so a warning, and it says so.
   const allPaid = healthFindings({ ...clean, sizesMispriced: f.sizesMispriced.filter((s) => s.paid) }, { money })
