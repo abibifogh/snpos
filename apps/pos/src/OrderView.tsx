@@ -10,7 +10,7 @@ import {
   loadRecipes, loadIngredients, pourList, showsRecipe,
   park, unpark, parkProblem, parkKey, describeParked, autoLabel, isStale,
   cartKey, cartWorthHolding, restorableCart, restoredWords,
-  chipColour, showsPicture, inkOn, downloadUrl, isService, canRepriceLine,
+  chipColour, showsPicture, inkOn, downloadUrl, isService, canRepriceLine, takesPayment,
   amountDueOn, unrungProblem, displayOrderNo, humanError,
   loadOpenTabs, postOrderToTab, postProblem, tabOwing, ordersOnTab, paidOnOrders, bpWords } from '@snpos/core';
 import type {
@@ -402,7 +402,9 @@ export function OrderView({
       const [m] = await Promise.all([
         listAll<PaymentMethod>('payment_methods', [Query.equal('venue_id', ctx.venue.$id)]),
       ]);
-      setMethods(m.filter((x) => x.enabled));
+      // Only what a customer can pay by: Bank transfer is for paying
+      // suppliers and never belongs on this screen. See takesPayment.
+      setMethods(m.filter(takesPayment));
 
       /**
        * What is still owed here.

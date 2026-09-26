@@ -19,7 +19,7 @@ import {
   quantityEditProblem, lineIsEditable, lineEditProblem, quantityProblem, quantityChanges, moneyEffect,
   removalEffects,
   retotalOrder, applyQuantityCorrection, creditedLineIds, isLivePayment as paymentCounts, dateWords, timeWords, dateTimeWords,
-  nameBook, nameFrom } from '@snpos/core';
+  nameBook, nameFrom, takesPayment } from '@snpos/core';
 import type {
   Order, OrderItem, StaffProfile, Doc, Venue, Module, GroupChoice, SortChoice, MovableShift,
 } from '@snpos/core';
@@ -52,7 +52,7 @@ interface Payment extends Doc {
  * method and leaving the kind behind would fix the label on the shift screen
  * and leave a card payment printing as cash on the customer's receipt.
  */
-interface PaymentMethod extends Doc { name: string; kind?: string; requires_reference?: boolean }
+interface PaymentMethod extends Doc { name: string; kind?: string; requires_reference?: boolean; enabled?: boolean; payouts_only?: boolean | null }
 
 /**
  * Every order, over a range you choose.
@@ -163,6 +163,9 @@ export function OrdersPage() {
   const [items, setItems] = useState<Record<string, OrderItem[]>>({});
   const [payments, setPayments] = useState<Payment[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  // Every method names the payments already made; only these can be chosen
+  // for money coming in (Bank transfer is for paying out).
+  const payable = useMemo(() => methods.filter(takesPayment), [methods]);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [open, setOpen] = useState<Order | null>(null);
@@ -1725,7 +1728,7 @@ export function OrdersPage() {
                   onClick={() => {
                     setSayRef('');
                     setSaying({ order: open, amount: missing });
-                    setSayMethod(methods[0]?.$id ?? '');
+                    setSayMethod(payable[0]?.$id ?? '');
                     setSayError(null);
                   }}
                 >
@@ -1792,7 +1795,7 @@ export function OrdersPage() {
                             actually be here, or that sentence is another door
                             that does not open.
                           */}
-                          {canVoid && !voided && methods.length > 1 && (
+                          {canVoid && !voided && payable.some((m) => m.$id !== p.method_id) && (
                             <Button size="sm" variant="ghost" onClick={() => setRepaying(p)}>
                               Change method
                             </Button>
@@ -1988,7 +1991,7 @@ export function OrdersPage() {
             worked out again, so the drawer it is counted against moves with it. Recorded against your name.
           </p>
           <div className="row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
-            {methods
+            {payable
               .filter((m) => m.$id !== repaying.method_id)
               .map((m) => (
                 <Button key={m.$id} variant="primary" disabled={repayBusy} onClick={() => void moveMethod(m)}>
@@ -2209,7 +2212,7 @@ export function OrdersPage() {
           <Field label="How it was paid">
             <Select value={sayMethod} onChange={(e) => { setSayMethod(e.target.value); setSayError(null); }}>
               <option value="">Choose a method…</option>
-              {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
+              {payable.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
             </Select>
           </Field>
           {referenceRequired(methods.find((m) => m.$id === sayMethod)) && (
@@ -2281,7 +2284,7 @@ export function OrdersPage() {
                     onChange={(e) => { setPayMethod(e.target.value); setError(null); }}
                   >
                     <option value="">Choose a method…</option>
-                    {methods.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
+                    {payable.map((m) => <option key={m.$id} value={m.$id}>{m.name}</option>)}
                   </Select>
                 </Field>
                 {referenceRequired(methods.find((m) => m.$id === payMethod)) && (

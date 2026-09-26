@@ -358,6 +358,20 @@ export function blockerFor(order: {
  * A row with no status at all is a real payment. The field arrived after the
  * rows did, and reading its absence as "voided" would erase a night's takings.
  */
+/**
+ * Can a customer pay by this method?
+ *
+ * Switched on, and not one of the ways money only ever goes OUT. Bank transfer
+ * is seeded for paying suppliers: it is in the list so a spend can say how it
+ * was paid, and it never belongs on a screen where money comes in — there it
+ * is only ever the wrong answer, a sale filed against an account nobody
+ * counts at close. One rule, asked by every screen that takes payment, because
+ * the till's payment screen read the list itself, checked only the switch,
+ * and so offered Bank transfer beside Cash and Card.
+ */
+export const takesPayment = (m: { enabled?: boolean; payouts_only?: boolean | null }): boolean =>
+  m.enabled === true && m.payouts_only !== true;
+
 export const isLivePayment = (p: { status?: string }): boolean =>
   p.status !== 'voided' && p.status !== 'refunded';
 

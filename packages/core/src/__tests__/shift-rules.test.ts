@@ -4,6 +4,7 @@ import {
   shiftCode, shiftPrefix, shiftAge, shiftAgeMessage, overdueFrom, isPastLimit, mustWaitForNextShift, shouldWarnLateOrder,
   SHIFT_MAX_HOURS, SHIFT_WARN_HOURS,
   shiftAgeOf, openShiftsFor, blockerFor, isLivePayment, sellBlockedReason, carryOverFloats, lastForSide, floatProblem, describeFloatChange, resendProblem, resendPending, ownFigure, floatOrigin, floatMethods,
+  takesPayment,
 } from '../shift-rules.ts';
 
 const at = (iso: string) => new Date(iso);
@@ -572,4 +573,15 @@ test('a tab order still on the pass is still on the pass', () => {
     blockerFor({ status: 'PREPARING', payment_status: 'unpaid', total: 9000, tab_id: 't1' }),
     'uncollected',
   );
+});
+
+test('Bank transfer is never offered where a customer pays', () => {
+  // It is in the list so a supplier payment can say how it went out.
+  const methods = [
+    { name: 'Cash', enabled: true },
+    { name: 'Card', enabled: true, payouts_only: false },
+    { name: 'Bank transfer', enabled: true, payouts_only: true },
+    { name: 'Mobile money', enabled: false },
+  ];
+  assert.deepEqual(methods.filter(takesPayment).map((m) => m.name), ['Cash', 'Card']);
 });
