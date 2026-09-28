@@ -12,6 +12,7 @@ import type {
 import { useSession } from '../session';
 import { LevelUpload } from '../components/LevelUpload';
 import { MadeHere } from '../components/MadeHere';
+import { ShelfTrailModal } from '../components/ShelfTrail';
 
 /**
  * Where stock sits, and moving it between places.
@@ -50,6 +51,8 @@ export function LocationsPage() {
   const [restoring, setRestoring] = useState<string | null>(null);
   /** The room whose contents are being read. */
   const [looking, setLooking] = useState<(StockLocation & Doc) | null>(null);
+  /** One item's movements in one place. See ShelfTrailModal. */
+  const [tracing, setTracing] = useState<{ item: { $id: string; name: string; unit?: string }; place: StockLocation & Doc } | null>(null);
   const [lookFilter, setLookFilter] = useState('');
   const [stock, setStock] = useState<{ $id: string; name: string; unit: string }[]>([]);
 
@@ -595,13 +598,25 @@ export function LocationsPage() {
             ) : (
               <div className="table-wrap" style={{ maxHeight: '46vh', overflowY: 'auto', marginTop: '0.9rem' }}>
                 <table className="data">
-                  <thead><tr><th>What</th><th className="num">How much</th></tr></thead>
+                  <thead><tr><th>What</th><th className="num">How much</th><th /></tr></thead>
                   <tbody>
                     {rows.map((r) => (
                       <tr key={r.ingredient_id}>
                         <td style={{ fontWeight: 550 }}>{r.item?.name}</td>
                         <td className="num">
                           {Number(r.qty.toFixed(3))} <span className="dim small">{r.item?.unit}</span>
+                        </td>
+                        <td className="num">
+                          {/* What moved it in and out of this place. */}
+                          {r.item && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setTracing({ item: { $id: r.ingredient_id, name: r.item!.name, unit: r.item!.unit }, place: looking })}
+                            >
+                              Movement
+                            </Button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -612,6 +627,20 @@ export function LocationsPage() {
           </Modal>
         );
       })()}
+
+      {tracing && (
+        <ShelfTrailModal
+          ingredient={tracing.item}
+          unit={tracing.item.unit}
+          place={{
+            id: tracing.place.$id,
+            name: tracing.place.name,
+            // Shift counts are taken at the counter the side sells from.
+            shiftCounts: saleLocation(places ?? [], tracing.place.module)?.$id === tracing.place.$id,
+          }}
+          onClose={() => setTracing(null)}
+        />
+      )}
     </>
   );
 }
