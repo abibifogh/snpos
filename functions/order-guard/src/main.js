@@ -1245,7 +1245,17 @@ export default async ({ req, res, log, error }) => {
       } else if (settings.order_number_reset_on) {
         queries.push(Query.greaterThanEqual('$createdAt', settings.order_number_reset_on));
       }
-      const latest = await db.listDocuments(DB_ID, 'orders', queries);
+      /*
+        Only this prefix's orders, asked for as such, where the plain index on
+        order_no exists; the wide window otherwise, as before. A side that sells
+        rarely never had its last number inside the venue's latest eighty, so
+        it started again from one and collided with every number it had used.
+        See nextOrderNo in core.
+      */
+      const latest = prefix
+        ? await db.listDocuments(DB_ID, 'orders', [...queries, Query.startsWith('order_no', prefix)])
+          .catch(() => db.listDocuments(DB_ID, 'orders', queries))
+        : await db.listDocuments(DB_ID, 'orders', queries);
       // Placeholders are not numbers; counting one as the last order would
       // send the next guest back to the start.
       const previous = latest.documents.filter(
@@ -1253,11 +1263,17 @@ export default async ({ req, res, log, error }) => {
           && !(d.order_no || '').startsWith('~')
           && (d.module === 'craft' ? 'craft' : 'kitchen') === side,
       );
-      const last = previous[0]?.order_no || '';
-      const digits = (prefix && last.startsWith(prefix) ? last.slice(prefix.length) : last).replace(/\D/g, '');
-      let next = previous.length === 0
+      // The highest number in the run, not the newest row: two tills selling
+      // in the same second do not agree with the clock about which came last.
+      const highest = previous.reduce((top, d) => {
+        const no = d.order_no || '';
+        if (prefix && !no.startsWith(prefix)) return top;
+        const digits = (prefix ? no.slice(prefix.length) : no);
+        return /^\d+$/.test(digits) ? Math.max(top, Number(digits)) : top;
+      }, 0);
+      let next = highest === 0
         ? Math.max(1, settings.order_number_next || 1)
-        : (Number(digits) || 0) + 1;
+        : highest + 1;
 
       // Two guests ordering in the same second land on the same number. The
       // unique index on (venue_id, order_no) refuses the second, so take the

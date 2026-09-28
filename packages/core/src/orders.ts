@@ -227,7 +227,24 @@ async function nextOrderNo(
     queries.push(Query.greaterThanEqual('$createdAt', settings.order_number_reset_on));
   }
 
-  const latest = await db.listDocuments(DB_ID, 'orders', queries);
+  /*
+    ONLY THIS PREFIX'S ORDERS, asked for as such.
+
+    The window used to be the venue's latest eighty orders of every kind,
+    filtered here. The shop sells a few pieces a day and the bar and kitchen a
+    hundred, so the shop's last number was nearly always outside the window:
+    none were seen, the count went back to CR0001, and the database refused
+    every number already taken. Five retries reached CR0006, the shop was
+    past it, and "Take payment" failed with "Document violates a unique
+    attribute constraint".
+
+    A database without the plain index on order_no refuses the narrow query;
+    the wide one is used then, as before.
+  */
+  const latest = prefix
+    ? await db.listDocuments(DB_ID, 'orders', [...queries, Query.startsWith('order_no', prefix)])
+      .catch(() => db.listDocuments(DB_ID, 'orders', queries))
+    : await db.listDocuments(DB_ID, 'orders', queries);
   /*
     Everything carrying this prefix, whichever side rang it up.
 

@@ -1008,6 +1008,40 @@ console.log('\n=== X — the nightly check finds what was left half written, and
   )]);
 }
 
+/* -------------------------- a shop sale after a busy night on the other sides */
+
+// The craft till's Take payment failed with "Document violates a unique
+// attribute constraint". The shop's last number, CR0007, sat behind more than
+// eighty newer bar and kitchen orders, so the till never saw it, started again
+// at CR0001, and five retries could not get past the numbers already used.
+{
+  __reset();
+  const at = (n: number) => new Date(Date.UTC(2026, 8, 20) + n * 60_000).toISOString();
+  __seed('orders', [
+    ...Array.from({ length: 7 }, (_, i) => ({
+      $id: `cr${i + 1}`, venue_id: 'main', module: 'craft', order_no: `CR${String(i + 1).padStart(4, '0')}`,
+      status: 'CLOSED', payment_status: 'paid', total: 100, $createdAt: at(i),
+    })),
+    ...Array.from({ length: 120 }, (_, i) => ({
+      $id: `k${i}`, venue_id: 'main', module: i % 2 ? 'bar' : 'kitchen', order_no: `ORD${String(1000 + i).padStart(4, '0')}`,
+      status: 'CLOSED', payment_status: 'paid', total: 100, $createdAt: at(100 + i),
+    })),
+  ]);
+  __seed('menu_items', [{ $id: 'soap', venue_id: 'main', name: 'Moringa Soap', module: 'craft', price: 7_500, active: true }]);
+  const settings = { order_number_prefix: 'ORD', craft_order_prefix: 'CR', order_number_padding: 4, currency_code: 'GHS', service_charge_bp: 0, tax_bp: 0 } as any;
+  let got = '';
+  try {
+    const { order } = await createOrder({
+      venueId: 'main', module: 'craft', settings, channel: 'counter', placedBy: 'Till',
+      lines: [{ key: 'soap', menu_item_id: 'soap', name: 'Moringa Soap', unit_price: 7_500, qty: 2, addons: [] }],
+    } as any);
+    got = order.order_no;
+  } catch (e) {
+    got = e instanceof Error ? e.message : String(e);
+  }
+  results.push(['X a shop sale takes the next shop number, however many bar and kitchen orders came after', ok('number', got, 'CR0008')]);
+}
+
 console.log('\n=== summary ===');
 for (const [name, pass] of results) console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}`);
 if (results.some(([, p]) => !p)) process.exitCode = 1;
