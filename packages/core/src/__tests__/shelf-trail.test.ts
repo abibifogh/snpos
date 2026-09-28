@@ -66,3 +66,27 @@ test('decided counts say how they were decided, and are not a warning', () => {
   assert.match(note('d'), /matched/);
   assert.equal(trailWarning(rows), null);
 });
+
+test('one place only: its own movements, its level, and the counts taken there', () => {
+  const input = {
+    moves: [
+      { $id: 'sold', $createdAt: '2026-09-27T20:00:00.000Z', type: 'sale_depletion', qty_delta: -1, location_id: bar },
+      { $id: 'in', $createdAt: '2026-09-27T10:00:00.000Z', type: 'transfer', qty_delta: 12, location_id: bar },
+      { $id: 'out', $createdAt: '2026-09-27T10:00:00.000Z', type: 'transfer', qty_delta: -12, location_id: 'store' },
+    ],
+    checks: [
+      { $id: 'shiftcount', $createdAt: '2026-09-27T18:00:00.000Z', shift_id: 'sh1', counted_qty: 11, theoretical_qty: 11, variance_qty: 0 },
+      { $id: 'storecount', $createdAt: '2026-09-27T09:00:00.000Z', shift_id: 'store:store', counted_qty: 36, theoretical_qty: 36, variance_qty: 0 },
+    ],
+    levels: { [bar]: 11, store: 24 },
+    total: 35,
+    placeNames: places,
+  };
+  const atBar = shelfTrail({ ...input, onlyAt: { locationId: bar, shiftCounts: true } });
+  assert.deepEqual(atBar.map((r) => r.id), ['sold', 'shiftcount', 'in']);
+  assert.deepEqual(atBar.filter((r) => r.after !== undefined).map((r) => r.after), [11, 12]);
+
+  const inStore = shelfTrail({ ...input, onlyAt: { locationId: 'store', shiftCounts: false } });
+  assert.deepEqual(inStore.map((r) => r.id), ['out', 'storecount']);
+  assert.equal(inStore[0]?.after, 24);
+});

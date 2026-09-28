@@ -12,9 +12,11 @@ const DAYS = 30;
  * still waiting for approval, which move nothing until somebody decides.
  * See shelf-trail.ts.
  */
-export function ShelfTrailModal({ ingredient, unit, onClose }: {
+export function ShelfTrailModal({ ingredient, unit, place, onClose }: {
   ingredient: { $id: string; name: string };
   unit?: string;
+  /** One place only, from Where stock sits. See shelfTrail's onlyAt. */
+  place?: { id: string; name: string; shiftCounts: boolean };
   onClose: () => void;
 }) {
   const [rows, setRows] = useState<TrailRow[] | null>(null);
@@ -22,17 +24,27 @@ export function ShelfTrailModal({ ingredient, unit, onClose }: {
 
   useEffect(() => {
     loadShelfTrail('main', ingredient.$id, Date.now() - DAYS * 86_400_000)
-      .then((got) => setRows(shelfTrail(got)))
+      .then((got) => setRows(shelfTrail({
+        ...got,
+        onlyAt: place ? { locationId: place.id, shiftCounts: place.shiftCounts } : undefined,
+      })))
       .catch((e) => { setError(humanError(e)); setRows([]); });
-  }, [ingredient.$id]);
+  }, [ingredient.$id, place?.id, place?.shiftCounts]);
 
   const warning = rows ? trailWarning(rows) : null;
   const n = (v: number) => `${v > 0 ? '+' : ''}${v}${unit ? ` ${unit}` : ''}`;
 
   return (
-    <Modal title={`${ingredient.name} · where the figure came from`} onClose={onClose} wide footer={<Button onClick={onClose}>Close</Button>}>
+    <Modal
+      title={`${ingredient.name}${place ? ` in ${place.name}` : ''} · where the figure came from`}
+      onClose={onClose}
+      wide
+      footer={<Button onClick={onClose}>Close</Button>}
+    >
       <p className="small dim" style={{ marginTop: 0 }}>
-        Everything that moved it in the last {DAYS} days, newest first, with what each place held straight after.
+        {place
+          ? `Everything that moved it in or out of ${place.name} in the last ${DAYS} days, newest first, with what ${place.name} held straight after, and the counts taken there.`
+          : `Everything that moved it in the last ${DAYS} days, newest first, with what each place held straight after.`}
       </p>
       {error && <Notice>{error}</Notice>}
       {warning && <Notice tone="warn">{warning}</Notice>}

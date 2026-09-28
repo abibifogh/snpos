@@ -81,12 +81,26 @@ export function shelfTrail(input: {
   total: number;
   placeNames: Record<string, string>;
   shiftCodes?: Record<string, string>;
+  /**
+   * One place only: what moved there, and the counts taken of it — a store
+   * room's own counts, and a counter's shift counts where it is the counter
+   * its side counts at.
+   */
+  onlyAt?: { locationId: string; shiftCounts: boolean };
 }): TrailRow[] {
   const running: Record<string, number> = { ...input.levels };
   const noPlace = '';
   running[noPlace] = input.total;
 
-  const moves = [...input.moves].sort((a, b) => b.$createdAt.localeCompare(a.$createdAt));
+  const at = input.onlyAt;
+  const moves = [...input.moves]
+    .filter((m) => !at || m.location_id === at.locationId)
+    .sort((a, b) => b.$createdAt.localeCompare(a.$createdAt));
+  const checks = input.checks.filter((c) => {
+    if (!at) return true;
+    const id = c.shift_id ?? '';
+    return id === `store:${at.locationId}` || (at.shiftCounts && !id.startsWith('store:'));
+  });
   const rows: TrailRow[] = [];
   for (const m of moves) {
     const loc = m.location_id || noPlace;
@@ -103,7 +117,7 @@ export function shelfTrail(input: {
     });
   }
 
-  for (const c of input.checks) {
+  for (const c of checks) {
     const shift = c.shift_id ? input.shiftCodes?.[c.shift_id] : undefined;
     const variance = c.variance_qty ?? 0;
     const state = c.undone_at ? 'taken back'
