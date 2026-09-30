@@ -103,7 +103,6 @@ export function countedParts(opts: {
 }): CountedParts {
   const { kindFor, expenses, kind } = opts;
   const closed = opts.shifts.filter((s) => s.status === 'closed');
-  const ids = new Set(closed.map((s) => s.$id));
 
   let counted = 0;
   let floats = 0;
@@ -120,10 +119,7 @@ export function countedParts(opts: {
     }
   }
 
-  const spent = expenses
-    .filter((e) => e.shift_id && ids.has(e.shift_id))
-    .filter((e) => e.from_takings !== false)
-    .filter((e) => kindFor(e.paid_from_method_id ?? '') === kind)
+  const spent = drawerSpends({ shifts: closed, kindFor, expenses, kind })
     .reduce((a, e) => a + (e.amount ?? 0), 0);
 
   return { kind, counted, floats, spent, variance, taken: counted - floats + spent - variance };
@@ -137,6 +133,28 @@ export function countedParts(opts: {
  * equals card sales — and dropped where it would be noise. The count and the
  * sales are always shown; they are the two ends of the sentence.
  */
+/**
+ * The spends behind "Spent out of the drawer", one by one.
+ *
+ * Exactly the rows the figure adds up — closed shifts only, out of the drawer
+ * rather than petty cash, paid by this kind of money — so the list opened
+ * under the figure can never come to a different total than the figure.
+ * Newest first.
+ */
+export function drawerSpends<T extends SpendRow & { $createdAt?: string }>(opts: {
+  shifts: Pick<TotalledShift, '$id' | 'status'>[];
+  kindFor: (methodId: string) => MoneyKind;
+  expenses: T[];
+  kind: MoneyKind;
+}): T[] {
+  const ids = new Set(opts.shifts.filter((s) => s.status === 'closed').map((s) => s.$id));
+  return opts.expenses
+    .filter((e) => e.shift_id && ids.has(e.shift_id))
+    .filter((e) => e.from_takings !== false)
+    .filter((e) => opts.kindFor(e.paid_from_method_id ?? '') === opts.kind)
+    .sort((a, b) => (b.$createdAt ?? '').localeCompare(a.$createdAt ?? ''));
+}
+
 export function partLines(parts: CountedParts): { label: string; amount: number; sign: 1 | -1 }[] {
   const rows: { label: string; amount: number; sign: 1 | -1 }[] = [
     { label: 'Counted at close', amount: parts.counted, sign: 1 },
