@@ -19,7 +19,7 @@ import { decideSpend } from './core/spend-decide.ts';
 import { db, DB_ID, Query } from './core/client.ts';
 // The server's side of the books: the same code the notify function runs,
 // against the same in-memory database. See functions/notify/src/books-post.js.
-import { postShiftClose, postSpend, postPayoutRow, postWasteRow, sweepBooks } from './notify/books-post.js';
+import { postShiftClose, postSpend, unpostSpend, postPayoutRow, postWasteRow, sweepBooks } from './notify/books-post.js';
 import { healthFacts, healthFindings, healthSummary } from './notify/health.js';
 
 /** What the notify function hands its books code: the database and a log. */
@@ -648,6 +648,19 @@ console.log('\n=== O — a market run posts its bottles to stock and its taxi to
   await postSpend(server, (__all('shift_expenses') as any[])[0]);
   results.push(['O paid by transfer, the money leaves the bank, not the till', ok(
     'credit', byAccount(linesOf(first.entryId))['1040'], -27_720,
+  )]);
+
+  // An admin deletes it: the entry is reversed, once, and nothing is left owing.
+  const gone = (__all('shift_expenses') as any[])[0];
+  const out = await unpostSpend(server, gone);
+  const twice = await unpostSpend(server, gone);
+  const net = (__all('journal_lines') as any[]).reduce((m: Record<string, number>, l: any) => {
+    m[l.account_code] = (m[l.account_code] ?? 0) + l.debit - l.credit;
+    return m;
+  }, {});
+  results.push(['O a deleted spend comes off the books, once', ok(
+    'after delete', [out.reversed, twice.skipped, net['1210'], net['6000'], net['1040']],
+    [true, 'nothing on the books', 0, 0, 0],
   )]);
 }
 

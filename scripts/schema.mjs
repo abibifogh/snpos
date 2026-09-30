@@ -1824,7 +1824,10 @@ export const COLLECTIONS = [
      */
     id: 'expense_items',
     name: 'Expense items',
-    perms: { read: ['team:cashiers', ...MGMT], create: ['team:cashiers', ...MGMT], update: MGMT, delete: MGMT },
+    // Deleted with the spend they belong to, which only an admin may do. A
+    // manager could delete these while the spend itself refused them, which
+    // left a spend with its shopping list gone.
+    perms: { read: ['team:cashiers', ...MGMT], create: ['team:cashiers', ...MGMT], update: MGMT, delete: ADMIN },
     attributes: [
       ['expense_id', 's', 64, true],
       ['ingredient_id', 's', 64, true],

@@ -76,6 +76,7 @@
         "databases.snpos.collections.shifts.documents.*.update",
         "databases.snpos.collections.shift_expenses.documents.*.create",
         "databases.snpos.collections.shift_expenses.documents.*.update",
+        "databases.snpos.collections.shift_expenses.documents.*.delete",
         "databases.snpos.collections.consignor_payouts.documents.*.create",
         "databases.snpos.collections.consignor_payouts.documents.*.update",
         "databases.snpos.collections.waste_log.documents.*.create",

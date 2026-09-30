@@ -19,7 +19,7 @@ import {
   countLines, countSubject, countBody, countPlace,
 } from './approvals.js';
 import {
-  postShiftClose, postSpend, postPayoutRow, postWasteRow, postBatchRow, postStaffChargeRow, postStaffSettleRow, sweepBooks,
+  postShiftClose, postSpend, unpostSpend, postPayoutRow, postWasteRow, postBatchRow, postStaffChargeRow, postStaffSettleRow, sweepBooks,
 } from './books-post.js';
 import { nightlyReconcile } from './health-night.js';
 import { send as pushSend } from './webpush.js';
@@ -49,6 +49,7 @@ import {
  *   staff_charge_settlements.*.create → paid, taken from pay, found or written off, on the books
  *   shifts.*.update            → the shift's takings, costs and drawer, on the books
  *   shift_expenses.*.create/update → the spend on the books, corrected, or reversed if refused
+ *   shift_expenses.*.delete        → a deleted spend's entry reversed
  *   consignor_payouts.*.create/update → the payout on the shop's books
  *   waste_log.*.create         → the write-off on the books
  *
@@ -1139,6 +1140,8 @@ export default async ({ req, res, log, error }) => {
     // the row does not write the books; see books-post.js for why.
     const books = { db, DB_ID, Query, log };
     if (events.some((e) => e.includes('collections.shift_expenses'))) {
+      // Deleted: its entry comes off the books. See unpostSpend.
+      if (events.some((e) => e.endsWith('.delete'))) return res.json(await unpostSpend(books, doc));
       return res.json(await postSpend(books, doc));
     }
     if (events.some((e) => e.includes('collections.consignor_payouts'))) {

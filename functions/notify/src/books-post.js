@@ -367,6 +367,31 @@ export async function postSpend(ctx, expense) {
   }
 }
 
+/**
+ * A spend deleted: its entry comes off the books.
+ *
+ * A deleted spend used to leave its entry standing, so the month still
+ * carried money paid out that no longer existed anywhere else. Reversed, not
+ * erased, like a refusal, and keyed off the spend afterwards so it is done
+ * once.
+ */
+export async function unpostSpend(ctx, expense) {
+  const venueId = expense.venue_id || 'main';
+  const key = `expense:${expense.$id}`;
+  const existing = await entryFor(ctx, venueId, key);
+  if (!existing || existing.reversed_by) return { skipped: 'nothing on the books' };
+  try {
+    await reverseEntry(ctx, existing, { postedBy: SYSTEM, memo: `Deleted: ${existing.memo || 'money paid out'}` });
+  } catch (e) {
+    if (e.locked) return { skipped: 'locked', through: e.through };
+    throw e;
+  }
+  await ctx.db.updateDocument(ctx.DB_ID, 'journal_entries', existing.$id, { source_id: `${key}:deleted` })
+    .catch(() => undefined);
+  ctx.log(`Reversed the deleted spend ${expense.$id}.`);
+  return { ok: true, reversed: true };
+}
+
 /* ------------------------------------------------------------- payouts */
 
 /** A maker paid, on the shop's books; or a payout reversed, taken off them. */

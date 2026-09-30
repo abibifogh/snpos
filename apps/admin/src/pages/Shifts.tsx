@@ -26,6 +26,7 @@ import type {
 } from '@snpos/core';
 import { useSession, useMoney } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
+import { SpendDetailsModal } from '../components/SpendDetails';
 
 interface Shift extends Doc {
   venue_id: string;
@@ -92,15 +93,6 @@ interface Expense extends Doc {
   from_takings?: boolean;
 }
 
-/** One thing bought on a shop run, under the expense that paid for it. */
-interface ExpenseItem extends Doc {
-  expense_id: string;
-  name_snapshot: string;
-  qty: number;
-  unit_cost: number;
-  line_total: number;
-  stocked?: boolean;
-}
 
 /** Local midnight, so "today" means today here rather than in UTC. */
 const dayStart = (d: string) => new Date(`${d}T00:00:00`).toISOString();
@@ -170,7 +162,6 @@ export function ShiftsPage() {
    * most of them are never opened.
    */
   const [openExpense, setOpenExpense] = useState<Expense | null>(null);
-  const [expenseItems, setExpenseItems] = useState<ExpenseItem[] | null>(null);
 
   /**
    * Correcting when a shift ended.
@@ -304,12 +295,9 @@ export function ShiftsPage() {
     }
   };
 
+  // The full details window reads its own lines, history and names.
   const openLines = async (e: Expense) => {
     setOpenExpense(e);
-    setExpenseItems(null);
-    setExpenseItems(
-      await listAll<ExpenseItem>('expense_items', [Query.equal('expense_id', e.$id)]).catch(() => []),
-    );
   };
   const [handovers, setHandovers] = useState<CashHandover[]>([]);
   const [detail, setDetail] = useState<Shift | null>(null);
@@ -2067,81 +2055,7 @@ export function ShiftsPage() {
         at and finding the same row again.
       */}
       {openExpense && (
-        <Modal
-          title={`${openExpense.category_key || openExpense.category} · ${settings ? formatMoney(openExpense.amount, settings) : openExpense.amount}`}
-          onClose={() => setOpenExpense(null)}
-          footer={<Button onClick={() => setOpenExpense(null)}>Close</Button>}
-        >
-          <div className="cash-split" style={{ marginTop: 0 }}>
-            <div className="cash-split-item">
-              <div className="label">Paid from</div>
-              <div className="figure" style={{ fontSize: '0.95rem' }}>
-                {methods.find((m) => m.$id === openExpense.paid_from_method_id)?.name ?? 'Not recorded'}
-              </div>
-            </div>
-            {/* The question the drawer count turns on, given its own block
-                rather than a line of small grey text. */}
-            <div className="cash-split-item">
-              <div className="label">Whose money</div>
-              <div className="figure" style={{ fontSize: '0.95rem' }}>
-                {fromTakings(openExpense) ? 'This shift\u2019s takings' : 'Petty cash'}
-              </div>
-              <div className="small dim">
-                {fromTakings(openExpense)
-                  ? 'Taken off what the drawer should hold'
-                  : 'Not taken off the drawer count'}
-              </div>
-            </div>
-            {openExpense.payee && (
-              <div className="cash-split-item">
-                <div className="label">Paid to</div>
-                <div className="figure" style={{ fontSize: '0.95rem' }}>{openExpense.payee}</div>
-              </div>
-            )}
-          </div>
-          {openExpense.note && <p className="small">{openExpense.note}</p>}
-
-          {expenseItems === null ? (
-            <Spinner />
-          ) : expenseItems.length === 0 ? (
-            <p className="small dim">
-              Nothing was itemised on this one. Plenty of spending has nothing to list — a taxi, a gas refill, a
-              repair — and it was recorded as a single amount.
-            </p>
-          ) : (
-            <div className="table-wrap">
-              <table className="data">
-                <thead>
-                  <tr><th>What</th><th className="num">How many</th><th className="num">Each</th><th className="num">Paid</th></tr>
-                </thead>
-                <tbody>
-                  {expenseItems.map((i) => (
-                    <tr key={i.$id}>
-                      <td>
-                        {i.name_snapshot}
-                        {/* An overhead is used up in the buying and never
-                            reached a shelf, which is worth saying beside the
-                            things that did. */}
-                        {i.stocked === false && <div className="small dim">not stocked, used up in the buying</div>}
-                      </td>
-                      <td className="num">{i.qty}</td>
-                      <td className="num dim">{settings ? formatMoney(i.unit_cost, settings) : i.unit_cost}</td>
-                      <td className="num">{settings ? formatMoney(i.line_total, settings) : i.line_total}</td>
-                    </tr>
-                  ))}
-                  <tr>
-                    <td colSpan={3} style={{ fontWeight: 650 }}>Itemised</td>
-                    <td className="num" style={{ fontWeight: 650 }}>
-                      {settings
-                        ? formatMoney(expenseItems.reduce((s2, i) => s2 + i.line_total, 0), settings)
-                        : expenseItems.reduce((s2, i) => s2 + i.line_total, 0)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Modal>
+        <SpendDetailsModal expenseId={openExpense.$id} settings={settings} onClose={() => setOpenExpense(null)} />
       )}
     </>
   );
