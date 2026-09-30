@@ -203,3 +203,24 @@
 .choice.on { border-color: var(--brand); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--brand); }
 .choice input { margin-top: 0.2rem; flex: none; }
 .choice-title { font-weight: 600; margin-bottom: 0.15rem; }
+
+/* ---- how many things are waiting --------------------------------------- */
+/* A red circle with the number in it, beside Waiting for you. */
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding: 0 0.35rem;
+  margin-left: 0.45rem;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+  vertical-align: middle;
+}
