@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  countedParts, partLines, partsWords, unexplained,
+  countedParts, partLines, partsWords, unexplained, drawerSpends,
   drawerMakeup, makeupWords, driftWords, spendSplit, splitWords,
   type SpendRow,
 } from '../counted-breakdown.ts';
@@ -430,4 +430,24 @@ test('spending that could not be read is not totalled as nothing', () => {
   const split = spendSplit([], false);
   assert.equal(split.known, false);
   assert.match(splitWords(split, money, nameOf), /could not be read/);
+});
+
+test('"Spent out of the drawer" opens to exactly the spends it adds up', () => {
+  /*
+    The figure and the list under it are worked out by one rule, so the list
+    can never come to a different total: closed shifts only, out of the drawer
+    rather than petty cash, and paid by this kind of money.
+  */
+  const shifts = [shift(), shift({ $id: 'sh2', status: 'open' })];
+  const expenses = [
+    { $id: 'gas', shift_id: 'sh1', amount: 50_000, paid_from_method_id: 'm-cash', $createdAt: '2026-09-28T10:00:00.000Z' },
+    { $id: 'market', shift_id: 'sh1', amount: 112_000, paid_from_method_id: 'm-cash', $createdAt: '2026-09-29T09:00:00.000Z' },
+    { $id: 'petty', shift_id: 'sh1', amount: 9_000, paid_from_method_id: 'm-cash', from_takings: false, $createdAt: '2026-09-29T11:00:00.000Z' },
+    { $id: 'card', shift_id: 'sh1', amount: 7_000, paid_from_method_id: 'm-card', $createdAt: '2026-09-29T12:00:00.000Z' },
+    { $id: 'still-open', shift_id: 'sh2', amount: 3_000, paid_from_method_id: 'm-cash', $createdAt: '2026-09-29T13:00:00.000Z' },
+  ];
+  const listed = drawerSpends({ shifts, kindFor, expenses, kind: 'cash' });
+  assert.deepEqual(listed.map((e) => e.$id), ['market', 'gas'], 'newest first');
+  const parts = countedParts({ shifts, kindFor, expenses, kind: 'cash' });
+  assert.equal(listed.reduce((a, e) => a + e.amount, 0), parts.spent);
 });

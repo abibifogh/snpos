@@ -4,13 +4,14 @@ import { db, DB_ID, listAll, humanError } from '../lib';
 import {
   formatMoney, downloadUrl, deleteFile, Query,
   isPostableExpenseAccount, expenseMethodsFor, expenseSides,
-  defaultExpenseSide, MODULE_LABELS, modulesOf, spendWords, dateWords } from '@snpos/core';
+  defaultExpenseSide, MODULE_LABELS, modulesOf, spendWords, dateWords, logSpendChange, spendSnapshot } from '@snpos/core';
 import type {
   Module, Doc, ExpenseCategoryDoc, ImprestFloatDoc, Settings, ShiftExpense,
 } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
 import { AccountsManager } from '../components/AccountsManager';
 import { ExpenseAnalysisTab } from '../components/ExpenseAnalysis';
+import { SpendDetailsModal } from '../components/SpendDetails';
 import { useSession } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 
@@ -62,6 +63,9 @@ interface AccountRow extends Doc { code: string; name: string; type: string; act
 
 export function ExpensesPage() {
   const { settings, user, profile } = useSession();
+  const isAdmin = profile?.role === 'admin';
+  /** The spend whose full details are open. See SpendDetailsModal. */
+  const [detailsFor, setDetailsFor] = useState<string | null>(null);
   const toast = useToast();
   const [tab, setTab] = useState<'expenses' | 'analysis' | 'categories' | 'accounts'>('expenses');
   const [rows, setRows] = useState<Expense[] | null>(null);
@@ -126,13 +130,35 @@ export function ExpensesPage() {
     setEditing(row ?? 'new');
   };
 
+  /**
+   * Delete a spend. An admin's alone, like the database says.
+   *
+   * The spend itself goes first. It used to be its lines and receipt first,
+   * so a manager pressing Delete lost the shopping list and the photo, and
+   * was then refused the spend — which stayed, with nothing left to show
+   * what it was for. Its entry in the books is reversed by the server.
+   */
   const remove = async (row: Expense) => {
-    if (!confirm(`Delete this ${settings ? formatMoney(row.amount, settings) : ''} expense? Stock already added from it stays where it is, remove that separately if it was wrong.`)) return;
+    if (!isAdmin) return;
+    if (!confirm(`Delete this ${settings ? formatMoney(row.amount, settings) : ''} expense? Stock already added from it stays where it is, remove that separately if it was wrong. Its entry in the books is reversed.`)) return;
     try {
-      if (row.receipt_file_id) await deleteFile(row.receipt_file_id, 'receipt', settings).catch(() => undefined);
       const items = await listAll<ExpenseItem>('expense_items', [Query.equal('expense_id', row.$id)]).catch(() => []);
-      await Promise.all(items.map((i) => db.deleteDocument(DB_ID, 'expense_items', i.$id).catch(() => undefined)));
       await db.deleteDocument(DB_ID, 'shift_expenses', row.$id);
+      // What was deleted, in full, by whom: the only record left of it.
+      void logSpendChange({
+        venueId: (row as unknown as { venue_id?: string }).venue_id ?? 'main',
+        expenseId: row.$id,
+        shiftId: row.shift_id,
+        actorId: user?.$id ?? '',
+        role: profile?.role ?? '',
+        action: 'spend_deleted',
+        before: spendSnapshot({
+          ...(row as unknown as Record<string, unknown>),
+          items: items.map((i) => ({ name: i.name_snapshot, qty: i.qty, line_total: i.line_total })),
+        }),
+      });
+      await Promise.all(items.map((i) => db.deleteDocument(DB_ID, 'expense_items', i.$id).catch(() => undefined)));
+      if (row.receipt_file_id) await deleteFile(row.receipt_file_id, 'receipt', settings).catch(() => undefined);
       await load();
       toast('Deleted');
     } catch (e) {
@@ -253,8 +279,10 @@ export function ExpensesPage() {
                           )}
                         </td>
                         <td className="num">
+                          <Button size="sm" variant="ghost" onClick={() => setDetailsFor(r.$id)}>Details</Button>
                           <Button size="sm" variant="ghost" onClick={() => void open(r)}>Edit</Button>
-                          <Button size="sm" variant="ghost" onClick={() => remove(r)}>Delete</Button>
+                          {/* Deleting a spend is an admin's alone. */}
+                          {isAdmin && <Button size="sm" variant="ghost" onClick={() => remove(r)}>Delete</Button>}
                         </td>
                       </tr>
                     ))}
@@ -294,6 +322,9 @@ export function ExpensesPage() {
             void load();
           }}
         />
+      )}
+      {detailsFor && (
+        <SpendDetailsModal expenseId={detailsFor} settings={settings} onClose={() => setDetailsFor(null)} />
       )}
     </>
   );

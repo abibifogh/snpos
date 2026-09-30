@@ -14,7 +14,7 @@ import {
   sealProblem, bulkSealPlan, bulkSealProblem, bulkSealWords, bulkSealOutcome,
   settlementBacklog, backlogSummary, stateWords, needsSettling, agedWords,
   rangeTotals, kindsWorthShowing, KIND_LABELS, MODULE_LABELS, canOpen, floatOrigin,
-  kindOf, countedParts, partLines, partsWords, unexplained,
+  kindOf, countedParts, partLines, partsWords, unexplained, drawerSpends,
   drawerMakeup, makeupWords, driftWords, spendSplit, splitWords,
   shiftCountEntries, countsByPhase, phaseSummary, bothEndsWords, countsGapWords,
   buildReportHtml, openPrintable,
@@ -26,6 +26,7 @@ import type {
 } from '@snpos/core';
 import { useSession, useMoney } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
+import { SpendDetailsModal } from '../components/SpendDetails';
 
 interface Shift extends Doc {
   venue_id: string;
@@ -92,15 +93,6 @@ interface Expense extends Doc {
   from_takings?: boolean;
 }
 
-/** One thing bought on a shop run, under the expense that paid for it. */
-interface ExpenseItem extends Doc {
-  expense_id: string;
-  name_snapshot: string;
-  qty: number;
-  unit_cost: number;
-  line_total: number;
-  stocked?: boolean;
-}
 
 /** Local midnight, so "today" means today here rather than in UTC. */
 const dayStart = (d: string) => new Date(`${d}T00:00:00`).toISOString();
@@ -170,7 +162,6 @@ export function ShiftsPage() {
    * most of them are never opened.
    */
   const [openExpense, setOpenExpense] = useState<Expense | null>(null);
-  const [expenseItems, setExpenseItems] = useState<ExpenseItem[] | null>(null);
 
   /**
    * Correcting when a shift ended.
@@ -304,12 +295,9 @@ export function ShiftsPage() {
     }
   };
 
+  // The full details window reads its own lines, history and names.
   const openLines = async (e: Expense) => {
     setOpenExpense(e);
-    setExpenseItems(null);
-    setExpenseItems(
-      await listAll<ExpenseItem>('expense_items', [Query.equal('expense_id', e.$id)]).catch(() => []),
-    );
   };
   const [handovers, setHandovers] = useState<CashHandover[]>([]);
   const [detail, setDetail] = useState<Shift | null>(null);
@@ -882,6 +870,13 @@ export function ShiftsPage() {
               payments={kindPayments}
               settings={settings}
               methodName={methodName}
+              // The spends behind "Spent out of the drawer", by the same rule
+              // the figure is added up by, so the two cannot disagree.
+              spends={drawerSpends({
+                shifts: shown, kindFor: (id) => kindOf(id, methods), expenses, kind: openKind,
+              })}
+              shiftCodeOf={(id) => shown.find((s) => s.$id === id)?.code ?? ''}
+              onOpenSpend={(e) => void openLines(e)}
             />
           )}
         </Card>
@@ -2060,81 +2055,7 @@ export function ShiftsPage() {
         at and finding the same row again.
       */}
       {openExpense && (
-        <Modal
-          title={`${openExpense.category_key || openExpense.category} · ${settings ? formatMoney(openExpense.amount, settings) : openExpense.amount}`}
-          onClose={() => setOpenExpense(null)}
-          footer={<Button onClick={() => setOpenExpense(null)}>Close</Button>}
-        >
-          <div className="cash-split" style={{ marginTop: 0 }}>
-            <div className="cash-split-item">
-              <div className="label">Paid from</div>
-              <div className="figure" style={{ fontSize: '0.95rem' }}>
-                {methods.find((m) => m.$id === openExpense.paid_from_method_id)?.name ?? 'Not recorded'}
-              </div>
-            </div>
-            {/* The question the drawer count turns on, given its own block
-                rather than a line of small grey text. */}
-            <div className="cash-split-item">
-              <div className="label">Whose money</div>
-              <div className="figure" style={{ fontSize: '0.95rem' }}>
-                {fromTakings(openExpense) ? 'This shift\u2019s takings' : 'Petty cash'}
-              </div>
-              <div className="small dim">
-                {fromTakings(openExpense)
-                  ? 'Taken off what the drawer should hold'
-                  : 'Not taken off the drawer count'}
-              </div>
-            </div>
-            {openExpense.payee && (
-              <div className="cash-split-item">
-                <div className="label">Paid to</div>
-                <div className="figure" style={{ fontSize: '0.95rem' }}>{openExpense.payee}</div>
-              </div>
-            )}
-          </div>
-          {openExpense.note && <p className="small">{openExpense.note}</p>}
-
-          {expenseItems === null ? (
-            <Spinner />
-          ) : expenseItems.length === 0 ? (
-            <p className="small dim">
-              Nothing was itemised on this one. Plenty of spending has nothing to list — a taxi, a gas refill, a
-              repair — and it was recorded as a single amount.
-            </p>
-          ) : (
-            <div className="table-wrap">
-              <table className="data">
-                <thead>
-                  <tr><th>What</th><th className="num">How many</th><th className="num">Each</th><th className="num">Paid</th></tr>
-                </thead>
-                <tbody>
-                  {expenseItems.map((i) => (
-                    <tr key={i.$id}>
-                      <td>
-                        {i.name_snapshot}
-                        {/* An overhead is used up in the buying and never
-                            reached a shelf, which is worth saying beside the
-                            things that did. */}
-                        {i.stocked === false && <div className="small dim">not stocked, used up in the buying</div>}
-                      </td>
-                      <td className="num">{i.qty}</td>
-                      <td className="num dim">{settings ? formatMoney(i.unit_cost, settings) : i.unit_cost}</td>
-                      <td className="num">{settings ? formatMoney(i.line_total, settings) : i.line_total}</td>
-                    </tr>
-                  ))}
-                  <tr>
-                    <td colSpan={3} style={{ fontWeight: 650 }}>Itemised</td>
-                    <td className="num" style={{ fontWeight: 650 }}>
-                      {settings
-                        ? formatMoney(expenseItems.reduce((s2, i) => s2 + i.line_total, 0), settings)
-                        : expenseItems.reduce((s2, i) => s2 + i.line_total, 0)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Modal>
+        <SpendDetailsModal expenseId={openExpense.$id} settings={settings} onClose={() => setOpenExpense(null)} />
       )}
     </>
   );
@@ -2160,7 +2081,7 @@ export function ShiftsPage() {
  * that quietly falls short of its own total is worse than no list.
  */
 function TotalsBreakdown({
-  kind, parts, payments, methodName,
+  kind, parts, payments, methodName, spends, shiftCodeOf, onOpenSpend,
 }: {
   kind: MoneyKind;
   parts: CountedParts;
@@ -2168,8 +2089,15 @@ function TotalsBreakdown({
   payments: (ShiftPaymentRow & { shiftCode?: string })[] | null;
   settings: Settings | null;
   methodName: (id: string) => string;
+  /** Every spend "Spent out of the drawer" adds up. See drawerSpends. */
+  spends: Expense[];
+  shiftCodeOf: (shiftId: string) => string;
+  /** Open one spend and what was bought with it. */
+  onOpenSpend: (e: Expense) => void;
 }) {
   const money = useMoney();
+  /** The spends under "Spent out of the drawer", shown when it is pressed. */
+  const [showSpends, setShowSpends] = useState(false);
   // Voided and refunded are money that came back out, so they are shown struck
   // through rather than dropped: a payment reversed is a thing that happened,
   // and a list it vanishes from cannot explain why a total moved.
@@ -2184,17 +2112,59 @@ function TotalsBreakdown({
         <strong>{KIND_LABELS[kind]}.</strong> {partsWords(parts, money)}
       </p>
 
-      <div className="table-wrap" style={{ maxWidth: '30rem', marginBottom: '1rem' }}>
+      <div className="table-wrap" style={{ maxWidth: showSpends ? '52rem' : '30rem', marginBottom: '1rem' }}>
         <table className="data">
           <tbody>
-            {partLines(parts).map((row) => (
-              <tr key={row.label}>
-                <td>{row.label}</td>
-                <td className="num">
-                  {row.sign < 0 ? '−' : ''}{money(row.amount)}
-                </td>
-              </tr>
-            ))}
+            {partLines(parts).map((row) => {
+              const spentRow = row.label === 'Spent out of the drawer';
+              return (
+                <Fragment key={row.label}>
+                  <tr>
+                    <td>
+                      {/* The spends behind the figure, one press away, each of
+                          which opens to what was bought. */}
+                      {spentRow && spends.length > 0 ? (
+                        <button type="button" className="linky" onClick={() => setShowSpends((v) => !v)}>
+                          {showSpends ? '▾' : '▸'} {row.label} · {spends.length}
+                        </button>
+                      ) : row.label}
+                    </td>
+                    <td className="num">
+                      {row.sign < 0 ? '−' : ''}{money(row.amount)}
+                    </td>
+                  </tr>
+                  {spentRow && showSpends && (
+                    <tr>
+                      <td colSpan={2} style={{ padding: 0 }}>
+                        <table className="data">
+                          <tbody>
+                            {spends.map((e) => (
+                              <tr key={e.$id}>
+                                <td className="small dim" style={{ whiteSpace: 'nowrap' }}>
+                                  {new Date(e.$createdAt).toLocaleString([], {
+                                    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                                  })}
+                                  <div>{shiftCodeOf(e.shift_id ?? '')}</div>
+                                </td>
+                                <td>
+                                  {e.category_key || e.category}
+                                  {e.payee && <div className="small dim">{e.payee}</div>}
+                                  {e.note && <div className="small dim">&ldquo;{e.note}&rdquo;</div>}
+                                </td>
+                                <td className="num">{money(e.amount)}</td>
+                                <td style={{ width: '1%' }}>
+                                  <Button size="sm" variant="ghost" onClick={() => onOpenSpend(e)}>Details</Button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
             <tr>
               <td style={{ fontWeight: 650 }}>Taken on the sales below</td>
               <td className="num" style={{ fontWeight: 650 }}>{money(parts.taken)}</td>

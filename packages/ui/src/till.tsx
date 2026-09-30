@@ -8,7 +8,7 @@ import {
   fromTakings, settleBoxSpend, listAll, Query, spendKind, spendSource,
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
   loadFloats, balancesFor, recordBoxSpend, boxOverdrawn, boxHeadroom,
-  checkPurchase, raiseAlerts, FLAG_WORDS,
+  checkPurchase, raiseAlerts, FLAG_WORDS, logSpendChange, spendSnapshot,
 } from '@snpos/core';
 import type {
   PaymentMethod, Settings, StaffProfile, PaidToKind, Supplier, ExpenseCategoryDoc, Ingredient,
@@ -618,6 +618,17 @@ export function ExpenseModal({
        */
       if (editing) {
         const { dropped } = await saveDropping('shift_expenses', editing.$id, fields);
+        // Who changed what, from what, so the spend's details can say. See
+        // spend-history.ts.
+        void logSpendChange({
+          venueId,
+          expenseId: editing.$id,
+          shiftId: editing.shift_id,
+          actorId: userId,
+          action: 'spend_edited',
+          before: spendSnapshot(editing as unknown as Record<string, unknown>),
+          after: spendSnapshot(fields as unknown as Record<string, unknown>),
+        });
         /*
           The books follow from the row: the server reads the corrected spend
           and brings its entry into line. See functions/notify/src/books-post.js.
