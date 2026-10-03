@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { Button, Logo, SchemaBar, StaleBar, Segmented, THEME_MODES, themeMode, setThemeMode } from '@snpos/ui';
-import { navFor, wordsFor, sidebarSides, SIDE_NAMES } from '@snpos/core';
+import { navFor, wordsFor, sidebarSides, SIDE_NAMES, loadWaiting, pendingGroupBookings, openBookingChanges } from '@snpos/core';
 import type { Module } from '@snpos/core';
 import { useSession } from './session';
 
@@ -41,6 +41,38 @@ export function Shell({ children }: { children: ReactNode }) {
     links: g.links.map((l) => ({ ...l, label: words[l.keys[0]] ?? l.label })),
   }));
   groups.push({ group: 'You', links: [{ to: '/account', label: 'Your account', keys: [] }, { to: '/help', label: 'Help', keys: [] }] });
+
+  /**
+   * How many things are waiting for a decision, shown in red beside Waiting
+   * for you.
+   *
+   * Counted by the same reader the page itself uses, plus the group bookings
+   * and booking changes it lists above, so the badge and the page always
+   * agree. Read again on every page change — deciding something and moving on
+   * brings it down — and every minute for what arrives meanwhile. Only for
+   * somebody who can open the page; a failed read shows nothing rather than a
+   * number that is not true.
+   */
+  const canWait = groups.some((g) => g.links.some((l) => l.to === '/waiting'));
+  const [waiting, setWaiting] = useState(0);
+  useEffect(() => {
+    if (!canWait) { setWaiting(0); return undefined; }
+    let live = true;
+    const count = () => {
+      void Promise.all([
+        loadWaiting('main', () => '').then((w) => w.items.length),
+        pendingGroupBookings().then((b) => b.length).catch(() => 0),
+        openBookingChanges().then((c) => c.length).catch(() => 0),
+      ]).then((ns) => { if (live) setWaiting(ns.reduce((a, n) => a + n, 0)); })
+        .catch(() => { if (live) setWaiting(0); });
+    };
+    count();
+    const timer = window.setInterval(count, 60_000);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [canWait, path]);
+  const badge = (n: number) => (n > 0
+    ? <span className="nav-badge" aria-label={`${n} waiting`}>{n > 99 ? '99+' : n}</span>
+    : null);
 
   const [narrow, setNarrow] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(max-width: 820px)').matches,
@@ -108,7 +140,7 @@ export function Shell({ children }: { children: ReactNode }) {
             aria-expanded={drawer}
             aria-controls="admin-nav"
           >
-            ☰ Menu
+            ☰ Menu{badge(waiting)}
           </Button>
           <span className="topbar-here">{hereLabel}</span>
           <Logo size={22} />
@@ -170,10 +202,13 @@ export function Shell({ children }: { children: ReactNode }) {
                 <summary className="group">
                   <span className="fold-caret" aria-hidden="true" />
                   {section.group}
+                  {/* Folded away, the count still shows on its heading. */}
+                  {!here && section.links.some((l) => l.to === '/waiting') && badge(waiting)}
                 </summary>
                 {section.links.map((l) => (
                   <NavLink key={l.to} to={l.to} end={l.end} className={({ isActive }) => (isActive ? 'active' : '')}>
                     {l.label}
+                    {l.to === '/waiting' && badge(waiting)}
                   </NavLink>
                 ))}
               </details>
