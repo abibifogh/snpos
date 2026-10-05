@@ -2227,6 +2227,12 @@ export const COLLECTIONS = [
       ['unit_price', 'i', null, true, 0],
       ['amount', 'i', null, true, 0],
       ['price_basis', 'e', ['selling', 'cost', 'custom'], true, 'selling'],
+      /*
+        Owed for a shortage, or credited for a surplus. A credit is set
+        against what the same person owes, oldest first, and what is left of
+        it waits for their next shortage. See staff-charges.ts.
+      */
+      ['direction', 'e', ['owed', 'credit'], false, 'owed'],
       ['note', 's', 300, false],
       ['charged_by', 's', 64, false],
       ['charged_at', 'd', null, true],
@@ -2256,7 +2262,10 @@ export const COLLECTIONS = [
       ['venue_id', 's', 64, true],
       ['charge_id', 's', 64, true],
       ['person_id', 's', 64, true],
-      ['kind', 'e', ['cash', 'pay', 'found', 'written_off'], true, 'cash'],
+      // 'credit': set against a surplus credited to the same person.
+      ['kind', 'e', ['cash', 'pay', 'found', 'written_off', 'credit'], true, 'cash'],
+      // For 'credit': the credit it was set against.
+      ['credit_id', 's', 64, false],
       ['amount', 'i', null, true, 0],
       // For "found": how many turned up and went back on the shelf.
       ['qty_found', 'f', null, false, 0],

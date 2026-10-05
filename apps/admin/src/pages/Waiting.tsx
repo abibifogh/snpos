@@ -7,7 +7,7 @@ import {
   approveBarCount, rejectBarCount, approveCount, rejectCount, refuseCountLines,
   tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS,
   decideSpend, loadWaiting, nameFrom, waitingCounts, waitingSummary, waitedWords, refuseSpendWords, WAITING_KIND_WORDS, dateTimeWords,
-  loadReview, offWords,
+  loadReview, offWords, countDifferencesHtml, openPrintable,
   openBookingChanges, decideBookingChange, CHANGE_KIND_WORDS,
   pendingGroupBookings, decideGroupBooking } from '@snpos/core';
 import type {
@@ -35,7 +35,7 @@ const SHOWS: Show[] = ['all', 'count', 'spend', 'shelf', 'tab'];
  * there.
  */
 export function WaitingPage() {
-  const { user, profile } = useSession();
+  const { user, profile, settings } = useSession();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const show = (SHOWS.includes(params.get('show') as Show) ? params.get('show') : 'all') as Show;
@@ -296,6 +296,38 @@ export function WaitingPage() {
     }
   };
 
+  const [printing, setPrinting] = useState(false);
+  /**
+   * Every count waiting for approval, read line by line, as one document.
+   * The browser's print window saves it as a PDF.
+   */
+  const downloadCounts = async () => {
+    const toPrint = (items ?? []).filter((i) => i.kind === 'count' || i.kind === 'shelf');
+    if (toPrint.length === 0) return;
+    setPrinting(true);
+    setError(null);
+    try {
+      const sections = await Promise.all(toPrint.map(async (i) => ({
+        title: i.title,
+        countedBy: nameOf(i.by),
+        at: i.at,
+        lines: (await loadReview(i.ref)).lines,
+      })));
+      openPrintable(countDifferencesHtml({
+        business: settings?.restaurant_name ?? '',
+        counts: sections.filter((c) => c.lines.length > 0),
+        money,
+        madeAt: new Date().toISOString(),
+        madeBy: profile?.display_name,
+        when: (iso) => dateTimeWords(iso),
+      }), `Count differences ${new Date().toISOString().slice(0, 10)}`);
+    } catch (e) {
+      setError(humanError(e));
+    } finally {
+      setPrinting(false);
+    }
+  };
+
   const now = Date.now();
 
   return (
@@ -312,6 +344,15 @@ export function WaitingPage() {
           }))}
         />
       </div>
+      {/* Every count waiting, with who counted it and each line at selling
+          price, as a document to save or print. See count-report.ts. */}
+      {counts.count + counts.shelf > 0 && (
+        <div style={{ margin: '0 0 0.6rem' }}>
+          <Button size="sm" loading={printing} onClick={() => void downloadCounts()}>
+            Download count differences as PDF
+          </Button>
+        </div>
+      )}
       <p className="dim small" style={{ marginTop: 0 }}>
         {items ? waitingSummary(items) : 'Reading every queue…'} Oldest first. Approving a count moves the shelf by the
         difference it found; refusing leaves the shelf as it is. Refusing a spend takes it off the books.
@@ -704,7 +745,7 @@ function ReviewLines({ review, money, onLine, onCharge, lineBusy }: {
                   <th className="num">Difference</th>
                 </>
               )}
-              <th className="num">Worth</th>
+              <th className="num">{spend ? 'Worth' : 'Worth at selling price'}</th>
               {onLine && <th />}
             </tr>
           </thead>
@@ -733,7 +774,11 @@ function ReviewLines({ review, money, onLine, onCharge, lineBusy }: {
                     </td>
                   </>
                 )}
-                <td className="num">{money(Math.abs(l.worth))}</td>
+                <td className="num">
+                  {money(Math.abs(l.worth))}
+                  {/* Valued at selling price; said where it could not be. */}
+                  {l.valuedAt === 'cost' && <div className="small dim">at cost: nothing on the menu sells it</div>}
+                </td>
                 {onLine && (
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>
                     {/* This line alone. The buttons on the row above still
@@ -747,12 +792,13 @@ function ReviewLines({ review, money, onLine, onCharge, lineBusy }: {
                         <Button size="sm" variant="ghost" disabled={!!lineBusy} onClick={() => onLine(l, 'refuse')}>
                           Refuse
                         </Button>
-                        {/* Only a shortage has somebody to charge. */}
-                        {onCharge && (l.delta ?? 0) < 0 && (
+                        {/* A shortage is charged to somebody; a surplus is
+                            credited to them, against what they owe. */}
+                        {onCharge && (l.delta ?? 0) !== 0 && (
                           <>
                             {' '}
                             <Button size="sm" variant="ghost" disabled={!!lineBusy} onClick={() => onCharge(l)}>
-                              Charge to…
+                              {(l.delta ?? 0) < 0 ? 'Charge to…' : 'Credit to…'}
                             </Button>
                           </>
                         )}

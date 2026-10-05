@@ -485,14 +485,14 @@ export async function postBatchRow(ctx, batch) {
 /** A count difference charged to somebody, on the books. Keyed on the charge. */
 export async function postStaffChargeRow(ctx, charge) {
   const venueId = charge.venue_id || 'main';
-  const lines = staffChargeLines(charge.amount || 0);
+  const lines = staffChargeLines(charge.amount || 0, charge.direction || 'owed');
   if (lines.length === 0) return { skipped: 'no value' };
   const key = `staffcharge:${charge.$id}`;
   if (await entryFor(ctx, venueId, key)) return { skipped: 'already posted' };
   try {
     const entry = await postEntry(ctx, {
       venueId, date: charge.charged_at || charge.$createdAt, source: 'adjustment', sourceId: key,
-      memo: `Charged to ${charge.person_name || 'staff'}: ${charge.qty} ${charge.item_name || ''}`.trim(),
+      memo: `${charge.direction === 'credit' ? 'Credited to' : 'Charged to'} ${charge.person_name || 'staff'}: ${charge.qty} ${charge.item_name || ''}`.trim(),
       postedBy: charge.charged_by,
     }, lines);
     return { ok: true, posted: true, entryId: entry.$id };

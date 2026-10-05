@@ -35,8 +35,10 @@ export interface ReviewLine {
   worth: number;
   /** For a bar count: the shelf item, so it can be priced to charge to somebody. */
   ingredientId?: string;
-  /** For a shop count: what one sells for. */
+  /** What one sells for — or, where nothing on the menu sells it, what one cost. */
   unitPrice?: number;
+  /** Which of the two the worth is at. Selling, unless nothing sells it. */
+  valuedAt?: 'selling' | 'cost';
 }
 
 /** Rows sorted so the ones worth arguing about are read first. */
@@ -65,16 +67,40 @@ export interface BarCheckRow {
 export function barReviewLines(
   checks: BarCheckRow[],
   nameOf: (ingredientId: string) => string,
+  /**
+   * What one of each sells for. A difference is valued at what the business
+   * would have taken for it, not at what it paid; the stored cost is used
+   * only where nothing on the menu sells the item.
+   */
+  sellingOf?: (ingredientId: string) => number | undefined,
 ): ReviewLine[] {
-  return worstFirst(checks.map((c) => ({
-    id: c.$id,
-    ingredientId: c.ingredient_id,
-    name: nameOf(c.ingredient_id) || 'Something no longer on the list',
-    expected: c.theoretical_qty ?? 0,
-    counted: c.counted_qty ?? 0,
-    delta: c.variance_qty ?? 0,
-    worth: c.variance_value ?? 0,
-  })));
+  return worstFirst(checks.map((c) => {
+    const delta = c.variance_qty ?? 0;
+    const selling = sellingOf?.(c.ingredient_id);
+    const atSelling = typeof selling === 'number';
+    return {
+      id: c.$id,
+      ingredientId: c.ingredient_id,
+      name: nameOf(c.ingredient_id) || 'Something no longer on the list',
+      expected: c.theoretical_qty ?? 0,
+      counted: c.counted_qty ?? 0,
+      delta,
+      worth: atSelling ? Math.round(delta * selling) : (c.variance_value ?? 0),
+      unitPrice: atSelling ? selling : (delta ? Math.abs(Math.round((c.variance_value ?? 0) / delta)) : undefined),
+      valuedAt: atSelling ? 'selling' as const : 'cost' as const,
+    };
+  }));
+}
+
+/**
+ * Bar count rows with their differences valued at selling price, for the
+ * totals on a list. Rows nothing sells keep their stored (cost) value.
+ */
+export function atSellingPrice<T extends BarCheckRow>(checks: T[], selling: Record<string, { price: number }>): T[] {
+  return checks.map((c) => {
+    const price = selling[c.ingredient_id]?.price;
+    return typeof price === 'number' ? { ...c, variance_value: Math.round((c.variance_qty ?? 0) * price) } : c;
+  });
 }
 
 /* ----------------------------------------------------------- shop counts */
@@ -115,6 +141,7 @@ export function shopReviewLines(rows: ShopCountRow[]): ReviewLine[] {
     delta: r.delta,
     worth: r.delta * r.unit_price,
     unitPrice: r.unit_price,
+    valuedAt: 'selling' as const,
   })));
 }
 

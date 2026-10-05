@@ -195,8 +195,14 @@ export function batchLines(b) {
 }
 
 /** Mirrors staffChargeLines in packages/core/src/books.ts. */
-export function staffChargeLines(amount) {
+export function staffChargeLines(amount, direction = 'owed') {
   if (!(amount > 0)) return [];
+  if (direction === 'credit') {
+    return [
+      { account_code: ACCOUNTS.shortagesCharged, debit: amount, credit: 0, memo: 'Surplus credited to staff' },
+      { account_code: ACCOUNTS.owedByStaff, debit: 0, credit: amount, memo: 'Owed by staff' },
+    ];
+  }
   return [
     { account_code: ACCOUNTS.owedByStaff, debit: amount, credit: 0, memo: 'Owed by staff' },
     { account_code: ACCOUNTS.shortagesCharged, debit: 0, credit: amount, memo: 'Shortage charged to staff' },
@@ -206,6 +212,7 @@ export function staffChargeLines(amount) {
 /** Mirrors staffSettleLines in packages/core/src/books.ts. */
 export function staffSettleLines(kind, amount) {
   if (!(amount > 0)) return [];
+  if (kind === 'credit') return [];
   const debit = kind === 'cash' ? ACCOUNTS.cash
     : kind === 'pay' ? ACCOUNTS.wages
       : ACCOUNTS.shortagesCharged;
