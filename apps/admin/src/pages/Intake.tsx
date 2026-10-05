@@ -7,8 +7,11 @@ import {
   parseMoney, Query,
   loadConsignors, nextReference, moveStock, buildDeliverySlipHtml, openPrintable,
   rateFor, flatFor, dueFor,
-  planUnwind, describeUnwind, stockDelta, changed, listByIds, dateWords } from '@snpos/core';
-import type { Consignor, ConsignmentIntake, MenuItem, Category, ProductMove, Settings } from '@snpos/core';
+  planUnwind, describeUnwind, stockDelta, changed, listByIds, dateWords,
+  restockChoices, restockedBy, toInput } from '@snpos/core';
+import type {
+  Consignor, ConsignmentIntake, MenuItem, Category, ProductMove, Settings, ProductVariant, RestockChoice, Restocked,
+} from '@snpos/core';
 import { useSession, useMoney } from '../session';
 
 /**
@@ -24,6 +27,40 @@ import { useSession, useMoney } from '../session';
  * and the movement is the record, and the question a shop cannot answer
  * without it is not "how many" but "where did the other one go".
  */
+/** A product a delivery restocked, ready to show: its name with the size, how many, the price now. */
+interface RestockLine extends Restocked {
+  name: string;
+  price: number;
+  left: number;
+  item: MenuItem | null;
+}
+
+/**
+ * The products a delivery added to rather than created, read from its own
+ * movements. See restockedBy.
+ */
+async function restockLines(intakeId: string, createdIds: Set<string>): Promise<RestockLine[]> {
+  const moves = await listAll<ProductMove>('product_moves', [Query.equal('ref_id', intakeId)]).catch(() => [] as ProductMove[]);
+  const restocked = restockedBy(moves, createdIds);
+  if (restocked.length === 0) return [];
+  const [items, sizes] = await Promise.all([
+    listByIds<MenuItem>('menu_items', '$id', [...new Set(restocked.map((r) => r.menuItemId))]).catch(() => [] as MenuItem[]),
+    listByIds<ProductVariant>('product_variants', '$id', restocked.map((r) => r.variantId ?? '').filter(Boolean))
+      .catch(() => [] as ProductVariant[]),
+  ]);
+  return restocked.map((r) => {
+    const item = items.find((i) => i.$id === r.menuItemId) ?? null;
+    const size = r.variantId ? sizes.find((v) => v.$id === r.variantId) : undefined;
+    return {
+      ...r,
+      item,
+      name: [item?.name ?? 'A product no longer listed', size?.label].filter(Boolean).join(' · '),
+      price: size?.price ?? item?.price ?? 0,
+      left: (size ? size.on_hand : item?.on_hand) ?? 0,
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export function IntakePage() {
   const toast = useToast();
   const { settings, user, profile } = useSession();
@@ -78,21 +115,22 @@ export function IntakePage() {
         Query.equal('ref_id', intake.$id), Query.equal('type', 'intake'),
       ]).catch(() => [] as ProductMove[]),
     ]);
-    if (pieces.length === 0) { setError('Nothing is recorded against that delivery.'); return; }
-
     const received = new Map<string, number>();
     for (const m of moves) {
       received.set(m.menu_item_id, (received.get(m.menu_item_id) ?? 0) + Math.abs(m.qty_delta));
     }
+
+    // Products this delivery added to rather than created. See intake-restock.
+    const restocks = await restockLines(intake.$id, new Set(pieces.map((p) => p.$id)));
+    if (pieces.length === 0 && restocks.length === 0) { setError('Nothing is recorded against that delivery.'); return; }
 
     openPrintable(
       buildDeliverySlipHtml({
         intake,
         consignor,
         settings,
-        pieces: pieces
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .map((p) => ({
+        pieces: [
+          ...pieces.map((p) => ({
             name: p.name,
             // The movement when there is one. Deliveries booked in before the
             // movements existed fall back to the shelf, taken as a positive.
@@ -101,6 +139,13 @@ export function IntakePage() {
             // What one earns them, at this piece's own terms where it has any.
             due: dueFor(p.price, rateFor(p, consignor, settings), flatFor(p, consignor)),
           })),
+          ...restocks.map((r) => ({
+            name: r.name,
+            qty: r.qty,
+            price: r.price,
+            due: dueFor(r.price, rateFor(r.item, consignor, settings), flatFor(r.item, consignor)),
+          })),
+        ].sort((a, b) => a.name.localeCompare(b.name)),
       }),
       `Delivery slip ${intake.reference}`,
     );
@@ -211,6 +256,8 @@ export function IntakePage() {
 
 /** A piece being booked in, before it is written. */
 interface DraftPiece {
+  /** One of this maker's products, or its size, to add to; blank for a new piece. See restockChoices. */
+  existing: string;
   name: string;
   categoryId: string;
   priceText: string;
@@ -219,7 +266,7 @@ interface DraftPiece {
 }
 
 const blankPiece = (categoryId: string): DraftPiece => ({
-  name: '', categoryId, priceText: '', qtyText: '1', note: '',
+  existing: '', name: '', categoryId, priceText: '', qtyText: '1', note: '',
 });
 
 /**
@@ -257,7 +304,31 @@ function ReceiveModal({
   const setPiece = (index: number, patch: Partial<DraftPiece>) =>
     setPieces((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
 
-  const filled = pieces.filter((p) => p.name.trim() && parseMoney(p.priceText, decimals) !== null);
+  /*
+    The shop's own catalogue, so more of something already on the shelf is
+    added to it rather than booked in as a second product of the same name.
+    Only this maker's: see restockChoices.
+  */
+  const [catalogue, setCatalogue] = useState<{ items: MenuItem[]; sizes: ProductVariant[] }>({ items: [], sizes: [] });
+  useEffect(() => {
+    Promise.all([
+      listAll<MenuItem>('menu_items', [Query.equal('module', 'craft')]).catch(() => [] as MenuItem[]),
+      listAll<ProductVariant>('product_variants').catch(() => [] as ProductVariant[]),
+    ]).then(([items, sizes]) => setCatalogue({ items, sizes }));
+  }, []);
+  const choices = useMemo(
+    () => restockChoices(catalogue.items as never, catalogue.sizes, consignorId),
+    [catalogue, consignorId],
+  );
+  const choiceOf = (key: string): RestockChoice | undefined => choices.find((c) => c.key === key);
+  // Another maker's products are not theirs to restock: a change of maker
+  // turns every picked row back into a new piece.
+  useEffect(() => {
+    setPieces((rows) => rows.map((r) => (r.existing && !choiceOf(r.existing) ? { ...r, existing: '' } : r)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [choices]);
+
+  const filled = pieces.filter((p) => (p.existing || p.name.trim()) && parseMoney(p.priceText, decimals) !== null);
   const totalRetail = filled.reduce(
     (sum, p) => sum + (parseMoney(p.priceText, decimals) ?? 0) * Math.max(1, Number(p.qtyText || 1)),
     0,
@@ -281,8 +352,8 @@ function ReceiveModal({
   const save = async () => {
     if (!consignorId) { setError('Say whose delivery this is.'); return; }
     if (filled.length === 0) { setError('Add at least one piece, with a name and a price.'); return; }
-    const bad = pieces.find((p) => p.name.trim() && parseMoney(p.priceText, decimals) === null);
-    if (bad) { setError(`"${bad.name}" needs a price.`); return; }
+    const bad = pieces.find((p) => (p.existing || p.name.trim()) && parseMoney(p.priceText, decimals) === null);
+    if (bad) { setError(`"${choiceOf(bad.existing)?.label ?? bad.name}" needs a price.`); return; }
 
     setBusy(true);
     setError(null);
@@ -304,6 +375,40 @@ function ReceiveModal({
       for (const p of filled) {
         const price = parseMoney(p.priceText, decimals) ?? 0;
         const qty = Math.max(1, Number(p.qtyText || 1));
+
+        /*
+          More of something already on the shelf: its count goes up, through
+          the same movement a new piece's arrival is written as, so the slip
+          and the maker's statement both see it. A price changed here is the
+          shelf price from now on.
+        */
+        const pick = p.existing ? choiceOf(p.existing) : undefined;
+        if (pick) {
+          const size = pick.variantId
+            ? await db.getDocument(DB_ID, 'product_variants', pick.variantId) as unknown as ProductVariant
+            : null;
+          const item = size ? null : await db.getDocument(DB_ID, 'menu_items', pick.menuItemId) as unknown as MenuItem;
+          if (price !== pick.price) {
+            if (size) await db.updateDocument(DB_ID, 'product_variants', size.$id, { price });
+            else await db.updateDocument(DB_ID, 'menu_items', pick.menuItemId, { price });
+          }
+          await moveStock({
+            venueId: 'main',
+            menuItemId: pick.menuItemId,
+            variant: size,
+            item: item ? { $id: item.$id, on_hand: item.on_hand } : null,
+            consignorId,
+            type: 'intake',
+            qtyDelta: qty,
+            unitPrice: price,
+            refType: 'intake',
+            refId: intake.$id,
+            userId,
+            note: `Restocked on ${reference}`,
+          });
+          continue;
+        }
+
         const item = await db.createDocument(DB_ID, 'menu_items', ID.unique(), {
           category_id: p.categoryId || categories[0]?.$id || '',
           name: p.name.trim(),
@@ -390,14 +495,39 @@ function ReceiveModal({
         <div>
           {pieces.map((p, i) => (
             <div key={i} className="variant-row">
-              <Input
-                placeholder="Woven basket, medium"
-                value={p.name}
-                onChange={(e) => setPiece(i, { name: e.target.value })}
-              />
-              <Select value={p.categoryId} onChange={(e) => setPiece(i, { categoryId: e.target.value })}>
-                {categories.map((c) => <option key={c.$id} value={c.$id}>{c.name}</option>)}
+              {/* Something already on the shelf, or a new piece. Picking one
+                  brings its price and adds to its count. */}
+              <Select
+                value={p.existing}
+                aria-label="Already sold here, or new"
+                onChange={(e) => {
+                  const pick = choiceOf(e.target.value);
+                  setPiece(i, pick
+                    ? { existing: pick.key, priceText: toInput(pick.price, decimals) }
+                    : { existing: '', priceText: '' });
+                }}
+              >
+                <option value="">A new piece…</option>
+                {choices.length > 0 && (
+                  <optgroup label={`More of what ${consignor?.name ?? 'this maker'} already sells here`}>
+                    {choices.map((c) => (
+                      <option key={c.key} value={c.key}>{c.label} · {c.onHand} on the shelf</option>
+                    ))}
+                  </optgroup>
+                )}
               </Select>
+              {!p.existing && (
+                <>
+                  <Input
+                    placeholder="Woven basket, medium"
+                    value={p.name}
+                    onChange={(e) => setPiece(i, { name: e.target.value })}
+                  />
+                  <Select value={p.categoryId} onChange={(e) => setPiece(i, { categoryId: e.target.value })}>
+                    {categories.map((c) => <option key={c.$id} value={c.$id}>{c.name}</option>)}
+                  </Select>
+                </>
+              )}
               <Input
                 placeholder={`Price ${symbol}`}
                 inputMode="decimal"
@@ -440,7 +570,8 @@ function ReceiveModal({
 
       <p className="small dim" style={{ marginBottom: 0 }}>
         Everything booked in here goes straight onto the shop floor at the price you set, credited to this
-        maker when it sells. Sizes are added afterwards, from the product itself under Craft shop → Products.
+        maker when it sells. Pick one of their products to add to its shelf; a new piece becomes a product of its
+        own, and its sizes are added afterwards from the product itself under Craft shop → Products.
       </p>
     </Modal>
   );
@@ -468,9 +599,15 @@ function IntakeContents({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /** Products this delivery added to rather than created. See restockLines. */
+  const [restocks, setRestocks] = useState<RestockLine[]>([]);
+
   useEffect(() => {
     listAll<MenuItem>('menu_items', [Query.equal('intake_id', intake.$id)])
-      .then((r) => setItems(r.sort((a, b) => a.name.localeCompare(b.name))))
+      .then(async (r) => {
+        setRestocks(await restockLines(intake.$id, new Set(r.map((x) => x.$id))));
+        setItems(r.sort((a, b) => a.name.localeCompare(b.name)));
+      })
       .catch(() => setItems([]));
     /*
       What has been sold from this delivery.
@@ -563,8 +700,26 @@ function IntakeContents({
         // what undoing can honestly do here.
         await db.updateDocument(DB_ID, 'menu_items', p.$id, { active: false, on_hand: 0 }).catch(() => undefined);
       }
+      /*
+        What it added to products already on the shelf is taken back off
+        them, as a movement of its own. The products stay: they were there
+        before this delivery and are not its to delete.
+      */
+      for (const r of restocks) {
+        const size = r.variantId
+          ? await db.getDocument(DB_ID, 'product_variants', r.variantId).catch(() => null) as unknown as ProductVariant | null
+          : null;
+        const item = size ? null : await db.getDocument(DB_ID, 'menu_items', r.menuItemId).catch(() => null) as unknown as MenuItem | null;
+        await moveStock({
+          venueId: 'main', menuItemId: r.menuItemId, variant: size, item: item ? { $id: item.$id, on_hand: item.on_hand } : null,
+          consignorId: intake.consignor_id, type: 'adjustment', qtyDelta: -r.qty, unitPrice: r.price,
+          refType: 'intake', refId: intake.$id, userId, note: `Delivery ${intake.reference} undone`,
+        }).catch(() => undefined);
+      }
       await db.deleteDocument(DB_ID, 'consignment_intakes', intake.$id);
-      await onChanged(`${intake.reference} undone. ${describeUnwind(plan)}`);
+      await onChanged(`${intake.reference} undone. ${describeUnwind(plan)}${restocks.length
+        ? ` ${restocks.reduce((n, r) => n + r.qty, 0)} taken back off products already on the shelf.`
+        : ''}`);
     } catch (e) {
       setError(humanError(e));
       setBusy(false);
@@ -575,7 +730,7 @@ function IntakeContents({
     <Modal wide title={`${intake.reference} · what came in`} onClose={onClose} footer={<Button onClick={onClose}>Close</Button>}>
       {items === null ? (
         <Spinner />
-      ) : items.length === 0 ? (
+      ) : items.length === 0 && restocks.length === 0 ? (
         <Empty title="Nothing found">
           The pieces from this delivery may have been deleted since.
         </Empty>
@@ -617,6 +772,19 @@ function IntakeContents({
                   )}
                 </tr>
               ))}
+              {/* More of something already on the shelf, added to it. */}
+              {restocks.map((r) => (
+                <tr key={`${r.menuItemId}|${r.variantId ?? ''}`}>
+                  <td>
+                    {r.name}
+                    <div className="small dim">{r.qty} added to what was already on the shelf</div>
+                  </td>
+                  <td className="num">{money(r.price)}</td>
+                  <td className="num">{r.left}</td>
+                  <td><Badge>Restocked</Badge></td>
+                  {isAdmin && <td />}
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -632,7 +800,7 @@ function IntakeContents({
         the maker's commission both point at it, and is taken off the floor
         instead.
       */}
-      {isAdmin && items && items.length > 0 && (
+      {isAdmin && items && (items.length > 0 || restocks.length > 0) && (
         <>
           <h3 style={{ margin: '1.4rem 0 0.3rem' }}>Put this right</h3>
           <p className="small dim" style={{ marginTop: 0 }}>
