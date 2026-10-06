@@ -90,6 +90,7 @@ export * from './shelf-trail';
 export * from './spend-history';
 export * from './intake-restock';
 export * from './count-report';
+export * from './owing-statement';
 export * from './push-device';
 export * from './batch-rules';
 export * from './pour-check';

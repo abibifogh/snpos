@@ -4,6 +4,7 @@ import { humanError } from '../lib';
 import {
   loadStaffCharges, loadSettlements, settleCharge, owingByPerson, owingTotals, chargeLeft, settleProblem, foundAmount,
   SETTLE_WORDS, isCredit, loadOpenShifts, loadPaymentMethods, parseMoney, toInput, dateTimeWords, waitedWords, MODULE_LABELS,
+  owingStatement, statementPeople, owingStatementHtml, balanceWords, openPrintable,
 } from '@snpos/core';
 import type { StaffCharge, StaffSettlement, SettleKind, Module } from '@snpos/core';
 import { useSession, useMoney } from '../session';
@@ -20,7 +21,7 @@ type OpenShift = { $id: string; code?: string; module?: string };
  * are in core, see staff-charges.ts.
  */
 export function StaffOwingPage() {
-  const { user, profile } = useSession();
+  const { user, profile, settings } = useSession();
   const money = useMoney();
   const toast = useToast();
   const isAdmin = profile?.role === 'admin';
@@ -31,6 +32,8 @@ export function StaffOwingPage() {
   const [show, setShow] = useState<Show>('owed');
   const [openPerson, setOpenPerson] = useState<string | null>(null);
   const [settling, setSettling] = useState<StaffCharge | null>(null);
+  /** The statement being chosen: a person's id, '' for everyone, null when closed. */
+  const [statementFor, setStatementFor] = useState<string | null>(null);
 
   const load = async () => {
     setError(null);
@@ -65,12 +68,15 @@ export function StaffOwingPage() {
             Waiting for you.
           </p>
         </div>
-        <Segmented<Show>
-          value={show}
-          onChange={setShow}
-          ariaLabel="Which charges"
-          options={[{ value: 'owed', label: 'Still owed' }, { value: 'settled', label: 'Settled' }, { value: 'all', label: 'All' }]}
-        />
+        <div className="row row-wrap" style={{ gap: '0.5rem' }}>
+          <Button onClick={() => setStatementFor('')} disabled={!charges || charges.length === 0}>Download statement</Button>
+          <Segmented<Show>
+            value={show}
+            onChange={setShow}
+            ariaLabel="Which charges"
+            options={[{ value: 'owed', label: 'Still owed' }, { value: 'settled', label: 'Settled' }, { value: 'all', label: 'All' }]}
+          />
+        </div>
       </div>
 
       {error && <Notice>{error}</Notice>}
@@ -106,6 +112,8 @@ export function StaffOwingPage() {
                           </button>
                           <div className="small dim">
                             {p.open > 0 && `${p.open} open`}{p.open > 0 && p.settledCount > 0 && ', '}{p.settledCount > 0 && `${p.settledCount} settled`}
+                            {' · '}
+                            <button type="button" className="linky" onClick={() => setStatementFor(p.personId)}>Statement</button>
                           </div>
                         </td>
                         <td className="small dim">{p.oldestOpen ? waitedWords(now - Date.parse(p.oldestOpen)) : '—'}</td>
@@ -172,6 +180,18 @@ export function StaffOwingPage() {
         )}
       </Card>
 
+      {statementFor !== null && charges && (
+        <StatementModal
+          charges={charges}
+          settlements={settlements}
+          personId={statementFor}
+          business={settings?.restaurant_name ?? ''}
+          madeBy={profile?.display_name}
+          money={money}
+          onClose={() => setStatementFor(null)}
+        />
+      )}
+
       {settling && (
         <SettleModal
           charge={settling}
@@ -188,6 +208,112 @@ export function StaffOwingPage() {
         />
       )}
     </>
+  );
+}
+
+const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
+/** A day as the date box wants it, in local time. */
+const dayInput = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const dayWords = (day: string) =>
+  new Date(`${day}T12:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+/**
+ * One person's statement, or everyone's a page each, for the days chosen:
+ * what they owed going in, each charge, credit and repayment, and what they
+ * owed coming out. Saved as a PDF from the browser's print window. See
+ * owing-statement.ts.
+ */
+function StatementModal({ charges, settlements, personId, business, madeBy, money, onClose }: {
+  charges: StaffCharge[];
+  settlements: StaffSettlement[];
+  /** '' for everyone. */
+  personId: string;
+  business: string;
+  madeBy?: string;
+  money: (n: number) => string;
+  onClose: () => void;
+}) {
+  const [who, setWho] = useState(personId);
+  const [from, setFrom] = useState(dayInput(startOfMonth(new Date())));
+  const [to, setTo] = useState(dayInput(new Date()));
+  const people = useMemo(
+    () => [...new Map(charges.map((c) => [c.person_id, c.person_name])).entries()].sort((a, b) => a[1].localeCompare(b[1])),
+    [charges],
+  );
+  // The whole of each day, in the venue's own time.
+  const fromIso = from ? new Date(`${from}T00:00:00`).toISOString() : '';
+  const toIso = to ? new Date(`${to}T23:59:59.999`).toISOString() : '';
+  const problem = !from || !to ? 'Choose both days.' : from > to ? 'The first day is after the last.' : null;
+  const statements = problem ? [] : who
+    ? [owingStatement({ personId: who, charges, settlements, from: fromIso, to: toIso, money })]
+    : statementPeople(charges, settlements, fromIso, toIso, money);
+  const one = who ? statements[0] : undefined;
+
+  const download = () => {
+    if (problem) return;
+    const name = who ? people.find(([id]) => id === who)?.[1] ?? 'Staff' : 'Everyone';
+    openPrintable(owingStatementHtml({
+      business,
+      statements,
+      periodWords: `${dayWords(from)} to ${dayWords(to)}`,
+      money,
+      when: (iso) => dateTimeWords(iso),
+      madeAt: new Date().toISOString(),
+      madeBy,
+    }), `Staff owing ${name} ${from} to ${to}`.replace(/[\\/:*?"<>|]/g, '-'));
+  };
+
+  return (
+    <Modal
+      title="Staff owing statement"
+      onClose={onClose}
+      footer={(
+        <>
+          <Button onClick={onClose}>Close</Button>
+          <Button variant="primary" disabled={!!problem} onClick={download}>Download as PDF</Button>
+        </>
+      )}
+    >
+      <div style={{ display: 'grid', gap: '0.7rem' }}>
+        <Field label="Who">
+          <Select value={who} onChange={(e) => setWho(e.target.value)}>
+            <option value="">Everyone, a page each</option>
+            {people.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </Select>
+        </Field>
+        <div className="grid-2">
+          <Field label="From"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+          <Field label="To"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+        </div>
+        <div className="row row-wrap" style={{ gap: '0.4rem' }}>
+          <Button size="sm" onClick={() => { setFrom(dayInput(startOfMonth(new Date()))); setTo(dayInput(new Date())); }}>This month</Button>
+          <Button
+            size="sm"
+            onClick={() => {
+              const first = startOfMonth(new Date());
+              setFrom(dayInput(new Date(first.getFullYear(), first.getMonth() - 1, 1)));
+              // The day before this month began: the last of the one before.
+              setTo(dayInput(new Date(first.getFullYear(), first.getMonth(), 0)));
+            }}
+          >
+            Last month
+          </Button>
+        </div>
+        {problem ? <Notice>{problem}</Notice> : one ? (
+          <Notice tone="info">
+            {one.name}: {balanceWords(one.opening, money)} at the start, {one.lines.length} {one.lines.length === 1 ? 'entry' : 'entries'} in
+            the period, {balanceWords(one.closing, money)} at the end.
+          </Notice>
+        ) : (
+          <Notice tone="info">
+            {statements.length === 0
+              ? 'Nobody owed anything, or had anything charged or put right, in these days.'
+              : `${statements.length} ${statements.length === 1 ? 'person' : 'people'}, a page each.`}
+          </Notice>
+        )}
+      </div>
+    </Modal>
   );
 }
 
