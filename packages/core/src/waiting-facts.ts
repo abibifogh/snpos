@@ -1,6 +1,7 @@
 import { listAll, Query } from './client';
-import { pendingBarChecks, loadLocations } from './stock';
-import { filedCounts, countSide } from './bar-count';
+import { pendingBarChecks, loadLocations, replacedAmong } from './stock';
+import { filedCounts, countSide, liveCount } from './bar-count';
+import type { FiledCheck } from './bar-count';
 import { pendingCounts, pendingShelfLines } from './consignment';
 import { loadOpenShifts } from './shifts';
 import { tabExposure } from './tab-store';
@@ -51,7 +52,11 @@ export async function loadWaiting(venueId: string, money: (minor: number) => str
   // Valued at what they sell for, not what they cost. See barReviewLines.
   const selling = await loadSellingPrices(checks.map((c) => c.ingredient_id))
     .catch(() => ({} as Record<string, { price: number }>));
-  const barCounts = filedCounts(atSellingPrice(checks, selling)).map((c) => ({ ...c, side: countSide(c.lines) }));
+  // Lines a later count of the same bottle covers are set aside, not added in.
+  // See replacedLines. Fails soft: approving checks again before it applies.
+  const replaced = await replacedAmong(checks).catch(() => new Map<string, FiledCheck>());
+  const barCounts = filedCounts(atSellingPrice(checks, selling))
+    .map((c) => ({ ...liveCount(c, replaced), side: countSide(c.lines) }));
   const shiftIds = [...new Set(barCounts.map((c) => c.shiftId).filter((id) => id && !id.startsWith('store:')))];
   const shifts = shiftIds.length > 0
     ? await listAll<Shift>('shifts', [Query.equal('$id', shiftIds)]).catch(() => [] as Shift[])

@@ -11,6 +11,7 @@ import type { RelinkPlan, LinkRow, LinkSize, LinkItem, ShelfRow, SoldLink } from
 import {
   variancesIn, wasCountedBar, shiftCounted, countable, countableBy, filedCounts, undoDeltas, undoProblem,
   movesOnItsOwn, storeCountId, isStoreCount, STORE_COUNT_PREFIX, isPending, approveDeltas, refuseLines, countSide,
+  replacedLines, olderWaiting,
 } from './bar-count';
 import type { FiledCheck } from './bar-count';
 import { levelFor, transferQty, transferMovements, purchaseLocation, saleLocation } from './locations';
@@ -907,6 +908,37 @@ export const barCountHistory = (sinceMs: number): Promise<FiledCheck[]> =>
   ]).catch(() => [] as (FiledCheck & Doc)[]);
 
 /**
+ * Lines of the same bottles filed since the earliest of these: what could
+ * have replaced them. See replacedLines.
+ *
+ * Fails loud. "Nothing replaced it" said because a read did not come back is
+ * how a gap gets taken off a shelf twice.
+ */
+export async function laterChecks(lines: FiledCheck[]): Promise<FiledCheck[]> {
+  if (lines.length === 0) return [];
+  const since = lines.reduce((m, l) => (l.$createdAt && (!m || l.$createdAt < m) ? l.$createdAt : m), '');
+  return listByIds<FiledCheck>(
+    'shift_stock_checks', 'ingredient_id', lines.map((l) => l.ingredient_id),
+    since ? [Query.greaterThan('$createdAt', since)] : [],
+  );
+}
+
+/** Which of these waiting lines a later count has replaced, and by what. */
+export const replacedAmong = async (lines: FiledCheck[]): Promise<Map<string, FiledCheck>> =>
+  replacedLines(lines, await laterChecks(lines));
+
+/**
+ * Set a waiting line aside because a later count covers it. Marked refused,
+ * so nothing ever applies it, and with the line that replaced it.
+ */
+async function setAside(lineId: string, by: FiledCheck, userId: string, when: string): Promise<boolean> {
+  const ok = await tryWrite(db.updateDocument(DB_ID, 'shift_stock_checks', lineId, { rejected_by: userId, rejected_at: when }));
+  // On its own: a database not yet provisioned for it must not undo the refusal.
+  if (ok) await tryWrite(db.updateDocument(DB_ID, 'shift_stock_checks', lineId, { replaced_by: by.$id }));
+  return ok;
+}
+
+/**
  * Apply a held count to the shelf.
  *
  * The same movement and the same level change that saveBarCount used to make
@@ -923,7 +955,7 @@ export async function approveBarCount(opts: {
   locationId?: string;
   /** Only these lines. Absent means every line still waiting. See refuseLines. */
   lineIds?: string[];
-}): Promise<{ applied: number; failed: number }> {
+}): Promise<{ applied: number; failed: number; cleared: number }> {
   const all = await countsForShift(opts.shiftId);
   const count = filedCounts(all).find((c) => c.phase === opts.phase);
   if (!count) throw new Error('That count could not be found.');
@@ -943,8 +975,26 @@ export async function approveBarCount(opts: {
 
   let applied = 0;
   let failed = 0;
+  let cleared = 0;
+
+  /*
+    COUNTED AGAIN SINCE: SET ASIDE, NOT APPLIED.
+
+    A later count of the same bottle was taken against the same shelf this one
+    never moved, so it found the same gap and holds it already. Applying both
+    takes it off twice. See replacedLines. And applying a line makes any older
+    one still waiting for the same bottle out of date in the same way, so
+    those are set aside as it goes in.
+  */
+  const replaced = await replacedAmong(count.lines.filter(isPending));
+  const waiting = await pendingBarChecks();
 
   for (const { checkId, ingredientId, delta } of approveDeltas(count, opts.lineIds)) {
+    const newer = replaced.get(checkId);
+    if (newer) {
+      if (await setAside(checkId, newer, opts.userId, when)) cleared += 1;
+      continue;
+    }
     const ing = await db.getDocument(DB_ID, 'ingredients', ingredientId).catch(() => null) as
       { base_unit_cost?: number } | null;
 
@@ -979,9 +1029,14 @@ export async function approveBarCount(opts: {
       approved_at: when,
     }));
     applied += 1;
+
+    const line = count.lines.find((l) => l.$id === checkId);
+    for (const old of line ? olderWaiting(line, waiting) : []) {
+      if (await setAside(old.$id, line!, opts.userId, when)) cleared += 1;
+    }
   }
 
-  return { applied, failed };
+  return { applied, failed, cleared };
 }
 
 /**

@@ -1937,6 +1937,10 @@ export const COLLECTIONS = [
       ['rejected_by', 's', 64, false],
       // Charged to a person rather than simply approved. See staff_charges.
       ['charge_id', 's', 64, false],
+      // Set aside rather than applied, because a later count of the same
+      // bottle on the same shelf already covers it: that line's id. Applying
+      // both would take the same gap off twice. See replacedLines.
+      ['replaced_by', 's', 64, false],
       /*
         When an admin was told this was waiting.
 
