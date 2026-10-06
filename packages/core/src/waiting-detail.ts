@@ -1,5 +1,8 @@
 import { listAll, listByIds, Query, db, DB_ID } from './client';
-import { pendingBarChecks } from './stock';
+import { pendingBarChecks, replacedAmong } from './stock';
+import { replacedWords } from './bar-count';
+import type { FiledCheck } from './bar-count';
+import { dateTimeWords } from './dates';
 import { countLines } from './consignment';
 import { lineUndecided } from './stocktake';
 import { loadSellingPrices } from './staff-charges-store';
@@ -39,14 +42,23 @@ export async function loadReview(ref: WaitingRef): Promise<Review> {
   if (ref.kind === 'bar_count') {
     const all = await pendingBarChecks();
     const mine = all.filter((c) => c.shift_id === ref.shiftId && (c.phase ?? 'close') === ref.phase);
-    const [names, selling] = await Promise.all([
+    const [names, selling, replaced] = await Promise.all([
       listByIds<Named>('ingredients', '$id', mine.map((c) => c.ingredient_id)).catch(() => [] as Named[]),
       loadSellingPrices(mine.map((c) => c.ingredient_id)).catch(() => ({} as Record<string, { price: number }>)),
+      replacedAmong(mine).catch(() => new Map<string, FiledCheck>()),
     ]);
     const book = new Map(names.map((n) => [n.$id, n.name ?? '']));
+    // Which shift each later count was on, to say where it was counted again.
+    const shiftIds = [...new Set([...replaced.values()].map((r) => r.shift_id ?? '').filter((id) => id && !id.startsWith('store:')))];
+    const shifts = await listByIds<{ $id: string; code?: string }>('shifts', '$id', shiftIds).catch(() => []);
+    const codes = new Map(shifts.map((s) => [s.$id, s.code ?? '']));
+    const replacedOf = (id: string) => {
+      const by = replaced.get(id);
+      return by ? replacedWords(dateTimeWords(by.$createdAt ?? ''), codes.get(by.shift_id ?? '') || undefined) : undefined;
+    };
     return {
       shape: 'count',
-      lines: barReviewLines(mine, (id) => book.get(id) ?? '', (id) => selling[id]?.price),
+      lines: barReviewLines(mine, (id) => book.get(id) ?? '', (id) => selling[id]?.price, replacedOf),
       empty: 'Every line on this count has already been dealt with.',
     };
   }

@@ -1,6 +1,6 @@
 import { db, DB_ID, ID, Query, Permission, Role, listAll, listByIds, tryWrite } from './client';
 import {
-  approveBarCount, countsForShift, loadLocations, adjustLevel, loadRecipes,
+  approveBarCount, countsForShift, loadLocations, adjustLevel, loadRecipes, replacedAmong,
 } from './stock';
 import { approveCount, countLines, moveStock } from './consignment';
 import type { ProductVariant } from './consignment';
@@ -82,6 +82,11 @@ export async function chargeBarLine(opts: {
   const line = count?.lines.find((l) => l.$id === opts.lineId);
   if (!count || !line) throw new Error('That line could not be found.');
   if (!isPending(line)) throw new Error('That line has already been decided.');
+  // A later count of this bottle already covers the gap. Charging this one
+  // would charge it twice. See replacedLines.
+  if ((await replacedAmong([line])).has(line.$id)) {
+    throw new Error(`${opts.itemName} was counted again on a later count, which already covers this difference. Charge that count's line instead.`);
+  }
   // Short is owed; over is credited. See creditMatches.
   const direction: ChargeDirection = (line.variance_qty ?? 0) > 0 ? 'credit' : 'owed';
   const short = Math.abs(line.variance_qty ?? 0);

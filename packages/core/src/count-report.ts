@@ -19,6 +19,8 @@ export interface ReportLine {
   unitPrice?: number;
   worth: number;
   valuedAt?: 'selling' | 'cost';
+  /** Counted again later, which covers it: shown, never added in. */
+  replaced?: boolean;
 }
 
 export interface ReportCount {
@@ -64,7 +66,7 @@ export function countDifferencesHtml(d: {
         <td class="num">${l.counted ?? ''}</td>
         <td class="num ${(l.delta ?? 0) < 0 ? 'short' : ''}">${signed(l.delta ?? 0)}</td>
         <td class="num">${l.unitPrice !== undefined ? esc(d.money(l.unitPrice)) : ''}${l.valuedAt === 'cost' ? ' *' : ''}</td>
-        <td class="num ${l.worth < 0 ? 'short' : ''}">${l.worth < 0 ? '−' : l.worth > 0 ? '+' : ''}${esc(d.money(Math.abs(l.worth)))}</td>
+        <td class="num ${l.worth < 0 ? 'short' : ''}">${l.replaced ? 'Not applied' : `${l.worth < 0 ? '−' : l.worth > 0 ? '+' : ''}${esc(d.money(Math.abs(l.worth)))}`}</td>
       </tr>`).join('');
     return `<section>
       <h2>${esc(c.title)}</h2>

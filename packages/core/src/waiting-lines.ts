@@ -39,6 +39,11 @@ export interface ReviewLine {
   unitPrice?: number;
   /** Which of the two the worth is at. Selling, unless nothing sells it. */
   valuedAt?: 'selling' | 'cost';
+  /**
+   * A later count of the same bottle covers this line, so it is set aside
+   * rather than applied, and is worth nothing here. See replacedLines.
+   */
+  replaced?: boolean;
 }
 
 /** Rows sorted so the ones worth arguing about are read first. */
@@ -73,19 +78,27 @@ export function barReviewLines(
    * only where nothing on the menu sells the item.
    */
   sellingOf?: (ingredientId: string) => number | undefined,
+  /**
+   * Words for a line a later count has replaced, or undefined. Such a line is
+   * worth nothing here: the later count holds its difference, and adding both
+   * in is the double count being avoided.
+   */
+  replacedOf?: (checkId: string) => string | undefined,
 ): ReviewLine[] {
   return worstFirst(checks.map((c) => {
     const delta = c.variance_qty ?? 0;
     const selling = sellingOf?.(c.ingredient_id);
     const atSelling = typeof selling === 'number';
+    const replaced = c.$id ? replacedOf?.(c.$id) : undefined;
     return {
       id: c.$id,
       ingredientId: c.ingredient_id,
       name: nameOf(c.ingredient_id) || 'Something no longer on the list',
+      ...(replaced ? { note: replaced, replaced: true } : {}),
       expected: c.theoretical_qty ?? 0,
       counted: c.counted_qty ?? 0,
       delta,
-      worth: atSelling ? Math.round(delta * selling) : (c.variance_value ?? 0),
+      worth: replaced ? 0 : atSelling ? Math.round(delta * selling) : (c.variance_value ?? 0),
       unitPrice: atSelling ? selling : (delta ? Math.abs(Math.round((c.variance_value ?? 0) / delta)) : undefined),
       valuedAt: atSelling ? 'selling' as const : 'cost' as const,
     };

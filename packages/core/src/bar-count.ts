@@ -506,6 +506,8 @@ export interface FiledCheck {
   approved_at?: string | null;
   rejected_by?: string | null;
   rejected_at?: string | null;
+  /** Set aside because a later count of the same bottle covers it: that line's id. See replacedLines. */
+  replaced_by?: string | null;
   /** Which side's shelf was counted. Absent on rows from before the kitchen counted in. */
   module?: string | null;
 }
@@ -704,6 +706,93 @@ export function refuseLines(count: FiledCount, lineIds?: string[]): FiledCheck[]
   const chosen = lineIds ? new Set(lineIds) : null;
   return count.lines.filter((l) => isPending(l) && (!chosen || chosen.has(l.$id)));
 }
+
+/* ------------------------------------------------- counted again */
+
+/**
+ * Which bottle on which shelf a filed line is about. Two lines with the same
+ * key are two counts of the same thing: a store room by its own id, any other
+ * count by the side whose counter it was.
+ */
+export function shelfKey(l: Pick<FiledCheck, 'shift_id' | 'module' | 'ingredient_id'>): string {
+  const sid = l.shift_id ?? '';
+  return `${isStoreCount(sid) ? sid : `side:${l.module || 'bar'}`}|${l.ingredient_id}`;
+}
+
+const countKeyOf = (l: Pick<FiledCheck, 'shift_id' | 'phase'>): string => `${l.shift_id ?? ''}|${l.phase ?? 'close'}`;
+
+/**
+ * Waiting lines that a later count of the same bottle on the same shelf has
+ * replaced, each with the newest line that replaced it.
+ *
+ * A waiting difference has not moved the shelf. So the next count is taken
+ * against the same old figure and finds the same gap again: the shelf said
+ * 12, 10 were found at close, and 10 are found again at the next opening
+ * against a shelf that still says 12. Both lines say −2, and approving both
+ * takes four off for two missing.
+ *
+ * The later count already holds everything the earlier one found, and
+ * anything since: its difference is between the shelf as it stands and what
+ * was really there. So the earlier line is never applied. That holds when the
+ * later count found the shelf right, too: whatever the earlier one saw is no
+ * longer so.
+ *
+ * A later line refused or taken back replaces nothing: it was judged wrong.
+ */
+export function replacedLines(pending: FiledCheck[], others: FiledCheck[]): Map<string, FiledCheck> {
+  const all = [...pending, ...others];
+  const out = new Map<string, FiledCheck>();
+  for (const p of pending) {
+    if (!isPending(p)) continue;
+    const at = p.$createdAt ?? '';
+    const key = shelfKey(p);
+    let newest: FiledCheck | undefined;
+    for (const o of all) {
+      if (o.$id === p.$id || shelfKey(o) !== key || countKeyOf(o) === countKeyOf(p)) continue;
+      if (isRejected(o) || o.undone_at) continue;
+      const oAt = o.$createdAt ?? '';
+      if (!(oAt > at)) continue;
+      if (!newest || oAt > (newest.$createdAt ?? '')) newest = o;
+    }
+    if (newest) out.set(p.$id, newest);
+  }
+  return out;
+}
+
+/**
+ * Waiting lines filed before this one, of the same bottle on the same shelf,
+ * on other counts: the ones applying this line makes out of date.
+ */
+export function olderWaiting(line: FiledCheck, pending: FiledCheck[]): FiledCheck[] {
+  const at = line.$createdAt ?? '';
+  return pending.filter((p) =>
+    p.$id !== line.$id && isPending(p) && shelfKey(p) === shelfKey(line)
+    && countKeyOf(p) !== countKeyOf(line) && (p.$createdAt ?? '') < at);
+}
+
+/**
+ * A count as it stands once replaced lines are set aside: how many lines
+ * still wait, how many differ and what they are worth, without the ones a
+ * later count covers, and how many those are.
+ */
+export function liveCount<C extends Pick<FiledCount, 'lines' | 'pending' | 'changed' | 'worth'>>(
+  count: C,
+  replaced: { has: (id: string) => boolean },
+): C & { replaced: number } {
+  const live = count.lines.filter((l) => !replaced.has(l.$id));
+  const differ = live.filter((l) => (l.variance_qty ?? 0) !== 0);
+  return {
+    ...count,
+    pending: live.filter(isPending).length,
+    changed: differ.length,
+    worth: differ.reduce((s, l) => s + Math.abs(l.variance_value ?? 0), 0),
+    replaced: count.lines.length - live.length,
+  };
+}
+
+/** What a replaced line says, under its name. */
+export const replacedWords = (when: string, shiftCode?: string): string =>
+  `Counted again on ${when}${shiftCode ? ` (${shiftCode})` : ''}, which already covers this. It will not be applied.`;
 
 /** What to tell whoever just filed a count that is now waiting. */
 export function heldWords(pending: number, format: (n: number) => string, worth: number): string | null {

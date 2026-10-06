@@ -67,6 +67,8 @@ export interface WaitingBarCount {
   countedBy?: string;
   /** Whose shelf: the bar's, or the kitchen's counted in at opening. Absent is the bar. */
   side?: string;
+  /** Waiting lines a later count of the same bottle covers, left out of the figures above. */
+  replaced?: number;
 }
 
 export interface WaitingShopCount {
@@ -145,7 +147,8 @@ export function waitingList(input: WaitingInput): WaitingItem[] {
   const money = input.money;
 
   for (const c of input.barCounts) {
-    if (c.pending <= 0) continue;
+    const replaced = c.replaced ?? 0;
+    if (c.pending <= 0 && replaced <= 0) continue;
     const store = c.shiftId.startsWith(STORE_PREFIX) ? c.shiftId.slice(STORE_PREFIX.length) : null;
     const where = store
       ? `${input.storeNames?.[store] ?? 'Store room'} count`
@@ -155,8 +158,13 @@ export function waitingList(input: WaitingInput): WaitingItem[] {
       id: `bar:${c.shiftId}:${c.phase}`,
       kind: 'count',
       title: where,
-      detail: `${plural(c.changed, 'line differs', 'lines differ')} from what was expected, worth ${money(Math.abs(c.worth))}. `
-        + 'Approving moves the shelf by the difference; refusing leaves it as it is.',
+      detail: c.pending <= 0
+        ? 'Every line here was counted again on a later count, which already covers it. Approving clears it without moving the shelf.'
+        : `${plural(c.changed, 'line differs', 'lines differ')} from what was expected, worth ${money(Math.abs(c.worth))}. `
+          + 'Approving moves the shelf by the difference; refusing leaves it as it is.'
+          + (replaced > 0
+            ? ` ${plural(replaced, 'more line was', 'more lines were')} counted again later and will be set aside, not applied.`
+            : ''),
       by: c.countedBy,
       at: c.at,
       value: Math.abs(c.worth),

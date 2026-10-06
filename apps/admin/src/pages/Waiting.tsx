@@ -139,10 +139,14 @@ export function WaitingPage() {
   const approve = (item: WaitingItem) => run(item, async () => {
     const ref = item.ref;
     if (ref.kind === 'bar_count') {
-      const { applied, failed } = await approveBarCount({ venueId: 'main', shiftId: ref.shiftId, phase: ref.phase, userId });
+      const { applied, failed, cleared } = await approveBarCount({ venueId: 'main', shiftId: ref.shiftId, phase: ref.phase, userId });
+      // Lines a later count covers are set aside, not applied. See replacedLines.
+      const aside = cleared > 0 ? ` ${cleared} counted again later ${cleared === 1 ? 'was' : 'were'} set aside, not applied.` : '';
       return failed > 0
-        ? `${applied} applied, ${failed} could not be. The count stays here until they are.`
-        : `${applied} difference${applied === 1 ? '' : 's'} applied to the shelf`;
+        ? `${applied} applied, ${failed} could not be. The count stays here until they are.${aside}`
+        : applied === 0 && cleared > 0
+          ? 'Cleared. Every line was counted again later, so the shelf is unchanged.'
+          : `${applied} difference${applied === 1 ? '' : 's'} applied to the shelf.${aside}`;
     }
     if (ref.kind === 'shop_count' || ref.kind === 'shelf') {
       const { applied, failed } = await approveCount({ countId: ref.countId, reviewerId: userId });
@@ -199,8 +203,16 @@ export function WaitingPage() {
     try {
       if (ref.kind === 'bar_count') {
         if (decision === 'approve') {
-          const { failed } = await approveBarCount({ venueId: 'main', shiftId: ref.shiftId, phase: ref.phase, userId, lineIds: [line.id] });
+          const { failed, applied, cleared } = await approveBarCount({ venueId: 'main', shiftId: ref.shiftId, phase: ref.phase, userId, lineIds: [line.id] });
           if (failed > 0) throw new Error(`${line.name} could not be applied. It is still waiting.`);
+          if (applied === 0 && cleared > 0) {
+            toast(`${line.name} set aside: a later count already covers it. The shelf is unchanged.`);
+            const fresh = await loadReview(ref);
+            setReview(fresh);
+            await load();
+            if (fresh.lines.length === 0) { setOpenId(null); setReview(null); }
+            return;
+          }
         } else {
           await rejectBarCount({ shiftId: ref.shiftId, phase: ref.phase, userId, lineIds: [line.id] });
         }
@@ -773,15 +785,22 @@ function ReviewLines({ review, money, onLine, onCharge, lineBusy }: {
                   </>
                 )}
                 <td className="num">
-                  {money(Math.abs(l.worth))}
+                  {l.replaced ? <Badge>Counted again</Badge> : money(Math.abs(l.worth))}
                   {/* Valued at selling price; said where it could not be. */}
-                  {l.valuedAt === 'cost' && <div className="small dim">at cost: nothing on the menu sells it</div>}
+                  {!l.replaced && l.valuedAt === 'cost' && <div className="small dim">at cost: nothing on the menu sells it</div>}
                 </td>
                 {onLine && (
                   <td className="num" style={{ whiteSpace: 'nowrap' }}>
+                    {/* A later count of this bottle holds its difference:
+                        it can only be cleared, never applied or charged. */}
+                    {l.id && l.replaced && (
+                      <Button size="sm" variant="ghost" loading={lineBusy === l.id} disabled={!!lineBusy} onClick={() => onLine(l, 'approve')}>
+                        Clear
+                      </Button>
+                    )}
                     {/* This line alone. The buttons on the row above still
                         decide everything that is left. */}
-                    {l.id && (
+                    {l.id && !l.replaced && (
                       <>
                         <Button size="sm" variant="ghost" loading={lineBusy === l.id} disabled={!!lineBusy} onClick={() => onLine(l, 'approve')}>
                           Approve
