@@ -45,7 +45,7 @@ test('only what came up short can be charged, to somebody, at a price', () => {
   assert.match(chargeProblem({ ...ok, personId: '' }) ?? '', /Choose who/);
   assert.match(chargeProblem({ ...ok, qty: 7 }) ?? '', /Only 6 came up short/);
   assert.match(chargeProblem({ ...ok, qty: 0 }) ?? '', /how many/);
-  assert.match(chargeProblem({ ...ok, short: 0 }) ?? '', /came up short/);
+  assert.match(chargeProblem({ ...ok, short: 0 }) ?? '', /Only a line that differed/);
   assert.match(chargeProblem({ ...ok, unitPrice: 0 }) ?? '', /price/);
   assert.equal(chargeAmount(6, 3_000), 18_000);
 });
@@ -117,4 +117,61 @@ test('on the books: owed by staff, and each way of settling it', () => {
   for (const k of ['cash', 'pay', 'found', 'written_off']) {
     assert.deepEqual(server.staffSettleLines(k, 4_200), staffSettleLines(k, 4_200));
   }
+});
+
+/* ------------------------------------------------ a surplus, credited */
+
+import { creditMatches, sellingPrices, isCredit } from '../staff-charges.ts';
+
+test('a surplus credited is set against what the same person owes, oldest first', () => {
+  const rows = [
+    charge({ $id: 'old', amount: 3_000, charged_at: '2026-09-20T10:00:00.000Z' }),
+    charge({ $id: 'new', amount: 5_000, charged_at: '2026-09-25T10:00:00.000Z' }),
+    charge({ $id: 'cr', direction: 'credit', amount: 6_000, charged_at: '2026-09-26T10:00:00.000Z' }),
+    // Somebody else's shortage is not touched by Regina's credit.
+    charge({ $id: 'chichi', person_id: 'chichi', amount: 9_000, charged_at: '2026-09-19T10:00:00.000Z' }),
+  ];
+  assert.deepEqual(creditMatches(rows), [
+    { creditId: 'cr', chargeId: 'old', amount: 3_000 },
+    { creditId: 'cr', chargeId: 'new', amount: 3_000 },
+  ]);
+  assert.equal(isCredit(rows[2]!), true);
+  assert.equal(isCredit(rows[0]!), false);
+});
+
+test('a credit nothing has used yet waits, and nets off what is owed meanwhile', () => {
+  const [regina] = owingByPerson([
+    charge({ $id: 'cr', direction: 'credit', amount: 6_000 }),
+    charge({ $id: 'owed', amount: 4_000 }),
+  ]);
+  assert.equal(regina?.left, 0);
+  assert.equal(regina?.creditLeft, 2_000);
+  assert.equal(regina?.credited, 6_000);
+  // Nobody is told they owe anything while their credit covers it.
+  assert.equal(owedWords([charge({ direction: 'credit', amount: 6_000 }), charge({ $id: 'o', amount: 4_000 })], money), null);
+  assert.equal(owingTotals([charge({ direction: 'credit', amount: 6_000 }), charge({ $id: 'o', amount: 4_000 })], [], '2026-09-01').owed, 0);
+});
+
+test('crediting checks the surplus as charging checks the shortage', () => {
+  assert.match(chargeProblem({ personId: 'r', qty: 15, short: 14, unitPrice: 500, direction: 'credit' }) ?? '', /Only 14 were over/);
+  assert.equal(chargeProblem({ personId: 'r', qty: 14, short: 14, unitPrice: 500, direction: 'credit' }), null);
+  const words = chargeWords({ name: 'Sobolo', person: 'Regina', qty: 10, short: 14, expected: 6, counted: 20, unitPrice: 500, money, direction: 'credit' });
+  assert.match(words[1] ?? '', /Regina is credited GH₵50\.00/);
+  assert.match(words[2] ?? '', /other 4 over are applied as an ordinary gain/);
+  assert.match(settleProblem({ kind: 'cash', amount: 100, left: 100, isAdmin: true, note: '', isCredit: true }) ?? '', /on its own/);
+});
+
+test('a credit posts the other way round, and setting it against a shortage posts nothing', () => {
+  assert.deepEqual(staffChargeLines(6_000, 'credit').map((l) => [l.account_code, l.debit, l.credit]), [['4910', 6_000, 0], ['1300', 0, 6_000]]);
+  assert.deepEqual(staffSettleLines('credit', 3_000), []);
+  assert.deepEqual(server.staffChargeLines(6_000, 'credit'), staffChargeLines(6_000, 'credit'));
+  assert.deepEqual(server.staffSettleLines('credit', 3_000), []);
+});
+
+test('selling prices are found for each shelf item something sells', () => {
+  const recipes = [{ menu_item_id: 'club', variant_id: 'large', ingredient_id: 'club-l', qty_per_unit: 1 }];
+  assert.deepEqual(
+    sellingPrices(['club-l', 'sugar'], recipes, [{ $id: 'club', name: 'Club', price: 2_500 }], [{ $id: 'large', label: 'Large', price: 3_000 }]),
+    { 'club-l': { price: 3_000, from: 'Club · Large' } },
+  );
 });

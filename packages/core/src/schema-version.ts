@@ -6,4 +6,4 @@
  * when the row says something else, the database is behind and the apps say
  * so. See scripts/schema-fingerprint.mjs.
  */
-export const SCHEMA_VERSION = '19fba8767988';
+export const SCHEMA_VERSION = '669be8c4d3a5';

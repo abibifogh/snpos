@@ -9,9 +9,9 @@ import { lineUndecided } from './stocktake';
 import { saleLocation } from './locations';
 import type { Module } from './access';
 import {
-  chargeProblem, chargeAmount, settleProblem, foundAmount, afterSettle, chargeLeft, sellingPricePerUnit,
+  chargeProblem, chargeAmount, settleProblem, foundAmount, afterSettle, chargeLeft, sellingPrices, creditMatches, isCredit,
 } from './staff-charges';
-import type { StaffCharge, StaffSettlement, SettleKind, PriceBasis } from './staff-charges';
+import type { StaffCharge, StaffSettlement, SettleKind, PriceBasis, ChargeDirection } from './staff-charges';
 
 /**
  * Reading and writing staff charges. The rules are in staff-charges.ts.
@@ -25,24 +25,32 @@ export interface ChargePerson { $id: string; user_id?: string | null; display_na
 const readableBy = (person: ChargePerson): string[] =>
   person.user_id ? [Permission.read(Role.user(person.user_id))] : [];
 
+/**
+ * What one unit of each shelf item sells for, from the drinks and dishes that
+ * use it. Items nothing on the menu sells are left out; see sellingPrices.
+ */
+export async function loadSellingPrices(ingredientIds: string[]): Promise<Record<string, { price: number; from: string }>> {
+  if (ingredientIds.length === 0) return {};
+  const wanted = new Set(ingredientIds);
+  const mine = (await loadRecipes()).filter((r) => wanted.has(r.ingredient_id));
+  const [items, variants] = await Promise.all([
+    listByIds<{ $id: string; name?: string; price?: number }>('menu_items', '$id', [...new Set(mine.map((r) => r.menu_item_id ?? '').filter(Boolean))]),
+    listByIds<{ $id: string; label?: string; price?: number }>('product_variants', '$id', [...new Set(mine.map((r) => r.variant_id ?? '').filter(Boolean))]),
+  ]);
+  return sellingPrices(ingredientIds, mine, items, variants);
+}
+
 /** Selling price and cost of one unit of a shelf item, for the charge form. */
 export async function barChargePrices(ingredientId: string): Promise<{
   selling: number | null;
   sellingFrom: string;
   cost: number;
 }> {
-  const [ing, recipes] = await Promise.all([
+  const [ing, prices] = await Promise.all([
     db.getDocument(DB_ID, 'ingredients', ingredientId).catch(() => null) as Promise<{ base_unit_cost?: number } | null>,
-    loadRecipes().catch(() => []),
+    loadSellingPrices([ingredientId]).catch(() => ({} as Record<string, { price: number; from: string }>)),
   ]);
-  const mine = recipes.filter((r) => r.ingredient_id === ingredientId);
-  const [items, variants] = await Promise.all([
-    listByIds<{ $id: string; name?: string; price?: number }>('menu_items', '$id', [...new Set(mine.map((r) => r.menu_item_id ?? '').filter(Boolean))])
-      .catch(() => []),
-    listByIds<{ $id: string; label?: string; price?: number }>('product_variants', '$id', [...new Set(mine.map((r) => r.variant_id ?? '').filter(Boolean))])
-      .catch(() => []),
-  ]);
-  const sell = sellingPricePerUnit(ingredientId, mine, items, variants);
+  const sell = prices[ingredientId];
   return { selling: sell?.price ?? null, sellingFrom: sell?.from ?? '', cost: Math.round(ing?.base_unit_cost ?? 0) };
 }
 
@@ -70,8 +78,10 @@ export async function chargeBarLine(opts: {
   const line = count?.lines.find((l) => l.$id === opts.lineId);
   if (!count || !line) throw new Error('That line could not be found.');
   if (!isPending(line)) throw new Error('That line has already been decided.');
-  const short = -(line.variance_qty ?? 0);
-  const problem = chargeProblem({ personId: opts.person.$id, qty: opts.qty, short, unitPrice: opts.unitPrice });
+  // Short is owed; over is credited. See creditMatches.
+  const direction: ChargeDirection = (line.variance_qty ?? 0) > 0 ? 'credit' : 'owed';
+  const short = Math.abs(line.variance_qty ?? 0);
+  const problem = chargeProblem({ personId: opts.person.$id, qty: opts.qty, short, unitPrice: opts.unitPrice, direction });
   if (problem) throw new Error(problem);
 
   const places = await loadLocations(opts.venueId);
@@ -85,6 +95,7 @@ export async function chargeBarLine(opts: {
     person_user_id: opts.person.user_id ?? '',
     person_name: opts.person.display_name,
     source: 'bar_count',
+    direction,
     count_ref: `${opts.shiftId}|${opts.phase}`,
     line_id: line.$id,
     module: side,
@@ -112,6 +123,7 @@ export async function chargeBarLine(opts: {
     throw e;
   }
   await tryWrite(db.updateDocument(DB_ID, 'shift_stock_checks', line.$id, { charge_id: charge.$id }));
+  await applyCredits(opts.venueId, opts.person.$id, opts.userId).catch(() => undefined);
   return charge;
 }
 
@@ -130,7 +142,8 @@ export async function chargeShopLine(opts: {
   const line = (await countLines(opts.countId)).find((l) => l.$id === opts.lineId);
   if (!line) throw new Error('That line could not be found.');
   if (!lineUndecided(line)) throw new Error('That line has already been decided.');
-  const problem = chargeProblem({ personId: opts.person.$id, qty: opts.qty, short: -line.delta, unitPrice: opts.unitPrice });
+  const direction: ChargeDirection = line.delta > 0 ? 'credit' : 'owed';
+  const problem = chargeProblem({ personId: opts.person.$id, qty: opts.qty, short: Math.abs(line.delta), unitPrice: opts.unitPrice, direction });
   if (problem) throw new Error(problem);
 
   const name = [line.name_snapshot, line.variant_label].filter(Boolean).join(' · ');
@@ -140,6 +153,7 @@ export async function chargeShopLine(opts: {
     person_user_id: opts.person.user_id ?? '',
     person_name: opts.person.display_name,
     source: 'shop_count',
+    direction,
     count_ref: opts.countId,
     line_id: line.$id,
     module: 'craft',
@@ -165,7 +179,45 @@ export async function chargeShopLine(opts: {
     throw e;
   }
   await tryWrite(db.updateDocument(DB_ID, 'stock_count_lines', line.$id, { charge_id: charge.$id }));
+  await applyCredits(opts.venueId, opts.person.$id, opts.userId).catch(() => undefined);
   return charge;
+}
+
+/**
+ * Set this person's credits against what they owe, oldest first.
+ *
+ * Run after every charge and credit, so a credit is used the moment there is
+ * something to use it on. Each match is written as a settlement of the
+ * shortage pointing at the credit, and both rows carry what is left of them.
+ */
+async function applyCredits(venueId: string, personId: string, userId: string): Promise<number> {
+  const rows = await listAll<StaffCharge>('staff_charges', [Query.equal('person_id', personId), Query.equal('status', 'open')]);
+  const matches = creditMatches(rows);
+  for (const m of matches) {
+    const owed = rows.find((r) => r.$id === m.chargeId)!;
+    const credit = rows.find((r) => r.$id === m.creditId)!;
+    await db.createDocument(DB_ID, 'staff_charge_settlements', ID.unique(), {
+      venue_id: venueId,
+      charge_id: owed.$id,
+      person_id: personId,
+      kind: 'credit',
+      amount: m.amount,
+      qty_found: 0,
+      shift_id: '',
+      method_id: '',
+      credit_id: credit.$id,
+      note: `Set against ${credit.item_name} over`,
+      recorded_by: userId,
+      recorded_at: new Date().toISOString(),
+    }, owed.person_user_id ? [Permission.read(Role.user(owed.person_user_id))] : []);
+    const nextOwed = afterSettle(owed, m.amount);
+    const nextCredit = afterSettle(credit, m.amount);
+    await db.updateDocument(DB_ID, 'staff_charges', owed.$id, nextOwed);
+    await db.updateDocument(DB_ID, 'staff_charges', credit.$id, nextCredit);
+    owed.settled_total = nextOwed.settled_total; owed.status = nextOwed.status;
+    credit.settled_total = nextCredit.settled_total; credit.status = nextCredit.status;
+  }
+  return matches.length;
 }
 
 /**
@@ -191,7 +243,7 @@ export async function settleCharge(opts: {
   const left = chargeLeft(charge);
   const problem = settleProblem({
     kind: opts.kind, amount: opts.amount, left, isAdmin: opts.isAdmin, note: opts.note ?? '',
-    qtyFound: opts.qtyFound, charged: charge.qty,
+    qtyFound: opts.qtyFound, charged: charge.qty, isCredit: isCredit(charge),
   });
   if (problem) throw new Error(problem);
   if (opts.kind === 'cash' && (!opts.shiftId || !opts.methodId)) {

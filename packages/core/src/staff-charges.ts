@@ -18,7 +18,9 @@
  * Pure. Imports nothing at runtime.
  */
 
-export type SettleKind = 'cash' | 'pay' | 'found' | 'written_off';
+export type SettleKind = 'cash' | 'pay' | 'found' | 'written_off' | 'credit';
+/** Owed for a shortage, or credited for a surplus. */
+export type ChargeDirection = 'owed' | 'credit';
 export type PriceBasis = 'selling' | 'cost' | 'custom';
 
 export interface StaffCharge {
@@ -44,6 +46,8 @@ export interface StaffCharge {
   charged_at: string;
   settled_total: number;
   status: 'open' | 'settled';
+  /** Absent on rows from before surpluses could be credited: owed. */
+  direction?: ChargeDirection | null;
 }
 
 export interface StaffSettlement {
@@ -55,6 +59,8 @@ export interface StaffSettlement {
   qty_found?: number | null;
   shift_id?: string | null;
   method_id?: string | null;
+  /** For 'credit': the credit it was set against. */
+  credit_id?: string | null;
   note?: string | null;
   recorded_by?: string | null;
   recorded_at: string;
@@ -65,7 +71,10 @@ export const SETTLE_WORDS: Record<SettleKind, string> = {
   pay: 'Taken from pay',
   found: 'Found on the shelf',
   written_off: 'Written off',
+  credit: 'Set against a surplus',
 };
+
+export const isCredit = (c: Pick<StaffCharge, 'direction'>): boolean => c.direction === 'credit';
 
 /** What is left to put right on one charge. Never below nothing. */
 export const chargeLeft = (c: Pick<StaffCharge, 'amount' | 'settled_total'>): number =>
@@ -122,19 +131,41 @@ export function sellingPricePerUnit(
   return best ? { price: best.price, from: best.from } : null;
 }
 
+/** Selling price per unit for each shelf item, where something on the menu sells it. */
+export function sellingPrices(
+  ingredientIds: string[],
+  recipes: PricedRecipe[],
+  items: { $id: string; name?: string; price?: number }[],
+  variants: { $id: string; label?: string; price?: number }[],
+): Record<string, { price: number; from: string }> {
+  const out: Record<string, { price: number; from: string }> = {};
+  for (const id of new Set(ingredientIds)) {
+    const found = sellingPricePerUnit(id, recipes, items, variants);
+    if (found) out[id] = found;
+  }
+  return out;
+}
+
 /* -------------------------------------------------------- charging */
 
 /** Why this charge cannot be made as typed, or null. */
 export function chargeProblem(input: {
   personId: string;
   qty: number;
+  /** How many the line differed by, either way. */
   short: number;
   unitPrice: number;
+  direction?: ChargeDirection;
 }): string | null {
-  if (!input.personId) return 'Choose who this is charged to.';
-  if (!(input.short > 0)) return 'Only a line that came up short can be charged to somebody.';
-  if (!Number.isFinite(input.qty) || !(input.qty > 0)) return 'Say how many are being charged.';
-  if (input.qty > input.short + 1e-9) return `Only ${input.short} came up short, so no more than that can be charged.`;
+  const credit = input.direction === 'credit';
+  if (!input.personId) return credit ? 'Choose who this is credited to.' : 'Choose who this is charged to.';
+  if (!(input.short > 0)) return 'Only a line that differed can be charged or credited to somebody.';
+  if (!Number.isFinite(input.qty) || !(input.qty > 0)) return credit ? 'Say how many are being credited.' : 'Say how many are being charged.';
+  if (input.qty > input.short + 1e-9) {
+    return credit
+      ? `Only ${input.short} were over, so no more than that can be credited.`
+      : `Only ${input.short} came up short, so no more than that can be charged.`;
+  }
   if (!Number.isFinite(input.unitPrice) || !(input.unitPrice > 0)) return 'Give a price for each one.';
   return null;
 }
@@ -149,14 +180,42 @@ export function chargeWords(input: {
   counted: number;
   unitPrice: number;
   money: (n: number) => string;
+  direction?: ChargeDirection;
 }): string[] {
   const amount = chargeAmount(input.qty, input.unitPrice);
+  const credit = input.direction === 'credit';
   const out = [
     `The shelf moves from ${input.expected} to ${input.counted} now, so the next count expects ${input.counted}.`,
-    `${input.person} owes ${input.money(amount)} (${input.qty} × ${input.money(input.unitPrice)}) until it is paid, found or written off.`,
+    credit
+      ? `${input.person} is credited ${input.money(amount)} (${input.qty} × ${input.money(input.unitPrice)}). It is set against what they owe, oldest first; anything left over is used up by their next shortage.`
+      : `${input.person} owes ${input.money(amount)} (${input.qty} × ${input.money(input.unitPrice)}) until it is paid, found or written off.`,
   ];
   const rest = Number((input.short - input.qty).toFixed(4));
-  if (rest > 0) out.push(`The other ${rest} short are applied as an ordinary loss.`);
+  if (rest > 0) out.push(credit ? `The other ${rest} over are applied as an ordinary gain.` : `The other ${rest} short are applied as an ordinary loss.`);
+  return out;
+}
+
+/**
+ * Which credits go against which shortages, for one person.
+ *
+ * Oldest credit against oldest shortage, each as far as it goes, so a credit
+ * is used up in the order things happened. Nothing is matched across people.
+ */
+export function creditMatches(rows: StaffCharge[]): { creditId: string; chargeId: string; amount: number }[] {
+  const byTime = (a: StaffCharge, b: StaffCharge) => a.charged_at.localeCompare(b.charged_at);
+  const credits = rows.filter((r) => isCredit(r) && chargeLeft(r) > 0).sort(byTime).map((r) => ({ id: r.$id, left: chargeLeft(r), person: r.person_id }));
+  const owed = rows.filter((r) => !isCredit(r) && chargeLeft(r) > 0).sort(byTime).map((r) => ({ id: r.$id, left: chargeLeft(r), person: r.person_id }));
+  const out: { creditId: string; chargeId: string; amount: number }[] = [];
+  for (const c of credits) {
+    for (const o of owed) {
+      if (c.left <= 0) break;
+      if (o.left <= 0 || o.person !== c.person) continue;
+      const amount = Math.min(c.left, o.left);
+      out.push({ creditId: c.id, chargeId: o.id, amount });
+      c.left -= amount;
+      o.left -= amount;
+    }
+  }
   return out;
 }
 
@@ -165,6 +224,8 @@ export function chargeWords(input: {
 /** Why this settlement cannot be recorded as typed, or null. */
 export function settleProblem(input: {
   kind: SettleKind;
+  /** A credit is used up against shortages, never settled by hand. */
+  isCredit?: boolean;
   amount: number;
   left: number;
   isAdmin: boolean;
@@ -172,6 +233,8 @@ export function settleProblem(input: {
   qtyFound?: number;
   charged?: number;
 }): string | null {
+  if (input.isCredit) return 'A credit is set against what they owe on its own; there is nothing to settle by hand.';
+  if (input.kind === 'credit') return 'Credits are set against shortages on their own.';
   if (input.left <= 0) return 'Nothing is owed on this any more.';
   if (input.kind === 'found') {
     const q = input.qtyFound ?? 0;
@@ -207,7 +270,12 @@ export interface PersonOwing {
   personId: string;
   name: string;
   charged: number;
+  /** Credited for surpluses, in all. */
+  credited: number;
+  /** Credit not yet set against anything: waits for their next shortage. */
+  creditLeft: number;
   settled: number;
+  /** What they owe once credits are set against it. Never below nothing; see creditLeft. */
   left: number;
   open: number;
   settledCount: number;
@@ -221,8 +289,15 @@ export function owingByPerson(charges: StaffCharge[]): PersonOwing[] {
   const by = new Map<string, PersonOwing>();
   for (const c of charges) {
     const p = by.get(c.person_id) ?? {
-      personId: c.person_id, name: c.person_name, charged: 0, settled: 0, left: 0, open: 0, settledCount: 0, charges: [],
+      personId: c.person_id, name: c.person_name, charged: 0, credited: 0, creditLeft: 0, settled: 0, left: 0, open: 0, settledCount: 0, charges: [],
     };
+    p.charges.push(c);
+    by.set(c.person_id, p);
+    if (isCredit(c)) {
+      p.credited += c.amount || 0;
+      p.creditLeft += chargeLeft(c);
+      continue;
+    }
     p.charged += c.amount || 0;
     p.settled += Math.min(c.amount || 0, c.settled_total || 0);
     p.left += chargeLeft(c);
@@ -232,10 +307,15 @@ export function owingByPerson(charges: StaffCharge[]): PersonOwing[] {
     } else {
       p.settledCount += 1;
     }
-    p.charges.push(c);
-    by.set(c.person_id, p);
   }
-  for (const p of by.values()) p.charges.sort((a, b) => b.charged_at.localeCompare(a.charged_at));
+  for (const p of by.values()) {
+    p.charges.sort((a, b) => b.charged_at.localeCompare(a.charged_at));
+    // Credits are set against shortages as they are made (creditMatches);
+    // where that has not happened yet, the figures still net them off.
+    const net = p.left - p.creditLeft;
+    p.left = Math.max(0, net);
+    p.creditLeft = Math.max(0, -net);
+  }
   return [...by.values()].sort((a, b) => b.left - a.left || a.name.localeCompare(b.name));
 }
 
@@ -245,19 +325,21 @@ export function owingTotals(
   settlements: StaffSettlement[],
   monthStart: string,
 ): { owed: number; people: number; putRightThisMonth: number } {
-  const open = charges.filter((c) => chargeLeft(c) > 0);
+  const owing = owingByPerson(charges).filter((p) => p.left > 0);
   return {
-    owed: open.reduce((s, c) => s + chargeLeft(c), 0),
-    people: new Set(open.map((c) => c.person_id)).size,
+    owed: owing.reduce((s, p) => s + p.left, 0),
+    people: owing.length,
     putRightThisMonth: settlements.filter((s) => s.recorded_at >= monthStart).reduce((s, r) => s + (r.amount || 0), 0),
   };
 }
 
 /** What the person at the till is told, or null when they owe nothing. */
 export function owedWords(mine: StaffCharge[], money: (n: number) => string): string | null {
-  const open = mine.filter((c) => chargeLeft(c) > 0);
+  const open = mine.filter((c) => !isCredit(c) && chargeLeft(c) > 0);
   if (open.length === 0) return null;
-  const sum = open.reduce((s, c) => s + chargeLeft(c), 0);
+  const credit = mine.filter(isCredit).reduce((s, c) => s + chargeLeft(c), 0);
+  const sum = open.reduce((s, c) => s + chargeLeft(c), 0) - credit;
+  if (sum <= 0) return null;
   const what = open.length === 1
     ? `${open[0]!.qty} ${open[0]!.item_name} short`
     : `${open.length} count differences`;

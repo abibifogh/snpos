@@ -25,7 +25,10 @@ export function ChargeLineModal({ refOf, line, countedBy, userId, money, onClose
   onClose: () => void;
   onDone: (words: string) => Promise<void>;
 }) {
-  const short = -(line.delta ?? 0);
+  // Short is charged; over is credited, against what they owe.
+  const credit = (line.delta ?? 0) > 0;
+  const direction = credit ? 'credit' as const : 'owed' as const;
+  const short = Math.abs(line.delta ?? 0);
   const [people, setPeople] = useState<StaffProfile[] | null>(null);
   const [personId, setPersonId] = useState('');
   const [qtyText, setQtyText] = useState(String(short));
@@ -66,7 +69,7 @@ export function ChargeLineModal({ refOf, line, countedBy, userId, money, onClose
   const qty = Number(qtyText);
   const unitPrice = parseMoney(priceText) ?? 0;
   const person = people?.find((p) => p.$id === personId);
-  const problem = chargeProblem({ personId, qty, short, unitPrice });
+  const problem = chargeProblem({ personId, qty, short, unitPrice, direction });
 
   const save = async () => {
     if (problem || !person) { setError(problem ?? 'Choose who this is charged to.'); return; }
@@ -85,7 +88,9 @@ export function ChargeLineModal({ refOf, line, countedBy, userId, money, onClose
           person: who, qty, unitPrice, basis, note, userId,
         });
       }
-      await onDone(`${money(chargeAmount(qty, unitPrice))} charged to ${person.display_name}. The shelf is corrected.`);
+      await onDone(credit
+        ? `${money(chargeAmount(qty, unitPrice))} credited to ${person.display_name}, against what they owe. The shelf is corrected.`
+        : `${money(chargeAmount(qty, unitPrice))} charged to ${person.display_name}. The shelf is corrected.`);
     } catch (e) {
       setError(humanError(e));
     } finally {
@@ -101,20 +106,22 @@ export function ChargeLineModal({ refOf, line, countedBy, userId, money, onClose
 
   return (
     <Modal
-      title={`Charge ${line.name} to a person`}
+      title={credit ? `Credit ${line.name} to a person` : `Charge ${line.name} to a person`}
       onClose={onClose}
       footer={(
         <>
           <Button onClick={onClose}>Cancel</Button>
           <Button variant="primary" loading={busy} disabled={!!problem || !people} onClick={() => void save()}>
-            {person && !problem ? `Charge ${money(chargeAmount(qty, unitPrice))} to ${person.display_name}` : 'Charge'}
+            {person && !problem
+              ? `${credit ? 'Credit' : 'Charge'} ${money(chargeAmount(qty, unitPrice))} to ${person.display_name}`
+              : credit ? 'Credit' : 'Charge'}
           </Button>
         </>
       )}
     >
       {!people || !prices ? <Spinner /> : (
         <div style={{ display: 'grid', gap: '0.7rem' }}>
-          <p style={{ margin: 0 }}>{short} short: the shelf said {line.expected}, {line.counted} were found.</p>
+          <p style={{ margin: 0 }}>{short} {credit ? 'over' : 'short'}: the shelf said {line.expected}, {line.counted} were found.</p>
           <Field label="Who">
             <Select value={personId} onChange={(e) => { setPersonId(e.target.value); setError(null); }}>
               <option value="">Choose…</option>
@@ -125,7 +132,7 @@ export function ChargeLineModal({ refOf, line, countedBy, userId, money, onClose
               ))}
             </Select>
           </Field>
-          <Field label="How many" hint={`Up to ${short}. Any not charged are applied as an ordinary loss.`}>
+          <Field label="How many" hint={`Up to ${short}. Any not ${credit ? 'credited are applied as an ordinary gain' : 'charged are applied as an ordinary loss'}.`}>
             <Input value={qtyText} inputMode="decimal" onChange={(e) => { setQtyText(e.target.value); setError(null); }} />
           </Field>
           <Field
@@ -148,7 +155,7 @@ export function ChargeLineModal({ refOf, line, countedBy, userId, money, onClose
             <Notice tone="info">
               {chargeWords({
                 name: line.name, person: person.display_name, qty, short,
-                expected: line.expected ?? 0, counted: line.counted ?? 0, unitPrice, money,
+                expected: line.expected ?? 0, counted: line.counted ?? 0, unitPrice, money, direction,
               }).map((w) => <div key={w}>{w}</div>)}
             </Notice>
           )}

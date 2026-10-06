@@ -236,8 +236,16 @@ export function batchLines(b: { madeModule?: string; crossing: { module: string;
  * A count difference charged to a person: they owe it, and the business has
  * recovered it. See staff-charges.ts.
  */
-export function staffChargeLines(amount: number): BookLine[] {
+export function staffChargeLines(amount: number, direction: string = 'owed'): BookLine[] {
   if (!(amount > 0)) return [];
+  // A surplus credited to somebody is the same pair the other way round: it
+  // takes off what they owe, or sits as what the business owes them.
+  if (direction === 'credit') {
+    return [
+      { account_code: ACCOUNTS.shortagesCharged, debit: amount, credit: 0, memo: 'Surplus credited to staff' },
+      { account_code: ACCOUNTS.owedByStaff, debit: 0, credit: amount, memo: 'Owed by staff' },
+    ];
+  }
   return [
     { account_code: ACCOUNTS.owedByStaff, debit: amount, credit: 0, memo: 'Owed by staff' },
     { account_code: ACCOUNTS.shortagesCharged, debit: 0, credit: amount, memo: 'Shortage charged to staff' },
@@ -253,6 +261,9 @@ export function staffChargeLines(amount: number): BookLine[] {
  */
 export function staffSettleLines(kind: string, amount: number): BookLine[] {
   if (!(amount > 0)) return [];
+  // A credit set against a shortage moves nothing: both already sit in
+  // Owed by staff, one each way.
+  if (kind === 'credit') return [];
   const debit = kind === 'cash' ? ACCOUNTS.cash
     : kind === 'pay' ? ACCOUNTS.wages
       : ACCOUNTS.shortagesCharged;

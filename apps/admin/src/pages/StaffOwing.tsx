@@ -3,7 +3,7 @@ import { Badge, Button, Card, Empty, Field, Input, Modal, Notice, Segmented, Sel
 import { humanError } from '../lib';
 import {
   loadStaffCharges, loadSettlements, settleCharge, owingByPerson, owingTotals, chargeLeft, settleProblem, foundAmount,
-  SETTLE_WORDS, loadOpenShifts, loadPaymentMethods, parseMoney, toInput, dateTimeWords, waitedWords, MODULE_LABELS,
+  SETTLE_WORDS, isCredit, loadOpenShifts, loadPaymentMethods, parseMoney, toInput, dateTimeWords, waitedWords, MODULE_LABELS,
 } from '@snpos/core';
 import type { StaffCharge, StaffSettlement, SettleKind, Module } from '@snpos/core';
 import { useSession, useMoney } from '../session';
@@ -92,7 +92,7 @@ export function StaffOwingPage() {
           <div className="table-wrap">
             <table className="data">
               <thead>
-                <tr><th>Person</th><th>Oldest open</th><th className="num">Charged</th><th className="num">Put right</th><th className="num">Still owed</th></tr>
+                <tr><th>Person</th><th>Oldest open</th><th className="num">Charged</th><th className="num">Credited</th><th className="num">Put right</th><th className="num">Still owed</th></tr>
               </thead>
               <tbody>
                 {people.map((p) => {
@@ -110,12 +110,17 @@ export function StaffOwingPage() {
                         </td>
                         <td className="small dim">{p.oldestOpen ? waitedWords(now - Date.parse(p.oldestOpen)) : '—'}</td>
                         <td className="num">{money(p.charged)}</td>
+                        <td className="num">{p.credited ? money(p.credited) : '—'}</td>
                         <td className="num">{money(p.settled)}</td>
-                        <td className="num" style={{ fontWeight: 650 }}>{money(p.left)}</td>
+                        <td className="num" style={{ fontWeight: 650 }}>
+                          {money(p.left)}
+                          {/* Credit nothing has used yet: their next shortage takes it. */}
+                          {p.creditLeft > 0 && <div className="small dim">{money(p.creditLeft)} credit waiting</div>}
+                        </td>
                       </tr>
                       {open && (
                         <tr>
-                          <td colSpan={5} style={{ background: 'var(--surface-2, rgba(0,0,0,0.02))' }}>
+                          <td colSpan={6} style={{ background: 'var(--surface-2, rgba(0,0,0,0.02))' }}>
                             <table className="data">
                               <thead>
                                 <tr><th>Charged</th><th>What</th><th>From</th><th className="num">Charged</th><th className="num">Put right</th><th className="num">Left</th><th>State</th><th /></tr>
@@ -128,7 +133,7 @@ export function StaffOwingPage() {
                                     <tr key={c.$id}>
                                       <td className="small dim">{dateTimeWords(c.charged_at)}</td>
                                       <td>
-                                        <strong>{c.item_name}</strong> × {c.qty}
+                                        <strong>{c.item_name}</strong> × {c.qty}{isCredit(c) ? ' over' : ''}
                                         <div className="small dim">at {money(c.unit_price)}, {c.price_basis === 'cost' ? 'cost' : c.price_basis === 'custom' ? 'a price set by hand' : 'selling price'}</div>
                                         {c.note && <div className="small dim">&ldquo;{c.note}&rdquo;</div>}
                                       </td>
@@ -139,12 +144,14 @@ export function StaffOwingPage() {
                                       <td className="num">{money(c.amount - left)}</td>
                                       <td className="num" style={{ fontWeight: 600 }}>{money(left)}</td>
                                       <td>
-                                        {left === 0 ? (
+                                        {isCredit(c) ? (
+                                          <Badge tone="ok">{left === 0 ? 'Credit, used' : left < c.amount ? 'Credit, part used' : 'Credit'}</Badge>
+                                        ) : left === 0 ? (
                                           <Badge tone="ok">{done.length === 1 ? SETTLE_WORDS[done[0]!.kind] : 'Settled'}</Badge>
                                         ) : left < c.amount ? <Badge tone="warn">Part put right</Badge> : <Badge tone="danger">Open</Badge>}
                                       </td>
                                       <td className="num">
-                                        {left > 0 && (isAdmin
+                                        {left > 0 && !isCredit(c) && (isAdmin
                                           ? <Button size="sm" variant="primary" onClick={() => setSettling(c)}>Put right</Button>
                                           : <span className="small dim">An admin records this</span>)}
                                       </td>

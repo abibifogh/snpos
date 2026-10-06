@@ -97,3 +97,19 @@ test('each count line carries its row, so it can be decided on its own', () => {
   // A spend's lines are decided together and carry no row.
   assert.equal(spendReviewLines([{ name_snapshot: 'Rice', qty: 1, unit_cost: 100 }])[0]?.id, undefined);
 });
+
+import { atSellingPrice } from '../waiting-lines.ts';
+
+test('a bar difference is worth what it sells for, and at cost only where nothing sells it', () => {
+  const rows = [
+    { $id: 'a', ingredient_id: 'club-l', variance_qty: -6, variance_value: 0 },
+    { $id: 'b', ingredient_id: 'sugar', variance_qty: -2, variance_value: -2_400 },
+  ];
+  const selling = { 'club-l': { price: 3_000 } };
+  const lines = barReviewLines(rows, (id) => id, (id) => selling[id as 'club-l']?.price);
+  const club = lines.find((l) => l.id === 'a');
+  const sugar = lines.find((l) => l.id === 'b');
+  assert.deepEqual([club?.worth, club?.unitPrice, club?.valuedAt], [-18_000, 3_000, 'selling']);
+  assert.deepEqual([sugar?.worth, sugar?.unitPrice, sugar?.valuedAt], [-2_400, 1_200, 'cost']);
+  assert.deepEqual(atSellingPrice(rows, selling).map((r) => r.variance_value), [-18_000, -2_400]);
+});

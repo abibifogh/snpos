@@ -9,6 +9,8 @@ import type { WaitingItem, WaitingSpend, WaitingTabShift } from './waiting';
 import type { Shift } from './shifts';
 import type { StaffProfile } from './types';
 import { nameBook } from './staff-words';
+import { loadSellingPrices } from './staff-charges-store';
+import { atSellingPrice } from './waiting-lines';
 
 /**
  * Everything waiting for somebody senior, read once.
@@ -46,7 +48,10 @@ export async function loadWaiting(venueId: string, money: (minor: number) => str
 
   // A bar count is named by the shift it was taken on, which the rows do not carry.
   // Each count says whose shelf it was, so a kitchen count is not listed as the bar's.
-  const barCounts = filedCounts(checks).map((c) => ({ ...c, side: countSide(c.lines) }));
+  // Valued at what they sell for, not what they cost. See barReviewLines.
+  const selling = await loadSellingPrices(checks.map((c) => c.ingredient_id))
+    .catch(() => ({} as Record<string, { price: number }>));
+  const barCounts = filedCounts(atSellingPrice(checks, selling)).map((c) => ({ ...c, side: countSide(c.lines) }));
   const shiftIds = [...new Set(barCounts.map((c) => c.shiftId).filter((id) => id && !id.startsWith('store:')))];
   const shifts = shiftIds.length > 0
     ? await listAll<Shift>('shifts', [Query.equal('$id', shiftIds)]).catch(() => [] as Shift[])

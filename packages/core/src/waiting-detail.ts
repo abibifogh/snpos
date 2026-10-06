@@ -2,6 +2,7 @@ import { listAll, listByIds, Query, db, DB_ID } from './client';
 import { pendingBarChecks } from './stock';
 import { countLines } from './consignment';
 import { lineUndecided } from './stocktake';
+import { loadSellingPrices } from './staff-charges-store';
 import { barReviewLines, shopReviewLines, spendReviewLines, linesAgainst } from './waiting-lines';
 import type { ReviewLine } from './waiting-lines';
 import type { WaitingRef } from './waiting';
@@ -38,12 +39,14 @@ export async function loadReview(ref: WaitingRef): Promise<Review> {
   if (ref.kind === 'bar_count') {
     const all = await pendingBarChecks();
     const mine = all.filter((c) => c.shift_id === ref.shiftId && (c.phase ?? 'close') === ref.phase);
-    const names = await listByIds<Named>('ingredients', '$id', mine.map((c) => c.ingredient_id))
-      .catch(() => [] as Named[]);
+    const [names, selling] = await Promise.all([
+      listByIds<Named>('ingredients', '$id', mine.map((c) => c.ingredient_id)).catch(() => [] as Named[]),
+      loadSellingPrices(mine.map((c) => c.ingredient_id)).catch(() => ({} as Record<string, { price: number }>)),
+    ]);
     const book = new Map(names.map((n) => [n.$id, n.name ?? '']));
     return {
       shape: 'count',
-      lines: barReviewLines(mine, (id) => book.get(id) ?? ''),
+      lines: barReviewLines(mine, (id) => book.get(id) ?? '', (id) => selling[id]?.price),
       empty: 'Every line on this count has already been dealt with.',
     };
   }
