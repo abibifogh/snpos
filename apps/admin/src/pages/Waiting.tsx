@@ -296,35 +296,30 @@ export function WaitingPage() {
     }
   };
 
-  const [printing, setPrinting] = useState(false);
+  /** The count being turned into a PDF, so only its own button spins. */
+  const [printing, setPrinting] = useState<string | null>(null);
   /**
-   * Every count waiting for approval, read line by line, as one document.
-   * The browser's print window saves it as a PDF.
+   * One count waiting for approval, line by line, as its own document: who
+   * counted it, when, and each difference at selling price. The browser's
+   * print window saves it as a PDF. See count-report.ts.
    */
-  const downloadCounts = async () => {
-    const toPrint = (items ?? []).filter((i) => i.kind === 'count' || i.kind === 'shelf');
-    if (toPrint.length === 0) return;
-    setPrinting(true);
+  const downloadCount = async (item: WaitingItem) => {
+    setPrinting(item.id);
     setError(null);
     try {
-      const sections = await Promise.all(toPrint.map(async (i) => ({
-        title: i.title,
-        countedBy: nameOf(i.by),
-        at: i.at,
-        lines: (await loadReview(i.ref)).lines,
-      })));
+      const { lines } = await loadReview(item.ref);
       openPrintable(countDifferencesHtml({
         business: settings?.restaurant_name ?? '',
-        counts: sections.filter((c) => c.lines.length > 0),
+        counts: [{ title: item.title, countedBy: nameOf(item.by), at: item.at, lines }],
         money,
         madeAt: new Date().toISOString(),
         madeBy: profile?.display_name,
         when: (iso) => dateTimeWords(iso),
-      }), `Count differences ${new Date().toISOString().slice(0, 10)}`);
+      }), `${item.title} ${item.at.slice(0, 10)}`.replace(/[\\/:*?"<>|]/g, '-'));
     } catch (e) {
       setError(humanError(e));
     } finally {
-      setPrinting(false);
+      setPrinting(null);
     }
   };
 
@@ -344,15 +339,6 @@ export function WaitingPage() {
           }))}
         />
       </div>
-      {/* Every count waiting, with who counted it and each line at selling
-          price, as a document to save or print. See count-report.ts. */}
-      {counts.count + counts.shelf > 0 && (
-        <div style={{ margin: '0 0 0.6rem' }}>
-          <Button size="sm" loading={printing} onClick={() => void downloadCounts()}>
-            Download count differences as PDF
-          </Button>
-        </div>
-      )}
       <p className="dim small" style={{ marginTop: 0 }}>
         {items ? waitingSummary(items) : 'Reading every queue…'} Oldest first. Approving a count moves the shelf by the
         difference it found; refusing leaves the shelf as it is. Refusing a spend takes it off the books.
@@ -518,6 +504,18 @@ export function WaitingPage() {
                             onClick={() => void toggle(item)}
                           >
                             {open ? 'Hide what is in it' : 'See what is in it'}
+                          </Button>
+                        )}
+                        {/* This count on its own, as a PDF. */}
+                        {(item.kind === 'count' || item.kind === 'shelf') && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            style={{ marginTop: '0.3rem' }}
+                            loading={printing === item.id}
+                            onClick={() => void downloadCount(item)}
+                          >
+                            Download as PDF
                           </Button>
                         )}
                       </td>
