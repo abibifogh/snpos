@@ -39,6 +39,23 @@ test('a bottle poured by measure is priced per bottle, from the drink closest to
   assert.equal(sellingPricePerUnit('sugar', recipes, items, []), null);
 });
 
+test('a cocktail that uses one sachet is not what a sachet sells for', () => {
+  // Castle Bridge: GH₵10 a sachet on its own, and one goes into a GH₵70 cocktail.
+  const recipes = [
+    { menu_item_id: 'cocktail', ingredient_id: 'cb-sachet', qty_per_unit: 1 },
+    { menu_item_id: 'cocktail', ingredient_id: 'juice', qty_per_unit: 0.2 },
+    { menu_item_id: 'sachet', ingredient_id: 'cb-sachet', qty_per_unit: 1 },
+  ];
+  const items = [{ $id: 'cocktail', name: 'Bridge Punch', price: 7_000 }, { $id: 'sachet', name: 'Castle Bridge', price: 1_000 }];
+  assert.deepEqual(sellingPricePerUnit('cb-sachet', recipes, items, []), { price: 1_000, from: 'Castle Bridge' });
+  // Only the cocktail sells it: no selling price, so cost is used.
+  assert.equal(sellingPricePerUnit('cb-sachet', recipes.slice(0, 2), items, []), null);
+  // Two sold on their own, equally close to one each: the cheaper.
+  const twice = [...recipes, { menu_item_id: 'double', ingredient_id: 'cb-sachet', qty_per_unit: 1 }];
+  const more = [...items, { $id: 'double', name: 'Castle Bridge (bar)', price: 1_500 }];
+  assert.deepEqual(sellingPricePerUnit('cb-sachet', twice, more, []), { price: 1_000, from: 'Castle Bridge' });
+});
+
 test('only what came up short can be charged, to somebody, at a price', () => {
   const ok = { personId: 'regina', qty: 6, short: 6, unitPrice: 3_000 };
   assert.equal(chargeProblem(ok), null);

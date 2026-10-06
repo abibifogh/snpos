@@ -32,7 +32,11 @@ const readableBy = (person: ChargePerson): string[] =>
 export async function loadSellingPrices(ingredientIds: string[]): Promise<Record<string, { price: number; from: string }>> {
   if (ingredientIds.length === 0) return {};
   const wanted = new Set(ingredientIds);
-  const mine = (await loadRecipes()).filter((r) => wanted.has(r.ingredient_id));
+  const all = await loadRecipes();
+  // Every row of the drinks that use these, so a cocktail that also takes
+  // juice and syrup can be told from the item sold on its own.
+  const drinks = new Set(all.filter((r) => wanted.has(r.ingredient_id)).map((r) => r.menu_item_id ?? ''));
+  const mine = all.filter((r) => drinks.has(r.menu_item_id ?? ''));
   const [items, variants] = await Promise.all([
     listByIds<{ $id: string; name?: string; price?: number }>('menu_items', '$id', [...new Set(mine.map((r) => r.menu_item_id ?? '').filter(Boolean))]),
     listByIds<{ $id: string; label?: string; price?: number }>('product_variants', '$id', [...new Set(mine.map((r) => r.variant_id ?? '').filter(Boolean))]),

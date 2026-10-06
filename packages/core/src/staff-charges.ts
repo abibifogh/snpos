@@ -99,10 +99,17 @@ export interface PricedRecipe {
  * per drink, so the bottle's selling price is the drink's. Where a bottle is
  * poured by measure — five centilitres of a seventy-five centilitre gin — the
  * drink's price is divided by the measure. The recipe closest to one unit per
- * drink wins, because that is the one where "one of these" means one sale.
+ * drink wins, because that is the one where "one of these" means one sale;
+ * between two equally close, the cheaper.
  *
- * Null when nothing sells it: then there is no selling price to charge, and
- * the screen offers cost instead.
+ * Only what sells it on its own counts. A cocktail that uses one sachet of
+ * gin alongside juice and syrup is not what a sachet sells for: its price is
+ * the whole glass. So a drink or size is used only when this is the one thing
+ * its recipe takes. Pass every recipe row of the drinks concerned, not only
+ * this item's, or a cocktail cannot be told from the sachet itself.
+ *
+ * Null when nothing sells it on its own: then there is no selling price to
+ * charge, and the screen offers cost instead.
  */
 export function sellingPricePerUnit(
   ingredientId: string,
@@ -110,19 +117,30 @@ export function sellingPricePerUnit(
   items: { $id: string; name?: string; price?: number }[],
   variants: { $id: string; label?: string; price?: number }[],
 ): { price: number; from: string } | null {
+  // What each drink, or each size of one, takes. Add-ons are extras chosen at
+  // the till, not part of the drink.
+  const takes = new Map<string, Set<string>>();
+  for (const r of recipes) {
+    if (r.addon_option_id || !(Number(r.qty_per_unit ?? 0) > 0)) continue;
+    const key = `${r.menu_item_id ?? ''}|${r.variant_id ?? ''}`;
+    if (!takes.has(key)) takes.set(key, new Set());
+    takes.get(key)!.add(r.ingredient_id);
+  }
   let best: { price: number; from: string; distance: number } | null = null;
   for (const r of recipes) {
     if (r.ingredient_id !== ingredientId || r.addon_option_id) continue;
     const q = Number(r.qty_per_unit ?? 0);
     if (!(q > 0)) continue;
+    if ((takes.get(`${r.menu_item_id ?? ''}|${r.variant_id ?? ''}`)?.size ?? 0) !== 1) continue;
     const item = items.find((i) => i.$id === r.menu_item_id);
     const size = r.variant_id ? variants.find((v) => v.$id === r.variant_id) : undefined;
     const price = size ? size.price : item?.price;
     if (typeof price !== 'number' || !(price > 0)) continue;
     const distance = Math.abs(Math.log(q));
-    if (!best || distance < best.distance) {
+    const each = Math.round(price / q);
+    if (!best || distance < best.distance - 1e-9 || (Math.abs(distance - best.distance) <= 1e-9 && each < best.price)) {
       best = {
-        price: Math.round(price / q),
+        price: each,
         from: [item?.name, size?.label].filter(Boolean).join(' · '),
         distance,
       };
