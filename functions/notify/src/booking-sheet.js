@@ -21,6 +21,7 @@
 
 import { Doc, widthOf } from './pdf-doc.js';
 import { splitDiet, parseOmissions, tagsWithout, tagsWithOptions } from './diet.js';
+import { packingWords } from './words.js';
 
 const INK = '#1a2230';
 const QUIET = '#66727f';
@@ -233,6 +234,8 @@ export function bookingSheetPdf({
   const portions = sittings.reduce(
     (n, s) => n + s.lines.reduce((m, l) => m + l.qty, 0), 0,
   );
+  // The boxes for the takeaway sittings: inside the total, and said so.
+  const packing = sittings.reduce((n, s) => n + (s.order.pack_fee || 0), 0);
   const facts = [
     ['Booked by', clean(booking.contact_name) || '-'],
     [label, clean(booking.reference) || '-'],
@@ -243,6 +246,7 @@ export function bookingSheetPdf({
     ['Last sitting', when(booking.last_at) || '-'],
     ['Orders', clean(booking.order_nos) || '-'],
     ...(prices ? [['Total', money(booking.total)]] : []),
+    ...(prices && packing > 0 ? [['Of which packing', money(packing)]] : []),
   ];
   factTable(doc, facts, { accent });
 
@@ -308,6 +312,28 @@ export function bookingSheetPdf({
 
     for (const line of sitting.lines) dishBlock(doc, line, prices ? money : null);
 
+    /*
+      THE BOXES, ON A LINE OF THEIR OWN.
+
+      A takeaway sitting is charged for its containers, once per portion. That
+      was inside the sitting total and nowhere else, so the dishes added up to
+      GHS 350 less than the total under them and nothing said why.
+    */
+    const pack = prices ? packingWords(order.pack_fee || 0, plates, money) : null;
+    if (pack) {
+      doc.need(30);
+      doc.pair(
+        pack.count ? `${pack.count} \u00d7  ${pack.label}` : pack.label,
+        money(order.pack_fee),
+        { size: 10.5, font: 'bold', valueFont: 'bold' },
+      );
+      doc.text(
+        pack.each ? `A container for each portion, ${pack.each} each` : 'Containers for the portions packed',
+        { size: 9, colour: QUIET, x: doc.left + 16, width: doc.right - doc.left - 16 },
+      );
+      doc.gap(5);
+    }
+
     if (prices) {
       doc.rule({ colour: LINE, above: 6, below: 4 });
       doc.pair('Sitting total', money(order.total), {
@@ -322,6 +348,10 @@ export function bookingSheetPdf({
   doc.rule({ colour: accent, thickness: 1.2, above: 2, below: 8 });
   if (prices) {
     doc.pair('Booking total', money(booking.total), { size: 13, font: 'bold', valueFont: 'bold' });
+    if (packing > 0) {
+      doc.text(`Includes ${money(packing)} takeaway packing; the food is ${money((booking.total || 0) - packing)}.`,
+        { size: 9.5, colour: QUIET });
+    }
     doc.gap(4);
   }
   doc.text(

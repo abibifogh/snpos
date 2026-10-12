@@ -1,6 +1,6 @@
 import { Client, Databases, Query, Users } from 'node-appwrite';
 import nodemailer from 'nodemailer';
-import { receiptPdf } from './receipt-pdf.js';
+import { receiptPdf, portionsOf } from './receipt-pdf.js';
 import { bookingSittings, bookingSheetPdf } from './booking-sheet.js';
 import { ordersForSide, shelfCheckSummary } from './shift-shape.js';
 import { houseRecipients, sendToEach } from './house.js';
@@ -9,7 +9,7 @@ import { voucherPdf } from './voucher-pdf.js';
 import {
   voucherHeadline, voucherValidity, voucherTerms, voucherCodeWords, voucherHasCode, voucherPrintProblem,
 } from './voucher-words.js';
-import { tradeWords, offSubject } from './words.js';
+import { tradeWords, offSubject, packingWords } from './words.js';
 import { dailyDigest, nightlyBackup, deliveryFrom } from './daily.js';
 import { ensureLogin, revokeLogin } from './staff.js';
 import { handleReports } from './reports.js';
@@ -2028,9 +2028,13 @@ export default async ({ req, res, log, error }) => {
         .map((i) => row(`${i.qty}× ${i.name_snapshot}`, money(i.line_total, settings)))
         .join('');
 
+      // A takeaway's containers, named, so the lines above and the total
+      // below agree in front of the customer. See packingWords.
+      const pack = packingWords(doc.pack_fee || 0, portionsOf(items.documents), (n) => money(n, settings));
       const totals =
         (doc.discount_total ? row('Discount', `−${money(doc.discount_total, settings)}`) : '') +
         (doc.service_total ? row('Service', money(doc.service_total, settings)) : '') +
+        (pack ? row(pack.count ? `${pack.label} (${pack.count} × ${pack.each})` : pack.label, money(doc.pack_fee, settings)) : '') +
         (doc.tax_total ? row(`${settings.levies ? 'VAT and levies' : 'Tax'}${settings.tax_inclusive ? ' (included)' : ''}`, money(doc.tax_total, settings)) : '') +
         row('Total', money(doc.total, settings), true);
 

@@ -540,6 +540,31 @@ export function packFeeFor(meal: { fulfilment: Fulfilment; lines: CartLine[] }, 
   return fee === 0 ? 0 : portionsOn(meal) * fee;
 }
 
+/**
+ * How packing is named on a bill: what it is, and how many at what each.
+ *
+ * Folded into the total, a pack fee left the lines short of the bill by
+ * exactly the boxes, and a party reading their receipt saw GHS 350 nobody had
+ * explained. So it is its own line, called what it is, with the count and
+ * the price of one — "35 @ GHS 10.00" — wherever it divides evenly. Where it
+ * does not (a dish taken off after the fee was set), the line still says what
+ * it is and shows the amount alone.
+ *
+ * The same words are in functions/notify/src/words.js, for the emailed
+ * receipt and the booking sheet. See the parity test.
+ */
+export function packingWords(
+  packFee: number,
+  portions: number,
+  money: (n: number) => string,
+): { label: string; count?: number; each?: string } | null {
+  if (!(packFee > 0)) return null;
+  const each = portions > 0 ? packFee / portions : 0;
+  return Number.isInteger(each) && each > 0
+    ? { label: 'Takeaway packing', count: portions, each: money(each) }
+    : { label: 'Takeaway packing' };
+}
+
 /** The calendar day a moment falls on, for grouping times into days. */
 export const dayKeyOf = (at: string | Date): string => {
   const d = at instanceof Date ? at : new Date(at);

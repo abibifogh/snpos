@@ -53,3 +53,20 @@ export function offSubject(name, module) {
   const w = tradeWords(module);
   return `${w.off.charAt(0).toUpperCase()}${w.off.slice(1)}: ${name}`;
 }
+
+/**
+ * How packing is named on a bill: what it is, and how many at what each.
+ * A copy of packingWords in packages/core/src/pricing.ts; see the parity test.
+ *
+ * @param {number} packFee
+ * @param {number} portions
+ * @param {(n: number) => string} money
+ * @returns {{ label: string, count?: number, each?: string } | null}
+ */
+export function packingWords(packFee, portions, money) {
+  if (!(packFee > 0)) return null;
+  const each = portions > 0 ? packFee / portions : 0;
+  return Number.isInteger(each) && each > 0
+    ? { label: 'Takeaway packing', count: portions, each: money(each) }
+    : { label: 'Takeaway packing' };
+}
