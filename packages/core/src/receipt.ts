@@ -4,7 +4,7 @@ import { downloadUrl } from './files';
 import { addonNames } from './orders-time';
 import type { Settings, Venue, Doc } from './types';
 import type { Order, OrderItem } from './orders';
-import { splitTax, parseLevies, taxWords, vatBpOf, showsTaxParts } from './pricing';
+import { splitTax, parseLevies, taxWords, vatBpOf, showsTaxParts, packingWords } from './pricing';
 
 /**
  * A printable receipt, in the shape people expect from a till.
@@ -66,6 +66,8 @@ export interface ReceiptData {
   discount?: string;
   discountLabel?: string;
   service?: string;
+  /** A takeaway's containers, named and counted. See packingWords. */
+  packing?: { label: string; amount: string; count?: number; each?: string };
   tax?: string;
   taxLabel?: string;
   taxInclusive?: boolean;
@@ -193,6 +195,8 @@ export function buildReceiptHtml(d: ReceiptData): string {
   ${row('Sub Total', d.subtotal)}
   ${d.discount ? row(d.discountLabel || 'Discount', `−${d.discount}`) : ''}
   ${d.service ? row('Service', d.service) : ''}
+  ${d.packing ? row(d.packing.label, d.packing.amount) : ''}
+  ${d.packing?.count ? `<div class="qtyline">${d.packing.count} @ ${esc(d.packing.each ?? '')}</div>` : ''}
   ${d.tip ? row('Tip', d.tip) : ''}
   ${!d.taxInclusive && d.tax
     ? (d.taxParts && d.taxParts.length > 1
@@ -291,6 +295,18 @@ interface PaymentRow extends Doc {
  * the copy a guest downloads and the copy an owner reprints are the same
  * document, which is the entire point of a receipt.
  */
+/** The packing line for a bill, or nothing where no pack fee was charged. */
+export function packingOn(
+  order: Pick<Order, 'pack_fee'>,
+  items: Pick<OrderItem, 'qty' | 'status'>[],
+  money: (n: number) => string,
+): ReceiptData['packing'] {
+  const fee = order.pack_fee ?? 0;
+  const portions = items.filter((i) => i.status !== 'void').reduce((n, i) => n + Math.max(0, i.qty || 0), 0);
+  const words = packingWords(fee, portions, money);
+  return words ? { ...words, amount: money(fee) } : undefined;
+}
+
 export async function receiptForOrder(opts: {
   order: Order;
   settings: Settings;
@@ -358,6 +374,7 @@ export async function receiptForOrder(opts: {
     subtotal: money(order.subtotal),
     discount: order.discount_total > 0 ? money(order.discount_total) : undefined,
     service: order.service_total > 0 ? money(order.service_total) : undefined,
+    packing: packingOn(order, items, money),
     tax: order.tax_total > 0 ? money(order.tax_total) : undefined,
     taxLabel: taxWords(parseLevies(settings.levies), settings.currency_code, vatBpOf(settings) > 0),
     taxInclusive: settings.tax_inclusive,

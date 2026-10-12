@@ -19,6 +19,7 @@ import { splitTax, parseLevies, vatBpOf, taxWords, showsTaxParts } from './books
 // to live here, with a mangled em dash in the table that quietly turned every
 // one of them into a question mark.
 import { latin1, esc } from './pdf-doc.js';
+import { packingWords } from './words.js';
 
 /** Courier is 600/1000 em wide at every size, the only reason this is easy. */
 const CHAR_W = 0.6;
@@ -164,6 +165,10 @@ function pdf(width, height, content) {
   return Buffer.from(out, 'latin1');
 }
 
+/** Portions on the bill: what a pack fee is charged per. */
+export const portionsOf = (items) =>
+  items.filter((i) => i.status !== 'void').reduce((n, i) => n + Math.max(0, i.qty || 0), 0);
+
 /**
  * The receipt itself.
  *
@@ -218,6 +223,13 @@ export function receiptPdf({ settings, venue, order, items, payments, methods })
   r.pair('Sub Total', money(order.subtotal));
   if (order.discount_total) r.pair('Discount', `-${money(order.discount_total)}`);
   if (order.service_total) r.pair('Service', money(order.service_total));
+  // The containers for a takeaway, on their own line so the dishes and the
+  // total agree on paper. See packingWords.
+  const pack = packingWords(order.pack_fee || 0, portionsOf(items), money);
+  if (pack) {
+    r.pair(pack.label, money(order.pack_fee));
+    if (pack.count) r.text(`  ${pack.count} @ ${pack.each}`, { size: 7.5 });
+  }
   if (order.tip_total) r.pair('Tip', money(order.tip_total));
   if (!settings.tax_inclusive && order.tax_total) {
     if (taxSeparate) for (const t of taxParts) r.pair(t.name, money(t.amount));
