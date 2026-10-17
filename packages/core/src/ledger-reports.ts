@@ -410,3 +410,88 @@ export function ageBuckets<T extends { amount: number; due: string }>(rows: T[],
 /** Days past due, or 0 when not yet due. */
 export const daysLate = (due: string, today: string): number =>
   Math.max(0, Math.floor((parse(today).getTime() - parse(due.slice(0, 10)).getTime()) / 86_400_000));
+
+/* ------------------------------------------------------ opening and closing */
+
+/** Entries a profit and loss must not count: the year-end closing entries. */
+export const isClosingEntry = (e: { source?: string; source_id?: string | null }): boolean =>
+  e.source === 'year_end' || String(e.source_id ?? '').startsWith('year_end:');
+
+/** Where a year that has not been closed starts: the day after the last year end, or the first posting. */
+export function yearStart(entries: { date: string; source?: string; source_id?: string | null }[], lines: PostedLine[]): string {
+  const closes = entries.filter(isClosingEntry).map((e) => e.date.slice(0, 10)).sort();
+  if (closes.length) {
+    const d = new Date(`${closes[closes.length - 1]}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }
+  return lines.map((l) => l.date.slice(0, 10)).sort()[0] ?? '';
+}
+
+/**
+ * Closing a year: every income and cost account brought to nought, the
+ * difference, the year's profit, into retained earnings.
+ *
+ * Only the year's own lines are counted, from `from` to `to`, and never an
+ * earlier closing entry. The result is empty when there is nothing to close.
+ */
+export function yearEndLines(
+  accounts: AccountRow[],
+  lines: PostedLine[],
+  opts: { from: string; to: string; retained: string; exclude?: Set<string> },
+): { lines: { account_code: string; debit: number; credit: number; memo: string }[]; profit: number } {
+  const types = new Map(accounts.map((a) => [a.code, a.type]));
+  const net = new Map<string, number>();
+  for (const l of lines) {
+    if (opts.exclude?.has(l.entry_id) || !inWindow(l.date, opts.from, opts.to)) continue;
+    const t = types.get(l.account_code);
+    if (t !== 'revenue' && t !== 'expense') continue;
+    net.set(l.account_code, (net.get(l.account_code) ?? 0) + (l.debit || 0) - (l.credit || 0));
+  }
+  const out: { account_code: string; debit: number; credit: number; memo: string }[] = [];
+  let debit = 0;
+  let credit = 0;
+  for (const [code, n] of [...net.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    if (n === 0) continue;
+    // A net debit (a cost) is credited away; a net credit (income) debited.
+    if (n > 0) { out.push({ account_code: code, debit: 0, credit: n, memo: 'Year end' }); credit += n; }
+    else { out.push({ account_code: code, debit: -n, credit: 0, memo: 'Year end' }); debit += -n; }
+  }
+  if (out.length === 0) return { lines: [], profit: 0 };
+  const profit = debit - credit;
+  if (profit > 0) out.push({ account_code: opts.retained, debit: 0, credit: profit, memo: 'Profit for the year' });
+  if (profit < 0) out.push({ account_code: opts.retained, debit: -profit, credit: 0, memo: 'Loss for the year' });
+  return { lines: out, profit };
+}
+
+/**
+ * Opening balances: what each account held on the day these books start,
+ * as one entry. Amounts are in each account's own direction (an asset or a
+ * cost as a debit, anything owed or owned by the owner as a credit). Any
+ * difference goes to the owner's equity, which is what a business that has
+ * never kept books before is worth on paper.
+ */
+export function openingLines(
+  accounts: AccountRow[],
+  amounts: Record<string, number>,
+  equity: string,
+): { lines: { account_code: string; debit: number; credit: number; memo: string }[]; balancing: number } {
+  const out: { account_code: string; debit: number; credit: number; memo: string }[] = [];
+  let debit = 0;
+  let credit = 0;
+  for (const a of accounts) {
+    const v = Math.round(amounts[a.code] ?? 0);
+    if (!v || a.code === equity) continue;
+    const debitSide = a.type === 'asset' || a.type === 'expense';
+    const asDebit = debitSide ? v > 0 : v < 0;
+    const amt = Math.abs(v);
+    out.push({ account_code: a.code, debit: asDebit ? amt : 0, credit: asDebit ? 0 : amt, memo: 'Opening balance' });
+    if (asDebit) debit += amt; else credit += amt;
+  }
+  const eq = Math.round(amounts[equity] ?? 0);
+  if (eq) { out.push({ account_code: equity, debit: eq < 0 ? -eq : 0, credit: eq > 0 ? eq : 0, memo: 'Opening balance' }); if (eq > 0) credit += eq; else debit += -eq; }
+  const balancing = debit - credit;
+  if (balancing > 0) out.push({ account_code: equity, debit: 0, credit: balancing, memo: 'Balancing to owner equity' });
+  if (balancing < 0) out.push({ account_code: equity, debit: -balancing, credit: 0, memo: 'Balancing to owner equity' });
+  return { lines: out, balancing };
+}

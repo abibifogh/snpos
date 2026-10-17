@@ -76,6 +76,8 @@ export const ACCOUNTS = {
    * the debt. See tabAccrualLines in functions/notify/src/books.js.
    */
   owedByCustomers: '1100',
+  /** Each closed year's profit, moved out of the income and cost accounts. */
+  retainedEarnings: '3100',
   /**
    * Sales and cost of sales, one pair per side of the business.
    *

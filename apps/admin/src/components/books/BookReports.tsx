@@ -3,7 +3,7 @@ import { Button, Card, Empty, Field, Input, Segmented, Select } from '@snpos/ui'
 import {
   plTable, previousPeriod, sameLastYear, changeShare, generalLedger, cashFlow, CASH_CODES,
   writeXlsx, XLSX_TYPE, downloadFile, buildReportHtml, openPrintable, totalsByAccount, naturalBalance,
-  profitAndLoss, balanceSheet, within,
+  profitAndLoss, balanceSheet, within, isClosingEntry,
 } from '@snpos/core';
 import type {
   AccountRow, JournalEntry, JournalLine, Settings, PlBy, PlTable, PostedLine, Cell, Sheet, ReportTable,
@@ -21,7 +21,7 @@ type Compare = 'none' | 'previous' | 'lastyear';
 
 /** Entries reports must not count: the year-end close. */
 export const closingEntries = (entries: JournalEntry[]): Set<string> =>
-  new Set(entries.filter((e) => e.source === 'year_end').map((e) => e.$id));
+  new Set(entries.filter(isClosingEntry).map((e) => e.$id));
 
 /** Money as a spreadsheet number: cedis, not pesewas. */
 const major = (n: number, decimals: number) => Math.round(n) / 10 ** decimals;

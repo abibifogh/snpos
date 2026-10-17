@@ -1,6 +1,6 @@
 import {
   ACCOUNTS, shiftEntries, takingsByKind, cashVarianceOf, payoutLines, wasteLines, batchLines, crossingFromStored,
-  staffChargeLines, staffSettleLines, tabAccrualLines, tabPaidLines,
+  staffChargeLines, staffSettleLines, tabAccrualLines, tabPaidLines, nextMonthly, recurringLines,
   debitsForSpend, spendPostingLines, sameDebits, parseLevies, splitTax, vatBpOf, makersShareOf, isLocked,
 } from './books.js';
 
@@ -273,6 +273,43 @@ export async function postShiftClose(ctx, shift) {
   }
   if (posted.length) ctx.log(`Posted shift ${shift.code || shift.$id}: ${posted.length} entries, ${spendsPosted} spends.`);
   return { ok: true, posted: posted.length, spends: spendsPosted, skipped: posted.length ? undefined : 'already posted' };
+}
+
+/* -------------------------------------------------------- recurring entries */
+
+/**
+ * Post every recurring entry that has come due, each once per date.
+ *
+ * Catches up: one missed for three months posts three times, each on its
+ * own date, so the months it belongs to carry it. A month already closed is
+ * skipped and the entry moves on; the books are not rewritten for it.
+ */
+export async function postRecurring(ctx, now = Date.now()) {
+  const today = new Date(now).toISOString().slice(0, 10);
+  const due = (await listAll(ctx, 'recurring_entries', [ctx.Query.lessThanEqual('next_on', today)]).catch(() => []))
+    .filter((r) => r.active !== false);
+  let posted = 0;
+  for (const r of due) {
+    const lines = recurringLines(r.lines);
+    let on = String(r.next_on).slice(0, 10);
+    let last = r.last_posted_on || '';
+    for (let guard = 0; on <= today && guard < 24; guard++) {
+      const venueId = r.venue_id || 'main';
+      const key = `recurring:${r.$id}:${on}`;
+      if (lines.length && !(await entryFor(ctx, venueId, key))) {
+        try {
+          await postEntry(ctx, { venueId, date: `${on}T12:00:00.000Z`, source: 'adjustment', sourceId: key, memo: r.name, postedBy: r.created_by || SYSTEM }, lines);
+          posted += 1;
+          last = on;
+        } catch (e) {
+          if (!e.locked) throw e;
+        }
+      }
+      on = nextMonthly(on, r.day_of_month);
+    }
+    await ctx.db.updateDocument(ctx.DB_ID, 'recurring_entries', r.$id, { next_on: on, last_posted_on: last }).catch(() => undefined);
+  }
+  return posted ? { ok: true, posted } : { skipped: 'nothing due' };
 }
 
 /* ------------------------------------------------------------------ tabs */
@@ -620,7 +657,7 @@ export async function postStaffSettleRow(ctx, row) {
  */
 export async function sweepBooks(ctx, now = Date.now()) {
   const since = new Date(now - 7 * 86_400_000).toISOString();
-  const out = { shifts: 0, spends: 0, payouts: 0, waste: 0, batches: 0, staff: 0, tabs: 0, locked: 0, errors: [] };
+  const out = { shifts: 0, spends: 0, payouts: 0, waste: 0, batches: 0, staff: 0, tabs: 0, recurring: 0, locked: 0, errors: [] };
 
   const attempt = async (kind, fn) => {
     try {
@@ -635,6 +672,7 @@ export async function sweepBooks(ctx, now = Date.now()) {
   const shifts = await listAll(ctx, 'shifts', [ctx.Query.equal('status', 'closed'), ctx.Query.notEqual('posted_to_ledger', true)])
     .catch(() => []);
   for (const s of shifts.slice(0, 50)) await attempt('shifts', () => postShiftClose(ctx, s));
+  await attempt('recurring', () => postRecurring(ctx, now));
   // Tabs on shifts closed lately, posted and all: an entry missed by the
   // event is caught here, and its own key keeps it from posting twice.
   for (const s of await listAll(ctx, 'shifts', [ctx.Query.equal('status', 'closed'), ctx.Query.greaterThanEqual('$updatedAt', since)]).catch(() => [])) {

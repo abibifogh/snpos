@@ -2943,6 +2943,31 @@ export const COLLECTIONS = [
   },
   {
     /**
+     * An entry posted every month by itself: rent, a salary, a loan
+     * repayment. The notify sweep posts each one on its day, keyed by the
+     * entry and the date so it never posts twice, and moves next_on a month
+     * on. See postRecurring in functions/notify/src/books-post.js.
+     */
+    id: 'recurring_entries',
+    name: 'Recurring entries',
+    perms: { read: MGMT, create: MGMT, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['name', 's', 160, true],
+      // The lines, as [{ account_code, debit, credit, memo }], in minor units.
+      ['lines', 's', 4000, true],
+      // The day of the month it falls on; a short month uses its last day.
+      ['day_of_month', 'i', null, true, 1],
+      // The next date it posts, YYYY-MM-DD.
+      ['next_on', 's', 10, true],
+      ['active', 'b', null, false, true],
+      ['last_posted_on', 's', 10, false],
+      ['created_by', 's', 64, false],
+    ],
+    indexes: [['venue', 'key', ['venue_id']], ['due', 'key', ['next_on']]],
+  },
+  {
+    /**
      * A line drawn under the books, and who drew it.
      *
      * Once a month has been reported on — to an owner, an accountant, a tax
@@ -4550,6 +4575,8 @@ export const SYSTEM_ACCOUNT_CODES = [
   '2300',
   // What customers owe on tabs, from the day they are served.
   '1100',
+  // The year end moves the year's profit here by number.
+  '3100',
 ];
 
 export const SEED_ACCOUNTS = [
@@ -4593,6 +4620,8 @@ export const SEED_ACCOUNTS = [
   ['2400', 'Owed to makers', 'liability'],
   ['2300', 'Accounts payable', 'liability'],
   ['3000', 'Owner equity', 'equity'],
+  // Each closed year's profit, moved here by the year-end entry.
+  ['3100', 'Retained earnings', 'equity'],
   ['4000', 'Restaurant sales', 'revenue'],
   ['4010', 'Bar sales', 'revenue'],
   ['4020', 'Craft shop sales', 'revenue'],

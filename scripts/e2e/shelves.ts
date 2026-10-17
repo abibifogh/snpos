@@ -19,7 +19,7 @@ import { decideSpend } from './core/spend-decide.ts';
 import { db, DB_ID, Query } from './core/client.ts';
 // The server's side of the books: the same code the notify function runs,
 // against the same in-memory database. See functions/notify/src/books-post.js.
-import { postShiftClose, postSpend, unpostSpend, postPayoutRow, postWasteRow, sweepBooks } from './notify/books-post.js';
+import { postShiftClose, postSpend, unpostSpend, postPayoutRow, postWasteRow, sweepBooks, postRecurring } from './notify/books-post.js';
 import { healthFacts, healthFindings, healthSummary } from './notify/health.js';
 
 /** What the notify function hands its books code: the database and a log. */
@@ -1096,6 +1096,27 @@ console.log('\n=== Y — a tab is a sale the day it is served, and paying it cle
   results.push(['Y a tab order from before is a sale when paid, as it always was, and nothing posts twice', ok(
     'keys', (__all('journal_entries') as any[]).map((e) => e.source_id).filter((k) => k.startsWith('tab_')).sort(),
     ['tab_accrual:o1', 'tab_paid:o1:pB'],
+  )]);
+}
+
+/* ------------------------------------------------ recurring entries post themselves */
+
+console.log('\n=== Z — rent posts itself each month, catches up, and never twice ===');
+{
+  __reset();
+  __seed('recurring_entries', [{
+    $id: 'rent', venue_id: 'main', name: 'Rent', day_of_month: 31, next_on: '2026-08-31', active: true,
+    lines: JSON.stringify([{ account_code: '6000', debit: 850_000, credit: 0 }, { account_code: '1040', debit: 0, credit: 850_000 }]),
+  }]);
+  const now = Date.parse('2026-10-17T09:00:00.000Z');
+  await postRecurring(server, now);
+  await postRecurring(server, now);
+  const posted = (__all('journal_entries') as any[]).filter((e) => e.source_id.startsWith('recurring:rent:'));
+  results.push(['Z two missed months post once each, on their own dates', ok(
+    'dates', posted.map((e) => e.date.slice(0, 10)).sort(), ['2026-08-31', '2026-09-30'],
+  )]);
+  results.push(['Z and the next one is the end of October', ok(
+    'next', (__all('recurring_entries') as any[])[0].next_on, '2026-10-31',
   )]);
 }
 

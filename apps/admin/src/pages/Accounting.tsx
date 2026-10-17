@@ -3,7 +3,7 @@ import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Text
 import { listAll, humanError, saveDropping } from '../lib';
 import {
   parseMoney, toInput, Query,
-  ledgerLines, loadAccounts, postManualEntry, reverseEntry, correctEntry, deleteEntry, loadFixedAssets, postDepreciation,
+  ledgerLines, loadAccounts, postManualEntry, postEntry, reverseEntry, correctEntry, deleteEntry, loadFixedAssets, postDepreciation,
   profitAndLoss, balanceSheet, totalsByAccount, naturalBalance, entryProblem, within,
   bookValue, monthOf, reconcile, db, DB_ID, ID,
   matchStatement, readStatement, parseCsv, loadStatementLines, importStatementLines,
@@ -19,6 +19,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CashToBank } from '../components/CashToBank';
 import { BillsToPay } from '../components/books/BillsToPay';
 import { OwedToUs } from '../components/books/OwedToUs';
+import { TaxReturnReport, RecurringEntries, OpeningBalances, YearEnd } from '../components/books/YearTools';
 import { useSession, useMoney } from '../session';
 import { AccountsManager } from '../components/AccountsManager';
 import { PlReport, LedgerReport, CashFlowReport, BalanceExports, yearPack } from '../components/books/BookReports';
@@ -37,7 +38,7 @@ import { PlReport, LedgerReport, CashFlowReport, BalanceExports, yearPack } from
  * sitting, and each of those is the same figures read a different way; putting
  * them behind separate navigation makes it feel like separate work.
  */
-type Tab = 'statements' | 'cashflow' | 'ledger' | 'journal' | 'trial' | 'assets' | 'bank' | 'settle' | 'payables' | 'receivables' | 'chart' | 'locks';
+type Tab = 'statements' | 'cashflow' | 'ledger' | 'tax' | 'journal' | 'recurring' | 'opening' | 'yearend' | 'trial' | 'assets' | 'bank' | 'settle' | 'payables' | 'receivables' | 'chart' | 'locks';
 
 /** A month back from today, as YYYY-MM-DD, for the default window. */
 const monthStart = (d = new Date()) => `${d.toISOString().slice(0, 7)}-01`;
@@ -80,7 +81,7 @@ export function AccountingPage() {
   // this page switches to it rather than leaving the old one showing.
   const [params, setParams] = useSearchParams();
   const asked = params.get('tab');
-  const tab = (['statements', 'cashflow', 'ledger', 'journal', 'trial', 'assets', 'bank', 'settle', 'payables', 'receivables', 'chart', 'locks'].includes(asked ?? '') ? asked : 'statements') as Tab;
+  const tab = (['statements', 'cashflow', 'ledger', 'tax', 'journal', 'recurring', 'opening', 'yearend', 'trial', 'assets', 'bank', 'settle', 'payables', 'receivables', 'chart', 'locks'].includes(asked ?? '') ? asked : 'statements') as Tab;
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
   useEffect(() => {
     // Land on something they can see. Opening on a tab they were not given
@@ -186,12 +187,16 @@ export function AccountingPage() {
           ['statements', 'Profit & loss and balance sheet'],
           ['cashflow', 'Cash flow'],
           ['ledger', 'General ledger'],
+          ['tax', 'Tax return'],
           ['trial', 'Trial balance'],
         ]],
         ['For your accountant', [
           ['journal', 'Journal'],
+          ['recurring', 'Recurring entries'],
           ['assets', 'Fixed assets'],
           ['chart', 'Chart of accounts'],
+          ['opening', 'Opening balances'],
+          ['yearend', 'Year end'],
         ]],
       ] as [string, [Tab, string][]][]).map(([heading, tabs]) => {
         const mine = tabs.filter(([key]) => can(key));
@@ -217,7 +222,7 @@ export function AccountingPage() {
         </Notice>
       )}
 
-      {tab !== 'chart' && tab !== 'assets' && tab !== 'bank' && tab !== 'settle' && tab !== 'payables' && tab !== 'receivables' && (
+      {!['chart', 'assets', 'bank', 'settle', 'payables', 'receivables', 'recurring', 'opening', 'yearend'].includes(tab) && (
         <Card pad>
           <div className="grid-2">
             <Field label="From" hint="The profit and loss covers these dates.">
@@ -333,6 +338,22 @@ export function AccountingPage() {
 
       {tab === 'settle' && can('settle') && (
         <Settle venueId={venueId} userId={user?.$id ?? ''} money={money} decimals={decimals} onChanged={load} toast={toast} />
+      )}
+
+      {tab === 'tax' && can('tax') && (
+        <TaxReturnReport accounts={accounts} lines={lines} entries={entries} from={from} to={to} money={money} settings={settings} venueId={venueId} userId={user?.$id ?? ''} onChanged={load} toast={toast} />
+      )}
+
+      {tab === 'recurring' && can('recurring') && (
+        <RecurringEntries accounts={accounts} money={money} settings={settings} venueId={venueId} userId={user?.$id ?? ''} toast={toast} />
+      )}
+
+      {tab === 'opening' && can('opening') && (
+        <OpeningBalances accounts={accounts} entries={entries} money={money} settings={settings} venueId={venueId} userId={user?.$id ?? ''} onChanged={load} toast={toast} />
+      )}
+
+      {tab === 'yearend' && can('yearend') && (
+        <YearEnd accounts={accounts} lines={lines} entries={entries} money={money} venueId={venueId} userId={user?.$id ?? ''} onChanged={load} toast={toast} />
       )}
 
       {tab === 'payables' && can('payables') && (
@@ -506,6 +527,12 @@ function Journal({
   const [changing, setChanging] = useState<JournalEntry | null>(null);
   const [date, setDate] = useState(today());
   const [memo, setMemo] = useState('');
+  /**
+   * An accrual: posted now, undone on a later day. September's power bill
+   * is September's cost even when the invoice comes in October, so it is
+   * posted on the 30th and reversed on the 1st, when the real bill lands.
+   */
+  const [reverseOn, setReverseOn] = useState('');
   const [draft, setDraft] = useState<DraftLine[]>([{ ...BLANK }, { ...BLANK }]);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -571,12 +598,22 @@ function Journal({
           { editedBy: userId },
         )).mode;
       } else {
-        await postManualEntry(
+        const id = await postManualEntry(
           venueId,
           { date: new Date(`${date}T12:00:00`), memo: memo.trim(), postedBy: userId },
           withNotes,
         );
+        if (reverseOn) {
+          await postEntry(venueId, {
+            date: new Date(`${reverseOn}T12:00:00`),
+            source: 'adjustment',
+            sourceId: `accrual_reverse:${id}`,
+            memo: `Reversal of: ${memo.trim()}`,
+            postedBy: userId,
+          }, withNotes.filter((l) => l.debit || l.credit).map((l) => ({ account_code: l.account_code, debit: l.credit, credit: l.debit, memo: l.memo })));
+        }
       }
+      setReverseOn('');
       setWriting(false);
       setChanging(null);
       setDraft([{ ...BLANK }, { ...BLANK }]);
@@ -761,6 +798,11 @@ function Journal({
             <Field label="What this is for" hint="In a year, this sentence is the only clue.">
               <Input value={memo} onChange={(e) => setMemo(e.target.value)} />
             </Field>
+            {!changing && (
+              <Field label="Reverse it on (optional)" hint="For an accrual: a cost or income that belongs to this period but is invoiced later. The same lines, the other way round, are posted on this day.">
+                <Input type="date" value={reverseOn} min={date} onChange={(e) => setReverseOn(e.target.value)} />
+              </Field>
+            )}
           </div>
 
           <div className="table-wrap">

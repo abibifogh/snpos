@@ -30,6 +30,7 @@ export const ACCOUNTS = {
   owedToMakers: '2400',
   accountsPayable: '2300',
   owedByCustomers: '1100',
+  retainedEarnings: '3100',
   foodSales: '4000',
   barSales: '4010',
   craftSales: '4020',
@@ -230,6 +231,31 @@ export function staffSettleLines(kind, amount) {
 /* --------------------------------------------------------------- spends */
 
 /** Mirrors spendDebits in packages/core/src/spend-posting.ts. */
+/* -------------------------------------------------------- recurring entries */
+
+/** The same day next month, or that month's last day when it is shorter. */
+export function nextMonthly(on, dayOfMonth) {
+  const [y, m] = String(on).slice(0, 7).split('-').map(Number);
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  const last = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
+  const d = Math.min(Math.max(1, Number(dayOfMonth) || 1), last);
+  return `${ny}-${String(nm).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+/** A recurring entry's lines, as stored, or none when they cannot be read. */
+export function recurringLines(raw) {
+  try {
+    const v = JSON.parse(raw || '[]');
+    return Array.isArray(v)
+      ? v.map((l) => ({ account_code: String(l.account_code), debit: Math.round(Number(l.debit) || 0), credit: Math.round(Number(l.credit) || 0), memo: l.memo || '' }))
+        .filter((l) => l.account_code && (l.debit || l.credit))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 /* ------------------------------------------------------------------- tabs */
 
 /**
