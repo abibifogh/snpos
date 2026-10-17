@@ -188,6 +188,7 @@ export function ShiftCloseForm({
   tolerance,
   flow,
   shelving = [],
+  cashAway,
 }: {
   blockers: BlockerRow[];
   rows: CountRow[];
@@ -214,6 +215,19 @@ export function ShiftCloseForm({
    * surprise: somebody is still owed for these and somebody else will collect.
    */
   shelving?: { id: string; label: string }[];
+  /**
+   * Where the counted cash is going: into the safe, to the bank, and who is
+   * taking it. What is left is the next shift's float. See cash-away.ts.
+   * Omitted, the question is not asked.
+   */
+  cashAway?: {
+    /** Cash counted in the drawers, minor units, from the boxes above. */
+    counted: number;
+    safeText: string;
+    bankText: string;
+    takenBy: string;
+    onChange: (patch: Partial<{ safeText: string; bankText: string; takenBy: string }>) => void;
+  };
 }) {
   if (blockers.length > 0) {
     const unpaid = blockers.filter((b) => b.reason === 'unpaid');
@@ -424,6 +438,40 @@ export function ShiftCloseForm({
           </Field>
         </div>
       )}
+
+      {/* After the count, never before it: the drawer is counted blind first. */}
+      {cashAway && cashAway.counted > 0 && (() => {
+        const toMinor = (t: string) => Math.round((Number(t.replace(/,/g, '')) || 0) * 100);
+        const safe = toMinor(cashAway.safeText);
+        const bank = toMinor(cashAway.bankText);
+        const kept = cashAway.counted - safe - bank;
+        return (
+          <div style={{ marginTop: '1.1rem' }}>
+            <h3 style={{ margin: '0 0 0.3rem' }}>Where is the cash going?</h3>
+            <p className="small dim" style={{ marginTop: 0 }}>
+              {money(cashAway.counted)} in cash was counted. Say how much goes into the safe or to the bank; the
+              rest stays in the drawer and is what the next shift starts with.
+            </p>
+            <div className="grid-2">
+              <Field label={`Into the safe (${symbol})`}>
+                <Input value={cashAway.safeText} inputMode="decimal" placeholder="0" onChange={(e) => cashAway.onChange({ safeText: e.target.value })} />
+              </Field>
+              <Field label={`Taken to the bank (${symbol})`}>
+                <Input value={cashAway.bankText} inputMode="decimal" placeholder="0" onChange={(e) => cashAway.onChange({ bankText: e.target.value })} />
+              </Field>
+            </div>
+            {(safe > 0 || bank > 0) && (
+              <Field label="Who is taking it">
+                <Input value={cashAway.takenBy} placeholder="Name" onChange={(e) => cashAway.onChange({ takenBy: e.target.value })} />
+              </Field>
+            )}
+            <div className="spread" style={{ fontWeight: 600 }}>
+              <span>Left in the drawer for the next shift</span>
+              <span style={{ color: kept < 0 ? 'var(--danger)' : undefined }}>{money(kept)}</span>
+            </div>
+          </div>
+        );
+      })()}
 
       {stock.length > 0 && (
         <>

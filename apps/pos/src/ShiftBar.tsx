@@ -9,7 +9,7 @@ import {
   loadPaymentMethods, openShift as createShift, shiftBlockers, expectedTakings, closeShift,
   tabOrdersOnShift, releaseWords, closeCodeProblem, spendCloseCode, humanError, liveOrders,
   openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, HANDOVER_ENABLED,
-  countsAtBothEnds, countsInAtOpen, askForOpeningCount, hasOpeningCount, shiftCountPhases, ownFigure, floatOrigin, floatMethods,
+  countsAtBothEnds, countsInAtOpen, countsOutAtClose, pourMissedSales, cashCounted, cashPlanProblem, askForOpeningCount, hasOpeningCount, shiftCountPhases, ownFigure, floatOrigin, floatMethods,
 } from '@snpos/core';
 import type { PaymentMethod, Shift, FloatSource, TabOrder } from '@snpos/core';
 import type { PosContext } from './App';
@@ -96,6 +96,12 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
     countsInAtOpen.
   */
   const kitchenCountsIn = !countsShelves && countsInAtOpen(ctx.module);
+  /*
+    Every side counts out on the sheet before it closes, the kitchen included,
+    and every difference waits on Waiting for you. The kitchen's is asked for,
+    never forced. See countsOutAtClose.
+  */
+  const countsOut = countsOutAtClose(ctx.module);
   const shiftId = ctx.shift?.$id;
   /*
     THE SHEET BELONGS TO THE SIDE THAT COUNTS, AND GOES WITH IT.
@@ -222,7 +228,12 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   // Which question the restaurant has chosen to ask, and what the answers come
   // to. Worked out here rather than in the form so the close button and the
   // boxes on screen can never be judging different things.
-  const counting = ctx.settings.stock_check_mode === 'counts';
+  /*
+    The close's stock check only ever asks OK, Low or Out now, and only about
+    the items marked "just check it". Everything with a number is counted on
+    the count sheet, where its difference can be agreed and charged.
+  */
+  const counting = false;
   const stockDecimals = ctx.settings.stock_count_decimals !== false;
   const resolved = resolveCounts(stockList, stockCounts, stockDecimals);
 
@@ -303,7 +314,20 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
    */
   const startClose = async (countDone = false) => {
     if (!ctx.shift) return;
-    if (countsShelves && !countDone && !countedOut) { setBarCount('close'); return; }
+    if (countsOut && !countDone && !countedOut) {
+      /*
+        The kitchen's shelf brought up to date first. Its dishes come off when
+        they are paid for; anything that missed that (a payment taken offline,
+        a shift open across the change) is poured now, so the count is
+        measured against what was really cooked. Pours nothing twice.
+      */
+      if (ctx.module === 'kitchen' && ctx.shift) {
+        await pourMissedSales({ venueId: ctx.venue.$id, shiftId: ctx.shift.$id, module: 'kitchen', userId: ctx.userId })
+          .catch(() => undefined);
+      }
+      setBarCount('close');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -374,7 +398,8 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         different basis — the business total rather than the bar's own — and
         two counts of one shelf that disagree is worse than either alone.
       */
-      const list = ctx.module === 'craft' || countsShelves
+      // Only the "just check it" items: everything else was on the count sheet.
+      const list = ctx.module === 'craft'
         ? []
         : await stockCheckRows(ctx.venue.$id, ctx.module);
       setStockList(list);
@@ -401,6 +426,14 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
 
   const countedMinor = () =>
     Object.fromEntries(rows.map((r) => [r.methodId, parseMoney(r.countedText, decimals) ?? 0]));
+
+  /** Where the counted cash is going. See cash-away.ts. */
+  const [cashAway, setCashAway] = useState({ safeText: '', bankText: '', takenBy: '' });
+  const cashPlan = () => ({
+    toSafe: parseMoney(cashAway.safeText || '0', decimals) ?? 0,
+    toBank: parseMoney(cashAway.bankText || '0', decimals) ?? 0,
+    takenBy: cashAway.takenBy.trim(),
+  });
 
   const anythingOff = () =>
     rows.some((r) => (parseMoney(r.countedText, decimals) ?? 0) !== r.expected);
@@ -444,6 +477,10 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       setError('Something is over or short. Say what happened before closing; that answer is gone by tomorrow.');
       return;
     }
+    {
+      const why = cashPlanProblem(cashCounted(countedMinor(), methods), cashPlan());
+      if (why) { setError(why); return; }
+    }
 
     /*
       MONEY GOING HOME ON A TAB NEEDS AN ADMIN'S SAY-SO.
@@ -484,7 +521,9 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         varianceNote: note.trim(),
         levels: counting ? resolved.levels : levels,
         stockCounts: counting ? resolved.counts : undefined,
+        cashPlan: cashPlan(),
       });
+      setCashAway({ safeText: '', bankText: '', takenBy: '' });
 
       // Closed is closed. Said first, so the screen is right even if the read
       // that follows fails; a stale open shift here keeps its overdue warning
@@ -723,7 +762,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           count shelves cannot be shown one however this state was reached. */}
       {/* The kitchen's opening count is the same sheet on its own larder, and
           only ever the opening one — its close is the check below. */}
-      {barCount && ((countsShelves && !shopCounts) || (kitchenCountsIn && barCount === 'open')) && ctx.shift && (
+      {barCount && ((countsShelves && !shopCounts) || kitchenCountsIn) && ctx.shift && (
         <BarCountModal
           venueId={ctx.venue.$id}
           shiftId={ctx.shift.$id}
@@ -755,7 +794,8 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
               proceed — which is the same rule as when there was no way out at
               all, minus the stuck screen.
             */
-            if (wasClosing && waived) { void startClose(true); return; }
+            // The kitchen's count-out is asked for, not forced.
+            if (wasClosing && (waived || ctx.module === 'kitchen')) { void startClose(true); return; }
             if (wasClosing) {
               onToast('The bar has not been counted out, so the shift cannot close yet.', 'err');
             }
@@ -846,16 +886,16 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
           {/* Said here, at the last moment it can still be put right, and with
               the way back on it. Once this closes the shelf is signed off. */}
-          {countsShelves && !countedOut && (
+          {countsOut && !countedOut && (
             <Notice tone="warn">
-              <strong>{shopCounts ? 'The shop was' : 'The bar was'} not counted out.</strong>
+              <strong>{shopCounts ? 'The shop was' : ctx.module === 'kitchen' ? 'The kitchen was' : 'The bar was'} not counted out.</strong>
               <div className="small" style={{ marginTop: '0.3rem' }}>
                 The shift will close on whatever the sales say is left, and nobody will know whether that is what
                 is actually there.
               </div>
               <div style={{ marginTop: '0.45rem' }}>
                 <Button size="sm" onClick={() => { setClosing(false); setBarCount('close'); }}>
-                  {shopCounts ? 'Count the shop out first' : 'Count the bar out first'}
+                  {shopCounts ? 'Count the shop out first' : ctx.module === 'kitchen' ? 'Count the kitchen out first' : 'Count the bar out first'}
                 </Button>
               </div>
             </Notice>
@@ -878,6 +918,11 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
             tolerance={tolerance}
             flow={flow}
             shelving={shelving}
+            cashAway={{
+              counted: cashCounted(countedMinor(), methods),
+              ...cashAway,
+              onChange: (patch) => setCashAway((c) => ({ ...c, ...patch })),
+            }}
           />
 
           {/*

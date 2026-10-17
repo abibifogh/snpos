@@ -37,7 +37,8 @@ export function CataloguePage({ kind }: { kind: 'categories' | 'items' | 'stock'
 
   // The address says which side, so a link and a reload land on the same one.
   useEffect(() => {
-    if (side && asked !== side) setParams({ side }, { replace: true });
+    // Anything else in the address (which tab) is kept.
+    if (side && asked !== side) setParams((p) => { p.set('side', side); return p; }, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [side, asked]);
 

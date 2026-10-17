@@ -16,6 +16,7 @@ import type {
 } from '@snpos/core';
 import { useSession, useMoney } from '../session';
 import { MakerUpload } from '../components/MakerUpload';
+import { AlsoHere } from '../components/AlsoHere';
 
 /**
  * The people whose work the shop sells, and what it owes them.
@@ -161,6 +162,7 @@ export function ConsignorsPage() {
           <Button variant="primary" onClick={() => open()}>Add a consignor</Button>
         </div>
       </div>
+      <AlsoHere host="consignors" />
 
       {error && <Notice tone="err">{error}</Notice>}
 

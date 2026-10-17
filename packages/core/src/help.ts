@@ -207,23 +207,22 @@ export const HELP_ARTICLES: HelpArticle[] = [
         + 'a second on the same side is refused with the code of the one already open. Two on one side splits a '
         + 'day across two sets of books that balance against neither.',
       ),
+      h('Counting in and out'),
+      p('Every side counts its shelf on the same count sheet: when the shift opens, and again before it closes. The bar and the shop must count; the kitchen is asked, and can carry on without it, but the close says when it was skipped.'),
+      list(
+        'You type what is actually there. The sheet shows what the shelf should hold and works out the difference.',
+        'A difference does not change the stock on its own. It waits on Waiting for you, where a manager agrees it, refuses it, or charges it to whoever was responsible. That is the same on every side.',
+        'Food and drink come off the shelf as each order is paid, so what the shelf should hold is always up to date, in the kitchen as well as the bar.',
+      ),
       h('Closing'),
       steps(
         'Settle or transfer any open bills. Nothing is left dangling.',
+        'Count the shelf out on the count sheet.',
         'Count the drawer and enter what is actually there. You are asked before being shown what was expected, counting blind is what makes the answer worth anything.',
-        'Go through the stock check. What it asks depends on a setting, see below.',
+        'Tap OK, Low or Out for anything marked "Just check it" under Stock: the cheap and bulky things, like salt and oil, that are not worth a number.',
         'Confirm. The system compares expected against counted and records the difference.',
       ),
-      h('The stock check'),
-      p('An admin chooses which of two questions staff are asked, under Settings. Both end in the same place, an OK, Low or Out against every ingredient. The difference is who decides which.'),
-      note('This is the kitchen\u2019s check only. Closing a shop counter shift does not ask it: ingredients are recipes and shelves, and the shop\u2019s stock moves through deliveries and sales, which count themselves.'),
-      list(
-        'Tap OK, Low or Out, quick, and honest about being a glance at a shelf rather than a measurement. Fine where the same person closes most nights.',
-        'Type how much is left, staff enter the amount actually on the shelf and the system works out the status from that ingredient\'s own low level. Slower, and it buys two things tapping cannot.',
-      ),
-      p('The two things: the same four crates get filed the same way whoever is closing, because nobody is judging. And what was counted can be measured against what the recipes say should have gone, which is the only way over-portioning, waste and theft ever show up at all.'),
-      p('The list is grouped the way your shelves are, in the order somebody walks the kitchen. Under each ingredient is the guide an admin wrote for it, "OK = 10pcs or more · Low = under 10pcs", in the units on the shelf rather than the units in the database. Set those under Stock; without them, "low" means whatever each person thinks it means.'),
-      note('When staff type amounts, a shift will not close with rows left blank; it names what is still to count. Type 0 for anything that has run out. The ingredient nobody looked at is exactly the one that runs out on Saturday.'),
+      note('"Just check it" is set per item, under Stock, in How often is this counted. Marking one Out sets it to nothing. Everything with a number goes on the count sheet instead, so its difference can be agreed.'),
       h('Money in and money out'),
       p(
         'The close opens with four figures before it asks you to count anything: what the drawers started '
@@ -293,6 +292,32 @@ export const HELP_ARTICLES: HelpArticle[] = [
   },
 
   {
+    id: 'close_day',
+    title: 'Putting the day away',
+    summary: 'Where the cash went, banking it, and the Close the day list.',
+    area: 'admin',
+    audience: ['cashier', 'manager', 'admin'],
+    body: [
+      h('Where the cash goes at the close'),
+      p('After the drawer is counted, the close asks one more question: where is the cash going? Say how much goes into the safe and how much is taken to the bank, and who is taking it. Whatever is left stays in the drawer, and the next shift opens with exactly that.'),
+      h('Banking it'),
+      steps(
+        'Cash taken to the bank waits under Accounting, Settle up, in Cash to the bank.',
+        'When the slip is in hand, confirm it there with the amount and the date. That is when the books move it from cash on hand into the bank.',
+        'Cash in the safe shows there too. Bank it from the safe when convenient, the same way.',
+      ),
+      h('Close the day'),
+      p('Today opens with a short list for yesterday (or today, after noon): shifts closed, count differences decided, cash put away and banked, MoMo and card matched to the bank, spends agreed, and petty cash counted. Each line says whether it is done and takes you to where it is done. It decides nothing itself.'),
+      h('The books, in two parts'),
+      list(
+        'Your jobs: Settle up, Reconcile, Close a period, and the profit and loss. These are the weekly ones.',
+        'For your accountant: the journal, the trial balance, fixed assets and the chart of accounts.',
+      ),
+      note('Both are the one Accounting page, and what each person sees of it is still granted part by part, under Settings.'),
+    ],
+  },
+
+  {
     id: 'menu_setup',
     title: 'Setting up the menu',
     summary: 'Categories, dishes, options, photos and stations.',
@@ -332,17 +357,33 @@ export const HELP_ARTICLES: HelpArticle[] = [
       steps(
         'Add your ingredients under Stock, name, the unit you count in, what it costs you, how much you have.',
         'Open a dish under Menu, and fill in "What it\'s made from": ingredient, how much per portion, and a wastage percentage.',
-        'That is the whole link. From then on, closing a shift deducts what should have been used.',
+        'That is the whole link. From then on, every dish takes its ingredients off the shelf the moment it is paid for.',
       ),
       h('Wastage'),
       p('The skin of an onion was bought and paid for even though it never reaches the plate. Putting 10% there is not padding, leaving it out flatters every margin on your menu in the same direction.'),
       h('What it tells you'),
       list(
         'What each dish costs you, and your margin at the price you charge.',
-        'What stock you should have left at the end of a shift, to compare against what you actually have.',
+        'What stock you should have left at any moment, to compare against what the count sheet finds.',
         'Which dishes use an ingredient, shown on the Stock list, alongside a warning for any ingredient no dish uses.',
       ),
       note('A dish with stock tracking switched on but no recipe is flagged in the dish list. That combination silently does nothing at all, so it is worth fixing or turning off.', 'warn'),
+      h('One Stock page'),
+      p('Stock is one page with a side switch: the kitchen, the bar. Each item is one row, with a column for each place it can sit in (the counter, the store room) and the total beside them. The jobs done to stock sit on top of the list.'),
+      list(
+        'Receive stock: what came in, from whom, into which place, and how it was paid.',
+        'Move: carry stock from one place to another, on the Places & moves tab. That tab is also where places are set up and opening levels uploaded; it used to be called Where stock sits.',
+        'Count: one count sheet for every place, opened on the side you are looking at. The shop counts its pieces on the shelf from the same page.',
+        'Waste: anything thrown away, spoiled or eaten by staff.',
+      ),
+      h('Receiving stock'),
+      steps(
+        'Press Receive stock and list what came in: the item, how many, and what was paid for it. A supplier order fills this in for you.',
+        'Say where it was put down. Deliveries usually go to the store room; a top-up can go straight to the counter.',
+        'Say how it was paid: from a drawer, a petty cash box, the bank, or Not paid yet.',
+        'Receive it. The stock goes up and the spend is recorded in one go, waiting for approval like any other spend.',
+      ),
+      note('Not paid yet is for a supplier who delivers on account. Nothing leaves a drawer, a box or the bank. It shows under Accounting, Settle up, as Owed to suppliers, and recording the payment there is what takes it out of the bank or the cash.'),
     ],
   },
 
@@ -354,13 +395,15 @@ export const HELP_ARTICLES: HelpArticle[] = [
     audience: ['cashier', 'manager', 'admin'],
     body: [
       steps(
-        'Choose a category. The list is yours, edit it under Expenses → Categories.',
+        'Choose a category. The list is yours, edit it under Money out → Categories.',
         'Say who the money went to: a supplier, a member of staff, the open market, or someone else.',
         'Enter the amount and which payment method it came out of. Cash paid out reduces what the drawer should hold, automatically.',
         'Attach a photo or PDF of the receipt. Only managers and admins can see it.',
       ),
       h('Buying stock'),
-      p('If the money bought ingredients, list them under "Stock bought", ingredient, quantity, unit cost. They go into stock as you save, so the shopping trip and the delivery are one job instead of two. The unit cost you enter becomes that ingredient\'s cost from then on.'),
+      p('If the money bought ingredients, list them under "What was bought", ingredient, quantity and what was paid. They go into stock as you save, so the shopping trip and the delivery are one job instead of two. Where a side has more than one place, you are asked which one it went into. On the Stock page the same form is called Receive stock.'),
+      h('Money out'),
+      p('Money out lists every payment that left, from every page that pays: spends from the drawers, petty cash and the bank, stock received and not yet paid for, and maker payouts. Pick a period and a source, or Waiting to approve, and the total follows.'),
       h('Categories and your accounts'),
       p('Each category names which line of the accounts it lands on. That is what makes a category more than a label: "Gas refill" can sit under Utilities rather than everything piling into Other.'),
       h('What it can be paid out of'),
@@ -683,7 +726,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       steps(
         'Settings \u2192 What this business runs. Switch on Craft shop.',
         'You can have both sides on at once. A kitchen with a craft corner is one business, not two systems: one till, one set of staff, one Reports page you can read either way.',
-        'A new group appears in the sidebar: Categories, Products, Consignors, Goods received and Payouts.',
+        'The shop\'s pages appear in the sidebar: Categories, Menu & products, Count, and Makers & payouts, which leads to Goods received and Payouts.',
       ),
       h('Consignors'),
       p(
@@ -784,7 +827,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         'no evidence.',
       ),
       steps(
-        'Craft shop \u2192 Payouts shows who is waiting, most owed first.',
+        'Makers & payouts \u2192 Payouts shows who is waiting, most owed first.',
         'Open their statement to see where every figure came from.',
         'Send the money the way you always do: mobile money, cash, transfer.',
         'Then press Record a payment inside the statement, so the figure and its workings are on one screen.',
@@ -857,7 +900,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       ),
       h('Reading it back'),
       p(
-        'Shifts, Expenses and Reports all carry a Both / Kitchen / Craft shop filter. Both is the default, ' +
+        'Shifts, Money out and Reports all carry a Both / Kitchen / Craft shop filter. Both is the default, ' +
         'because the first question is usually what the whole business did.',
       ),
     ],

@@ -6,7 +6,7 @@ import {
 import type { BlockerRow, CountRow, StockRow, ShiftFlow } from '@snpos/ui';
 import { resolveCounts } from '@snpos/ui';
 import {
-  db, DB_ID, formatMoney, parseMoney, toInput, stockCheckRows,
+  db, DB_ID, formatMoney, parseMoney, toInput, stockCheckRows, pourMissedSales, cashCounted, cashPlanProblem,
   loadPaymentMethods, openShift, loadOpenShift, loadOpenShifts, shiftBlockers, expectedTakings, closeShift, openingFloats,
   recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, shouldWarnLateOrder,
   referenceProblem, referenceRequired, referenceWords,
@@ -62,6 +62,15 @@ export function CombinedBar({
     at once, the same as the bar's. Never a wall — see openingCountOptional.
   */
   const [countingIn, setCountingIn] = useState(false);
+  /*
+    Counting the kitchen OUT, on the same sheet, before the drawer. Its
+    differences wait on Waiting for you like the bar's. Asked for, never a
+    wall: leaving the sheet goes on to the close, which says it was skipped.
+  */
+  const [countingOut, setCountingOut] = useState(false);
+  const [countedOut, setCountedOut] = useState(false);
+  // A new shift has not been counted out, whatever the last one was.
+  useEffect(() => { setCountedOut(false); }, [shift?.$id]);
   /** Whether this shift has been counted in. Unknown until asked; a failed read stays unknown. */
   const [countedIn, setCountedIn] = useState<boolean | null>(null);
   const [closing, setClosing] = useState(false);
@@ -88,6 +97,15 @@ export function CombinedBar({
   const [error, setError] = useState<string | null>(null);
 
   const decimals = settings.currency_decimals ?? 2;
+  const countedMinor = () =>
+    Object.fromEntries(rows.map((r) => [r.methodId, parseMoney(r.countedText, decimals) ?? 0]));
+  /** Where the counted cash is going. See cash-away.ts. */
+  const [cashAway, setCashAway] = useState({ safeText: '', bankText: '', takenBy: '' });
+  const cashPlan = () => ({
+    toSafe: parseMoney(cashAway.safeText || '0', decimals) ?? 0,
+    toBank: parseMoney(cashAway.bankText || '0', decimals) ?? 0,
+    takenBy: cashAway.takenBy.trim(),
+  });
 
   // How long this shift has been open. A day is the limit; past it nothing
   // more may be sold or settled against it.
@@ -96,7 +114,9 @@ export function CombinedBar({
   // Which question the restaurant has chosen to ask, and what the answers come
   // to. Worked out here rather than in the form so the close button and the
   // boxes on screen can never be judging different things.
-  const counting = settings.stock_check_mode === 'counts';
+  // OK, Low or Out only, for the "just check it" items. Everything with a
+  // number is on the count sheet. See countsOutAtClose.
+  const counting = false;
   const stockDecimals = settings.stock_count_decimals !== false;
   const resolved = resolveCounts(stockList, stockCounts, stockDecimals);
   const tolerance = settings.cash_variance_tolerance ?? 500;
@@ -179,8 +199,16 @@ export function CombinedBar({
     }
   };
 
-  const startClose = async () => {
+  const startClose = async (countDone = false) => {
     if (!shift) return;
+    if (!countDone && !countedOut) {
+      // Anything the server missed is poured first, so the count is measured
+      // against what was really cooked. Pours nothing twice.
+      await pourMissedSales({ venueId: venue.$id, shiftId: shift.$id, module: 'kitchen', userId: who?.user_id || who?.$id || '' })
+        .catch(() => undefined);
+      setCountingOut(true);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -274,6 +302,10 @@ export function CombinedBar({
       setError('Something is over or short. Say what happened before closing; that answer is gone by tomorrow.');
       return;
     }
+    {
+      const why = cashPlanProblem(cashCounted(countedMinor(), methods), cashPlan());
+      if (why) { setError(why); return; }
+    }
 
     setBusy(true);
     setError(null);
@@ -285,11 +317,13 @@ export function CombinedBar({
         settings,
         features,
         methods,
-        counted: Object.fromEntries(rows.map((r) => [r.methodId, parseMoney(r.countedText, decimals) ?? 0])),
+        counted: countedMinor(),
         varianceNote: note.trim(),
         levels: counting ? resolved.levels : levels,
         stockCounts: counting ? resolved.counts : undefined,
+        cashPlan: cashPlan(),
       });
+      setCashAway({ safeText: '', bankText: '', takenBy: '' });
       // Closed is closed, said before asking again. A read that fails after a
       // successful close would otherwise leave the shift, and its overdue
       // warning, sitting on the bar.
@@ -349,7 +383,7 @@ export function CombinedBar({
           <Button size="sm" onClick={() => setCountingIn(true)}>Count the kitchen in</Button>
         )}
         {shift ? (
-          <Button size="sm" onClick={startClose} loading={busy && !closing} disabled={!who?.can_close_shift}>
+          <Button size="sm" onClick={() => void startClose()} loading={busy && !closing} disabled={!who?.can_close_shift}>
             Close shift
           </Button>
         ) : (
@@ -404,6 +438,22 @@ export function CombinedBar({
           who={who}
           onClose={() => setHistory(false)}
           onToast={onToast}
+        />
+      )}
+
+      {countingOut && shift && (
+        <BarCountModal
+          module="kitchen"
+          venueId={venue.$id}
+          shiftId={shift.$id}
+          phase="close"
+          userId={who?.user_id || who?.$id || ''}
+          settings={settings}
+          isManager={who?.role === 'admin' || who?.role === 'manager'}
+          dismissLabel="Close without counting"
+          onEmpty={() => { setCountingOut(false); setCountedOut(true); void startClose(true); }}
+          onClose={() => { setCountingOut(false); void startClose(true); }}
+          onDone={(m) => { setCountingOut(false); setCountedOut(true); onToast(m); void startClose(true); }}
         />
       )}
 
@@ -486,6 +536,18 @@ export function CombinedBar({
           }
         >
           {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
+          {!countedOut && (
+            <Notice tone="warn">
+              <strong>The kitchen was not counted out.</strong>
+              <div className="small" style={{ marginTop: '0.3rem' }}>
+                The shift will close on whatever the sales say is left, and nobody will know whether that is what
+                is actually there.
+              </div>
+              <div style={{ marginTop: '0.45rem' }}>
+                <Button size="sm" onClick={() => { setClosing(false); setCountingOut(true); }}>Count the kitchen out first</Button>
+              </div>
+            </Notice>
+          )}
           <ShiftCloseForm
             blockers={blockers}
             rows={rows}
@@ -504,6 +566,11 @@ export function CombinedBar({
             tolerance={tolerance}
             flow={flow}
             shelving={shelving}
+            cashAway={{
+              counted: cashCounted(countedMinor(), methods),
+              ...cashAway,
+              onChange: (patch) => setCashAway((c) => ({ ...c, ...patch })),
+            }}
           />
         </Modal>
       )}

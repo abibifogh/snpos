@@ -1,12 +1,15 @@
 import { db, DB_ID, ID, Query, listAll, saveDropping } from './client';
 import type { Doc, Settings } from './types';
 import type { Order, OrderItem } from './orders';
-import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from './stock';
+import { theoreticalUsage, pourMissedSales, loadIngredients, loadRecipes, updateStockAlerts } from './stock';
 import { liveOrders } from './orders';
 import { countable } from './bar-count';
 import { repaidByMethod } from './staff-charges';
 import { makersShareOf } from './consignment-math';
 import { splitTax, parseLevies, vatBpOf } from './pricing';
+import { cashCounted, keptFrom, keptByMethod } from './cash-away';
+import type { CashPlan } from './cash-away';
+import { recordCashPlan } from './cash-away-store';
 import { loadConsignors } from './consignment';
 import { postShift, reverseEntry, shiftCloseEntries, lockedThroughFor, isLocked } from './ledger';
 import { isLivePayment } from './payments';
@@ -174,13 +177,17 @@ export async function openingFloats(
       // One was only ever enough when there was one drawer.
       Query.limit(20),
     ]);
-    const last = lastForSide(previous.documents as unknown as (Shift & { counted?: string })[], module);
+    const last = lastForSide(previous.documents as unknown as (Shift & { counted?: string; cash_kept?: number | null })[], module);
     if (last?.counted) {
       try {
         const counted = JSON.parse(last.counted) as Record<string, number>;
         return {
-          // Cash only. See carryOverFloats for why a card is not a float.
-          floats: carryOverFloats(counted, methods),
+          // Cash only. See carryOverFloats for why a card is not a float. And
+          // only what was LEFT in the drawer, where the close said some went
+          // to the safe or the bank. See keptByMethod.
+          floats: typeof last.cash_kept === 'number'
+            ? keptByMethod(counted, methods, last.cash_kept)
+            : carryOverFloats(counted, methods),
           source: 'carried_over',
           policy,
           from: { id: last.$id, code: last.code },
@@ -717,6 +724,8 @@ export async function closeShift(opts: {
    * been worked out from the number instead of tapped.
    */
   stockCounts?: Record<string, number>;
+  /** Where the counted cash went: safe, bank, and who took it. See cash-away.ts. */
+  cashPlan?: CashPlan;
 }): Promise<CloseShiftResult> {
   const { venueId, shift, userId, settings, features, methods, counted, levels } = opts;
   const stockCounts = opts.stockCounts ?? {};
@@ -781,8 +790,22 @@ export async function closeShift(opts: {
       by somebody else's trade, and the closing email then listed the lot.
     */
     const side = shift.module ?? 'kitchen';
+    /*
+      NOTHING IS TAKEN OFF HERE ANY MORE.
+
+      Every side's food and drink now leaves the shelf when it is paid for —
+      see pourFromBottles in order-guard — so the kitchen's figures are right
+      during service, and its count-out is measured against what was really
+      cooked. All that is left for the close is to catch anything the server
+      missed (a payment taken offline, a shift open across the change), which
+      pours only sale lines that have not been poured, so nothing goes twice.
+      The cost of sales is still worked out from the recipes, as it was.
+    */
+    if (side !== 'craft') {
+      await pourMissedSales({ venueId, shiftId: shift.$id, module: side, userId }).catch(() => undefined);
+    }
     const [ingredients, recipes] = await Promise.all([loadIngredients(venueId, side), loadRecipes()]);
-    const usage = await depleteForShift(venueId, shift.$id, soldItems, recipes, ingredients, userId);
+    const usage = theoreticalUsage(soldItems, recipes);
     for (const [ingredientId, qty] of Object.entries(usage)) {
       const ing = ingredients.find((i) => i.$id === ingredientId);
       if (ing) cogs += Math.round(qty * ing.base_unit_cost);
@@ -793,19 +816,8 @@ export async function closeShift(opts: {
     for (const [ingredientId, level] of Object.entries(levels)) {
       const ing = ingredients.find((i) => i.$id === ingredientId);
       if (!ing) continue;
-      /*
-        A bar's drinks have already been taken off the shelf.
-
-        `depleteForShift` deliberately skips the bar — see the note there — so
-        by the time a bar shift closes, `current_qty` is ALREADY net of the
-        night's pours. Subtracting the usage a second time would set what the
-        shelf "should" hold to well below what was actually sold from it, and
-        every bartender would be told they were short by exactly the amount
-        they served. What the recipes say was used is still the right figure
-        for the kitchen, whose depletion happens here and now.
-      */
-      const poured = (ing.module ?? 'kitchen') === 'bar' ? 0 : usage[ingredientId] ?? 0;
-      const theoretical = Number((ing.current_qty - poured).toFixed(4));
+      // Already net of the shift's sales on every side; see the note above.
+      const theoretical = Number(ing.current_qty.toFixed(4));
       const countedQty = stockCounts[ingredientId];
       const wasCounted = typeof countedQty === 'number' && Number.isFinite(countedQty);
 
@@ -905,6 +917,27 @@ export async function closeShift(opts: {
     discount_total: shiftOrders.reduce((a, o) => a + o.discount_total, 0),
     covers: shiftOrders.reduce((a, o) => a + (o.guest_count || 1), 0),
   });
+
+  /*
+    Where the cash went, written on its own after the close.
+
+    Separately, through saveDropping, so a database not yet provisioned for
+    these fields cannot take the close down with it. Then the movements, for
+    the safe and for Settle up to confirm against the bank slip.
+  */
+  if (opts.cashPlan) {
+    const plan = opts.cashPlan;
+    const kept = keptFrom(cashCounted(counted, methods), plan);
+    await saveDropping('shifts', shift.$id, {
+      cash_kept: kept,
+      cash_to_safe: Math.max(0, plan.toSafe || 0),
+      cash_to_bank: Math.max(0, plan.toBank || 0),
+      cash_taken_by: (plan.takenBy ?? '').trim().slice(0, 120),
+    }).catch(() => undefined);
+    await recordCashPlan({
+      venueId, shiftId: shift.$id, shiftCode: shift.code, module: shift.module, plan, userId,
+    }).catch(() => undefined);
+  }
 
   return { variance, totalOff, cogs, stockNote, shelved };
 }

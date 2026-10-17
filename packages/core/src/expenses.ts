@@ -80,5 +80,11 @@ export interface ShiftExpense extends Doc {
   receipt_file_id?: string;
   created_by?: string;
   approval_status?: string;
+  /** Received and not yet paid for. See owed-spends.ts. */
+  pay_later?: boolean;
+  paid_at?: string;
+  paid_via?: string;
+  paid_ref?: string;
+  paid_by?: string;
 }
 

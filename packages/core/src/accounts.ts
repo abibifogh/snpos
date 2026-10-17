@@ -66,6 +66,11 @@ export const ACCOUNTS = {
    */
   owedToMakers: '2400',
   /**
+   * Stock received and not yet paid for. Receive stock's "Not paid yet"
+   * credits it, and paying the supplier later debits it. See owed-spends.ts.
+   */
+  accountsPayable: '2300',
+  /**
    * Sales and cost of sales, one pair per side of the business.
    *
    * A single "Food sales" line answers what the business took and nothing

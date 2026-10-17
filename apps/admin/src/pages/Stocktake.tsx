@@ -6,9 +6,9 @@ import {
   shelfLines, submitCount, pendingCounts, countLines, decidedCounts,
   summariseCount, countWarnings, groupLines, COUNT_REASONS, 
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft, clearAllWarning,
-  pendingShelfLines, frozenPieces, frozenBy, dateTimeWords, loadStaffNames, nameFrom } from '@snpos/core';
+  pendingShelfLines, frozenPieces, frozenBy, loadStaffNames, nameFrom } from '@snpos/core';
 import type {
-  CountLine, CountReason, CountGrouping, PendingCount, PendingCountLine, WaitingChange,
+  CountLine, CountReason, CountGrouping, PendingCount, WaitingChange,
 } from '@snpos/core';
 import { listAll } from '@snpos/core';
 import { CountUpload } from '../components/CountUpload';
@@ -232,7 +232,6 @@ export function StocktakePage() {
   const groups = useMemo(() => groupLines(shown, groupBy), [shown, groupBy]);
   const summary = useMemo(() => summariseCount(lines ?? []), [lines]);
   const warnings = useMemo(() => countWarnings(lines ?? []), [lines]);
-  const nameOf = (id: string) => nameFrom(names, id, 'someone');
 
   const submit = async () => {
     setBusy(true);
@@ -260,11 +259,8 @@ export function StocktakePage() {
       await loadShelf();
       await loadQueue();
       toast(
-        isAdmin
-          ? `${written} difference${written === 1 ? '' : 's'} sent for approval. Apply them under Approvals.`
-          : `${written} difference${written === 1 ? '' : 's'} sent to an admin to approve.`,
+        `${written} difference${written === 1 ? '' : 's'} sent to Waiting for you, to be agreed or refused.`,
       );
-      if (isAdmin) setTab('approve');
     } catch (e) {
       setError(humanError(e));
     } finally {
@@ -303,20 +299,24 @@ export function StocktakePage() {
         onChange={setTab}
         options={[
           { value: 'count', label: 'Count' },
-          { value: 'approve', label: `Approvals${queue?.length ? ` (${queue.length})` : ''}` },
+          { value: 'approve', label: 'Past counts' },
         ]}
       />
+
+      {/* Decided in one place, with every other count: Waiting for you. This
+          page used to have its own approvals list as well, so a shop count
+          could be agreed here and still be waiting there. */}
+      {(queue?.length ?? 0) > 0 && (
+        <Notice tone="info">
+          {queue!.length} count{queue!.length === 1 ? ' is' : 's are'} waiting to be agreed.{' '}
+          <Link to="/waiting?show=count">Open Waiting for you</Link>
+        </Notice>
+      )}
 
       {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
 
       {tab === 'approve' ? (
         <>
-          <Approvals
-            queue={queue}
-            isAdmin={isAdmin}
-            money={money}
-            nameOf={nameOf}
-          />
           <div style={{ marginTop: '1rem' }}>
             <CountHistory
               title="Every count decided on, last 90 days"
@@ -550,141 +550,3 @@ export function StocktakePage() {
   );
 }
 
-/**
- * Counts waiting to be applied, line by line.
- *
- * A look, not a decision. Deciding happens under Money, Waiting for you,
- * where every held count, spend and shelf change sits in one list; this tab
- * is where somebody reads the lines of a shop count before going there. A
- * manager can see what they submitted and that it is still waiting, which is
- * the difference between a queue and a black hole.
- */
-function Approvals({
-  queue, isAdmin, money, nameOf,
-}: {
-  queue: PendingCount[] | null;
-  isAdmin: boolean;
-  money: (n: number) => string;
-  nameOf: (id: string) => string;
-}) {
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [lines, setLines] = useState<PendingCountLine[] | null>(null);
-
-  const open = async (id: string) => {
-    setOpenId(id);
-    setLines(null);
-    setLines(await countLines(id).catch(() => []));
-  };
-
-  const current = (queue ?? []).find((c) => c.$id === openId) ?? null;
-
-  return (
-    <>
-      <Card pad={false}>
-        {!queue ? (
-          <div className="card-pad"><Spinner /></div>
-        ) : queue.length === 0 ? (
-          <Empty title="Nothing waiting">
-            Counts appear here when somebody sends one. Until one is approved, the shelf is exactly as it was.
-          </Empty>
-        ) : (
-          <div className="table-wrap">
-            <table className="data">
-              <thead>
-                <tr>
-                  <th>Counted</th><th>By</th><th>Note</th>
-                  <th className="num">Lines</th><th className="num">Missing</th><th />
-                </tr>
-              </thead>
-              <tbody>
-                {queue.map((c) => (
-                  <tr key={c.$id}>
-                    <td className="dim small">{dateTimeWords(c.counted_at)}</td>
-                    <td>{nameOf(c.counted_by)}</td>
-                    <td className="dim small">{c.note || '—'}</td>
-                    <td className="num">{c.line_count}</td>
-                    <td className="num">
-                      {c.missing_pieces > 0 && (
-                        <Badge tone="danger">{c.missing_pieces} · {money(c.missing_value)}</Badge>
-                      )}
-                      {c.surplus_pieces > 0 && <Badge tone="warn"> +{c.surplus_pieces}</Badge>}
-                    </td>
-                    <td className="num">
-                      <Button size="sm" onClick={() => void open(c.$id)}>Look</Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
-
-      {openId && current && (
-        <Modal
-          wide
-          title={`Counted by ${nameOf(current.counted_by)}`}
-          onClose={() => setOpenId(null)}
-          footer={
-            <>
-              <Button variant="ghost" onClick={() => setOpenId(null)}>Close</Button>
-              {isAdmin && <Link className="btn btn-primary" to="/waiting?show=count">Decide it under Waiting for you</Link>}
-            </>
-          }
-        >
-          <Notice tone="info">
-            {isAdmin
-              ? 'Nothing on the shelf has changed. Approve or refuse this under Money, Waiting for you, with everything else that is held.'
-              : 'Waiting for an admin. Nothing on the shelf has changed, and the till is still selling what it says.'}
-          </Notice>
-
-          {!lines ? <Spinner /> : (
-            <div className="table-wrap">
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th>Piece</th><th>Maker</th>
-                    <th className="num">Shelf said</th><th className="num">Counted</th>
-                    <th className="num">Change</th><th>Why</th><th className="num">Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((l) => (
-                    <tr key={l.$id} className={l.applied ? 'dim' : undefined}>
-                      <td>
-                        {l.name_snapshot}
-                        {l.variant_label && <span className="dim small"> · {l.variant_label}</span>}
-                        {l.applied && <Badge tone="ok"> applied</Badge>}
-                      </td>
-                      <td className="dim small">{l.consignor_name || 'The shop'}</td>
-                      <td className="num dim">{l.expected}</td>
-                      <td className="num" style={{ fontWeight: 600 }}>{l.counted}</td>
-                      <td className="num">
-                        <Badge tone={l.delta < 0 ? 'danger' : 'warn'}>
-                          {l.delta > 0 ? `+${l.delta}` : l.delta}
-                        </Badge>
-                      </td>
-                      <td className="small dim">{COUNT_REASONS.find((x) => x.value === l.reason)?.label}</td>
-                      <td className="num">{money(Math.abs(l.delta) * l.unit_price)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {isAdmin && (
-            /* Said before the decision, not after. Applying the DIFFERENCE is
-               what makes a count taken this morning safe to approve this
-               evening: anything sold in between is a movement of its own and
-               stays counted. */
-            <p className="small dim">
-              The <strong>change</strong> column is what is applied, not the counted figure. Anything sold since
-              this was counted stays sold — approving takes the difference off whatever the shelf holds now.
-            </p>
-          )}
-        </Modal>
-      )}
-    </>
-  );
-}

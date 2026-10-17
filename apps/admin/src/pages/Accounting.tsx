@@ -15,7 +15,9 @@ import type {
   AccountRow, JournalEntry, JournalLine, FixedAsset, LineRow, Doc, BankStatementLine, Settings,
   PeriodLock, CloseItem,
 } from '@snpos/core';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { CashToBank } from '../components/CashToBank';
+import { OwedToSuppliers } from '../components/OwedToSuppliers';
 import { useSession, useMoney } from '../session';
 import { AccountsManager } from '../components/AccountsManager';
 
@@ -72,10 +74,12 @@ export function AccountingPage() {
   const allowed = useMemo(() => areasOf('accounting', profile, settings), [profile, settings]);
   const can = (area: Tab) => allowed.includes(`accounting_${area}`);
   // A link may name the tab: /accounting?tab=locks from the health page, say.
-  const [tab, setTab] = useState<Tab>(() => {
-    const asked = new URLSearchParams(window.location.hash.split('?')[1] ?? window.location.search).get('tab');
-    return (['statements', 'journal', 'trial', 'assets', 'bank', 'settle', 'chart', 'locks'].includes(asked ?? '') ? asked : 'statements') as Tab;
-  });
+  // Read from the address every time, so a sidebar link to another tab of
+  // this page switches to it rather than leaving the old one showing.
+  const [params, setParams] = useSearchParams();
+  const asked = params.get('tab');
+  const tab = (['statements', 'journal', 'trial', 'assets', 'bank', 'settle', 'chart', 'locks'].includes(asked ?? '') ? asked : 'statements') as Tab;
+  const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
   useEffect(() => {
     // Land on something they can see. Opening on a tab they were not given
     // shows an empty page that reads as a fault rather than as a permission.
@@ -164,22 +168,38 @@ export function AccountingPage() {
         never passes through a till gets in.
       </p>
 
-      <div className="row row-wrap" style={{ gap: '0.4rem', margin: '0.9rem 0' }}>
-        {([
+      {/*
+        Two rows: the jobs somebody here does every week, and the tools only
+        an accountant opens. Side by side in one row, the weekly jobs were
+        hidden among the accountant's.
+      */}
+      {([
+        ['Your jobs', [
+          ['settle', 'Settle up'],
+          ['bank', 'Reconcile'],
+          ['locks', 'Close a period'],
           ['statements', 'Profit & loss and balance sheet'],
+        ]],
+        ['For your accountant', [
           ['journal', 'Journal'],
           ['trial', 'Trial balance'],
           ['assets', 'Fixed assets'],
-          ['bank', 'Reconcile'],
-          ['settle', 'Settle up'],
           ['chart', 'Chart of accounts'],
-          ['locks', 'Close a period'],
-        ] as [Tab, string][]).filter(([key]) => can(key)).map(([key, label]) => (
-          <Button key={key} size="sm" variant={tab === key ? 'primary' : 'default'} onClick={() => setTab(key)}>
-            {label}
-          </Button>
-        ))}
-      </div>
+        ]],
+      ] as [string, [Tab, string][]][]).map(([heading, tabs]) => {
+        const mine = tabs.filter(([key]) => can(key));
+        if (mine.length === 0) return null;
+        return (
+          <div key={heading} className="row row-wrap" style={{ gap: '0.4rem', margin: '0.6rem 0', alignItems: 'center' }}>
+            <span className="small dim" style={{ minWidth: '9rem' }}>{heading}</span>
+            {mine.map(([key, label]) => (
+              <Button key={key} size="sm" variant={tab === key ? 'primary' : 'default'} onClick={() => setTab(key)}>
+                {label}
+              </Button>
+            ))}
+          </div>
+        );
+      })}
 
       {/* Granted the page and none of its parts. Said plainly rather than shown
           as an empty screen somebody reads as broken. */}
@@ -1621,6 +1641,8 @@ function Settle({
 
   return (
     <div className="stack">
+      <CashToBank venueId={venueId} userId={userId} money={money} decimals={decimals} onChanged={onChanged} toast={toast} />
+      <OwedToSuppliers venueId={venueId} userId={userId} money={money} onChanged={onChanged} toast={toast} />
       <Card title="Card and mobile money settled to the bank" pad>
         <p className="small dim" style={{ marginTop: 0 }}>
           Every close puts card and mobile-money takings into a clearing account. When the provider pays it into
@@ -1769,7 +1791,7 @@ function Locks({
     if (item.goto === 'settle' || item.goto === 'journal') { onGoto(item.goto); return; }
     if (item.goto === 'shifts') navigate('/shifts');
     if (item.goto === 'payouts') navigate('/payouts');
-    if (item.goto === 'counts') navigate('/bar/counts');
+    if (item.goto === 'counts') navigate('/count?side=bar');
     // Held counts, spends and shelf changes are all decided on the one page.
     if (item.goto === 'waiting') navigate(item.key === 'spends' ? '/waiting?show=spend' : item.key === 'shelf' ? '/waiting?show=shelf' : '/waiting?show=count');
   };

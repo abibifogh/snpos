@@ -1441,6 +1441,15 @@ export const COLLECTIONS = [
     // money hangs off, so it goes last and only ever deliberately.
     perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: ADMIN },
     attributes: [
+      /*
+        Where the counted cash went, asked at the close: into the safe, taken
+        to the bank (and by whom), and what was left as the next float. The
+        next shift on this side opens on cash_kept. See cash-away.ts.
+      */
+      ['cash_kept', 'i', null, false],
+      ['cash_to_safe', 'i', null, false],
+      ['cash_to_bank', 'i', null, false],
+      ['cash_taken_by', 's', 120, false],
       ['code', 's', 40, true],
       ['status', 'e', ['open', 'closing', 'closed', 'reopened'], true, 'open'],
       ['opened_by', 's', 64, true],
@@ -1576,6 +1585,17 @@ export const COLLECTIONS = [
       ['imprest_float_id', 's', 64, false],
       // The supplier order this spend received, where it was one.
       ['purchase_order_id', 's', 64, false],
+      /*
+        Received and not yet paid for (Receive stock, "Not paid yet"). The
+        books credit Accounts payable instead of the drawer or the bank, and
+        the paid_* fields say when, how and by whom it was settled later.
+        See owed-spends.ts.
+      */
+      ['pay_later', 'b', null, false, false],
+      ['paid_at', 's', 40, false],
+      ['paid_via', 's', 20, false],
+      ['paid_ref', 's', 120, false],
+      ['paid_by', 's', 64, false],
       /**
        * Whether this came out of the money taken during the shift.
        *
@@ -1613,7 +1633,7 @@ export const COLLECTIONS = [
       */
       ['alerted_at', 'd', null, false],
     ],
-    indexes: [['shift', 'key', ['shift_id']], ['supplier', 'key', ['supplier_id']]],
+    indexes: [['shift', 'key', ['shift_id']], ['supplier', 'key', ['supplier_id']], ['owed', 'key', ['pay_later']]],
   },
   {
     /**
@@ -2058,6 +2078,9 @@ export const COLLECTIONS = [
        * cannot silently switch the count off.
        */
       ['count_each_shift', 'b', null, false, false],
+      // Only glanced at: OK, Low or Out at the close, never on the count
+      // sheet. For the cheap and bulky. See checkOnly.
+      ['check_only', 'b', null, false, false],
       /**
        * Only a manager may put a number against this.
        *
@@ -2156,6 +2179,34 @@ export const COLLECTIONS = [
       ['payment_terms', 's', 80, false],
       ['active', 'b', null, true, true],
     ],
+  },
+  {
+    /**
+     * Cash leaving the drawers: into the safe, or to the bank.
+     *
+     * Written at a shift close from the person's own answer, and confirmed
+     * by an admin in Settle up when the bank slip is in hand — which is when
+     * the books move cash on hand into the bank. The safe's balance is what
+     * went in less what was banked from it. See cash-away.ts.
+     */
+    id: 'cash_moves',
+    name: 'Cash moves',
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['kind', 'e', ['to_safe', 'to_bank', 'safe_to_bank'], true],
+      ['status', 'e', ['in_safe', 'pending', 'banked'], true, 'pending'],
+      ['amount', 'i', null, true, 0],
+      ['shift_id', 's', 64, false],
+      ['shift_code', 's', 40, false],
+      ['module', 'e', ['kitchen', 'bar', 'craft'], false],
+      ['taken_by', 's', 120, false],
+      ['recorded_by', 's', 64, false],
+      ['banked_at', 'd', null, false],
+      ['banked_ref', 's', 120, false],
+      ['banked_by', 's', 64, false],
+    ],
+    indexes: [['venue', 'key', ['venue_id']]],
   },
   {
     /**
@@ -4483,6 +4534,9 @@ export const SYSTEM_ACCOUNT_CODES = [
   // Count differences charged to staff: what they owe, what charging them
   // recovers, and the pay it is taken from. See staff-charges.ts.
   '1300', '4910', '6100',
+  // Stock received and not yet paid for: Receive stock credits it, paying
+  // the supplier debits it. See owed-spends.ts.
+  '2300',
 ];
 
 export const SEED_ACCOUNTS = [

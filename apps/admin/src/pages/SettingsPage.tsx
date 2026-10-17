@@ -10,6 +10,7 @@ import type { Levy } from '@snpos/core';
 import type { Settings, Doc } from '@snpos/core';
 
 import { useSession } from '../session';
+import { AlsoHere } from '../components/AlsoHere';
 
 /**
  * Save the settings, and say exactly what did not save.
@@ -326,6 +327,7 @@ export function SettingsPage() {
         <h1>Settings</h1>
         <Button variant="primary" onClick={save} loading={busy}>Save changes</Button>
       </div>
+      <AlsoHere host="settings" />
 
       {error && <Notice>{error}</Notice>}
 
@@ -722,52 +724,13 @@ export function SettingsPage() {
           a count.
         </p>
 
-        <h3 style={{ marginTop: '1.6rem' }}>The stock check at the end of a shift</h3>
-        <Field
-          label="What staff are asked"
-          hint="Both end up in the same place, an OK, Low or Out against every ingredient. The difference is who decides which."
-        >
-          <Select
-            value={form.stock_check_mode ?? 'levels'}
-            onChange={(e) => set('stock_check_mode', e.target.value as Settings['stock_check_mode'])}
-          >
-            <option value="levels">Tap OK, Low or Out</option>
-            <option value="counts">Type how much is left, and let the system decide</option>
-          </Select>
-        </Field>
-
+        <h3 style={{ marginTop: '1.6rem' }}>Counting at the end of a shift</h3>
         <p className="small dim">
-          {form.stock_check_mode === 'counts' ? (
-            <>
-              Staff type what is actually on the shelf and the system reads it against each ingredient's low level. It
-              takes longer, and it buys two things a tapped level cannot: the same shelf gets filed the same way
-              whoever is closing, and what was counted can be set against what the recipes say should have gone, 
-              which is the only way over-portioning, waste and theft ever show up. Set the low level for each
-              ingredient under <strong>Stock</strong>, or nothing above zero can be called low.
-            </>
-          ) : (
-            <>
-              Quick, and honest about being a glance at a shelf rather than a measurement. Fine for a small kitchen
-              where the same person closes most nights. Write a guide under each ingredient in <strong>Stock</strong>
-              {' '}so “low” means the same thing to everybody.
-            </>
-          )}
+          Every side now counts out on the count sheet before it closes, the kitchen included, and every difference
+          waits on <strong>Waiting for you</strong> to be agreed or charged. The close itself only asks OK, Low or
+          Out about items marked <strong>Just check it</strong> under <strong>Stock</strong>: the cheap and bulky
+          things, like salt and oil, that are not worth a number.
         </p>
-
-        {form.stock_check_mode === 'counts' && (
-          <>
-            <Toggle
-              checked={form.stock_count_decimals !== false}
-              onChange={(v) => set('stock_count_decimals', v)}
-              label="Allow part amounts, 0.5, 0.25"
-            />
-            <p className="small dim" style={{ marginBottom: 0 }}>
-              On for anything measured: half a bucket of rice, a quarter bottle of oil. Off for anything counted in
-              pieces, nobody has 2.5 eggs, and a till with a numeric keypad will produce one by accident if the
-              decimal point is there to be pressed.
-            </p>
-          </>
-        )}
 
         {/* Only where there is a bar. A kitchen counts once, at the end, and
             nobody hands the rice over. */}

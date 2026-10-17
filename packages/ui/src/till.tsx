@@ -10,11 +10,12 @@ import {
   loadFloats, balancesFor, recordBoxSpend, boxOverdrawn, boxHeadroom,
   checkPurchase, raiseAlerts, FLAG_WORDS, logSpendChange, spendSnapshot,
   openOrdersFor, receiveOrderFromSpend, readLines, stillToCome,
+  loadLocations, openIn, purchaseLocation,
 } from '@snpos/core';
 import type {
   PaymentMethod, Settings, StaffProfile, PaidToKind, Supplier, ExpenseCategoryDoc, Ingredient,
   CashHandover, HandoverDestination, Module, ShiftExpense, ImprestFloatDoc, CheckedLine, ExpenseDesk,
-  PurchaseOrderDoc,
+  PurchaseOrderDoc, StockLocation,
 } from '@snpos/core';
 
 /**
@@ -63,7 +64,7 @@ const CANNOT_STORE_SOURCE =
  * which screen it was entered from.
  */
 export function ExpenseModal({
-  module, venueId, shiftId, settings, userId, expense, askPaidFrom = true, fromFloatId, desk = 'till', onClose, onDone,
+  module, venueId, shiftId, settings, userId, expense, askPaidFrom = true, fromFloatId, desk = 'till', receive = false, onClose, onDone,
 }: {
   module: Module;
   venueId: string;
@@ -121,6 +122,12 @@ export function ExpenseModal({
    * office may pay by transfer, and a new office spend comes off no drawer.
    */
   desk?: ExpenseDesk;
+  /**
+   * Opened as Receive stock: the same form, worded for a delivery. The items
+   * come first and are required, and the place they go into is asked for.
+   * Paying for it is one of four answers, one of them "not paid yet".
+   */
+  receive?: boolean;
   onClose: () => void;
   onDone: (message: string) => void;
 }) {
@@ -186,6 +193,14 @@ export function ExpenseModal({
   const [noBox, setNoBox] = useState<boolean>(
     editing ? !fromTakings(editing) && !editing.imprest_float_id : officeNew,
   );
+  /**
+   * Received on account: owed to the supplier, paid later from Settle up.
+   * Nothing leaves a drawer, a box or the bank today. See owed-spends.ts.
+   */
+  const [payLater, setPayLater] = useState<boolean>(editing?.pay_later === true);
+  /** This side's places, and which one the delivery is put down in. */
+  const [places, setPlaces] = useState<StockLocation[]>([]);
+  const [placeId, setPlaceId] = useState('');
   // What was actually bought. A shop run is rarely one thing, and an expense
   // recorded as a single number tells you money left without telling you what
   // came back with it.
@@ -355,6 +370,13 @@ export function ExpenseModal({
           : Promise.resolve([] as Ingredient[]),
       ]);
       if (stocks) void openOrdersFor(venueId, module).then(setOrders).catch(() => undefined);
+      if (stocks) {
+        void loadLocations(venueId).then((all: StockLocation[]) => {
+          const mine = openIn(all, module);
+          setPlaces(mine);
+          setPlaceId((cur: string) => cur || purchaseLocation(mine, module)?.$id || '');
+        }).catch(() => undefined);
+      }
       /*
         This side's spending only, plus the ones that belong to everybody.
         A bartender should not scroll past "Kitchen gas" to find tonic.
@@ -565,7 +587,9 @@ export function ExpenseModal({
       setError('The extra amount is not a number. Clear it or correct it.');
       return;
     }
-    if (!methodId) { setError('Choose how it was paid.'); return; }
+    if (receive && filledLines.length === 0) { setError('Add what came in: the item, how many and what it cost.'); return; }
+    if (!methodId && !payLater) { setError('Choose how it was paid.'); return; }
+    if (payLater && paidToKind !== 'supplier') { setError('Not paid yet means it is owed to a supplier. Choose which one under Paid to.'); return; }
     if (paidToKind === 'supplier' && !supplierId) { setError('Choose which supplier was paid.'); return; }
     // Either the person from the list, or their name typed in. Somebody who
     // has left, or a casual hand for the day, is still somebody the money went
@@ -625,14 +649,17 @@ export function ExpenseModal({
             ? `Includes ${formatMoney(extra, settings)} not itemised.`
             : '',
         ].filter(Boolean).join(' · ').slice(0, 500), // the column's own limit
-        from_takings: chosenBox ? false : fromDrawer,
+        from_takings: payLater ? false : chosenBox ? false : fromDrawer,
+        // Owed to the supplier rather than paid. The books credit Accounts
+        // payable; see books-post.js spendFromAccount.
+        pay_later: payLater,
         // What it was and where the money came from, in a word each, so no
         // screen has to work it out again. See spend-kind.ts.
         kind: spendKind(filledLines.flatMap((l) => {
           const ing = ingredients.find((i) => i.$id === l.ingredientId);
           return ing ? [{ stocked: ing.counted_at_close !== false }] : [];
         })),
-        source: spendSource({
+        source: payLater ? 'own' : spendSource({
           imprest_float_id: chosenBox?.$id ?? '',
           from_takings: chosenBox ? false : fromDrawer,
           methodKind: methods.find((m) => m.$id === methodId)?.kind ?? 'cash',
@@ -644,7 +671,7 @@ export function ExpenseModal({
           decides the account the expense is credited against — see
           postExpense — and it is what the box's own balance is rebuilt from.
         */
-        imprest_float_id: chosenBox?.$id ?? '',
+        imprest_float_id: payLater ? '' : chosenBox?.$id ?? '',
       };
 
       /**
@@ -714,6 +741,9 @@ export function ExpenseModal({
       });
       const expense = { $id: expenseId };
       const lostSource = dropped.includes('from_takings');
+      // Not paid yet, on a database that cannot hold the answer yet: the
+      // books would treat it as somebody's own money, so it is said.
+      const lostOwed = payLater && dropped.includes('pay_later');
 
       /*
         Write down that somebody was asked, whatever they answered.
@@ -743,7 +773,7 @@ export function ExpenseModal({
         The box's own record is written here, pointing at the spend, so the
         tin and the books can be walked from either end.
       */
-      if (chosenBox) {
+      if (chosenBox && !payLater) {
         await recordBoxSpend({
           venueId,
           boxId: chosenBox.$id,
@@ -818,6 +848,7 @@ export function ExpenseModal({
               shiftId,
               createdBy: userId,
               note: payee.trim() ? `Bought from ${payee.trim()}` : 'Expense',
+              locationId: placeId || undefined,
             });
           }
         } catch {
@@ -852,13 +883,16 @@ export function ExpenseModal({
       // Saved for real, so the unfinished copy has nothing left to protect.
       clearExpenseDraft(store, draftKey);
 
+      const into = places.length > 1 ? places.find((p) => p.$id === placeId)?.name : '';
       onDone(
-        lostSource
+        lostOwed
+          ? 'Received, but this database cannot mark it as not paid yet, so the books treat it as own money. Run Provision, then correct the spend.'
+          : lostSource
           ? CANNOT_STORE_SOURCE
           : stockFailures > 0
           ? `Spend recorded, but ${stockFailures} item${stockFailures > 1 ? 's' : ''} did not reach stock`
           : filledLines.length
-            ? `Spend recorded and ${filledLines.length} item${filledLines.length > 1 ? 's' : ''} added to stock.${orderWords}`
+            ? `${receive ? 'Received' : 'Spend recorded and'} ${filledLines.length} item${filledLines.length > 1 ? 's' : ''} ${receive ? 'into' : 'added to'} ${into || 'stock'}${payLater ? ', owed to the supplier' : ''}.${orderWords}`
             : 'Spend recorded',
       );
     } catch (e) {
@@ -870,7 +904,7 @@ export function ExpenseModal({
 
   return (
     <Modal
-      title={editing ? 'Correct this spend' : 'Record spend'}
+      title={editing ? 'Correct this spend' : receive ? 'Receive stock' : 'Record spend'}
       onClose={onClose}
       footer={
         <>
@@ -880,7 +914,11 @@ export function ExpenseModal({
             loading={busy || checking}
             onClick={() => void (async () => { if (await lookOver()) await save(); })()}
           >
-            {editing ? 'Save the correction' : 'Save'}
+            {editing
+              ? 'Save the correction'
+              : receive
+                ? `Receive into ${places.find((p) => p.$id === placeId)?.name ?? 'stock'}`
+                : 'Save'}
           </Button>
         </>
       }
@@ -915,7 +953,9 @@ export function ExpenseModal({
       <p className="small dim" style={{ marginTop: 0 }}>
         {editing
           ? 'Fix what was typed wrongly. What was added to stock stays as it is.'
-          : 'Money paid out now, so the drawer still balances at the end of the night.'}
+          : receive
+            ? 'A delivery, a market run or a top-up: what came in, where it went and how it was paid. Adds to stock and records the spend in one go.'
+            : 'Money paid out now, so the drawer still balances at the end of the night.'}
       </p>
 
       {/* What was bought, before what it cost. A shop run is several things,
@@ -1057,6 +1097,16 @@ export function ExpenseModal({
         </div>
       </Field>}
 
+      {/* Which place it was put down in. Only asked where there is a choice:
+          a side with one place puts everything there. */}
+      {stocks && places.length > 1 && (
+        <Field label="Into" hint="Where it was put down. Counts and the stock list follow from this.">
+          <Select value={placeId} onChange={(e) => setPlaceId(e.target.value)}>
+            {places.map((p) => <option key={p.$id} value={p.$id}>{p.name}</option>)}
+          </Select>
+        </Field>
+      )}
+
       {/* Not asked once items are chosen. Each ingredient already carries the
           category it belongs to, set when an admin added it, so asking again
           is asking the same question twice and inviting two answers.
@@ -1125,7 +1175,7 @@ export function ExpenseModal({
           recorded — it defaults to the cash drawer, which is where a cook's
           market money comes from — it is just not put in front of somebody
           who has no other answer to give. */}
-      {askPaidFrom && (methods.length === 1 ? (
+      {askPaidFrom && !payLater && (methods.length === 1 ? (
         <Field label="Paid from" hint="Set by an admin under Settings.">
           <Input value={methods[0].name} disabled />
         </Field>
@@ -1153,17 +1203,20 @@ export function ExpenseModal({
       <Field
         hidden={!!fromFloatId}
         label="Where did the money come from"
-        hint={fromDrawer
+        hint={payLater
+          ? 'Owed to the supplier. Nothing leaves a drawer, a box or the bank until it is paid, under Accounting, Settle up.'
+          : fromDrawer
           ? 'Taken off what the drawer should hold at the end of the shift.'
           : !noBox && boxes.length > 0
             ? 'Comes out of the petty cash box, not a drawer. The box is counted on its own.'
             : 'A transfer from the bank, or somebody\u2019s own money to be paid back. Not taken off any drawer.'}
       >
         <Select
-          value={fromDrawer ? 'shift' : noBox || boxes.length === 0 ? 'other' : 'petty'}
+          value={payLater ? 'owed' : fromDrawer ? 'shift' : noBox || boxes.length === 0 ? 'other' : 'petty'}
           onChange={(e) => {
+            setPayLater(e.target.value === 'owed');
             setFromDrawer(e.target.value === 'shift');
-            setNoBox(e.target.value === 'other');
+            setNoBox(e.target.value === 'other' || e.target.value === 'owed');
           }}
         >
           {/* The drawer is only an answer where there is a drawer: the till,
@@ -1171,6 +1224,8 @@ export function ExpenseModal({
           {mayComeFromShift(desk, !!editing) && !!shiftId && <option value="shift">From the shift\u2019s drawer</option>}
           {boxes.length > 0 && <option value="petty">From a petty cash box</option>}
           <option value="other">Bank transfer, or own money</option>
+          {/* Stock only: a delivery on account. A taxi is never owed. */}
+          {(stocks || payLater) && <option value="owed">Not paid yet (owed to the supplier)</option>}
         </Select>
       </Field>
 
@@ -1201,7 +1256,7 @@ export function ExpenseModal({
         books repost when where the money came from has changed. The only
         thing missing was the question.
       */}
-      {!fromFloatId && !fromDrawer && !noBox && boxes.length > 0 && (
+      {!fromFloatId && !fromDrawer && !noBox && !payLater && boxes.length > 0 && (
         <Field
           label={boxes.length > 1 ? 'Which petty cash box' : 'The petty cash box'}
           hint={

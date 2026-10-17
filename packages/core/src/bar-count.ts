@@ -74,6 +74,16 @@ export function countable<T extends { counted_at_close?: boolean }>(rows: T[]): 
   return rows.filter((r) => r.counted_at_close !== false);
 }
 
+/** What goes on the count sheet: everything counted that is not "just check it". */
+export function countedOnSheet<T extends { check_only?: boolean }>(rows: T[]): T[] {
+  return rows.filter((r) => r.check_only !== true);
+}
+
+/** What the close asks OK, Low or Out about: only the "just check it" items. */
+export function checkOnly<T extends { check_only?: boolean }>(rows: T[]): T[] {
+  return rows.filter((r) => r.check_only === true);
+}
+
 export function shiftCounted<T extends { count_each_shift?: boolean }>(rows: T[]): T[] {
   const chosen = rows.filter((r) => r.count_each_shift);
   return chosen.length > 0 ? chosen : rows;
@@ -158,6 +168,19 @@ export const countsInAtOpen = (module?: string): boolean =>
 
 /** Whether the opening count may be left for later. Always, on the kitchen. */
 export const openingCountOptional = (module?: string): boolean => (module ?? 'kitchen') === 'kitchen';
+
+/**
+ * Does this side count its shelf OUT on the count sheet before it closes?
+ *
+ * Every side now. The kitchen used to type amounts on the closing screen,
+ * which replaced the stock figure on the spot with nobody agreeing to it and
+ * nothing to charge — the one place a shortage could be typed away. It now
+ * counts out on the same sheet as the bar, and its differences wait on
+ * Waiting for you like everybody else's. Unlike the bar's, the kitchen's is
+ * never a wall: it is asked for, and the close can go on without it.
+ */
+export const countsOutAtClose = (module?: string): boolean =>
+  countsAtBothEnds(module) || (module ?? 'kitchen') === 'kitchen';
 
 /**
  * Which side a filed count belongs to, from its rows.

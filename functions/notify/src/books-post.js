@@ -285,6 +285,8 @@ async function spendFromAccount(ctx, expense) {
     const box = await ctx.db.getDocument(ctx.DB_ID, 'imprest_floats', expense.imprest_float_id).catch(() => null);
     return { account: box?.account_code || ACCOUNTS.pettyCash, memo: box ? `Paid from ${box.name}` : 'Paid from petty cash' };
   }
+  // Received and not yet paid: owed to the supplier until somebody pays it.
+  if (expense.pay_later === true) return { account: ACCOUNTS.accountsPayable, memo: 'Not paid yet' };
   if (expense.source === 'bank') return { account: ACCOUNTS.bank, memo: 'Paid from the bank' };
   return { account: ACCOUNTS.cash, memo: 'Money paid out' };
 }
