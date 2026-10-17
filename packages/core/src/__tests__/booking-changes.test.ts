@@ -21,7 +21,7 @@ test('the cutoff is counted from the first sitting, and it is five days', () => 
 
 test('inside five days it is a telephone call, and says so', () => {
   const said = String(changeProblem(first, new Date('2026-11-16T12:00:00')));
-  assert.match(said, /Changes close 5 days before the first sitting/);
+  assert.match(said, /Changes close 5 days before the first meal time/);
   assert.match(said, /ring the restaurant/);
   // A few hours inside the boundary is inside it.
   assert.match(String(changeProblem(first, new Date('2026-11-15T18:00:00'))), /has passed/);
@@ -37,7 +37,7 @@ test('the window is said as a date, not as a rule', () => {
   // their own calendar. "The cutoff is five days" makes them do the sum.
   const words = changeWindowWords(first, (d) => `${d.getDate()}/${d.getMonth() + 1}`);
   assert.match(words, /until 15\/11/);
-  assert.match(words, /5 days before the first sitting/);
+  assert.match(words, /5 days before the first meal time/);
   assert.equal(changeWindowWords('nonsense', () => 'x'), '');
 });
 

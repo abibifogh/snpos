@@ -73,14 +73,14 @@ test('a booking says the one thing stopping it, earliest first', () => {
     The button used to say "Add a meal", and the first person outside this
     office to try the page read it the way anybody would — as "add a meal from
     the menu" — tapped a dish, was told to add a meal, and reported the button
-    as broken. The occasion is a time the group will eat; the food is the only
-    thing a customer calls a meal.
+    as broken. The occasion is a "meal time", always with the word time: a
+    time is something you set, and nobody reads "add a meal time" as a dish.
   */
-  assert.match(String(bookingProblem([], ok)), /Add a time the group will eat/);
-  assert.doesNotMatch(String(bookingProblem([], ok)), /\bmeals?\b/i);
+  assert.match(String(bookingProblem([], ok)), /Add a meal time/);
+  assert.doesNotMatch(String(bookingProblem([], ok)), /\bmeals?\b(?! times?)/i);
 
   const some = [meal('2026-09-14T12:00:00Z', 'dine_in'), meal('2026-09-15T12:00:00Z', 'dine_in', [])];
-  assert.match(String(bookingProblem(some, ok)), /has nothing on it/);
+  assert.match(String(bookingProblem(some, ok)), /has no food on it yet/);
 
   // Party-sized, because this test is about which complaint comes first and
   // the smallest-group rule is counted from the plates now.
@@ -144,7 +144,7 @@ test('a meal and the charge say what they are in words', () => {
 
   assert.match(packWords(200, money), /GH₵2\.00 a portion/);
   assert.match(packWords(0, money), /Nothing extra/);
-  assert.equal(FULFILMENT_WORDS.takeaway, 'Packed to take away');
+  assert.equal(FULFILMENT_WORDS.takeaway, 'Packed');
 });
 
 test('a meal can be booked on any day, at any time the kitchen could serve', () => {
@@ -208,10 +208,10 @@ test('a sitting eaten here says whether it is plated or a buffet', () => {
   // And the question is not asked of food going into boxes.
   assert.equal(serviceOf({ fulfilment: 'takeaway', service: 'buffet' }), null);
 
-  assert.match(mealServiceWords({ fulfilment: 'dine_in', service: 'buffet' }), /Dine in · buffet/);
-  assert.equal(FULFILMENT_WORDS.dine_in, 'Dine in');
-  assert.equal(mealServiceWords({ fulfilment: 'takeaway' }), 'Packed to take away');
-  assert.equal(SERVICE_WORDS.plated, 'Served to each guest');
+  assert.match(mealServiceWords({ fulfilment: 'dine_in', service: 'buffet' }), /Eat here · Buffet/);
+  assert.equal(FULFILMENT_WORDS.dine_in, 'Eat here');
+  assert.equal(mealServiceWords({ fulfilment: 'takeaway' }), 'Packed');
+  assert.equal(SERVICE_WORDS.plated, 'Plated');
 });
 
 test('a booking is not sent without somewhere to send it', () => {
@@ -262,7 +262,7 @@ test('how big a party is comes from the plates, not from a box they typed in', (
     minSize: 6, contactName: 'Ama', email: 'ama@example.com',
   };
   assert.equal(bookingProblem([big, small], base), null);
-  assert.match(String(bookingProblem([small], base)), /start at 6 plates at a sitting, and the biggest here has 2/);
+  assert.match(String(bookingProblem([small], base)), /start at 6 portions at one meal time, and the biggest here has 2/);
 });
 
 test('four dinners for two is still two, and is refused', () => {

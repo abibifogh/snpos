@@ -45,7 +45,7 @@ test('a sitting the pass already has is refused, and told why', () => {
 test('a sitting that is already off has nothing to move', () => {
   for (const status of ['CANCELLED', 'REJECTED']) {
     const why = sittingMoveProblem({ sitting: sitting({ status }), to: at('2026-03-12T19:00:00Z'), now: NOW });
-    assert.match(String(why), /already off/i);
+    assert.match(String(why), /already cancelled/i);
   }
 });
 

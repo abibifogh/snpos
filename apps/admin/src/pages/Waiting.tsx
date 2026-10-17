@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, Empty, Input, Modal, Notice, Segmented, Spinner, useToast } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
@@ -9,7 +9,7 @@ import {
   decideSpend, loadWaiting, nameFrom, waitingCounts, waitingSummary, waitedWords, refuseSpendWords, WAITING_KIND_WORDS, dateTimeWords,
   loadReview, offWords, countDifferencesHtml, openPrintable,
   openBookingChanges, decideBookingChange, CHANGE_KIND_WORDS,
-  pendingGroupBookings, decideGroupBooking } from '@snpos/core';
+  pendingGroupBookings, bookingStatusWords } from '@snpos/core';
 import type {
   WaitingItem, WaitingKind, WaitingSpend, WaitingTabShift, TabOrder, Review, ReviewLine, BookingChangeDoc, GroupBookingDoc,
 } from '@snpos/core';
@@ -247,33 +247,6 @@ export function WaitingPage() {
     looked at, made from a summary. This closes the request and records who
     closed it.
   */
-  /*
-    Agreeing to a booking, or saying it cannot be done.
-
-    Writing the decision is what emails the group: the function watches that
-    collection, so one place decides and one place tells them, and the two
-    cannot come apart. Refusing does NOT cancel the sittings — a refusal that
-    silently emptied the kitchen's day would be a decision nobody reviewed.
-    Cancel them on the Orders page if that is what is meant.
-  */
-  const decideBooking = async (b: GroupBookingDoc, status: 'approved' | 'refused') => {
-    if (status === 'refused' && !confirm(
-      `Tell ${b.contact_name} you cannot take this booking? They are emailed straight away. `
-      + 'The sittings stay on the kitchen\'s list until somebody cancels them on the Orders page.',
-    )) return;
-    setBusy(b.$id);
-    setError(null);
-    try {
-      await decideGroupBooking({ id: b.$id, status, by: userId, note: replying[b.$id] ?? '' });
-      await load();
-      toast(status === 'approved' ? 'Booking approved, the group has been told' : 'The group has been told');
-    } catch (e) {
-      setError(humanError(e));
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const decide = async (c: BookingChangeDoc, status: 'done' | 'refused') => {
     setBusy(c.$id);
     setError(null);
@@ -367,22 +340,21 @@ export function WaitingPage() {
         longer it sits.
       */}
       {bookings.length > 0 && (
-        <Card title={`Group bookings waiting for you (${bookings.length})`}>
+        <Card title={`Group bookings to confirm (${bookings.length})`}>
           <p className="small dim" style={{ marginTop: 0 }}>
-            The sittings are already scheduled and will reach the kitchen at their own times whatever you decide
-            here — holding food back until a button is pressed would mean one forgotten booking is a party
-            standing in a room with nothing cooked. What this changes is what the group is told.
+            Open one to confirm or decline it. Its meal times reach the kitchen at their time either way, marked
+            Not confirmed until you decide; declining can cancel them too.
           </p>
           {bookings.map((b) => (
             <div key={b.$id} style={{ padding: '0.6rem 0', borderBottom: '1px solid var(--border)' }}>
               <div className="spread" style={{ alignItems: 'baseline' }}>
                 <strong>{b.contact_name}{b.reference ? ` · ${b.reference}` : ''}</strong>
                 <span className="small dim">
-                  {b.sittings} sitting{b.sittings === 1 ? '' : 's'} · {b.portions} portions · {money(b.total ?? 0)}
+                  {b.sittings} meal time{b.sittings === 1 ? '' : 's'} · {b.portions} portions · {money(b.total ?? 0)}
                 </span>
               </div>
               <div className="small dim">
-                {b.first_at ? `First meal ${dateTimeWords(b.first_at)}` : 'No date'}
+                {b.first_at ? `First meal time ${dateTimeWords(b.first_at)}` : 'No date'}
                 {b.email ? ` · ${b.email}` : ''}
                 {b.order_nos ? ` · ${b.order_nos}` : ''}
               </div>
@@ -400,18 +372,13 @@ export function WaitingPage() {
                   “{b.note.trim()}”
                 </div>
               )}
-              <div className="row" style={{ gap: '0.5rem', marginTop: '0.4rem' }}>
-                <Input
-                  placeholder="A line to the group (optional)"
-                  value={replying[b.$id] ?? ''}
-                  onChange={(e) => setReplying({ ...replying, [b.$id]: e.target.value })}
-                />
-                <Button size="sm" variant="primary" loading={busy === b.$id} onClick={() => void decideBooking(b, 'approved')}>
-                  Approve
-                </Button>
-                <Button size="sm" variant="danger" disabled={busy === b.$id} onClick={() => void decideBooking(b, 'refused')}>
-                  Cannot take it
-                </Button>
+              {/* One place decides: the booking itself, with its meal times
+                  and the choice to cancel them beside the decision. */}
+              <div className="row" style={{ gap: '0.5rem', marginTop: '0.4rem', alignItems: 'center' }}>
+                <Badge tone={bookingStatusWords(b.status).tone}>{bookingStatusWords(b.status).label}</Badge>
+                <Link className="btn btn-primary btn-sm" to={`/group-bookings?open=${encodeURIComponent(b.$id)}`}>
+                  Open to confirm or decline
+                </Link>
               </div>
             </div>
           ))}
@@ -435,7 +402,7 @@ export function WaitingPage() {
                 </strong>
                 <span className="small dim">
                   {CHANGE_KIND_WORDS[c.kind as keyof typeof CHANGE_KIND_WORDS] ?? c.kind}
-                  {c.first_at ? ` · first meal ${dateTimeWords(c.first_at)}` : ''}
+                  {c.first_at ? ` · first meal time ${dateTimeWords(c.first_at)}` : ''}
                 </span>
               </div>
               <p style={{ margin: '0.3rem 0', whiteSpace: 'pre-wrap' }}>{c.note}</p>

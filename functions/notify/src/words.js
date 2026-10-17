@@ -70,3 +70,38 @@ export function packingWords(packFee, portions, money) {
     ? { label: 'Takeaway packing', count: portions, each: money(each) }
     : { label: 'Takeaway packing' };
 }
+
+/**
+ * Whether a status email is worth sending for this order.
+ *
+ * Every order gets "accepted" and "ready". A group's meal time gets only
+ * "ready", and only when it is packed to collect: the party already has the
+ * booking and its confirmation, and was otherwise being sent two emails per
+ * meal time under order numbers they had never seen.
+ *
+ * @param {string | null} stage
+ * @param {{ group_booking_id?: string, group_reference?: string, is_group?: boolean, fulfilment?: string }} order
+ */
+export function groupStageWanted(stage, order) {
+  if (!stage) return false;
+  const group = !!(order.group_booking_id || order.is_group);
+  if (!group) return true;
+  return stage === 'ready' && order.fulfilment === 'takeaway';
+}
+
+/**
+ * Whether the hourly sweep should remind the team about an unconfirmed booking.
+ *
+ * Once, in the hour the first meal time comes within a day. The sweep runs on
+ * the hour, so the window is that hour and no other: no column records that a
+ * reminder went, and none is needed. A booking made inside the last day was
+ * announced when it arrived and is not reminded again.
+ *
+ * @param {{ status?: string, first_at?: string }} booking
+ * @param {number} now
+ */
+export function unconfirmedReminderDue(booking, now) {
+  if ((booking.status ?? 'pending') !== 'pending' || !booking.first_at) return false;
+  const until = (new Date(booking.first_at).getTime() - now) / 3_600_000;
+  return until >= 23 && until < 24;
+}

@@ -92,9 +92,9 @@ export function sittingMoveProblem(opts: {
   const { sitting, to } = opts;
   const now = opts.now ?? new Date();
 
-  if (OFF.includes(sitting.status)) return 'That sitting is already off. There is nothing to move.';
+  if (OFF.includes(sitting.status)) return 'That meal time is already cancelled. There is nothing to move.';
   if (!sittingIsMovable(sitting)) {
-    return 'The kitchen already has that sitting, so its time cannot be changed here. '
+    return 'The kitchen already has that meal time, so its time cannot be changed here. '
       + 'Cancel it and take the new time as a fresh order, or speak to the pass.';
   }
   if (!to || Number.isNaN(to.getTime())) return 'Pick a date and a time to move it to.';

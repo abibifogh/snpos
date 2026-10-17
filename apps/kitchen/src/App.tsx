@@ -14,7 +14,7 @@ import {
   formatWait, giveTheMoneyBack, wakesScreen, latestMovement,
   billsToSettle, settleableTotal, billsToSettleLabel,
   busyConfigFrom, busyLevel, loadOverride, setBusyLevel, staffWords, LEVEL_WORDS,
-  humanError,
+  humanError, pendingGroupBookings,
 } from '@snpos/core';
 import type { BusyLevel, BusyOverride } from '@snpos/core';
 import type {
@@ -277,6 +277,25 @@ export function App() {
    * an admin switching something off, tips, say, has no effect until somebody
    * thinks to reload a screen nobody ever touches.
    */
+  /*
+    Group bookings nobody has confirmed yet.
+
+    Their meal times still come to the kitchen at their time — holding food
+    back risks a party arriving to nothing because nobody pressed a button —
+    but the ticket says "Not confirmed", so the pass knows to ask before the
+    shopping is done. Read every few minutes; a booking confirmed in the
+    office drops its tag on the next read.
+  */
+  const [unconfirmed, setUnconfirmed] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const read = () => void pendingGroupBookings()
+      .then((rows) => setUnconfirmed(new Set(rows.map((b) => b.$id))))
+      .catch(() => undefined);
+    read();
+    const t = window.setInterval(read, 180_000);
+    return () => window.clearInterval(t);
+  }, []);
+
   useEffect(() => {
     const t = window.setInterval(() => {
       void db
@@ -1248,6 +1267,9 @@ export function App() {
                 <b>{o.fire_at ? new Date(o.fire_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'no time'}</b>
                 <span>{displayOrderNo(o.order_no)}</span>
                 {isGroupSitting(o) && <span className="pill">Group</span>}
+                {o.group_booking_id && unconfirmed.has(o.group_booking_id) && (
+                  <span className="pill" style={{ background: 'var(--warn)', color: '#111' }}>Not confirmed</span>
+                )}
                 <span className="dim">{(items[o.$id] ?? []).reduce((a, i) => a + i.qty, 0) || '·'} items</span>
                 {/* Said rather than hidden: a cook who cannot do it still needs
                     to know the booking is there and who to ask. */}
@@ -1319,6 +1341,7 @@ export function App() {
               sla={sla}
               overdue={overdue.some((o) => o.$id === order.$id)}
               cookMinutes={promisedMinutes(order)}
+              notConfirmed={!!order.group_booking_id && unconfirmed.has(order.group_booking_id)}
               settings={settings}
               canSettle={combined && (who?.can_mark_paid ?? false)}
               onAccept={() => accept(order)}
@@ -1399,7 +1422,7 @@ export function App() {
 }
 
 function Ticket({
-  order, items, seating, owed, sla, overdue, cookMinutes,
+  order, items, seating, owed, sla, overdue, cookMinutes, notConfirmed,
   settings, canSettle, onAccept, onStart, onDone, onCollect, onSettle, onReject,
 }: {
   order: Order;
@@ -1413,6 +1436,8 @@ function Ticket({
   overdue: boolean;
   /** The cooking time this ticket is judged against, the same figure the alarm uses. */
   cookMinutes: number;
+  /** A group booking the office has not confirmed yet. See `unconfirmed`. */
+  notConfirmed?: boolean;
   settings: Settings | null;
   /** Combined mode, and this person is allowed to take money. */
   canSettle: boolean;
@@ -1518,6 +1543,11 @@ function Ticket({
               */}
               {order.group_service === 'buffet' && (
                 <span className="pill" style={{ marginLeft: '0.35rem' }}>Buffet</span>
+              )}
+              {notConfirmed && (
+                <span className="pill" style={{ marginLeft: '0.35rem', background: 'var(--warn)', color: '#111' }}>
+                  Not confirmed
+                </span>
               )}
             </div>
           )}

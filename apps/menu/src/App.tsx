@@ -10,6 +10,7 @@ import {
   bookingTotals, dietChips, matchesDiet, removableFor, dietaryLabels, couldBeWords,
   type Omission,
   needsChoosing, defaultPicks, choicesWhere, longDayWords, timeWords, isGroupPath, byHeading, openNow,
+  mealServiceWords,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, MenuSection, MenuEntry, CartLine, FeatureMap, Doc, GroupMeal,
@@ -104,7 +105,7 @@ export function App() {
   const [groupMeals, setGroupMeals] = useState<GroupMeal[]>([]);
   /** The booking just sent, while its own page is up. See GroupSent. */
   const [sentBooking, setSentBooking] = useState<{
-    booked: { orderNo: string; at: string }[];
+    booked: { orderNo: string; at: string; how?: string }[];
     bookingId: string | null;
     contactName: string;
     email: string;
@@ -541,8 +542,8 @@ export function App() {
       */
       if (!activeMeal) {
         toast(groupMeals.length === 0
-          ? 'Add a time the group will eat first — the green button above the menu.'
-          : 'Tap the sitting you are ordering for, above the menu.');
+          ? 'Add a meal time first — the green button above the menu.'
+          : 'Tap the meal time you are adding food to, above the menu.');
         return;
       }
       setGroupMeals((all) => all.map((d) => {
@@ -878,6 +879,37 @@ export function App() {
       </div>
     );
   }
+
+  /*
+    Step three of a group booking, as a page of its own rather than a pop-up.
+    See GroupSheet. Change on a meal time comes back to the menu with that
+    meal time chosen.
+  */
+  if (showCart && inGroupMode) {
+    return (
+      <div className="menu-app">
+        <GroupSheet
+          meals={groupMeals}
+          setMeals={setGroupMeals}
+          settings={settings}
+          venue={venue}
+          features={features}
+          onClose={() => setShowCart(false)}
+          onEditMeal={(key) => { setActiveMeal(key); setShowCart(false); }}
+          onPlaced={(sent) => {
+            setShowCart(false);
+            setActiveMeal(null);
+            for (const b of sent.booked) rememberOrder({ id: b.id, no: b.orderNo, at: b.at, venueId: venue.$id });
+            /* A page, not a toast: a party that has just committed several
+               thousand cedis is asking whether it is booked and what happens
+               next. See GroupSent. */
+            setSentBooking(sent);
+          }}
+          onError={(m: string) => toast(m)}
+        />
+      </div>
+    );
+  }
   // The link opens group ordering; the feature switch still decides whether
   // group ordering exists at all. An old link doing something an admin has
   // since turned off would be the worst of both.
@@ -1178,6 +1210,8 @@ export function App() {
           setMeals={setGroupMeals}
           activeKey={activeMeal}
           setActiveKey={setActiveMeal}
+          settings={settings}
+          packFee={featureConfig(features, 'group_orders', 'pack_fee', 0)}
         />
       )}
 
@@ -1354,27 +1388,33 @@ export function App() {
       )}
       </div>
 
-      {/* On a group booking the panel shows the sitting being filled, which is
-          the one a tapped dish is going into. The others are a tab away in the
-          sheet, and are named on the strip above the menu. */}
+      {/* On a group booking the panel shows the meal time being filled, which
+          is the one a tapped dish goes into, with ITS portions and ITS money.
+          The whole booking's total is a separate line under it: the two used
+          to share one row, so "4 sittings · 35 portions" sat beside the
+          money for all four. */}
       {inGroupMode ? (
         <BasketPanel
-          title="This booking"
+          title="This meal time"
           subtitle={openMeal
-            ? `${longDayWords(openMeal.at)}, ${timeWords(openMeal.at)}`
-            : 'No sitting chosen yet'}
+            ? `${longDayWords(openMeal.at)}, ${timeWords(openMeal.at)} · ${mealServiceWords(openMeal)}`
+            : 'No meal time chosen yet'}
           lines={openMeal?.lines ?? []}
           settings={settings}
-          total={booking.total}
-          totalLabel={`${groupMeals.length} sitting${groupMeals.length === 1 ? '' : 's'}`}
-          actionLabel={`See the booking · ${formatMoney(booking.total, settings)}`}
+          total={booking.meals.find((m) => m.meal.key === activeMeal)?.totals.total ?? 0}
+          totalLabel="This meal time"
+          extra={{
+            label: `Whole booking · ${groupMeals.length} meal time${groupMeals.length === 1 ? '' : 's'}`,
+            value: formatMoney(booking.total, settings),
+          }}
+          actionLabel="Next: check & send"
           onAction={() => setShowCart(true)}
           onQty={(lineKey, qty) => setGroupMeals((all) => all.map((m) => (m.key === activeMeal
             ? { ...m, lines: m.lines.map((l) => (l.key === lineKey ? { ...l, qty } : l)).filter((l) => l.qty > 0) }
             : m)))}
           empty={openMeal
-            ? 'Nothing on this sitting yet. Tap Add beside a dish.'
-            : 'Add a time the group will eat, above, then choose their food.'}
+            ? 'No food on this meal time yet. Tap Add beside a dish.'
+            : 'Add a meal time, above, then choose the food.'}
         />
       ) : (
         <BasketPanel
@@ -1405,9 +1445,9 @@ export function App() {
         <div className="cart-bar">
           <button type="button" className="cart-bar-btn" onClick={() => setShowCart(true)}>
             <span className="cart-bar-what">
-              <strong>See the booking</strong>
+              <strong>Next: check &amp; send</strong>
               <span className="cart-bar-sub">
-                {groupMeals.length} sitting{groupMeals.length === 1 ? '' : 's'} · {booking.portions} portion
+                {groupMeals.length} meal time{groupMeals.length === 1 ? '' : 's'} · {booking.portions} portion
                 {booking.portions === 1 ? '' : 's'}
               </span>
             </span>
@@ -1437,34 +1477,12 @@ export function App() {
           canLeaveOut={inGroupMode}
           blocked={inGroupMode && !activeMeal
             ? (groupMeals.length === 0
-              ? 'Before you can choose food, say when the group will eat. Close this and press '
-                + '\u201c+ Add a time the group will eat\u201d above the menu.'
-              : 'Close this and tap the sitting you are ordering for, above the menu.')
+              ? 'Before you can choose food, add a meal time. Close this and press '
+                + '\u201c+ Add a meal time\u201d above the menu.'
+              : 'Close this and tap the meal time you are adding food to, above the menu.')
             : undefined}
           onClose={() => setOpenDish(null)}
           onAdd={addLine}
-        />
-      )}
-
-      {showCart && inGroupMode && (
-        <GroupSheet
-          meals={groupMeals}
-          setMeals={setGroupMeals}
-          settings={settings}
-          venue={venue}
-          features={features}
-          onClose={() => setShowCart(false)}
-          onPlaced={(sent) => {
-            setShowCart(false);
-            setActiveMeal(null);
-            for (const b of sent.booked) rememberOrder({ id: b.id, no: b.orderNo, at: b.at, venueId: venue.$id });
-            /* A page, not a toast. A party that has just committed several
-               thousand cedis for a Tuesday three weeks out is asking whether
-               it is actually booked and what happens next; a message that
-               slides away in four seconds answers neither. See GroupSent. */
-            setSentBooking(sent);
-          }}
-          onError={(m: string) => toast(m)}
         />
       )}
 

@@ -1,54 +1,57 @@
 import { useMemo, useState } from 'react';
-import { Button, Modal, Input, Field, Notice, Select, FormError, Badge, Textarea } from '@snpos/ui';
+import { Button, Input, Field, Notice, FormError, Textarea } from '@snpos/ui';
 import { QtyBox } from './QtyBox';
+import { GroupSteps } from './GroupDays';
 import {
   formatMoney, lineTotal, createOrder, featureConfig, isProvisionalOrderNo,
   ensureGuestSession, humanError, selfOrderModule, isSlotFull,
-  bookingTotals, bookingProblem, packWords, mealWords, FULFILMENT_WORDS, dayKeyOf, longDayWords, timeWords,
-  portionsAtBiggest,
-  serviceOf, SERVICE_WORDS, SERVICE_HINTS,
-  tabLabel,
+  bookingTotals, bookingProblem, dayKeyOf, longDayWords, timeWords,
+  portionsAtBiggest, serviceOf, mealServiceWords,
   db, DB_ID, Query, recordGroupBooking,
 } from '@snpos/core';
 import type {
-  CartLine, Settings, Venue, FeatureMap, GroupMeal, MealPricing, Fulfilment, ServiceStyle, Order,
+  CartLine, Settings, Venue, FeatureMap, GroupMeal, MealPricing, Order,
 } from '@snpos/core';
 
-/** The last tab: asked once for the booking, not once per meal. */
-const WHO = 'who';
-
 /**
- * A group that is staying, booking every day of it at once.
+ * Step three of a group booking: check it all, say who it is for, and send.
  *
- * Kept apart from the ordinary cart sheet on purpose. A walk-in has one
- * basket and one question, "where are you sitting"; a hotel booking a party
- * for four nights has a basket per night, a different answer per night about
- * whether they are eating here or taking it away, and one bill for the lot.
- * Folding both into one screen would make the common case worse to serve the
- * rare one.
+ * ONE PAGE, every meal time on it. This used to be a pop-up with a tab per
+ * meal time and the name and email on a last tab, so checking a booking of
+ * four meal times meant five taps, and the first a guest learnt that an email
+ * was needed was when Send refused. Now the whole booking reads top to
+ * bottom — each meal time with its food and its packing, then who it is for,
+ * then the total beside the button — and each meal time has a Change that
+ * goes back to the menu with it chosen.
  *
- * The rules are in core, see group-booking.ts. This shows them and sends the
- * booking: one order per day, tied together by a booking id, each scheduled
- * for its own moment so the kitchen is silent until the morning it matters.
+ * Eat here or packed is no longer asked here; it is chosen with the time, on
+ * step one, where it cannot be skipped. See GroupDays.
+ *
+ * The rules are in core, see pricing.ts. This shows them and sends the
+ * booking: one order per meal time, tied together by a booking id, each
+ * scheduled for its own moment so the kitchen is silent until it matters.
  */
 export function GroupSheet({
-  meals, setMeals, settings, venue, features, onClose, onPlaced, onError,
+  meals, setMeals, settings, venue, features, onClose, onEditMeal, onPlaced, onError,
 }: {
   meals: GroupMeal[];
   setMeals: (fn: (m: GroupMeal[]) => GroupMeal[]) => void;
   settings: Settings;
   venue: Venue;
   features: FeatureMap;
+  /** Back to the menu, as it was. */
   onClose: () => void;
+  /** Back to the menu with this meal time chosen, to change its food. */
+  onEditMeal: (key: string) => void;
   /**
-   * Everything the sent page needs, because this sheet is gone by then.
+   * Everything the sent page needs, because this page is gone by then.
    *
    * `bookingId` is null when the booking record could not be written, which
    * is also what stops both emails — so the page says so rather than
    * promising a confirmation nobody will get.
    */
   onPlaced: (sent: {
-    booked: { id: string; orderNo: string; at: string }[];
+    booked: { id: string; orderNo: string; at: string; how: string }[];
     bookingId: string | null;
     contactName: string;
     email: string;
@@ -70,13 +73,9 @@ export function GroupSheet({
   const [email, setEmail] = useState('');
   const [groupRef, setGroupRef] = useState('');
   /**
-   * Anything true of the whole booking rather than of one dish.
-   *
-   * Every dish already has its own box for "no pepper on this one". What had
-   * nowhere to go was the sentence about the arrangement: the coach that
-   * leaves at two, the high chair, the guest in a wheelchair, the cake to be
-   * brought out at the end. It arrived by telephone, to whoever picked up, or
-   * it did not arrive.
+   * Anything true of the whole booking rather than of one dish: the coach
+   * that leaves at two, the high chair, the cake at the end. Every dish has
+   * its own box for "no pepper on this one".
    */
   const [note, setNote] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
@@ -90,18 +89,11 @@ export function GroupSheet({
   const money = (n: number) => formatMoney(n, settings);
 
   /*
-    How big the party is, counted rather than asked.
-
-    There used to be a "How many people?" box. It asked a second time for
-    something the order had already said — somebody ordering thirty plates has
-    told you there are about thirty of them — and it was the only gate on the
-    smallest-group rule, so a party of two could type "twenty" and walk
-    through. The biggest sitting is the count: see portionsAtBiggest.
+    How big the party is, counted rather than asked: the biggest meal time.
+    A box asking "how many people?" was a second answer to a question the
+    order had already answered, and the only gate on the smallest-group rule.
   */
   const partySize = portionsAtBiggest(meals);
-
-  const setMeal = (key: string, patch: Partial<GroupMeal>) =>
-    setMeals((all) => all.map((m) => (m.key === key ? { ...m, ...patch } : m)));
 
   const setQty = (key: string, lineKey: string, qty: number) =>
     setMeals((all) => all.map((m) => (m.key === key
@@ -109,16 +101,16 @@ export function GroupSheet({
       : m)));
 
   /**
-   * Send the booking: one order per day.
+   * Send the booking: one order per meal time.
    *
-   * In the order the days will be eaten, and one after another rather than
-   * all at once. Each order takes an order number and, where the slot is
-   * capped, a place in it; firing four of those off together is four races
-   * against each other for numbers that are worked out from the last one.
+   * In the order they will be eaten, and one after another rather than all at
+   * once. Each order takes an order number and, where the slot is capped, a
+   * place in it; firing four of those off together is four races against
+   * each other for numbers that are worked out from the last one.
    *
-   * A day that fails stops the rest. The days already written stay — they are
-   * real orders the kitchen can see — and the person is told which day it got
-   * to, rather than being left guessing whether any of it landed.
+   * A meal time that fails stops the rest. The ones already written stay —
+   * they are real orders the kitchen can see — and the person is told how far
+   * it got, rather than being left guessing whether any of it landed.
    */
   const send = async () => {
     const said = bookingProblem(meals, {
@@ -131,17 +123,7 @@ export function GroupSheet({
     });
     if (said) {
       setProblem(said);
-      /*
-        Show the tab the complaint is about.
-
-        With one meal on screen at a time, "Wednesday has nothing on it" said
-        over a panel showing Thursday is a complaint about something the
-        reader cannot see, and they would reasonably conclude the form is
-        broken. The empty meal is found the same way bookingProblem finds it:
-        earliest first.
-      */
-      const empty = [...meals].sort((a, b) => a.at.localeCompare(b.at)).find((m) => m.lines.length === 0);
-      setTab(meals.length > 0 && empty ? empty.key : WHO);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
@@ -150,7 +132,7 @@ export function GroupSheet({
     const bookingId = `gb-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     /** Whether the booking record landed, which is what sends both emails. */
     let recorded = false;
-    const booked: { id: string; orderNo: string; at: string }[] = [];
+    const booked: { id: string; orderNo: string; at: string; how: string }[] = [];
 
     try {
       await ensureGuestSession();
@@ -175,11 +157,11 @@ export function GroupSheet({
           packFee: totals.packFee,
           scheduledFor: new Date(meal.at),
           slotCapacity,
-          /* No opening hours. A sitting is agreed with the kitchen, which
+          /* No opening hours. A meal time is agreed with the kitchen, which
              opens for it; what the doors are doing this evening has nothing
              to say about a booking three weeks out. */
         });
-        booked.push({ id: order.$id, orderNo: order.order_no, at: meal.at });
+        booked.push({ id: order.$id, orderNo: order.order_no, at: meal.at, how: mealServiceWords(meal) });
       }
 
       // The numbers are settled server-side a moment after each order lands.
@@ -196,17 +178,14 @@ export function GroupSheet({
       }));
 
       /*
-        The booking itself, written last.
-
-        Once every sitting has actually landed, and not before: a booking row
-        for sittings that failed would be a confirmation of something that is
-        not booked. Writing it is also what sends the emails — one to whoever
-        runs the place and one to the person who booked — so a stay of four
-        sittings is one message each rather than four.
+        The booking itself, written last, once every meal time has landed: a
+        booking row for orders that failed would confirm something that is not
+        booked. Writing it is what sends the emails, one to the team and one
+        to the guest.
 
         Never fatal. The food is ordered and the kitchen has it; failing the
         whole booking here would tell somebody their party is not booked when
-        it is, which is the worse of the two wrongs by a distance.
+        it is. But it is not silent either: the page says the email failed.
       */
       await recordGroupBooking({
         bookingId,
@@ -226,16 +205,6 @@ export function GroupSheet({
       })
         .then(() => { recorded = true; })
         .catch((e) => {
-          /*
-            Not fatal, and no longer silent.
-
-            The food IS ordered: failing the whole booking here would tell
-            somebody their party is not booked when it is, which is the worse
-            of the two wrongs by a distance. But this write is what sends both
-            emails, so swallowing it meant a booking went in, nobody was told,
-            and nothing anywhere said why. The page says so instead, and the
-            console names it.
-          */
           onError(`The booking was placed but its confirmation could not be sent: ${humanError(e)}`);
         });
 
@@ -255,7 +224,7 @@ export function GroupSheet({
         : humanError(e) || 'Could not send the booking. Please try again.';
       const done = booked.length;
       setProblem(done > 0
-        ? `${message} ${done} sitting${done === 1 ? '' : 's'} of the booking went through before this; the rest have not. Please tell the front desk.`
+        ? `${message} ${done} meal time${done === 1 ? '' : 's'} of the booking went through before this; the rest have not. Please tell the front desk.`
         : message);
       onError(message);
     } finally {
@@ -263,233 +232,113 @@ export function GroupSheet({
     }
   };
 
-  /*
-    One meal at a time, behind tabs.
-
-    Every meal of the stay used to be laid out one under another, each with its
-    own heading, its own eat-in-or-packed box with a line of explanation under
-    it, its own dishes, its own total and its own Remove — then the booking
-    summary and four questions below all of that. Four nights of lunch and
-    dinner made a sheet somebody scrolled through rather than read, and the
-    Send button at the bottom of it was a leap of faith.
-
-    So the tabs carry the whole booking's shape in one line, the panel shows
-    only what is being looked at, and the total is beside Send where it is
-    always in view. "Who it is for" is the last tab, because it is asked once
-    for the booking and not once per meal.
-  */
-  const [tab, setTab] = useState<string>(booking.meals[0]?.meal.key ?? WHO);
-  const shown = booking.meals.find((m) => m.meal.key === tab) ?? null;
-  const onWho = tab === WHO || !shown;
-
   return (
-    <Modal
-      title="Your group booking"
-      onClose={onClose}
-      footer={
-        <Button variant="primary" onClick={() => void send()} loading={busy} disabled={meals.length === 0} style={{ width: '100%' }}>
-          Send this booking · {money(booking.total)}
-        </Button>
-      }
-    >
+    <div className="status-page group-review">
+      <GroupSteps at={3} />
+      <h1>Check and send</h1>
       <FormError message={problem} />
 
       {meals.length === 0 ? (
         <Notice tone="info">
-          Nothing booked yet. Close this, add a time the group will eat above the menu, and choose what they would like to
-          eat at it. Lunch and dinner on the same day are two meals.
+          Nothing on the booking yet. Go back, add a meal time, and choose the food for it.
         </Notice>
       ) : (
         <>
-          <div className="book-tabs">
-            {booking.meals.map(({ meal, totals }: { meal: GroupMeal; totals: MealPricing }) => (
-              <button
-                key={meal.key}
-                type="button"
-                className={meal.key === tab ? 'on' : ''}
-                onClick={() => setTab(meal.key)}
-              >
-                {tabLabel(meal.at)}
-                {/* A meal with nothing on it is the commonest reason a booking
-                    will not send, and the one thing the tabs can say about it
-                    without being read. */}
-                {totals.portions > 0 ? ` · ${totals.portions}` : ' · —'}
-              </button>
-            ))}
-            <button type="button" className={onWho ? 'on' : ''} onClick={() => setTab(WHO)}>
-              Who it is for
-            </button>
-          </div>
-
-          {shown && !onWho && (
-            <>
-              <div className="spread" style={{ alignItems: 'baseline', marginTop: '0.8rem' }}>
-                <h3 style={{ margin: 0 }}>{longDayWords(shown.meal.at)}</h3>
-                <span className="meta">{timeWords(shown.meal.at)}</span>
+          {booking.meals.map(({ meal, totals }: { meal: GroupMeal; totals: MealPricing }) => (
+            <section key={meal.key} className="review-meal">
+              <div className="spread" style={{ alignItems: 'baseline' }}>
+                <h2>{longDayWords(meal.at)}, {timeWords(meal.at)}</h2>
+                <Button size="sm" variant="ghost" onClick={() => onEditMeal(meal.key)}>Change</Button>
+              </div>
+              <div className="meta">
+                {mealServiceWords(meal)} · {totals.portions} portion{totals.portions === 1 ? '' : 's'}
               </div>
 
-              {/* The choice that carries the money, made per meal and beside
-                  that meal's food rather than once for the whole stay. The
-                  packing charge is only worth a line where one is charged. */}
-              <Field hint={shown.meal.fulfilment === 'takeaway' ? packWords(packFee, money) : undefined}>
-                <Select
-                  value={shown.meal.fulfilment}
-                  onChange={(e) => setMeal(shown.meal.key, { fulfilment: e.target.value as Fulfilment })}
-                >
-                  <option value="dine_in">{FULFILMENT_WORDS.dine_in}</option>
-                  <option value="takeaway">{FULFILMENT_WORDS.takeaway}</option>
-                </Select>
-              </Field>
-
-              {/*
-                Plated or a buffet, and only where the question has two
-                answers. Forty covers plated and forty as a buffet are the
-                same food and two different days of work — forty plates
-                leaving together at a promised time, against chafing dishes
-                set out beforehand and topped up — and the kitchen used to
-                find out which when the party arrived. Food going into boxes
-                is not asked.
-              */}
-              {shown.meal.fulfilment === 'dine_in' && (
-                <Field
-                  label="How should it be served?"
-                  hint={SERVICE_HINTS[serviceOf(shown.meal) ?? 'plated']}
-                >
-                  <Select
-                    value={serviceOf(shown.meal) ?? 'plated'}
-                    onChange={(e) => setMeal(shown.meal.key, { service: e.target.value as ServiceStyle })}
-                  >
-                    <option value="plated">{SERVICE_WORDS.plated}</option>
-                    <option value="buffet">{SERVICE_WORDS.buffet}</option>
-                  </Select>
-                </Field>
-              )}
-
-              {/* A flat list, in the order they were tapped.
-
-                  These used to be gathered under the headings they came from,
-                  which is right for a menu divided into Wraps and Sandwiches
-                  and wrong for this one: its headings are "Everyday
-                  offerings", "Monday special" — which day a dish is cooked on.
-                  A booking for a Sunday then read as "Monday special", which
-                  tells the party nothing and misleads them about what they
-                  have ordered. */}
-              {shown.meal.lines.length === 0 ? (
-                <p className="meta" style={{ margin: '0.6rem 0' }}>
-                  Nothing on this sitting yet. Close this and choose from the menu.
-                </p>
-              ) : shown.meal.lines.map((line: CartLine) => (
+              {meal.lines.length === 0 ? (
+                <Notice tone="warn">No food on this meal time yet. Press Change to add some, or remove it.</Notice>
+              ) : meal.lines.map((line: CartLine) => (
                 <div className="line" key={line.key}>
                   <div>
                     <div style={{ fontWeight: 550 }}>{line.name}</div>
                     {line.addons.length > 0 && <div className="meta">{line.addons.map((a) => a.name).join(', ')}</div>}
                     {line.notes && <div className="meta">&ldquo;{line.notes}&rdquo;</div>}
                     <div style={{ marginTop: '0.4rem' }}>
-                      <QtyBox
-                        qty={line.qty}
-                        onChange={(q) => setQty(shown.meal.key, line.key, q)}
-                        least={0}
-                        label={line.name}
-                      />
+                      <QtyBox qty={line.qty} onChange={(q) => setQty(meal.key, line.key, q)} least={0} label={line.name} />
                     </div>
                   </div>
                   <div style={{ fontWeight: 600 }}>{formatMoney(lineTotal(line), settings)}</div>
                 </div>
               ))}
 
-              <div className="spread" style={{ marginTop: '0.6rem' }}>
-                <span className="meta">{mealWords(shown.totals, money)}</span>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={() => {
-                    if (shown.meal.lines.length > 0
-                      && !confirm(`Take ${longDayWords(shown.meal.at)}, ${timeWords(shown.meal.at)} off the booking? What is on it will be lost.`)) {
-                      return;
-                    }
-                    setMeals((all) => all.filter((m) => m.key !== shown.meal.key));
-                    setTab(WHO);
-                  }}
-                >
-                  Remove this sitting
-                </Button>
-              </div>
-            </>
-          )}
-
-          {onWho && (
-            <div style={{ marginTop: '0.8rem' }}>
-              <Field label="Who is this booking for?" hint="So the kitchen and the front desk know whose it is.">
-                <Input value={name} onChange={(e) => { setName(e.target.value); setProblem(null); }} />
-              </Field>
-              <Field label={reservationLabel} hint={needReference ? 'Needed for a group booking.' : 'Optional.'}>
-                <Input value={groupRef} onChange={(e) => { setGroupRef(e.target.value); setProblem(null); }} />
-              </Field>
-
-              {/* Required here, optional on an ordinary order, and the
-                  difference is the situation: a walk-in is standing in the
-                  room and can be told; a party of forty booked three weeks ago
-                  has nothing to hold. */}
-              <Field
-                label="Email"
-                hint="We send the whole booking through in writing, so you have it on the day."
-              >
-                <Input
-                  type="email"
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); setProblem(null); }}
-                />
-              </Field>
-
-              {/* Not a dish note — every dish has its own box for those. This
-                  is for what is true of the whole booking, which until now
-                  had nowhere to go but a telephone call. */}
-              <Field
-                label="Anything else we should know?"
-                hint="About the booking as a whole — a high chair, a wheelchair, a coach to catch, a cake at the
-                      end. For one dish, use the box on that dish. Optional."
-              >
-                <Textarea
-                  rows={3}
-                  maxLength={1000}
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                />
-              </Field>
-
-              {/* The whole booking, priced, on the tab where somebody is about
-                  to send it. Packing and service are only worth a line where
-                  they come to something. */}
-              <div className="spread" style={{ marginTop: '0.8rem' }}>
-                <span>Food</span><span>{money(booking.subtotal)}</span>
-              </div>
-              {booking.packFees > 0 && (
-                <div className="spread">
-                  <span>Packing <Badge>{booking.portions} portions</Badge></span>
-                  <span>{money(booking.packFees)}</span>
+              {/* The boxes, on a line of their own, so the dishes and the
+                  total under them agree. */}
+              {totals.packFee > 0 && (
+                <div className="line meta">
+                  <span>Packing, {totals.portions} × {money(totals.packFee / Math.max(1, totals.portions))}</span>
+                  <span>{money(totals.packFee)}</span>
                 </div>
               )}
-              {booking.service > 0 && (
-                <div className="spread"><span>Service</span><span>{money(booking.service)}</span></div>
-              )}
-              <div className="spread" style={{ fontWeight: 650, fontSize: '1.05rem' }}>
-                <span>{booking.meals.length} sitting{booking.meals.length === 1 ? '' : 's'}, {booking.portions} portions</span>
-                <span>{money(booking.total)}</span>
+              <div className="spread" style={{ fontWeight: 600, paddingTop: '0.4rem' }}>
+                <span>This meal time</span><span>{money(totals.total)}</span>
               </div>
+            </section>
+          ))}
 
-              <p className="meta">
-                Each sitting is sent to the kitchen as its own order, in time to cook it and not before, so nothing
-                is made early. They all carry your reference.
-              </p>
+          <section className="review-who">
+            <h2>Who is it for?</h2>
+            <Field label="Name for the booking" hint="So the kitchen and the front desk know whose it is.">
+              <Input value={name} onChange={(e) => { setName(e.target.value); setProblem(null); }} />
+            </Field>
+            <Field label={reservationLabel} hint={needReference ? 'Needed for a group booking.' : 'Optional.'}>
+              <Input value={groupRef} onChange={(e) => { setGroupRef(e.target.value); setProblem(null); }} />
+            </Field>
+            {/* Required here, optional on an ordinary order: a party booked
+                three weeks out has nothing else to hold. */}
+            <Field label="Email" hint="We email you a copy now, and again once the booking is confirmed.">
+              <Input type="email" value={email} onChange={(e) => { setEmail(e.target.value); setProblem(null); }} />
+            </Field>
+            <Field
+              label="Anything else we should know? (optional)"
+              hint="About the booking as a whole: a high chair, a wheelchair, a coach to catch, a cake at the end. For one dish, use the box on that dish."
+            >
+              <Textarea rows={3} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} />
+            </Field>
+          </section>
+
+          <section className="review-total">
+            <div className="spread"><span>Food</span><span>{money(booking.subtotal)}</span></div>
+            {booking.packFees > 0 && (
+              <div className="spread">
+                <span>Packing, {booking.packedPortions} portion{booking.packedPortions === 1 ? '' : 's'}</span>
+                <span>{money(booking.packFees)}</span>
+              </div>
+            )}
+            {booking.service > 0 && (
+              <div className="spread"><span>Service</span><span>{money(booking.service)}</span></div>
+            )}
+            <div className="spread grand">
+              <span>{booking.meals.length} meal time{booking.meals.length === 1 ? '' : 's'}, {booking.portions} portions</span>
+              <span>{money(booking.total)}</span>
             </div>
-          )}
+            <Button variant="primary" loading={busy} onClick={() => void send()} style={{ width: '100%' }}>
+              Send booking · {money(booking.total)}
+            </Button>
+            <p className="meta" style={{ margin: 0 }}>
+              Nothing to pay now. We will check the booking and email you to confirm it. Each meal time is paid
+              on the day.
+            </p>
+          </section>
         </>
       )}
-    </Modal>
+
+      <Button variant="ghost" onClick={onClose} disabled={busy} style={{ marginTop: '0.8rem' }}>
+        Back to the menu
+      </Button>
+    </div>
   );
 }
 
-/** A meal that has just been added, ready for dishes. */
+/** A meal time that has just been added, ready for dishes. */
 export const newMeal = (at: Date): GroupMeal => ({
   key: `m-${dayKeyOf(at)}-${at.getHours()}${at.getMinutes()}-${Math.random().toString(36).slice(2, 6)}`,
   at: at.toISOString(),

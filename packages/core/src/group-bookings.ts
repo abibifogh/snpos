@@ -2,6 +2,7 @@ import { db, DB_ID, ID, Query, listAll } from './client';
 import { claimPlace, releasePlace } from './slot-booking';
 import { fireAtFor, sittingMoveProblem, spanOf } from './sitting-move';
 import { APPROVAL_KIND } from './booking-approval';
+import { cancelOrder } from './orders';
 import type { Sitting } from './sitting-move';
 
 /**
@@ -282,6 +283,56 @@ export async function decideGroupBooking(input: {
     decided_at: new Date().toISOString(),
     decided_note: (input.note ?? '').slice(0, 1000),
   });
+}
+
+/**
+ * Every booking worth showing on Group bookings: anything eaten since
+ * `sinceIso`, and anything still waiting for a decision whatever its date.
+ *
+ * By when it is EATEN, not when it was made. A booking made six weeks ago for
+ * next month is the one most likely to need looking at, and a list of the
+ * last thirty days of bookings made had already dropped it.
+ */
+export async function groupBookingsFrom(venueId: string, sinceIso: string): Promise<GroupBookingDoc[]> {
+  const [eaten, waiting] = await Promise.all([
+    listAll<GroupBookingDoc>('group_bookings', [
+      Query.equal('venue_id', venueId),
+      Query.greaterThanEqual('first_at', sinceIso),
+    ]),
+    pendingGroupBookings(),
+  ]);
+  return [...new Map([...eaten, ...waiting].map((b) => [b.$id, b])).values()];
+}
+
+/**
+ * Say no to a booking, and — unless asked not to — take its meal times off.
+ *
+ * Declining used to tell the guest and leave every meal time on the
+ * kitchen's list, for somebody to remember to cancel one by one on the
+ * Orders page. Now the two happen together by default; keeping the food is
+ * a box to untick, for the case where somebody is still talking to the
+ * guest. The decision is written first, so the guest is told whatever
+ * happens to the orders.
+ */
+export async function declineGroupBooking(input: {
+  id: string;
+  by: string;
+  userId: string;
+  note?: string;
+  cancelMealTimes: boolean;
+}): Promise<{ cancelled: number }> {
+  await decideGroupBooking({ id: input.id, status: 'refused', by: input.by, note: input.note });
+  if (!input.cancelMealTimes) return { cancelled: 0 };
+  const live = (await sittingsOf(input.id)).filter((s) => !['CANCELLED', 'REJECTED', 'CLOSED', 'SERVED'].includes(s.status));
+  let cancelled = 0;
+  for (const s of live) {
+    await cancelOrder(
+      s as Parameters<typeof cancelOrder>[0],
+      { reason: 'Group booking declined', userId: input.userId },
+    );
+    cancelled += 1;
+  }
+  return { cancelled };
 }
 
 /* ------------------------------------------------- moving a sitting's hour */
