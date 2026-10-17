@@ -17,7 +17,8 @@ import type {
 } from '@snpos/core';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CashToBank } from '../components/CashToBank';
-import { OwedToSuppliers } from '../components/OwedToSuppliers';
+import { BillsToPay } from '../components/books/BillsToPay';
+import { OwedToUs } from '../components/books/OwedToUs';
 import { useSession, useMoney } from '../session';
 import { AccountsManager } from '../components/AccountsManager';
 import { PlReport, LedgerReport, CashFlowReport, BalanceExports, yearPack } from '../components/books/BookReports';
@@ -36,7 +37,7 @@ import { PlReport, LedgerReport, CashFlowReport, BalanceExports, yearPack } from
  * sitting, and each of those is the same figures read a different way; putting
  * them behind separate navigation makes it feel like separate work.
  */
-type Tab = 'statements' | 'cashflow' | 'ledger' | 'journal' | 'trial' | 'assets' | 'bank' | 'settle' | 'chart' | 'locks';
+type Tab = 'statements' | 'cashflow' | 'ledger' | 'journal' | 'trial' | 'assets' | 'bank' | 'settle' | 'payables' | 'receivables' | 'chart' | 'locks';
 
 /** A month back from today, as YYYY-MM-DD, for the default window. */
 const monthStart = (d = new Date()) => `${d.toISOString().slice(0, 7)}-01`;
@@ -79,7 +80,7 @@ export function AccountingPage() {
   // this page switches to it rather than leaving the old one showing.
   const [params, setParams] = useSearchParams();
   const asked = params.get('tab');
-  const tab = (['statements', 'cashflow', 'ledger', 'journal', 'trial', 'assets', 'bank', 'settle', 'chart', 'locks'].includes(asked ?? '') ? asked : 'statements') as Tab;
+  const tab = (['statements', 'cashflow', 'ledger', 'journal', 'trial', 'assets', 'bank', 'settle', 'payables', 'receivables', 'chart', 'locks'].includes(asked ?? '') ? asked : 'statements') as Tab;
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
   useEffect(() => {
     // Land on something they can see. Opening on a tab they were not given
@@ -176,6 +177,8 @@ export function AccountingPage() {
       {([
         ['Your jobs', [
           ['settle', 'Settle up'],
+          ['payables', 'Bills to pay'],
+          ['receivables', 'Owed to us'],
           ['bank', 'Reconcile'],
           ['locks', 'Close a period'],
         ]],
@@ -214,7 +217,7 @@ export function AccountingPage() {
         </Notice>
       )}
 
-      {tab !== 'chart' && tab !== 'assets' && tab !== 'bank' && tab !== 'settle' && (
+      {tab !== 'chart' && tab !== 'assets' && tab !== 'bank' && tab !== 'settle' && tab !== 'payables' && tab !== 'receivables' && (
         <Card pad>
           <div className="grid-2">
             <Field label="From" hint="The profit and loss covers these dates.">
@@ -331,6 +334,12 @@ export function AccountingPage() {
       {tab === 'settle' && can('settle') && (
         <Settle venueId={venueId} userId={user?.$id ?? ''} money={money} decimals={decimals} onChanged={load} toast={toast} />
       )}
+
+      {tab === 'payables' && can('payables') && (
+        <BillsToPay venueId={venueId} userId={user?.$id ?? ''} accounts={accounts} money={money} settings={settings} onChanged={load} toast={toast} />
+      )}
+
+      {tab === 'receivables' && can('receivables') && <OwedToUs money={money} settings={settings} />}
 
       {tab === 'chart' && can('chart') && <AccountsManager />}
 
@@ -1634,7 +1643,6 @@ function Settle({
   return (
     <div className="stack">
       <CashToBank venueId={venueId} userId={userId} money={money} decimals={decimals} onChanged={onChanged} toast={toast} />
-      <OwedToSuppliers venueId={venueId} userId={userId} money={money} onChanged={onChanged} toast={toast} />
       <Card title="Card and mobile money settled to the bank" pad>
         <p className="small dim" style={{ marginTop: 0 }}>
           Every close puts card and mobile-money takings into a clearing account. When the provider pays it into

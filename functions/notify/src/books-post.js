@@ -1,6 +1,6 @@
 import {
   ACCOUNTS, shiftEntries, takingsByKind, cashVarianceOf, payoutLines, wasteLines, batchLines, crossingFromStored,
-  staffChargeLines, staffSettleLines,
+  staffChargeLines, staffSettleLines, tabAccrualLines, tabPaidLines,
   debitsForSpend, spendPostingLines, sameDebits, parseLevies, splitTax, vatBpOf, makersShareOf, isLocked,
 } from './books.js';
 
@@ -264,11 +264,95 @@ export async function postShiftClose(ctx, shift) {
     if (r.posted) spendsPosted += 1;
   }
 
+  // Sales on tabs, and tabs paid on this shift. Their own keys, so they are
+  // safe to run on every touch of the row.
+  await postTabs(ctx, shift).catch((e) => ctx.log(`Tabs on ${shift.code || shift.$id}: ${e.message}`));
+
   if (!shift.posted_to_ledger) {
     await ctx.db.updateDocument(ctx.DB_ID, 'shifts', shift.$id, { posted_to_ledger: true }).catch(() => undefined);
   }
   if (posted.length) ctx.log(`Posted shift ${shift.code || shift.$id}: ${posted.length} entries, ${spendsPosted} spends.`);
   return { ok: true, posted: posted.length, spends: spendsPosted, skipped: posted.length ? undefined : 'already posted' };
+}
+
+/* ------------------------------------------------------------------ tabs */
+
+const paidAmount = (payments) => payments
+  .filter((p) => p.status !== 'voided' && p.status !== 'refunded')
+  .reduce((n, p) => n + (p.amount || 0), 0);
+
+/**
+ * Tab sales on the books the day they are served, and cleared when paid.
+ *
+ * At a close, every order on a tab served on this shift has what is still
+ * unpaid posted as owed by customers (tabAccrualLines). Every payment on this
+ * shift against a tab order that was posted that way, and made after it,
+ * takes that much back out of sales and off what is owed (tabPaidLines),
+ * because the close has just counted it as a sale. A payment made before the
+ * order was posted as owed was never in it, so it is left alone; so is every
+ * tab order from before this existed, which has no such entry.
+ */
+export async function postTabs(ctx, shift) {
+  if (!shift || shift.status !== 'closed') return { skipped: 'not closed' };
+  const venueId = shift.venue_id || 'main';
+  const date = shift.closed_at;
+  let posted = 0;
+
+  const served = (await listAll(ctx, 'orders', [ctx.Query.equal('shift_id', shift.$id)]).catch(() => []))
+    .filter((o) => o.tab_id && (o.status === 'SERVED' || o.status === 'CLOSED'));
+  for (const o of served) {
+    const key = `tab_accrual:${o.$id}`;
+    if (await entryFor(ctx, venueId, key)) continue;
+    const paid = paidAmount(await listAll(ctx, 'payments', [ctx.Query.equal('order_id', o.$id)]).catch(() => []));
+    const owed = Math.max(0, (o.total || 0) - paid);
+    if (owed <= 0) continue;
+    try {
+      await postEntry(ctx, {
+        venueId, date, source: 'adjustment', sourceId: key, shiftId: shift.$id,
+        memo: `On a tab: ${o.order_no || o.$id}`,
+      }, tabAccrualLines(owed, o.module));
+      posted += 1;
+    } catch (e) {
+      if (!e.locked) throw e;
+    }
+  }
+
+  const payments = (await listAll(ctx, 'payments', [ctx.Query.equal('shift_id', shift.$id)]).catch(() => []))
+    .filter((p) => p.status !== 'voided' && p.status !== 'refunded' && (p.amount || 0) > 0);
+  const orderIds = [...new Set(payments.map((p) => p.order_id))];
+  const orders = orderIds.length
+    ? (await listAll(ctx, 'orders', [ctx.Query.equal('$id', orderIds)]).catch(() => [])).filter((o) => o.tab_id)
+    : [];
+  for (const o of orders) {
+    const accrual = await entryFor(ctx, venueId, `tab_accrual:${o.$id}`);
+    if (!accrual) continue;
+    const accrued = (await linesOf(ctx, accrual.$id)).reduce((n, l) => n + (l.account_code === ACCOUNTS.owedByCustomers ? l.debit : 0), 0);
+    const earlier = await listAll(ctx, 'journal_entries', [
+      ctx.Query.equal('venue_id', venueId), ctx.Query.startsWith('source_id', `tab_paid:${o.$id}:`),
+    ]).catch(() => []);
+    let cleared = 0;
+    for (const e of earlier) {
+      cleared += (await linesOf(ctx, e.$id)).reduce((n, l) => n + (l.account_code === ACCOUNTS.owedByCustomers ? l.credit : 0), 0);
+    }
+    for (const p of payments.filter((x) => x.order_id === o.$id)) {
+      const key = `tab_paid:${o.$id}:${p.$id}`;
+      if (earlier.some((e) => e.source_id === key)) continue;
+      if (String(p.$createdAt) <= String(accrual.$createdAt)) continue;
+      const amount = Math.min(p.amount, accrued - cleared);
+      if (amount <= 0) continue;
+      try {
+        await postEntry(ctx, {
+          venueId, date, source: 'adjustment', sourceId: key, shiftId: shift.$id,
+          memo: `Tab paid: ${o.order_no || o.$id}`,
+        }, tabPaidLines(amount, o.module));
+        cleared += amount;
+        posted += 1;
+      } catch (e) {
+        if (!e.locked) throw e;
+      }
+    }
+  }
+  return posted ? { ok: true, posted } : { skipped: 'nothing on a tab' };
 }
 
 /* --------------------------------------------------------------- spends */
@@ -536,7 +620,7 @@ export async function postStaffSettleRow(ctx, row) {
  */
 export async function sweepBooks(ctx, now = Date.now()) {
   const since = new Date(now - 7 * 86_400_000).toISOString();
-  const out = { shifts: 0, spends: 0, payouts: 0, waste: 0, batches: 0, staff: 0, locked: 0, errors: [] };
+  const out = { shifts: 0, spends: 0, payouts: 0, waste: 0, batches: 0, staff: 0, tabs: 0, locked: 0, errors: [] };
 
   const attempt = async (kind, fn) => {
     try {
@@ -551,6 +635,11 @@ export async function sweepBooks(ctx, now = Date.now()) {
   const shifts = await listAll(ctx, 'shifts', [ctx.Query.equal('status', 'closed'), ctx.Query.notEqual('posted_to_ledger', true)])
     .catch(() => []);
   for (const s of shifts.slice(0, 50)) await attempt('shifts', () => postShiftClose(ctx, s));
+  // Tabs on shifts closed lately, posted and all: an entry missed by the
+  // event is caught here, and its own key keeps it from posting twice.
+  for (const s of await listAll(ctx, 'shifts', [ctx.Query.equal('status', 'closed'), ctx.Query.greaterThanEqual('$updatedAt', since)]).catch(() => [])) {
+    await attempt('tabs', () => postTabs(ctx, s));
+  }
 
   for (const s of await listAll(ctx, 'shift_expenses', [ctx.Query.greaterThanEqual('$createdAt', since)]).catch(() => [])) {
     await attempt('spends', () => postSpend(ctx, s));

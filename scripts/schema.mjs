@@ -1595,6 +1595,10 @@ export const COLLECTIONS = [
         See owed-spends.ts.
       */
       ['pay_later', 'b', null, false, false],
+      // When the supplier wants it by, and what has been paid so far: a bill
+      // can be paid in parts. paid_at is set once it is paid in full.
+      ['due_on', 's', 10, false],
+      ['paid_amount', 'i', null, false, 0],
       ['paid_at', 's', 40, false],
       ['paid_via', 's', 20, false],
       ['paid_ref', 's', 120, false],
@@ -4544,6 +4548,8 @@ export const SYSTEM_ACCOUNT_CODES = [
   // Stock received and not yet paid for: Receive stock credits it, paying
   // the supplier debits it. See owed-spends.ts.
   '2300',
+  // What customers owe on tabs, from the day they are served.
+  '1100',
 ];
 
 export const SEED_ACCOUNTS = [
@@ -4561,6 +4567,8 @@ export const SEED_ACCOUNTS = [
   */
   ['1030', 'Petty cash (imprest)', 'asset'],
   ['1040', 'Bank account', 'asset'],
+  // What customers owe for what they were served on a tab.
+  ['1100', 'Owed by customers', 'asset'],
   ['1200', 'Inventory - kitchen', 'asset'],
   ['1210', 'Inventory - bar', 'asset'],
   ['1220', 'Inventory - craft shop', 'asset'],

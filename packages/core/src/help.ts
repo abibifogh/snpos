@@ -383,7 +383,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         'Say how it was paid: from a drawer, a petty cash box, the bank, or Not paid yet.',
         'Receive it. The stock goes up and the spend is recorded in one go, waiting for approval like any other spend.',
       ),
-      note('Not paid yet is for a supplier who delivers on account. Nothing leaves a drawer, a box or the bank. It shows under Accounting, Settle up, as Owed to suppliers, and recording the payment there is what takes it out of the bank or the cash.'),
+      note('Not paid yet is for a supplier who delivers on account. Nothing leaves a drawer, a box or the bank. It shows under Accounting, Bills to pay, and recording the payment there, in full or in parts, is what takes it out of the bank or the cash.'),
     ],
   },
 

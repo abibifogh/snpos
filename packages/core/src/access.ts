@@ -270,6 +270,8 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   // The entries a shift close leaves hanging: card and mobile money reaching
   // the bank, tips handed over, tax remitted. See settle.ts.
   { key: 'accounting_settle', label: 'Settle card, mobile money, tips and tax', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_payables', label: 'Bills to pay: add, and pay in full or in parts', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_receivables', label: 'Owed to us: what customers owe on tabs', path: '/accounting', group: 'Books', parent: 'accounting' },
   { key: 'accounting_chart', label: 'Chart of accounts', path: '/accounting', group: 'Books', parent: 'accounting' },
   // Its own grant, and the most consequential of them: it decides what
   // everybody else is allowed to change, including the person who closed it.

@@ -1055,6 +1055,50 @@ console.log('\n=== X — the nightly check finds what was left half written, and
   results.push(['X a shop sale takes the next shop number, however many bar and kitchen orders came after', ok('number', got, 'CR0008')]);
 }
 
+/* ------------------------------------------------- tabs, sold when served */
+
+console.log('\n=== Y — a tab is a sale the day it is served, and paying it clears the debt ===');
+{
+  __reset();
+  __seed('settings', [{ $id: 'main', tax_rate_bp: 0 }]);
+  __seed('payment_methods', [{ $id: 'm-cash', venue_id: 'main', name: 'Cash', kind: 'cash', enabled: true }]);
+  __seed('orders', [
+    // Served on a tab on Friday, 2,000 paid on the spot.
+    { $id: 'o1', venue_id: 'main', shift_id: 'shA', tab_id: 't1', module: 'bar', order_no: 'BAR-0101', status: 'SERVED', payment_status: 'partial', total: 10_000 },
+    // An older tab order from before this existed: no entry of its own.
+    { $id: 'o2', venue_id: 'main', shift_id: 'sh0', tab_id: 't1', module: 'bar', order_no: 'BAR-0050', status: 'SERVED', payment_status: 'unpaid', total: 3_000 },
+  ]);
+  __seed('payments', [{ $id: 'pA', order_id: 'o1', shift_id: 'shA', method_id: 'm-cash', amount: 2_000, tip: 0, $createdAt: '2026-09-04T20:00:00.000Z' }]);
+  const closed = (id: string, at: string) => ({
+    $id: id, venue_id: 'main', code: id, module: 'bar', status: 'closed', closed_at: at, closed_by: 'ama',
+    expected: '{}', counted: '{}', tip_total: 0, tax_total: 0, discount_total: 0, cogs_total: 0, posted_to_ledger: false,
+  });
+  __seed('shifts', [closed('shA', '2026-09-04T23:00:00.000Z')]);
+  await postShiftClose(server, (__all('shifts') as any[])[0]);
+  const accrual = (__all('journal_entries') as any[]).find((e) => e.source_id === 'tab_accrual:o1');
+  results.push(['Y what is still owed on the tab is a sale on the night it was served', ok(
+    'accrual', byAccount(linesOf(accrual?.$id)), { '1100': 8_000, '4010': -8_000 },
+  )]);
+
+  // Paid in full the next week, on another shift: the old tab order too.
+  __seed('payments', [
+    { $id: 'pB', order_id: 'o1', shift_id: 'shB', method_id: 'm-cash', amount: 8_000, tip: 0, $createdAt: '2099-01-01T10:00:00.000Z' },
+    { $id: 'pC', order_id: 'o2', shift_id: 'shB', method_id: 'm-cash', amount: 3_000, tip: 0, $createdAt: '2099-01-01T10:05:00.000Z' },
+  ]);
+  __seed('shifts', [closed('shB', '2026-09-11T23:00:00.000Z')]);
+  await postShiftClose(server, (__all('shifts') as any[]).find((x) => x.$id === 'shB'));
+  await postShiftClose(server, (__all('shifts') as any[]).find((x) => x.$id === 'shB'));
+  const all = __all('journal_lines') as any[];
+  const net = (code: string) => all.filter((l) => l.account_code === code).reduce((n, l) => n + l.debit - l.credit, 0);
+  results.push(['Y paying it clears what was owed, and the sale is counted once', ok(
+    'net', { owed: net('1100'), sales: net('4010'), cash: net('1000') }, { owed: 0, sales: -13_000, cash: 13_000 },
+  )]);
+  results.push(['Y a tab order from before is a sale when paid, as it always was, and nothing posts twice', ok(
+    'keys', (__all('journal_entries') as any[]).map((e) => e.source_id).filter((k) => k.startsWith('tab_')).sort(),
+    ['tab_accrual:o1', 'tab_paid:o1:pB'],
+  )]);
+}
+
 console.log('\n=== summary ===');
 for (const [name, pass] of results) console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}`);
 if (results.some(([, p]) => !p)) process.exitCode = 1;

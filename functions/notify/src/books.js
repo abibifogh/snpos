@@ -29,6 +29,7 @@ export const ACCOUNTS = {
   tipsPayable: '2200',
   owedToMakers: '2400',
   accountsPayable: '2300',
+  owedByCustomers: '1100',
   foodSales: '4000',
   barSales: '4010',
   craftSales: '4020',
@@ -229,6 +230,35 @@ export function staffSettleLines(kind, amount) {
 /* --------------------------------------------------------------- spends */
 
 /** Mirrors spendDebits in packages/core/src/spend-posting.ts. */
+/* ------------------------------------------------------------------- tabs */
+
+/**
+ * An order on a tab is a sale on the day it is served.
+ *
+ * The shift close posts sales from the money taken, so an unpaid tab used to
+ * reach the books only in the month it was paid. Its tax is already credited
+ * at the close (the close counts every served order's tax), so this credits
+ * the sale in full — gross, the tax part offsetting what the close took out
+ * of sales for it — and holds the debt as owed by customers.
+ */
+export function tabAccrualLines(owed, module) {
+  return [
+    { account_code: ACCOUNTS.owedByCustomers, debit: owed, credit: 0, memo: 'Owed on a tab' },
+    { account_code: salesAccount(module || 'kitchen'), debit: 0, credit: owed, memo: 'Sold on a tab' },
+  ];
+}
+
+/**
+ * A tab paid. The paying shift's close counts the payment as a sale again,
+ * so this takes that back out of sales and clears what was owed instead.
+ */
+export function tabPaidLines(amount, module) {
+  return [
+    { account_code: salesAccount(module || 'kitchen'), debit: amount, credit: 0, memo: 'Counted when it was served' },
+    { account_code: ACCOUNTS.owedByCustomers, debit: 0, credit: amount, memo: 'Tab paid' },
+  ];
+}
+
 export function spendDebits(input) {
   const amount = Math.max(0, Math.round(input.amount));
   if (amount === 0) return [];

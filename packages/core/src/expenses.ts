@@ -86,5 +86,7 @@ export interface ShiftExpense extends Doc {
   paid_via?: string;
   paid_ref?: string;
   paid_by?: string;
+  due_on?: string;
+  paid_amount?: number;
 }
 

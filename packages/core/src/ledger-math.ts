@@ -21,7 +21,32 @@ export interface AccountRow {
   parent_code?: string;
   /** Retired. Off every list that offers a choice, still on every statement. */
   active?: boolean;
+  /**
+   * An account that holds money: 'bank', 'momo' (a merchant wallet) or
+   * 'cash'. Set on extra bank accounts; the system's own (cash on hand,
+   * the bank account) are money without saying so. See moneyAccounts.
+   */
+  cash_kind?: string | null;
 }
+
+/** The system's own money accounts: cash on hand, petty cash, the bank. */
+const MONEY_CODES = ['1000', '1030', '1040'];
+
+/**
+ * Every account that holds money, for the cash flow and for "paid from":
+ * the system's three, and every account marked as a bank, wallet or cash.
+ */
+export const moneyAccounts = (accounts: AccountRow[]): AccountRow[] =>
+  accounts.filter((a) => a.active !== false && (MONEY_CODES.includes(a.code) || !!a.cash_kind));
+
+/**
+ * The accounts a bill or a transfer can be paid from: the money accounts
+ * less petty cash, which pays through its own box. The bank first.
+ */
+export const payFromAccounts = (accounts: AccountRow[]): AccountRow[] =>
+  moneyAccounts(accounts)
+    .filter((a) => a.code !== '1030')
+    .sort((a, b) => (a.code === '1040' ? -1 : b.code === '1040' ? 1 : a.code.localeCompare(b.code)));
 
 /**
  * The accounts still on offer.
