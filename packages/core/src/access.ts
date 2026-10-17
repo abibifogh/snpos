@@ -301,7 +301,12 @@ export interface NavMerge {
 export const NAV_MERGES: NavMerge[] = [
   { to: '/catalogue/categories', label: 'Categories', keys: { kitchen: 'menu_categories', craft: 'shop_categories', bar: 'bar_categories' } },
   { to: '/catalogue/items', label: 'Menu & products', keys: { kitchen: 'menu_items', craft: 'shop_items', bar: 'bar_items' } },
-  { to: '/stock', label: 'Stock', keys: { kitchen: 'stock', bar: 'bar_stock' }, also: { label: 'Receive stock', query: 'receive=1' } },
+  /*
+    The shop's own supplies (bags, wrapping, labels) are reached with its
+    products grant: it has no separate stock grant, and its pieces are the
+    makers', counted on Count.
+  */
+  { to: '/stock', label: 'Stock', keys: { kitchen: 'stock', bar: 'bar_stock', craft: 'shop_items' }, also: { label: 'Receive stock', query: 'receive=1' } },
   /*
     Count, every place. The kitchen counts on the bar's sheet now, so it is
     reached with the kitchen's stock grant; the shop's shelf count is its

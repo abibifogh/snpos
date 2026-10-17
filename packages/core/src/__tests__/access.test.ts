@@ -512,7 +512,7 @@ test('the sidebar is grouped by job, and the per-side pages are one link each', 
   assert.deepEqual(sell.links.find((l) => l.label === 'Categories')?.keys, ['menu_categories', 'bar_categories', 'shop_categories']);
   assert.equal(sell.links.find((l) => l.label === 'Menu & products')?.to, '/catalogue/items');
   const stock = nav.find((g) => g.group === 'Stock')!;
-  assert.deepEqual(stock.links.find((l) => l.label === 'Stock')?.keys, ['stock', 'bar_stock']);
+  assert.deepEqual(stock.links.find((l) => l.label === 'Stock')?.keys, ['stock', 'bar_stock', 'shop_items']);
   assert.equal(stock.links.find((l) => l.label === 'Receive stock')?.to, '/stock?receive=1');
   // Count, one link for every side: the bar's sheet, the kitchen's, the shop's shelf.
   assert.deepEqual(stock.links.find((l) => l.label === 'Count')?.keys, ['stock', 'bar_counts', 'stocktake']);

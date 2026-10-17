@@ -175,14 +175,14 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   // Opened from the sidebar's Receive stock link with the form already up.
   const [receiving, setReceiving] = useState(false);
   const wantsReceive = params.get('receive') === '1';
-  useEffect(() => { if (wantsReceive && module !== 'craft') setReceiving(true); }, [wantsReceive, module]);
+  useEffect(() => { if (wantsReceive) setReceiving(true); }, [wantsReceive]);
   /** Closing the form takes the request out of the address, so a reload does not reopen it. */
   const doneReceiving = () => {
     setReceiving(false);
     if (wantsReceive) setParams((p) => { p.delete('receive'); return p; }, { replace: true });
   };
   const mayPlaces = canOpen('locations', profile, settings);
-  const mayCount = canOpen(module === 'bar' ? 'bar_counts' : 'stock', profile, settings);
+  const mayCount = canOpen(module === 'bar' ? 'bar_counts' : module === 'craft' ? 'stocktake' : 'stock', profile, settings);
   const mayWaste = canOpen('waste', profile, settings);
   const { rows: packKinds, reload: reloadPacks } = useKeyedList('pack_kinds');
   const [ingredients, setIngredients] = useState<Ingredient[] | null>(null);
@@ -220,7 +220,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   const W = module === 'bar'
     ? { title: 'Stock · bar', add: 'Add a bottle or mixer' }
     : module === 'craft'
-      ? { title: 'Supplies', add: 'Add a supply' }
+      ? { title: 'Stock · shop', add: 'Add a supply' }
       : { title: 'Stock · kitchen', add: 'Add ingredient' };
   /** The ingredient whose purchase history is being read. */
   const [historyFor, setHistoryFor] = useState<Ingredient | null>(null);
@@ -617,9 +617,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
         shows it. Each was a page of its own under a different heading.
       */}
       <div className="row row-wrap" style={{ gap: '0.5rem', marginBottom: '0.8rem' }}>
-        {module !== 'craft' && (
-          <Button variant="primary" onClick={() => setReceiving(true)}>Receive stock</Button>
-        )}
+        <Button variant="primary" onClick={() => setReceiving(true)}>Receive stock</Button>
         {mayPlaces && <Button onClick={() => setTab('places')}>Move</Button>}
         {mayCount && <Link className="btn" to={`/count?side=${module}`}>Count</Link>}
         {mayWaste && module === 'kitchen' && <Link className="btn" to="/waste">Waste</Link>}
