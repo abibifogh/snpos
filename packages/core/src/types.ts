@@ -11,6 +11,8 @@ export interface Doc {
 }
 
 export interface Settings extends Doc {
+  /** Which roles may make purchase orders, as a JSON list. See orderRoles. */
+  po_order_roles?: string | null;
   restaurant_name: string;
   timezone: string;
   /** Minutes of quiet before a till shows the clock. 0 or absent is off. */
@@ -272,6 +274,8 @@ export interface StaffProfile extends Doc {
   can_record_waste?: boolean;
   /** May make and send orders to suppliers. See canOrderStock. */
   can_order_stock?: boolean;
+  /** This person's exception to their role's ordering: 'group', 'yes' or 'no'. See orderChoice. */
+  order_stock?: string;
   hourly_rate?: number;
   email?: string;
   venue_ids?: string[];

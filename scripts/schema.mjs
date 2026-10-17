@@ -200,6 +200,9 @@ export const COLLECTIONS = [
     perms: { read: ['any'], create: [], update: ADMIN, delete: [] },
     attributes: [
       ['restaurant_name', 's', 120, true],
+      // Which roles may make purchase orders, as a JSON list. Unset means
+      // managers; see orderRoles.
+      ['po_order_roles', 's', 200, false],
       ['timezone', 's', 64, true, 'Africa/Accra'],
       ['currency_code', 's', 3, true, 'GHS'],
       ['currency_symbol', 's', 8, true, 'GH₵'],
@@ -3118,6 +3121,10 @@ export const COLLECTIONS = [
       // May make, change and send orders to suppliers. Admins always may. See
       // purchase-orders.ts.
       ['can_order_stock', 'b', null, false, false],
+      // This person's exception to their role's ordering: 'group' (as the
+      // role says), 'yes' or 'no'. Read with can_order_stock for profiles
+      // saved before it; see orderChoice.
+      ['order_stock', 's', 8, false],
       ['hourly_rate', 'i', null, false], // feature 4: labour cost
       // Getting somebody their first sign-in.
       //

@@ -7,6 +7,7 @@ import {
   isEditableOrder, isOpenOrder, orderNeedsApproval, canOrderStock, PO_STATUS_WORDS,
   loadFeatures, featureConfig, formatMoney, parseMoney, toInput, dateTimeWords, downloadFile, MODULE_LABELS,
   modulesOf, SIDE_NAMES, itemsFor, newSupplierProblem, addSupplier,
+  ORDER_ROLES, orderRoles, orderRolesValue, saveDropping,
 } from '@snpos/core';
 import type { PurchaseOrderDoc, PoLine, OrderSupplier, Ingredient, Module, Suggestion, FeatureMap } from '@snpos/core';
 /* The same builder the email attaches, so the office's copy and the
@@ -31,8 +32,8 @@ type Show = 'open' | 'received' | 'all';
  */
 export function PurchaseOrdersPage() {
   const toast = useToast();
-  const { settings, profile, user } = useSession();
-  const mayOrder = canOrderStock(profile);
+  const { settings, profile, user, refreshSettings } = useSession();
+  const mayOrder = canOrderStock(profile, settings);
   const isAdmin = profile?.role === 'admin';
   const [orders, setOrders] = useState<PurchaseOrderDoc[] | null>(null);
   const [items, setItems] = useState<Ingredient[]>([]);
@@ -102,8 +103,9 @@ export function PurchaseOrdersPage() {
 
       {error && <Notice>{error}</Notice>}
       {!mayOrder && (
-        <Notice tone="info">You can read orders here. An admin can let you make and send them, under Staff, Order stock.</Notice>
+        <Notice tone="info">You can read orders here. An admin can let your role make them, on this page, or you alone, under Staff.</Notice>
       )}
+      {isAdmin && settings && <WhoOrders settings={settings} onSaved={refreshSettings} toast={toast} />}
 
       {mayOrder && orders && (
         <Card title={ideas.length ? `Running low (${ideas.reduce((n, g) => n + g.lines.length, 0)} items)` : 'Running low'}>
@@ -207,6 +209,54 @@ export function PurchaseOrdersPage() {
         />
       )}
     </>
+  );
+}
+
+const ROLE_WORDS: Record<string, string> = { manager: 'Managers', cashier: 'Cashiers', waiter: 'Waiters', cook: 'Cooks' };
+
+/**
+ * Which roles may make and send orders. An admin's choice, here where the
+ * orders are; one person can still be made an exception on Staff.
+ */
+function WhoOrders({ settings, onSaved, toast }: {
+  settings: NonNullable<ReturnType<typeof useSession>['settings']>;
+  onSaved: () => Promise<void>;
+  toast: (m: string, t?: 'ok' | 'err') => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const roles = orderRoles(settings);
+  const flip = async (role: string) => {
+    const next = roles.includes(role as never) ? roles.filter((r) => r !== role) : [...roles, role];
+    setBusy(role);
+    try {
+      const { dropped } = await saveDropping('settings', settings.$id, { po_order_roles: orderRolesValue(next) });
+      if (dropped.includes('po_order_roles')) {
+        toast('This database cannot keep that yet. Run Provision in GitHub Actions, then try again.', 'err');
+        return;
+      }
+      await onSaved();
+      toast(next.length ? `${next.map((r) => ROLE_WORDS[r]).join(', ')} can make orders.` : 'Only admins can make orders now.');
+    } catch (e) {
+      toast(humanError(e), 'err');
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <Card title="Who can make orders" pad>
+      <p className="small dim" style={{ marginTop: 0 }}>
+        Admins always can. Tick the roles that may make and send orders; one person can be made an exception
+        either way under Staff, Make purchase orders. Orders over the limit still wait for approval.
+      </p>
+      <div className="row row-wrap" style={{ gap: '1.2rem' }}>
+        {ORDER_ROLES.map((r) => (
+          <label key={r} className="row" style={{ gap: '0.4rem', alignItems: 'center', cursor: 'pointer' }}>
+            <input type="checkbox" checked={roles.includes(r)} disabled={!!busy} onChange={() => void flip(r)} />
+            {ROLE_WORDS[r]}
+          </label>
+        ))}
+      </div>
+    </Card>
   );
 }
 

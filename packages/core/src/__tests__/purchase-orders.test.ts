@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { orderRoles, orderRolesValue, orderChoice, canOrderStock } from '../access.ts';
 import {
   isRunningLow, suggestLine, suggestions, orderTotal, orderNeedsApproval, orderProblem, nextPoNo, orderMessage,
-  receiveInto, stillToCome, submittedStatus, readLines, canOrderStock, canApproveOrders, isOpenOrder, isEditableOrder,
+  receiveInto, stillToCome, submittedStatus, readLines, canApproveOrders, isOpenOrder, isEditableOrder,
   PO_STATUS_WORDS, type OrderableItem,
   itemsFor, newSupplierProblem,
 } from '../purchase-orders.ts';
@@ -130,10 +131,10 @@ test('a spend receives an order in counting units, and the order knows what is s
 
 test('who may order, approve, and what can still be changed', () => {
   assert.equal(canOrderStock({ role: 'admin' }), true);
-  assert.equal(canOrderStock({ role: 'manager' }), true, 'a manager saved before the switch existed');
-  assert.equal(canOrderStock({ role: 'manager', can_order_stock: false }), false);
+  assert.equal(canOrderStock({ role: 'manager' }), true, 'managers by default');
+  assert.equal(canOrderStock({ role: 'manager', can_order_stock: false }), false, 'switched off before the role setting');
   assert.equal(canOrderStock({ role: 'cashier' }), false);
-  assert.equal(canOrderStock({ role: 'cashier', can_order_stock: true }), true);
+  assert.equal(canOrderStock({ role: 'cashier', can_order_stock: true }), true, 'switched on before the role setting');
   assert.equal(canApproveOrders({ role: 'manager' }), true);
   assert.equal(canApproveOrders({ role: 'cashier' }), false);
   assert.deepEqual(['ready', 'sent', 'part', 'draft', 'received'].map(isOpenOrder), [true, true, true, false, false]);
@@ -166,4 +167,25 @@ test('the PDF names the supplier, the number, each item in packs, and the total'
   assert.match(pdf, /3 crates \\\(12 bottles each\\\)/);
   assert.equal(quantityWords({ qty: 1, buy_key: 'pack', buy_label: 'crates', per: 12, unit: 'bottle' }), '1 crate (12 bottles each)');
   assert.equal(quantityWords({ qty: 5, buy_key: 'unit', unit: 'kg' }), '5 kg');
+});
+
+test('an admin picks the roles that order; a person can be an exception either way', () => {
+  const cashiers = { po_order_roles: orderRolesValue(['cashier', 'manager']) };
+  assert.deepEqual(orderRoles(null), ['manager'], 'nothing set is managers, as before');
+  assert.deepEqual(orderRoles({ po_order_roles: '[]' }), [], 'none ticked is admins only');
+  assert.deepEqual(orderRoles({ po_order_roles: 'not json' }), ['manager']);
+  assert.deepEqual(orderRoles(cashiers), ['manager', 'cashier']);
+  assert.equal(canOrderStock({ role: 'cashier' }, cashiers), true);
+  assert.equal(canOrderStock({ role: 'cook' }, cashiers), false);
+  assert.equal(canOrderStock({ role: 'manager' }, { po_order_roles: '[]' }), false);
+  assert.equal(canOrderStock({ role: 'admin' }, { po_order_roles: '[]' }), true, 'an admin always');
+  // The person's own answer beats the role, both ways.
+  assert.equal(canOrderStock({ role: 'cook', order_stock: 'yes' }, cashiers), true);
+  assert.equal(canOrderStock({ role: 'cashier', order_stock: 'no' }, cashiers), false);
+  assert.equal(canOrderStock({ role: 'cashier', order_stock: 'group' }, cashiers), true);
+  // The old switch was stamped with the role's default on every save, so a
+  // stamped value is "as their role", not a decision.
+  assert.equal(orderChoice({ role: 'manager', can_order_stock: true }), 'group');
+  assert.equal(orderChoice({ role: 'cashier', can_order_stock: false }), 'group');
+  assert.equal(canOrderStock({ role: 'cashier', can_order_stock: false }, cashiers), true);
 });

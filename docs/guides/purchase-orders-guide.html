@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Making a purchase order</title>
+<style>
+  @page { size: A4; margin: 0; }
+  :root { --ink: #1c2526; --dim: #5b6b6d; --teal: #0f766e; --tint: #e7f3f1; --line: #d5dfde; --warn: #9a5b00; --warnbg: #fdf3e2; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; color: var(--ink); }
+  body { font: 9.6pt/1.38 "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  .page { width: 210mm; height: 297mm; padding: 13mm 14mm 11mm; display: flex; flex-direction: column; overflow: hidden; }
+  header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2.5px solid var(--teal); padding-bottom: 3.5mm; }
+  h1 { font-size: 21pt; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--dim); margin: 1mm 0 0; font-size: 10pt; }
+  .where { text-align: right; font-size: 8.6pt; color: var(--dim); }
+  .where b { color: var(--teal); }
+  .who { margin: 4mm 0 3.5mm; background: var(--tint); border-radius: 2.5mm; padding: 3mm 4mm; display: grid; grid-template-columns: 30mm 1fr; gap: 1mm 4mm; font-size: 9pt; }
+  .who strong { color: var(--teal); }
+  .steps { display: grid; grid-template-columns: 1fr 1fr; gap: 3.2mm 6mm; flex: 1; align-content: start; }
+  .step { display: grid; grid-template-columns: 8mm 1fr; gap: 0 2.5mm; }
+  .n { width: 8mm; height: 8mm; border-radius: 50%; background: var(--teal); color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 10.5pt; }
+  .step h2 { font-size: 11pt; margin: 0.8mm 0 1mm; }
+  .step p { margin: 0 0 1mm; }
+  .step ul { margin: 0.5mm 0 0; padding-left: 4.2mm; }
+  .step li { margin: 0 0 0.7mm; }
+  .btn { display: inline-block; border: 1px solid var(--teal); color: var(--teal); border-radius: 1.2mm; padding: 0 1.4mm; font-weight: 600; font-size: 8.6pt; white-space: nowrap; }
+  .btn.p { background: var(--teal); color: #fff; }
+  .field { font-weight: 600; }
+  .note { background: var(--warnbg); color: var(--warn); border-radius: 1.5mm; padding: 1.5mm 2.4mm; font-size: 8.8pt; margin-top: 1.4mm; }
+  .flow { margin: 3.5mm 0 3mm; display: flex; align-items: center; gap: 1.6mm; font-size: 8.4pt; flex-wrap: nowrap; }
+  .flow span.s { border: 1px solid var(--line); border-radius: 4mm; padding: 0.8mm 2.4mm; white-space: nowrap; }
+  .flow span.s.w { border-color: var(--warn); color: var(--warn); }
+  .flow span.s.ok { border-color: var(--teal); color: var(--teal); font-weight: 600; }
+  .flow i { color: var(--dim); font-style: normal; }
+  .flow .lab { color: var(--dim); margin-right: 1mm; font-weight: 600; white-space: nowrap; }
+  .flow i { white-space: nowrap; }
+  .tips { border-top: 1px solid var(--line); padding-top: 2.6mm; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4mm; font-size: 8.6pt; }
+  .tips h3 { font-size: 9pt; margin: 0 0 0.8mm; color: var(--teal); }
+  .tips p { margin: 0; color: var(--ink); }
+  footer { margin-top: 2.5mm; font-size: 7.6pt; color: var(--dim); display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div>
+      <h1>Making a purchase order</h1>
+      <p class="sub">Order what is running low, send it to the supplier, and receive it into stock.</p>
+    </div>
+    <div class="where">In the admin app:<br><b>Stock → Purchase orders</b></div>
+  </header>
+
+  <div class="who">
+    <strong>Who can order</strong>
+    <span>Admins always. An admin ticks which roles may (Managers, Cashiers, Waiters, Cooks) under <span class="field">Who can make orders</span> on the Purchase orders page.</span>
+    <strong>One person</strong>
+    <span>To let one person order, or stop them, open them on <b>Staff</b> and set <span class="field">Make purchase orders</span> to <i>Yes</i>, <i>No</i> or <i>As their role</i>.</span>
+  </div>
+
+  <div class="steps">
+    <div class="step"><div class="n">1</div><div>
+      <h2>Start the order</h2>
+      <p><b>Running low</b> lists what needs ordering, already grouped by supplier and department and worked out in the packs it comes in. Press <span class="btn p">Make this order</span> on a group.</p>
+      <p>Or press <span class="btn p">New order</span> to start an empty one.</p>
+    </div></div>
+
+    <div class="step"><div class="n">5</div><div>
+      <h2>Save it</h2>
+      <ul>
+        <li><span class="btn">Save as draft</span> keeps it to finish later.</li>
+        <li><span class="btn p">Done</span> finishes it: it becomes <i>Ready to send</i>.</li>
+      </ul>
+      <div class="note">Over the approval limit (GH₵1,000 unless changed under Features), it waits on <b>Waiting for you</b> until a manager or admin approves it. If it is <i>Not approved</i>, change it and press Done to ask again.</div>
+    </div></div>
+
+    <div class="step"><div class="n">2</div><div>
+      <h2>Pick the department</h2>
+      <p>Choose <b>Bistro</b>, <b>Bar</b> or <b>Shop</b>. Only that department's stock items are offered, and the goods are received into its store and paid from its books.</p>
+      <p>Switching department clears items from the other one, after asking.</p>
+    </div></div>
+
+    <div class="step"><div class="n">6</div><div>
+      <h2>Send it to the supplier</h2>
+      <p>Open the order, then any one of:</p>
+      <ul>
+        <li><span class="btn">Download PDF</span> and send the file.</li>
+        <li><span class="btn">Copy as a message</span>, paste it into WhatsApp or a text, then press <span class="btn">Mark as sent</span>.</li>
+        <li><span class="btn">Email to …</span> when the supplier has an email address. It goes within a minute.</li>
+      </ul>
+    </div></div>
+
+    <div class="step"><div class="n">3</div><div>
+      <h2>Choose the supplier</h2>
+      <p>Pick them from the list. Not there? Choose <span class="field">+ A new supplier…</span> and type their name, and a phone or email if you have them.</p>
+      <p>A manager's new supplier joins the list for next time. Anybody else's is kept on this order only.</p>
+    </div></div>
+
+    <div class="step"><div class="n">7</div><div>
+      <h2>Receive it when it arrives</h2>
+      <p>On <b>Stock</b>, press <span class="btn p">Receive stock</span> (or <span class="btn">Record spend</span> at the till) and pick the order under <span class="field">For an order</span>. Its items fill in.</p>
+      <ul>
+        <li>Change any line that came differently, say where it went and how it was paid. <i>Not paid yet</i> is fine.</li>
+        <li>Saving adds it to stock and marks the order <i>Part received</i> or <i>Received</i>.</li>
+      </ul>
+    </div></div>
+
+    <div class="step"><div class="n">4</div><div>
+      <h2>Check the items</h2>
+      <p>For each line: the <span class="field">Item</span>, <span class="field">How many</span>, <span class="field">Of</span> (packs or single units) and <span class="field">Price each</span>, which starts at what was last paid.</p>
+      <p><span class="btn">+ Add an item</span> for more, <span class="btn">Remove</span> for one you don't need. Add <span class="field">Needed by</span> and a <span class="field">Note to the supplier</span> if useful.</p>
+    </div></div>
+
+    <div class="step"><div class="n">✕</div><div>
+      <h2>Cancel one that is not needed</h2>
+      <p>Open it and press <span class="btn">Cancel this order</span>. It stays on the list, marked <i>Cancelled</i>, so nothing is lost.</p>
+    </div></div>
+  </div>
+
+  <div class="flow">
+    <span class="lab">An order's life</span>
+    <span class="s">Draft</span><i>→</i>
+    <span class="s w">Waiting for approval*</span><i>→</i>
+    <span class="s w">Ready to send</span><i>→</i>
+    <span class="s">Sent</span><i>→</i>
+    <span class="s w">Part received</span><i>→</i>
+    <span class="s ok">Received</span>
+  </div>
+  <p style="margin:-1.5mm 0 2.5mm;font-size:7.8pt;color:var(--dim)">* Only orders over the approval limit, and never an admin's own.</p>
+
+  <div class="tips">
+    <div><h3>Better suggestions</h3><p>Set each item's full level, pack size and supplier under Stock. Running low tops items back up to their full level.</p></div>
+    <div><h3>No double orders</h3><p>An item already on an open order is left off Running low until that order arrives or is cancelled.</p></div>
+    <div><h3>One department per order</h3><p>The bar's drinks and the kitchen's oil from the same supplier are two orders, received into two stores.</p></div>
+  </div>
+
+  <footer><span>snpos · Purchase orders</span><span>Print on A4. Keep by the office desk.</span></footer>
+</div>
+</body>
+</html>
