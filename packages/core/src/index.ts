@@ -148,6 +148,8 @@ export * from './xlsx-write';
 export * from './receivables';
 export * from './receivables-store';
 export * from './books-year-store';
+export * from './banks';
+export * from './banks-store';
 export * from './close-day';
 export * from './close-day-store';
 export * from './booking-changes';

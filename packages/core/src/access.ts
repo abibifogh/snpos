@@ -268,6 +268,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'accounting_tax', label: 'Tax return, and recording tax paid', path: '/accounting', group: 'Books', parent: 'accounting' },
   { key: 'accounting_recurring', label: 'Recurring entries', path: '/accounting', group: 'Books', parent: 'accounting' },
   { key: 'accounting_opening', label: 'Opening balances', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_banks', label: 'Bank and cash accounts, and transfers between them', path: '/accounting', group: 'Books', parent: 'accounting' },
   { key: 'accounting_yearend', label: 'Year end: close a year into retained earnings', path: '/accounting', group: 'Books', parent: 'accounting' },
   { key: 'accounting_assets', label: 'Fixed assets and depreciation', path: '/accounting', group: 'Books', parent: 'accounting' },
   { key: 'accounting_bank', label: 'Reconcile against a statement', path: '/accounting', group: 'Books', parent: 'accounting' },
@@ -569,7 +570,7 @@ export function sidebarSides(profile: StaffProfile | null, settings: Settings | 
  * side — shifts, spends, the books — is always there.
  */
 /** The parts of Accounting only an accountant opens. */
-const ACCOUNTANT_AREAS = ['accounting_journal', 'accounting_trial', 'accounting_recurring', 'accounting_assets', 'accounting_chart', 'accounting_opening', 'accounting_yearend'];
+const ACCOUNTANT_AREAS = ['accounting_journal', 'accounting_trial', 'accounting_recurring', 'accounting_assets', 'accounting_chart', 'accounting_banks', 'accounting_opening', 'accounting_yearend'];
 
 /** Whether a page that hosts others is itself in this person's sidebar. */
 function hostOpen(key: string, profile: StaffProfile | null, settings: Settings | null, side: Module | 'all'): boolean {

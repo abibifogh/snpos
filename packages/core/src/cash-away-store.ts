@@ -58,6 +58,8 @@ export async function confirmBanked(opts: {
   date: Date;
   reference?: string;
   userId: string;
+  /** Which bank account it was paid into. The bank account when left out. */
+  bankCode?: string;
 }): Promise<void> {
   await postEntry(opts.venueId, {
     date: opts.date,
@@ -66,7 +68,7 @@ export async function confirmBanked(opts: {
     memo: `Cash banked${opts.move.shift_code ? ` from ${opts.move.shift_code}` : ''}${opts.reference ? ` · ${opts.reference}` : ''}`,
     postedBy: opts.userId,
   }, [
-    { account_code: ACCOUNTS.bank, debit: opts.amount, credit: 0 },
+    { account_code: opts.bankCode || ACCOUNTS.bank, debit: opts.amount, credit: 0 },
     { account_code: ACCOUNTS.cash, debit: 0, credit: opts.amount },
   ]);
   await saveDropping('cash_moves', opts.move.$id, {
@@ -86,6 +88,7 @@ export async function bankFromSafe(opts: {
   reference?: string;
   takenBy?: string;
   userId: string;
+  bankCode?: string;
 }): Promise<void> {
   const { id } = await saveDropping('cash_moves', null, {
     venue_id: opts.venueId,
@@ -105,7 +108,7 @@ export async function bankFromSafe(opts: {
     memo: `Cash banked from the safe${opts.reference ? ` · ${opts.reference}` : ''}`,
     postedBy: opts.userId,
   }, [
-    { account_code: ACCOUNTS.bank, debit: opts.amount, credit: 0 },
+    { account_code: opts.bankCode || ACCOUNTS.bank, debit: opts.amount, credit: 0 },
     { account_code: ACCOUNTS.cash, debit: 0, credit: opts.amount },
   ]);
 }

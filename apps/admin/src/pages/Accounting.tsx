@@ -10,7 +10,7 @@ import {
   postFromStatement, attachReceipt, downloadUrl, areasOf,
   loadLocks, lockPeriod, openAccounts,
   hanging, postSettlement, postTipsPaid, postTaxRemitted, settlementProblem, paydownProblem,
-  closeFacts, closeChecklist, mayLock, closeProgress, lockOverWarningsWords, bpWords } from '@snpos/core';
+  closeFacts, closeChecklist, mayLock, closeProgress, lockOverWarningsWords, bpWords, payFromAccounts, moneyAccounts } from '@snpos/core';
 import type {
   AccountRow, JournalEntry, JournalLine, FixedAsset, LineRow, Doc, BankStatementLine, Settings,
   PeriodLock, CloseItem,
@@ -20,6 +20,7 @@ import { CashToBank } from '../components/CashToBank';
 import { BillsToPay } from '../components/books/BillsToPay';
 import { OwedToUs } from '../components/books/OwedToUs';
 import { TaxReturnReport, RecurringEntries, OpeningBalances, YearEnd } from '../components/books/YearTools';
+import { BankAccounts } from '../components/books/Banks';
 import { useSession, useMoney } from '../session';
 import { AccountsManager } from '../components/AccountsManager';
 import { PlReport, LedgerReport, CashFlowReport, BalanceExports, yearPack } from '../components/books/BookReports';
@@ -38,7 +39,7 @@ import { PlReport, LedgerReport, CashFlowReport, BalanceExports, yearPack } from
  * sitting, and each of those is the same figures read a different way; putting
  * them behind separate navigation makes it feel like separate work.
  */
-type Tab = 'statements' | 'cashflow' | 'ledger' | 'tax' | 'journal' | 'recurring' | 'opening' | 'yearend' | 'trial' | 'assets' | 'bank' | 'settle' | 'payables' | 'receivables' | 'chart' | 'locks';
+type Tab = 'statements' | 'cashflow' | 'ledger' | 'tax' | 'journal' | 'recurring' | 'opening' | 'yearend' | 'banks' | 'trial' | 'assets' | 'bank' | 'settle' | 'payables' | 'receivables' | 'chart' | 'locks';
 
 /** A month back from today, as YYYY-MM-DD, for the default window. */
 const monthStart = (d = new Date()) => `${d.toISOString().slice(0, 7)}-01`;
@@ -81,7 +82,7 @@ export function AccountingPage() {
   // this page switches to it rather than leaving the old one showing.
   const [params, setParams] = useSearchParams();
   const asked = params.get('tab');
-  const tab = (['statements', 'cashflow', 'ledger', 'tax', 'journal', 'recurring', 'opening', 'yearend', 'trial', 'assets', 'bank', 'settle', 'payables', 'receivables', 'chart', 'locks'].includes(asked ?? '') ? asked : 'statements') as Tab;
+  const tab = (['statements', 'cashflow', 'ledger', 'tax', 'journal', 'recurring', 'opening', 'yearend', 'banks', 'trial', 'assets', 'bank', 'settle', 'payables', 'receivables', 'chart', 'locks'].includes(asked ?? '') ? asked : 'statements') as Tab;
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
   useEffect(() => {
     // Land on something they can see. Opening on a tab they were not given
@@ -195,6 +196,7 @@ export function AccountingPage() {
           ['recurring', 'Recurring entries'],
           ['assets', 'Fixed assets'],
           ['chart', 'Chart of accounts'],
+          ['banks', 'Bank and cash accounts'],
           ['opening', 'Opening balances'],
           ['yearend', 'Year end'],
         ]],
@@ -222,7 +224,7 @@ export function AccountingPage() {
         </Notice>
       )}
 
-      {!['chart', 'assets', 'bank', 'settle', 'payables', 'receivables', 'recurring', 'opening', 'yearend'].includes(tab) && (
+      {!['chart', 'assets', 'bank', 'settle', 'payables', 'receivables', 'recurring', 'opening', 'yearend', 'banks'].includes(tab) && (
         <Card pad>
           <div className="grid-2">
             <Field label="From" hint="The profit and loss covers these dates.">
@@ -243,7 +245,7 @@ export function AccountingPage() {
       )}
 
       {tab === 'cashflow' && can('cashflow') && (
-        <CashFlowReport accounts={accounts} lines={lines} from={from} to={to} money={money} settings={settings} />
+        <CashFlowReport accounts={accounts} lines={lines} from={from} to={to} money={money} settings={settings} cashCodes={moneyAccounts(accounts).map((a) => a.code)} />
       )}
 
       {tab === 'ledger' && can('ledger') && (
@@ -337,7 +339,11 @@ export function AccountingPage() {
       )}
 
       {tab === 'settle' && can('settle') && (
-        <Settle venueId={venueId} userId={user?.$id ?? ''} money={money} decimals={decimals} onChanged={load} toast={toast} />
+        <Settle venueId={venueId} userId={user?.$id ?? ''} money={money} decimals={decimals} onChanged={load} toast={toast} accounts={accounts} />
+      )}
+
+      {tab === 'banks' && can('banks') && (
+        <BankAccounts accounts={accounts} lines={lines} money={money} decimals={decimals} venueId={venueId} userId={user?.$id ?? ''} isOwner={profile?.role === 'admin'} onChanged={load} toast={toast} />
       )}
 
       {tab === 'tax' && can('tax') && (
@@ -425,7 +431,7 @@ function Statements({
       )}
 
       <div className="row" style={{ gap: '0.5rem', justifyContent: 'flex-end', marginBottom: '0.6rem' }}>
-        <Button onClick={() => yearPack({ accounts, lines, entries, from, to, settings })}>
+        <Button onClick={() => yearPack({ accounts, lines, entries, from, to, settings, cashCodes: moneyAccounts(accounts).map((a) => a.code) })}>
           Download the accounts for these dates (Excel)
         </Button>
       </div>
@@ -1177,7 +1183,7 @@ function Reconcile({
   // statement is not a thing anybody does, and offering it invites the attempt.
   // Archived ones drop out: a closed bank account is not something to
   // reconcile this month against. Past reconciliations of it are untouched.
-  const cashLike = openAccounts(accounts).filter((a) => a.type === 'asset' && a.code < '1200');
+  const cashLike = openAccounts(accounts).filter((a) => a.type === 'asset' && a.code < '1200' && a.code !== '1100');
 
   const [code, setCode] = useState(cashLike[0]?.code ?? '1000');
   const [statementDate, setStatementDate] = useState(today());
@@ -1624,8 +1630,9 @@ function Reconcile({
  * written down, with the balance each one is clearing shown beside the box.
  */
 function Settle({
-  venueId, userId, money, decimals, onChanged, toast,
+  venueId, userId, money, decimals, onChanged, toast, accounts,
 }: {
+  accounts: AccountRow[];
   venueId: string;
   userId: string;
   money: (n: number) => string;
@@ -1643,6 +1650,9 @@ function Settle({
   const [feeText, setFeeText] = useState('');
   const [settleDate, setSettleDate] = useState(today());
   const [settleRef, setSettleRef] = useState('');
+  /** Where it arrived, when there is more than one bank or wallet. */
+  const banks = payFromAccounts(accounts).filter((a) => a.code !== '1000');
+  const [settleInto, setSettleInto] = useState('1040');
   const [tipsText, setTipsText] = useState('');
   const [tipsDate, setTipsDate] = useState(today());
   const [taxText, setTaxText] = useState('');
@@ -1684,7 +1694,7 @@ function Settle({
 
   return (
     <div className="stack">
-      <CashToBank venueId={venueId} userId={userId} money={money} decimals={decimals} onChanged={onChanged} toast={toast} />
+      <CashToBank venueId={venueId} userId={userId} money={money} decimals={decimals} onChanged={onChanged} toast={toast} banks={banks} />
       <Card title="Card and mobile money settled to the bank" pad>
         <p className="small dim" style={{ marginTop: 0 }}>
           Every close puts card and mobile-money takings into a clearing account. When the provider pays it into
@@ -1710,6 +1720,13 @@ function Settle({
           <Field label="Reference" hint="The settlement or batch number, so it can be found on the statement.">
             <Input value={settleRef} onChange={(e) => setSettleRef(e.target.value)} />
           </Field>
+          {banks.length > 1 && (
+            <Field label="Arrived in">
+              <Select value={settleInto} onChange={(e) => setSettleInto(e.target.value)}>
+                {banks.map((a) => <option key={a.code} value={a.code}>{a.name}</option>)}
+              </Select>
+            </Field>
+          )}
         </div>
         {receivedText && settleWhy && <Notice tone="warn">{settleWhy}</Notice>}
         <div className="row" style={{ marginTop: '0.75rem' }}>
@@ -1719,7 +1736,7 @@ function Settle({
             loading={busy === 'settle'}
             onClick={() => run('settle', async () => {
               await postSettlement(venueId, {
-                kind, received, fee, date: at(settleDate), reference: settleRef.trim(), postedBy: userId,
+                kind, received, fee, date: at(settleDate), reference: settleRef.trim(), postedBy: userId, bankAccount: settleInto,
               });
               setReceivedText(''); setFeeText(''); setSettleRef('');
             }, `${money(received + fee)} cleared, ${money(received)} into the bank`)}

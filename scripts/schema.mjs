@@ -2787,6 +2787,9 @@ export const COLLECTIONS = [
       ['name', 's', 120, true],
       ['type', 'e', ['asset', 'liability', 'equity', 'revenue', 'expense'], true],
       ['parent_code', 's', 10, false],
+      // An account that holds money: 'bank', 'momo' or 'cash'. Set on extra
+      // bank accounts and wallets; see banks.ts.
+      ['cash_kind', 's', 10, false],
       ['system', 'b', null, true, false],
       /**
        * Retired, not removed.
