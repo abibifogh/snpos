@@ -15,6 +15,7 @@ import { dailyDigest, nightlyBackup, deliveryFrom } from './daily.js';
 import { ensureLogin, revokeLogin } from './staff.js';
 import { handleReports } from './reports.js';
 import { handleSso } from './sso.js';
+import { handleInsightApprovals } from './insight-approvals.js';
 import {
   fromBarChecks, fromShopCounts, fromExpenses, worthSending, approvalSubject, approvalBody,
   countLines, countSubject, countBody, countPlace,
@@ -842,6 +843,14 @@ export default async ({ req, res, log, error }) => {
    */
   const reported = await handleReports({ req, res, db, DB_ID, log, error });
   if (reported) return reported;
+
+  /**
+   * The group hub's Approvals page: what waits here for an admin, and the
+   * decision made from there, as that admin. Signed by the hub; answered
+   * before anything else for the same reason as the two above.
+   */
+  const approved = await handleInsightApprovals({ req, res, db, DB_ID, users: new Users(client), Query, log, error });
+  if (approved) return approved;
 
   /**
    * What kind of invocation this is, according to Appwrite rather than
