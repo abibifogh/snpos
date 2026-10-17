@@ -35,9 +35,7 @@ import { ConsignorsPage } from './pages/Consignors';
 import { TabsPage } from './pages/Tabs';
 import { StaffOwingPage } from './pages/StaffOwing';
 import { IntakePage } from './pages/Intake';
-import { StocktakePage } from './pages/Stocktake';
-import { BarCountsPage } from './pages/BarCounts';
-import { LocationsPage } from './pages/Locations';
+import { CountPage } from './pages/Count';
 import { PayoutsPage } from './pages/Payouts';
 
 export function App() {
@@ -106,7 +104,9 @@ export function App() {
         <Route path="/tabs" element={guard('tabs', <TabsPage />)} />
         <Route path="/staff-owing" element={guard('staff_owing', <StaffOwingPage />)} />
         <Route path="/intake" element={guard('intake', <IntakePage />)} />
-        <Route path="/stocktake" element={guard('stocktake', <StocktakePage />)} />
+        {/* Count, every place. The old addresses open it on their side. */}
+        <Route path="/count" element={guardAny('/count', <CountPage />)} />
+        <Route path="/stocktake" element={<Navigate to="/count?side=craft" replace />} />
         {/* The bar reuses the kitchen's screens for its catalogue and its
             shelves — a dish and a cocktail are both a menu item with a recipe,
             and a bottle is an ingredient. What it does NOT share is the
@@ -114,8 +114,9 @@ export function App() {
         <Route path="/bar/categories" element={<Navigate to="/catalogue/categories?side=bar" replace />} />
         <Route path="/bar/items" element={<Navigate to="/catalogue/items?side=bar" replace />} />
         <Route path="/bar/stock" element={<Navigate to="/stock?side=bar" replace />} />
-        <Route path="/bar/counts" element={guard('bar_counts', <BarCountsPage />)} />
-        <Route path="/locations" element={guard('locations', <LocationsPage />)} />
+        <Route path="/bar/counts" element={<Navigate to="/count?side=bar" replace />} />
+        {/* Where stock sits is the Stock page's Places tab now. */}
+        <Route path="/locations" element={<Navigate to="/stock?tab=places" replace />} />
         <Route path="/payouts" element={guard('payouts', <PayoutsPage />)} />
         <Route path="/venues" element={guard('venues', <VenuesPage />)} />
         <Route path="/tables" element={guard('tables', <TablesPage />)} />

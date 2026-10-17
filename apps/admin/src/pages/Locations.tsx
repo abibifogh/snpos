@@ -27,14 +27,21 @@ import { ShelfTrailModal } from '../components/ShelfTrail';
  * rule resolves to the one location it has, or to the old single-number
  * behaviour when it has none.
  */
-export function LocationsPage() {
+/**
+ * Where stock sits: the places, moving between them, and opening levels.
+ *
+ * Now the Places tab of the Stock page, which says the side — so `side`
+ * fixes it and the page's own switch and heading are left out. Opened on its
+ * own (the old address) it keeps both.
+ */
+export function LocationsPage({ side }: { side?: Module } = {}) {
   const { settings, profile, user } = useSession();
   const toast = useToast();
 
   const [places, setPlaces] = useState<(StockLocation & Doc)[] | null>(null);
   const [levels, setLevels] = useState<LocationStock[]>([]);
   const [editing, setEditing] = useState<Partial<StockLocation & Doc> | null>(null);
-  const [module, setModule] = useState<Module>('bar');
+  const [module, setModule] = useState<Module>(side ?? 'bar');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -221,7 +228,7 @@ export function LocationsPage() {
   return (
     <>
       <div className="spread">
-        <h1>Where stock sits</h1>
+        {side ? <h2 style={{ margin: 0 }}>Places</h2> : <h1>Where stock sits</h1>}
         <div className="row" style={{ gap: '0.5rem' }}>
           {/* Counting forty items twice on day one is the kind of task that
               gets done badly or not at all. */}
@@ -242,7 +249,7 @@ export function LocationsPage() {
 
       {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
 
-      {([ 'kitchen', 'bar', 'craft' ] as Module[]).filter((m) => mods[m]).length > 1 && (
+      {!side && ([ 'kitchen', 'bar', 'craft' ] as Module[]).filter((m) => mods[m]).length > 1 && (
         // Which trade's storerooms, which narrows a list rather than changing
         // the screen — so it is the filter shape, not the tab shape.
         <div style={{ marginBottom: '0.8rem' }}>

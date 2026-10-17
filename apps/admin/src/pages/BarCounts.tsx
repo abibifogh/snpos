@@ -43,8 +43,18 @@ interface CheckRow extends Doc {
  * count somebody rushed at midnight. Two minutes at the start is what stops an
  * argument at the end.
  */
-export function BarCountsPage() {
+export function BarCountsPage({ module = 'bar' }: { module?: 'bar' | 'kitchen' } = {}) {
   const { profile, user } = useSession();
+  /**
+   * The same sheet for every side. The bar was the first to count in and
+   * out; the kitchen counts on the same sheet now, against its own places,
+   * and its differences wait for a decision the same way. What is bar-only
+   * below — whether a drink is set up to pour — is shown only for the bar.
+   */
+  const isBar = module === 'bar';
+  const W = isBar
+    ? { side: 'bar', Side: 'Bar', items: 'Bottles & mixers', search: 'Gin, tonic…' }
+    : { side: 'kitchen', Side: 'Kitchen', items: 'Stock', search: 'Rice, oil…' };
   const toast = useToast();
 
   const [shift, setShift] = useState<Shift | null>(null);
@@ -224,7 +234,7 @@ export function BarCountsPage() {
     // The bar's own. The kitchen counts in on the same sheet and its counts
     // are decided under Waiting for you, where they are named as the kitchen's.
     const barsOnly = <T extends { module?: string | null }>(rows: T[]) =>
-      rows.filter((r) => (r.module ?? 'bar') !== 'kitchen');
+      rows.filter((r) => ((r.module ?? 'bar') === 'kitchen') === !isBar);
     const [waiting, filed] = await Promise.all([
       pendingBarChecks().then(barsOnly),
       barCountHistory(Date.now() - 90 * 86_400_000).then(barsOnly),
@@ -254,7 +264,7 @@ export function BarCountsPage() {
 
   const load = async () => {
     try {
-      const open = await loadOpenShifts('main', 'bar').catch(() => [] as Shift[]);
+      const open = await loadOpenShifts('main', module).catch(() => [] as Shift[]);
       const current = open[0] ?? null;
       setShift(current);
       /*
@@ -268,11 +278,11 @@ export function BarCountsPage() {
       */
       const where = await loadLocations('main').catch(() => null);
       setRoomsFailed(where === null);
-      const bar = (where ?? []).filter((l) => (l.module ?? 'kitchen') === 'bar' && l.active !== false);
+      const bar = (where ?? []).filter((l) => (l.module ?? 'kitchen') === module && l.active !== false);
       setPlaces(bar);
-      const here = placeId || saleLocation(bar, 'bar')?.$id || '';
+      const here = placeId || saleLocation(bar, module)?.$id || '';
       if (!placeId) setPlaceId(here);
-      setLines(await barCountSheet('main', here || undefined, isManager));
+      setLines(await barCountSheet('main', here || undefined, isManager, module));
       // Best effort. A sheet that cannot answer "is this wired up" is still a
       // usable sheet; one that refuses to load over it is not.
       const [rec, items] = await Promise.all([
@@ -285,7 +295,7 @@ export function BarCountsPage() {
       // must not stop anybody counting.
       void loadDecisions().catch(() => { setPending([]); setPast([]); });
       if (current) {
-        void unpouredForShift('main', current.$id, 'bar')
+        void unpouredForShift('main', current.$id, module)
           .then(setUnpoured)
           .catch(() => setUnpoured([]));
       } else {
@@ -424,6 +434,7 @@ export function BarCountsPage() {
         phase,
         lines: lines ?? [],
         userId: user?.$id ?? '',
+        module,
       });
       await load();
       /*
@@ -540,11 +551,11 @@ export function BarCountsPage() {
       const { poured, lines, failed, retired, unmatched } = await pourMissedSales({
         venueId: 'main',
         shiftId: shift.$id,
-        module: 'bar',
+        module,
         userId: user?.$id ?? '',
       });
       await load();
-      void unpouredForShift('main', shift.$id, 'bar').then(setUnpoured).catch(() => undefined);
+      void unpouredForShift('main', shift.$id, module).then(setUnpoured).catch(() => undefined);
       /*
         WHAT WAS SKIPPED IS SAID, because silence here reads as success.
 
@@ -605,11 +616,11 @@ export function BarCountsPage() {
       const { poured, lines } = await pourMissedSales({
         venueId: 'main',
         shiftId: shift.$id,
-        module: 'bar',
+        module,
         userId: user?.$id ?? '',
       });
       await load();
-      void unpouredForShift('main', shift.$id, 'bar').then(setUnpoured).catch(() => undefined);
+      void unpouredForShift('main', shift.$id, module).then(setUnpoured).catch(() => undefined);
 
       toast(`${relinkWords(plan)} ${lines === 0
         ? 'Nothing on this shift was waiting on them.'
@@ -631,12 +642,12 @@ export function BarCountsPage() {
   return (
     <>
       <div className="spread">
-        <h1>Bar counts</h1>
+        <h1>Count · {W.side}</h1>
         {canCount && (
           <Button variant="primary" onClick={() => void save()} loading={busy} disabled={summary.countedLines === 0}>
             {isStore
               ? `Save the count of ${room?.name ?? 'the store'}`
-              : phase === 'open' ? 'Count the bar in' : 'Count the bar out'}
+              : phase === 'open' ? `Count the ${W.side} in` : `Count the ${W.side} out`}
           </Button>
         )}
       </div>
@@ -652,7 +663,7 @@ export function BarCountsPage() {
             has not put on the page.
           */}
           {places.length > 0 && (
-            <Field label="Which room" hint="A store room can be counted at any time. The bar is counted against a shift.">
+            <Field label="Which room" hint={`A store room can be counted at any time. The ${W.side} is counted against a shift.`}>
               <Select value={placeId} onChange={(e) => setPlaceId(e.target.value)}>
                 {places.map((l) => <option key={l.$id} value={l.$id}>{l.name}</option>)}
               </Select>
@@ -668,22 +679,17 @@ export function BarCountsPage() {
           */}
           {roomsFailed ? (
             <Empty title="The rooms could not be read">
-              Nothing is wrong with the bar — this page could not reach the database just now, so it has no
+              Nothing is wrong with the {W.side} — this page could not reach the database just now, so it has no
               list of rooms to offer. The message above says what to check. Nothing was saved; reload when it
               is back.
             </Empty>
-          ) : places.length === 0 ? (
-            <Empty title="The bar has no rooms set up">
-              A bar keeps stock in two places: behind the counter, and in a store. Set them up under
-              {' '}<strong>Bar → Where stock sits</strong>, and deliveries will land in the store and counts
-              will know which one they are counting.
-            </Empty>
           ) : (
-            <Empty title="No bar shift is open">
-              Counting the bar is part of a shift — it is what one person accepted and what they handed over.
-              Open the bar from the till, then count it in. A store room does not need a shift; pick one above.
-              {' '}A manager can also spot-check the bar itself without one, which is recorded as a stocktake
-              rather than as anybody&rsquo;s handover.
+            <Empty title={`No ${W.side} shift is open`}>
+              Counting the {W.side} is part of a shift — it is what one person accepted and what they handed over.
+              Open the {W.side} from its screen, then count it in. A store room does not need a shift; set one up
+              under <strong>Stock → Places &amp; moves</strong> and it can be counted any time.
+              {' '}A manager can also spot-check without a shift, which is recorded as a stocktake rather than as
+              anybody&rsquo;s handover.
             </Empty>
           )}
         </Card>
@@ -735,7 +741,7 @@ export function BarCountsPage() {
                 once, where somebody starting a shift will read it. */}
             {phase === 'open' && !openingDone && (
               <Notice tone="info">
-                Count what is actually behind the bar before service starts. It is usually what last night left,
+                Count what is actually there before service starts. It is usually what last night left,
                 and the times it is not — an overnight delivery, a bottle taken for a function — are the times a
                 variance gets argued about at two in the morning.
               </Notice>
@@ -768,7 +774,7 @@ export function BarCountsPage() {
               it as a loss is how a bartender gets asked about a shortage that
               is a setting.
             */}
-            {wiring.lines > 0 && (
+            {isBar && wiring.lines > 0 && (
               <Notice tone="warn">
                 {wiring.lines === 1 ? 'One line on this sheet is' : `${wiring.lines} lines on this sheet are`}
                 {' '}short {money(wiring.value)} between {wiring.lines === 1 ? 'it' : 'them'}, and nothing on the
@@ -782,7 +788,7 @@ export function BarCountsPage() {
 
           <Card>
             <Field label="Search">
-              <Input value={filter} placeholder="Gin, tonic…" onChange={(e) => setFilter(e.target.value)} />
+              <Input value={filter} placeholder={W.search} onChange={(e) => setFilter(e.target.value)} />
             </Field>
             {/* Only worth asking when there is more than one room. A bar with
                 a single shelf should not be made to choose it. */}
@@ -797,10 +803,10 @@ export function BarCountsPage() {
               </Field>
             )}
             <p className="small dim" style={{ margin: 0 }}>
-              Grouped the way the bar is walked: bottles on the shelf, then crates in the store, then what is
-              open and measured. Leave a line blank and nothing is recorded for it — blank is not nought.
-              {' '}This sheet is the items an admin marked as counted every shift, under Bottles &amp; mixers;
-              with none marked it asks for everything.
+              Grouped by how each thing is counted. Leave a line blank and nothing is recorded for it — blank
+              is not nought.
+              {' '}This sheet is the items marked as counted every shift, under Stock; with none marked it asks
+              for everything. Items marked &ldquo;just check it&rdquo; are asked about at the close instead.
             </p>
           </Card>
 
@@ -808,9 +814,9 @@ export function BarCountsPage() {
             <Card><Spinner /></Card>
           ) : groups.length === 0 ? (
             <Card>
-              <Empty title="Nothing set up for the bar yet">
-                Add your bottles and mixers under Bar, Bottles &amp; mixers, and set each one&rsquo;s unit —
-                bottles, cases, or measures. They appear here grouped by it.
+              <Empty title={`Nothing set up for the ${W.side} yet`}>
+                Add what the {W.side} keeps under Stock, and set each one&rsquo;s unit. They appear here grouped
+                by it.
               </Empty>
             </Card>
           ) : (
@@ -833,6 +839,7 @@ export function BarCountsPage() {
                      person reading it is looking at one line and asking what
                      happened to it. */
                   extra={(l) => {
+                    if (!isBar) return null;
                     const state = pourFor(l.ingredientId);
                     const label = pourLabel(state);
                     if (!label) return null;
@@ -909,8 +916,9 @@ export function BarCountsPage() {
       {isAdmin && shift && (
         <Card title="Sales that never came off a shelf">
           <p className="small dim" style={{ marginTop: 0 }}>
-            Drinks sold before their size had a shelf of its own were never taken off anything. This puts them
-            through now, so what the shelves say includes tonight&rsquo;s sales. Safe to press twice — a sale
+            Sales that were never taken off a shelf — a drink sold before its size had a shelf, a dish paid
+            while the screen was offline — are put through now, so what the shelves say includes this
+            shift&rsquo;s sales. Safe to press twice — a sale
             already accounted for is left alone.
           </p>
           <Button loading={pouring} onClick={() => void catchUp()}>
@@ -980,7 +988,7 @@ export function BarCountsPage() {
             leftover links and no sizes could pour from either shelf, and
             picking one would be a new fault nobody can see.
           */}
-          {isAdmin && shift && unpoured.some(
+          {isBar && isAdmin && shift && unpoured.some(
             (u) => u.reason === 'size-has-no-recipe' || u.reason === 'sold-without-a-size',
           ) && (
             <>

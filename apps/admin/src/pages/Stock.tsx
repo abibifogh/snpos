@@ -1,23 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast, ViewTabs,
-  PickerMenu, PickerItem, FacetChips, GroupedRows, SortableTh,
+  PickerMenu, PickerItem, FacetChips, GroupedRows, SortableTh, ExpenseModal,
 } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, levelOf, saveDropping, AVERAGE_COST_WORDS,
   purchasesFor, priceHistory, priceMoveNote, packProblem, hasPack, packSize,
   matches, sortStock, stockState, STOCK_SORTS, STOCK_STATES,
-  groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, normaliseName, bpWords, dateWords } from '@snpos/core';
+  groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, normaliseName, bpWords, dateWords,
+  loadLocations, loadLevels, openIn, levelFor, canOpen } from '@snpos/core';
 import { SalesHistory } from '../components/SalesHistory';
 import { ShelfTrailModal } from '../components/ShelfTrail';
 import type {
   StockSort, StockState, Module, Ingredient, Recipe, MenuItem, Doc, Settings, PurchaseRow,
-  GroupChoice, SortChoice,
+  GroupChoice, SortChoice, StockLocation, LocationStock,
 } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
 import { StockImport } from '../components/StockImport';
 import { useSession } from '../session';
+import { LocationsPage } from './Locations';
 
 interface Supplier extends Doc { venue_id: string; name: string; contact?: string; phone?: string; email?: string; active: boolean }
 
@@ -149,11 +152,30 @@ const guideExample = (unit?: string) => {
  * else's larder.
  */
 export function StockPage({ module = 'kitchen' }: { module?: Module }) {
-  const { settings } = useSession();
+  const { settings, profile, user } = useSession();
   const toast = useToast();
   const decimals = settings?.currency_decimals ?? 2;
+  const [params] = useSearchParams();
 
-  const [tab, setTab] = useState<'ingredients' | 'suppliers' | 'categories' | 'packs'>('ingredients');
+  type Tab = 'ingredients' | 'places' | 'suppliers' | 'categories' | 'packs';
+  const [tab, setTab] = useState<Tab>(() => {
+    const asked = params.get('tab');
+    return asked === 'places' || asked === 'suppliers' || asked === 'categories' || asked === 'packs' ? asked : 'ingredients';
+  });
+  /**
+   * This side's places and what each holds, for a column per place.
+   *
+   * The item list and "Where stock sits" were two pages about one shelf:
+   * cost and supplier on one, how much is where on the other. One list now,
+   * a column per place, with the places themselves on the Places tab.
+   */
+  const [places, setPlaces] = useState<StockLocation[]>([]);
+  const [levels, setLevels] = useState<LocationStock[]>([]);
+  /** Receive stock: the spend form, worded for a delivery. */
+  const [receiving, setReceiving] = useState(false);
+  const mayPlaces = canOpen('locations', profile, settings);
+  const mayCount = canOpen(module === 'bar' ? 'bar_counts' : 'stock', profile, settings);
+  const mayWaste = canOpen('waste', profile, settings);
   const { rows: packKinds, reload: reloadPacks } = useKeyedList('pack_kinds');
   const [ingredients, setIngredients] = useState<Ingredient[] | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -188,10 +210,10 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
    * page had: a screen written when there were two sides, read by a third.
    */
   const W = module === 'bar'
-    ? { title: 'Bottles & mixers', add: 'Add a bottle or mixer' }
+    ? { title: 'Stock · bar', add: 'Add a bottle or mixer' }
     : module === 'craft'
       ? { title: 'Supplies', add: 'Add a supply' }
-      : { title: 'Stock', add: 'Add ingredient' };
+      : { title: 'Stock · kitchen', add: 'Add ingredient' };
   /** The ingredient whose purchase history is being read. */
   const [historyFor, setHistoryFor] = useState<Ingredient | null>(null);
   /** The item whose shelf figure is being traced. See ShelfTrailModal. */
@@ -220,6 +242,10 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
     setSuppliers(s.sort((a, b) => a.name.localeCompare(b.name)));
     setRecipes(r);
     setDishes(d);
+    // Best effort: without them the list shows one total, as it always has.
+    const mine = openIn(await loadLocations('main'), module);
+    setPlaces(mine);
+    setLevels(mine.length > 1 ? await loadLevels(mine.map((l) => l.$id)) : []);
   };
   useEffect(() => { load().catch((e) => setError(humanError(e))); }, []);
 
@@ -279,6 +305,8 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   };
 
   const archivedCount = (ingredients ?? []).filter((i) => !i.active).length;
+  /** A column per place, where there is more than one. */
+  const byPlace = places.length > 1;
   /**
    * Narrowed, then ordered — by default, by what is closest to running out.
    *
@@ -576,11 +604,25 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
         )}
       </div>
 
+      {/*
+        The jobs done to stock, in the order they happen, on the page that
+        shows it. Each was a page of its own under a different heading.
+      */}
+      <div className="row row-wrap" style={{ gap: '0.5rem', marginBottom: '0.8rem' }}>
+        {module !== 'craft' && (
+          <Button variant="primary" onClick={() => setReceiving(true)}>Receive stock</Button>
+        )}
+        {mayPlaces && <Button onClick={() => setTab('places')}>Move</Button>}
+        {mayCount && <Link className="btn" to={`/count?side=${module}`}>Count</Link>}
+        {mayWaste && module === 'kitchen' && <Link className="btn" to="/waste">Waste</Link>}
+      </div>
+
       <ViewTabs
         value={tab}
         onChange={setTab}
         options={[
-          { value: 'ingredients', label: 'Ingredients' },
+          { value: 'ingredients', label: 'Items' },
+          ...(mayPlaces ? [{ value: 'places' as const, label: 'Places & moves' }] : []),
           { value: 'suppliers', label: 'Suppliers' },
           { value: 'categories', label: 'Categories' },
           { value: 'packs', label: 'Packs' },
@@ -661,7 +703,9 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
         />
       )}
 
-      {tab === 'packs' ? (
+      {tab === 'places' ? (
+        <LocationsPage side={module} />
+      ) : tab === 'packs' ? (
         <KeyedListManager
           collection="pack_kinds"
           singular="pack"
@@ -715,8 +759,9 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
                       onClick={() => setSorts(cycleSort(sorts, 'counted', 'How often it is counted'))}
                     />
                     <th>Supplier</th><th>Used in</th>
+                    {byPlace && places.map((p) => <th key={p.$id} className="num">{p.name}</th>)}
                     <SortableTh
-                      label="In stock"
+                      label={byPlace ? 'All places' : 'In stock'}
                       className="num"
                       dir={sortDir(sorts, 'qty')}
                       position={sortPosition(sorts, 'qty')}
@@ -737,7 +782,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
                   <GroupedRows
                     nodes={tree}
                     rows={ordered}
-                    columns={10}
+                    columns={10 + (byPlace ? places.length : 0)}
                     closed={closedGroups}
                     onToggle={(path) => setClosedGroups((c) => {
                       const next = new Set(c);
@@ -783,6 +828,9 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
                         </td>
                         <td className="dim small">{supplierName(i.supplier_id)}</td>
                         <td className="small">{usedIn(i.$id)}</td>
+                        {byPlace && places.map((p) => (
+                          <td key={p.$id} className="num">{levelFor(levels, i.$id, p.$id)}</td>
+                        ))}
                         <td className="num">{i.current_qty} {i.unit}</td>
                         <td className="num dim">{i.par_level} {i.unit}</td>
                         <td className="num">{settings ? formatMoney(i.base_unit_cost, settings) : i.base_unit_cost}</td>
@@ -844,6 +892,24 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
           </div>
         )}
       </Card>
+      )}
+
+      {receiving && settings && (
+        <ExpenseModal
+          receive
+          desk="office"
+          module={module}
+          venueId="main"
+          shiftId=""
+          settings={settings as Settings}
+          userId={user?.$id ?? ''}
+          onClose={() => setReceiving(false)}
+          onDone={(m) => {
+            setReceiving(false);
+            toast(m);
+            void load();
+          }}
+        />
       )}
 
       {trailFor && (

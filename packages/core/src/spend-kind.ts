@@ -67,8 +67,12 @@ export function spendWords(e: {
   source?: string | null;
   imprest_float_id?: string | null;
   from_takings?: boolean;
+  pay_later?: boolean | null;
+  paid_at?: string | null;
 }, items: { stocked?: boolean }[] = [], methodKind?: string | null): { kind: string; source: string } {
   const kind = (e.kind as SpendKind) || spendKind(items);
+  // Received on account: owed to the supplier until it is paid.
+  if (e.pay_later === true) return { kind: KIND_WORDS[kind] ?? KIND_WORDS.overhead, source: e.paid_at ? 'Paid later' : 'Not paid yet' };
   const source = (e.source as SpendSource) || spendSource({ ...e, methodKind });
   return { kind: KIND_WORDS[kind] ?? KIND_WORDS.overhead, source: SOURCE_WORDS[source] ?? SOURCE_WORDS.drawer };
 }

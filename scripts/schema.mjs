@@ -1585,6 +1585,17 @@ export const COLLECTIONS = [
       ['imprest_float_id', 's', 64, false],
       // The supplier order this spend received, where it was one.
       ['purchase_order_id', 's', 64, false],
+      /*
+        Received and not yet paid for (Receive stock, "Not paid yet"). The
+        books credit Accounts payable instead of the drawer or the bank, and
+        the paid_* fields say when, how and by whom it was settled later.
+        See owed-spends.ts.
+      */
+      ['pay_later', 'b', null, false, false],
+      ['paid_at', 's', 40, false],
+      ['paid_via', 's', 20, false],
+      ['paid_ref', 's', 120, false],
+      ['paid_by', 's', 64, false],
       /**
        * Whether this came out of the money taken during the shift.
        *
@@ -1622,7 +1633,7 @@ export const COLLECTIONS = [
       */
       ['alerted_at', 'd', null, false],
     ],
-    indexes: [['shift', 'key', ['shift_id']], ['supplier', 'key', ['supplier_id']]],
+    indexes: [['shift', 'key', ['shift_id']], ['supplier', 'key', ['supplier_id']], ['owed', 'key', ['pay_later']]],
   },
   {
     /**
@@ -4523,6 +4534,9 @@ export const SYSTEM_ACCOUNT_CODES = [
   // Count differences charged to staff: what they owe, what charging them
   // recovers, and the pay it is taken from. See staff-charges.ts.
   '1300', '4910', '6100',
+  // Stock received and not yet paid for: Receive stock credits it, paying
+  // the supplier debits it. See owed-spends.ts.
+  '2300',
 ];
 
 export const SEED_ACCOUNTS = [

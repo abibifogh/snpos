@@ -168,6 +168,11 @@ export async function receiveStock(opts: {
   shiftId?: string;
   createdBy?: string;
   note?: string;
+  /**
+   * Which place it was put down in, when somebody said. Receive stock asks;
+   * left out, it lands where deliveries land for that side.
+   */
+  locationId?: string;
 }): Promise<void> {
   const { venueId, ingredient, qty, unitCost, refType, refId, shiftId, createdBy, note } = opts;
   if (qty <= 0) return;
@@ -183,10 +188,11 @@ export async function receiveStock(opts: {
     A business with one location has both answers the same, which is why none
     of this changes anything for a kitchen that has never heard of a store room.
   */
-  const where = purchaseLocation(
-    await loadLocations(venueId),
-    (ingredient as { module?: string }).module ?? 'kitchen',
-  );
+  const places = await loadLocations(venueId);
+  const side = (ingredient as { module?: string }).module ?? 'kitchen';
+  // A place that was named, if it is one of this side's; otherwise the store.
+  const where = places.find((l) => l.$id === opts.locationId && (l.module ?? 'kitchen') === side && l.active !== false)
+    ?? purchaseLocation(places, side);
 
   await db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
     venue_id: venueId,

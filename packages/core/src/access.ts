@@ -195,13 +195,15 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'group_bookings', label: 'Group bookings', path: '/group-bookings', group: 'Sell', module: 'kitchen' },
   { key: 'tables', label: 'Tables & QR', path: '/tables', group: 'Sell' },
   { key: 'vouchers', label: 'Discount vouchers', path: '/vouchers', group: 'Sell' },
-  { key: 'stock', label: 'Ingredients · bistro', path: '/stock', group: 'Stock', module: 'kitchen' },
-  { key: 'bar_stock', label: 'Bottles & mixers · bar', path: '/stock', group: 'Stock', module: 'bar' },
+  { key: 'stock', label: 'Stock · kitchen', path: '/stock', group: 'Stock', module: 'kitchen' },
+  { key: 'bar_stock', label: 'Stock · bar', path: '/stock', group: 'Stock', module: 'bar' },
   { key: 'waste', label: 'Waste', path: '/waste', group: 'Stock', module: 'kitchen' },
   { key: 'purchase_orders', label: 'Purchase orders', path: '/purchase-orders', group: 'Stock' },
-  { key: 'bar_counts', label: 'Bar counts', path: '/bar/counts', group: 'Stock', module: 'bar' },
-  { key: 'stocktake', label: 'Shop stocktake', path: '/stocktake', group: 'Stock', module: 'craft' },
-  { key: 'locations', label: 'Where stock sits', path: '/locations', group: 'Stock', module: 'bar' },
+  { key: 'bar_counts', label: 'Count · bar', path: '/count', group: 'Stock', module: 'bar' },
+  { key: 'stocktake', label: 'Count · shop', path: '/count', group: 'Stock', module: 'craft' },
+  // Every side's places, on the Stock page's Places tab rather than a page
+  // of its own. No side of its own: the kitchen keeps a store room too.
+  { key: 'locations', label: 'Places & moves', path: '/stock?tab=places', group: 'Stock', parent: 'stock' },
   { key: 'consignors', label: 'Makers', path: '/consignors', group: 'Stock', module: 'craft' },
   { key: 'intake', label: 'Goods received', path: '/intake', group: 'Stock', module: 'craft' },
   /*
@@ -286,7 +288,13 @@ export interface NavMerge {
 export const NAV_MERGES: NavMerge[] = [
   { to: '/catalogue/categories', label: 'Categories', keys: { kitchen: 'menu_categories', craft: 'shop_categories', bar: 'bar_categories' } },
   { to: '/catalogue/items', label: 'Menu & products', keys: { kitchen: 'menu_items', craft: 'shop_items', bar: 'bar_items' } },
-  { to: '/stock', label: 'Ingredients & bottles', keys: { kitchen: 'stock', bar: 'bar_stock' } },
+  { to: '/stock', label: 'Stock', keys: { kitchen: 'stock', bar: 'bar_stock' } },
+  /*
+    Count, every place. The kitchen counts on the bar's sheet now, so it is
+    reached with the kitchen's stock grant; the shop's shelf count is its
+    stocktake.
+  */
+  { to: '/count', label: 'Count', keys: { bar: 'bar_counts', kitchen: 'stock', craft: 'stocktake' } },
 ];
 
 /** Roles that can be granted admin sections at all. */

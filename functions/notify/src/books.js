@@ -28,6 +28,7 @@ export const ACCOUNTS = {
   otherLeviesPayable: '2190',
   tipsPayable: '2200',
   owedToMakers: '2400',
+  accountsPayable: '2300',
   foodSales: '4000',
   barSales: '4010',
   craftSales: '4020',

@@ -140,6 +140,8 @@ export * from './purchase-orders';
 export * from './purchase-orders-store';
 export * from './cash-away';
 export * from './cash-away-store';
+export * from './owed-spends';
+export * from './owed-spends-store';
 export * from './close-day';
 export * from './close-day-store';
 export * from './booking-changes';

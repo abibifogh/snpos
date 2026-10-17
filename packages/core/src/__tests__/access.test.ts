@@ -510,7 +510,11 @@ test('the sidebar is grouped by job, and the per-side pages are one link each', 
   assert.deepEqual(sell.links.find((l) => l.label === 'Categories')?.keys, ['menu_categories', 'bar_categories', 'shop_categories']);
   assert.equal(sell.links.find((l) => l.label === 'Menu & products')?.to, '/catalogue/items');
   const stock = nav.find((g) => g.group === 'Stock')!;
-  assert.deepEqual(stock.links.find((l) => l.label === 'Ingredients & bottles')?.keys, ['stock', 'bar_stock']);
+  assert.deepEqual(stock.links.find((l) => l.label === 'Stock')?.keys, ['stock', 'bar_stock']);
+  // Count, one link for every side: the bar's sheet, the kitchen's, the shop's shelf.
+  assert.deepEqual(stock.links.find((l) => l.label === 'Count')?.keys, ['stock', 'bar_counts', 'stocktake']);
+  // Where stock sits is a tab of Stock, not a link of its own.
+  assert.ok(!stock.links.some((l) => l.label === 'Where stock sits' || l.label === 'Places & moves'));
   // One Accounting link, not six. The tabs are reached through the page.
   const books = nav.find((g) => g.group === 'Books')!;
   assert.deepEqual(books.links.map((l) => l.label), ['Reports', 'Accounting']);
@@ -520,13 +524,12 @@ test('narrowed to one side, the sidebar keeps that side and everything with no s
   const both = settings({ kitchen_enabled: true, craft_enabled: true, bar_enabled: true });
   const nav = navFor(staff({ role: 'admin' }), both, 'bar');
   const labels = nav.flatMap((g) => g.links.map((l) => l.label));
-  assert.ok(labels.includes('Bar counts'));
-  assert.ok(!labels.includes('Shop stocktake'));
+  assert.equal(nav.flatMap((g) => g.links).find((l) => l.label === 'Count')?.to, '/count?side=bar');
   assert.ok(!labels.includes('Waste'));
   assert.ok(labels.includes('Shifts'), 'shifts have no side');
   // The merged links point at the chosen side.
   assert.equal(nav.flatMap((g) => g.links).find((l) => l.label === 'Categories')?.to, '/catalogue/categories?side=bar');
-  assert.deepEqual(nav.flatMap((g) => g.links).find((l) => l.label === 'Ingredients & bottles')?.keys, ['bar_stock']);
+  assert.deepEqual(nav.flatMap((g) => g.links).find((l) => l.label === 'Stock')?.keys, ['bar_stock']);
 });
 
 test('a merged link appears when any of its sides is granted, and offers only those sides', () => {

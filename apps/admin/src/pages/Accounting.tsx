@@ -17,6 +17,7 @@ import type {
 } from '@snpos/core';
 import { useNavigate } from 'react-router-dom';
 import { CashToBank } from '../components/CashToBank';
+import { OwedToSuppliers } from '../components/OwedToSuppliers';
 import { useSession, useMoney } from '../session';
 import { AccountsManager } from '../components/AccountsManager';
 
@@ -1623,6 +1624,7 @@ function Settle({
   return (
     <div className="stack">
       <CashToBank venueId={venueId} userId={userId} money={money} decimals={decimals} onChanged={onChanged} toast={toast} />
+      <OwedToSuppliers venueId={venueId} userId={userId} money={money} onChanged={onChanged} toast={toast} />
       <Card title="Card and mobile money settled to the bank" pad>
         <p className="small dim" style={{ marginTop: 0 }}>
           Every close puts card and mobile-money takings into a clearing account. When the provider pays it into
@@ -1771,7 +1773,7 @@ function Locks({
     if (item.goto === 'settle' || item.goto === 'journal') { onGoto(item.goto); return; }
     if (item.goto === 'shifts') navigate('/shifts');
     if (item.goto === 'payouts') navigate('/payouts');
-    if (item.goto === 'counts') navigate('/bar/counts');
+    if (item.goto === 'counts') navigate('/count?side=bar');
     // Held counts, spends and shelf changes are all decided on the one page.
     if (item.goto === 'waiting') navigate(item.key === 'spends' ? '/waiting?show=spend' : item.key === 'shelf' ? '/waiting?show=shelf' : '/waiting?show=count');
   };
