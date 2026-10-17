@@ -162,7 +162,7 @@ test('what the party said about the whole booking is on the sheet, whole', () =>
     assert.ok(pdf.includes(part), `the sheet must say "${part}"`);
   }
   // And it comes before the sittings, like everything else they must read.
-  assert.ok(pdf.indexOf('A note from the party') < pdf.indexOf('Sitting 1 of 2'));
+  assert.ok(pdf.indexOf('A note from the party') < pdf.indexOf('Meal time 1 of 2'));
 });
 
 test('a booking with nothing to add prints no note block', () => {
@@ -175,9 +175,9 @@ test('a booking with nothing to add prints no note block', () => {
 test('what would ruin the service is pulled to the front', () => {
   const pdf =asText(bookingSheetPdf({ settings: {}, booking, sittings }));
   const notice = pdf.indexOf('What the kitchen must know');
-  const firstSitting = pdf.indexOf('Sitting 1 of 2');
+  const firstSitting = pdf.indexOf('Meal time 1 of 2');
   assert.ok(notice > 0 && notice < firstSitting, 'the warnings come before the sittings');
-  assert.ok(pdf.includes('Contains nuts: 12 plates'));
+  assert.ok(pdf.includes('Contains nuts: 12 portions'));
   assert.ok(pdf.includes('Not yet recorded as suitable'));
 });
 
@@ -450,7 +450,7 @@ test('no money reaches the kitchen copy at all', () => {
   assert.doesNotMatch(words, /GHS/, 'no currency anywhere');
   assert.doesNotMatch(words, /\d+\.\d{2}/, 'and no money-shaped figure at all');
   assert.doesNotMatch(words, /Booking total/, 'and no label left standing with nothing beside it');
-  assert.doesNotMatch(words, /Sitting total/);
+  assert.doesNotMatch(words, /Meal time total/);
 });
 
 test('everything a cook actually needs is still on it', () => {

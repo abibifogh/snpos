@@ -5,22 +5,19 @@ import type { Settings } from '@snpos/core';
 /**
  * What a group sees the moment their booking goes in.
  *
- * A walk-in gets a toast and a status page, because their food is twenty
- * minutes away and they are standing in the room. A party who has just
- * committed several thousand cedis for a Tuesday three weeks out has a
- * different question, and it is not "how long": it is "is that actually
- * booked, and what happens now". A message that slides away after four
- * seconds answers neither.
+ * A party that has just committed several thousand cedis for a Tuesday three
+ * weeks out is asking "is that booked, and what happens now". So the page
+ * says where it stands and what comes next, in order: sent, waiting for us to
+ * confirm, cooked on the day, paid on the day. The email address is repeated
+ * back so a typo is caught while they are still sitting there.
  *
- * So it says the three things they need. What went in. That it is not
- * confirmed yet and somebody here will look at it. And that they will hear by
- * email either way — which is why the address is required, and is repeated
- * back here so a typo is caught while they are still sitting there.
+ * It does not say "confirmed". It is not, until somebody here confirms it,
+ * and the guest is told so by email in the same words.
  */
 export function GroupSent({
   booked, contactName, email, reference, portions, total, settings, changeUrl, onDone,
 }: {
-  booked: { orderNo: string; at: string }[];
+  booked: { orderNo: string; at: string; how?: string }[];
   contactName: string;
   email: string;
   reference: string;
@@ -31,30 +28,59 @@ export function GroupSent({
   changeUrl: string | null;
   onDone: () => void;
 }) {
-  const sittings = [...booked].sort((a, b) => a.at.localeCompare(b.at));
+  const times = [...booked].sort((a, b) => a.at.localeCompare(b.at));
+  const first = times[0]?.at;
+  // Changes close five days before the first meal time; see booking-changes.ts.
+  const closes = first ? new Date(new Date(first).getTime() - 5 * 86_400_000) : null;
 
   return (
     <div className="status-page">
-      <h1>Your booking is with us</h1>
+      <h1>Booking sent</h1>
 
-      <Notice tone="ok">
-        <strong>Thank you for your group order.</strong> Our bistro will check your order and revert. As soon as
-        it is approved you will be emailed{email ? <> at <strong>{email}</strong></> : ''}.
-      </Notice>
+      <ol className="steps">
+        <li className="past">
+          <span className="dot" aria-hidden="true" />
+          <div>
+            <div className="label">Sent</div>
+            <div className="says">
+              {changeUrl
+                ? <>A copy is on its way to <strong>{email}</strong>.</>
+                : 'Your food is ordered, but the copy could not be emailed. See below.'}
+            </div>
+          </div>
+        </li>
+        <li className="now">
+          <span className="dot" aria-hidden="true" />
+          <div>
+            <div className="label">Waiting for us to confirm</div>
+            <div className="says">We check every group booking and email you once it is confirmed.</div>
+          </div>
+        </li>
+        <li>
+          <span className="dot" aria-hidden="true" />
+          <div><div className="label">Cooked on the day</div></div>
+        </li>
+        <li>
+          <span className="dot" aria-hidden="true" />
+          <div><div className="label">Paid on the day, a receipt for each meal time</div></div>
+        </li>
+      </ol>
 
-      <h2 style={{ fontSize: '1.05rem', marginBottom: '0.3rem' }}>What you have asked for</h2>
+      <h2 style={{ fontSize: '1.05rem', marginBottom: '0.3rem' }}>Your meal times</h2>
       <p className="meta" style={{ marginTop: 0 }}>
-        {contactName}{reference ? ` · ${reference}` : ''} · {sittings.length} sitting
-        {sittings.length === 1 ? '' : 's'} · {portions} portions
+        {contactName}{reference ? ` · ${reference}` : ''} · {portions} portions
       </p>
 
       <div className="table-wrap">
         <table className="data">
-          <thead><tr><th>Sitting</th><th>Order</th></tr></thead>
+          <thead><tr><th>Meal time</th><th>Order</th></tr></thead>
           <tbody>
-            {sittings.map((b) => (
+            {times.map((b) => (
               <tr key={b.orderNo}>
-                <td>{longDayWords(b.at)}, {timeWords(b.at)}</td>
+                <td>
+                  {longDayWords(b.at)}, {timeWords(b.at)}
+                  {b.how && <div className="meta">{b.how}</div>}
+                </td>
                 {/* The number the kitchen will call out, so the front desk has
                     something to quote on the day. */}
                 <td style={{ fontWeight: 600 }}>{b.orderNo}</td>
@@ -68,25 +94,24 @@ export function GroupSent({
         <span>Total</span>
         <span>{formatMoney(total, settings)}</span>
       </div>
+      <p className="meta">Nothing to pay now.</p>
 
-      {/*
-        The way back in, given while they still have the page.
-
-        The same link is in the confirmation email, but an email can be missed
-        and this is the one moment they are certainly looking. Absent when the
-        booking record could not be written — see the notice below, which says
-        so rather than offering a link that would not open anything.
-      */}
+      {/* The way back in, given while they are certainly looking. The same
+          link is in the email. */}
       {changeUrl ? (
-        <p className="meta">
-          Need to change something, or not coming after all?{' '}
-          <a href={changeUrl}>Open your booking</a>. Changes close five days before the first meal.
-        </p>
+        <>
+          <a className="btn-link" href={changeUrl}>Change or cancel this booking</a>
+          {closes && (
+            <p className="meta">
+              Changes are open until {longDayWords(closes.toISOString())}, 5 days before the first meal time.
+            </p>
+          )}
+        </>
       ) : (
         <Notice tone="warn">
-          <strong>We could not send your confirmation email.</strong> Your food IS ordered — the numbers above are
-          real and the kitchen has them — but nothing has gone to your inbox and nobody here has been emailed
-          either. Please ring the restaurant and read them the order numbers above.
+          <strong>We could not email your copy.</strong> Your food IS ordered — the numbers above are real and
+          the kitchen has them — but nothing has gone to your inbox and nobody here has been emailed either.
+          Please ring the restaurant and read them the order numbers above.
         </Notice>
       )}
 

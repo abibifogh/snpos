@@ -27,7 +27,7 @@ import type { CartLine, Settings } from '@snpos/core';
  * into a modal to do it is the thing the panel exists to avoid.
  */
 export function BasketPanel({
-  title, subtitle, lines, settings, total, totalLabel, actionLabel, onAction, onQty, empty,
+  title, subtitle, lines, settings, total, totalLabel, extra, actionLabel, onAction, onQty, empty,
 }: {
   title: string;
   /** Which sitting is being filled, on a group booking. */
@@ -36,6 +36,8 @@ export function BasketPanel({
   settings: Settings;
   total: number;
   totalLabel: string;
+  /** A second figure under the total: the whole booking, beside one meal time's. */
+  extra?: { label: string; value: string };
   actionLabel: string;
   onAction: () => void;
   onQty: (lineKey: string, qty: number) => void;
@@ -82,6 +84,12 @@ export function BasketPanel({
                 </span>
                 <span>{formatMoney(total, settings)}</span>
               </div>
+              {extra && (
+                <div className="basket-total basket-total-extra">
+                  <span className="dim">{extra.label}</span>
+                  <span>{extra.value}</span>
+                </div>
+              )}
               <Button variant="primary" onClick={onAction} style={{ width: '100%' }}>
                 {actionLabel}
               </Button>

@@ -9,7 +9,7 @@ import { voucherPdf } from './voucher-pdf.js';
 import {
   voucherHeadline, voucherValidity, voucherTerms, voucherCodeWords, voucherHasCode, voucherPrintProblem,
 } from './voucher-words.js';
-import { tradeWords, offSubject, packingWords } from './words.js';
+import { tradeWords, offSubject, packingWords, groupStageWanted, unconfirmedReminderDue } from './words.js';
 import { dailyDigest, nightlyBackup, deliveryFrom } from './daily.js';
 import { ensureLogin, revokeLogin } from './staff.js';
 import { handleReports } from './reports.js';
@@ -101,6 +101,12 @@ const esc = (s) => String(s ?? '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>':
  * builder, because two would drift and a guest following a stale link is a
  * guest who rings instead.
  */
+/** The booking on the Group bookings page, for an email to the team. Empty without APP_URL. */
+const adminLink = (bookingId) => {
+  const base = (process.env.APP_URL || '').replace(/\/+$/, '');
+  return base && bookingId ? `${base}/admin/#/group-bookings?open=${encodeURIComponent(bookingId)}` : '';
+};
+
 const bookingLink = (booking) => {
   const base = (process.env.APP_URL || '').replace(/\/+$/, '');
   return base && booking?.$id ? `${base}/menu/?change=${booking.$id}` : '';
@@ -970,7 +976,7 @@ export default async ({ req, res, log, error }) => {
          ${row('Booked by', booking.contact_name || '-')}
          ${row(label, booking.reference || '-')}
          ${row('People', String(booking.size || '-'))}
-         ${row('Sittings', `${booking.sittings || 0} · ${booking.portions || 0} portions`)}
+         ${row('Meal times', `${booking.sittings || 0} · ${booking.portions || 0} portions`)}
          ${row('When', spread)}
          ${row('Orders', booking.order_nos || '-')}
          ${row('Total', money(booking.total))}
@@ -1020,18 +1026,24 @@ export default async ({ req, res, log, error }) => {
       send: (address) => transport.sendMail({
         from,
         to: address,
-        subject: `${again ? 'Group booking (sent again)' : 'Group booking'} · ${
+        subject: `${again ? 'Group booking (sent again)' : 'New group booking, needs a decision'} · ${
           booking.contact_name || 'a party'}${booking.size ? ` · ${booking.size} people` : ''}`,
         html: shell(
-          again ? 'A group booked — sending this again' : 'A group has booked',
+          again ? 'A group booked — sending this again' : 'A group has booked: please confirm or decline',
           (again
             ? '<p style="margin:0 0 10px;color:#5d6b7a;font-size:14px">Asked for again from Admin. The booking '
               + 'itself has not changed.</p>'
+            : '<p style="margin:0 0 10px">The party has been told it is not confirmed yet. Confirm or decline it '
+              + 'on Group bookings. Until then its meal times show as not confirmed on the kitchen screen.</p>')
+          + facts + noteBlock('They also said')
+          + (adminLink(booking.$id)
+            ? `<p style="margin:14px 0 0"><a href="${adminLink(booking.$id)}" style="color:${brand};font-weight:600">`
+              + 'Open the booking</a></p>'
             : '')
-          + facts + noteBlock('They also said') + (sheet
+          + (sheet
             ? `<p style="margin:16px 0 0;color:#5d6b7a;font-size:14px">Attached is the full sheet: every
-               sitting, every choice, everything left out, the notes in the guests' own words, and what each
-               plate is suitable for. Print it for the pass.</p>`
+               meal time, every choice, everything left out, the notes in the guests' own words, and what each
+               dish is suitable for. Print it for the pass.</p>`
             : ''),
         ),
         attachments: sheet,
@@ -1081,6 +1093,48 @@ export default async ({ req, res, log, error }) => {
     }
   };
 
+  /**
+   * A group booking still waiting for a decision a day before it is eaten.
+   *
+   * Its meal times reach the kitchen whether or not anybody confirmed it, so
+   * an unanswered booking is a party that may arrive to food nobody planned
+   * for, and a guest who never heard back. One reminder, in the hour the
+   * first meal time comes within a day. See unconfirmedReminderDue.
+   */
+  const remindUnconfirmed = async () => {
+    const rows = await db.listDocuments(DB_ID, 'group_bookings', [
+      Query.equal('status', 'pending'), Query.limit(100),
+    ]).then((r) => r.documents).catch(() => []);
+    const due = rows.filter((b) => unconfirmedReminderDue(b, Date.now()));
+    if (due.length === 0) return { nothing: true };
+    if (!transport) return { ok: false, error: 'no smtp' };
+    const house = await houseList();
+    if (house.to.length === 0) return { ok: false, error: house.why };
+    let sent = 0;
+    for (const b of due) {
+      const { facts, noteBlock } = await bookingFacts(b);
+      const link = adminLink(b.$id);
+      const outcome = await sendToEach({
+        to: house.to,
+        log,
+        send: (address) => transport.sendMail({
+          from,
+          to: address,
+          subject: `Still not confirmed: group booking tomorrow · ${b.contact_name || b.reference || 'a party'}`,
+          html: shell(
+            'A group booking is still waiting for you',
+            `<p style="margin:0 0 10px">Its first meal time is tomorrow and nobody has confirmed or declined it.
+             The kitchen will still get the food at its time, and the guest has not heard back.</p>`
+            + facts + noteBlock('They also said')
+            + (link ? `<p style="margin:14px 0 0"><a href="${link}" style="color:#0f766e;font-weight:600">Open the booking</a></p>` : ''),
+          ),
+        }),
+      });
+      sent += outcome.sent.length;
+    }
+    return { ok: true, bookings: due.length, sent };
+  };
+
   // ---------------------------------------------- hourly sweep (no document)
   // Nothing arrived, so this is the timer. The only thing worth checking on a
   // clock is the absence of an event: a dish taken off the menu that nobody
@@ -1105,6 +1159,8 @@ export default async ({ req, res, log, error }) => {
       // After the first word, so a count filed an hour ago is never escalated
       // before it has been announced. See overdue-counts.js.
       ['overdue_counts', () => sweepOverdueCounts({ db, DB_ID, settings, transport, from, log, error })],
+      // A group booking nobody has confirmed, a day before its first meal time.
+      ['unconfirmed_bookings', () => remindUnconfirmed()],
       ['daily', () => dailyDigest({ db, DB_ID, settings, transport, from, shell, row, money, log, error })],
       ['backup', () => nightlyBackup({ db, DB_ID, settings, transport, from, shell, log, error })],
       // Last, after the books have been swept: what is still wrong once everything that can be filled has been.
@@ -1337,7 +1393,7 @@ export default async ({ req, res, log, error }) => {
       nobody sees it.
 
       It hangs off the booking now, which is written last by the form once
-      every sitting has landed. One booking, one message — and the same
+      every meal time has landed. One booking, one message — and the same
       message goes to the person who booked, because a party of forty arranged
       three weeks ahead has nothing else to hold.
     */
@@ -1413,20 +1469,20 @@ export default async ({ req, res, log, error }) => {
         await transport.sendMail({
           from,
           to: doc.email,
-          subject: `Your group booking${doc.reference ? ` · ${doc.reference}` : ''}`,
+          subject: `We have your group booking${doc.reference ? ` · ${doc.reference}` : ''}`,
           html: shell(
-            'Your booking is with us',
-            `<p style="margin:0 0 10px">Thank you for your group order. Our bistro will check your order and
-             revert. As soon as it is approved you will be emailed.</p>
+            'We have your booking',
+            `<p style="margin:0 0 10px">Thank you. We will check your booking and email you again once it is
+             confirmed. It is not confirmed until then. Nothing is paid now: each meal time is paid on the day.</p>
              <p style="margin:0 0 10px">Here is the whole booking, so you have it on the day.</p>
              ${facts}
              ${noteBlock('Your note to us')}
              ${sheet
-               ? `<p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">The attached sheet lists every sitting
+               ? `<p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">The attached sheet lists every meal time
                   in full — each dish, the choices made, anything left out, your notes, and what each plate is
                   suitable for. Please check it and tell us if anything is wrong.</p>`
                : ''}
-             <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">Each sitting reaches the kitchen in time to
+             <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">Each meal time reaches the kitchen in time to
              cook it and not before.</p>
              ${bookingLink(doc)
                ? `<p style="margin:14px 0 0"><a href="${bookingLink(doc)}"
@@ -1514,8 +1570,8 @@ export default async ({ req, res, log, error }) => {
                ${noteBlock('Your note to us')}
                ${sheet
                  ? `<p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">The attached sheet lists every
-                    sitting in full — each dish, the choices made, anything left out, your notes, and what
-                    each plate is suitable for. Please check it and tell us if anything is wrong.</p>`
+                    meal time in full — each dish, the choices made, anything left out, your notes, and what
+                    each dish is suitable for. Please check it and tell us if anything is wrong.</p>`
                  : ''}`,
             ),
             attachments: sheet,
@@ -1594,8 +1650,8 @@ export default async ({ req, res, log, error }) => {
             + noteBlock('Your note to us')
             + (sheet
               ? `<p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">The attached sheet lists every
-                 sitting in full — each dish, the choices made, anything left out, your notes, and what each
-                 plate is suitable for. This is what the kitchen will cook from once you agree to it.</p>`
+                 meal time in full — each dish, the choices made, anything left out, your notes, and what each
+                 dish is suitable for. This is what the kitchen will cook from once you agree to it.</p>`
               : '')
             + (bookingLink(doc)
               ? `<p style="margin:18px 0 0"><a href="${bookingLink(doc)}" style="background:${brand};color:#fff;
@@ -1666,7 +1722,7 @@ export default async ({ req, res, log, error }) => {
              ${row('Booked by', doc.contact_name || '-')}
              ${row('Reference', doc.reference || '-')}
              ${row('Was for', when(doc.first_at) || '-')}
-             ${row('Sittings', `${doc.sittings || 0} · ${doc.portions || 0} portions`)}
+             ${row('Meal times', `${doc.sittings || 0} · ${doc.portions || 0} portions`)}
              ${row('Orders', doc.order_nos || '-')}
              ${row('Was worth', `${doc.currency_code || ''}${((doc.total || 0) / 100).toFixed(2)}`)}
            </table>`;
@@ -1678,7 +1734,7 @@ export default async ({ req, res, log, error }) => {
             subject: `Group booking CANCELLED · ${doc.contact_name || doc.reference || 'a party'}`,
             html: shell(
               'A group has cancelled',
-              `<p style="margin:0 0 10px">This booking is off. Every sitting under it has been cancelled and
+              `<p style="margin:0 0 10px">This booking is off. Every meal time under it has been cancelled and
                the kitchen's list no longer has them.</p>
                ${gone}
                <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">Anything held for them — a room, a
@@ -1694,7 +1750,7 @@ export default async ({ req, res, log, error }) => {
             subject: `Your group booking is cancelled${doc.reference ? ` · ${doc.reference}` : ''}`,
             html: shell(
               'Your booking is cancelled',
-              `<p style="margin:0 0 10px">That is done — every sitting under this booking has been cancelled
+              `<p style="margin:0 0 10px">That is done — every meal time under this booking has been cancelled
                and nothing will be cooked. Nothing is owed.</p>
                ${gone}
                <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">If this was a mistake, please send us an
@@ -1736,11 +1792,11 @@ export default async ({ req, res, log, error }) => {
           yes ? 'Your booking is confirmed' : 'We cannot take this booking',
           yes
             ? `<p style="margin:0 0 10px">Good news — we have your booking and the kitchen has it in hand.
-               ${doc.sittings || 0} sitting${doc.sittings === 1 ? '' : 's'}, ${doc.portions || 0} portions.</p>
+               ${doc.sittings || 0} meal time${doc.sittings === 1 ? '' : 's'}, ${doc.portions || 0} portions.</p>
                ${said ? `<p style="margin:0 0 10px">${said}</p>` : ''}
                ${agreed
                  ? `<p style="margin:0 0 10px;color:#5d6b7a;font-size:14px">The attached sheet is what the
-                    kitchen is working to — every sitting, every choice and every dietary note.</p>`
+                    kitchen is working to — every meal time, every choice and every dietary note.</p>`
                  : ''}
                <p style="margin:0;color:#5d6b7a;font-size:14px">Orders ${doc.order_nos || ''}. Nothing is owed
                until the day.</p>`
@@ -1815,7 +1871,7 @@ export default async ({ req, res, log, error }) => {
               `<table style="width:100%;border-collapse:collapse;font-size:15px">
                  ${row('Booked by', doc.contact_name || '-')}
                  ${row('Reference', doc.reference || '-')}
-                 ${row('First sitting', doc.first_at ? new Date(doc.first_at).toLocaleString() : '-')}
+                 ${row('First meal time', doc.first_at ? new Date(doc.first_at).toLocaleString() : '-')}
                </table>
                <p style="margin:14px 0 0">They have agreed to the booking as it now stands. The kitchen can
                work to the revised sheet.</p>`
@@ -1865,13 +1921,13 @@ export default async ({ req, res, log, error }) => {
              ${row('Booked by', doc.contact_name || '-')}
              ${row('Reference', doc.reference || '-')}
              ${row('About', KINDS[doc.kind] || doc.kind)}
-             ${row('First sitting', doc.first_at ? new Date(doc.first_at).toLocaleString() : '-')}
+             ${row('First meal time', doc.first_at ? new Date(doc.first_at).toLocaleString() : '-')}
            </table>
            <p style="margin:14px 0 4px;font-weight:600">What they asked for</p>
            <p style="margin:0;white-space:pre-wrap">${String(doc.note || '')
              .replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</p>
            <p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">Nothing has changed. The kitchen is still
-           working to what was ordered. Decide it on the Waiting for you page${
+           working to what was ordered. Answer it on Group bookings${
              doc.email ? `, and they are expecting an answer at ${doc.email}` : ''}.</p>`,
         ),
       }).catch((e) => error(`Change request notice failed: ${e.message}`));
@@ -1885,7 +1941,18 @@ export default async ({ req, res, log, error }) => {
     // an order can be accepted and paid in the same breath at a counter, and
     // "your food is ready" is worth more to them than arriving second.
     if (events.some((e) => e.includes('collections.orders'))) {
-      const stage = doc.status === 'ACCEPTED' ? 'accepted' : doc.status === 'READY' ? 'ready' : null;
+      const asked = doc.status === 'ACCEPTED' ? 'accepted' : doc.status === 'READY' ? 'ready' : null;
+      /*
+        A group's meal time is not a walk-in's order.
+
+        The party was told about the booking when they made it and again when
+        it was confirmed, so "order ORD0843 accepted" on the morning, under a
+        number they have never seen, is noise; a four-meal stay sent them a
+        dozen of these. "Ready" is kept for a packed meal time, which somebody
+        comes to the counter to collect. See groupStageWanted.
+      */
+      const stage = groupStageWanted(asked, doc) ? asked : null;
+      if (asked && !stage) log(`No ${asked} notice for ${doc.order_no}: group meal times only hear when packed food is ready.`);
 
       /**
        * Every reason for not sending is said out loud.
@@ -2094,7 +2161,13 @@ export default async ({ req, res, log, error }) => {
       try {
         const info = await transport.sendMail({
           from, to: doc.customer_email,
-          subject: `Your receipt from ${settings.restaurant_name} · ${doc.order_no}`,
+          subject: doc.group_booking_id && doc.scheduled_for
+            // A group's meal time, named by its day: the party knows "Monday
+            // 12 October, 09:00", not ORD0843.
+            ? `Your receipt from ${settings.restaurant_name} · meal time ${new Date(doc.scheduled_for).toLocaleString('en-GB', {
+              weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
+            })} (${doc.order_no})`
+            : `Your receipt from ${settings.restaurant_name} · ${doc.order_no}`,
           html,
           attachments,
         });

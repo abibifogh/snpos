@@ -341,6 +341,8 @@
 .opt-row input { width: 20px; height: 20px; accent-color: var(--brand); }
 
 .line { display: flex; justify-content: space-between; gap: 1rem; padding: 0.55rem 0; border-bottom: 1px solid var(--border); }
+/* Small, quiet text under something. Used across the group screens. */
+.meta { font-size: 0.86rem; color: var(--text-dim); }
 .line .meta { font-size: 0.8rem; color: var(--text-dim); }
 .totals { padding-top: 0.6rem; }
 .totals .row-t { display: flex; justify-content: space-between; padding: 0.22rem 0; font-size: 0.9rem; }
@@ -545,3 +547,48 @@
 @media (prefers-reduced-motion: reduce) {
   .attract-arrow { animation: none; opacity: 1; }
 }
+
+/* ---- group booking: the three steps ------------------------------------ */
+/* Said at the top of every group screen, so a party booking four days of
+   meals can see they are on step two of three rather than lost in a form. */
+.group-steps {
+  list-style: none; margin: 0; padding: 0; display: flex; gap: 0.35rem;
+  font-size: 0.8rem;
+}
+.group-steps li {
+  flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 0.3rem;
+  padding: 0.35rem 0.4rem; border-radius: 8px; background: var(--surface-2); color: var(--text-dim);
+  text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.group-steps li.on { background: var(--brand); color: var(--brand-ink); font-weight: 650; }
+.group-steps li.done { color: var(--brand); font-weight: 600; }
+.group-step-n { font-variant-numeric: tabular-nums; }
+
+/* Two answers side by side, each a button that says what it means. */
+.choice-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.choice-pair button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; text-align: left;
+  padding: 0.6rem 0.7rem; border-radius: 10px; border: 1.5px solid var(--border);
+  background: var(--surface); color: var(--text); font: inherit; cursor: pointer;
+}
+.choice-pair button span { font-size: 0.8rem; color: var(--text-dim); }
+.choice-pair button.on { border-color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand); }
+.choice-pair button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* ---- group booking: check and send ------------------------------------- */
+.group-review { max-width: 36rem; display: flex; flex-direction: column; gap: 1rem; padding-top: 1rem; }
+.group-review h1 { margin: 0.2rem 0 0; }
+.group-review h2 { margin: 0; font-size: 1.05rem; }
+.review-meal, .review-who, .review-total {
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+  padding: 0.8rem 0.9rem; display: flex; flex-direction: column; gap: 0.35rem;
+}
+.review-total .grand { font-weight: 700; font-size: 1.06rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
+.basket-total-extra { font-weight: 500; font-size: 0.9rem; margin-top: -0.2rem; }
+.btn-link {
+  display: block; text-align: center; padding: 0.7rem 1rem; border-radius: 10px;
+  border: 1.5px solid var(--brand); color: var(--brand); font-weight: 650; text-decoration: none; margin-top: 0.6rem;
+}
+
+/* Remove, quiet beside Change: three solid red buttons down a list shouted louder than the meal times. */
+.btn.remove-quiet { color: var(--danger); }

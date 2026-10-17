@@ -15,7 +15,7 @@ import {
 test('a booking nobody has revised has nothing to approve', () => {
   assert.equal(approvalState({}), 'none');
   assert.equal(awaitingParty({}), false);
-  assert.equal(approvalWords('none').label, 'Not sent for approval');
+  assert.equal(approvalWords('none').label, 'No changes sent');
 });
 
 test('sent and unanswered is waiting on the party', () => {

@@ -29,13 +29,13 @@ const LINE = '#dde3ea';
 const WARN = '#b4530a';
 
 const FULFILMENT = {
-  dine_in: 'Dine in',
+  dine_in: 'Eat here',
   takeaway: 'Packed to take away',
   delivery: 'Delivery',
 };
 
 const SERVICE = {
-  plated: 'Served to each guest',
+  plated: 'Plated, one per guest',
   buffet: 'Buffet, set out to share',
 };
 
@@ -240,10 +240,10 @@ export function bookingSheetPdf({
     ['Booked by', clean(booking.contact_name) || '-'],
     [label, clean(booking.reference) || '-'],
     ['Email', clean(booking.email) || '-'],
-    ['Sittings', `${sittings.length}`],
-    ['Plates in all', `${portions}`],
-    ['First sitting', when(booking.first_at) || '-'],
-    ['Last sitting', when(booking.last_at) || '-'],
+    ['Meal times', `${sittings.length}`],
+    ['Portions in all', `${portions}`],
+    ['First meal time', when(booking.first_at) || '-'],
+    ['Last meal time', when(booking.last_at) || '-'],
     ['Orders', clean(booking.order_nos) || '-'],
     ...(prices ? [['Total', money(booking.total)]] : []),
     ...(prices && packing > 0 ? [['Of which packing', money(packing)]] : []),
@@ -296,17 +296,17 @@ export function bookingSheetPdf({
     // sitting that is printed overleaf.
     doc.need(86);
     doc.band(
-      `Sitting ${i + 1} of ${sittings.length}  ·  ${when(order.scheduled_for) || 'Time not set'}`,
+      `Meal time ${i + 1} of ${sittings.length}  ·  ${when(order.scheduled_for) || 'Time not set'}`,
       { colour: accent, right: `Order ${clean(order.order_no)}` },
     );
     doc.text(
-      `${FULFILMENT[order.fulfilment] ?? 'Dine in'}${style}  ·  ${plates} plate${plates === 1 ? '' : 's'}`,
+      `${FULFILMENT[order.fulfilment] ?? 'Eat here'}${style}  ·  ${plates} portion${plates === 1 ? '' : 's'}`,
       { size: 9.5, colour: QUIET },
     );
     doc.gap(4);
 
     if (sitting.lines.length === 0) {
-      doc.text('Nothing on this sitting.', { size: 10, font: 'italic', colour: QUIET });
+      doc.text('Nothing on this meal time.', { size: 10, font: 'italic', colour: QUIET });
       return;
     }
 
@@ -336,7 +336,7 @@ export function bookingSheetPdf({
 
     if (prices) {
       doc.rule({ colour: LINE, above: 6, below: 4 });
-      doc.pair('Sitting total', money(order.total), {
+      doc.pair('Meal time total', money(order.total), {
         size: 10, font: 'bold', valueFont: 'bold',
       });
     }
@@ -356,8 +356,8 @@ export function bookingSheetPdf({
   }
   doc.text(
     prices
-      ? 'Each sitting reaches the kitchen in time to cook it and not before. Nothing is owed until the day.'
-      : 'Each sitting reaches the kitchen in time to cook it and not before.',
+      ? 'Each meal time reaches the kitchen in time to cook it and not before. Each is paid on the day.'
+      : 'Each meal time reaches the kitchen in time to cook it and not before.',
     { size: 9, colour: QUIET },
   );
 
@@ -425,7 +425,7 @@ function kitchenNotice(sittings) {
       : `${omissions} lines are ordered with something left out. The prep list is not the recipe card.`);
   }
   for (const [word, plates] of cautions) {
-    out.push(`${word}: ${plates} plate${plates === 1 ? '' : 's'}.`);
+    out.push(`${word}: ${plates} portion${plates === 1 ? '' : 's'}.`);
   }
   if (unknown.size) {
     out.push(`Not yet recorded as suitable for anything: ${[...unknown].join(', ')}. `

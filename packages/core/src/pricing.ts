@@ -477,9 +477,15 @@ export interface GroupMeal {
   lines: CartLine[];
 }
 
+/**
+ * Where a group eats a meal time, in the words on its button.
+ *
+ * One word each, the same on the menu, the booking sheet and the emails, so
+ * "packed" said on the telephone means what the screen meant.
+ */
 export const FULFILMENT_WORDS: Record<Fulfilment, string> = {
-  dine_in: 'Dine in',
-  takeaway: 'Packed to take away',
+  dine_in: 'Eat here',
+  takeaway: 'Packed',
 };
 
 /**
@@ -498,14 +504,14 @@ export const FULFILMENT_WORDS: Record<Fulfilment, string> = {
 export type ServiceStyle = 'plated' | 'buffet';
 
 export const SERVICE_WORDS: Record<ServiceStyle, string> = {
-  plated: 'Served to each guest',
-  buffet: 'Buffet, set out to share',
+  plated: 'Plated',
+  buffet: 'Buffet',
 };
 
-/** The longer sentence, where there is room to say what each one means. */
+/** The line under each choice, saying what it means. */
 export const SERVICE_HINTS: Record<ServiceStyle, string> = {
-  plated: 'Each portion comes out as its own plate.',
-  buffet: 'Set out in dishes for the group to help themselves.',
+  plated: 'One plate per guest',
+  buffet: 'Set out to share',
 };
 
 /** How this sitting is served, or nothing where the question does not apply. */
@@ -513,11 +519,11 @@ export function serviceOf(meal: { fulfilment: Fulfilment; service?: ServiceStyle
   return meal.fulfilment === 'dine_in' ? (meal.service ?? 'plated') : null;
 }
 
-/** "Dine in · buffet, set out to share" — one line for a ticket or a tab. */
+/** "Eat here · Buffet" — one line for a ticket or a tab. */
 export function mealServiceWords(meal: { fulfilment: Fulfilment; service?: ServiceStyle }): string {
   const style = serviceOf(meal);
   return style
-    ? `${FULFILMENT_WORDS[meal.fulfilment]} · ${SERVICE_WORDS[style].toLowerCase()}`
+    ? `${FULFILMENT_WORDS[meal.fulfilment]} · ${SERVICE_WORDS[style]}`
     : FULFILMENT_WORDS[meal.fulfilment];
 }
 
@@ -732,7 +738,7 @@ export function longDayWords(at: string | Date): string {
  */
 export function tabLabel(at: string | Date): string {
   const d = at instanceof Date ? at : new Date(at);
-  if (!Number.isFinite(d.getTime())) return 'A sitting';
+  if (!Number.isFinite(d.getTime())) return 'A meal time';
   const two = (n: number) => String(n).padStart(2, '0');
   return `${LONG_DAYS[d.getDay()].slice(0, 3)} ${d.getDate()} · ${two(d.getHours())}:${two(d.getMinutes())}`;
 }
@@ -759,12 +765,12 @@ export const portionsAtBiggest = (meals: GroupMeal[]): number =>
   meals.reduce((most, m) => Math.max(most, portionsOn(m)), 0);
 
 export function bookingProblem(meals: GroupMeal[], check: BookingCheck): string | null {
-  if (meals.length === 0) return 'Add a time the group will eat, and what they would like at it.';
+  if (meals.length === 0) return 'Add a meal time, and the food the group would like at it.';
   const empty = [...meals].sort((a, b) => a.at.localeCompare(b.at)).find((m) => portionsOn(m) === 0);
   if (empty) {
     // Named by day AND time: a stay with lunch and dinner on the same Tuesday
     // has two meals that a date alone cannot tell apart.
-    return `${mealLabel(empty.at)} has nothing on it. Add something, or take that sitting off the booking.`;
+    return `${mealLabel(empty.at)} has no food on it yet. Add some, or remove that meal time.`;
   }
   if (!check.contactName.trim()) return 'Please give a name for the booking, so the kitchen knows whose it is.';
   if (check.needReference && !check.reference.trim()) return `Please enter the ${check.referenceLabel.toLowerCase()}.`;
@@ -789,11 +795,11 @@ export function bookingProblem(meals: GroupMeal[], check: BookingCheck): string 
   */
   const biggest = portionsAtBiggest(meals);
   if (check.minSize > 0 && biggest < check.minSize) {
-    return `Group bookings start at ${check.minSize} plates at a sitting, and the biggest here has ${biggest}. `
+    return `Group bookings start at ${check.minSize} portions at one meal time, and the biggest here has ${biggest}. `
       + 'Add more, or order from the ordinary menu.';
   }
   if (!emailLooksReal(check.email)) {
-    return 'Please give an email address. We send the booking through in writing so you have it on the day.';
+    return 'Please give an email address. We email you a copy of the booking and tell you once it is confirmed.';
   }
   return null;
 }
@@ -824,7 +830,7 @@ export function mealWords(
  */
 export function packWords(feePerPortion: number, money: (n: number) => string): string {
   if (feePerPortion <= 0) return 'Nothing extra either way.';
-  return `Packed meals carry ${money(feePerPortion)} a portion for the containers. Dining in carries nothing.`;
+  return `+${money(feePerPortion)} a portion for the boxes`;
 }
 
 export interface MealPricing extends OrderTotals {
@@ -852,6 +858,8 @@ export interface BookingTotals {
   service: number;
   total: number;
   portions: number;
+  /** Portions on the packed meal times only: what the packing is charged on. */
+  packedPortions: number;
 }
 
 /**
@@ -879,6 +887,7 @@ export function bookingTotals(
     service: sum((t) => t.service_total),
     total: sum((t) => t.total),
     portions: sum((t) => t.portions),
+    packedPortions: priced.reduce((n, p) => n + (p.meal.fulfilment === 'takeaway' ? p.totals.portions : 0), 0),
   };
 }
 

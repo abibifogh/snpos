@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Button, Field, Input, Notice, Select, Spinner, Textarea } from '@snpos/ui';
+import { Badge, Button, Field, Input, Notice, Select, Spinner, Textarea } from '@snpos/ui';
 import {
   loadGroupBooking, requestBookingChange, changeProblem, changeWindowWords, requestProblem,
   CHANGE_KIND_WORDS, humanError, ensureGuestSession, dateWords, dateTimeWords,
   cancelGroupBooking, bookingIsCancelled,
-  approvalState, approveBookingRevision,
+  approvalState, approveBookingRevision, bookingStatusWords,
 } from '@snpos/core';
 import type { GroupBookingDoc } from '@snpos/core';
 
@@ -73,7 +73,7 @@ export function BookingChange({ bookingId, onClose }: { bookingId: string; onClo
   const cancelAll = async () => {
     if (shut) { setProblem(shut); return; }
     if (!confirm(
-      'Cancel this whole booking? Every sitting comes off, the times go back to anybody else who wants them, '
+      'Cancel this whole booking? Every meal time comes off, the times go back to anybody else who wants them, '
       + 'and it cannot be undone from here.',
     )) return;
     setBusy(true);
@@ -90,7 +90,7 @@ export function BookingChange({ bookingId, onClose }: { bookingId: string; onClo
       setCancelled(await bookingIsCancelled(bookingId));
       if (!(await bookingIsCancelled(bookingId))) {
         setProblem(
-          'The restaurant has not accepted the cancellation. That usually means the first sitting is now inside '
+          'The restaurant has not accepted the cancellation. That usually means the first meal time is now inside '
           + 'five days. Please ring them.',
         );
       }
@@ -148,15 +148,23 @@ export function BookingChange({ bookingId, onClose }: { bookingId: string; onClo
   return (
     <div className="status-page">
       <h1>Your booking</h1>
+      {/* Where it stands, in the same words the emails use. */}
+      {!cancelled && (
+        <p style={{ margin: '0 0 0.3rem' }}>
+          <Badge tone={bookingStatusWords(booking.status).tone}>
+            {bookingStatusWords(booking.status).label}
+          </Badge>
+        </p>
+      )}
       <p className="meta">
         {booking.contact_name}{booking.reference ? ` · ${booking.reference}` : ''}
-        {booking.sittings ? ` · ${booking.sittings} sitting${booking.sittings === 1 ? '' : 's'}` : ''}
+        {booking.sittings ? ` · ${booking.sittings} meal time${booking.sittings === 1 ? '' : 's'}` : ''}
         {booking.portions ? `, ${booking.portions} portions` : ''}
       </p>
 
       {cancelled ? (
         <Notice tone="ok">
-          <strong>This booking is cancelled.</strong> Every sitting has come off and the times have gone back.
+          <strong>This booking is cancelled.</strong> Every meal time has come off and the times have gone back.
           Nothing is owed. If that was a mistake, ring the restaurant — it cannot be undone from here.
         </Notice>
       ) : sent ? (
@@ -249,7 +257,7 @@ export function BookingChange({ bookingId, onClose }: { bookingId: string; onClo
 
           <Field
             label="In your own words"
-            hint="The detail is what saves a telephone call: which sitting, how many, and what instead."
+            hint="The detail is what saves a telephone call: which meal time, how many, and what instead."
           >
             <Textarea
               rows={5}

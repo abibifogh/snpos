@@ -53,7 +53,7 @@ test('the booking sheet shows the packing under a takeaway sitting, and in the t
   assert.ok(pdf.includes('Includes GHS 350.00 takeaway packing; the food is GHS 7085.00.'));
   // Under the dishes, before the sitting total.
   assert.ok(pdf.indexOf('Veggie sandwich') < pdf.indexOf('Takeaway packing'));
-  assert.ok(pdf.indexOf('Takeaway packing') < pdf.indexOf('Sitting total'));
+  assert.ok(pdf.indexOf('Takeaway packing') < pdf.indexOf('Meal time total'));
   // Once: the dine-in sitting has none.
   assert.equal(pdf.split('A container for each portion').length - 1, 1);
 });

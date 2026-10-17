@@ -90,15 +90,15 @@ export function approvalWords(state: ApprovalState): ApprovalWords {
   }
   if (state === 'awaiting') {
     return {
-      label: 'Waiting on the party',
+      label: 'Guest checking changes',
       tone: 'warn',
-      detail: 'The revised booking has gone to them. They have not agreed to it yet.',
+      detail: 'The changes have gone to the guest. They have not agreed to them yet.',
     };
   }
   if (state === 'approved') {
-    return { label: 'Party agreed', tone: 'ok', detail: 'They have agreed to the booking as it now stands.' };
+    return { label: 'Guest agreed', tone: 'ok', detail: 'They have agreed to the booking as it now stands.' };
   }
-  return { label: 'Not sent for approval', tone: 'default' };
+  return { label: 'No changes sent', tone: 'default' };
 }
 
 /** Whether there is an answer outstanding from the party on this booking. */
@@ -114,7 +114,7 @@ export const awaitingParty = (b: ApprovableBooking): boolean => approvalState(b)
  */
 export function approvalRequestProblem(b: { email?: string } & ApprovableBooking): string | null {
   if (!(b.email ?? '').trim()) {
-    return 'This booking has no email address on it, so there is nobody to send the revision to.';
+    return 'This booking has no email address on it, so there is nobody to send the changes to.';
   }
   return null;
 }
@@ -131,3 +131,25 @@ export const APPROVAL_KIND = 'approved';
  * job stamps the booking from it.
  */
 export const isApproval = (c: { kind?: string }): boolean => c.kind === APPROVAL_KIND;
+
+/** Where the house's own decision on a booking stands, in the words every screen uses. */
+export type BookingStatus = 'pending' | 'approved' | 'refused' | 'cancelled';
+
+export interface BookingStatusWords {
+  label: string;
+  tone: 'ok' | 'warn' | 'danger' | 'default';
+}
+
+/**
+ * "Waiting to confirm", "Confirmed", "Declined", "Cancelled".
+ *
+ * The stored values are the database's; these are what staff and guests
+ * read, and the guest's emails use the same words, so "it says confirmed"
+ * means the same thing at both ends of a telephone call.
+ */
+export function bookingStatusWords(status?: string | null): BookingStatusWords {
+  if (status === 'approved') return { label: 'Confirmed', tone: 'ok' };
+  if (status === 'refused') return { label: 'Declined', tone: 'danger' };
+  if (status === 'cancelled') return { label: 'Cancelled', tone: 'default' };
+  return { label: 'Waiting to confirm', tone: 'warn' };
+}
