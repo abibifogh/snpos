@@ -20,6 +20,7 @@ import { CashToBank } from '../components/CashToBank';
 import { OwedToSuppliers } from '../components/OwedToSuppliers';
 import { useSession, useMoney } from '../session';
 import { AccountsManager } from '../components/AccountsManager';
+import { PlReport, LedgerReport, CashFlowReport, BalanceExports, yearPack } from '../components/books/BookReports';
 
 /**
  * The books.
@@ -35,7 +36,7 @@ import { AccountsManager } from '../components/AccountsManager';
  * sitting, and each of those is the same figures read a different way; putting
  * them behind separate navigation makes it feel like separate work.
  */
-type Tab = 'statements' | 'journal' | 'trial' | 'assets' | 'bank' | 'settle' | 'chart' | 'locks';
+type Tab = 'statements' | 'cashflow' | 'ledger' | 'journal' | 'trial' | 'assets' | 'bank' | 'settle' | 'chart' | 'locks';
 
 /** A month back from today, as YYYY-MM-DD, for the default window. */
 const monthStart = (d = new Date()) => `${d.toISOString().slice(0, 7)}-01`;
@@ -78,7 +79,7 @@ export function AccountingPage() {
   // this page switches to it rather than leaving the old one showing.
   const [params, setParams] = useSearchParams();
   const asked = params.get('tab');
-  const tab = (['statements', 'journal', 'trial', 'assets', 'bank', 'settle', 'chart', 'locks'].includes(asked ?? '') ? asked : 'statements') as Tab;
+  const tab = (['statements', 'cashflow', 'ledger', 'journal', 'trial', 'assets', 'bank', 'settle', 'chart', 'locks'].includes(asked ?? '') ? asked : 'statements') as Tab;
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
   useEffect(() => {
     // Land on something they can see. Opening on a tab they were not given
@@ -141,7 +142,6 @@ export function AccountingPage() {
   const periodLines = useMemo(() => within(lines, from, to) as LineRow[], [lines, from, to]);
   const upToLines = useMemo(() => within(lines, undefined, to) as LineRow[], [lines, to]);
 
-  const pl = useMemo(() => profitAndLoss(accounts, periodLines), [accounts, periodLines]);
   const bs = useMemo(() => balanceSheet(accounts, upToLines), [accounts, upToLines]);
 
   const trial = useMemo(() => {
@@ -178,11 +178,15 @@ export function AccountingPage() {
           ['settle', 'Settle up'],
           ['bank', 'Reconcile'],
           ['locks', 'Close a period'],
+        ]],
+        ['Reports', [
           ['statements', 'Profit & loss and balance sheet'],
+          ['cashflow', 'Cash flow'],
+          ['ledger', 'General ledger'],
+          ['trial', 'Trial balance'],
         ]],
         ['For your accountant', [
           ['journal', 'Journal'],
-          ['trial', 'Trial balance'],
           ['assets', 'Fixed assets'],
           ['chart', 'Chart of accounts'],
         ]],
@@ -225,9 +229,17 @@ export function AccountingPage() {
 
       {tab === 'statements' && can('statements') && (
         <Statements
-          pl={pl} bs={bs} money={money} from={from} to={to}
-          lines={lines} entries={entries} settings={settings}
+          bs={bs} money={money} from={from} to={to}
+          lines={lines} entries={entries} settings={settings} accounts={accounts}
         />
+      )}
+
+      {tab === 'cashflow' && can('cashflow') && (
+        <CashFlowReport accounts={accounts} lines={lines} from={from} to={to} money={money} settings={settings} />
+      )}
+
+      {tab === 'ledger' && can('ledger') && (
+        <LedgerReport accounts={accounts} lines={lines} entries={entries} from={from} to={to} money={money} settings={settings} />
       )}
 
       {tab === 'trial' && can('trial') && (
@@ -332,9 +344,9 @@ export function AccountingPage() {
 /* ------------------------------------------------------------- statements */
 
 function Statements({
-  pl, bs, money, from, to, lines, entries, settings,
+  bs, money, from, to, lines, entries, settings, accounts,
 }: {
-  pl: ReturnType<typeof profitAndLoss>;
+  accounts: AccountRow[];
   bs: ReturnType<typeof balanceSheet>;
   money: (n: number) => string;
   from: string;
@@ -382,37 +394,17 @@ function Statements({
         />
       )}
 
-      <Card title={`Profit and loss · ${from} to ${to}`} pad>
-        {pl.revenue.length === 0 && pl.expenses.length === 0 ? (
-          <Empty title="Nothing in this period">Close a shift, or widen the dates.</Empty>
-        ) : (
-          <div className="table-wrap">
-            <table className="data">
-              <tbody>
-                <tr><td colSpan={2} style={{ fontWeight: 650 }}>Income</td></tr>
-                {pl.revenue.map((l) => row(l, from))}
-                <tr><td style={{ fontWeight: 600 }}>Total income</td><td className="num" style={{ fontWeight: 600 }}>{money(pl.totalRevenue)}</td></tr>
+      <div className="row" style={{ gap: '0.5rem', justifyContent: 'flex-end', marginBottom: '0.6rem' }}>
+        <Button onClick={() => yearPack({ accounts, lines, entries, from, to, settings })}>
+          Download the accounts for these dates (Excel)
+        </Button>
+      </div>
+      <PlReport
+        accounts={accounts} lines={lines} entries={entries} from={from} to={to} money={money} settings={settings}
+        onOpen={(line) => setOpen({ line, since: from })}
+      />
 
-                <tr><td colSpan={2} style={{ fontWeight: 650, paddingTop: '1rem' }}>Costs</td></tr>
-                {pl.expenses.map((l) => row(l, from))}
-                <tr><td style={{ fontWeight: 600 }}>Total costs</td><td className="num" style={{ fontWeight: 600 }}>{money(pl.totalExpenses)}</td></tr>
-
-                <tr>
-                  <td style={{ fontWeight: 700, paddingTop: '1rem' }}>
-                    {pl.netProfit < 0 ? 'Loss for the period' : 'Profit for the period'}
-                  </td>
-                  <td className="num" style={{ fontWeight: 700, paddingTop: '1rem' }}>{money(pl.netProfit)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
-        <p className="small dim" style={{ marginBottom: 0 }}>
-          Press any line to see the postings behind it. Profit is not cash: money can be owed to you and still be earned, and spent without being a cost yet.
-        </p>
-      </Card>
-
-      <Card title={`Balance sheet · as at ${to}`} pad>
+      <Card title={`Balance sheet · as at ${to}`} pad actions={<BalanceExports accounts={accounts} lines={lines} to={to} settings={settings} />}>
         {/* Out by anything at all is worth saying loudly. It cannot happen
             through the front door — every entry is refused unless it balances
             — so it means a line was written without its entry or removed from

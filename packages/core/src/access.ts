@@ -263,6 +263,8 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'accounting_statements', label: 'Profit & loss and balance sheet', path: '/accounting', group: 'Books', parent: 'accounting' },
   { key: 'accounting_journal', label: 'Journal: read and post entries', path: '/accounting', group: 'Books', parent: 'accounting' },
   { key: 'accounting_trial', label: 'Trial balance', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_cashflow', label: 'Cash flow statement', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_ledger', label: 'General ledger, any account', path: '/accounting', group: 'Books', parent: 'accounting' },
   { key: 'accounting_assets', label: 'Fixed assets and depreciation', path: '/accounting', group: 'Books', parent: 'accounting' },
   { key: 'accounting_bank', label: 'Reconcile against a statement', path: '/accounting', group: 'Books', parent: 'accounting' },
   // The entries a shift close leaves hanging: card and mobile money reaching
