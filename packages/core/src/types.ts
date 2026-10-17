@@ -270,6 +270,8 @@ export interface StaffProfile extends Doc {
   pin_hash?: string;
   pin_set_at?: string;
   can_record_waste?: boolean;
+  /** May make and send orders to suppliers. See canOrderStock. */
+  can_order_stock?: boolean;
   hourly_rate?: number;
   email?: string;
   venue_ids?: string[];

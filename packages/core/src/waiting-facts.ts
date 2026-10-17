@@ -12,6 +12,7 @@ import type { StaffProfile } from './types';
 import { nameBook } from './staff-words';
 import { loadSellingPrices } from './staff-charges-store';
 import { atSellingPrice } from './waiting-lines';
+import { ordersWaiting } from './purchase-orders-store';
 
 /**
  * Everything waiting for somebody senior, read once.
@@ -44,6 +45,7 @@ export async function loadWaiting(venueId: string, money: (minor: number) => str
     loadOpenShifts(venueId, 'craft'),
     listAll<{ key: string; name: string }>('expense_categories').catch(() => []),
   ]);
+  const orders = await ordersWaiting().catch(() => []);
 
   const names = nameBook(staff);
 
@@ -83,6 +85,7 @@ export async function loadWaiting(venueId: string, money: (minor: number) => str
     })),
     spends: pendingSpends,
     tabShifts,
+    orders,
     shiftCodes: Object.fromEntries(shifts.map((s) => [s.$id, s.code])),
     storeNames: Object.fromEntries(places.map((p) => [p.$id, p.name])),
     categoryNames: Object.fromEntries(categories.map((c) => [c.key, c.name])),

@@ -1,6 +1,7 @@
 import { Client, Databases, Query, Users } from 'node-appwrite';
 import nodemailer from 'nodemailer';
 import { receiptPdf, portionsOf } from './receipt-pdf.js';
+import { purchaseOrderPdf } from './po-pdf.js';
 import { bookingSittings, bookingSheetPdf } from './booking-sheet.js';
 import { ordersForSide, shelfCheckSummary } from './shift-shape.js';
 import { houseRecipients, sendToEach } from './house.js';
@@ -1397,6 +1398,67 @@ export default async ({ req, res, log, error }) => {
       message goes to the person who booked, because a party of forty arranged
       three weeks ahead has nothing else to hold.
     */
+    /*
+      An order to a supplier, asked to go by email.
+
+      The office presses "Email to supplier", which only stamps the order; the
+      PDF is built and sent here, from the same builder the office downloads,
+      and the order is marked sent once it has actually gone. The stamp is
+      cleared either way, so this does not send twice when its own update
+      fires the event again, and a failure is written on the order where the
+      person who asked will see it.
+    */
+    if (events.some((e) => e.includes('collections.purchase_orders'))) {
+      if (!doc?.email_send_at) return res.json({ ok: true, skipped: 'no email asked for' });
+      const done = (fields) => db.updateDocument(DB_ID, 'purchase_orders', doc.$id, { email_send_at: null, ...fields })
+        .catch((e) => error(`Could not update order ${doc.po_no}: ${e.message}`));
+      const to = String(doc.supplier_email || '').trim();
+      if (!to) {
+        await done({ email_error: 'This supplier has no email address. Add one under Stock, Suppliers.' });
+        return res.json({ sent: false, reason: 'no address' });
+      }
+      if (!transport) {
+        await done({ email_error: 'Email is not set up on the server, so nothing was sent.' });
+        return res.json({ sent: false, reason: 'no smtp' });
+      }
+      try {
+        await transport.sendMail({
+          from,
+          to,
+          replyTo: settings.email_from_address || undefined,
+          subject: `Purchase order ${doc.po_no} from ${settings.restaurant_name || 'us'}`,
+          html: shell(
+            `Order ${doc.po_no}`,
+            `<p style="margin:0 0 10px">Hello${doc.supplier_name ? ` ${esc(doc.supplier_name)}` : ''},</p>
+             <p style="margin:0 0 10px">Please find our order ${esc(doc.po_no)} attached.${
+               doc.expected_on ? ` We need it by ${esc(String(doc.expected_on).replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3/$2/$1'))}.` : ''}</p>
+             ${doc.note ? `<p style="margin:0 0 10px;white-space:pre-wrap">${esc(doc.note)}</p>` : ''}
+             <p style="margin:0;color:#5d6b7a;font-size:14px">Please tell us before delivering if anything has
+             changed, and quote the order number on your invoice.</p>`,
+            brand,
+          ),
+          attachments: [{
+            filename: `${doc.po_no}.pdf`,
+            content: Buffer.from(purchaseOrderPdf({ order: doc, settings, accent: brand })),
+            contentType: 'application/pdf',
+          }],
+        });
+        await done({
+          email_error: '',
+          sent_at: new Date().toISOString(),
+          sent_via: 'email',
+          // A part-received order stays part received; anything not yet sent is now sent.
+          ...(doc.status === 'ready' || doc.status === 'sent' ? { status: 'sent' } : {}),
+        });
+        log(`Order ${doc.po_no} emailed to ${to}`);
+        return res.json({ sent: true });
+      } catch (e) {
+        await done({ email_error: `The email to ${to} was refused: ${e.message}`.slice(0, 500) });
+        error(`Order ${doc.po_no} email failed: ${e.message}`);
+        return res.json({ sent: false, error: e.message });
+      }
+    }
+
     if (events.some((e) => e.includes('collections.group_bookings'))
         && events.some((e) => e.endsWith('.create'))) {
       const already = await db.listDocuments(DB_ID, 'order_notices', [

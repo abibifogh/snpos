@@ -9,10 +9,12 @@ import {
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
   loadFloats, balancesFor, recordBoxSpend, boxOverdrawn, boxHeadroom,
   checkPurchase, raiseAlerts, FLAG_WORDS, logSpendChange, spendSnapshot,
+  openOrdersFor, receiveOrderFromSpend, readLines, stillToCome,
 } from '@snpos/core';
 import type {
   PaymentMethod, Settings, StaffProfile, PaidToKind, Supplier, ExpenseCategoryDoc, Ingredient,
   CashHandover, HandoverDestination, Module, ShiftExpense, ImprestFloatDoc, CheckedLine, ExpenseDesk,
+  PurchaseOrderDoc,
 } from '@snpos/core';
 
 /**
@@ -188,6 +190,15 @@ export function ExpenseModal({
   // recorded as a single number tells you money left without telling you what
   // came back with it.
   const [lines, setLines] = useState<DraftLine[]>([{ ingredientId: '', qtyText: '', totalText: '' }]);
+  /**
+   * The supplier order this spend receives, where it is one.
+   *
+   * Picking it fills the items in with what is still to come, so the delivery
+   * is entered once: saving adds them to stock as any spend does, and the
+   * order is marked part received or received. See purchase-orders.ts.
+   */
+  const [orders, setOrders] = useState<PurchaseOrderDoc[]>([]);
+  const [orderId, setOrderId] = useState('');
   const [receipt, setReceipt] = useState<{ file: File; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   /**
@@ -297,6 +308,33 @@ export function ExpenseModal({
    */
   const stocks = module !== 'craft' && !editing;
 
+  /** Fill the spend from an order: its supplier, and what is still to arrive. */
+  const pickOrder = (id: string) => {
+    setOrderId(id);
+    const o = orders.find((x) => x.$id === id);
+    if (!o) return;
+    const left = stillToCome(readLines(o.lines)).filter((l) => l.qty > 0);
+    if (o.supplier_id && suppliers.some((x) => x.$id === o.supplier_id)) {
+      setPaidToKind('supplier');
+      setSupplierId(o.supplier_id);
+    } else if (o.supplier_name) {
+      setPaidToKind('other');
+      setPayee(o.supplier_name);
+    }
+    setLines(left.length > 0
+      ? left.map((l) => {
+        const qty = Number((l.qty - (l.received_qty || 0)).toFixed(4));
+        return {
+          ingredientId: l.ingredient_id,
+          qtyText: String(qty),
+          totalText: toInput(Math.round(qty * l.unit_cost), decimals),
+          buyKey: l.buy_key,
+        };
+      })
+      : [{ ingredientId: '', qtyText: '', totalText: '' }]);
+    setChecked(null);
+  };
+
   useEffect(() => {
     (async () => {
       const [opts, m, ing] = await Promise.all([
@@ -316,6 +354,7 @@ export function ExpenseModal({
           ? loadIngredients(venueId, module).catch(() => [] as Ingredient[])
           : Promise.resolve([] as Ingredient[]),
       ]);
+      if (stocks) void openOrdersFor(venueId, module).then(setOrders).catch(() => undefined);
       /*
         This side's spending only, plus the ones that belong to everybody.
         A bartender should not scroll past "Kitchen gas" to find tonic.
@@ -786,6 +825,30 @@ export function ExpenseModal({
         }
       }
 
+      /*
+        What this spend received of a supplier order. What went into stock,
+        in counting units, moves the order on; the spend is noted on it, and
+        it on the spend. Best effort: the spend and the stock are the record
+        that matters, and a failure here leaves the order to be marked by hand.
+      */
+      let orderWords = '';
+      if (orderId) {
+        const got = filledLines.flatMap((l) => {
+          const ing = ingredients.find((i) => i.$id === l.ingredientId);
+          if (!ing) return [];
+          const opt = buyOptionFor(ing, l.buyKey);
+          return [{ ingredient_id: ing.$id, qty: Number(l.qtyText) * opt.per }];
+        });
+        try {
+          const st = await receiveOrderFromSpend({ orderId, expenseId, got });
+          await saveDropping('shift_expenses', expenseId, { purchase_order_id: orderId }).catch(() => undefined);
+          const po = orders.find((o) => o.$id === orderId)?.po_no ?? 'The order';
+          orderWords = st === 'received' ? ` ${po} is now received.` : ` ${po} is part received; the rest is still to come.`;
+        } catch {
+          orderWords = ' The order could not be updated; mark it on Purchase orders.';
+        }
+      }
+
       // Saved for real, so the unfinished copy has nothing left to protect.
       clearExpenseDraft(store, draftKey);
 
@@ -795,7 +858,7 @@ export function ExpenseModal({
           : stockFailures > 0
           ? `Spend recorded, but ${stockFailures} item${stockFailures > 1 ? 's' : ''} did not reach stock`
           : filledLines.length
-            ? `Spend recorded and ${filledLines.length} item${filledLines.length > 1 ? 's' : ''} added to stock`
+            ? `Spend recorded and ${filledLines.length} item${filledLines.length > 1 ? 's' : ''} added to stock.${orderWords}`
             : 'Spend recorded',
       );
     } catch (e) {
@@ -865,6 +928,20 @@ export function ExpenseModal({
           Already added to stock from this spend:{' '}
           {savedLines.map((l) => `${l.qty} × ${l.name_snapshot}`).join(', ')}. Adding more below adds to stock again.
         </p>
+      )}
+      {/* A delivery that answers an order: picking it fills in what is still
+          to come, from that supplier. Only offered where there is one. */}
+      {stocks && orders.length > 0 && (
+        <Field label="For an order" hint="Pick the order this delivery is for. Its items fill in below; change any that came differently.">
+          <Select value={orderId} onChange={(e) => pickOrder(e.target.value)}>
+            <option value="">Not for an order</option>
+            {orders.map((o) => (
+              <option key={o.$id} value={o.$id}>
+                {o.po_no} · {o.supplier_name || 'supplier'}{o.status === 'part' ? ' (part received)' : ''}
+              </option>
+            ))}
+          </Select>
+        </Field>
       )}
       {stocks && <Field
         label="What was bought"

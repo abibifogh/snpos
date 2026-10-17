@@ -6,7 +6,7 @@ import {
   
   approveBarCount, rejectBarCount, approveCount, rejectCount, refuseCountLines,
   tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS,
-  decideSpend, loadWaiting, nameFrom, waitingCounts, waitingSummary, waitedWords, refuseSpendWords, WAITING_KIND_WORDS, dateTimeWords,
+  decideSpend, decidePurchaseOrder, loadWaiting, nameFrom, waitingCounts, waitingSummary, waitedWords, refuseSpendWords, WAITING_KIND_WORDS, dateTimeWords,
   loadReview, offWords, countDifferencesHtml, openPrintable,
   openBookingChanges, decideBookingChange, CHANGE_KIND_WORDS,
   pendingGroupBookings, bookingStatusWords } from '@snpos/core';
@@ -17,7 +17,7 @@ import { useSession, useMoney } from '../session';
 import { ChargeLineModal } from '../components/ChargeLine';
 
 type Show = WaitingKind | 'all';
-const SHOWS: Show[] = ['all', 'count', 'spend', 'shelf', 'tab'];
+const SHOWS: Show[] = ['all', 'count', 'spend', 'shelf', 'tab', 'order'];
 
 /**
  * Everything waiting for somebody senior, and the buttons to decide it.
@@ -158,6 +158,10 @@ export function WaitingPage() {
       await decideSpend({ expenseId: ref.expenseId, decision: 'approved', by: userId });
       return 'Spend approved';
     }
+    if (ref.kind === 'order') {
+      await decidePurchaseOrder({ id: ref.orderId, approve: true, by: userId });
+      return 'Order approved. It can be sent now from Purchase orders.';
+    }
     return '';
   });
 
@@ -166,6 +170,8 @@ export function WaitingPage() {
     if (ref.kind === 'spend') {
       const s = spends.get(ref.expenseId);
       if (!confirm(refuseSpendWords(s?.source, money(item.value)))) return;
+    } else if (ref.kind === 'order') {
+      if (!confirm('Refuse this order? It goes back to whoever made it, to change or cancel. Nothing is sent.')) return;
     } else if (!confirm('Refuse this? The shelf stays exactly as it is, and the count is kept, marked as refused.')) {
       return;
     }
@@ -181,6 +187,10 @@ export function WaitingPage() {
       if (ref.kind === 'spend') {
         await decideSpend({ expenseId: ref.expenseId, decision: 'rejected', by: userId });
         return 'Spend refused. The books follow in a moment.';
+      }
+      if (ref.kind === 'order') {
+        await decidePurchaseOrder({ id: ref.orderId, approve: false, by: userId });
+        return 'Order refused. Nothing was sent.';
       }
       return '';
     });
@@ -453,7 +463,7 @@ export function WaitingPage() {
                   const since = Date.parse(item.at);
                   const decidable = item.kind !== 'tab';
                   // A spend is any manager's to decide; a count that moves a shelf is an admin's.
-                  const may = item.kind === 'spend' ? true : isAdmin;
+                  const may = item.kind === 'spend' || item.kind === 'order' ? true : isAdmin;
                   const open = openId === item.id;
                   // A tab has its own screen already, and there are no lines
                   // behind it to read.

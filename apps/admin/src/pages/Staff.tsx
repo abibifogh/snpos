@@ -229,6 +229,7 @@ export function StaffPage() {
         can_see_private_expenses: editing.can_see_private_expenses ?? false,
         can_fund_petty_cash: editing.can_fund_petty_cash ?? false,
         can_record_waste: editing.can_record_waste ?? true,
+        can_order_stock: editing.can_order_stock ?? (editing.role === 'manager'),
         venue_ids: editing.venue_ids ?? [],
         ...(pin ? { pin_hash: await encodePin(pin), pin_set_at: new Date().toISOString() } : {}),
         // Asking for the sign-in link is a field on the profile, not a call
@@ -685,6 +686,15 @@ export function StaffPage() {
             />
           </Field>
           <Field><Toggle checked={editing.can_record_waste ?? true} onChange={(v) => setEditing({ ...editing, can_record_waste: v })} label="Record waste" /></Field>
+          {/* Who may make and send orders to suppliers. An admin always may.
+              On by default for a manager; anybody else is given it here. */}
+          <Field hint="Make and send orders to suppliers for things running low. Orders over the limit under Features still wait for approval.">
+            <Toggle
+              checked={editing.role === 'admin' || (editing.can_order_stock ?? (editing.role === 'manager'))}
+              onChange={(v) => setEditing({ ...editing, can_order_stock: v })}
+              label="Order stock"
+            />
+          </Field>
           <Field hint="Off for everybody but an admin. Archiving already takes something off the board and keeps its recipe, its price and its history; deleting takes all three with it, and nothing afterwards says what used to be there.">
             <Toggle
               checked={editing.can_delete_items ?? false}
