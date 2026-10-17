@@ -242,8 +242,12 @@ async function depleteShelf({ db, DB_ID, order, lines, log }) {
  * retried on a bad connection finds the movements already written and pours
  * nothing twice.
  *
- * Only bar items. A dish with a recipe is still the kitchen's, and depleting
- * it here as well as at shift close would take every ingredient off twice.
+ * The kitchen's dishes too, now. A kitchen whose ingredients only moved at
+ * shift close spent every service looking at last night's figures, and its
+ * count-in was measured against them. Each side pours from its own counter:
+ * a dish off the kitchen's, a drink off the bar's. The shop is not here; its
+ * pieces come off the shelf in depleteShelf. The close no longer deducts
+ * anything, so nothing comes off twice.
  */
 async function pourFromBottles({ db, DB_ID, order, lines, log }) {
   let poured = 0;
@@ -260,11 +264,12 @@ async function pourFromBottles({ db, DB_ID, order, lines, log }) {
   const places = await db.listDocuments(DB_ID, 'stock_locations', [
     Query.equal('venue_id', order.venue_id), Query.limit(50),
   ]).catch(() => ({ documents: [] }));
-  const bar = places.documents
-    .filter((l) => l.active !== false && (l.module || 'kitchen') === 'bar')
+  /** Each side's counter: where its sales are poured from. Mirrors saleLocation in core. */
+  const counterOf = (side) => places.documents
+    .filter((l) => l.active !== false && (l.module || 'kitchen') === side)
     .sort((a, b) => (a.sort || 0) - (b.sort || 0))
     .find((l) => l.kind === 'counter')
-    || places.documents.find((l) => (l.module || 'kitchen') === 'bar')
+    || places.documents.find((l) => (l.module || 'kitchen') === side)
     || null;
 
   for (const line of lines) {
@@ -276,7 +281,10 @@ async function pourFromBottles({ db, DB_ID, order, lines, log }) {
     if (already.total > 0) continue;
 
     const item = await db.getDocument(DB_ID, 'menu_items', line.menu_item_id).catch(() => null);
-    if (!item || item.module !== 'bar') continue;
+    if (!item) continue;
+    const side = item.module || 'kitchen';
+    if (side === 'craft') continue;
+    const bar = counterOf(side);
 
     const recipes = await db.listDocuments(DB_ID, 'recipes', [
       Query.equal('menu_item_id', line.menu_item_id), Query.limit(50),
@@ -372,7 +380,7 @@ async function pourFromBottles({ db, DB_ID, order, lines, log }) {
     }
   }
 
-  if (poured) log(`${poured} bar ingredient(s) poured for ${order.order_no}`);
+  if (poured) log(`${poured} ingredient(s) taken off the shelf for ${order.order_no}`);
   return poured;
 }
 

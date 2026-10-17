@@ -1,7 +1,7 @@
 import { db, DB_ID, ID, Query, listAll, saveDropping } from './client';
 import type { Doc, Settings } from './types';
 import type { Order, OrderItem } from './orders';
-import { depleteForShift, loadIngredients, loadRecipes, updateStockAlerts } from './stock';
+import { theoreticalUsage, pourMissedSales, loadIngredients, loadRecipes, updateStockAlerts } from './stock';
 import { liveOrders } from './orders';
 import { countable } from './bar-count';
 import { repaidByMethod } from './staff-charges';
@@ -781,8 +781,22 @@ export async function closeShift(opts: {
       by somebody else's trade, and the closing email then listed the lot.
     */
     const side = shift.module ?? 'kitchen';
+    /*
+      NOTHING IS TAKEN OFF HERE ANY MORE.
+
+      Every side's food and drink now leaves the shelf when it is paid for —
+      see pourFromBottles in order-guard — so the kitchen's figures are right
+      during service, and its count-out is measured against what was really
+      cooked. All that is left for the close is to catch anything the server
+      missed (a payment taken offline, a shift open across the change), which
+      pours only sale lines that have not been poured, so nothing goes twice.
+      The cost of sales is still worked out from the recipes, as it was.
+    */
+    if (side !== 'craft') {
+      await pourMissedSales({ venueId, shiftId: shift.$id, module: side, userId }).catch(() => undefined);
+    }
     const [ingredients, recipes] = await Promise.all([loadIngredients(venueId, side), loadRecipes()]);
-    const usage = await depleteForShift(venueId, shift.$id, soldItems, recipes, ingredients, userId);
+    const usage = theoreticalUsage(soldItems, recipes);
     for (const [ingredientId, qty] of Object.entries(usage)) {
       const ing = ingredients.find((i) => i.$id === ingredientId);
       if (ing) cogs += Math.round(qty * ing.base_unit_cost);
@@ -793,19 +807,8 @@ export async function closeShift(opts: {
     for (const [ingredientId, level] of Object.entries(levels)) {
       const ing = ingredients.find((i) => i.$id === ingredientId);
       if (!ing) continue;
-      /*
-        A bar's drinks have already been taken off the shelf.
-
-        `depleteForShift` deliberately skips the bar — see the note there — so
-        by the time a bar shift closes, `current_qty` is ALREADY net of the
-        night's pours. Subtracting the usage a second time would set what the
-        shelf "should" hold to well below what was actually sold from it, and
-        every bartender would be told they were short by exactly the amount
-        they served. What the recipes say was used is still the right figure
-        for the kitchen, whose depletion happens here and now.
-      */
-      const poured = (ing.module ?? 'kitchen') === 'bar' ? 0 : usage[ingredientId] ?? 0;
-      const theoretical = Number((ing.current_qty - poured).toFixed(4));
+      // Already net of the shift's sales on every side; see the note above.
+      const theoretical = Number(ing.current_qty.toFixed(4));
       const countedQty = stockCounts[ingredientId];
       const wasCounted = typeof countedQty === 'number' && Number.isFinite(countedQty);
 

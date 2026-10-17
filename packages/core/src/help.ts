@@ -207,23 +207,22 @@ export const HELP_ARTICLES: HelpArticle[] = [
         + 'a second on the same side is refused with the code of the one already open. Two on one side splits a '
         + 'day across two sets of books that balance against neither.',
       ),
+      h('Counting in and out'),
+      p('Every side counts its shelf on the same count sheet: when the shift opens, and again before it closes. The bar and the shop must count; the kitchen is asked, and can carry on without it, but the close says when it was skipped.'),
+      list(
+        'You type what is actually there. The sheet shows what the shelf should hold and works out the difference.',
+        'A difference does not change the stock on its own. It waits on Waiting for you, where a manager agrees it, refuses it, or charges it to whoever was responsible. That is the same on every side.',
+        'Food and drink come off the shelf as each order is paid, so what the shelf should hold is always up to date, in the kitchen as well as the bar.',
+      ),
       h('Closing'),
       steps(
         'Settle or transfer any open bills. Nothing is left dangling.',
+        'Count the shelf out on the count sheet.',
         'Count the drawer and enter what is actually there. You are asked before being shown what was expected, counting blind is what makes the answer worth anything.',
-        'Go through the stock check. What it asks depends on a setting, see below.',
+        'Tap OK, Low or Out for anything marked "Just check it" under Stock: the cheap and bulky things, like salt and oil, that are not worth a number.',
         'Confirm. The system compares expected against counted and records the difference.',
       ),
-      h('The stock check'),
-      p('An admin chooses which of two questions staff are asked, under Settings. Both end in the same place, an OK, Low or Out against every ingredient. The difference is who decides which.'),
-      note('This is the kitchen\u2019s check only. Closing a shop counter shift does not ask it: ingredients are recipes and shelves, and the shop\u2019s stock moves through deliveries and sales, which count themselves.'),
-      list(
-        'Tap OK, Low or Out, quick, and honest about being a glance at a shelf rather than a measurement. Fine where the same person closes most nights.',
-        'Type how much is left, staff enter the amount actually on the shelf and the system works out the status from that ingredient\'s own low level. Slower, and it buys two things tapping cannot.',
-      ),
-      p('The two things: the same four crates get filed the same way whoever is closing, because nobody is judging. And what was counted can be measured against what the recipes say should have gone, which is the only way over-portioning, waste and theft ever show up at all.'),
-      p('The list is grouped the way your shelves are, in the order somebody walks the kitchen. Under each ingredient is the guide an admin wrote for it, "OK = 10pcs or more · Low = under 10pcs", in the units on the shelf rather than the units in the database. Set those under Stock; without them, "low" means whatever each person thinks it means.'),
-      note('When staff type amounts, a shift will not close with rows left blank; it names what is still to count. Type 0 for anything that has run out. The ingredient nobody looked at is exactly the one that runs out on Saturday.'),
+      note('"Just check it" is set per item, under Stock, in How often is this counted. Marking one Out sets it to nothing. Everything with a number goes on the count sheet instead, so its difference can be agreed.'),
       h('Money in and money out'),
       p(
         'The close opens with four figures before it asks you to count anything: what the drawers started '
@@ -332,14 +331,14 @@ export const HELP_ARTICLES: HelpArticle[] = [
       steps(
         'Add your ingredients under Stock, name, the unit you count in, what it costs you, how much you have.',
         'Open a dish under Menu, and fill in "What it\'s made from": ingredient, how much per portion, and a wastage percentage.',
-        'That is the whole link. From then on, closing a shift deducts what should have been used.',
+        'That is the whole link. From then on, every dish takes its ingredients off the shelf the moment it is paid for.',
       ),
       h('Wastage'),
       p('The skin of an onion was bought and paid for even though it never reaches the plate. Putting 10% there is not padding, leaving it out flatters every margin on your menu in the same direction.'),
       h('What it tells you'),
       list(
         'What each dish costs you, and your margin at the price you charge.',
-        'What stock you should have left at the end of a shift, to compare against what you actually have.',
+        'What stock you should have left at any moment, to compare against what the count sheet finds.',
         'Which dishes use an ingredient, shown on the Stock list, alongside a warning for any ingredient no dish uses.',
       ),
       note('A dish with stock tracking switched on but no recipe is flagged in the dish list. That combination silently does nothing at all, so it is worth fixing or turning off.', 'warn'),

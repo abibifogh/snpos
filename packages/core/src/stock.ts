@@ -11,7 +11,7 @@ import type { RelinkPlan, LinkRow, LinkSize, LinkItem, ShelfRow, SoldLink } from
 import {
   variancesIn, wasCountedBar, shiftCounted, countable, countableBy, filedCounts, undoDeltas, undoProblem,
   movesOnItsOwn, storeCountId, isStoreCount, STORE_COUNT_PREFIX, isPending, approveDeltas, refuseLines, countSide,
-  replacedLines, olderWaiting,
+  replacedLines, olderWaiting, checkOnly, countedOnSheet,
 } from './bar-count';
 import type { FiledCheck } from './bar-count';
 import { levelFor, transferQty, transferMovements, purchaseLocation, saleLocation } from './locations';
@@ -69,6 +69,12 @@ export interface Ingredient extends Doc {
    */
   pack_size?: number;
   pack_name?: string;
+  /**
+   * Only glanced at, never counted: OK, Low or Out at the close. For the
+   * cheap and the bulky — salt, oil, spices — where a number is not worth
+   * the time. Kept off the count sheet, so it can never show a difference.
+   */
+  check_only?: boolean;
   /** Counted at the start and end of every shift. See shiftCounted. */
   count_each_shift?: boolean;
   consecutive_low_count?: number;
@@ -139,50 +145,6 @@ export function theoreticalUsage(items: OrderItem[], recipes: Recipe[]): Record<
   return usage;
 }
 
-/** Deplete stock for what a shift sold, and record why each figure moved. */
-export async function depleteForShift(
-  venueId: string,
-  shiftId: string,
-  items: OrderItem[],
-  recipes: Recipe[],
-  ingredients: Ingredient[],
-  userId: string,
-): Promise<Record<string, number>> {
-  const usage = theoreticalUsage(items, recipes);
-  const byId = new Map(ingredients.map((i) => [i.$id, i]));
-
-  for (const [ingredientId, qty] of Object.entries(usage)) {
-    const ing = byId.get(ingredientId);
-    if (!ing || qty <= 0) continue;
-    /*
-      A bar's bottles have already been poured.
-
-      The bar deducts as each drink is paid for rather than at close, because
-      the point of watching a gin level is to see it running out before
-      somebody orders the drink it makes. Depleting it again here would take
-      every measure off twice and report a bar that loses half its stock every
-      night. See pourFromBottles in order-guard.
-    */
-    if (ing.module === 'bar') continue;
-
-    await db.createDocument(DB_ID, 'stock_movements', ID.unique(), {
-      venue_id: venueId,
-      ingredient_id: ingredientId,
-      type: 'sale_depletion',
-      qty_delta: -qty,
-      unit_cost: ing.base_unit_cost,
-      ref_type: 'shift',
-      ref_id: shiftId,
-      shift_id: shiftId,
-      created_by: userId,
-    });
-
-    await db.updateDocument(DB_ID, 'ingredients', ingredientId, {
-      current_qty: Number((ing.current_qty - qty).toFixed(4)),
-    });
-  }
-  return usage;
-}
 
 /**
  * Put bought stock on the shelf.
@@ -509,7 +471,15 @@ export async function stockCheckRows(venueId: string, module: Module = 'kitchen'
     (i) => i.active && (i.module ?? 'kitchen') === module,
   );
 
-  return shiftCounted(mine)
+  /*
+    ONLY THE ITEMS THAT ARE JUST CHECKED.
+
+    Everything that is counted is counted on the count sheet, on every side,
+    and its difference waits on Waiting for you like the bar's always has.
+    What is left for the close is the quick look: OK, Low or Out against the
+    items an admin has marked "just check it". See checkOnly.
+  */
+  return checkOnly(shiftCounted(mine))
     .sort(
       (a, b) =>
         rank(a.category) - rank(b.category) ||
@@ -629,7 +599,8 @@ export async function barCountSheet(
     "count everything" whenever nothing had been marked for the shift. See
     countable.
   */
-  const onShelf = countable(ingredients.filter((i) => i.active && (i.module ?? 'kitchen') === module));
+  // "Just check it" items are glanced at on the close, never counted here.
+  const onShelf = countedOnSheet(countable(ingredients.filter((i) => i.active && (i.module ?? 'kitchen') === module)));
   const rows = counter?.kind === 'store' ? onShelf : shiftCounted(onShelf);
   /*
     And then who is holding the clipboard.

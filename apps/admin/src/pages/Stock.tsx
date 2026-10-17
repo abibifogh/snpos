@@ -57,12 +57,13 @@ const UNITS = ['g', 'kg', 'ml', 'l', 'each', 'pack', 'bottle', 'case', 'shot', '
  * checkbox nobody pairs correctly. Underneath it is the "at stocktake"
  * cadence plus a flag; see managerCountOnly.
  */
-type Cadence = 'shift' | 'close' | 'manager' | 'never';
+type Cadence = 'shift' | 'close' | 'check' | 'manager' | 'never';
 
 const countCadence = (
-  i: { counted_at_close?: boolean; count_each_shift?: boolean; manager_count_only?: boolean },
+  i: { counted_at_close?: boolean; count_each_shift?: boolean; manager_count_only?: boolean; check_only?: boolean },
 ): Cadence => {
   if (i.counted_at_close === false) return 'never';
+  if (i.check_only) return 'check';
   if (i.manager_count_only) return 'manager';
   return i.count_each_shift ? 'shift' : 'close';
 };
@@ -76,6 +77,11 @@ const countCadence = (
 const CADENCE_WORDS: Record<Cadence, { label: string; tone: 'ok' | 'default' | 'warn'; detail: string }> = {
   shift: { label: 'Every shift', tone: 'ok', detail: 'Counted in at the start and out at the end' },
   close: { label: 'At stocktake', tone: 'default', detail: 'Off the shift sheet; counted when somebody does a stocktake' },
+  check: {
+    label: 'Just check it',
+    tone: 'default',
+    detail: 'OK, Low or Out at the close, no number. For the cheap and bulky: salt, oil, spices',
+  },
   manager: {
     label: 'Managers only',
     tone: 'default',
@@ -91,6 +97,8 @@ const cadenceFields = (c: Cadence) => ({
   // Held back from the nightly sheet AND from anybody who is not a manager.
   // Written on every branch so moving off it actually releases the item.
   manager_count_only: c === 'manager',
+  // Glanced at on the close, kept off the count sheet.
+  check_only: c === 'check',
 });
 
 /** The pack's name for a label, before anybody has given it one. */
@@ -463,6 +471,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
         pack_size: Number(editing.pack_size ?? 0),
         pack_name: (editing.pack_name ?? '').trim(),
         count_each_shift: editing.count_each_shift === true,
+        check_only: editing.check_only === true,
         // Whose shelf, taken from the page rather than asked for. A bottle
         // added from the bar's screen belongs to the bar; nobody should have
         // to answer a question the screen already knows the answer to.
@@ -1149,13 +1158,16 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
             label="How often is this counted?"
             hint={module === 'bar'
               ? 'Bottled drinks leave whole and are quick to see, so they are counted in and out every shift. "At stocktake" keeps a thing off the twice-daily sheet — spirits belong there, because forty open bottles judged by eye at two in the morning produce numbers nobody believes. Add "managers only" where the count is worth trusting because of who made it.'
-              : 'Choose Never for things with nothing on a shelf: transport, delivery fees, repairs. They can still be entered on an expense.'}
+              : 'Every shift puts it on the count sheet the kitchen fills in when it opens and closes. Just check it is for the cheap and bulky (salt, oil, spices): a quick OK, Low or Out at the close instead of a number. Choose Never for things with nothing on a shelf: transport, delivery fees, repairs.'}
           >
             <Select
               value={countCadence(editing)}
               onChange={(e) => setEditing({ ...editing, ...cadenceFields(e.target.value as Cadence) })}
             >
-              {module === 'bar' && <option value="shift">Every shift, in and out</option>}
+              <option value="shift">Every shift, in and out</option>
+              {/* A glance, not a number: OK, Low or Out at the close. Never on
+                  the count sheet, so it can never show a difference. */}
+              <option value="check">Just check it: OK, Low or Out at the close</option>
               <option value="close">At stocktake</option>
               {/* Held back from the nightly sheet AND from anybody who is not
                   a manager. The whole reason spirits are counted rarely is
