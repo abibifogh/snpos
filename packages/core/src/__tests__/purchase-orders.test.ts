@@ -4,6 +4,7 @@ import {
   isRunningLow, suggestLine, suggestions, orderTotal, orderNeedsApproval, orderProblem, nextPoNo, orderMessage,
   receiveInto, stillToCome, submittedStatus, readLines, canOrderStock, canApproveOrders, isOpenOrder, isEditableOrder,
   PO_STATUS_WORDS, type OrderableItem,
+  itemsFor, newSupplierProblem,
 } from '../purchase-orders.ts';
 import { waitingList, waitingCounts } from '../waiting.ts';
 import { purchaseOrderPdf, quantityWords } from '../../../../functions/notify/src/po-pdf.js';
@@ -50,6 +51,32 @@ test('suggestions are grouped by supplier, with anything unsupplied kept rather 
     ['Guinness Ghana', ['Club Large', 'Malt']],
     ['No supplier set', ['Gas']],
   ]);
+});
+
+test('one order per supplier and department: the bar\'s Club and the kitchen\'s oil are two orders', () => {
+  const items = [
+    club({ supplier_id: 'gbl', module: 'bar' }),
+    club({ $id: 'oil', name: 'Oil', supplier_id: 'gbl', module: 'kitchen', current_qty: 0 }),
+    club({ $id: 'old', name: 'Salt', supplier_id: 'gbl', current_qty: 0 }),
+  ];
+  const g = suggestions(items, [{ $id: 'gbl', name: 'Guinness Ghana' }]);
+  assert.deepEqual(g.map((x) => [x.module, x.lines.map((l) => l.name)]).sort(), [
+    ['bar', ['Club Large']],
+    ['kitchen', ['Oil', 'Salt']],
+  ]);
+});
+
+test('an order offers its own department\'s items, and a new supplier must be new', () => {
+  const items = [
+    { $id: 'a', module: 'bar' }, { $id: 'b', module: 'kitchen' }, { $id: 'c' }, { $id: 'd', module: 'bar', active: false },
+  ];
+  assert.deepEqual(itemsFor(items, 'bar').map((i) => i.$id), ['a']);
+  assert.deepEqual(itemsFor(items, 'kitchen').map((i) => i.$id), ['b', 'c'], 'no side is the kitchen\'s');
+  assert.equal(itemsFor(items, 'craft').length, 0);
+  const list = [{ name: 'Kasapreko' }];
+  assert.match(newSupplierProblem('  ', list) ?? '', /name/);
+  assert.match(newSupplierProblem('kasapreko ', list) ?? '', /already on the list/);
+  assert.equal(newSupplierProblem('Accra Wholesale', list), null);
 });
 
 test('approval only above the limit, and never for an admin’s own order', () => {

@@ -119,14 +119,20 @@ export function suggestLine(i: OrderableItem): PoLine {
 export interface Suggestion {
   supplierId: string;
   supplierName: string;
+  /** Whose stock: one order is for one department, as its stock is. */
+  module: string;
   lines: PoLine[];
   total: number;
 }
 
 /**
- * Everything running low, as orders to make: one per supplier, and one for
- * items with no supplier set, so nothing that has run out drops off the list
- * for want of a name. Biggest order first.
+ * Everything running low, as orders to make: one per supplier and
+ * department, and one for items with no supplier set, so nothing that has
+ * run out drops off the list for want of a name. Biggest order first.
+ *
+ * Split by department because an order is: the bar's Club and the
+ * kitchen's oil from the same wholesaler are two orders, received into two
+ * different stores and paid from two sides' books.
  */
 export function suggestions(items: OrderableItem[], suppliers: OrderSupplier[], lowDefaultBp = 3000): Suggestion[] {
   const by = new Map<string, Suggestion>();
@@ -134,15 +140,32 @@ export function suggestions(items: OrderableItem[], suppliers: OrderSupplier[], 
     if (!isRunningLow(i, lowDefaultBp)) continue;
     const sid = i.supplier_id && suppliers.some((s) => s.$id === i.supplier_id) ? i.supplier_id : '';
     const name = suppliers.find((s) => s.$id === sid)?.name ?? 'No supplier set';
-    const g = by.get(sid) ?? { supplierId: sid, supplierName: name, lines: [], total: 0 };
+    const module = i.module ?? 'kitchen';
+    const key = `${sid}|${module}`;
+    const g = by.get(key) ?? { supplierId: sid, supplierName: name, module, lines: [], total: 0 };
     g.lines.push(suggestLine(i));
-    by.set(sid, g);
+    by.set(key, g);
   }
   for (const g of by.values()) {
     g.lines.sort((a, b) => a.name.localeCompare(b.name));
     g.total = orderTotal(g.lines);
   }
   return [...by.values()].sort((a, b) => (a.supplierId ? 0 : 1) - (b.supplierId ? 0 : 1) || b.total - a.total);
+}
+
+/** A department's own items, for an order's item list. Rows with no side were the kitchen's. */
+export const itemsFor = <T extends { module?: string; active?: boolean }>(items: T[], module: string): T[] =>
+  items.filter((i) => i.active !== false && (i.module ?? 'kitchen') === module);
+
+/**
+ * Why a supplier typed on the order cannot be added, or null when it can.
+ * A name that matches one already on the list is that one, not a second.
+ */
+export function newSupplierProblem(name: string, suppliers: Pick<OrderSupplier, 'name'>[]): string | null {
+  const n = name.trim().toLowerCase();
+  if (!n) return 'Give the new supplier a name.';
+  if (suppliers.some((s) => s.name.trim().toLowerCase() === n)) return 'That supplier is already on the list: pick it above.';
+  return null;
 }
 
 export const poLineTotal = (l: Pick<PoLine, 'qty' | 'unit_cost'>): number => Math.round((l.qty || 0) * (l.unit_cost || 0));

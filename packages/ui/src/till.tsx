@@ -310,10 +310,11 @@ export function ExpenseModal({
   /**
    * Whether spending can be itemised into stock.
    *
-   * Only in the kitchen. Ingredients are recipes and shelves, and the shop's
-   * goods arrive from consignors through a delivery, not out of the drawer, so
-   * offering a rice-and-tomatoes list to a craft cashier would be offering
-   * somebody else's larder.
+   * Each side's own items only (see loadIngredients below), so a craft
+   * cashier is never offered the kitchen's larder. The shop's pieces arrive
+   * from makers through Goods received, not out of the drawer; what it buys
+   * itself — bags, wrapping, labels — is its own stock, and is offered once
+   * any such item exists. With none, the shop's form has no item list at all.
    *
    * And never while correcting an expense. Its items were delivered into stock
    * when it was recorded, and re-listing them here would deliver them a second
@@ -321,7 +322,8 @@ export function ExpenseModal({
    * not a cook's. A correction changes the figures on the expense, and what
    * already reached the shelf stays reached.
    */
-  const stocks = module !== 'craft' && !editing;
+  const canStock = !editing;
+  const stocks = canStock && (module !== 'craft' || ingredients.length > 0);
 
   /** Fill the spend from an order: its supplier, and what is still to arrive. */
   const pickOrder = (id: string) => {
@@ -365,12 +367,12 @@ export function ExpenseModal({
           other side's shelf is a shortage on one and a surplus on the other,
           discovered weeks later at a count.
         */
-        stocks
+        canStock
           ? loadIngredients(venueId, module).catch(() => [] as Ingredient[])
           : Promise.resolve([] as Ingredient[]),
       ]);
-      if (stocks) void openOrdersFor(venueId, module).then(setOrders).catch(() => undefined);
-      if (stocks) {
+      if (canStock) void openOrdersFor(venueId, module).then(setOrders).catch(() => undefined);
+      if (canStock) {
         void loadLocations(venueId).then((all: StockLocation[]) => {
           const mine = openIn(all, module);
           setPlaces(mine);
@@ -438,7 +440,7 @@ export function ExpenseModal({
       if (!editing) setBoxId((cur: string) => cur || tins[0]?.$id || '');
     })().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [venueId, settings.expense_paid_from, stocks, module]);
+  }, [venueId, settings.expense_paid_from, canStock, module]);
 
   /**
    * The box this spend is coming out of, if it is coming out of one.

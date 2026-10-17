@@ -63,6 +63,22 @@ export async function loadOrderables(venueId: string): Promise<{ items: Ingredie
 }
 
 /**
+ * Add a supplier from the order form, when the one being ordered from is not
+ * on the list yet. The same row Stock → Suppliers writes; the rest of its
+ * details can be filled in there later.
+ */
+export async function addSupplier(input: { name: string; phone?: string; email?: string }): Promise<OrderSupplier> {
+  const row = {
+    name: input.name.trim().slice(0, 160),
+    phone: (input.phone ?? '').trim().slice(0, 40),
+    email: (input.email ?? '').trim().slice(0, 160),
+    active: true,
+  };
+  const { id } = await saveDropping('suppliers', null, row);
+  return { $id: id, ...row };
+}
+
+/**
  * Write an order, new or changed. A new one takes the next number.
  *
  * `submit` finishes it: it goes to "ready to send", or to "waiting for

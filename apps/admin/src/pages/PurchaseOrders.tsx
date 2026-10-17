@@ -6,6 +6,7 @@ import {
   suggestions, suggestLine, orderTotal, poLineTotal, orderProblem, orderMessage, readLines, stillToCome,
   isEditableOrder, isOpenOrder, orderNeedsApproval, canOrderStock, PO_STATUS_WORDS,
   loadFeatures, featureConfig, formatMoney, parseMoney, toInput, dateTimeWords, downloadFile, MODULE_LABELS,
+  modulesOf, SIDE_NAMES, itemsFor, newSupplierProblem, addSupplier,
 } from '@snpos/core';
 import type { PurchaseOrderDoc, PoLine, OrderSupplier, Ingredient, Module, Suggestion, FeatureMap } from '@snpos/core';
 /* The same builder the email attaches, so the office's copy and the
@@ -62,6 +63,11 @@ export function PurchaseOrdersPage() {
   useEffect(() => { void load(); }, []);
 
   const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
+  /** The departments the business runs, each ordering its own stock. */
+  const mods = modulesOf(settings);
+  const sides = (['kitchen', 'bar', 'craft'] as Module[]).filter((m) => mods[m]);
+  /** Adding to the supplier list is a manager's job, as it is under Stock. */
+  const mayAddSupplier = profile?.role === 'admin' || profile?.role === 'manager';
   const lowBp = settings?.low_stock_default_bp ?? 3000;
   const limit = featureConfig(features, 'purchase_orders', 'approve_over', 100000);
   /*
@@ -110,9 +116,10 @@ export function PurchaseOrdersPage() {
                 level, pack and supplier for an item under Stock.
               </p>
               {ideas.map((g) => (
-                <div key={g.supplierId || 'none'} className="spread" style={{ borderTop: '1px solid var(--border)', paddingTop: '0.5rem', alignItems: 'center' }}>
+                <div key={`${g.supplierId || 'none'}|${g.module}`} className="spread" style={{ borderTop: '1px solid var(--border)', paddingTop: '0.5rem', alignItems: 'center' }}>
                   <div>
                     <strong>{g.supplierName}</strong>
+                    {sides.length > 1 && <span className="small dim"> · {SIDE_NAMES[g.module as Module] ?? g.module}</span>}
                     <div className="small dim">
                       {g.lines.slice(0, 4).map((l) => `${l.name} × ${l.qty} ${l.buy_label}`).join(', ')}
                       {g.lines.length > 4 ? `, and ${g.lines.length - 4} more` : ''}
@@ -180,6 +187,9 @@ export function PurchaseOrdersPage() {
           start={open.start}
           items={items}
           suppliers={suppliers}
+          sides={sides}
+          mayAddSupplier={mayAddSupplier}
+          onSupplierAdded={(sup) => setSuppliers((cur) => [...cur, sup].sort((a, b) => a.name.localeCompare(b.name)))}
           limit={limit}
           mayOrder={mayOrder}
           isAdmin={isAdmin}
@@ -202,12 +212,17 @@ export function PurchaseOrdersPage() {
 
 /** One order: written, read, sent. */
 function OrderModal({
-  order, start, items, suppliers, limit, mayOrder, isAdmin, userId, userName, settings, money, onClose, onSaved, onError,
+  order, start, items, suppliers, sides, mayAddSupplier, onSupplierAdded,
+  limit, mayOrder, isAdmin, userId, userName, settings, money, onClose, onSaved, onError,
 }: {
   order?: PurchaseOrderDoc;
   start?: Suggestion;
   items: Ingredient[];
   suppliers: OrderSupplier[];
+  /** The departments to order for. One order is one department's stock. */
+  sides: Module[];
+  mayAddSupplier: boolean;
+  onSupplierAdded: (s: OrderSupplier) => void;
   limit: number;
   mayOrder: boolean;
   isAdmin: boolean;
@@ -228,12 +243,38 @@ function OrderModal({
   const [note, setNote] = useState(order?.note ?? '');
   const [neededBy, setNeededBy] = useState(order?.expected_on ?? '');
   const [busy, setBusy] = useState<string | null>(null);
+  /**
+   * Which department this order is for, and so whose items it offers.
+   *
+   * It used to be read off the first item, with every side's stock in one
+   * list: the bar's Club next to the kitchen's oil, and an order that mixed
+   * them filed under whichever came first.
+   */
+  const [side, setSide] = useState<Module>(() => {
+    const from = (order?.module ?? start?.module) as Module | undefined;
+    return from && sides.includes(from) ? from : (from ?? sides[0] ?? 'kitchen');
+  });
+  const mine = useMemo(() => itemsFor(items, side), [items, side]);
+  /** A supplier not on the list yet, typed in here. */
+  const NEW = '__new';
+  const [fresh, setFresh] = useState({ name: '', phone: '', email: '' });
+  const adding = supplierId === NEW;
+
+  const pickSide = (next: Module) => {
+    if (next === side) return;
+    const filled = lines.some((l) => l.ingredient_id);
+    if (filled && !confirm(`Switch this order to ${SIDE_NAMES[next]}? The items on it are ${SIDE_NAMES[side]}'s, so they will be cleared.`)) return;
+    setSide(next);
+    if (filled) {
+      setLines([{ ingredient_id: '', name: '', unit: '', buy_key: 'unit', buy_label: '', per: 1, qty: 1, unit_cost: 0, received_qty: 0 }]);
+      setCostText({});
+    }
+  };
 
   const supplier = suppliers.find((s) => s.$id === supplierId);
   const total = orderTotal(lines);
-  const draft = { supplier_name: supplier?.name ?? order?.supplier_name ?? '', lines };
+  const draft = { supplier_name: adding ? fresh.name : supplier?.name ?? order?.supplier_name ?? '', lines };
   const problem = orderProblem(draft);
-  const moduleOf = (): Module => (items.find((i) => i.$id === lines[0]?.ingredient_id)?.module as Module) ?? (order?.module as Module) ?? 'kitchen';
   const status = order?.status;
 
   const setLine = (i: number, patch: Partial<PoLine>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
@@ -267,15 +308,30 @@ function OrderModal({
   };
 
   const save = (submit: boolean) => run(submit ? 'submit' : 'draft', async () => {
+    let to = supplier;
+    let typed: { name: string; email?: string; phone?: string } | null = null;
+    if (adding) {
+      const why = newSupplierProblem(fresh.name, suppliers);
+      if (why) throw new Error(why);
+      if (mayAddSupplier) {
+        // Onto the list first, so the order points at a real supplier and the
+        // next order finds it.
+        to = await addSupplier(fresh);
+        onSupplierAdded(to);
+        setSupplierId(to.$id);
+      } else {
+        typed = { name: fresh.name.trim(), email: fresh.email.trim(), phone: fresh.phone.trim() };
+      }
+    }
     if (submit && problem) throw new Error(problem);
-    if (!supplier && !order?.supplier_name) throw new Error('Choose who the order is going to.');
+    if (!to && !typed && !order?.supplier_name) throw new Error('Choose who the order is going to.');
     const saved = await savePurchaseOrder({
       id: order?.$id,
       venueId: 'main',
-      module: moduleOf(),
-      supplier: supplier
-        ? { $id: supplier.$id, name: supplier.name, email: supplier.email, phone: supplier.phone }
-        : { $id: order?.supplier_id, name: order?.supplier_name ?? '', email: order?.supplier_email, phone: order?.supplier_phone },
+      module: side,
+      supplier: to
+        ? { $id: to.$id, name: to.name, email: to.email, phone: to.phone }
+        : typed ?? { $id: order?.supplier_id, name: order?.supplier_name ?? '', email: order?.supplier_email, phone: order?.supplier_phone },
       lines,
       note,
       expectedOn: neededBy,
@@ -348,12 +404,45 @@ function OrderModal({
 
         {editable ? (
           <>
+            {sides.length > 1 && (
+              <Field label="Department" hint="Only this department's stock is offered below. It is received into its store and paid from its books.">
+                <Segmented<Module>
+                  value={side}
+                  onChange={pickSide}
+                  ariaLabel="Which department"
+                  options={sides.map((m) => ({ value: m, label: SIDE_NAMES[m] }))}
+                />
+              </Field>
+            )}
+            {mine.length === 0 && (
+              <Notice tone="info">
+                {SIDE_NAMES[side]} has no stock items yet. Add them under Stock, {SIDE_NAMES[side]}, and they appear here.
+              </Notice>
+            )}
             <Field label="Supplier" hint={supplier && !supplier.email ? 'No email address for this supplier: send it as a PDF or a message.' : undefined}>
               <Select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
                 <option value="">{order?.supplier_name && !supplierId ? order.supplier_name : 'Choose…'}</option>
                 {suppliers.map((s) => <option key={s.$id} value={s.$id}>{s.name}</option>)}
+                <option value={NEW}>+ A new supplier…</option>
               </Select>
             </Field>
+            {/* Not on the list: typed here. A manager's goes onto the list
+                when the order is saved; anybody else's is kept on this order
+                only, for a manager to add under Stock → Suppliers. */}
+            {adding && (
+              <div className="grid-3" style={{ display: 'grid', gap: '0.6rem', gridTemplateColumns: 'repeat(auto-fit, minmax(12rem, 1fr))' }}>
+                <Field label="Name"><Input value={fresh.name} autoFocus onChange={(e) => setFresh({ ...fresh, name: e.target.value })} /></Field>
+                <Field label="Phone (optional)"><Input value={fresh.phone} inputMode="tel" onChange={(e) => setFresh({ ...fresh, phone: e.target.value })} /></Field>
+                <Field label="Email (optional)" hint="Needed to email the order.">
+                  <Input value={fresh.email} type="email" onChange={(e) => setFresh({ ...fresh, email: e.target.value })} />
+                </Field>
+                {!mayAddSupplier && (
+                  <p className="small dim" style={{ margin: 0, gridColumn: '1 / -1' }}>
+                    Kept on this order only. A manager can add them to the supplier list under Stock → Suppliers.
+                  </p>
+                )}
+              </div>
+            )}
             <div className="table-wrap">
               <table className="data">
                 <thead><tr><th>Item</th><th className="num">How many</th><th>Of</th><th className="num">Price each</th><th className="num">Total</th><th /></tr></thead>
@@ -366,7 +455,9 @@ function OrderModal({
                         <td>
                           <Select value={l.ingredient_id} onChange={(e) => pickItem(i, e.target.value)}>
                             <option value="">Choose…</option>
-                            {items.filter((x) => x.active !== false).map((x) => <option key={x.$id} value={x.$id}>{x.name}</option>)}
+                            {mine.map((x) => <option key={x.$id} value={x.$id}>{x.name}</option>)}
+                            {/* An item from another department, on an order written before this asked. */}
+                            {ing && !mine.some((x) => x.$id === ing.$id) && <option value={ing.$id}>{ing.name}</option>}
                           </Select>
                           {ing && <div className="small dim">{ing.current_qty} {ing.unit} left{ing.par_level ? `, full is ${ing.par_level}` : ''}</div>}
                         </td>
