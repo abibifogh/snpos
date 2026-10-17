@@ -275,15 +275,6 @@ export function readLines(raw: string | null | undefined): PoLine[] {
   }
 }
 
-/**
- * May make, change and send orders. Admins always. A manager unless an admin
- * has switched it off for them — a profile saved before the switch existed
- * has nothing stored and still orders, as a manager is expected to. Anybody
- * else only when an admin has switched it on, on Staff.
- */
-export const canOrderStock = (p: { role?: string; can_order_stock?: boolean } | null | undefined): boolean =>
-  !!p && (p.role === 'admin' || p.can_order_stock === true || (p.role === 'manager' && p.can_order_stock !== false));
-
 /** May approve an order over the limit. The same people who approve spends. */
 export const canApproveOrders = (p: { role?: string } | null | undefined): boolean =>
   !!p && (p.role === 'admin' || p.role === 'manager');

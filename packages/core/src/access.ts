@@ -479,9 +479,9 @@ export function canOpen(section: string, profile: StaffProfile | null, settings:
   const meta = ADMIN_SECTIONS.find((s) => s.key === section);
   if (meta && !inTrade(meta, settings, profile)) return false;
   if (profile.role === 'admin') return true;
-  // Given to a person rather than a role: whoever an admin has allowed to
-  // order stock can open the page they order from. See canOrderStock.
-  if (section === 'purchase_orders' && profile.can_order_stock === true) return true;
+  // Whoever may order stock, by their role or as a person, can open the page
+  // they order from. See canOrderStock.
+  if (section === 'purchase_orders' && canOrderStock(profile, settings)) return true;
   return (parseAccess(settings)[profile.role] ?? []).includes(section);
 }
 
@@ -833,4 +833,67 @@ export function wordsFor(settings: Settings | null): Record<string, string> {
   // and renaming the shared pages would leave neither side's language right.
   if (kitchen || !craft) return {};
   return { orders: 'Sales' };
+}
+
+/* ------------------------------------------------ who may make purchase orders */
+
+/** The roles that may be given ordering, an admin aside (who always may). */
+export const ORDER_ROLES = ['manager', 'cashier', 'waiter', 'cook'] as const;
+export type OrderRole = (typeof ORDER_ROLES)[number];
+
+/** Managers, until an admin says otherwise: what ordering was before it could be set. */
+export const ORDER_ROLES_DEFAULT: OrderRole[] = ['manager'];
+
+/**
+ * Which roles may make orders, as an admin set it on Purchase orders.
+ *
+ * Kept on the settings row as a JSON list. Nothing stored is the default,
+ * managers; an empty list is a real answer, admins only.
+ */
+export function orderRoles(settings: { po_order_roles?: string | null } | null | undefined): OrderRole[] {
+  const raw = settings?.po_order_roles;
+  if (raw === undefined || raw === null || raw === '') return [...ORDER_ROLES_DEFAULT];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? ORDER_ROLES.filter((r) => v.includes(r)) : [...ORDER_ROLES_DEFAULT];
+  } catch {
+    return [...ORDER_ROLES_DEFAULT];
+  }
+}
+
+export const orderRolesValue = (roles: string[]): string =>
+  JSON.stringify(ORDER_ROLES.filter((r) => roles.includes(r)));
+
+/** One person's exception to their role: always, never, or as the role says. */
+export type OrderChoice = 'group' | 'yes' | 'no';
+
+/**
+ * A person's own answer.
+ *
+ * `order_stock` when set. Before it existed the Staff form stamped
+ * `can_order_stock` with the role's default on every save, so those values
+ * say little: only the ones that went against the default were somebody's
+ * decision — a non-manager switched on, a manager switched off.
+ */
+export function orderChoice(p: { role?: string; order_stock?: string | null; can_order_stock?: boolean | null }): OrderChoice {
+  if (p.order_stock === 'yes' || p.order_stock === 'no' || p.order_stock === 'group') return p.order_stock;
+  if (p.role !== 'manager' && p.can_order_stock === true) return 'yes';
+  if (p.role === 'manager' && p.can_order_stock === false) return 'no';
+  return 'group';
+}
+
+/**
+ * May make, change and send orders. Admins always. Anybody else by their
+ * role, as set on Purchase orders, unless their own entry on Staff says
+ * always or never.
+ */
+export function canOrderStock(
+  p: { role?: string; order_stock?: string | null; can_order_stock?: boolean | null } | null | undefined,
+  settings?: { po_order_roles?: string | null } | null,
+): boolean {
+  if (!p) return false;
+  if (p.role === 'admin') return true;
+  const own = orderChoice(p);
+  if (own !== 'group') return own === 'yes';
+  return (orderRoles(settings) as string[]).includes(p.role ?? '');
 }
