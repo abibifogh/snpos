@@ -16,6 +16,7 @@ import type {
   PeriodLock, CloseItem,
 } from '@snpos/core';
 import { useNavigate } from 'react-router-dom';
+import { CashToBank } from '../components/CashToBank';
 import { useSession, useMoney } from '../session';
 import { AccountsManager } from '../components/AccountsManager';
 
@@ -1621,6 +1622,7 @@ function Settle({
 
   return (
     <div className="stack">
+      <CashToBank venueId={venueId} userId={userId} money={money} decimals={decimals} onChanged={onChanged} toast={toast} />
       <Card title="Card and mobile money settled to the bank" pad>
         <p className="small dim" style={{ marginTop: 0 }}>
           Every close puts card and mobile-money takings into a clearing account. When the provider pays it into

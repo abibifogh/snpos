@@ -1441,6 +1441,15 @@ export const COLLECTIONS = [
     // money hangs off, so it goes last and only ever deliberately.
     perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: ADMIN },
     attributes: [
+      /*
+        Where the counted cash went, asked at the close: into the safe, taken
+        to the bank (and by whom), and what was left as the next float. The
+        next shift on this side opens on cash_kept. See cash-away.ts.
+      */
+      ['cash_kept', 'i', null, false],
+      ['cash_to_safe', 'i', null, false],
+      ['cash_to_bank', 'i', null, false],
+      ['cash_taken_by', 's', 120, false],
       ['code', 's', 40, true],
       ['status', 'e', ['open', 'closing', 'closed', 'reopened'], true, 'open'],
       ['opened_by', 's', 64, true],
@@ -2159,6 +2168,34 @@ export const COLLECTIONS = [
       ['payment_terms', 's', 80, false],
       ['active', 'b', null, true, true],
     ],
+  },
+  {
+    /**
+     * Cash leaving the drawers: into the safe, or to the bank.
+     *
+     * Written at a shift close from the person's own answer, and confirmed
+     * by an admin in Settle up when the bank slip is in hand — which is when
+     * the books move cash on hand into the bank. The safe's balance is what
+     * went in less what was banked from it. See cash-away.ts.
+     */
+    id: 'cash_moves',
+    name: 'Cash moves',
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['kind', 'e', ['to_safe', 'to_bank', 'safe_to_bank'], true],
+      ['status', 'e', ['in_safe', 'pending', 'banked'], true, 'pending'],
+      ['amount', 'i', null, true, 0],
+      ['shift_id', 's', 64, false],
+      ['shift_code', 's', 40, false],
+      ['module', 'e', ['kitchen', 'bar', 'craft'], false],
+      ['taken_by', 's', 120, false],
+      ['recorded_by', 's', 64, false],
+      ['banked_at', 'd', null, false],
+      ['banked_ref', 's', 120, false],
+      ['banked_by', 's', 64, false],
+    ],
+    indexes: [['venue', 'key', ['venue_id']]],
   },
   {
     /**

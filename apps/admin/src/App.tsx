@@ -2,7 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { Spinner, Notice } from '@snpos/ui';
 import { canOpen, unavailableWords, NAV_MERGES } from '@snpos/core';
 import type { ReactElement } from 'react';
-import { useSession } from './session';
+import { useSession, useMoney } from './session';
 import { Login } from './pages/Login';
 import { Shell } from './Shell';
 import { Dashboard } from './pages/Dashboard';
@@ -25,6 +25,7 @@ import { ShiftsPage } from './pages/Shifts';
 import { StaffPage } from './pages/Staff';
 import { WastePage } from './pages/Waste';
 import { PurchaseOrdersPage } from './pages/PurchaseOrders';
+import { CloseDayPage } from './components/CloseDay';
 import { ReportsPage } from './pages/Reports';
 import { StationsPage } from './pages/Stations';
 import { OrdersPage } from './pages/Orders';
@@ -94,6 +95,7 @@ export function App() {
         <Route path="/menu/options" element={guard('menu_options', <AddonsPage />)} />
         <Route path="/expenses" element={guard('expenses', <ExpensesPage />)} />
         <Route path="/waiting" element={guard('waiting', <WaitingPage />)} />
+        <Route path="/close-day" element={guard('close_day', <CloseDayRoute />)} />
         <Route path="/group-bookings" element={guard('group_bookings', <GroupBookingsPage />)} />
         <Route path="/health" element={guard('health', <HealthPage />)} />
         <Route path="/imprest" element={guard('imprest', <ImprestPage />)} />
@@ -133,4 +135,10 @@ export function App() {
       </Routes>
     </Shell>
   );
+}
+
+/** Close the day, with the business's own money format. */
+function CloseDayRoute() {
+  const money = useMoney();
+  return <CloseDayPage money={money} />;
 }

@@ -6,7 +6,7 @@ import {
 import type { BlockerRow, CountRow, StockRow, ShiftFlow } from '@snpos/ui';
 import { resolveCounts } from '@snpos/ui';
 import {
-  db, DB_ID, formatMoney, parseMoney, toInput, stockCheckRows, pourMissedSales,
+  db, DB_ID, formatMoney, parseMoney, toInput, stockCheckRows, pourMissedSales, cashCounted, cashPlanProblem,
   loadPaymentMethods, openShift, loadOpenShift, loadOpenShifts, shiftBlockers, expectedTakings, closeShift, openingFloats,
   recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, shouldWarnLateOrder,
   referenceProblem, referenceRequired, referenceWords,
@@ -97,6 +97,15 @@ export function CombinedBar({
   const [error, setError] = useState<string | null>(null);
 
   const decimals = settings.currency_decimals ?? 2;
+  const countedMinor = () =>
+    Object.fromEntries(rows.map((r) => [r.methodId, parseMoney(r.countedText, decimals) ?? 0]));
+  /** Where the counted cash is going. See cash-away.ts. */
+  const [cashAway, setCashAway] = useState({ safeText: '', bankText: '', takenBy: '' });
+  const cashPlan = () => ({
+    toSafe: parseMoney(cashAway.safeText || '0', decimals) ?? 0,
+    toBank: parseMoney(cashAway.bankText || '0', decimals) ?? 0,
+    takenBy: cashAway.takenBy.trim(),
+  });
 
   // How long this shift has been open. A day is the limit; past it nothing
   // more may be sold or settled against it.
@@ -293,6 +302,10 @@ export function CombinedBar({
       setError('Something is over or short. Say what happened before closing; that answer is gone by tomorrow.');
       return;
     }
+    {
+      const why = cashPlanProblem(cashCounted(countedMinor(), methods), cashPlan());
+      if (why) { setError(why); return; }
+    }
 
     setBusy(true);
     setError(null);
@@ -304,11 +317,13 @@ export function CombinedBar({
         settings,
         features,
         methods,
-        counted: Object.fromEntries(rows.map((r) => [r.methodId, parseMoney(r.countedText, decimals) ?? 0])),
+        counted: countedMinor(),
         varianceNote: note.trim(),
         levels: counting ? resolved.levels : levels,
         stockCounts: counting ? resolved.counts : undefined,
+        cashPlan: cashPlan(),
       });
+      setCashAway({ safeText: '', bankText: '', takenBy: '' });
       // Closed is closed, said before asking again. A read that fails after a
       // successful close would otherwise leave the shift, and its overdue
       // warning, sitting on the bar.
@@ -551,6 +566,11 @@ export function CombinedBar({
             tolerance={tolerance}
             flow={flow}
             shelving={shelving}
+            cashAway={{
+              counted: cashCounted(countedMinor(), methods),
+              ...cashAway,
+              onChange: (patch) => setCashAway((c) => ({ ...c, ...patch })),
+            }}
           />
         </Modal>
       )}

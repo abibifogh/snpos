@@ -22,5 +22,5 @@ test('"just check it" items stay off the count sheet and are the only ones the c
   assert.deepEqual(countedOnSheet(rows).map((r) => r.$id), ['rice', 'chicken']);
   assert.deepEqual(checkOnly(rows).map((r) => r.$id), ['salt', 'oil']);
   // Nothing marked: everything is counted, and the close asks about nothing.
-  assert.equal(checkOnly([{ $id: 'x' }]).length, 0);
+  assert.equal(checkOnly<{ $id: string; check_only?: boolean }>([{ $id: 'x' }]).length, 0);
 });

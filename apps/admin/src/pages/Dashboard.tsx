@@ -6,6 +6,7 @@ import {
   loadWaiting, waitedWords, levelOf, timeWords, nameFrom } from '@snpos/core';
 import type { TodayFacts, WaitingItem } from '@snpos/core';
 import { useSession, useMoney } from '../session';
+import { CloseDayCard } from '../components/CloseDay';
 
 /**
  * Today.
@@ -207,6 +208,11 @@ export function Dashboard() {
           )}
         </Card>
       </div>
+
+      {/* Whether yesterday (or today) is put away, before anything else that
+          needs a look. See close-day.ts. */}
+      <CloseDayCard money={money} compact />
+      <div style={{ height: '1rem' }} />
 
       <Card title={`Needs a look${look.length ? ` · ${look.length}` : ''}`} pad={false}>
         {look.length === 0 ? (

@@ -7,6 +7,9 @@ import { countable } from './bar-count';
 import { repaidByMethod } from './staff-charges';
 import { makersShareOf } from './consignment-math';
 import { splitTax, parseLevies, vatBpOf } from './pricing';
+import { cashCounted, keptFrom, keptByMethod } from './cash-away';
+import type { CashPlan } from './cash-away';
+import { recordCashPlan } from './cash-away-store';
 import { loadConsignors } from './consignment';
 import { postShift, reverseEntry, shiftCloseEntries, lockedThroughFor, isLocked } from './ledger';
 import { isLivePayment } from './payments';
@@ -174,13 +177,17 @@ export async function openingFloats(
       // One was only ever enough when there was one drawer.
       Query.limit(20),
     ]);
-    const last = lastForSide(previous.documents as unknown as (Shift & { counted?: string })[], module);
+    const last = lastForSide(previous.documents as unknown as (Shift & { counted?: string; cash_kept?: number | null })[], module);
     if (last?.counted) {
       try {
         const counted = JSON.parse(last.counted) as Record<string, number>;
         return {
-          // Cash only. See carryOverFloats for why a card is not a float.
-          floats: carryOverFloats(counted, methods),
+          // Cash only. See carryOverFloats for why a card is not a float. And
+          // only what was LEFT in the drawer, where the close said some went
+          // to the safe or the bank. See keptByMethod.
+          floats: typeof last.cash_kept === 'number'
+            ? keptByMethod(counted, methods, last.cash_kept)
+            : carryOverFloats(counted, methods),
           source: 'carried_over',
           policy,
           from: { id: last.$id, code: last.code },
@@ -717,6 +724,8 @@ export async function closeShift(opts: {
    * been worked out from the number instead of tapped.
    */
   stockCounts?: Record<string, number>;
+  /** Where the counted cash went: safe, bank, and who took it. See cash-away.ts. */
+  cashPlan?: CashPlan;
 }): Promise<CloseShiftResult> {
   const { venueId, shift, userId, settings, features, methods, counted, levels } = opts;
   const stockCounts = opts.stockCounts ?? {};
@@ -908,6 +917,27 @@ export async function closeShift(opts: {
     discount_total: shiftOrders.reduce((a, o) => a + o.discount_total, 0),
     covers: shiftOrders.reduce((a, o) => a + (o.guest_count || 1), 0),
   });
+
+  /*
+    Where the cash went, written on its own after the close.
+
+    Separately, through saveDropping, so a database not yet provisioned for
+    these fields cannot take the close down with it. Then the movements, for
+    the safe and for Settle up to confirm against the bank slip.
+  */
+  if (opts.cashPlan) {
+    const plan = opts.cashPlan;
+    const kept = keptFrom(cashCounted(counted, methods), plan);
+    await saveDropping('shifts', shift.$id, {
+      cash_kept: kept,
+      cash_to_safe: Math.max(0, plan.toSafe || 0),
+      cash_to_bank: Math.max(0, plan.toBank || 0),
+      cash_taken_by: (plan.takenBy ?? '').trim().slice(0, 120),
+    }).catch(() => undefined);
+    await recordCashPlan({
+      venueId, shiftId: shift.$id, shiftCode: shift.code, module: shift.module, plan, userId,
+    }).catch(() => undefined);
+  }
 
   return { variance, totalOff, cogs, stockNote, shelved };
 }

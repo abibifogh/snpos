@@ -9,7 +9,7 @@ import {
   loadPaymentMethods, openShift as createShift, shiftBlockers, expectedTakings, closeShift,
   tabOrdersOnShift, releaseWords, closeCodeProblem, spendCloseCode, humanError, liveOrders,
   openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, HANDOVER_ENABLED,
-  countsAtBothEnds, countsInAtOpen, countsOutAtClose, pourMissedSales, askForOpeningCount, hasOpeningCount, shiftCountPhases, ownFigure, floatOrigin, floatMethods,
+  countsAtBothEnds, countsInAtOpen, countsOutAtClose, pourMissedSales, cashCounted, cashPlanProblem, askForOpeningCount, hasOpeningCount, shiftCountPhases, ownFigure, floatOrigin, floatMethods,
 } from '@snpos/core';
 import type { PaymentMethod, Shift, FloatSource, TabOrder } from '@snpos/core';
 import type { PosContext } from './App';
@@ -427,6 +427,14 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   const countedMinor = () =>
     Object.fromEntries(rows.map((r) => [r.methodId, parseMoney(r.countedText, decimals) ?? 0]));
 
+  /** Where the counted cash is going. See cash-away.ts. */
+  const [cashAway, setCashAway] = useState({ safeText: '', bankText: '', takenBy: '' });
+  const cashPlan = () => ({
+    toSafe: parseMoney(cashAway.safeText || '0', decimals) ?? 0,
+    toBank: parseMoney(cashAway.bankText || '0', decimals) ?? 0,
+    takenBy: cashAway.takenBy.trim(),
+  });
+
   const anythingOff = () =>
     rows.some((r) => (parseMoney(r.countedText, decimals) ?? 0) !== r.expected);
 
@@ -469,6 +477,10 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       setError('Something is over or short. Say what happened before closing; that answer is gone by tomorrow.');
       return;
     }
+    {
+      const why = cashPlanProblem(cashCounted(countedMinor(), methods), cashPlan());
+      if (why) { setError(why); return; }
+    }
 
     /*
       MONEY GOING HOME ON A TAB NEEDS AN ADMIN'S SAY-SO.
@@ -509,7 +521,9 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         varianceNote: note.trim(),
         levels: counting ? resolved.levels : levels,
         stockCounts: counting ? resolved.counts : undefined,
+        cashPlan: cashPlan(),
       });
+      setCashAway({ safeText: '', bankText: '', takenBy: '' });
 
       // Closed is closed. Said first, so the screen is right even if the read
       // that follows fails; a stale open shift here keeps its overdue warning
@@ -904,6 +918,11 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
             tolerance={tolerance}
             flow={flow}
             shelving={shelving}
+            cashAway={{
+              counted: cashCounted(countedMinor(), methods),
+              ...cashAway,
+              onChange: (patch) => setCashAway((c) => ({ ...c, ...patch })),
+            }}
           />
 
           {/*

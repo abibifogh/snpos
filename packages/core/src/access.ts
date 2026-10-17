@@ -161,6 +161,7 @@ export const NAV_GROUPS = ['Today', 'Sell', 'Stock', 'Money', 'Books', 'People &
 export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'dashboard', label: 'Today', path: '/', group: 'Today' },
   { key: 'orders', label: 'Orders', path: '/orders', group: 'Today' },
+  { key: 'close_day', label: 'Close the day', path: '/close-day', group: 'Today' },
   /*
     The people who have bought something.
 
@@ -304,7 +305,7 @@ export const DEFAULT_ACCESS: Record<string, string[]> = {
     // A manager opens tabs. It is the job: deciding who is good for credit is
     // a floor decision made while somebody is standing there, and an owner who
     // has to be rung at eleven at night to open one is an owner who gets rung.
-    'dashboard', 'orders', 'reports', 'shifts', 'expenses', 'vouchers', 'tabs', 'waiting', 'staff_owing',
+    'dashboard', 'orders', 'close_day', 'reports', 'shifts', 'expenses', 'vouchers', 'tabs', 'waiting', 'staff_owing',
     'menu_items', 'stock', 'waste', 'stations', 'group_bookings', 'purchase_orders',
     // A shop manager runs the intake desk and needs to see who is owed what.
     'shop_categories', 'shop_items', 'consignors', 'intake', 'stocktake', 'payouts',
