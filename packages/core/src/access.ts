@@ -263,11 +263,20 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'accounting_statements', label: 'Profit & loss and balance sheet', path: '/accounting', group: 'Books', parent: 'accounting' },
   { key: 'accounting_journal', label: 'Journal: read and post entries', path: '/accounting', group: 'Books', parent: 'accounting' },
   { key: 'accounting_trial', label: 'Trial balance', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_cashflow', label: 'Cash flow statement', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_ledger', label: 'General ledger, any account', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_tax', label: 'Tax return, and recording tax paid', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_recurring', label: 'Recurring entries', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_opening', label: 'Opening balances', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_banks', label: 'Bank and cash accounts, and transfers between them', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_yearend', label: 'Year end: close a year into retained earnings', path: '/accounting', group: 'Books', parent: 'accounting' },
   { key: 'accounting_assets', label: 'Fixed assets and depreciation', path: '/accounting', group: 'Books', parent: 'accounting' },
   { key: 'accounting_bank', label: 'Reconcile against a statement', path: '/accounting', group: 'Books', parent: 'accounting' },
   // The entries a shift close leaves hanging: card and mobile money reaching
   // the bank, tips handed over, tax remitted. See settle.ts.
   { key: 'accounting_settle', label: 'Settle card, mobile money, tips and tax', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_payables', label: 'Bills to pay: add, and pay in full or in parts', path: '/accounting', group: 'Books', parent: 'accounting' },
+  { key: 'accounting_receivables', label: 'Owed to us: what customers owe on tabs', path: '/accounting', group: 'Books', parent: 'accounting' },
   { key: 'accounting_chart', label: 'Chart of accounts', path: '/accounting', group: 'Books', parent: 'accounting' },
   // Its own grant, and the most consequential of them: it decides what
   // everybody else is allowed to change, including the person who closed it.
@@ -561,7 +570,7 @@ export function sidebarSides(profile: StaffProfile | null, settings: Settings | 
  * side — shifts, spends, the books — is always there.
  */
 /** The parts of Accounting only an accountant opens. */
-const ACCOUNTANT_AREAS = ['accounting_journal', 'accounting_trial', 'accounting_assets', 'accounting_chart'];
+const ACCOUNTANT_AREAS = ['accounting_journal', 'accounting_trial', 'accounting_recurring', 'accounting_assets', 'accounting_chart', 'accounting_banks', 'accounting_opening', 'accounting_yearend'];
 
 /** Whether a page that hosts others is itself in this person's sidebar. */
 function hostOpen(key: string, profile: StaffProfile | null, settings: Settings | null, side: Module | 'all'): boolean {

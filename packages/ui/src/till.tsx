@@ -64,7 +64,7 @@ const CANNOT_STORE_SOURCE =
  * which screen it was entered from.
  */
 export function ExpenseModal({
-  module, venueId, shiftId, settings, userId, expense, askPaidFrom = true, fromFloatId, desk = 'till', receive = false, onClose, onDone,
+  module, venueId, shiftId, settings, userId, expense, askPaidFrom = true, fromFloatId, desk = 'till', receive = false, bill = false, onClose, onDone,
 }: {
   module: Module;
   venueId: string;
@@ -128,6 +128,12 @@ export function ExpenseModal({
    * Paying for it is one of four answers, one of them "not paid yet".
    */
   receive?: boolean;
+  /**
+   * Opened as Add a bill: an invoice to pay later, for anything (rent,
+   * power, a repair), not only stock. Starts at "not paid yet" and asks when
+   * it is due. See owed-spends.ts.
+   */
+  bill?: boolean;
   onClose: () => void;
   onDone: (message: string) => void;
 }) {
@@ -164,7 +170,7 @@ export function ExpenseModal({
    * box back is one input. Ripping it out would mean writing it again.
    */
   const [extraText] = useState('');
-  const [paidToKind, setPaidToKind] = useState<PaidToKind>(editing?.paid_to_kind ?? 'open_market');
+  const [paidToKind, setPaidToKind] = useState<PaidToKind>(editing?.paid_to_kind ?? (bill ? 'supplier' : 'open_market'));
   const [supplierId, setSupplierId] = useState(editing?.supplier_id ?? '');
   const [staffId, setStaffId] = useState(editing?.paid_to_staff_id ?? '');
   const [payee, setPayee] = useState(editing?.paid_to_kind === 'supplier' ? '' : editing?.payee ?? '');
@@ -197,7 +203,9 @@ export function ExpenseModal({
    * Received on account: owed to the supplier, paid later from Settle up.
    * Nothing leaves a drawer, a box or the bank today. See owed-spends.ts.
    */
-  const [payLater, setPayLater] = useState<boolean>(editing?.pay_later === true);
+  const [payLater, setPayLater] = useState<boolean>(editing ? editing.pay_later === true : bill);
+  /** When a bill is due, for Bills to pay. Blank is "on receipt". */
+  const [dueOn, setDueOn] = useState(editing?.due_on ?? '');
   /** This side's places, and which one the delivery is put down in. */
   const [places, setPlaces] = useState<StockLocation[]>([]);
   const [placeId, setPlaceId] = useState('');
@@ -655,6 +663,7 @@ export function ExpenseModal({
         // Owed to the supplier rather than paid. The books credit Accounts
         // payable; see books-post.js spendFromAccount.
         pay_later: payLater,
+        due_on: payLater ? dueOn : '',
         // What it was and where the money came from, in a word each, so no
         // screen has to work it out again. See spend-kind.ts.
         kind: spendKind(filledLines.flatMap((l) => {
@@ -906,7 +915,7 @@ export function ExpenseModal({
 
   return (
     <Modal
-      title={editing ? 'Correct this spend' : receive ? 'Receive stock' : 'Record spend'}
+      title={editing ? 'Correct this spend' : receive ? 'Receive stock' : bill ? 'Add a bill' : 'Record spend'}
       onClose={onClose}
       footer={
         <>
@@ -955,6 +964,8 @@ export function ExpenseModal({
       <p className="small dim" style={{ marginTop: 0 }}>
         {editing
           ? 'Fix what was typed wrongly. What was added to stock stays as it is.'
+          : bill
+            ? 'An invoice to pay later: rent, power, a repair, a delivery on account. It waits under Bills to pay until it is paid, in full or in parts.'
           : receive
             ? 'A delivery, a market run or a top-up: what came in, where it went and how it was paid. Adds to stock and records the spend in one go.'
             : 'Money paid out now, so the drawer still balances at the end of the night.'}
@@ -1206,7 +1217,7 @@ export function ExpenseModal({
         hidden={!!fromFloatId}
         label="Where did the money come from"
         hint={payLater
-          ? 'Owed to the supplier. Nothing leaves a drawer, a box or the bank until it is paid, under Accounting, Settle up.'
+          ? 'Owed to the supplier. Nothing leaves a drawer, a box or the bank until it is paid, under Accounting, Bills to pay.'
           : fromDrawer
           ? 'Taken off what the drawer should hold at the end of the shift.'
           : !noBox && boxes.length > 0
@@ -1227,9 +1238,14 @@ export function ExpenseModal({
           {boxes.length > 0 && <option value="petty">From a petty cash box</option>}
           <option value="other">Bank transfer, or own money</option>
           {/* Stock only: a delivery on account. A taxi is never owed. */}
-          {(stocks || payLater) && <option value="owed">Not paid yet (owed to the supplier)</option>}
+          {(stocks || payLater || desk === 'office') && <option value="owed">Not paid yet (owed to the supplier)</option>}
         </Select>
       </Field>
+      {payLater && (
+        <Field label="Due on (optional)" hint="When the supplier wants it paid. Blank means on receipt. Bills to pay sorts and ages by this.">
+          <Input type="date" value={dueOn} onChange={(e) => setDueOn(e.target.value)} />
+        </Field>
+      )}
 
       {/*
         Which tin, and what is left in it.

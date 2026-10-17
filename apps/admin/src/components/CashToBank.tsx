@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Field, Input, Notice } from '@snpos/ui';
+import { Button, Card, Field, Input, Notice, Select } from '@snpos/ui';
 import {
   loadCashMoves, confirmBanked, bankFromSafe, awaitingBank, safeBalance, bankingProblem,
   parseMoney, toInput, dateTimeWords, humanError,
@@ -18,7 +18,9 @@ const at = (d: string) => new Date(`${d}T12:00:00`);
  * the books — cash on hand down, bank up — dated the day it was paid in.
  * See cash-away.ts.
  */
-export function CashToBank({ venueId, userId, money, decimals, onChanged, toast }: {
+export function CashToBank({ venueId, userId, money, decimals, onChanged, toast, banks = [] }: {
+  /** The bank accounts and wallets it can go into. One or none: the bank account. */
+  banks?: { code: string; name: string }[];
   venueId: string;
   userId: string;
   money: (n: number) => string;
@@ -30,6 +32,14 @@ export function CashToBank({ venueId, userId, money, decimals, onChanged, toast 
   const [text, setText] = useState<Record<string, { amount: string; date: string; ref: string }>>({});
   const [safe, setSafe] = useState({ amount: '', date: today(), ref: '', by: '' });
   const [busy, setBusy] = useState<string | null>(null);
+  const [into, setInto] = useState('1040');
+  const choose = banks.length > 1 && (
+    <Field label="Paid into">
+      <Select value={into} onChange={(e) => setInto(e.target.value)}>
+        {banks.map((b) => <option key={b.code} value={b.code}>{b.name}</option>)}
+      </Select>
+    </Field>
+  );
 
   const load = () => loadCashMoves(venueId).then(setMoves).catch(() => setMoves([]));
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [venueId]);
@@ -83,12 +93,13 @@ export function CashToBank({ venueId, userId, money, decimals, onChanged, toast 
               <Field label="Slip reference (optional)">
                 <Input value={f.ref} onChange={(e) => setText({ ...text, [m.$id]: { ...f, ref: e.target.value } })} />
               </Field>
+              {choose}
               <Button
                 variant="primary"
                 loading={busy === m.$id}
                 disabled={!!busy || !!why}
                 onClick={() => void run(m.$id, () => confirmBanked({
-                  venueId, move: m, amount, date: at(f.date), reference: f.ref, userId,
+                  venueId, move: m, amount, date: at(f.date), reference: f.ref, userId, bankCode: into,
                 }), `${money(amount)} confirmed in the bank.`)}
               >
                 Confirm banked
@@ -120,12 +131,13 @@ export function CashToBank({ venueId, userId, money, decimals, onChanged, toast 
               <Field label="Who took it (optional)">
                 <Input value={safe.by} onChange={(e) => setSafe({ ...safe, by: e.target.value })} />
               </Field>
+              {choose}
               <Button
                 variant="primary"
                 loading={busy === 'safe'}
                 disabled={!!busy || !!why}
                 onClick={() => void run('safe', async () => {
-                  await bankFromSafe({ venueId, amount, date: at(safe.date), reference: safe.ref, takenBy: safe.by, userId });
+                  await bankFromSafe({ venueId, amount, date: at(safe.date), reference: safe.ref, takenBy: safe.by, userId, bankCode: into });
                   setSafe({ amount: '', date: today(), ref: '', by: '' });
                 }, `${money(amount)} banked from the safe.`)}
               >

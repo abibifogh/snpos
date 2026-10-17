@@ -527,13 +527,17 @@ export const TAX_ACCOUNTS: readonly { account_code: string; name: string }[] = [
  */
 export async function postSettlement(
   venueId: string,
-  s: { kind: 'card' | 'momo'; received: number; fee: number; date?: Date; reference?: string; postedBy: string },
+  s: {
+    kind: 'card' | 'momo'; received: number; fee: number; date?: Date; reference?: string; postedBy: string;
+    /** Which account it arrived in: a second bank, the MoMo wallet. The bank account when left out. */
+    bankAccount?: string;
+  },
 ): Promise<string> {
   const lines = settlementLines({
     received: s.received,
     fee: s.fee,
     clearingAccount: s.kind === 'card' ? ACCOUNTS.cardClearing : ACCOUNTS.momoClearing,
-    bankAccount: ACCOUNTS.bank,
+    bankAccount: s.bankAccount || ACCOUNTS.bank,
     feesAccount: ACCOUNTS.providerFees,
   });
   const entry = await postEntry(venueId, {

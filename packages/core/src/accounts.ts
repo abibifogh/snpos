@@ -71,6 +71,14 @@ export const ACCOUNTS = {
    */
   accountsPayable: '2300',
   /**
+   * What customers owe for what they have been served: a tab, until it is
+   * paid. A tab's sales are income the day they are served, and this holds
+   * the debt. See tabAccrualLines in functions/notify/src/books.js.
+   */
+  owedByCustomers: '1100',
+  /** Each closed year's profit, moved out of the income and cost accounts. */
+  retainedEarnings: '3100',
+  /**
    * Sales and cost of sales, one pair per side of the business.
    *
    * A single "Food sales" line answers what the business took and nothing
