@@ -292,6 +292,32 @@ export const HELP_ARTICLES: HelpArticle[] = [
   },
 
   {
+    id: 'close_day',
+    title: 'Putting the day away',
+    summary: 'Where the cash went, banking it, and the Close the day list.',
+    area: 'admin',
+    audience: ['cashier', 'manager', 'admin'],
+    body: [
+      h('Where the cash goes at the close'),
+      p('After the drawer is counted, the close asks one more question: where is the cash going? Say how much goes into the safe and how much is taken to the bank, and who is taking it. Whatever is left stays in the drawer, and the next shift opens with exactly that.'),
+      h('Banking it'),
+      steps(
+        'Cash taken to the bank waits under Accounting, Settle up, in Cash to the bank.',
+        'When the slip is in hand, confirm it there with the amount and the date. That is when the books move it from cash on hand into the bank.',
+        'Cash in the safe shows there too. Bank it from the safe when convenient, the same way.',
+      ),
+      h('Close the day'),
+      p('Today opens with a short list for yesterday (or today, after noon): shifts closed, count differences decided, cash put away and banked, MoMo and card matched to the bank, spends agreed, and petty cash counted. Each line says whether it is done and takes you to where it is done. It decides nothing itself.'),
+      h('The books, in two parts'),
+      list(
+        'Your jobs: Settle up, Reconcile, Close a period, and the profit and loss. These are the weekly ones.',
+        'For your accountant: the journal, the trial balance, fixed assets and the chart of accounts.',
+      ),
+      note('Both are the one Accounting page, and what each person sees of it is still granted part by part, under Settings.'),
+    ],
+  },
+
+  {
     id: 'menu_setup',
     title: 'Setting up the menu',
     summary: 'Categories, dishes, options, photos and stations.',
@@ -369,13 +395,15 @@ export const HELP_ARTICLES: HelpArticle[] = [
     audience: ['cashier', 'manager', 'admin'],
     body: [
       steps(
-        'Choose a category. The list is yours, edit it under Expenses → Categories.',
+        'Choose a category. The list is yours, edit it under Money out → Categories.',
         'Say who the money went to: a supplier, a member of staff, the open market, or someone else.',
         'Enter the amount and which payment method it came out of. Cash paid out reduces what the drawer should hold, automatically.',
         'Attach a photo or PDF of the receipt. Only managers and admins can see it.',
       ),
       h('Buying stock'),
       p('If the money bought ingredients, list them under "What was bought", ingredient, quantity and what was paid. They go into stock as you save, so the shopping trip and the delivery are one job instead of two. Where a side has more than one place, you are asked which one it went into. On the Stock page the same form is called Receive stock.'),
+      h('Money out'),
+      p('Money out lists every payment that left, from every page that pays: spends from the drawers, petty cash and the bank, stock received and not yet paid for, and maker payouts. Pick a period and a source, or Waiting to approve, and the total follows.'),
       h('Categories and your accounts'),
       p('Each category names which line of the accounts it lands on. That is what makes a category more than a label: "Gas refill" can sit under Utilities rather than everything piling into Other.'),
       h('What it can be paid out of'),
@@ -698,7 +726,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       steps(
         'Settings \u2192 What this business runs. Switch on Craft shop.',
         'You can have both sides on at once. A kitchen with a craft corner is one business, not two systems: one till, one set of staff, one Reports page you can read either way.',
-        'A new group appears in the sidebar: Categories, Products, Consignors, Goods received and Payouts.',
+        'The shop\'s pages appear in the sidebar: Categories, Menu & products, Count, and Makers & payouts, which leads to Goods received and Payouts.',
       ),
       h('Consignors'),
       p(
@@ -799,7 +827,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         'no evidence.',
       ),
       steps(
-        'Craft shop \u2192 Payouts shows who is waiting, most owed first.',
+        'Makers & payouts \u2192 Payouts shows who is waiting, most owed first.',
         'Open their statement to see where every figure came from.',
         'Send the money the way you always do: mobile money, cash, transfer.',
         'Then press Record a payment inside the statement, so the figure and its workings are on one screen.',
@@ -872,7 +900,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       ),
       h('Reading it back'),
       p(
-        'Shifts, Expenses and Reports all carry a Both / Kitchen / Craft shop filter. Both is the default, ' +
+        'Shifts, Money out and Reports all carry a Both / Kitchen / Craft shop filter. Both is the default, ' +
         'because the first question is usually what the whole business did.',
       ),
     ],

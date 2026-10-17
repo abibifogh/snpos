@@ -10,6 +10,7 @@ import type { Levy } from '@snpos/core';
 import type { Settings, Doc } from '@snpos/core';
 
 import { useSession } from '../session';
+import { AlsoHere } from '../components/AlsoHere';
 
 /**
  * Save the settings, and say exactly what did not save.
@@ -326,6 +327,7 @@ export function SettingsPage() {
         <h1>Settings</h1>
         <Button variant="primary" onClick={save} loading={busy}>Save changes</Button>
       </div>
+      <AlsoHere host="settings" />
 
       {error && <Notice>{error}</Notice>}
 

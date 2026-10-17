@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react';
-import { Button, Card, Empty, Notice, Select, Spinner, Badge, useToast, ViewTabs, ExpenseModal } from '@snpos/ui';
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Button, Card, Empty, Notice, Select, Spinner, Badge, useToast, ViewTabs, ExpenseModal, Segmented } from '@snpos/ui';
 import { db, DB_ID, listAll, humanError } from '../lib';
 import {
   formatMoney, downloadUrl, deleteFile, Query,
   isPostableExpenseAccount, expenseMethodsFor, expenseSides,
-  defaultExpenseSide, MODULE_LABELS, modulesOf, spendWords, dateWords, logSpendChange, spendSnapshot } from '@snpos/core';
+  defaultExpenseSide, MODULE_LABELS, modulesOf, spendWords, dateWords, logSpendChange, spendSnapshot,
+  moneyOutRows, inPeriod, outFilter, outFilters, outTotal, OUT_STATE_WORDS, OUT_FROM_WORDS } from '@snpos/core';
 import type {
   Module, Doc, ExpenseCategoryDoc, ImprestFloatDoc, Settings, ShiftExpense,
+  OutFilter, OutPeriod, OutPayout, OutRow,
 } from '@snpos/core';
 import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedList';
 import { AccountsManager } from '../components/AccountsManager';
@@ -37,6 +40,8 @@ interface Expense extends Doc {
   receipt_file_id?: string;
   created_by: string;
   approval_status: string;
+  pay_later?: boolean;
+  paid_at?: string;
 }
 
 interface ExpenseItem extends Doc {
@@ -61,6 +66,13 @@ interface VenueRow extends Doc { name: string }
 interface AccountRow extends Doc { code: string; name: string; type: string; active?: boolean }
 
 
+/**
+ * Money out: every payment that left, in one list.
+ *
+ * Spends from the drawers, from petty cash boxes and from the bank, stock
+ * received and not yet paid for, and maker payouts. Each was its own list on
+ * its own page. See money-out.ts. The address is still /expenses.
+ */
 export function ExpensesPage() {
   const { settings, user, profile } = useSession();
   const isAdmin = profile?.role === 'admin';
@@ -99,6 +111,11 @@ export function ExpensesPage() {
    */
   const [boxes, setBoxes] = useState<ImprestFloatDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** Maker payouts, and the makers' names, for the shop's side of money out. */
+  const [payouts, setPayouts] = useState<OutPayout[]>([]);
+  const [makers, setMakers] = useState<Record<string, string>>({});
+  const [period, setPeriod] = useState<OutPeriod>('month');
+  const [filter, setFilter] = useState<OutFilter>('all');
 
   const load = async () => {
     const [e, m, v, a, tins] = await Promise.all([
@@ -121,6 +138,15 @@ export function ExpensesPage() {
         .sort((a2, b) => a2.code.localeCompare(b.code)),
     );
     setBoxes(tins);
+    // Best effort: a business with no shop has no makers to pay.
+    if (mods.craft) {
+      const [paid, people] = await Promise.all([
+        listAll<OutPayout>('consignor_payouts').catch(() => [] as OutPayout[]),
+        listAll<{ $id: string; name: string }>('consignors').catch(() => []),
+      ]);
+      setPayouts(paid);
+      setMakers(Object.fromEntries(people.map((c) => [c.$id, c.name])));
+    }
   };
   useEffect(() => { load().catch((err) => setError(humanError(err))); }, []);
 
@@ -168,11 +194,23 @@ export function ExpensesPage() {
 
   const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? '-';
 
+  const narrowed = narrowSide(side, profile, settings);
+  const allRows = useMemo(() => moneyOutRows(
+    (rows ?? []).filter((r) => onSide(r, narrowed)),
+    narrowed === 'all' || narrowed === 'craft' ? payouts : [],
+    {
+      methodKind: (id) => methods.find((m) => m.$id === id)?.kind,
+      makerName: (id) => makers[id],
+    },
+  ), [rows, payouts, methods, makers, narrowed]);
+  const periodRows = inPeriod(allRows, period, new Date());
+  const shown = outFilter(periodRows, filter);
+  const byId = new Map((rows ?? []).map((r) => [r.$id, r]));
+
   return (
     <>
       <div className="spread">
-        {/* "Spends" in the sidebar, so "Spends" here. */}
-        <h1>Spends</h1>
+        <h1>Money out</h1>
         {tab === 'expenses' && <SideFilter value={side} onChange={setSide} settings={settings} profile={profile} />}
         {tab === 'expenses' && (
           <div className="row">
@@ -184,7 +222,7 @@ export function ExpensesPage() {
               </Select>
             )}
             <Button variant="primary" onClick={() => open()} disabled={methods.length === 0}>
-              Record expense
+              Record a spend
             </Button>
           </div>
         )}
@@ -194,7 +232,7 @@ export function ExpensesPage() {
         value={tab}
         onChange={setTab}
         options={[
-          { value: 'expenses', label: 'Expenses' },
+          { value: 'expenses', label: 'Money out' },
           { value: 'analysis', label: 'Analysis' },
           { value: 'categories', label: 'Categories' },
           { value: 'accounts', label: 'Accounts' },
@@ -221,71 +259,106 @@ export function ExpensesPage() {
       ) : (
         <>
           <p className="dim small" style={{ marginTop: 0 }}>
-            Money paid out, supplies, transport, repairs. Attach the receipt as a photo or PDF; receipts are visible
-            to managers and admins only, never to customers or other staff.
+            Everything that left: spends from the drawers, petty cash and the bank, stock received and not yet
+            paid for, and maker payouts. Receipts are visible to managers and admins only.
           </p>
 
           {error && !editing && <Notice>{error}</Notice>}
 
+          <div className="row row-wrap" style={{ gap: '0.6rem', alignItems: 'center', marginBottom: '0.8rem' }}>
+            <Segmented<OutPeriod>
+              value={period}
+              onChange={setPeriod}
+              ariaLabel="Which period"
+              options={[{ value: 'week', label: 'This week' }, { value: 'month', label: 'This month' }, { value: 'all', label: 'All' }]}
+            />
+            <strong>{settings ? formatMoney(outTotal(shown), settings) : outTotal(shown)}</strong>
+            <span className="small dim">{shown.length} {shown.length === 1 ? 'payment' : 'payments'}</span>
+          </div>
+          <div className="row row-wrap" style={{ gap: '0.4rem', marginBottom: '0.8rem' }}>
+            {outFilters(periodRows).map((f) => (
+              <Button key={f.value} size="sm" variant={filter === f.value ? 'primary' : 'ghost'} onClick={() => setFilter(f.value)}>
+                {f.label} {f.count > 0 && <span className="dim">· {f.count}</span>}
+              </Button>
+            ))}
+          </div>
+
           <Card pad={false}>
             {!rows ? (
               <div className="card-pad"><Spinner /></div>
-            ) : rows.length === 0 ? (
-              <Empty title="No expenses recorded">Record what you spend and it lands in the accounts and the shift close.</Empty>
+            ) : shown.length === 0 ? (
+              <Empty title={allRows.length === 0 ? 'Nothing paid out yet' : 'Nothing here for this period'}>
+                {allRows.length === 0
+                  ? 'Record what you spend and it lands in the accounts and the shift close.'
+                  : 'Choose a longer period, or All, to see older payments.'}
+              </Empty>
             ) : (
               <div className="table-wrap">
                 <table className="data">
                   <thead>
                     <tr>
-                      <th>Date</th>
-                      <th>Category</th>
+                      <th>When</th>
+                      <th>What</th>
                       <th>Paid to</th>
-                      <th>Method</th>
+                      <th>From</th>
                       <th className="num">Amount</th>
+                      <th>State</th>
                       <th>Receipt</th>
                       <th />
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.filter((r) => onSide(r, narrowSide(side, profile, settings))).map((r) => (
-                      <tr key={r.$id}>
-                        <td className="dim small">{dateWords(r.$createdAt)}</td>
-                        <td>{nameForKey(categories, r.category_key || r.category)}</td>
-                        <td className="dim">
-                          {r.payee || '-'}
-                          {r.paid_to_kind === 'open_market' && <div className="small dim">Open market</div>}
-                          {r.paid_to_kind === 'staff' && <div className="small dim">Staff</div>}
-                        </td>
-                        {/* Which drawer, and whose money. "Cash" alone does not
-                            say whether a shift is short by this or a tin is. */}
-                        <td className="dim small">
-                          {methodName(r.paid_from_method_id)}
-                          {/* Where the money came from, in the words every
-                              screen shares. A box is named when one paid. */}
-                          <div className="small dim">
-                            {r.imprest_float_id
-                              ? (boxes.find((b) => b.$id === r.imprest_float_id)?.name ?? 'Petty cash')
-                              : spendWords(r, [], methods.find((m) => m.$id === r.paid_from_method_id)?.kind).source}
-                          </div>
-                        </td>
-                        <td className="num">{settings ? formatMoney(r.amount, settings) : r.amount}</td>
-                        <td>
-                          {r.receipt_file_id ? (
-                            <a href={downloadUrl(r.receipt_file_id, 'receipt', settings)} target="_blank" rel="noreferrer">
-                              View
-                            </a>
-                          ) : (
-                            <Badge tone="warn">None</Badge>
-                          )}
-                        </td>
-                        <td className="num">
-                          <Button size="sm" variant="ghost" onClick={() => setDetailsFor(r.$id)}>Details</Button>
-                          <Button size="sm" variant="ghost" onClick={() => void open(r)}>Edit</Button>
-                          {/* Deleting a spend is an admin's alone. */}
-                          {isAdmin && <Button size="sm" variant="ghost" onClick={() => remove(r)}>Delete</Button>}
-                        </td>
-                      </tr>
-                    ))}
+                    {shown.map((o: OutRow) => {
+                      const r = o.kind === 'spend' ? byId.get(o.id) : undefined;
+                      const state = OUT_STATE_WORDS[o.state];
+                      return (
+                        <tr key={`${o.kind}-${o.id}`} className={o.state === 'refused' || o.state === 'reversed' ? 'dim' : undefined}>
+                          <td className="dim small">{dateWords(o.at)}</td>
+                          <td>{r ? nameForKey(categories, r.category_key || r.category) : 'Maker payout'}</td>
+                          <td className="dim">
+                            {o.to || '-'}
+                            {r?.paid_to_kind === 'open_market' && <div className="small dim">Open market</div>}
+                            {r?.paid_to_kind === 'staff' && <div className="small dim">Staff</div>}
+                          </td>
+                          {/* Which drawer, box or account, in the words every screen shares. */}
+                          <td className="dim small">
+                            {r ? (
+                              <>
+                                {o.from === 'box'
+                                  ? (boxes.find((b) => b.$id === r.imprest_float_id)?.name ?? 'Petty cash')
+                                  : o.from === 'owed' ? 'Owed to the supplier' : methodName(r.paid_from_method_id)}
+                                <div className="small dim">
+                                  {o.from === 'box' ? OUT_FROM_WORDS.box : spendWords(r, [], methods.find((m) => m.$id === r.paid_from_method_id)?.kind).source}
+                                </div>
+                              </>
+                            ) : OUT_FROM_WORDS.maker}
+                          </td>
+                          <td className="num">{settings ? formatMoney(o.amount, settings) : o.amount}</td>
+                          <td><Badge tone={state.tone}>{state.label}</Badge></td>
+                          <td>
+                            {!r ? null : r.receipt_file_id ? (
+                              <a href={downloadUrl(r.receipt_file_id, 'receipt', settings)} target="_blank" rel="noreferrer">
+                                View
+                              </a>
+                            ) : (
+                              <Badge tone="warn">None</Badge>
+                            )}
+                          </td>
+                          <td className="num">
+                            {r ? (
+                              <>
+                                <Button size="sm" variant="ghost" onClick={() => setDetailsFor(r.$id)}>Details</Button>
+                                <Button size="sm" variant="ghost" onClick={() => void open(r)}>Edit</Button>
+                                {/* Deleting a spend is an admin's alone. */}
+                                {isAdmin && <Button size="sm" variant="ghost" onClick={() => remove(r)}>Delete</Button>}
+                              </>
+                            ) : (
+                              <Link className="small" to="/payouts">Payouts</Link>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

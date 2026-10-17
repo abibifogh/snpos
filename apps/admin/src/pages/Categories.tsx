@@ -11,6 +11,7 @@ import { ImageField } from '../components/ImageField';
 import { StationPicker, useStations, legacyStationFor } from '../components/StationPicker';
 import { useSession } from '../session';
 import { canEditCatalogue, canDeleteCatalogue } from '@snpos/core';
+import { AlsoHere } from '../components/AlsoHere';
 
 const blank = (sort: number): Partial<Category> => ({
   name: '', description: '', sort, active: true, unavailable_display: 'grey', station: 'hot',
@@ -153,6 +154,7 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: Module }) {
           {mayEdit && <Button variant="primary" onClick={() => open()}>Add category</Button>}
         </div>
       </div>
+      {module === 'kitchen' && <AlsoHere host="menu_categories" />}
 
       {error && !editing && <Notice>{error}</Notice>}
 

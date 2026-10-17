@@ -11,6 +11,7 @@ import {
 import type { CustomerRecord, CustomerOrder, CustomerSort, Module } from '@snpos/core';
 import { useSession, useMoney } from '../session';
 import { SideFilter, type Side } from '../components/SideFilter';
+import { AlsoHere } from '../components/AlsoHere';
 
 /**
  * The people who have bought something.
@@ -109,6 +110,7 @@ export function CustomersPage() {
         <h1>Customers</h1>
         <Button onClick={exportCsv} disabled={shown.length === 0}>Export what is shown</Button>
       </div>
+      <AlsoHere host="customers" />
 
       <FilterBar>
         <FilterField label="From"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></FilterField>

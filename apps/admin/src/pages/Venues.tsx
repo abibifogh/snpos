@@ -3,6 +3,7 @@ import { Button, Card, Empty, Field, Input, Modal, Notice, Spinner, Toggle, Badg
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import { parseWindows, describeWindows, isAvailable } from '@snpos/core';
 import type { Venue, DayKey, Windows } from '@snpos/core';
+import { AlsoHere } from '../components/AlsoHere';
 
 const DAYS: { key: DayKey; label: string }[] = [
   { key: 'mon', label: 'Monday' }, { key: 'tue', label: 'Tuesday' }, { key: 'wed', label: 'Wednesday' },
@@ -109,6 +110,7 @@ export function VenuesPage() {
         <h1>Venues</h1>
         <Button variant="primary" onClick={() => open()}>Add venue</Button>
       </div>
+      <AlsoHere host="venues" />
 
       <p className="dim small" style={{ marginTop: 0 }}>
         Opening hours matter beyond looking tidy: without them the system cannot tell customers when you are open, and

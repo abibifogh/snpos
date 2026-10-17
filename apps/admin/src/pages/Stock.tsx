@@ -155,7 +155,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   const { settings, profile, user } = useSession();
   const toast = useToast();
   const decimals = settings?.currency_decimals ?? 2;
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
 
   type Tab = 'ingredients' | 'places' | 'suppliers' | 'categories' | 'packs';
   const [tab, setTab] = useState<Tab>(() => {
@@ -172,7 +172,15 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   const [places, setPlaces] = useState<StockLocation[]>([]);
   const [levels, setLevels] = useState<LocationStock[]>([]);
   /** Receive stock: the spend form, worded for a delivery. */
+  // Opened from the sidebar's Receive stock link with the form already up.
   const [receiving, setReceiving] = useState(false);
+  const wantsReceive = params.get('receive') === '1';
+  useEffect(() => { if (wantsReceive && module !== 'craft') setReceiving(true); }, [wantsReceive, module]);
+  /** Closing the form takes the request out of the address, so a reload does not reopen it. */
+  const doneReceiving = () => {
+    setReceiving(false);
+    if (wantsReceive) setParams((p) => { p.delete('receive'); return p; }, { replace: true });
+  };
   const mayPlaces = canOpen('locations', profile, settings);
   const mayCount = canOpen(module === 'bar' ? 'bar_counts' : 'stock', profile, settings);
   const mayWaste = canOpen('waste', profile, settings);
@@ -903,9 +911,9 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
           shiftId=""
           settings={settings as Settings}
           userId={user?.$id ?? ''}
-          onClose={() => setReceiving(false)}
+          onClose={doneReceiving}
           onDone={(m) => {
-            setReceiving(false);
+            doneReceiving();
             toast(m);
             void load();
           }}
