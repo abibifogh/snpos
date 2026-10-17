@@ -36,7 +36,7 @@ test('one row each, oldest first, and nothing that is not actually waiting', () 
   assert.deepEqual(items.map((i) => i.id), [
     'shop:c1', 'bar:sh1:close', 'spend:e1', 'bar:store:cellar:close', 'shelf:c2', 'tab:sh2',
   ]);
-  assert.deepEqual(waitingCounts(items), { count: 3, spend: 1, shelf: 1, tab: 1 });
+  assert.deepEqual(waitingCounts(items), { count: 3, spend: 1, shelf: 1, tab: 1, order: 0 });
 });
 
 test('each row says what it is in the words of the person deciding it', () => {

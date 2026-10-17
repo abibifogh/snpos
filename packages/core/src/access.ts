@@ -197,6 +197,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'stock', label: 'Ingredients · bistro', path: '/stock', group: 'Stock', module: 'kitchen' },
   { key: 'bar_stock', label: 'Bottles & mixers · bar', path: '/stock', group: 'Stock', module: 'bar' },
   { key: 'waste', label: 'Waste', path: '/waste', group: 'Stock', module: 'kitchen' },
+  { key: 'purchase_orders', label: 'Purchase orders', path: '/purchase-orders', group: 'Stock' },
   { key: 'bar_counts', label: 'Bar counts', path: '/bar/counts', group: 'Stock', module: 'bar' },
   { key: 'stocktake', label: 'Shop stocktake', path: '/stocktake', group: 'Stock', module: 'craft' },
   { key: 'locations', label: 'Where stock sits', path: '/locations', group: 'Stock', module: 'bar' },
@@ -304,7 +305,7 @@ export const DEFAULT_ACCESS: Record<string, string[]> = {
     // a floor decision made while somebody is standing there, and an owner who
     // has to be rung at eleven at night to open one is an owner who gets rung.
     'dashboard', 'orders', 'reports', 'shifts', 'expenses', 'vouchers', 'tabs', 'waiting', 'staff_owing',
-    'menu_items', 'stock', 'waste', 'stations', 'group_bookings',
+    'menu_items', 'stock', 'waste', 'stations', 'group_bookings', 'purchase_orders',
     // A shop manager runs the intake desk and needs to see who is owed what.
     'shop_categories', 'shop_items', 'consignors', 'intake', 'stocktake', 'payouts',
     'bar_categories', 'bar_items', 'bar_stock', 'bar_counts', 'locations',
@@ -451,6 +452,9 @@ export function canOpen(section: string, profile: StaffProfile | null, settings:
   const meta = ADMIN_SECTIONS.find((s) => s.key === section);
   if (meta && !inTrade(meta, settings, profile)) return false;
   if (profile.role === 'admin') return true;
+  // Given to a person rather than a role: whoever an admin has allowed to
+  // order stock can open the page they order from. See canOrderStock.
+  if (section === 'purchase_orders' && profile.can_order_stock === true) return true;
   return (parseAccess(settings)[profile.role] ?? []).includes(section);
 }
 

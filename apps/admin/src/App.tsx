@@ -24,6 +24,7 @@ import { TablesPage } from './pages/Tables';
 import { ShiftsPage } from './pages/Shifts';
 import { StaffPage } from './pages/Staff';
 import { WastePage } from './pages/Waste';
+import { PurchaseOrdersPage } from './pages/PurchaseOrders';
 import { ReportsPage } from './pages/Reports';
 import { StationsPage } from './pages/Stations';
 import { OrdersPage } from './pages/Orders';
@@ -121,6 +122,7 @@ export function App() {
         <Route path="/stock" element={guardAny('/stock', <CataloguePage kind="stock" />)} />
         <Route path="/stations" element={guard('stations', <StationsPage />)} />
         <Route path="/waste" element={guard('waste', <WastePage />)} />
+        <Route path="/purchase-orders" element={guard('purchase_orders', <PurchaseOrdersPage />)} />
         <Route path="/features" element={guard('features', <FeaturesPage />)} />
         <Route path="/settings" element={guard('settings', <SettingsPage />)} />
         <Route path="/erase" element={guard('erase', <PurgePage />)} />

@@ -93,7 +93,8 @@
         "databases.snpos.collections.push_subscriptions.documents.*.update",
         "databases.snpos.collections.production_batches.documents.*.create",
         "databases.snpos.collections.staff_charges.documents.*.create",
-        "databases.snpos.collections.staff_charge_settlements.documents.*.create"
+        "databases.snpos.collections.staff_charge_settlements.documents.*.create",
+        "databases.snpos.collections.purchase_orders.documents.*.update"
       ],
       "schedule": "0 * * * *",
       "timeout": 60,

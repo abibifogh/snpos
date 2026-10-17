@@ -136,6 +136,8 @@ export * from './voucher-send';
 export * from './sitting-move';
 export * from './booking-approval';
 export * from './booking-tabs';
+export * from './purchase-orders';
+export * from './purchase-orders-store';
 export * from './booking-changes';
 export * from './health-rules';
 export * from './health';

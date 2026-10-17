@@ -14,13 +14,14 @@
  */
 
 /** What kind of thing is waiting. The filter chips are these, plus "all". */
-export type WaitingKind = 'count' | 'spend' | 'shelf' | 'tab';
+export type WaitingKind = 'count' | 'spend' | 'shelf' | 'tab' | 'order';
 
 export const WAITING_KIND_WORDS: Record<WaitingKind, string> = {
   count: 'Counts',
   spend: 'Spends',
   shelf: 'Shelf changes',
   tab: 'Tabs to release',
+  order: 'Orders to suppliers',
 };
 
 /** How the page finds the thing again when a button on the row is pressed. */
@@ -29,7 +30,8 @@ export type WaitingRef =
   | { kind: 'shop_count'; countId: string }
   | { kind: 'shelf'; countId: string }
   | { kind: 'spend'; expenseId: string }
-  | { kind: 'tab'; shiftId: string; module: string; venueId: string };
+  | { kind: 'tab'; shiftId: string; module: string; venueId: string }
+  | { kind: 'order'; orderId: string };
 
 export interface WaitingItem {
   /** Unique across kinds, so a list of mixed rows can key on it. */
@@ -112,12 +114,25 @@ export interface WaitingTabShift {
   tabValue: number;
 }
 
+/** An order to a supplier over the approval limit. See purchase-orders.ts. */
+export interface WaitingOrder {
+  $id: string;
+  $createdAt?: string;
+  po_no: string;
+  supplier_name?: string;
+  total?: number;
+  created_by?: string;
+  lines?: string;
+}
+
 export interface WaitingInput {
   barCounts: WaitingBarCount[];
   shopCounts: WaitingShopCount[];
   shelfLines?: WaitingShelfLine[];
   spends: WaitingSpend[];
   tabShifts: WaitingTabShift[];
+  /** Orders to suppliers waiting for approval. */
+  orders?: WaitingOrder[];
   /** Shift id to its code, for a bar count that is named by the shift it was taken on. */
   shiftCodes?: Record<string, string>;
   /** A store room's count carries the room in its id; this names the room. */
@@ -238,6 +253,22 @@ export function waitingList(input: WaitingInput): WaitingItem[] {
     });
   }
 
+  for (const o of input.orders ?? []) {
+    let n = 0;
+    try { const l = JSON.parse(o.lines || '[]'); n = Array.isArray(l) ? l.filter((x: { qty?: number }) => (x.qty ?? 0) > 0).length : 0; } catch { n = 0; }
+    items.push({
+      id: `order:${o.$id}`,
+      kind: 'order',
+      title: `${o.po_no} to ${o.supplier_name || 'a supplier'}, ${money(o.total ?? 0)}`,
+      detail: `${plural(n, 'item', 'items')}, over the amount that needs approval. Approving lets it be sent; `
+        + 'refusing sends it back to whoever made it to change.',
+      by: o.created_by,
+      at: o.$createdAt ?? '',
+      value: o.total ?? 0,
+      ref: { kind: 'order', orderId: o.$id },
+    });
+  }
+
   // Plain ordering, not locale-aware: ISO dates sort as text, and a row that
   // never said when it started goes last rather than wherever a collation
   // happens to put an empty string.
@@ -249,7 +280,7 @@ export function waitingList(input: WaitingInput): WaitingItem[] {
 
 /** How many of each kind, for the chips. */
 export function waitingCounts(items: WaitingItem[]): Record<WaitingKind, number> {
-  const counts: Record<WaitingKind, number> = { count: 0, spend: 0, shelf: 0, tab: 0 };
+  const counts: Record<WaitingKind, number> = { count: 0, spend: 0, shelf: 0, tab: 0, order: 0 };
   for (const i of items) counts[i.kind] += 1;
   return counts;
 }

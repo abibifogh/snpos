@@ -87,6 +87,10 @@ const LABELS: Record<string, { title: string; blurb: string; to?: string; toLabe
     title: 'Alerts for late tickets',
     blurb: 'The kitchen screen escalates a ticket that has waited too long, so a forgotten order announces itself.',
   },
+  purchase_orders: {
+    title: 'Orders to suppliers',
+    blurb: 'Make orders for things running low, send them as a PDF, a message or an email, and receive them through the spend that pays for them. Who may order is set per person on Staff.',
+  },
   help: {
     title: 'In-app help',
     blurb: 'The question mark on each screen, showing the manual written for whoever is signed in.',
@@ -106,6 +110,15 @@ const NUMBERS: Record<string, {
   /** Shown and typed in cedis, stored in pesewas, so nobody types 200 meaning two. */
   money?: boolean;
 }[]> = {
+  purchase_orders: [
+    {
+      option: 'approve_over',
+      label: 'Orders over this amount need approval',
+      hint: 'An order worth more than this waits on Waiting for you before it can be sent. Orders an admin makes go straight out. Leave at 0 for no approval.',
+      fallback: 100000,
+      money: true,
+    },
+  ],
   group_orders: [
     {
       option: 'pack_fee',
@@ -116,10 +129,10 @@ const NUMBERS: Record<string, {
     },
     {
       option: 'min_group_size',
-      label: 'Fewest plates at a sitting',
-      hint: 'Counted from the order rather than asked for: a booking whose biggest sitting has fewer plates than '
-        + 'this is turned away, and told how many it has. Counted at the biggest sitting, so a party that takes '
-        + 'coffee for two one morning is not caught by it.',
+      label: 'Fewest portions at one meal time',
+      hint: 'Counted from the order rather than asked for: a booking whose biggest meal time has fewer portions '
+        + 'than this is turned away, and told how many it has. Counted at the biggest meal time, so a party that '
+        + 'takes coffee for two one morning is not caught by it.',
       fallback: 6,
     },
   ],

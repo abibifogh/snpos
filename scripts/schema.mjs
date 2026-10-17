@@ -1574,6 +1574,8 @@ export const COLLECTIONS = [
        * shortage that is sitting in a tin in the office. See postExpense.
        */
       ['imprest_float_id', 's', 64, false],
+      // The supplier order this spend received, where it was one.
+      ['purchase_order_id', 's', 64, false],
       /**
        * Whether this came out of the money taken during the shift.
        *
@@ -2154,6 +2156,56 @@ export const COLLECTIONS = [
       ['payment_terms', 's', 80, false],
       ['active', 'b', null, true, true],
     ],
+  },
+  {
+    /**
+     * An order sent to a supplier for things running out.
+     *
+     * Made from what is low, grouped by who supplies it, sent as a PDF, a
+     * message or an email, and received through the spend that pays for it —
+     * so a delivery is entered once and the stock, the spend and the order all
+     * agree. See purchase-orders.ts.
+     *
+     * Anyone working may update a row, because the person recording the spend
+     * that receives it is whoever was at the till; who may MAKE and SEND one is
+     * a per-person permission, checked in the app (can_order_stock).
+     */
+    id: 'purchase_orders',
+    name: 'Purchase orders',
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['po_no', 's', 24, true],
+      ['module', 'e', ['kitchen', 'bar', 'craft'], false, 'kitchen'],
+      ['supplier_id', 's', 64, false],
+      // Kept on the order, so a supplier renamed or archived later does not
+      // change what was sent.
+      ['supplier_name', 's', 160, false],
+      ['supplier_email', 's', 160, false],
+      ['supplier_phone', 's', 40, false],
+      ['status', 'e', ['draft', 'waiting', 'ready', 'sent', 'part', 'received', 'cancelled', 'refused'], true, 'draft'],
+      // Each line: the item, how many of what (crates, bottles), the price of
+      // one and how many have arrived. One JSON field rather than a second
+      // collection: an order is read and written whole.
+      ['lines', 's', 20000, false, '[]'],
+      ['total', 'i', null, false, 0],
+      ['note', 's', 1000, false],
+      ['expected_on', 's', 10, false],
+      ['created_by', 's', 64, false],
+      ['created_by_name', 's', 120, false],
+      ['approved_by', 's', 64, false],
+      ['approved_at', 'd', null, false],
+      ['decided_note', 's', 500, false],
+      ['sent_at', 'd', null, false],
+      ['sent_via', 's', 40, false],
+      // Set to ask the notify job to email the supplier; it clears it once sent.
+      ['email_send_at', 'd', null, false],
+      ['email_error', 's', 500, false],
+      ['received_at', 'd', null, false],
+      // The spends that received it, comma separated.
+      ['expense_ids', 's', 1000, false],
+    ],
+    indexes: [['venue_no', 'key', ['venue_id', 'po_no']], ['status', 'key', ['status']]],
   },
   {
     /**
@@ -3012,6 +3064,9 @@ export const COLLECTIONS = [
       */
       ['can_fund_petty_cash', 'b', null, false, false],
       ['can_record_waste', 'b', null, false, true],
+      // May make, change and send orders to suppliers. Admins always may. See
+      // purchase-orders.ts.
+      ['can_order_stock', 'b', null, false, false],
       ['hourly_rate', 'i', null, false], // feature 4: labour cost
       // Getting somebody their first sign-in.
       //
@@ -4363,6 +4418,16 @@ export const FEATURES = [
       notify_emails: '',
       notify_on_placed: true,
       notify_group_on_accepted: true,
+    },
+  },
+  {
+    key: 'purchase_orders',
+    label: 'Orders to suppliers',
+    enabled: true,
+    config: {
+      // An order worth more than this waits on Waiting for you before it can
+      // be sent. Minor units, so 100000 is GH₵1,000. Nought: none wait.
+      approve_over: 100000,
     },
   },
   {

@@ -9,6 +9,7 @@ import { loadSellingPrices } from './staff-charges-store';
 import { barReviewLines, shopReviewLines, spendReviewLines, linesAgainst } from './waiting-lines';
 import type { ReviewLine } from './waiting-lines';
 import type { WaitingRef } from './waiting';
+import { readLines, poLineTotal } from './purchase-orders';
 
 /**
  * Reading the lines behind one thing that is waiting.
@@ -75,6 +76,20 @@ export async function loadReview(ref: WaitingRef): Promise<Review> {
       // shows what is left of it rather than everything it started with.
       lines: shopReviewLines(rows.filter((r) => r.delta !== 0 && lineUndecided(r))),
       empty: 'Every line on this count has already been dealt with.',
+    };
+  }
+
+  if (ref.kind === 'order') {
+    const o = await db.getDocument(DB_ID, 'purchase_orders', ref.orderId).catch(() => null) as
+      { lines?: string; note?: string; total?: number } | null;
+    const lines = readLines(o?.lines).filter((l) => l.qty > 0).map((l) => ({
+      name_snapshot: `${l.name} (${l.buy_label})`, qty: l.qty, unit_cost: l.unit_cost, line_total: poLineTotal(l),
+    }));
+    return {
+      shape: 'spend',
+      lines: spendReviewLines(lines),
+      note: o?.note || undefined,
+      empty: 'Nothing on this order.',
     };
   }
 
