@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Button, Logo, SchemaBar, StaleBar, Segmented, THEME_MODES, themeMode, setThemeMode } from '@snpos/ui';
 import { navFor, wordsFor, sidebarSides, SIDE_NAMES, loadWaiting, pendingGroupBookings, openBookingChanges } from '@snpos/core';
 import type { Module } from '@snpos/core';
 import { useSession } from './session';
 
 export function Shell({ children }: { children: ReactNode }) {
-  const { settings, profile, user, signOut } = useSession();
+  const { settings, profile, user, signOut, viewAs, realProfile, stopViewAs } = useSession();
+  const navigate = useNavigate();
   const path = useLocation().pathname;
 
   /**
@@ -236,9 +237,32 @@ export function Shell({ children }: { children: ReactNode }) {
             two bars are the same fault, and this one names it correctly: the
             other reads the mismatch the wrong way round and sends somebody to
             provision a database that is in fact ahead of the page. */}
+        {/*
+          Whose eyes these are. Sticky, so it is never scrolled out of sight:
+          a screen that looks like somebody else's without saying so is how
+          an owner ends up believing a page is missing that is only hidden.
+        */}
+        {viewAs && (
+          <div
+            role="status"
+            style={{
+              position: 'sticky', top: 0, zIndex: 20, display: 'flex', gap: '0.75rem', alignItems: 'center',
+              flexWrap: 'wrap', padding: '0.55rem 1rem', background: 'var(--warn-bg, #fbeedd)', color: 'var(--warn, #9a4a07)',
+              borderBottom: '1px solid currentColor', fontWeight: 600,
+            }}
+          >
+            <span style={{ flex: '1 1 16rem' }}>
+              Viewing as {viewAs.display_name || 'this person'} ({viewAs.role}). This is what they see. Nothing can be
+              saved until you switch back.
+            </span>
+            <Button size="sm" variant="primary" onClick={() => { stopViewAs(); navigate('/staff'); }}>
+              Back to {realProfile?.display_name || 'you'}
+            </Button>
+          </div>
+        )}
         <StaleBar />
         {/* Across the top of every page, for the person who can fix it. */}
-        <SchemaBar settings={settings} owner={profile?.role === 'admin'} />
+        <SchemaBar settings={settings} owner={(realProfile ?? profile)?.role === 'admin'} />
         <div className="page">{children}</div>
       </div>
     </div>

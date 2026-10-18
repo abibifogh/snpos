@@ -80,6 +80,15 @@ const wire = () => {
   if (unreachable) throw Object.assign(new TypeError('Failed to fetch'), { code: 0 });
 };
 
+/* The same read-only switch as the real client: "view as" refuses every write. */
+let readOnlyReason: string | null = null;
+export const setReadOnly = (reason: string | null) => { readOnlyReason = reason; };
+export const readOnlyNow = () => readOnlyReason;
+export class ReadOnlyError extends Error {
+  constructor(reason: string) { super(reason); this.name = 'ReadOnlyError'; }
+}
+const blocked = () => { if (readOnlyReason) throw new ReadOnlyError(readOnlyReason); };
+
 export const db = {
   listDocuments: async (_d: string, c: string, queries: any[] = []) => {
     wire();
@@ -104,6 +113,7 @@ export const db = {
     return copy(doc);
   },
   createDocument: async (_d: string, c: string, id: string, data: Doc) => {
+    blocked();
     wire();
     /*
       Appwrite refuses a whole document for one attribute it has never heard
@@ -121,12 +131,14 @@ export const db = {
     return copy(doc);
   },
   updateDocument: async (_d: string, c: string, id: string, data: Doc = {}) => {
+    blocked();
     const doc = coll(c).get(id);
     if (!doc) throw new Error(`no ${c}/${id}`);
     Object.assign(doc, copy(data));
     return copy(doc);
   },
   deleteDocument: async (_d: string, c: string, id: string) => {
+    blocked();
     coll(c).delete(id);
     return {};
   },
@@ -202,4 +214,4 @@ export const __seed = (c: string, docs: Doc[]) => {
   for (const d of docs) coll(c).set(d.$id, { $createdAt: new Date().toISOString(), ...copy(d) });
 };
 export const __all = (c: string) => [...coll(c).values()].map(copy);
-export const __reset = () => { store.clear(); unknownFields.clear(); unreachable = false; };
+export const __reset = () => { store.clear(); unknownFields.clear(); unreachable = false; readOnlyReason = null; };
