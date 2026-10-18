@@ -568,3 +568,17 @@ test('a merged link appears when any of its sides is granted, and offers only th
   assert.deepEqual(sidebarSides(staff({ role: 'admin' }), kitchenOnly), ['kitchen']);
   assert.deepEqual(sidebarSides(staff({ role: 'admin' }), both), ['kitchen', 'bar', 'craft']);
 });
+
+test('only an owner views as someone else, and never as themselves', async () => {
+  const { viewAsProblem, viewAsWords } = await import('../access.ts');
+  const owner = staff({ $id: 'me', role: 'admin' });
+  const ama = staff({ $id: 'ama', role: 'cashier', display_name: 'Ama' });
+  assert.equal(viewAsProblem(owner, ama), null);
+  assert.match(viewAsProblem(owner, owner) ?? '', /you/);
+  assert.match(viewAsProblem(staff({ $id: 'kofi', role: 'manager' }), ama) ?? '', /owner/);
+  assert.match(viewAsWords(ama), /Viewing as Ama \(cashier\)\. Nothing can be saved/);
+  // What she sees is worked out from her profile, as for her.
+  const both = settings({ kitchen_enabled: true, craft_enabled: true, bar_enabled: true });
+  const hers = navFor(ama, both).flatMap((g) => g.links.map((l) => l.label));
+  assert.ok(!hers.includes('Accounting'), 'a cashier has no books by default');
+});

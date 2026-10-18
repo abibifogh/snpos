@@ -906,3 +906,25 @@ export function canOrderStock(
   if (own !== 'group') return own === 'yes';
   return (orderRoles(settings) as string[]).includes(p.role ?? '');
 }
+
+/* ------------------------------------------------------------------ view as */
+
+/**
+ * Why this person cannot view the app as that one, or null when they can.
+ *
+ * Only an owner, and never as themselves. Viewing as another admin is
+ * allowed and shows everything, which is the answer to "what does she see".
+ */
+export function viewAsProblem(
+  real: Pick<StaffProfile, '$id' | 'role'> | null,
+  target: Pick<StaffProfile, '$id' | 'role'> | null,
+): string | null {
+  if (!real || real.role !== 'admin') return 'Only an owner can view the app as someone else.';
+  if (!target) return 'Choose who to view as.';
+  if (target.$id === real.$id) return 'That is you.';
+  return null;
+}
+
+/** What the banner and every refused save say while viewing as someone. */
+export const viewAsWords = (p: Pick<StaffProfile, 'display_name' | 'role'>): string =>
+  `Viewing as ${p.display_name || 'this person'} (${p.role}). Nothing can be saved until you switch back.`;

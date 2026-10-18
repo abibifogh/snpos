@@ -465,6 +465,8 @@ export const HELP_ARTICLES: HelpArticle[] = [
         'Tick what they may do: open a shift and the cash drawer, close a shift, take payment, and how much discount they may give.',
         'Only tick "give them a login" for people who need the admin app on their own device.',
       ),
+      h('Seeing what someone else sees'),
+      p('An owner can press View as on anyone\'s row under Staff. The admin app then shows exactly what that person would see: their sidebar, their pages, their tabs and buttons. A bar across the top says whose view it is and has the way back. Nothing can be saved while viewing as someone, so nothing is changed under their name by mistake. It covers the admin app, not the tills.'),
       h('Permissions are per person'),
       p('These are not decided by job title. On a quiet shift the cook is the cashier, and this is where you say so for that particular cook.'),
       note('Obvious PINs are refused, 1111, 1234, and the other usual ones. A PIN that everybody can guess is the same as no PIN.', 'warn'),

@@ -5,7 +5,8 @@
  * presses the catch-up, and reads the sheet again. Nothing is stubbed except
  * Appwrite itself.
  */
-import { __seed, __reset, __all, __missingColumns, __unreachable } from './core/client.ts';
+import { __seed, __reset, __all, __missingColumns, __unreachable, setReadOnly } from './core/client.ts';
+import { postOpeningBalances } from './core/books-year-store.ts';
 import {
   barCountSheet, relinkShelves, pourMissedSales, unpouredForShift, saveBarCount, hasOpeningCount,
 } from './core/stock.ts';
@@ -1118,6 +1119,30 @@ console.log('\n=== Z — rent posts itself each month, catches up, and never twi
   results.push(['Z and the next one is the end of October', ok(
     'next', (__all('recurring_entries') as any[])[0].next_on, '2026-10-31',
   )]);
+}
+
+/* ------------------------------------------ viewing as someone saves nothing */
+
+console.log('\n=== V2 — an owner viewing as a cashier sees exactly the cashier screens and can save nothing ===');
+{
+  __reset();
+  setReadOnly('Viewing as Ama (cashier). Nothing can be saved until you switch back.');
+  let said = '';
+  try {
+    await postOpeningBalances('main', { date: '2026-01-01', userId: 'owner' }, [
+      { account_code: '1000', debit: 500, credit: 0 }, { account_code: '3000', debit: 0, credit: 500 },
+    ]);
+  } catch (e) {
+    said = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+  }
+  results.push(['V2 a write while viewing as is refused, saying why, and nothing lands', ok(
+    'refused', [said.startsWith('ReadOnlyError: Viewing as Ama'), __all('journal_entries').length, __all('journal_lines').length], [true, 0, 0],
+  )]);
+  setReadOnly(null);
+  await postOpeningBalances('main', { date: '2026-01-01', userId: 'owner' }, [
+    { account_code: '1000', debit: 500, credit: 0 }, { account_code: '3000', debit: 0, credit: 500 },
+  ]);
+  results.push(['V2 and switching back, the same save goes through', ok('saved', __all('journal_entries').length, 1)]);
 }
 
 console.log('\n=== summary ===');

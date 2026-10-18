@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   encodePin, pinProblem, modulesOf, sidesOf, legacySide, MODULE_LABELS,
   inviteState, inviteWords, stuckInvites, meanwhile, INVITE_CHECKS, bpWords,
-  hasSignIn, invitationWanted, orderChoice, canOrderStock } from '@snpos/core';
+  hasSignIn, invitationWanted, orderChoice, canOrderStock, viewAsProblem } from '@snpos/core';
 import type { StaffProfile, Module, OrderChoice } from '@snpos/core';
 import type { Doc } from '@snpos/core';
 import { useSession } from '../session';
@@ -81,8 +82,18 @@ export function StaffPage() {
   // Kitchen staff usually have no email at all. A profile with a PIN and no
   // login is a complete, working staff record, not a half-finished one.
   const [wantsLogin, setWantsLogin] = useState(false);
-  const { settings } = useSession();
+  const { settings, realProfile, startViewAs } = useSession();
+  const navigate = useNavigate();
   const mods = modulesOf(settings);
+  /** See the admin app as this person does: their sidebar, pages and buttons. */
+  const viewAs = (p: StaffProfile) => {
+    try {
+      startViewAs(p);
+      navigate('/');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), 'err');
+    }
+  };
   /**
    * The trades this business actually runs, in a fixed order.
    *
@@ -496,6 +507,9 @@ export function StaffPage() {
                         <Button size="sm" variant="ghost" onClick={() => sendLink(p)}>
                           {hasSignIn(p) ? 'Send reset link' : 'Send sign-in link'}
                         </Button>
+                      )}
+                      {!viewAsProblem(realProfile, p) && (
+                        <Button size="sm" variant="ghost" onClick={() => viewAs(p)} title="See the admin app as they see it">View as</Button>
                       )}
                       <Button size="sm" variant="ghost" onClick={() => open(p)}>Edit</Button>
                       <Button size="sm" variant="ghost" onClick={() => remove(p)}>Remove</Button>

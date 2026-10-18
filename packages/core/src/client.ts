@@ -86,6 +86,28 @@ export const teams = new Teams(client);
 const rawDb = new Databases(client);
 
 /**
+ * Nothing written while an owner is looking through someone else's eyes.
+ *
+ * "View as" swaps the profile every screen decides from, and nothing else:
+ * the session underneath is still the owner's, so a save made from that
+ * preview would be the owner's write dressed as somebody else's screen.
+ * Refused here, where every write passes, rather than at each button.
+ */
+let readOnlyReason: string | null = null;
+export const setReadOnly = (reason: string | null): void => { readOnlyReason = reason; };
+export const readOnlyNow = (): string | null => readOnlyReason;
+
+export class ReadOnlyError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = 'ReadOnlyError';
+  }
+}
+/** Run a write, or refuse it as a rejected promise, so a caller's .catch still catches it. */
+const unlessReadOnly = <T>(write: () => Promise<T>): Promise<T> =>
+  (readOnlyReason ? Promise.reject(new ReadOnlyError(readOnlyReason)) : write());
+
+/**
  * The database, with the current hotel applied to everything.
  *
  * One database holds every hotel, so a query that forgets to say whose rows it
@@ -114,14 +136,13 @@ export const db = {
     documentId: string,
     data: Record<string, unknown>,
     permissions?: string[],
-  ) =>
-    rawDb.createDocument(
-      databaseId,
-      collectionId,
-      documentId,
-      scopedPayload(collectionId, data),
-      scopedPermissions(collectionId, permissions ?? []),
-    ),
+  ) => unlessReadOnly(() => rawDb.createDocument(
+    databaseId,
+    collectionId,
+    documentId,
+    scopedPayload(collectionId, data),
+    scopedPermissions(collectionId, permissions ?? []),
+  )),
 
   // Update and delete are left alone on purpose. Both name one document by id,
   // and Appwrite will not hand over a document this session's team cannot read
@@ -132,10 +153,10 @@ export const db = {
     documentId: string,
     data?: Record<string, unknown>,
     permissions?: string[],
-  ) => rawDb.updateDocument(databaseId, collectionId, documentId, data, permissions),
+  ) => unlessReadOnly(() => rawDb.updateDocument(databaseId, collectionId, documentId, data, permissions)),
 
   deleteDocument: (databaseId: string, collectionId: string, documentId: string) =>
-    rawDb.deleteDocument(databaseId, collectionId, documentId),
+    unlessReadOnly(() => rawDb.deleteDocument(databaseId, collectionId, documentId)),
 };
 
 export { ID, Query, Permission, Role };
@@ -364,6 +385,8 @@ export async function tryWrite(work: Promise<unknown>): Promise<boolean> {
  */
 export function humanError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
+  // Said as it is: the reason is already written for the person reading it.
+  if (e instanceof Error && e.name === 'ReadOnlyError') return msg;
 
   if (/Invalid credentials/i.test(msg)) return 'That email and password combination was not recognised.';
   if (/User .*not found/i.test(msg)) return 'No account exists for that email address.';

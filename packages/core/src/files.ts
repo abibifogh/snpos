@@ -1,4 +1,4 @@
-import { storage, teams, account, ID, Permission, Role } from './client';
+import { storage, teams, account, ID, Permission, Role, readOnlyNow, ReadOnlyError } from './client';
 import type { Settings } from './types';
 
 /**
@@ -117,6 +117,8 @@ export async function uploadFile(
   purpose: FilePurpose,
   settings?: Pick<Settings, 'storage_mode' | 'shared_bucket_id'> | null,
 ): Promise<UploadResult> {
+  const blocked = readOnlyNow();
+  if (blocked) throw new ReadOnlyError(blocked);
   const bucketId = bucketFor(purpose, settings);
   // Receipts are evidence and are kept as sent; menu photos are decoration and
   // are shrunk to something a phone on mobile data can actually load.
@@ -130,6 +132,8 @@ export async function deleteFile(
   purpose: FilePurpose,
   settings?: Pick<Settings, 'storage_mode' | 'shared_bucket_id'> | null,
 ): Promise<void> {
+  const blocked = readOnlyNow();
+  if (blocked) throw new ReadOnlyError(blocked);
   await storage.deleteFile(bucketFor(purpose, settings), fileId);
 }
 
