@@ -1,3 +1,5 @@
+import { PRODUCT_NAME } from '@snpos/core';
+
 /**
  * The system mark.
  *
@@ -128,7 +130,7 @@ export function applyFavicon(c: BrandColours = currentBrand()): void {
 export function Logo({
   size = 32,
   tile = true,
-  title = 'NiceOps POS',
+  title = PRODUCT_NAME,
 }: {
   size?: number;
   /** Draw the brand-coloured tile behind the receipt. */

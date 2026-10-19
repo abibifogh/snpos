@@ -4,7 +4,7 @@ import { useSession } from '../session';
 import { account, humanError } from '../lib';
 import {
   signOutCompletely,
-  probeAppwrite, appwriteHost, diagnose, reachWords, reachLabel, isOursToFix,
+  probeAppwrite, appwriteHost, diagnose, reachWords, reachLabel, isOursToFix, PRODUCT_NAME, appTitle,
 } from '@snpos/core';
 import type { Reach } from '@snpos/core';
 
@@ -111,7 +111,9 @@ export function Login() {
     return () => { cancelled = true; };
   }, [link]);
 
-  const name = settings?.restaurant_name ?? 'NiceOps POS';
+  const name = settings?.restaurant_name ?? PRODUCT_NAME;
+  // Signing out leaves the last page's title on the tab otherwise.
+  useEffect(() => { document.title = appTitle('admin'); }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
