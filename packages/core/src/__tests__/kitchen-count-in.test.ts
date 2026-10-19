@@ -16,13 +16,15 @@ import {
   kitchen count moves the bar's shelf and the email calls it the bar's.
 */
 
-test('the kitchen now counts in at the start of a shift, and only in', () => {
-  assert.equal(countsInAtOpen('kitchen'), true);
-  assert.equal(countsInAtOpen(undefined), true, 'no side named is the kitchen');
+test('a kitchen set to count counts in at the start of a shift', () => {
+  const counted = { kitchen_stock_check: 'count' };
+  assert.equal(countsInAtOpen('kitchen', counted), true);
+  assert.equal(countsInAtOpen(undefined, counted), true, 'no side named is the kitchen');
+  // One that only glances has nothing to count in. See kitchenCounts.
+  assert.equal(countsInAtOpen('kitchen'), false);
   assert.equal(countsInAtOpen('bar'), true);
   assert.equal(countsInAtOpen('craft'), true);
-  // Its close is still the larder check on the closing screen, not a second
-  // sheet: the kitchen does not count at BOTH ends.
+  // Never a wall, so not a both-ends side like the bar.
   assert.equal(countsAtBothEnds('kitchen'), false);
 });
 

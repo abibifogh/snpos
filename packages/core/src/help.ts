@@ -208,7 +208,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         + 'day across two sets of books that balance against neither.',
       ),
       h('Counting in and out'),
-      p('Every side counts its shelf on the same count sheet: when the shift opens, and again before it closes. The bar and the shop must count; the kitchen is asked, and can carry on without it, but the close says when it was skipped.'),
+      p('The bar and the shop count their shelf on the count sheet: when the shift opens, and again before it closes, and they must. The kitchen does a quick check instead: at the close the cook taps OK, Low or Out against every ingredient. An admin can switch the kitchen to counting in and out on the sheet under Settings, Stock; it is then asked, never forced, and the close says when it was skipped.'),
       list(
         'You type what is actually there. The sheet shows what the shelf should hold and works out the difference.',
         'A difference does not change the stock on its own. It waits on Waiting for you, where a manager agrees it, refuses it, or charges it to whoever was responsible. That is the same on every side.',
@@ -217,9 +217,9 @@ export const HELP_ARTICLES: HelpArticle[] = [
       h('Closing'),
       steps(
         'Settle or transfer any open bills. Nothing is left dangling.',
-        'Count the shelf out on the count sheet.',
+        'At the bar or the shop, count the shelf out on the count sheet.',
         'Count the drawer and enter what is actually there. You are asked before being shown what was expected, counting blind is what makes the answer worth anything.',
-        'Tap OK, Low or Out for anything marked "Just check it" under Stock: the cheap and bulky things, like salt and oil, that are not worth a number.',
+        'Tap OK, Low or Out. In the kitchen that is every ingredient; at the bar and the shop it is only what is marked "Just check it" under Stock, the cheap and bulky things like salt and oil that are not worth a number.',
         'Confirm. The system compares expected against counted and records the difference.',
       ),
       note('"Just check it" is set per item, under Stock, in How often is this counted. Marking one Out sets it to nothing. Everything with a number goes on the count sheet instead, so its difference can be agreed.'),

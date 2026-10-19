@@ -440,6 +440,11 @@ export const COLLECTIONS = [
       // waved past is waved past on the nights it would have caught something,
       // and a shortage with two shifts to belong to belongs to neither.
       ['bar_count_skippable', 'b', null, false, false],
+      // How the kitchen checks its larder. 'levels', the default: OK, Low or
+      // Out on every ingredient at the close, and no count sheet at either
+      // end. 'count': counted in and out on the count sheet like the bar, with
+      // differences waiting on Waiting for you. See kitchenCounts.
+      ['kitchen_stock_check', 'e', ['levels', 'count'], false, 'levels'],
       // Whether whoever holds a petty cash box may count it themselves. Off:
       // a count is the check ON the custodian and catches nothing when the
       // person answerable for the money is the one answering. See canCountBox.

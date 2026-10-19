@@ -151,10 +151,25 @@ export const countsAtBothEnds = (module?: string): boolean =>
   (module ?? 'kitchen') === 'bar' || (module ?? 'kitchen') === 'craft';
 
 /**
+ * Does the kitchen count its larder on the count sheet, or glance at it?
+ *
+ * A glance unless an admin has chosen otherwise. Forty-five lines to type at
+ * the end of a fourteen-hour day is a sheet that gets "Back — count later"
+ * every night, and a count nobody files measures nothing; OK, Low or Out on
+ * every ingredient is a question a cook will actually answer. A kitchen that
+ * wants the shortage figure can switch to counting under Settings, Stock.
+ *
+ * Absent means a glance, so a restaurant that has never answered gets the
+ * quick check rather than a sheet it never asked for.
+ */
+export const kitchenCounts = (settings?: { kitchen_stock_check?: string | null } | null): boolean =>
+  settings?.kitchen_stock_check === 'count';
+
+/**
  * Does this side count its shelf IN when a shift opens?
  *
- * The bar and the shop, which count at both ends — and the kitchen, which
- * checks its larder at close and now also counts in at the start. Its
+ * The bar and the shop, which count at both ends — and the kitchen, when it
+ * has been set to count rather than glance (see kitchenCounts). Its
  * opening count is the same sheet and the same path as the bar's: a
  * difference is held for an admin and emailed the moment it is filed.
  *
@@ -163,8 +178,11 @@ export const countsAtBothEnds = (module?: string): boolean =>
  * order until forty ingredients are counted is a till that gets a count
  * typed to make it go away. It is asked for, and can be done later.
  */
-export const countsInAtOpen = (module?: string): boolean =>
-  countsAtBothEnds(module) || (module ?? 'kitchen') === 'kitchen';
+export const countsInAtOpen = (
+  module?: string,
+  settings?: { kitchen_stock_check?: string | null } | null,
+): boolean =>
+  countsAtBothEnds(module) || ((module ?? 'kitchen') === 'kitchen' && kitchenCounts(settings));
 
 /** Whether the opening count may be left for later. Always, on the kitchen. */
 export const openingCountOptional = (module?: string): boolean => (module ?? 'kitchen') === 'kitchen';
@@ -172,15 +190,19 @@ export const openingCountOptional = (module?: string): boolean => (module ?? 'ki
 /**
  * Does this side count its shelf OUT on the count sheet before it closes?
  *
- * Every side now. The kitchen used to type amounts on the closing screen,
- * which replaced the stock figure on the spot with nobody agreeing to it and
- * nothing to charge — the one place a shortage could be typed away. It now
- * counts out on the same sheet as the bar, and its differences wait on
- * Waiting for you like everybody else's. Unlike the bar's, the kitchen's is
- * never a wall: it is asked for, and the close can go on without it.
+ * The bar and the shop always. The kitchen only when it is set to count
+ * (see kitchenCounts); otherwise its close asks OK, Low or Out about every
+ * ingredient instead. A kitchen that counts does it on the same sheet as the
+ * bar, never by typing amounts on the closing screen — that replaced the
+ * stock figure on the spot with nobody agreeing to it, the one place a
+ * shortage could be typed away — and its differences wait on Waiting for you
+ * like everybody else's. Unlike the bar's, the kitchen's is never a wall.
  */
-export const countsOutAtClose = (module?: string): boolean =>
-  countsAtBothEnds(module) || (module ?? 'kitchen') === 'kitchen';
+export const countsOutAtClose = (
+  module?: string,
+  settings?: { kitchen_stock_check?: string | null } | null,
+): boolean =>
+  countsAtBothEnds(module) || ((module ?? 'kitchen') === 'kitchen' && kitchenCounts(settings));
 
 /**
  * Which side a filed count belongs to, from its rows.
