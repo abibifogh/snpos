@@ -7,6 +7,7 @@
  */
 import { __seed, __reset, __all, __missingColumns, __unreachable, setReadOnly } from './core/client.ts';
 import { postOpeningBalances } from './core/books-year-store.ts';
+import { addSupplier } from './core/purchase-orders-store.ts';
 import {
   barCountSheet, relinkShelves, pourMissedSales, unpouredForShift, saveBarCount, hasOpeningCount,
 } from './core/stock.ts';
@@ -1143,6 +1144,18 @@ console.log('\n=== V2 — an owner viewing as a cashier sees exactly the cashier
     { account_code: '1000', debit: 500, credit: 0 }, { account_code: '3000', debit: 0, credit: 500 },
   ]);
   results.push(['V2 and switching back, the same save goes through', ok('saved', __all('journal_entries').length, 1)]);
+}
+
+/* ------------------------------------------ a supplier added from an order */
+
+console.log('\n=== S2 — a supplier added from an order carries the venue the database requires ===');
+{
+  __reset();
+  await addSupplier({ venueId: 'main', name: 'Accra Brewery', phone: '0550000000' });
+  const row = (__all('suppliers') as any[])[0];
+  results.push(['S2 the new supplier row has venue_id, name and active', ok(
+    'row', [row?.venue_id, row?.name, row?.active], ['main', 'Accra Brewery', true],
+  )]);
 }
 
 console.log('\n=== summary ===');

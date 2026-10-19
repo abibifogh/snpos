@@ -941,7 +941,7 @@ export function BarCountsPage({ module = 'bar' }: { module?: 'bar' | 'kitchen' }
         conversation with a different person.
       */}
       {unpoured && unpoured.length > 0 && (
-        <Card title="Sold, but nothing came off a shelf">
+        <Card title="Sold but nothing came off a shelf">
           {/* Which shift this is about, and a way to open it. */}
           {shift && (
             <p className="small" style={{ marginTop: 0 }}>
@@ -1036,7 +1036,7 @@ export function BarCountsPage({ module = 'bar' }: { module?: 'bar' | 'kitchen' }
 
       {isManager && (
         <CountHistory
-          title="Every count filed, last 90 days"
+          title="Counts filed in the last 90 days"
           counts={past}
           money={money}
           emptyWords="Counts appear here once they have been filed and decided on."

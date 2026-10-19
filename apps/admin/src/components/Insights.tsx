@@ -124,7 +124,7 @@ export function Insights({ revenue, cost, from, to, money, tickMoney }: InsightI
       </div>
 
       <Card
-        title={`Money in and out, by ${grainWord}`}
+        title={`Money in and out by ${grainWord}`}
         actions={
           <div className="row" style={{ gap: '0.3rem' }}>
             {GRAINS.map((g) => (

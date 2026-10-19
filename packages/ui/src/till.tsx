@@ -643,7 +643,9 @@ export function ExpenseModal({
           payee,
         }),
         amount,
-        paid_from_method_id: methodId,
+        // Required on every spend, and not asked for one not paid yet: the
+        // first method stands in, and pay_later is what the books read.
+        paid_from_method_id: methodId || methods[0]?.$id || '',
         /**
          * The remainder explains itself, in the record rather than in
          * somebody's memory.

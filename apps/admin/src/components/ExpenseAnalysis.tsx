@@ -514,7 +514,7 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
             somebody can act on; a list of forty percentages is not.
           */}
           {ranked.filter((r) => r.now > 0).length > 0 && (
-            <Card title="Every item, ranked by what it cost">
+            <Card title="Every item ranked by what it cost">
               <p className="small dim" style={{ marginTop: 0 }}>
                 Measured against the {money(coverage.itemised)} that was itemised, not against everything spent.
                 Transport, gas and repairs have no lines behind them — {bpWords(coverage.coverBp)} of
@@ -589,7 +589,7 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
           {/* The same figures as a table, because a bar shows a shape and a
               table answers "by how much". Both, rather than choosing. */}
           {ranked.filter((r) => r.now > 0).length > 0 && (
-            <Card title="Item by item, against the period before" pad={false}>
+            <Card title="Item by item against the period before" pad={false}>
               <div className="table-wrap">
                 <table className="data">
                   <thead>

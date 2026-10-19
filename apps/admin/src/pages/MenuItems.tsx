@@ -1700,7 +1700,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
                         size="sm"
                         variant="ghost"
                         onClick={() => setHistoryFor({ id: i.$id, name: i.name })}
-                        title="Every sale of this, over a period you choose"
+                        title="Every sale of this in a period you choose"
                       >
                         History
                       </Button>

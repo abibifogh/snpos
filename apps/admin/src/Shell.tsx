@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Button, Logo, SchemaBar, StaleBar, Segmented, THEME_MODES, themeMode, setThemeMode } from '@snpos/ui';
-import { navFor, wordsFor, sidebarSides, SIDE_NAMES, loadWaiting, pendingGroupBookings, openBookingChanges } from '@snpos/core';
+import { navFor, wordsFor, sidebarSides, SIDE_NAMES, loadWaiting, pendingGroupBookings, openBookingChanges, PRODUCT_NAME, pageTitle } from '@snpos/core';
 import type { Module } from '@snpos/core';
 import { useSession } from './session';
 
@@ -129,6 +129,9 @@ export function Shell({ children }: { children: ReactNode }) {
     .find((l) => (l.end ? path === '/' : path === bare(l.to) || path.startsWith(`${bare(l.to)}/`)))?.label
     ?? 'Admin';
 
+  /* The tab says which page too, so six Admin tabs can be told apart. */
+  useEffect(() => { document.title = pageTitle(hereLabel, 'admin'); }, [hereLabel]);
+
   return (
     <div className={`shell${drawer ? ' drawer-open' : ''}`}>
       {/* Only on a phone; the sidebar is always there on a wide screen and a
@@ -161,7 +164,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <aside className="sidebar" id="admin-nav">
         <div className="sidebar-brand">
           <Logo size={24} />
-          <span>{settings?.restaurant_name ?? 'NiceOps POS'}</span>
+          <span>{settings?.restaurant_name ?? PRODUCT_NAME}</span>
         </div>
         <nav>
           {/* One side at a time, for somebody who works on one. Only offered

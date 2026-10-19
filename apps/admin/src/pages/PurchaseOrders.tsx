@@ -380,7 +380,7 @@ function OrderModal({
       if (mayAddSupplier) {
         // Onto the list first, so the order points at a real supplier and the
         // next order finds it.
-        to = await addSupplier(fresh);
+        to = await addSupplier({ venueId: 'main', ...fresh });
         onSupplierAdded(to);
         setSupplierId(to.$id);
       } else {

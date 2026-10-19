@@ -107,7 +107,7 @@ export function MenuEngineeringPanel({
               sitting in dishes priced below what the rest of the menu manages"
               is the sentence that starts a conversation. */}
           <div className="stat-row">
-            <Stat label="Kept, all dishes" value={money(totals.contribution)} />
+            <Stat label="Kept across all dishes" value={money(totals.contribution)} />
             <Stat label="Average plate keeps" value={money(benchmarks!.contribution)} />
             <Stat
               label="On the table"

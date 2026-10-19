@@ -489,7 +489,7 @@ export function TablesPage() {
 
       {showQr && (
         <Modal
-          title={`QR link, ${showQr.label}`}
+          title={`QR link for ${showQr.label}`}
           onClose={() => setShowQr(null)}
           footer={
             <>

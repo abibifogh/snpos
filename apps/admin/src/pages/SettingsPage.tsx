@@ -361,12 +361,12 @@ export function SettingsPage() {
         <Toggle
           checked={mods.kitchen}
           onChange={(v) => set('kitchen_enabled', v || (!mods.craft && !mods.bar))}
-          label="Kitchen, food and drink"
+          label="Kitchen (food and drink)"
         />
         <Toggle
           checked={mods.craft}
           onChange={(v) => set('craft_enabled', v || (!mods.kitchen && !mods.bar))}
-          label="Craft shop, goods sold on consignment"
+          label="Craft shop (goods sold on consignment)"
         />
         {/* Its own side rather than a category of drinks on the kitchen's
             menu. A bar counts bottles at both ends of a shift, pours cocktails
@@ -376,7 +376,7 @@ export function SettingsPage() {
         <Toggle
           checked={mods.bar}
           onChange={(v) => set('bar_enabled', v || (!mods.kitchen && !mods.craft))}
-          label="Bar, bottles and cocktails counted in and out"
+          label="Bar (bottles and cocktails counted in and out)"
         />
         {/* Refusing to turn the last one off rather than letting somebody
             discover an admin app with nothing in it. The toggle simply does

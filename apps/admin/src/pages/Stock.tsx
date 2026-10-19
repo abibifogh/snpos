@@ -860,7 +860,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
                             size="sm"
                             variant="ghost"
                             onClick={() => setSalesFor({ id: i.$id, name: i.name })}
-                            title="Every sale that used this, over a period you choose"
+                            title="Every sale that used this in a period you choose"
                           >
                             Sales
                           </Button>
@@ -1251,7 +1251,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
           </Field>
 
           <Field hint="Critical items are called out first when they run low, ahead of everything else.">
-            <Toggle checked={editing.critical ?? false} onChange={(v) => setEditing({ ...editing, critical: v })} label="Critical, service stops without it" />
+            <Toggle checked={editing.critical ?? false} onChange={(v) => setEditing({ ...editing, critical: v })} label="Critical (service stops without it)" />
           </Field>
           <Field>
             <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label="Active" />

@@ -53,7 +53,7 @@ const MGMT: HelpRole[] = ['manager', 'admin'];
 export const HELP_ARTICLES: HelpArticle[] = [
   {
     id: 'getting_started',
-    title: 'What this system is, in one page',
+    title: 'The whole system on one page',
     summary: 'The four screens and which one you are meant to be looking at.',
     area: 'general',
     audience: ALL_STAFF,

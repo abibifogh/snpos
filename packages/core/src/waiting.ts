@@ -212,7 +212,7 @@ export function waitingList(input: WaitingInput): WaitingItem[] {
     items.push({
       id: `shop:${c.$id}`,
       kind: 'count',
-      title: `Shop stocktake, ${plural(c.line_count, 'piece', 'pieces')}`,
+      title: `Shop stocktake of ${plural(c.line_count, 'piece', 'pieces')}`,
       detail: moved > 0
         ? `${plural(c.missing_pieces, 'piece missing', 'pieces missing')}, ${plural(c.surplus_pieces, 'extra', 'extra')}, worth ${money(Math.abs(c.missing_value))}. `
           + 'Approving moves the shelf by the difference; refusing leaves it as it is.'
