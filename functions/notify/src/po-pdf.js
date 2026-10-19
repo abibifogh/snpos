@@ -60,6 +60,13 @@ export function purchaseOrderPdf({ order, settings = {}, accent = '#0f766e' }) {
   const decimals = settings.currency_decimals ?? 2;
   const code = settings.currency_code || '';
   const money = (n) => `${code} ${((n || 0) / 10 ** decimals).toFixed(decimals)}`.trim();
+  // A unit price may be finer than a pesewa (two extra places; see
+  // PRICE_EXTRA_PLACES in purchase-orders.ts). Shown as entered, not rounded.
+  const each = (n) => {
+    if (Number.isInteger(n || 0)) return money(n);
+    const [whole, frac = ''] = ((n || 0) / 10 ** decimals).toFixed(decimals + 2).split('.');
+    return `${code} ${whole}.${frac.replace(/0+$/, '').padEnd(decimals, '0')}`.trim();
+  };
   const lines = readLines(order.lines).filter((l) => (Number(l.qty) || 0) > 0);
 
   const doc = new Doc();
@@ -84,7 +91,7 @@ export function purchaseOrderPdf({ order, settings = {}, accent = '#0f766e' }) {
   doc.band('What we would like', { colour: accent, right: 'Expected price' });
   for (const l of lines) {
     doc.pair(`${clean(l.name)}`, money(Math.round((l.qty || 0) * (l.unit_cost || 0))), { size: 10.5, font: 'bold' });
-    doc.text(`${quantityWords(l)}${l.unit_cost ? ` · ${money(l.unit_cost)} each` : ''}`, {
+    doc.text(`${quantityWords(l)}${l.unit_cost ? ` · ${each(l.unit_cost)} each` : ''}`, {
       size: 9, colour: QUIET, x: doc.left + 12,
     });
     doc.rule({ colour: LINE, above: 4, below: 4 });

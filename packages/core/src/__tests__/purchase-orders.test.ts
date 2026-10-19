@@ -189,3 +189,36 @@ test('an admin picks the roles that order; a person can be an exception either w
   assert.equal(orderChoice({ role: 'cashier', can_order_stock: false }), 'group');
   assert.equal(canOrderStock({ role: 'cashier', can_order_stock: false }, cashiers), true);
 });
+
+test('a unit price can be finer than a pesewa, and a quantity can have decimals', async () => {
+  const { parseUnitPrice, unitPriceInput, parseQty, poLineTotal: lineTotal, orderTotal: total } = await import('../purchase-orders.ts');
+  assert.equal(parseUnitPrice('7.50'), 750);
+  assert.equal(parseUnitPrice('0.355'), 35.5);
+  assert.equal(parseUnitPrice('0,3555'), 35.55, 'a comma for the point, four places kept');
+  assert.equal(parseUnitPrice('0.35559'), 35.56, 'and no more than four');
+  assert.equal(parseUnitPrice('GH₵ 12'), 1200);
+  assert.equal(parseUnitPrice(''), null);
+  assert.equal(parseUnitPrice('.'), null);
+  assert.equal(parseUnitPrice('-2'), null);
+  assert.equal(unitPriceInput(750), '7.50');
+  assert.equal(unitPriceInput(35.5), '0.355');
+  assert.equal(unitPriceInput(35.55), '0.3555');
+  assert.equal(parseQty('1.5'), 1.5);
+  assert.equal(parseQty('2,25'), 2.25);
+  assert.equal(parseQty('1.'), 1, 'half typed still reads');
+  assert.equal(parseQty('abc'), null);
+  // The line and the order still come to whole pesewas.
+  const lines = [{ qty: 1000, unit_cost: 35.5 }, { qty: 1.5, unit_cost: 2099 }];
+  assert.equal(lineTotal(lines[0]), 35500);
+  assert.equal(lineTotal(lines[1]), 3149);
+  assert.equal(total(lines), 38649);
+});
+
+test('the PDF prints a finer unit price as it was entered', () => {
+  const bytes = purchaseOrderPdf({
+    order: { po_no: 'PO-0009', supplier_name: 'Example Wholesale', lines: JSON.stringify([{ name: 'Sachet', unit: 'sachet', buy_key: 'unit', buy_label: 'sachets', per: 1, qty: 1000, unit_cost: 35.5 }]), total: 35500 },
+    settings: { restaurant_name: 'Example', currency_code: 'GHS', currency_decimals: 2 },
+  } as never);
+  const text = new TextDecoder('latin1').decode(bytes);
+  assert.match(text, /GHS 0\.355 each/);
+});
