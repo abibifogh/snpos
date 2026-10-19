@@ -319,7 +319,7 @@ export function StocktakePage() {
         <>
           <div style={{ marginTop: '1rem' }}>
             <CountHistory
-              title="Every count decided on, last 90 days"
+              title="Counts decided in the last 90 days"
               counts={past}
               money={money}
               emptyWords="Counts appear here once an admin has agreed to them or refused them."

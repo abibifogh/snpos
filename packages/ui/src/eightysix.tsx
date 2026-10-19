@@ -151,7 +151,7 @@ export function EightySixModal({
 
       {confirming && (
         <Modal
-          title={`${confirming.name}, what happened?`}
+          title={`What happened to ${confirming.name}?`}
           onClose={() => setConfirming(null)}
           footer={
             <>

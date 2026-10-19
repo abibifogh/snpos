@@ -45,7 +45,7 @@ test('each row says what it is in the words of the person deciding it', () => {
   assert.equal(by['bar:sh1:close'].title, 'Bar count, counted out on BAR-01');
   assert.match(by['bar:sh1:close'].detail, /3 lines differ .* worth GH₵45\.00/);
   assert.equal(by['bar:store:cellar:close'].title, 'Cellar count');
-  assert.equal(by['shop:c1'].title, 'Shop stocktake, 40 pieces');
+  assert.equal(by['shop:c1'].title, 'Shop stocktake of 40 pieces');
   assert.match(by['shop:c1'].detail, /2 pieces missing, 1 extra, worth GH₵120\.00/);
   assert.equal(by['shelf:c2'].title, 'Kente scarf · Blue: 3 → 5');
   assert.equal(by['spend:e1'].title, 'GH₵25.00 to Taxi · Transport');
