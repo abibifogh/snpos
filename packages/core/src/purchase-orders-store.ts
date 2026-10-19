@@ -67,8 +67,12 @@ export async function loadOrderables(venueId: string): Promise<{ items: Ingredie
  * on the list yet. The same row Stock → Suppliers writes; the rest of its
  * details can be filled in there later.
  */
-export async function addSupplier(input: { name: string; phone?: string; email?: string }): Promise<OrderSupplier> {
+export async function addSupplier(input: { venueId: string; name: string; phone?: string; email?: string }): Promise<OrderSupplier> {
   const row = {
+    // Required on suppliers: venue_id is added to every venue-scoped
+    // collection by VENUE_SCOPED in scripts/schema.mjs, which is why a row
+    // written without it is refused with "Missing required attribute".
+    venue_id: input.venueId,
     name: input.name.trim().slice(0, 160),
     phone: (input.phone ?? '').trim().slice(0, 40),
     email: (input.email ?? '').trim().slice(0, 160),
