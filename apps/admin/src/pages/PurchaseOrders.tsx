@@ -5,8 +5,8 @@ import {
   loadPurchaseOrders, loadOrderables, savePurchaseOrder, markOrderSent, askToEmailOrder, cancelPurchaseOrder,
   suggestions, suggestLine, orderTotal, poLineTotal, orderProblem, orderMessage, readLines, stillToCome,
   isEditableOrder, isOpenOrder, orderNeedsApproval, canOrderStock, PO_STATUS_WORDS,
-  loadFeatures, featureConfig, formatMoney, parseMoney, toInput, dateTimeWords, downloadFile, MODULE_LABELS,
-  modulesOf, SIDE_NAMES, itemsFor, newSupplierProblem, addSupplier,
+  loadFeatures, featureConfig, formatMoney, dateTimeWords, downloadFile, MODULE_LABELS,
+  modulesOf, SIDE_NAMES, itemsFor, newSupplierProblem, addSupplier, parseUnitPrice, unitPriceInput, parseQty,
   ORDER_ROLES, orderRoles, orderRolesValue, saveDropping,
 } from '@snpos/core';
 import type { PurchaseOrderDoc, PoLine, OrderSupplier, Ingredient, Module, Suggestion, FeatureMap } from '@snpos/core';
@@ -285,11 +285,23 @@ function OrderModal({
   onError: (m: string) => void;
 }) {
   const decimals = settings.currency_decimals ?? 2;
+  /** A unit price as written: whole pesewas as money, a finer one with its extra places. */
+  const priceEach = (n: number) => (Number.isInteger(n) ? money(n) : `${settings.currency_symbol ?? ''}${unitPriceInput(n, decimals)}`);
   const editable = mayOrder && (!order || isEditableOrder(order.status));
   const [supplierId, setSupplierId] = useState(order?.supplier_id ?? start?.supplierId ?? '');
   const [lines, setLines] = useState<PoLine[]>(() => (order ? readLines(order.lines) : start?.lines ?? []));
-  const [costText, setCostText] = useState<Record<number, string>>(() =>
-    Object.fromEntries((order ? readLines(order.lines) : start?.lines ?? []).map((l, i) => [i, toInput(l.unit_cost, decimals)])));
+  /**
+   * What is typed in each line's How many and Price each, beside the line.
+   *
+   * Kept as text while it is typed, so "1." and "0.35" can be typed at all:
+   * a box that turned each keystroke into a number and back dropped the
+   * point before the next digit arrived. One entry per line, removed with it,
+   * so taking a line out never moves another line's price onto its neighbour.
+   */
+  const [text, setText] = useState<{ qty: string; cost: string }[]>(() =>
+    (order ? readLines(order.lines) : start?.lines ?? []).map((l) => ({ qty: String(l.qty), cost: unitPriceInput(l.unit_cost, decimals) })));
+  const setTextAt = (i: number, patch: Partial<{ qty: string; cost: string }>) =>
+    setText((t) => t.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const [note, setNote] = useState(order?.note ?? '');
   const [neededBy, setNeededBy] = useState(order?.expected_on ?? '');
   const [busy, setBusy] = useState<string | null>(null);
@@ -317,7 +329,7 @@ function OrderModal({
     setSide(next);
     if (filled) {
       setLines([{ ingredient_id: '', name: '', unit: '', buy_key: 'unit', buy_label: '', per: 1, qty: 1, unit_cost: 0, received_qty: 0 }]);
-      setCostText({});
+      setText([{ qty: '1', cost: '' }]);
     }
   };
 
@@ -333,16 +345,18 @@ function OrderModal({
     if (!ing) return;
     const fresh = suggestLine(ing as never);
     setLine(i, fresh);
-    setCostText((c) => ({ ...c, [i]: toInput(fresh.unit_cost, decimals) }));
+    setTextAt(i, { qty: String(fresh.qty), cost: unitPriceInput(fresh.unit_cost, decimals) });
   };
   const switchBuy = (i: number, key: 'pack' | 'unit') => {
     const l = lines[i];
     const ing = items.find((x) => x.$id === l?.ingredient_id) as (Ingredient & { pack_size?: number; pack_name?: string }) | undefined;
     if (!l || !ing) return;
     const per = key === 'pack' ? (ing.pack_size ?? 1) : 1;
-    const each = Math.round((l.unit_cost / (l.per || 1)) * per);
+    // Kept to the same two extra places a typed price has, so a per-unit
+    // price worked back from a pack keeps its fraction of a pesewa.
+    const each = Math.round((l.unit_cost / (l.per || 1)) * per * 100) / 100;
     setLine(i, { buy_key: key, per, unit_cost: each, buy_label: key === 'pack' ? `${(ing.pack_name || 'pack').replace(/s$/, '')}s` : `${ing.unit}s` });
-    setCostText((c) => ({ ...c, [i]: toInput(each, decimals) }));
+    setTextAt(i, { cost: unitPriceInput(each, decimals) });
   };
 
   const run = async (key: string, fn: () => Promise<string | undefined>, keepOpen = false) => {
@@ -512,7 +526,14 @@ function OrderModal({
                           {ing && <div className="small dim">{ing.current_qty} {ing.unit} left{ing.par_level ? `, full is ${ing.par_level}` : ''}</div>}
                         </td>
                         <td className="num" style={{ width: '6rem' }}>
-                          <Input value={String(l.qty)} inputMode="decimal" onChange={(e) => setLine(i, { qty: Number(e.target.value) || 0 })} />
+                          <Input
+                            value={text[i]?.qty ?? String(l.qty)}
+                            inputMode="decimal"
+                            onChange={(e) => {
+                              setTextAt(i, { qty: e.target.value });
+                              setLine(i, { qty: parseQty(e.target.value) ?? 0 });
+                            }}
+                          />
                         </td>
                         <td style={{ width: '9rem' }}>
                           {packs ? (
@@ -524,17 +545,18 @@ function OrderModal({
                         </td>
                         <td className="num" style={{ width: '8rem' }}>
                           <Input
-                            value={costText[i] ?? ''}
+                            value={text[i]?.cost ?? ''}
                             inputMode="decimal"
+                            placeholder="0.00"
                             onChange={(e) => {
-                              setCostText((c) => ({ ...c, [i]: e.target.value }));
-                              setLine(i, { unit_cost: parseMoney(e.target.value, decimals) ?? 0 });
+                              setTextAt(i, { cost: e.target.value });
+                              setLine(i, { unit_cost: parseUnitPrice(e.target.value, decimals) ?? 0 });
                             }}
                           />
                         </td>
                         <td className="num">{money(poLineTotal(l))}</td>
                         <td className="num">
-                          <Button size="sm" variant="ghost" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>Remove</Button>
+                          <Button size="sm" variant="ghost" onClick={() => { setLines((ls) => ls.filter((_, j) => j !== i)); setText((t) => t.filter((_, j) => j !== i)); }}>Remove</Button>
                         </td>
                       </tr>
                     );
@@ -543,9 +565,12 @@ function OrderModal({
               </table>
             </div>
             <div className="spread">
-              <Button size="sm" onClick={() => setLines((ls) => [...ls, {
-                ingredient_id: '', name: '', unit: '', buy_key: 'unit', buy_label: '', per: 1, qty: 1, unit_cost: 0, received_qty: 0,
-              }])}>
+              <Button size="sm" onClick={() => {
+                setLines((ls) => [...ls, {
+                  ingredient_id: '', name: '', unit: '', buy_key: 'unit', buy_label: '', per: 1, qty: 1, unit_cost: 0, received_qty: 0,
+                }]);
+                setText((t) => [...t, { qty: '1', cost: '' }]);
+              }}>
                 + Add an item
               </Button>
               <strong>Total {money(total)}</strong>
@@ -575,7 +600,7 @@ function OrderModal({
                       <td>{l.name}</td>
                       <td className="num">{l.qty} {l.buy_label}</td>
                       <td className="num">{l.received_qty ? `${Number(l.received_qty.toFixed(2))}` : '—'}</td>
-                      <td className="num">{money(l.unit_cost)}</td>
+                      <td className="num">{priceEach(l.unit_cost)}</td>
                       <td className="num">{money(poLineTotal(l))}</td>
                     </tr>
                   ))}

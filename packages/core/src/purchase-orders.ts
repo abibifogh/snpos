@@ -168,6 +168,42 @@ export function newSupplierProblem(name: string, suppliers: Pick<OrderSupplier, 
   return null;
 }
 
+/*
+  A unit price can be finer than the currency's smallest coin: a sachet
+  bought by the thousand at GH₵0.355, a gram of spice. Two more places than
+  the currency has are kept (stored in minor units with two decimals, so
+  35.5 pesewas), and each line's total is rounded to a whole pesewa as it
+  always was. The order's total never carries a fraction.
+*/
+export const PRICE_EXTRA_PLACES = 2;
+
+/** A unit price as typed, to minor units with up to two extra places; null when it is not a number. */
+export function parseUnitPrice(text: string, decimals = 2): number | null {
+  const cleaned = String(text).replace(/[^0-9.,-]/g, '').replace(',', '.');
+  if (cleaned === '' || cleaned === '-' || cleaned === '.') return null;
+  const n = Number(cleaned);
+  if (!Number.isFinite(n) || n < 0) return null;
+  const scale = 10 ** PRICE_EXTRA_PLACES;
+  return Math.round(n * 10 ** decimals * scale) / scale;
+}
+
+/** A unit price as an editable figure: the currency's places, plus any finer ones it has. */
+export function unitPriceInput(minor: number, decimals = 2): string {
+  const s = ((minor || 0) / 10 ** decimals).toFixed(decimals + PRICE_EXTRA_PLACES);
+  const [whole, frac = ''] = s.split('.');
+  const kept = frac.replace(/0+$/, '');
+  return decimals > 0 ? `${whole}.${kept.padEnd(decimals, '0')}` : (kept ? `${whole}.${kept}` : whole);
+}
+
+/** A quantity as typed: whole or decimal, to three places; null when it is not a number. */
+export function parseQty(text: string): number | null {
+  const cleaned = String(text).trim().replace(',', '.');
+  if (cleaned === '' || cleaned === '.') return null;
+  const n = Number(cleaned);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 1000) / 1000;
+}
+
 export const poLineTotal = (l: Pick<PoLine, 'qty' | 'unit_cost'>): number => Math.round((l.qty || 0) * (l.unit_cost || 0));
 export const orderTotal = (lines: Pick<PoLine, 'qty' | 'unit_cost'>[]): number => lines.reduce((n, l) => n + poLineTotal(l), 0);
 
