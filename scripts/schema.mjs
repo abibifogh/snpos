@@ -2276,6 +2276,9 @@ export const COLLECTIONS = [
       ['email_send_at', 'd', null, false],
       ['email_error', 's', 500, false],
       ['received_at', 'd', null, false],
+      // When the admins were emailed that it had been made. Once, so the
+      // order's own later updates never tell them again. See po-notice.js.
+      ['admin_told_at', 'd', null, false],
       // The spends that received it, comma separated.
       ['expense_ids', 's', 1000, false],
     ],
