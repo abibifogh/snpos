@@ -15,6 +15,7 @@ import {
   SYSTEM_ACCOUNT_CODES,
 } from './schema.mjs';
 import { schemaFingerprint } from './schema-fingerprint.mjs';
+import { leftoversToRelax, relaxCall } from './leftover-columns.mjs';
 // The same code the function signs with, so the key made here is the key
 // that works there. It imports nothing but node:crypto.
 import { makeKeys } from '../functions/notify/src/webpush.js';
@@ -279,6 +280,27 @@ async function relaxIfNowOptional(colId, tuple, live) {
 }
 
 /**
+ * Make a required column the schema no longer has optional. See
+ * leftover-columns.mjs: left required, it refuses every row the code writes.
+ */
+async function relaxLeftover(colId, live) {
+  const call = relaxCall(live);
+  if (!call) {
+    log('  !', `${colId}.${live.key} is required, not in the schema, and cannot be made optional here`);
+    return false;
+  }
+  const [method, args] = call;
+  try {
+    await db[method](DB_ID, colId, live.key, ...args);
+    log('  ~', `${colId}.${live.key} is left over from an older schema; no longer required`);
+    return true;
+  } catch (e) {
+    log('  !', `could not relax leftover ${colId}.${live.key}: ${e.message}`);
+    return false;
+  }
+}
+
+/**
  * Poll until every listed attribute reports status "available".
  *
  * Appwrite builds attributes in a background queue, so a wide collection on a
@@ -375,6 +397,10 @@ async function main() {
         continue;
       }
       await ensure(`${col.id}.${attr[0]}`, () => createAttribute(col.id, attr));
+    }
+    // Columns an older schema left behind, still required and refusing writes.
+    for (const old of leftoversToRelax(col.attributes, Object.values(live))) {
+      if (await relaxLeftover(col.id, old)) created++;
     }
 
     if (col.indexes?.length) {
