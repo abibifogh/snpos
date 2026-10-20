@@ -685,3 +685,54 @@ test('a difference found counting the KITCHEN in is emailed as the kitchen\'s', 
   assert.match(mail[0].html, /The kitchen was counted in at the start of the shift/);
   assert.match(mail[0].html, /A kitchen count needs your approval/);
 });
+
+/* ------------------------------------------- a purchase order, told to the admins */
+
+const ORDER = {
+  $id: 'po1', venue_id: 'main', po_no: 'PO-0004', module: 'bar', status: 'waiting',
+  supplier_name: 'Accra Brewery', total: 720_000, created_by: 'u-godfred', created_by_name: 'Godfred',
+  lines: JSON.stringify([{ name: 'Club Large', qty: 600, unit: 'bottle', buy_key: 'unit', buy_label: 'bottles', unit_cost: 1200 }]),
+};
+const orderMail = () => outbox.filter((m) => /PO-0004/.test(m.subject));
+const stamped = () => updates.filter((u) => u.table === 'stock_orders' && u.data.admin_told_at);
+
+test('an order over the limit is emailed to the admins the moment it is made', async () => {
+  reset([
+    { $id: 'p1', user_id: 'u-owner', role: 'admin', email: 'owner@bistro.com', active: true },
+    { $id: 'p2', user_id: 'u-godfred', role: 'manager', email: 'godfred@bistro.com', active: true },
+  ]);
+  await run({ ...ORDER }, 'databases.snpos.collections.stock_orders.documents.po1.create');
+  const mail = orderMail();
+  assert.equal(mail.length, 1);
+  assert.equal(mail[0].to, 'owner@bistro.com', 'the admin, not the manager who made it');
+  assert.match(mail[0].subject, /PO-0004 to Accra Brewery needs your approval · GH₵7200\.00/);
+  assert.match(mail[0].html, /Godfred has made purchase order <strong>PO-0004<\/strong> for the bar/);
+  assert.match(mail[0].html, /Club Large/);
+  assert.match(mail[0].html, /Money, Waiting for you/);
+  assert.equal(stamped().length, 1, 'stamped, so it is never told twice');
+});
+
+test('one under the limit says it is ready to send', async () => {
+  reset([{ $id: 'p1', user_id: 'u-owner', role: 'admin', email: 'owner@bistro.com', active: true }]);
+  await run({ ...ORDER, status: 'ready' }, 'databases.snpos.collections.stock_orders.documents.po1.update');
+  const mail = orderMail();
+  assert.equal(mail.length, 1);
+  assert.match(mail[0].subject, /^New purchase order PO-0004/);
+  assert.match(mail[0].html, /ready to send to the supplier now/);
+});
+
+test('a draft, or an order already told about, sends nothing', async () => {
+  reset([{ $id: 'p1', user_id: 'u-owner', role: 'admin', email: 'owner@bistro.com', active: true }]);
+  await run({ ...ORDER, status: 'draft' }, 'databases.snpos.collections.stock_orders.documents.po1.create');
+  await run({ ...ORDER, admin_told_at: '2026-10-20T12:00:00.000Z' },
+    'databases.snpos.collections.stock_orders.documents.po1.update');
+  assert.equal(orderMail().length, 0);
+  assert.equal(stamped().length, 0);
+});
+
+test('the only admin making their own order is not emailed about it', async () => {
+  reset([{ $id: 'p1', user_id: 'u-owner', role: 'admin', email: 'owner@bistro.com', active: true }]);
+  await run({ ...ORDER, created_by: 'u-owner' }, 'databases.snpos.collections.stock_orders.documents.po1.create');
+  assert.equal(orderMail().length, 0);
+  assert.equal(stamped().length, 1, 'still stamped: there was nobody else to tell');
+});

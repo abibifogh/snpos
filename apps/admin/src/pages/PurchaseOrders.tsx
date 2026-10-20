@@ -407,8 +407,8 @@ function OrderModal({
     });
     if (!submit) return `${saved.po_no} saved as a draft.`;
     return saved.status === 'waiting'
-      ? `${saved.po_no} is over ${money(limit)}, so it waits on Waiting for you before it can be sent.`
-      : `${saved.po_no} is ready to send.`;
+      ? `${saved.po_no} is over ${money(limit)}, so it waits on Waiting for you before it can be sent. The admins are being emailed.`
+      : `${saved.po_no} is ready to send. The admins are being emailed.`;
   });
 
   const copy = () => run('copy', async () => {

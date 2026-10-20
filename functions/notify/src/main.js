@@ -2,6 +2,7 @@ import { Client, Databases, Query, Users } from 'node-appwrite';
 import nodemailer from 'nodemailer';
 import { receiptPdf, portionsOf } from './receipt-pdf.js';
 import { purchaseOrderPdf } from './po-pdf.js';
+import { orderToTell, orderNoticeRecipients, orderNoticeSubject, orderNoticeBody } from './po-notice.js';
 import { bookingSittings, bookingSheetPdf } from './booking-sheet.js';
 import { ordersForSide, shelfCheckSummary } from './shift-shape.js';
 import { houseRecipients, sendToEach } from './house.js';
@@ -251,6 +252,70 @@ async function sweepUnavailable({ db, DB_ID, settings, transport, from, log, err
   }
   log(`Alerted about ${open.total} dishes off over ${hours}h.`);
   return { alerted: open.total };
+}
+
+/**
+ * A purchase order somebody has just finished, told to the admins.
+ *
+ * Sent from the order's own event, and again from the hourly run for any the
+ * event missed. Stamped `admin_told_at` once it has gone (or once there was
+ * nobody to tell), so neither ever sends it twice. See po-notice.js.
+ */
+async function tellAdminsAboutOrder({ db, DB_ID, settings, transport, from, doc, log, error }) {
+  if (!orderToTell(doc)) return { skipped: true };
+  const stamp = () => db.updateDocument(DB_ID, 'stock_orders', doc.$id, { admin_told_at: new Date().toISOString() })
+    .catch((e) => error(`Could not stamp order ${doc.po_no}: ${e.message}`));
+
+  const profiles = await db.listDocuments(DB_ID, 'staff_profiles', [
+    Query.equal('role', 'admin'), Query.limit(100),
+  ]).catch(() => ({ documents: [] }));
+  const fallback = await alertRecipients({ db, DB_ID, configured: '' });
+  const to = orderNoticeRecipients(profiles.documents, doc.created_by, fallback);
+
+  if (to.length === 0) {
+    // The admin who made it is the only one: there is nobody else to tell.
+    await stamp();
+    return { told: 0 };
+  }
+  if (!transport) {
+    // Left unstamped, so the hourly run sends it once email is set up.
+    error(`Order ${doc.po_no} was made but SMTP is not configured, so no admin was told.`);
+    return { ok: false, error: 'no smtp' };
+  }
+  const m = (n) => money(n, settings);
+  await transport.sendMail({
+    from,
+    to: to.join(','),
+    subject: orderNoticeSubject(doc, m),
+    html: shell(
+      doc.status === 'waiting' ? `Order ${doc.po_no} needs your approval` : `New order ${doc.po_no}`,
+      orderNoticeBody(doc, m, esc),
+      settings.primary_color || '#0f766e',
+    ),
+  });
+  await stamp();
+  log(`Told ${to.length} admin(s) about order ${doc.po_no}.`);
+  return { told: to.length };
+}
+
+/**
+ * Orders the event missed: done in the last week and never told about.
+ * The week keeps an email from arriving about an order long since dealt with.
+ */
+async function sweepOrderNotices({ db, DB_ID, settings, transport, from, log, error }) {
+  const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const rows = await db.listDocuments(DB_ID, 'stock_orders', [
+    Query.equal('status', ['waiting', 'ready']),
+    Query.isNull('admin_told_at'),
+    Query.greaterThan('$createdAt', since),
+    Query.limit(50),
+  ]).catch(() => ({ documents: [] }));
+  let told = 0;
+  for (const doc of rows.documents) {
+    const r = await tellAdminsAboutOrder({ db, DB_ID, settings, transport, from, doc, log, error });
+    if (r.told) told++;
+  }
+  return { orders: rows.documents.length, told };
 }
 
 /**
@@ -1166,6 +1231,7 @@ export default async ({ req, res, log, error }) => {
       ['availability', () => sweepUnavailable({ db, DB_ID, settings, transport, from, log, error })],
       ['stale_shifts', () => sweepStaleShifts({ db, DB_ID, settings, transport, from, shell, log, error })],
       ['approvals', () => sweepApprovals({ db, DB_ID, settings, transport, from, log, error })],
+      ['order_notices', () => sweepOrderNotices({ db, DB_ID, settings, transport, from, log, error })],
       // After the first word, so a count filed an hour ago is never escalated
       // before it has been announced. See overdue-counts.js.
       ['overdue_counts', () => sweepOverdueCounts({ db, DB_ID, settings, transport, from, log, error })],
@@ -1418,7 +1484,11 @@ export default async ({ req, res, log, error }) => {
       person who asked will see it.
     */
     if (events.some((e) => e.includes('collections.stock_orders'))) {
-      if (!doc?.email_send_at) return res.json({ ok: true, skipped: 'no email asked for' });
+      // An order just finished is told to the admins first, once. A failure
+      // here must not stop a supplier email asked for in the same write.
+      const told = await tellAdminsAboutOrder({ db, DB_ID, settings, transport, from, doc, log, error })
+        .catch((e) => { error(`Telling the admins about ${doc?.po_no}: ${e.message}`); return { ok: false }; });
+      if (!doc?.email_send_at) return res.json({ ok: true, told, skipped: 'no email asked for' });
       const done = (fields) => db.updateDocument(DB_ID, 'stock_orders', doc.$id, { email_send_at: null, ...fields })
         .catch((e) => error(`Could not update order ${doc.po_no}: ${e.message}`));
       const to = String(doc.supplier_email || '').trim();
