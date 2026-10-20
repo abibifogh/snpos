@@ -64,7 +64,7 @@ const CANNOT_STORE_SOURCE =
  * which screen it was entered from.
  */
 export function ExpenseModal({
-  module, venueId, shiftId, settings, userId, expense, askPaidFrom = true, fromFloatId, desk = 'till', receive = false, bill = false, onClose, onDone,
+  module, venueId, shiftId, settings, userId, expense, askPaidFrom = true, fromFloatId, desk = 'till', receive = false, bill = false, forOrder, onClose, onDone,
 }: {
   module: Module;
   venueId: string;
@@ -122,6 +122,12 @@ export function ExpenseModal({
    * office may pay by transfer, and a new office spend comes off no drawer.
    */
   desk?: ExpenseDesk;
+  /**
+   * Opened from a purchase order: that order is picked as soon as the form
+   * has loaded, exactly as if somebody had chosen it under "For an order",
+   * so its supplier and what is still to come fill in. See pickOrder.
+   */
+  forOrder?: string;
   /**
    * Opened as Receive stock: the same form, worded for a delivery. The items
    * come first and are required, and the place they go into is asked for.
@@ -222,6 +228,8 @@ export function ExpenseModal({
    */
   const [orders, setOrders] = useState<PurchaseOrderDoc[]>([]);
   const [orderId, setOrderId] = useState('');
+  /** The suppliers and items have loaded, so an order can be filled in. */
+  const [loaded, setLoaded] = useState(false);
   const [receipt, setReceipt] = useState<{ file: File; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
   /**
@@ -360,6 +368,19 @@ export function ExpenseModal({
     setChecked(null);
   };
 
+  /*
+    Opened from an order: pick it once its list and the suppliers are in, so
+    the supplier lands on the right one rather than as a typed name. Once,
+    so somebody who changes it to "Not for an order" is not overruled.
+  */
+  const [usedForOrder, setUsedForOrder] = useState(false);
+  useEffect(() => {
+    if (!forOrder || usedForOrder || !loaded || !orders.some((o) => o.$id === forOrder)) return;
+    setUsedForOrder(true);
+    pickOrder(forOrder);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forOrder, usedForOrder, loaded, orders]);
+
   useEffect(() => {
     (async () => {
       const [opts, m, ing] = await Promise.all([
@@ -423,6 +444,7 @@ export function ExpenseModal({
         setMethodId((cur) => cur || allowed.find((x) => x.kind === 'cash')?.$id || allowed[0]?.$id || '');
       }
       setIngredients(ing.filter((i) => i.active).sort((a, b) => a.name.localeCompare(b.name)));
+      setLoaded(true);
       // What a spend being corrected already put on the shelf, so nobody
       // re-enters it and raises the stock twice.
       if (editing) {
