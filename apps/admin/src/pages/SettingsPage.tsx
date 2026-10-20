@@ -45,6 +45,7 @@ const FIELD_LABELS: Record<string, string> = {
   stock_check_mode: 'How the stock check asks',
   stock_count_decimals: 'Part amounts in the stock count',
   bar_count_skippable: 'Letting staff skip the bar count',
+  kitchen_stock_check: 'How the kitchen checks its stock',
   imprest_custodian_counts: 'Letting a petty cash holder count their own box',
   craft_counts_enabled: 'Whether the shop counts its shelves',
   expense_paid_from: 'What money spent during a shift can come out of',
@@ -288,6 +289,7 @@ export function SettingsPage() {
         stock_check_mode: form.stock_check_mode ?? 'levels',
         stock_count_decimals: form.stock_count_decimals !== false,
         bar_count_skippable: form.bar_count_skippable === true,
+        kitchen_stock_check: form.kitchen_stock_check === 'count' ? 'count' : 'levels',
         imprest_custodian_counts: form.imprest_custodian_counts === true,
         // Written as "on unless switched off", matching how it is read. See
         // shopCountsOn: a blank must never take the page away.
@@ -726,11 +728,44 @@ export function SettingsPage() {
 
         <h3 style={{ marginTop: '1.6rem' }}>Counting at the end of a shift</h3>
         <p className="small dim">
-          Every side now counts out on the count sheet before it closes, the kitchen included, and every difference
-          waits on <strong>Waiting for you</strong> to be agreed or charged. The close itself only asks OK, Low or
-          Out about items marked <strong>Just check it</strong> under <strong>Stock</strong>: the cheap and bulky
+          The bar and the shop count out on the count sheet before they close, and every difference waits on
+          {' '}<strong>Waiting for you</strong> to be agreed or charged. Their close then only asks OK, Low or Out
+          about items marked <strong>Just check it</strong> under <strong>Stock</strong>: the cheap and bulky
           things, like salt and oil, that are not worth a number.
         </p>
+
+        {mods.kitchen && (
+          <>
+            <Field label="How the kitchen checks its stock">
+              <Select
+                value={form.kitchen_stock_check === 'count' ? 'count' : 'levels'}
+                onChange={(e) => set('kitchen_stock_check', e.target.value as 'levels' | 'count')}
+              >
+                <option value="levels">OK, Low or Out at the close</option>
+                <option value="count">Count it in and out on the count sheet</option>
+              </Select>
+            </Field>
+            <p className="small dim" style={{ marginBottom: 0 }}>
+              {form.kitchen_stock_check === 'count' ? (
+                <>
+                  <strong>Counted.</strong> The kitchen is asked to count every ingredient when a shift opens and
+                  again before it closes, on the same sheet as the bar. What was counted is set against what the
+                  recipes say should be left, which is where waste and over-portioning show up, and each
+                  difference waits on <strong>Waiting for you</strong>. It is slower, and it is asked for rather
+                  than forced: a cook can close without it.
+                </>
+              ) : (
+                <>
+                  <strong>OK, Low or Out, which is the quick check.</strong> No count sheet at either end. At the
+                  close the cook taps OK, Low or Out against every ingredient; anything Low or Out goes into the
+                  shift summary, and Out sets the stock to nothing. Write a guide under each ingredient in
+                  {' '}<strong>Stock</strong> so “low” means the same thing to everybody. A full count can still be
+                  done from <strong>Count</strong> in the sidebar whenever you want the real figures.
+                </>
+              )}
+            </p>
+          </>
+        )}
 
         {/* Only where there is a bar. A kitchen counts once, at the end, and
             nobody hands the rice over. */}

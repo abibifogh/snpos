@@ -73,6 +73,12 @@ export interface Settings extends Doc {
    */
   bar_count_skippable?: boolean;
   /**
+   * How the kitchen checks its larder: OK, Low or Out at the close
+   * ('levels', and absent means this), or counted in and out on the count
+   * sheet like the bar ('count'). See kitchenCounts.
+   */
+  kitchen_stock_check?: 'levels' | 'count';
+  /**
    * Whether whoever holds a petty cash box may count it themselves.
    *
    * Off unless set. A count is the check ON the custodian, and it catches

@@ -11,7 +11,7 @@ import {
   recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, shouldWarnLateOrder,
   referenceProblem, referenceRequired, referenceWords,
   discountPlacedOrder, findCode, codeProblem, needsManager, discountAmount, discountLabelFor,
-  listAll, Query,
+  listAll, Query, countsOutAtClose,
   HANDOVER_ENABLED, ownFigure, floatOrigin, floatMethods, hasOpeningCount,
 } from '@snpos/core';
 import type {
@@ -114,8 +114,14 @@ export function CombinedBar({
   // Which question the restaurant has chosen to ask, and what the answers come
   // to. Worked out here rather than in the form so the close button and the
   // boxes on screen can never be judging different things.
-  // OK, Low or Out only, for the "just check it" items. Everything with a
-  // number is on the count sheet. See countsOutAtClose.
+  /*
+    Whether this kitchen counts in and out on the count sheet, or only says
+    OK, Low or Out about every ingredient at the close. A glance unless an
+    admin has chosen counting under Settings, Stock. See kitchenCounts.
+  */
+  const countsSheet = countsOutAtClose('kitchen', settings);
+  // Amounts are never typed on the closing screen: what is counted is counted
+  // on the sheet. The close only ever taps OK, Low or Out.
   const counting = false;
   const stockDecimals = settings.stock_count_decimals !== false;
   const resolved = resolveCounts(stockList, stockCounts, stockDecimals);
@@ -141,11 +147,12 @@ export function CombinedBar({
   useEffect(() => { void reload(); }, [reload]);
 
   useEffect(() => {
-    if (!shift) { setCountedIn(null); return; }
+    // A kitchen that only glances has nothing to count in.
+    if (!shift || !countsSheet) { setCountedIn(null); return; }
     // Unknown is not "no": a read that failed offers nothing rather than
     // asking somebody to count a shelf they may already have counted.
     void hasOpeningCount(shift.$id).then(setCountedIn).catch(() => setCountedIn(null));
-  }, [shift?.$id]);
+  }, [shift?.$id, countsSheet]);
 
   const startOpen = async () => {
     const m = await loadPaymentMethods(venue.$id);
@@ -190,8 +197,10 @@ export function CombinedBar({
       setOpening(false);
       onToast('Shift opened');
       // Straight into the count, while nothing has been cooked from the shelf.
-      setCountedIn(false);
-      setCountingIn(true);
+      if (countsSheet) {
+        setCountedIn(false);
+        setCountingIn(true);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not open the shift.');
     } finally {
@@ -201,7 +210,7 @@ export function CombinedBar({
 
   const startClose = async (countDone = false) => {
     if (!shift) return;
-    if (!countDone && !countedOut) {
+    if (countsSheet && !countDone && !countedOut) {
       // Anything the server missed is poured first, so the count is measured
       // against what was really cooked. Pours nothing twice.
       await pourMissedSales({ venueId: venue.$id, shiftId: shift.$id, module: 'kitchen', userId: who?.user_id || who?.$id || '' })
@@ -257,7 +266,7 @@ export function CombinedBar({
         out: takings.expensesTotal - takings.ownMoneyTotal,
         ownMoney: takings.ownMoneyTotal,
       });
-      const list = await stockCheckRows(venue.$id, shift?.module ?? 'kitchen');
+      const list = await stockCheckRows(venue.$id, shift?.module ?? 'kitchen', settings);
       setStockList(list);
       setLevels(Object.fromEntries(list.map((i) => [i.$id, 'OK' as const])));
       setStockCounts({});
@@ -536,7 +545,7 @@ export function CombinedBar({
           }
         >
           {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
-          {!countedOut && (
+          {countsSheet && !countedOut && (
             <Notice tone="warn">
               <strong>The kitchen was not counted out.</strong>
               <div className="small" style={{ marginTop: '0.3rem' }}>

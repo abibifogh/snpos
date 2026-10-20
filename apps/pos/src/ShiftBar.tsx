@@ -90,18 +90,19 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   */
   const countsShelves = countsAtBothEnds(ctx.module);
   /*
-    The kitchen counts IN, and only in: its close is still the larder check on
-    the closing screen. Asked for when the shift opens and can be done later;
+    The kitchen counts in only when it is set to count rather than glance
+    (Settings, Stock). Asked for when the shift opens and can be done later;
     a difference is held and emailed exactly as the bar's is. See
-    countsInAtOpen.
+    countsInAtOpen and kitchenCounts.
   */
-  const kitchenCountsIn = !countsShelves && countsInAtOpen(ctx.module);
+  const kitchenCountsIn = !countsShelves && countsInAtOpen(ctx.module, ctx.settings);
   /*
-    Every side counts out on the sheet before it closes, the kitchen included,
-    and every difference waits on Waiting for you. The kitchen's is asked for,
-    never forced. See countsOutAtClose.
+    The bar and the shop count out on the sheet before they close, and so does
+    a kitchen set to count; every difference waits on Waiting for you. A
+    kitchen that glances says OK, Low or Out about every ingredient on the
+    close instead. See countsOutAtClose.
   */
-  const countsOut = countsOutAtClose(ctx.module);
+  const countsOut = countsOutAtClose(ctx.module, ctx.settings);
   const shiftId = ctx.shift?.$id;
   /*
     THE SHEET BELONGS TO THE SIDE THAT COUNTS, AND GOES WITH IT.
@@ -186,7 +187,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       window.clearTimeout(timer);
       window.removeEventListener('online', again);
     };
-  }, [countsShelves, shopCounts, shiftId]);
+  }, [countsShelves, kitchenCountsIn, shopCounts, shiftId]);
 
   /**
    * Whether the count is optional. It is not, unless an admin has said so.
@@ -398,10 +399,11 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         different basis — the business total rather than the bar's own — and
         two counts of one shelf that disagree is worse than either alone.
       */
-      // Only the "just check it" items: everything else was on the count sheet.
+      // Only the "just check it" items where everything else was on the count
+      // sheet; every ingredient where the kitchen glances rather than counts.
       const list = ctx.module === 'craft'
         ? []
-        : await stockCheckRows(ctx.venue.$id, ctx.module);
+        : await stockCheckRows(ctx.venue.$id, ctx.module, ctx.settings);
       setStockList(list);
       setLevels(Object.fromEntries(list.map((i) => [i.$id, 'OK' as const])));
       setStockCounts({});

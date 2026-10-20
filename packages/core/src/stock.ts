@@ -11,7 +11,7 @@ import type { RelinkPlan, LinkRow, LinkSize, LinkItem, ShelfRow, SoldLink } from
 import {
   variancesIn, wasCountedBar, shiftCounted, countable, countableBy, filedCounts, undoDeltas, undoProblem,
   movesOnItsOwn, storeCountId, isStoreCount, STORE_COUNT_PREFIX, isPending, approveDeltas, refuseLines, countSide,
-  replacedLines, olderWaiting, checkOnly, countedOnSheet,
+  replacedLines, olderWaiting, checkOnly, countedOnSheet, countsOutAtClose,
 } from './bar-count';
 import type { FiledCheck } from './bar-count';
 import { levelFor, transferQty, transferMovements, purchaseLocation, saleLocation } from './locations';
@@ -432,7 +432,11 @@ export interface StockCheckRow {
  * both ask this question, and two copies of it is two chances for the list a
  * cook sees to depend on which device they picked up.
  */
-export async function stockCheckRows(venueId: string, module: Module = 'kitchen'): Promise<StockCheckRow[]> {
+export async function stockCheckRows(
+  venueId: string,
+  module: Module = 'kitchen',
+  settings?: { kitchen_stock_check?: string | null } | null,
+): Promise<StockCheckRow[]> {
   const [ingredients, categories] = await Promise.all([
     loadIngredients(venueId),
     listAll<{ key: string; name: string; sort?: number; active?: boolean }>('ingredient_categories').catch(() => []),
@@ -478,14 +482,15 @@ export async function stockCheckRows(venueId: string, module: Module = 'kitchen'
   );
 
   /*
-    ONLY THE ITEMS THAT ARE JUST CHECKED.
+    WHAT THE COUNT SHEET DID NOT ALREADY ASK ABOUT.
 
-    Everything that is counted is counted on the count sheet, on every side,
-    and its difference waits on Waiting for you like the bar's always has.
-    What is left for the close is the quick look: OK, Low or Out against the
-    items an admin has marked "just check it". See checkOnly.
+    A side that counts out on the sheet is asked OK, Low or Out only about the
+    items an admin has marked "just check it" (see checkOnly); everything else
+    was counted a moment ago. A kitchen that glances rather than counts has no
+    sheet, so the close asks about every ingredient. See countsOutAtClose.
   */
-  return checkOnly(shiftCounted(mine))
+  const glanced = countsOutAtClose(module, settings) ? checkOnly(shiftCounted(mine)) : shiftCounted(mine);
+  return glanced
     .sort(
       (a, b) =>
         rank(a.category) - rank(b.category) ||
