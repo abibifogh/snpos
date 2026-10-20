@@ -1417,9 +1417,9 @@ export default async ({ req, res, log, error }) => {
       fires the event again, and a failure is written on the order where the
       person who asked will see it.
     */
-    if (events.some((e) => e.includes('collections.purchase_orders'))) {
+    if (events.some((e) => e.includes('collections.stock_orders'))) {
       if (!doc?.email_send_at) return res.json({ ok: true, skipped: 'no email asked for' });
-      const done = (fields) => db.updateDocument(DB_ID, 'purchase_orders', doc.$id, { email_send_at: null, ...fields })
+      const done = (fields) => db.updateDocument(DB_ID, 'stock_orders', doc.$id, { email_send_at: null, ...fields })
         .catch((e) => error(`Could not update order ${doc.po_no}: ${e.message}`));
       const to = String(doc.supplier_email || '').trim();
       if (!to) {

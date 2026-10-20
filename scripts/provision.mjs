@@ -16,6 +16,7 @@ import {
 } from './schema.mjs';
 import { schemaFingerprint } from './schema-fingerprint.mjs';
 import { leftoversToRelax, relaxCall } from './leftover-columns.mjs';
+import { movedOrderRow } from './order-move.mjs';
 // The same code the function signs with, so the key made here is the key
 // that works there. It imports nothing but node:crypto.
 import { makeKeys } from '../functions/notify/src/webpush.js';
@@ -413,6 +414,33 @@ async function main() {
     }
   }
   log('✓', `Collections (${COLLECTIONS.length})`);
+
+  // ---- purchase orders, out of the old collection ------------------------
+  //
+  // See order-move.mjs. Copied under the same id, once: a row already in
+  // stock_orders is never written again, so a later edit is never undone.
+  {
+    let old = [];
+    try {
+      await db.getCollection(DB_ID, 'purchase_orders');
+      old = await allDocuments('purchase_orders');
+    } catch (e) {
+      if (e?.code !== 404) throw new Error(`reading the old purchase orders: ${e.message}`);
+    }
+    if (old.length) {
+      const keys = COLLECTIONS.find((c) => c.id === 'stock_orders').attributes.map((a) => a[0]);
+      await waitForAttributes('stock_orders', keys);
+      const have = new Set((await allDocuments('stock_orders')).map((d) => d.$id));
+      for (const o of old) {
+        if (have.has(o.$id)) continue;
+        const row = movedOrderRow(o, keys);
+        if (!row) continue;
+        await ensure(`order ${o.po_no} moved to stock_orders`, () =>
+          db.createDocument(DB_ID, 'stock_orders', o.$id, row, o.$permissions ?? []),
+        );
+      }
+    }
+  }
 
   // ---- buckets -----------------------------------------------------------
   //

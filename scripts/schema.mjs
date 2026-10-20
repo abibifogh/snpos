@@ -2232,9 +2232,20 @@ export const COLLECTIONS = [
      * Anyone working may update a row, because the person recording the spend
      * that receives it is whoever was at the till; who may MAKE and SEND one is
      * a per-person permission, checked in the app (can_order_stock).
+     *
+     * A NEW COLLECTION, NOT 'purchase_orders'. That id belonged to an older
+     * design and the live one carries its leftovers: required columns the
+     * code never writes, a unique index on a number nobody fills in, and a
+     * column (`module`) that Appwrite holds on every row but no longer lists
+     * — so every UPDATE was refused with "Unknown attribute: module" whatever
+     * the app sent, and an order could be saved but never sent for approval.
+     * Starting clean was the only repair the code could make. Old rows are
+     * copied across under the same ids by provisioning (see order-move.mjs),
+     * so a spend that points at one still finds it. The old collection is
+     * left where it is, untouched.
      */
-    id: 'purchase_orders',
-    name: 'Purchase orders',
+    id: 'stock_orders',
+    name: 'Orders to suppliers',
     perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: ADMIN },
     attributes: [
       ['venue_id', 's', 64, true],
