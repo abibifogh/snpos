@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Field, Input, Modal, Notice, Segmented, Select, Spinner, Textarea, useToast } from '@snpos/ui';
+import { Badge, Button, Card, Field, Input, Modal, Notice, Segmented, Select, Spinner, Textarea, useToast, ExpenseModal } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
   loadPurchaseOrders, loadOrderables, savePurchaseOrder, markOrderSent, askToEmailOrder, cancelPurchaseOrder,
@@ -7,9 +7,9 @@ import {
   isEditableOrder, isOpenOrder, orderNeedsApproval, canOrderStock, PO_STATUS_WORDS,
   loadFeatures, featureConfig, formatMoney, dateTimeWords, downloadFile, MODULE_LABELS,
   modulesOf, SIDE_NAMES, itemsFor, newSupplierProblem, addSupplier, parseUnitPrice, unitPriceInput, parseQty,
-  ORDER_ROLES, orderRoles, orderRolesValue, saveDropping,
+  ORDER_ROLES, orderRoles, orderRolesValue, saveDropping, canOpen,
 } from '@snpos/core';
-import type { PurchaseOrderDoc, PoLine, OrderSupplier, Ingredient, Module, Suggestion, FeatureMap } from '@snpos/core';
+import type { PurchaseOrderDoc, PoLine, OrderSupplier, Ingredient, Module, Suggestion, FeatureMap, Settings } from '@snpos/core';
 /* The same builder the email attaches, so the office's copy and the
    supplier's are one document. See functions/notify/src/po-pdf.js. */
 import { purchaseOrderPdf } from '../../../../functions/notify/src/po-pdf.js';
@@ -43,6 +43,14 @@ export function PurchaseOrdersPage() {
   const [show, setShow] = useState<Show>('open');
   /** The order being written or read: an existing one, or a new one's starting lines. */
   const [open, setOpen] = useState<{ order?: PurchaseOrderDoc; start?: Suggestion } | null>(null);
+  /**
+   * The order whose delivery is being recorded, on the till's own spend form
+   * with the order already picked. The same form, so a delivery booked here
+   * reaches the shelf and the books exactly as one booked at a till does.
+   */
+  const [receiving, setReceiving] = useState<PurchaseOrderDoc | null>(null);
+  /** Recording a spend here is the Spending page's permission. */
+  const mayReceive = canOpen('expenses', profile, settings);
 
   const load = async () => {
     setError(null);
@@ -94,7 +102,8 @@ export function PurchaseOrdersPage() {
           <h1>Purchase orders</h1>
           <p className="dim small" style={{ margin: '0.2rem 0 0', maxWidth: '64ch' }}>
             Orders to suppliers for things running low. Send one as a PDF, a message or an email. When the goods
-            arrive, record the spend as usual and pick the order: its items fill in and go into stock.
+            arrive, press Record the delivery on the order, or record the spend at a till and pick the order: its
+            items fill in and go into stock.
             {limit > 0 && ` Orders over ${money(limit)} wait on Waiting for you before they can be sent.`}
           </p>
         </div>
@@ -173,7 +182,14 @@ export function PurchaseOrdersPage() {
                         <Badge tone={st.tone}>{st.label}</Badge>
                         {o.email_error && <div className="small" style={{ color: 'var(--danger)' }}>Email failed</div>}
                       </td>
-                      <td className="num"><Button size="sm" onClick={() => setOpen({ order: o })}>Open</Button></td>
+                      <td className="num">
+                        <div className="row" style={{ gap: '0.4rem', justifyContent: 'flex-end' }}>
+                          {mayReceive && isOpenOrder(o.status) && (
+                            <Button size="sm" variant="primary" onClick={() => setReceiving(o)}>Record the delivery</Button>
+                          )}
+                          <Button size="sm" onClick={() => setOpen({ order: o })}>Open</Button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -182,6 +198,25 @@ export function PurchaseOrdersPage() {
           </div>
         )}
       </Card>
+
+      {receiving && settings && (
+        <ExpenseModal
+          receive
+          desk="office"
+          module={(receiving.module ?? 'kitchen') as Module}
+          venueId={receiving.venue_id || 'main'}
+          shiftId=""
+          settings={settings as Settings}
+          userId={user?.$id ?? ''}
+          forOrder={receiving.$id}
+          onClose={() => setReceiving(null)}
+          onDone={(m) => {
+            setReceiving(null);
+            toast(m);
+            void load();
+          }}
+        />
+      )}
 
       {open && settings && (
         <OrderModal
@@ -206,6 +241,7 @@ export function PurchaseOrdersPage() {
             await load();
           }}
           onError={(m) => toast(m, 'err')}
+          onReceive={mayReceive ? (o) => { setOpen(null); setReceiving(o); } : undefined}
         />
       )}
     </>
@@ -263,8 +299,10 @@ function WhoOrders({ settings, onSaved, toast }: {
 /** One order: written, read, sent. */
 function OrderModal({
   order, start, items, suppliers, sides, mayAddSupplier, onSupplierAdded,
-  limit, mayOrder, isAdmin, userId, userName, settings, money, onClose, onSaved, onError,
+  limit, mayOrder, isAdmin, userId, userName, settings, money, onClose, onSaved, onError, onReceive,
 }: {
+  /** Record the delivery for this order, where the person may record spending. */
+  onReceive?: (o: PurchaseOrderDoc) => void;
   order?: PurchaseOrderDoc;
   start?: Suggestion;
   items: Ingredient[];
@@ -630,8 +668,20 @@ function OrderModal({
               </div>
             )}
             <p className="small dim" style={{ marginBottom: 0 }}>
-              When it arrives, record the spend as usual and choose {order?.po_no} under "For an order".
+              When it arrives, press Record the delivery below, or record the spend at a till and choose{' '}
+              {order?.po_no} under "For an order".
             </p>
+          </Card>
+        )}
+
+        {/* The goods have come: the till's spend form, with this order picked. */}
+        {order && onReceive && isOpenOrder(order.status) && (
+          <Card title="It has arrived">
+            <p className="small dim" style={{ marginTop: 0 }}>
+              Records the spend that pays for it. What is still to come fills in; change anything that came
+              differently, and say how it was paid, or that it has not been paid yet.
+            </p>
+            <Button variant="primary" disabled={!!busy} onClick={() => onReceive(order)}>Record the delivery</Button>
           </Card>
         )}
 
