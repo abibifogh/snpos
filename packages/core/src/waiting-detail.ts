@@ -80,7 +80,7 @@ export async function loadReview(ref: WaitingRef): Promise<Review> {
   }
 
   if (ref.kind === 'order') {
-    const o = await db.getDocument(DB_ID, 'purchase_orders', ref.orderId).catch(() => null) as
+    const o = await db.getDocument(DB_ID, 'stock_orders', ref.orderId).catch(() => null) as
       { lines?: string; note?: string; total?: number } | null;
     const lines = readLines(o?.lines).filter((l) => l.qty > 0).map((l) => ({
       name_snapshot: `${l.name} (${l.buy_label})`, qty: l.qty, unit_cost: l.unit_cost, line_total: poLineTotal(l),

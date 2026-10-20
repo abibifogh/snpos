@@ -40,7 +40,7 @@ export interface PurchaseOrderDoc {
 }
 
 export const loadPurchaseOrders = (venueId: string): Promise<PurchaseOrderDoc[]> =>
-  listAll<PurchaseOrderDoc>('purchase_orders', [Query.equal('venue_id', venueId)])
+  listAll<PurchaseOrderDoc>('stock_orders', [Query.equal('venue_id', venueId)])
     .then((rows) => rows.sort((a, b) => (b.$createdAt ?? '').localeCompare(a.$createdAt ?? '')));
 
 /** Orders still to arrive on one side: what a spend can receive. */
@@ -51,7 +51,7 @@ export async function openOrdersFor(venueId: string, module?: Module): Promise<P
 
 /** Orders waiting for somebody to approve them, for Waiting for you. */
 export const ordersWaiting = (): Promise<PurchaseOrderDoc[]> =>
-  listAll<PurchaseOrderDoc>('purchase_orders', [Query.equal('status', 'waiting')]).catch(() => []);
+  listAll<PurchaseOrderDoc>('stock_orders', [Query.equal('status', 'waiting')]).catch(() => []);
 
 /** What can be ordered, and who from. */
 export async function loadOrderables(venueId: string): Promise<{ items: Ingredient[]; suppliers: OrderSupplier[] }> {
@@ -122,25 +122,25 @@ export async function savePurchaseOrder(input: {
     ...(status === 'ready' && input.isAdmin ? { approved_by: input.by, approved_at: new Date().toISOString() } : {}),
   };
   if (input.id) {
-    await saveDropping('purchase_orders', input.id, body);
-    return db.getDocument(DB_ID, 'purchase_orders', input.id) as unknown as Promise<PurchaseOrderDoc>;
+    await saveDropping('stock_orders', input.id, body);
+    return db.getDocument(DB_ID, 'stock_orders', input.id) as unknown as Promise<PurchaseOrderDoc>;
   }
-  const used = await listAll<{ po_no: string }>('purchase_orders', [Query.equal('venue_id', input.venueId)])
+  const used = await listAll<{ po_no: string }>('stock_orders', [Query.equal('venue_id', input.venueId)])
     .then((rows) => rows.map((r) => r.po_no)).catch(() => [] as string[]);
-  const { id } = await saveDropping('purchase_orders', null, {
+  const { id } = await saveDropping('stock_orders', null, {
     ...body,
     po_no: nextPoNo(used),
     created_by: input.by,
     created_by_name: input.byName ?? '',
   });
-  return db.getDocument(DB_ID, 'purchase_orders', id) as unknown as Promise<PurchaseOrderDoc>;
+  return db.getDocument(DB_ID, 'stock_orders', id) as unknown as Promise<PurchaseOrderDoc>;
 }
 
 /** Agree to an order over the limit, or not. Agreed, it is ready to send. */
 export async function decidePurchaseOrder(input: {
   id: string; approve: boolean; by: string; note?: string;
 }): Promise<void> {
-  await saveDropping('purchase_orders', input.id, {
+  await saveDropping('stock_orders', input.id, {
     status: input.approve ? 'ready' : 'refused',
     approved_by: input.by,
     approved_at: new Date().toISOString(),
@@ -154,7 +154,7 @@ export async function decidePurchaseOrder(input: {
  * and never send it, so they say when they have.
  */
 export async function markOrderSent(id: string, via: string): Promise<void> {
-  await saveDropping('purchase_orders', id, { status: 'sent', sent_at: new Date().toISOString(), sent_via: via });
+  await saveDropping('stock_orders', id, { status: 'sent', sent_at: new Date().toISOString(), sent_via: via });
 }
 
 /**
@@ -162,11 +162,11 @@ export async function markOrderSent(id: string, via: string): Promise<void> {
  * job builds the PDF, sends it, and marks the order sent once it has gone.
  */
 export async function askToEmailOrder(id: string): Promise<void> {
-  await saveDropping('purchase_orders', id, { email_send_at: new Date().toISOString(), email_error: '' });
+  await saveDropping('stock_orders', id, { email_send_at: new Date().toISOString(), email_error: '' });
 }
 
 export async function cancelPurchaseOrder(id: string): Promise<void> {
-  await saveDropping('purchase_orders', id, { status: 'cancelled' });
+  await saveDropping('stock_orders', id, { status: 'cancelled' });
 }
 
 /**
@@ -181,10 +181,10 @@ export async function receiveOrderFromSpend(input: {
   expenseId: string;
   got: { ingredient_id: string; qty: number }[];
 }): Promise<PoStatus> {
-  const o = await db.getDocument(DB_ID, 'purchase_orders', input.orderId) as unknown as PurchaseOrderDoc;
+  const o = await db.getDocument(DB_ID, 'stock_orders', input.orderId) as unknown as PurchaseOrderDoc;
   const { lines, status } = receiveInto(readLines(o.lines), input.got);
   const ids = [...new Set([...(o.expense_ids ?? '').split(',').filter(Boolean), input.expenseId])].join(',');
-  await saveDropping('purchase_orders', input.orderId, {
+  await saveDropping('stock_orders', input.orderId, {
     lines: JSON.stringify(lines),
     status,
     expense_ids: ids.slice(0, 1000),

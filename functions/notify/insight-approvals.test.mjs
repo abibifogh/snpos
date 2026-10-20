@@ -26,7 +26,7 @@ function world() {
       { $id: 'p3', user_id: 'u3', email: 'ama@example.test', display_name: 'Ama Test', role: 'waiter', active: true },
     ],
     shift_expenses: [{ $id: 'e1', venue_id: 'main', shift_id: 's1', amount: 25000, payee: 'A Gas Seller', category: 'Gas', approval_status: 'pending', created_by: 'u3', $createdAt: '2026-10-17T08:00:00Z' }],
-    purchase_orders: [{ $id: 'o1', venue_id: 'main', po_no: 'PO-0042', supplier_name: 'A Drinks Supplier', status: 'waiting', total: 185000, created_by_name: 'Kofi Test', lines: JSON.stringify([{ name: 'Club beer', qty: 10, buy_label: 'crates', unit_cost: 15000 }]), $createdAt: '2026-10-16T08:00:00Z' }],
+    stock_orders: [{ $id: 'o1', venue_id: 'main', po_no: 'PO-0042', supplier_name: 'A Drinks Supplier', status: 'waiting', total: 185000, created_by_name: 'Kofi Test', lines: JSON.stringify([{ name: 'Club beer', qty: 10, buy_label: 'crates', unit_cost: 15000 }]), $createdAt: '2026-10-16T08:00:00Z' }],
     group_bookings: [
       { $id: 'g1', status: 'pending', contact_name: 'A Choir', email: 'choir@example.test', size: 30, total: 900000, first_at: '2026-10-24T12:00:00Z', $createdAt: '2026-10-15T08:00:00Z' },
       { $id: 'g2', status: 'pending', contact_name: 'A Wedding', size: 80, $createdAt: '2026-10-15T09:00:00Z' },
@@ -122,7 +122,7 @@ test('decisions are written as the app writes them, with an audit row from Insig
   assert.equal((await call(w, '/approvals/decide', { email: 'owner@example.test', kind: 'spend', id: 'e1', decision: 'approve' })).status, 409);
 
   await call(w, '/approvals/decide', { email: 'kofi@example.test', kind: 'order', id: 'o1', decision: 'approve', note: 'Fine this once' });
-  assert.deepEqual([w.tables.purchase_orders[0].status, w.tables.purchase_orders[0].approved_by, w.tables.purchase_orders[0].decided_note], ['ready', 'u2', 'Fine this once']);
+  assert.deepEqual([w.tables.stock_orders[0].status, w.tables.stock_orders[0].approved_by, w.tables.stock_orders[0].decided_note], ['ready', 'u2', 'Fine this once']);
 
   const refused = await call(w, '/approvals/decide', { email: 'owner@example.test', kind: 'group_booking', id: 'g2', decision: 'refuse' });
   assert.equal(refused.status, 409);

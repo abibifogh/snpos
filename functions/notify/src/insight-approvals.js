@@ -119,7 +119,7 @@ export async function listWaiting({ db, DB_ID, Query, person, settings = {}, app
     open: open('spend'),
   })));
 
-  await gather('order', 'Purchase order', async () => (await listAll(db, DB_ID, Query, 'purchase_orders', [Query.equal('status', 'waiting')])).map((o) => {
+  await gather('order', 'Purchase order', async () => (await listAll(db, DB_ID, Query, 'stock_orders', [Query.equal('status', 'waiting')])).map((o) => {
     const lines = parseLines(o.lines);
     return {
       kind: 'order', kindLabel: 'Purchase order over the limit', id: o.$id,
@@ -243,9 +243,9 @@ export async function decide({ db, DB_ID, Query, person, body }) {
   }
   if (kind === 'order') {
     // decidePurchaseOrder, packages/core/src/purchase-orders-store.ts
-    const row = await db.getDocument(DB_ID, 'purchase_orders', id);
+    const row = await db.getDocument(DB_ID, 'stock_orders', id);
     if (row.status !== 'waiting') throw gone('purchase order');
-    await db.updateDocument(DB_ID, 'purchase_orders', id, { status: yes ? 'ready' : 'refused', approved_by: by, approved_at: now, decided_note: note });
+    await db.updateDocument(DB_ID, 'stock_orders', id, { status: yes ? 'ready' : 'refused', approved_by: by, approved_at: now, decided_note: note });
     await audit('purchase_orders', yes ? 'po_approved' : 'po_refused', '', row.venue_id || 'main');
     return { said: yes ? 'Approved' : 'Refused' };
   }
