@@ -3,7 +3,7 @@ import { Badge, Button, FoldCard, Field, Input, Select, Notice, Textarea, Toggle
 import { contrastRatio } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
-  bpToPercent, percentToBp, toInput, parseMoney,
+  bpToPercent, percentToBp,
   ADMIN_SECTIONS, GRANTABLE_ROLES, DEFAULT_ACCESS, parseAccess, asksForTip, modulesOf, saveDropping,
   parseLevies, serialiseLevies, GHANA_LEVIES, dateTimeWords, FULL_COUNT_DAYS, DEFAULT_COUNT_OVER } from '@snpos/core';
 import type { Levy } from '@snpos/core';
@@ -11,6 +11,7 @@ import type { Settings, Doc } from '@snpos/core';
 
 import { useSession } from '../session';
 import { AlsoHere } from '../components/AlsoHere';
+import { MoneyInput } from '../components/MoneyInput';
 
 /**
  * Save the settings, and say exactly what did not save.
@@ -693,12 +694,10 @@ export function SettingsPage() {
 
         {form.shift_float_policy === 'fixed' && (
           <Field label={`The fixed float (${form.currency_symbol})`}>
-            <Input
-              inputMode="decimal"
-              value={toInput(form.shift_float_default ?? 0, form.currency_decimals ?? 2)}
-              onChange={(e) =>
-                set('shift_float_default', parseMoney(e.target.value, form.currency_decimals ?? 2) ?? 0)
-              }
+            <MoneyInput
+              value={form.shift_float_default ?? 0}
+              decimals={form.currency_decimals ?? 2}
+              onChange={(n) => set('shift_float_default', n)}
             />
           </Field>
         )}
@@ -861,10 +860,10 @@ export function SettingsPage() {
                 />
                 <div className="row row-wrap" style={{ gap: '0.6rem', alignItems: 'flex-end', marginTop: '0.6rem' }}>
                   <Field label="Pieces worth at least" hint="Looked at every shift. Nought switches it off.">
-                    <Input
-                      inputMode="decimal"
-                      value={toInput(form.shop_count_over ?? DEFAULT_COUNT_OVER, form.currency_decimals ?? 2)}
-                      onChange={(e) => set('shop_count_over', parseMoney(e.target.value, form.currency_decimals ?? 2) ?? 0)}
+                    <MoneyInput
+                      value={form.shop_count_over ?? DEFAULT_COUNT_OVER}
+                      decimals={form.currency_decimals ?? 2}
+                      onChange={(n) => set('shop_count_over', n)}
                     />
                   </Field>
                 </div>
