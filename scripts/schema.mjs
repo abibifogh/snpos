@@ -454,6 +454,14 @@ export const COLLECTIONS = [
       // one-off pieces that are looked at rather than counted can turn the
       // stocktake off entirely. See shopCountsOn.
       ['craft_counts_enabled', 'b', null, false, true],
+      // What the shop counts at each shift, instead of every piece. See
+      // shop-count.ts: sold or moved this shift, pieces worth at least
+      // shop_count_over (minor units; nought is off), one shelf a day in turn,
+      // and the whole shop on shop_count_full.
+      ['shop_count_sold', 'b', null, false, true],
+      ['shop_count_over', 'i', null, false, 50000],
+      ['shop_count_rotate', 'b', null, false, true],
+      ['shop_count_full', 'e', ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'month', 'never'], false, 'sun'],
       ['stock_variance_threshold_bp', 'i', null, true, 1000],
       ['stock_variance_value_floor', 'i', null, true, 2000],
       ['expense_approval_threshold', 'i', null, true, 20000],
@@ -2635,6 +2643,37 @@ export const COLLECTIONS = [
       ['tab_value', 'i', null, false, 0],
     ],
     indexes: [['shift_issued', 'key', ['shift_id', 'issued_at']]],
+  },
+  {
+    /**
+     * A count somebody is half way through, kept on the server as they type.
+     *
+     * Kept on the device alone, a count was lost to anything that was not the
+     * same tablet on the same shift: a reload, a battery, the next till over.
+     * Saved here on every tap, so it comes back on any till with who counted
+     * how far and when.
+     *
+     * NOT A COUNT. Nothing reads these as figures against a shelf; they are
+     * filed only when somebody presses Send, which writes stock_counts and
+     * removes the draft. One per shift and end, its id `<shift>-<phase>`.
+     */
+    id: 'count_drafts',
+    name: 'Counts in progress',
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: ALL_STAFF },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['side', 'e', ['craft', 'bar', 'kitchen'], true, 'craft'],
+      ['shift_id', 's', 64, true],
+      ['phase', 'e', ['open', 'close'], true, 'close'],
+      // JSON: { "<menuItemId>:<variantId>": { "countedText": "3", "note": "damaged" } }.
+      ['lines', 's', 100000, false, '{}'],
+      ['done', 'i', null, false, 0],
+      ['total', 'i', null, false, 0],
+      ['saved_by', 's', 64, false],
+      ['saved_by_name', 's', 120, false],
+      ['saved_at', 'd', null, false],
+    ],
+    indexes: [['shift', 'key', ['shift_id']]],
   },
   {
     /**

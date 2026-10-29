@@ -8,6 +8,7 @@
 import { __seed, __reset, __all, __missingColumns, __unreachable, setReadOnly } from './core/client.ts';
 import { postOpeningBalances } from './core/books-year-store.ts';
 import { addSupplier } from './core/purchase-orders-store.ts';
+import { movedThisShift, saveServerDraft, loadServerDraft, clearServerDraft } from './core/shop-count-store.ts';
 import {
   barCountSheet, relinkShelves, pourMissedSales, unpouredForShift, saveBarCount, hasOpeningCount,
 } from './core/stock.ts';
@@ -1155,6 +1156,46 @@ console.log('\n=== S2 — a supplier added from an order carries the venue the d
   const row = (__all('suppliers') as any[])[0];
   results.push(['S2 the new supplier row has venue_id, name and active', ok(
     'row', [row?.venue_id, row?.name, row?.active], ['main', 'Accra Brewery', true],
+  )]);
+}
+
+/* ------------------------------------------ the shop's count, kept as it is typed */
+
+console.log('\n=== SC — the shop count knows what moved, and keeps a count in progress on the server ===');
+{
+  __reset();
+  __seed('shifts', [{ $id: 'sh-c', venue_id: 'main', module: 'craft', status: 'OPEN', opened_at: '2026-10-29T08:00:00.000Z' }]);
+  __seed('orders', [{ $id: 'oc1', venue_id: 'main', shift_id: 'sh-c', module: 'craft', status: 'PAID' }]);
+  __seed('order_items', [
+    { $id: 'ic1', order_id: 'oc1', menu_item_id: 'basket', variant_id: 'v-l', qty: 1, status: 'served' },
+    { $id: 'ic2', order_id: 'oc1', menu_item_id: 'stole', variant_id: '', qty: 1, status: 'void' },
+  ]);
+  __seed('menu_items', [
+    { $id: 'mug', module: 'craft', name: 'Mug', $createdAt: '2026-10-29T09:30:00.000Z' },
+    { $id: 'card', module: 'craft', name: 'Card', $createdAt: '2026-01-01T09:00:00.000Z' },
+  ]);
+  const moved = await movedThisShift('sh-c');
+  results.push(['SC sold and added since the shift opened are moved; a voided line and an old piece are not', ok(
+    'moved', [moved.has('basket:v-l'), moved.has('stole:'), moved.has('mug:'), moved.has('card:')], [true, false, true, false],
+  )]);
+
+  const first = await saveServerDraft({
+    venueId: 'main', shiftId: 'sh-c', phase: 'close', lines: { 'basket:v-l': { countedText: '2', note: '' } },
+    done: 1, total: 3, userId: 'u-esi', userName: 'Esi',
+  });
+  const again = await saveServerDraft({
+    venueId: 'main', shiftId: 'sh-c', phase: 'close',
+    lines: { 'basket:v-l': { countedText: '2', note: '' }, 'mug:': { countedText: '0', note: 'damaged' } },
+    done: 2, total: 3, userId: 'u-esi', userName: 'Esi',
+  });
+  const back = await loadServerDraft('sh-c', 'close');
+  results.push(['SC a count in progress is created, then written over, and comes back with who and how far', ok(
+    'draft', [first, again, (__all('count_drafts') as any[]).length, back?.done, back?.savedByName, back?.lines['mug:']?.note],
+    [true, true, 1, 2, 'Esi', 'damaged'],
+  )]);
+  await clearServerDraft('sh-c', 'close');
+  results.push(['SC filing the count removes the draft', ok(
+    'gone', [(__all('count_drafts') as any[]).length, await loadServerDraft('sh-c', 'close')], [0, null],
   )]);
 }
 

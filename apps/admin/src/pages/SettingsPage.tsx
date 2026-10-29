@@ -5,7 +5,7 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   bpToPercent, percentToBp, toInput, parseMoney,
   ADMIN_SECTIONS, GRANTABLE_ROLES, DEFAULT_ACCESS, parseAccess, asksForTip, modulesOf, saveDropping,
-  parseLevies, serialiseLevies, GHANA_LEVIES, dateTimeWords } from '@snpos/core';
+  parseLevies, serialiseLevies, GHANA_LEVIES, dateTimeWords, FULL_COUNT_DAYS, DEFAULT_COUNT_OVER } from '@snpos/core';
 import type { Levy } from '@snpos/core';
 import type { Settings, Doc } from '@snpos/core';
 
@@ -48,6 +48,10 @@ const FIELD_LABELS: Record<string, string> = {
   kitchen_stock_check: 'How the kitchen checks its stock',
   imprest_custodian_counts: 'Letting a petty cash holder count their own box',
   craft_counts_enabled: 'Whether the shop counts its shelves',
+  shop_count_sold: 'Counting what was sold or moved each shift',
+  shop_count_over: 'The price over which a piece is counted every shift',
+  shop_count_rotate: 'Counting one shelf a day, in turn',
+  shop_count_full: 'When the whole shop is counted',
   expense_paid_from: 'What money spent during a shift can come out of',
   kitchen_enabled: 'The kitchen side',
   craft_enabled: 'The craft shop side',
@@ -294,6 +298,11 @@ export function SettingsPage() {
         // Written as "on unless switched off", matching how it is read. See
         // shopCountsOn: a blank must never take the page away.
         craft_counts_enabled: form.craft_counts_enabled !== false,
+        // Written as "on unless switched off", the way shopCountRules reads them.
+        shop_count_sold: form.shop_count_sold !== false,
+        shop_count_over: Math.max(0, Number(form.shop_count_over ?? DEFAULT_COUNT_OVER)),
+        shop_count_rotate: form.shop_count_rotate !== false,
+        shop_count_full: form.shop_count_full ?? 'sun',
         expense_paid_from: form.expense_paid_from ?? 'cash_only',
         kitchen_enabled: mods.kitchen,
         craft_enabled: mods.craft,
@@ -836,6 +845,48 @@ export function SettingsPage() {
                 </>
               )}
             </p>
+
+            {form.craft_counts_enabled !== false && (
+              <>
+                <h3 style={{ marginTop: '1.6rem' }}>What the shop counts at each shift</h3>
+                <p className="small dim" style={{ marginTop: 0 }}>
+                  A short count at every shift instead of every piece, and the whole shop on a set day. Pieces
+                  already waiting for an admin are always left off. With all three switched off, every shift
+                  counts the whole shop.
+                </p>
+                <Toggle
+                  checked={form.shop_count_sold !== false}
+                  onChange={(v) => set('shop_count_sold', v)}
+                  label="Everything sold or added since the shift opened"
+                />
+                <div className="row row-wrap" style={{ gap: '0.6rem', alignItems: 'flex-end', marginTop: '0.6rem' }}>
+                  <Field label="Pieces worth at least" hint="Looked at every shift. Nought switches it off.">
+                    <Input
+                      inputMode="decimal"
+                      value={toInput(form.shop_count_over ?? DEFAULT_COUNT_OVER, form.currency_decimals ?? 2)}
+                      onChange={(e) => set('shop_count_over', parseMoney(e.target.value, form.currency_decimals ?? 2) ?? 0)}
+                    />
+                  </Field>
+                </div>
+                <Toggle
+                  checked={form.shop_count_rotate !== false}
+                  onChange={(v) => set('shop_count_rotate', v)}
+                  label="One shelf a day, in turn"
+                />
+                <p className="small dim" style={{ margin: '0.2rem 0 0.6rem' }}>
+                  The shelves are the shop's categories, taking turns in alphabetical order, so every piece is
+                  walked regularly. Counting in and out on the same day walks the same shelf.
+                </p>
+                <Field label="The whole shop is counted">
+                  <Select
+                    value={form.shop_count_full ?? 'sun'}
+                    onChange={(e) => set('shop_count_full', e.target.value as Settings['shop_count_full'])}
+                  >
+                    {FULL_COUNT_DAYS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+                  </Select>
+                </Field>
+              </>
+            )}
           </>
         )}
 
