@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Badge, Button, FoldCard, Field, Input, Select, Notice, Textarea, Toggle, useToast } from '@snpos/ui';
+import { Badge, Button, FoldCard, Field, Input, Select, Notice, Textarea, Toggle, useToast, InfoTip } from '@snpos/ui';
 import { contrastRatio } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
@@ -363,12 +363,16 @@ export function SettingsPage() {
           </Field>
         </div>
 
-        <h3 style={{ marginTop: '1.6rem' }}>What this business runs</h3>
-        <p className="small dim" style={{ marginTop: 0 }}>
-          Switch on whichever sides you actually run. They can run together under one set of staff and one set
-          of books — a kitchen with a bar and a craft corner is one business, not three systems. Each keeps its
-          own shift and its own drawer, so a short till always has exactly one person to ask.
-        </p>
+        <h3 style={{ marginTop: '1.6rem' }}>
+          What this business runs
+          <InfoTip label="About the sides of the business">
+            Switch on whichever sides you actually run. They can run together under one set of staff and one set
+            of books — a kitchen with a bar and a craft corner is one business, not three systems. Each keeps its
+            own shift and its own drawer, so a short till always has exactly one person to ask. One of these has to
+            stay on. Turning a side off only hides its sections: the products, sales and statements behind them
+            stay exactly where they are.
+          </InfoTip>
+        </h3>
 
         <Toggle
           checked={mods.kitchen}
@@ -392,11 +396,7 @@ export function SettingsPage() {
         />
         {/* Refusing to turn the last one off rather than letting somebody
             discover an admin app with nothing in it. The toggle simply does
-            not move, and this says why before they try. */}
-        <p className="small dim">
-          One of these has to stay on. Turning a side off only hides its sections, the products, sales and
-          statements behind them stay exactly where they are.
-        </p>
+            not move, and the ? above says why. */}
 
         {/*
           The bar's own run of numbers, or the kitchen's.
@@ -437,7 +437,7 @@ export function SettingsPage() {
             </Field>
             <Field
               label="Commission you keep by default (%)"
-              hint="Used for a new consignor until you set theirs. Each person can have their own rate, and each piece can override that again."
+              hint="Used for a new consignor until you set theirs. Each person can have their own rate, and each piece can override that again. Changing this never rewrites anything: the rate is written onto each sale as it happens, so what somebody has already earned stays what they earned."
             >
               <Input
                 inputMode="decimal"
@@ -448,10 +448,6 @@ export function SettingsPage() {
                 }}
               />
             </Field>
-            <p className="small dim">
-              Changing this never rewrites anything. The rate is written onto each sale as it happens, so what
-              somebody has already earned stays what they earned.
-            </p>
           </>
         )}
 
@@ -459,12 +455,10 @@ export function SettingsPage() {
           checked={form.self_order_enabled !== false}
           onChange={(v) => set('self_order_enabled', v)}
           label="Customers can scan a code and order for themselves"
-        />
-        <p className="small dim" style={{ marginBottom: 0 }}>
-          {mods.kitchen
+          help={mods.kitchen
             ? 'This is what the table QR codes are for. Off means orders can only be taken by staff.'
             : 'Off suits a shop where the normal way to buy is to hand something to whoever is on the till. Worth turning on for a market stall or a busy weekend, where a queue is the problem.'}
-        </p>
+        />
       </FoldCard>
 
       <FoldCard
@@ -534,11 +528,12 @@ export function SettingsPage() {
           sentence somebody can read rather than a number they have to
           interpret. See vatBpOf: everything that works out tax reads it.
         */}
-        <Field hint="Turn this off if you are not VAT registered. Your rate is kept, and nothing charges it while this is off. Levies below are separate and stay as you set them.">
+        <Field>
           <Toggle
             checked={form.vat_charged !== false}
             onChange={(v) => set('vat_charged', v)}
             label="We charge VAT"
+            help="Turn this off if you are not VAT registered. Your rate is kept, and nothing charges it while this is off. Levies below are separate and stay as you set them."
           />
         </Field>
 
@@ -566,8 +561,13 @@ export function SettingsPage() {
             />
           </Field>
         </div>
-        <Field hint="Tax-inclusive means the price on the menu is what the customer pays; tax is worked out from it rather than added on top.">
-          <Toggle checked={form.tax_inclusive} onChange={(v) => set('tax_inclusive', v)} label="Menu prices include tax" />
+        <Field>
+          <Toggle
+            checked={form.tax_inclusive}
+            onChange={(v) => set('tax_inclusive', v)}
+            label="Menu prices include tax"
+            help="Tax-inclusive means the price on the menu is what the customer pays; tax is worked out from it rather than added on top."
+          />
         </Field>
 
         {/*
@@ -593,12 +593,16 @@ export function SettingsPage() {
           the price PLUS these. A business with none switched on gets the
           single rate it always had.
         */}
-        <h3 style={{ marginTop: '1.6rem' }}>Levies beside VAT</h3>
-        <p className="small dim" style={{ marginTop: 0 }}>
-          Each levy is a share of the price and is owed to its own body on its own return. The tax rate above is
-          VAT, charged on the price plus these levies, which is how Ghana stacks them. Receipts show each one,
-          and every shift close credits each to its own account.
-        </p>
+        <h3 style={{ marginTop: '1.6rem' }}>
+          Levies beside VAT
+          <InfoTip label="About levies">
+            Each levy is a share of the price and is owed to its own body on its own return. The tax rate above is
+            VAT, charged on the price plus these levies, which is how Ghana stacks them. Receipts show each one,
+            and every shift close credits each to its own account. The rates offered are the ones in force when
+            this was written: check them against the current notice from the revenue authority. They are yours to
+            change.
+          </InfoTip>
+        </h3>
         <div className="stack" style={{ gap: '0.5rem' }}>
           {GHANA_LEVIES.map((known) => {
             const current = parseLevies(form.levies);
@@ -634,16 +638,12 @@ export function SettingsPage() {
             );
           })}
         </div>
-        <p className="small dim">
-          The rates offered are the ones in force when this was written. Check them against the current
-          notice from the revenue authority; they are yours to change.
-        </p>
       </FoldCard>
 
       <FoldCard title="Tips" summary={askOn === 'none' ? 'Never asked' : `Asked on the ${askOn === 'both' ? 'till and in the kitchen' : askOn}`}>
         <Field
           label="Where to ask for a tip"
-          hint="A waiter closing a table and a cook handing a bag over a counter are different moments. You can have the box on one and not the other."
+          hint="A waiter closing a table and a cook handing a bag over a counter are different moments. You can have the box on one and not the other. Nowhere removes the box entirely rather than defaulting it to zero: a field staff have to look at and skip past on every bill is worse than no field."
         >
           <Select
             value={askOn}
@@ -662,10 +662,6 @@ export function SettingsPage() {
             <option value="none">Nowhere, never ask</option>
           </Select>
         </Field>
-        <p className="small dim">
-          Off removes the box entirely rather than defaulting it to zero, a field staff have to look at and skip
-          past on every bill is worse than no field.
-        </p>
         {/* What the database currently holds, not what this form is showing.
             The two disagreeing is the whole reason this switch appeared not to
             work, and the difference was invisible. */}
@@ -706,16 +702,14 @@ export function SettingsPage() {
           checked={!!form.allow_negative_cash}
           onChange={(v) => set('allow_negative_cash', v)}
           label="Allow a drawer to close below nothing"
-        />
-        <p className="small dim">
-          Off is the safer setting and the default. A drawer cannot physically hold less than no money, so a negative
+          help={<>Off is the safer setting and the default. A drawer cannot physically hold less than no money, so a negative
           count nearly always means cash was paid out and never recorded, blocking it makes somebody enter the missing
-          expense instead of closing over it.
-        </p>
+          expense instead of closing over it.</>}
+        />
 
         <Field
           label="What money spent during a shift can come out of"
-          hint="This covers shop runs, gas, transport; anything staff record as spent while a shift is open."
+          hint="This covers shop runs, gas, transport; anything staff record as spent while a shift is open. Cash only is the default, and it is not about tidiness: money taken from the drawer has to be missing from the drawer when it is counted at the end of the shift, so a wrong entry surfaces within hours. An expense recorded against mobile money reduces nothing anybody counts. Choose any method only if you genuinely pay suppliers by transfer from this screen, and expect those entries to rest on the receipt rather than on a count."
         >
           <Select
             value={form.expense_paid_from ?? 'cash_only'}
@@ -725,26 +719,39 @@ export function SettingsPage() {
             <option value="any">Any payment method</option>
           </Select>
         </Field>
-        <p className="small dim" style={{ marginBottom: 0 }}>
-          Cash only is the default, and it is not about tidiness. Money taken from the drawer has to be missing
-          from the drawer when it is counted at the end of the shift, so a wrong entry surfaces within hours.
-          An expense recorded against mobile money reduces nothing anybody counts, which makes it the easiest
-          entry in the whole system to write and never have questioned. Turn it on only if you genuinely pay
-          suppliers by transfer from this screen, and expect those entries to rest on the receipt rather than on
-          a count.
-        </p>
 
-        <h3 style={{ marginTop: '1.6rem' }}>Counting at the end of a shift</h3>
-        <p className="small dim">
+        <h3 style={{ marginTop: '1.6rem' }}>
+          Counting at the end of a shift
+          <InfoTip label="About counting at the end of a shift">
           The bar and the shop count out on the count sheet before they close, and every difference waits on
           {' '}<strong>Waiting for you</strong> to be agreed or charged. Their close then only asks OK, Low or Out
           about items marked <strong>Just check it</strong> under <strong>Stock</strong>: the cheap and bulky
           things, like salt and oil, that are not worth a number.
-        </p>
+          </InfoTip>
+        </h3>
 
         {mods.kitchen && (
           <>
-            <Field label="How the kitchen checks its stock">
+            <Field
+              label="How the kitchen checks its stock"
+              hint={form.kitchen_stock_check === 'count' ? (
+                  <>
+                    <strong>Counted.</strong> The kitchen is asked to count every ingredient when a shift opens and
+                    again before it closes, on the same sheet as the bar. What was counted is set against what the
+                    recipes say should be left, which is where waste and over-portioning show up, and each
+                    difference waits on <strong>Waiting for you</strong>. It is slower, and it is asked for rather
+                    than forced: a cook can close without it.
+                  </>
+                ) : (
+                  <>
+                    <strong>OK, Low or Out, which is the quick check.</strong> No count sheet at either end. At the
+                    close the cook taps OK, Low or Out against every ingredient; anything Low or Out goes into the
+                    shift summary, and Out sets the stock to nothing. Write a guide under each ingredient in
+                    {' '}<strong>Stock</strong> so “low” means the same thing to everybody. A full count can still be
+                    done from <strong>Count</strong> in the sidebar whenever you want the real figures.
+                  </>
+                )}
+            >
               <Select
                 value={form.kitchen_stock_check === 'count' ? 'count' : 'levels'}
                 onChange={(e) => set('kitchen_stock_check', e.target.value as 'levels' | 'count')}
@@ -753,25 +760,6 @@ export function SettingsPage() {
                 <option value="count">Count it in and out on the count sheet</option>
               </Select>
             </Field>
-            <p className="small dim" style={{ marginBottom: 0 }}>
-              {form.kitchen_stock_check === 'count' ? (
-                <>
-                  <strong>Counted.</strong> The kitchen is asked to count every ingredient when a shift opens and
-                  again before it closes, on the same sheet as the bar. What was counted is set against what the
-                  recipes say should be left, which is where waste and over-portioning show up, and each
-                  difference waits on <strong>Waiting for you</strong>. It is slower, and it is asked for rather
-                  than forced: a cook can close without it.
-                </>
-              ) : (
-                <>
-                  <strong>OK, Low or Out, which is the quick check.</strong> No count sheet at either end. At the
-                  close the cook taps OK, Low or Out against every ingredient; anything Low or Out goes into the
-                  shift summary, and Out sets the stock to nothing. Write a guide under each ingredient in
-                  {' '}<strong>Stock</strong> so “low” means the same thing to everybody. A full count can still be
-                  done from <strong>Count</strong> in the sidebar whenever you want the real figures.
-                </>
-              )}
-            </p>
           </>
         )}
 
@@ -779,19 +767,19 @@ export function SettingsPage() {
             nobody hands the rice over. */}
         {form.bar_enabled && (
           <>
-            <h3 style={{ marginTop: '1.6rem' }}>The bar&rsquo;s count at both ends of a shift</h3>
-            <p className="small dim" style={{ marginTop: 0 }}>
+            <h3 style={{ marginTop: '1.6rem' }}>
+              The bar&rsquo;s count at both ends of a shift
+              <InfoTip label="About the bar's count">
               The bar is counted when a shift opens and again when it closes: one person accepts what is behind
               the bar, the next hands it over, and the difference is what somebody is answerable for. Both counts
               happen at the till.
-            </p>
+              </InfoTip>
+            </h3>
             <Toggle
               checked={form.bar_count_skippable === true}
               onChange={(v) => set('bar_count_skippable', v)}
               label="Let staff skip the count"
-            />
-            <p className="small dim" style={{ marginBottom: 0 }}>
-              {form.bar_count_skippable === true ? (
+              help={form.bar_count_skippable === true ? (
                 <>
                   <strong>On.</strong> Staff can leave the sheet unfinished and carry on, and a shift can close
                   on a shelf nobody counted. It gets skipped on the busy nights, which are the nights it would
@@ -807,7 +795,7 @@ export function SettingsPage() {
                   cannot describe.
                 </>
               )}
-            </p>
+            />
           </>
         )}
         {/* Only where there is a shop. A stocktake of one-off consigned
@@ -815,19 +803,19 @@ export function SettingsPage() {
             and some shops do not want it at all. */}
         {mods.craft && (
           <>
-            <h3 style={{ marginTop: '1.6rem' }}>The shop&rsquo;s stocktake</h3>
-            <p className="small dim" style={{ marginTop: 0 }}>
+            <h3 style={{ marginTop: '1.6rem' }}>
+              The shop&rsquo;s stocktake
+              <InfoTip label="About the shop's stocktake">
               Somebody walks the shelves, writes down what is actually there, and an admin agrees it before
               anything moves. It is the only thing that can take a piece off the shelf with no sale behind it,
               which is how a piece that broke, walked, or went back to its maker ever comes off.
-            </p>
+              </InfoTip>
+            </h3>
             <Toggle
               checked={form.craft_counts_enabled !== false}
               onChange={(v) => set('craft_counts_enabled', v)}
               label="The shop counts its shelves"
-            />
-            <p className="small dim" style={{ marginBottom: 0 }}>
-              {form.craft_counts_enabled === false ? (
+              help={form.craft_counts_enabled === false ? (
                 <>
                   <strong>Off.</strong> <strong>Shop stocktake</strong> is gone from the sidebar and no new count
                   can be started. The shelf still moves on goods received and on a sale — what stops is the only
@@ -843,16 +831,18 @@ export function SettingsPage() {
                   the sheet is a form somebody fills in to say what everybody can already see.
                 </>
               )}
-            </p>
+            />
 
             {form.craft_counts_enabled !== false && (
               <>
-                <h3 style={{ marginTop: '1.6rem' }}>What the shop counts at each shift</h3>
-                <p className="small dim" style={{ marginTop: 0 }}>
+                <h3 style={{ marginTop: '1.6rem' }}>
+                  What the shop counts at each shift
+                  <InfoTip label="About the shop's shift count">
                   A short count at every shift instead of every piece, and the whole shop on a set day. Pieces
                   already waiting for an admin are always left off. With all three switched off, every shift
                   counts the whole shop.
-                </p>
+                  </InfoTip>
+                </h3>
                 <Toggle
                   checked={form.shop_count_sold !== false}
                   onChange={(v) => set('shop_count_sold', v)}
@@ -871,11 +861,9 @@ export function SettingsPage() {
                   checked={form.shop_count_rotate !== false}
                   onChange={(v) => set('shop_count_rotate', v)}
                   label="One shelf a day, in turn"
+                  help={<>The shelves are the shop's categories, taking turns in alphabetical order, so every piece is
+                  walked regularly. Counting in and out on the same day walks the same shelf.</>}
                 />
-                <p className="small dim" style={{ margin: '0.2rem 0 0.6rem' }}>
-                  The shelves are the shop's categories, taking turns in alphabetical order, so every piece is
-                  walked regularly. Counting in and out on the same day walks the same shelf.
-                </p>
                 <Field label="The whole shop is counted">
                   <Select
                     value={form.shop_count_full ?? 'sun'}
@@ -889,18 +877,18 @@ export function SettingsPage() {
           </>
         )}
 
-        <h3 style={{ marginTop: '1.6rem' }}>Petty cash counts</h3>
-        <p className="small dim" style={{ marginTop: 0 }}>
+        <h3 style={{ marginTop: '1.6rem' }}>
+          Petty cash counts
+          <InfoTip label="About petty cash counts">
           A petty cash box is counted against what its records say should be in it. That count is the check on
           whoever holds the box, which is why it is normally somebody else who makes it.
-        </p>
+          </InfoTip>
+        </h3>
         <Toggle
           checked={form.imprest_custodian_counts === true}
           onChange={(v) => set('imprest_custodian_counts', v)}
           label="Let whoever holds a box count it themselves"
-        />
-        <p className="small dim" style={{ marginBottom: 0 }}>
-          {form.imprest_custodian_counts === true ? (
+          help={form.imprest_custodian_counts === true ? (
             <>
               <strong>On.</strong> The person holding a box can count it and settle any difference. That is the
               only moment the system catches a shortage, and it catches nothing when the person answerable for
@@ -916,12 +904,16 @@ export function SettingsPage() {
               would have been, so a missing button is never a mystery.
             </>
           )}
-        </p>
+        />
       </FoldCard>
 
-      <FoldCard title="Orders and the kitchen" summary={`Numbers ${form.order_number_prefix ?? ''}0001 · ping every ${form.kitchen_ack_sla_seconds ?? 60}s`}>
-        <p className="small dim" style={{ marginTop: 0 }}>
-          These get shouted across a pass, so they are yours to shape. The number shown is{' '}
+      <FoldCard
+        title="Orders and the kitchen"
+        summary={`Numbers ${form.order_number_prefix ?? ''}0001 · ping every ${form.kitchen_ack_sla_seconds ?? 60}s`}
+        help="Order numbers get shouted across a pass, so they are yours to shape."
+      >
+        <p className="small" style={{ marginTop: 0 }}>
+          The next order will be{' '}
           <strong>
             {(form.order_number_prefix ?? '') +
               String(form.order_number_next ?? 1).padStart(Math.max(1, Number(form.order_number_padding ?? 4)), '0')}
@@ -1007,11 +999,12 @@ export function SettingsPage() {
             label="Require a reason when the kitchen rejects an order"
           />
         </Field>
-        <Field hint="Leave off for the usual flow, where a customer's order goes straight to the kitchen.">
+        <Field>
           <Toggle
             checked={form.qr_orders_need_approval}
             onChange={(v) => set('qr_orders_need_approval', v)}
             label="Staff must approve QR orders before the kitchen sees them"
+            help="Leave off for the usual flow, where a customer's order goes straight to the kitchen."
           />
         </Field>
       </FoldCard>
@@ -1028,22 +1021,26 @@ export function SettingsPage() {
           </Field>
           <Field
             label="From address"
-            hint="Must be an address your email provider has verified as a sender."
+            hint={
+              <>
+                <strong>This address has to be verified with your email provider.</strong> Brevo and the others
+                accept the message, report success, and then quietly drop it if the from-address is not one of their
+                verified senders, so receipts show as <em>sent</em> here and never arrive. If that is happening, this
+                is almost always why. Check Brevo → Senders, Domains &amp; Dedicated IPs → Senders, and put exactly
+                that address here.
+              </>
+            }
           >
             <Input type="email" value={form.email_from_address ?? ''} onChange={(e) => set('email_from_address', e.target.value)} />
           </Field>
         </div>
-        <Notice tone="warn">
-          <strong>This address has to be verified with your email provider.</strong> Brevo and the others accept the
-          message, report success, and then quietly drop it if the from-address is not one of their verified senders, 
-          so receipts show as <em>sent</em> here and never arrive. If that is happening, this is almost always why.
-          Check Brevo → Senders, Domains &amp; Dedicated IPs → Senders, and put exactly that address here.
-        </Notice>
 
-        <h3 style={{ marginTop: '1.6rem' }}>Who gets them</h3>
-        <p className="small dim" style={{ marginTop: 0 }}>
-          One address per line. Everyone listed gets whichever reports are ticked below.
-        </p>
+        <h3 style={{ marginTop: '1.6rem' }}>
+          Who gets them
+          <InfoTip label="About report recipients">
+            One address per line. Everyone listed gets whichever reports are ticked below.
+          </InfoTip>
+        </h3>
 
         {[
           {
@@ -1071,7 +1068,7 @@ export function SettingsPage() {
               }
             />{' '}
             <strong>{k.label}</strong>
-            <div className="small dim" style={{ marginLeft: '1.6rem' }}>{k.hint}</div>
+            <InfoTip label={`About the ${k.label.toLowerCase()}`}>{k.hint}</InfoTip>
           </label>
         ))}
 
@@ -1126,21 +1123,21 @@ export function SettingsPage() {
           Save recipients
         </Button>
 
-        <h3 style={{ margin: '1.4rem 0 0.4rem' }}>What actually happened</h3>
-        <p className="small dim" style={{ marginTop: 0 }}>
-          The last few reports the server produced, and what happened when it tried to send them.
-        </p>
         {/*
           The limit of what this panel can know, said before somebody reads
           more into it than it says. Three different failures used to look
           identical from here, and only two of them are ours.
         */}
-        <p className="small dim">
-          <strong>Handed to the mail server</strong> means the provider took the message — not that it reached an
-          inbox. If it says that and nothing arrived, the message left this system correctly and went astray
-          afterwards: check the spam folder first, then look the reference below up in your mail provider&rsquo;s own
-          records, which will say whether it was delivered, bounced or blocked.
-        </p>
+        <h3 style={{ margin: '1.4rem 0 0.4rem' }}>
+          What actually happened
+          <InfoTip label="About the delivery list">
+            The last few reports the server produced, and what happened when it tried to send them.{' '}
+            <strong>Handed to the mail server</strong> means the provider took the message — not that it reached an
+            inbox. If it says that and nothing arrived, the message left this system correctly and went astray
+            afterwards: check the spam folder first, then look the reference up in your mail provider&rsquo;s own
+            records, which will say whether it was delivered, bounced or blocked.
+          </InfoTip>
+        </h3>
         {deliveries === null ? (
           <p className="small dim">Loading…</p>
         ) : deliveries.length === 0 ? (
@@ -1156,16 +1153,15 @@ export function SettingsPage() {
             fault when nothing was ever sent.
           */
           <>
-            <p className="small dim">
-              <strong>Nothing has been produced at all.</strong> A report that was attempted and failed leaves a
-              row here saying why, so an empty list means the background job was never called rather than that
-              mail is going astray.
-            </p>
-            <p className="small dim" style={{ marginBottom: 0 }}>
-              If shifts have been closed since this was set up, run <strong>Deploy functions</strong> — that is
-              what subscribes the job to the events it answers, and until it has run, closing a shift tells
-              nothing on the server that anything happened. The end-of-shift report appears when a shift is
-              closed; the daily ones after the hour set above.
+            <p className="small" style={{ marginBottom: 0 }}>
+              <strong>Nothing has been produced at all.</strong>
+              <InfoTip label="Why nothing has been produced">
+                A report that was attempted and failed leaves a row here saying why, so an empty list means the
+                background job was never called rather than that mail is going astray. If shifts have been closed
+                since this was set up, run <strong>Deploy functions</strong>: that is what subscribes the job to the
+                events it answers. The end-of-shift report appears when a shift is closed; the daily ones after the
+                hour set above.
+              </InfoTip>
             </p>
           </>
         ) : (
@@ -1245,17 +1241,19 @@ export function SettingsPage() {
         )}
       </FoldCard>
 
-      <FoldCard title="Who can see what" summary="Which admin pages each role may open">
-        <p className="small dim" style={{ marginTop: 0 }}>
-          Which parts of this admin app each role can open. Admins always see everything; there is no switch for that
-          on purpose, and it is what makes the rest of this safe to hand out — no combination of these can lock you
-          out of your own business.
-        </p>
-        <p className="small dim">
-          Accounting is granted a part at a time. Somebody needs the Accounting row to get in at all, and then only
-          the parts ticked beneath it — a bookkeeper can be given the journal and the bank without being given the
-          chart of accounts, and a manager can be given the profit and loss without being given any of it.
-        </p>
+      <FoldCard
+        title="Who can see what"
+        summary="Which admin pages each role may open"
+        help={
+          <>
+            Which parts of this admin app each role can open. Admins always see everything; there is no switch for
+            that on purpose, and it is what makes the rest of this safe to hand out — no combination of these can
+            lock you out of your own business. Accounting is granted a part at a time: somebody needs the
+            Accounting row to get in at all, and then only the parts ticked beneath it. Changes take effect the
+            next time that person loads the app.
+          </>
+        }
+      >
         <div className="table-wrap">
           <table className="data">
             <thead>
@@ -1301,9 +1299,6 @@ export function SettingsPage() {
             </tbody>
           </table>
         </div>
-        <p className="small dim">
-          Changes take effect the next time that person loads the app.
-        </p>
       </FoldCard>
 
     </>

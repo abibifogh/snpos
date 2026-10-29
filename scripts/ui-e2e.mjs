@@ -155,6 +155,25 @@ scenario('a wrong PIN is refused, and says so', async () => {
   expect('after the right PIN', await till.settled(), { state: 'OPEN', pad: 0, clock: 0 });
 });
 
+scenario('a note sits behind a ?, opens on a tap, and does not flip the switch it is in', async () => {
+  const { page, errors } = await fresh();
+  const notes = page.locator('#notes');
+  expect('notes hidden at first', await notes.getByText('The note behind the switch.').count(), 0);
+  expect('nor the box\'s', await notes.getByText('The note behind the box.').count(), 0);
+  await notes.getByRole('button', { name: 'What this means' }).click();
+  expect('the switch\'s note opens', await notes.getByText('The note behind the switch.').count(), 1);
+  expect('and the switch did not move', await page.locator('#switch').textContent(), 'OFF');
+  await page.keyboard.press('Escape');
+  expect('Escape closes it', await notes.getByText('The note behind the switch.').count(), 0);
+  await notes.getByRole('button', { name: 'About Pieces worth at least' }).click();
+  expect('the box\'s note opens', await notes.getByText('The note behind the box.').count(), 1);
+  await page.locator('#state').click();
+  expect('a tap elsewhere closes it', await notes.getByText('The note behind the box.').count(), 0);
+  await notes.getByText('Let staff skip the count').click();
+  expect('the switch itself still works', await page.locator('#switch').textContent(), 'ON');
+  expect('no errors', errors, []);
+});
+
 /* ------------------------------------------------------------------- run */
 
 for (const { name, run } of scenarios) {

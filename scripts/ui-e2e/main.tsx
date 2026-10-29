@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { IdleScreen } from '@snpos/ui';
+import { IdleScreen, Field, Input, Toggle } from '@snpos/ui';
 import type { Unlocker } from '@snpos/core';
 
 /**
@@ -38,6 +38,7 @@ const say = (what: string) => { window.__log.push(`${Date.now()} ${what}`); };
 
 function Till() {
   const [locked, setLocked] = useState(false);
+  const [on, setOn] = useState(false);
   const identified = useRef(false);
 
   // What the till does on lock and unlock. The parts that matter to the
@@ -54,6 +55,12 @@ function Till() {
     <div>
       <div id="state">{locked ? 'LOCKED' : 'OPEN'}</div>
       <button id="lock" type="button" onClick={lock}>Lock</button>
+      {/* The ? beside a name: see InfoTip. A switch with a note, and a box with one. */}
+      <div id="notes">
+        <Toggle checked={on} onChange={setOn} label="Let staff skip the count" help="The note behind the switch." />
+        <span id="switch">{on ? 'ON' : 'OFF'}</span>
+        <Field label="Pieces worth at least" hint="The note behind the box."><Input /></Field>
+      </div>
       <IdleScreen
         afterMinutes={1}
         hasOpenShift
