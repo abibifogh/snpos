@@ -70,3 +70,9 @@ test('the form says what a service is instead of hiding a box', () => {
   // reading only the exclusions would not know the seamstress still gets paid.
   assert.match(NO_SHELF_WORDS, /credited/);
 });
+
+test('the Services heading is work, however it is written; nothing else is', async () => {
+  const { isServiceCategory } = await import('../craft-services.ts');
+  for (const name of ['Services', 'services', ' Service ', 'SERVICES']) assert.equal(isServiceCategory(name), true, name);
+  for (const name of ['Customer service desk', 'Clothing', '', undefined, null]) assert.equal(isServiceCategory(name), false, String(name));
+});
