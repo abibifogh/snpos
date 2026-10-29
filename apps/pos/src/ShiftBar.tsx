@@ -740,6 +740,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           shiftId={ctx.shift.$id}
           phase={barCount}
           userId={ctx.userId}
+          userName={ctx.profile?.display_name ?? ''}
           settings={ctx.settings}
           dismissLabel={barCount === 'close' ? 'Close without counting' : 'Not now'}
           onEmpty={() => { setCountedIn(true); setCountedOut(true); }}

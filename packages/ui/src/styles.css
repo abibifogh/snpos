@@ -1138,3 +1138,55 @@ table.data th .sort-order {
 }
 .linky:hover { text-decoration: underline; }
 .linky:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 3px; }
+
+/* ---- The shop's shift count: parts, cards and one tap per piece ---- */
+.shopcount-parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.8rem; }
+.shopcount-part {
+  display: flex; flex-direction: column; gap: 0.35rem; padding: 0.9rem 1rem; text-align: left;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text);
+  font: inherit; cursor: pointer; min-height: 44px;
+}
+.shopcount-part[aria-current='true'] { border: 2px solid var(--brand); }
+.shopcount-part .big { font-size: 1.7rem; font-weight: 700; }
+.shopcount-layout { display: flex; gap: 1rem; align-items: flex-start; }
+.shopcount-rail { width: 15rem; flex-shrink: 0; display: flex; flex-direction: column; gap: 0.5rem; position: sticky; top: 0; }
+.shopcount-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.7rem; }
+.shopcount-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); gap: 0.7rem; }
+.shopcount-card {
+  display: flex; flex-direction: column; gap: 0.6rem; padding: 0.8rem; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--surface);
+}
+.shopcount-card.is-match { border-color: var(--ok); }
+.shopcount-card.is-off { border: 2px solid var(--warn); }
+.shopcount-card.is-held { opacity: 0.6; }
+.shopcount-head { display: flex; gap: 0.7rem; align-items: center; }
+.shopcount-head .what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.shopcount-head .what strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shopcount-step { display: flex; align-items: center; gap: 0.3rem; }
+.shopcount-step button {
+  width: 44px; height: 44px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font: inherit; font-size: 1.3rem; cursor: pointer;
+}
+.shopcount-step input {
+  width: 3.4rem; height: 44px; box-sizing: border-box; text-align: center; font: inherit; font-size: 1.2rem;
+  font-weight: 700; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--text);
+}
+.shopcount-all { min-height: 46px; }
+.shopcount-state { display: flex; align-items: center; gap: 0.4rem; min-height: 40px; padding: 0 0.7rem; border-radius: var(--radius-sm); font-weight: 600; }
+.shopcount-state.ok { background: var(--ok-bg); color: var(--ok); }
+.shopcount-why { display: flex; flex-direction: column; gap: 0.45rem; padding: 0.6rem 0.7rem; border-radius: var(--radius-sm); background: var(--warn-bg); }
+.shopcount-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.shopcount-chips button {
+  min-height: 38px; padding: 0 0.8rem; border-radius: 999px; border: 1px solid var(--warn); background: var(--surface);
+  color: var(--text); font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+}
+.shopcount-chips button[aria-pressed='true'] { background: var(--warn); color: #fff; }
+.shopcount-saved { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.3rem 0.7rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; background: var(--ok-bg); color: var(--ok); }
+.shopcount-saved.is-local { background: var(--warn-bg); color: var(--warn); }
+.shopcount-bar { height: 8px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.shopcount-bar > span { display: block; height: 100%; background: var(--brand); border-radius: 999px; }
+@media (max-width: 820px) {
+  .shopcount-layout { flex-direction: column; }
+  .shopcount-rail { width: 100%; flex-direction: row; overflow-x: auto; position: static; }
+  .shopcount-rail .shopcount-part { min-width: 12rem; }
+}

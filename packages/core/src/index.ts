@@ -164,3 +164,5 @@ export * from './staff-names';
 export * from './schema-version';
 export * from './spend-decide';
 export * from './brand';
+export * from './shop-count';
+export * from './shop-count-store';

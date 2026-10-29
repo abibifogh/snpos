@@ -95,6 +95,11 @@ export interface Settings extends Doc {
    * has answered must not take a page away. See shopCountsOn.
    */
   craft_counts_enabled?: boolean;
+  /** What the shop counts each shift. See shopCountRules in shop-count.ts. */
+  shop_count_sold?: boolean;
+  shop_count_over?: number;
+  shop_count_rotate?: boolean;
+  shop_count_full?: 'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'month' | 'never';
   /** This server's public push key, for a browser to subscribe with. Written by provisioning. */
   push_public_key?: string;
   /** What a shift expense may be paid out of. Cash only, or any method. */
