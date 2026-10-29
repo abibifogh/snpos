@@ -9,6 +9,7 @@ import { __seed, __reset, __all, __missingColumns, __unreachable, setReadOnly } 
 import { postOpeningBalances } from './core/books-year-store.ts';
 import { addSupplier } from './core/purchase-orders-store.ts';
 import { movedThisShift, saveServerDraft, loadServerDraft, clearServerDraft } from './core/shop-count-store.ts';
+import { shelfLines } from './core/consignment.ts';
 import {
   barCountSheet, relinkShelves, pourMissedSales, unpouredForShift, saveBarCount, hasOpeningCount,
 } from './core/stock.ts';
@@ -1196,6 +1197,26 @@ console.log('\n=== SC — the shop count knows what moved, and keeps a count in 
   await clearServerDraft('sh-c', 'close');
   results.push(['SC filing the count removes the draft', ok(
     'gone', [(__all('count_drafts') as any[]).length, await loadServerDraft('sh-c', 'close')], [0, null],
+  )]);
+}
+
+console.log('\n=== SV — anything filed under Services stays off the shop count ===');
+{
+  __reset();
+  __seed('categories', [{ $id: 'svc', name: 'Services', module: 'craft' }, { $id: 'bk', name: 'Bag', module: 'craft' }]);
+  __seed('menu_items', [
+    { $id: 'tote', module: 'craft', name: 'Tote', price: 9000, on_hand: 4, active: true, category_id: 'bk' },
+    // Not switched to Work on the product itself, but filed under Services.
+    { $id: 'alter', module: 'craft', name: 'Alteration', price: 4000, on_hand: -3, active: true, category_id: 'svc' },
+    { $id: 'hem', module: 'craft', name: 'Hemming', price: 2000, on_hand: 0, active: true },
+  ]);
+  __seed('menu_item_categories', [
+    { $id: 'l1', menu_item_id: 'tote', category_id: 'bk' },
+    { $id: 'l2', menu_item_id: 'hem', category_id: 'svc' },
+  ]);
+  const sheet = await shelfLines();
+  results.push(['SV the count sheet has the tote, not the alteration or the hemming', ok(
+    'sheet', sheet.map((l) => l.menuItemId), ['tote'],
   )]);
 }
 

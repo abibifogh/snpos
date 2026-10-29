@@ -5,7 +5,7 @@ import type { Doc, Settings, MenuItem } from './types';
 import { differencesIn, summariseCount, MOVE_FOR_REASON, lineUndecided, countOutcome } from './stocktake';
 import type { CountLine, PendingCount, PendingCountLine } from './stocktake';
 import type { WaitingChange } from './shelf-approval';
-import { hasShelf } from './craft-services';
+import { hasShelf, isServiceCategory } from './craft-services';
 import type { ImportMaker } from './maker-import';
 import { SHELF_CHANGE_NOTE } from './waiting';
 
@@ -572,7 +572,7 @@ export async function importStock(opts: {
  */
 export async function shelfLines(): Promise<CountLine[]> {
   const [items, variants, consignors, links, categories] = await Promise.all([
-    listAll<MenuItem & { module?: string; consignor_id?: string; on_hand?: number; price: number }>('menu_items'),
+    listAll<MenuItem & { module?: string; consignor_id?: string; on_hand?: number; price: number; category_id?: string }>('menu_items'),
     listAll<ProductVariant>('product_variants'),
     listAll<Consignor>('consignors').catch(() => [] as Consignor[]),
     listAll<{ menu_item_id: string; category_id: string }>('menu_item_categories').catch(() => []),
@@ -586,7 +586,17 @@ export async function shelfLines(): Promise<CountLine[]> {
     clipboard how many alterations are standing on the shelf has no answer, so
     they write nothing or they write a number, and both are wrong.
   */
-  const craft = items.filter((i) => hasShelf(i) && i.active !== false);
+  /*
+    And nothing filed under Services, whatever its own switch says: see
+    isServiceCategory. A piece is in a category either by its own category_id
+    or by a link, so both are asked.
+  */
+  const serviceCats = new Set(categories.filter((c) => isServiceCategory(c.name)).map((c) => c.$id));
+  const linkedTo = new Map<string, string[]>();
+  for (const l of links) (linkedTo.get(l.menu_item_id) ?? linkedTo.set(l.menu_item_id, []).get(l.menu_item_id)!).push(l.category_id);
+  const filedAsWork = (i: { $id: string; category_id?: string }) =>
+    serviceCats.has(i.category_id ?? '') || (linkedTo.get(i.$id) ?? []).some((c) => serviceCats.has(c));
+  const craft = items.filter((i) => hasShelf(i) && i.active !== false && !filedAsWork(i));
   const nameOf = new Map(consignors.map((c) => [c.$id, c.name]));
   // The first category a piece is in. A product can sit in several; for
   // deciding which shelf somebody walks to, the first is as good an answer as

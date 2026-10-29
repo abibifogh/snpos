@@ -122,3 +122,15 @@ export function serviceProblem(opts: {
   }
   return null;
 }
+
+/**
+ * Is this the shop's category for work: Services, or Service?
+ *
+ * A shop that has put its alterations under a Services heading has already
+ * said what they are. Asking it to also open each one and switch it to Work,
+ * one product at a time, is how one gets missed and turns up on the count
+ * sheet asking how many alterations are on the shelf. So the count leaves
+ * anything filed under that heading alone, whatever its own switch says.
+ */
+export const isServiceCategory = (name?: string | null): boolean =>
+  /^\s*services?\s*$/i.test(name ?? '');
