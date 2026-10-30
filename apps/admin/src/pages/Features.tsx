@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, Field, Input, Notice, Spinner, Toggle, Badge, Button, useToast } from '@snpos/ui';
+import { Card, Field, Input, Notice, Spinner, Toggle, Badge, Button, useToast, InfoTip } from '@snpos/ui';
 import { db, DB_ID, listAll, humanError } from '../lib';
 import { useSession } from '../session';
 import { FEATURE_DEPENDENCIES, toInput, parseMoney } from '@snpos/core';
@@ -281,11 +281,13 @@ export function FeaturesPage() {
 
   return (
     <>
-      <h1>Features</h1>
-      <p className="dim small" style={{ marginTop: 0 }}>
-        Switching a feature off hides it; it never deletes what you have already recorded, so you can turn it back on
-        later and find everything intact.
-      </p>
+      <h1>
+        Features
+        <InfoTip label="About features">
+          Switching a feature off hides it; it never deletes what you have already recorded, so you can turn it back
+          on later and find everything intact.
+        </InfoTip>
+      </h1>
 
       <Card pad>
         {!rows ? (
@@ -297,13 +299,19 @@ export function FeaturesPage() {
             return (
               <div className="feature-row" key={f.$id}>
                 <div className="meta">
-                  <h3>{meta.title}</h3>
-                  <div className="small dim">
-                    {meta.blurb}
-                    {meta.to && (
-                      <> The link itself is under <Link to={meta.to}>{meta.toLabel ?? meta.to}</Link>.</>
+                  {/* The title alone, and what it does behind the ?: a page of
+                      paragraphs is a page where the switches get lost. */}
+                  <h3>
+                    {meta.title}
+                    {(meta.blurb || meta.to) && (
+                      <InfoTip label={`About ${meta.title}`}>
+                        {meta.blurb}
+                        {meta.to && (
+                          <> The link itself is under <Link to={meta.to}>{meta.toLabel ?? meta.to}</Link>.</>
+                        )}
+                      </InfoTip>
                     )}
-                  </div>
+                  </h3>
                   {unmet.length > 0 && (
                     <div style={{ marginTop: '0.4rem' }}>
                       <Badge tone="warn">
@@ -336,8 +344,8 @@ export function FeaturesPage() {
                         checked={configFlag(f, w.option, w.fallback)}
                         onChange={(v) => void setOption(f, w.option, v)}
                         label={w.label}
+                        help={w.hint}
                       />
-                      <div className="small dim" style={{ marginTop: '0.2rem' }}>{w.hint}</div>
                     </div>
                   ))}
                   {/* Only while the feature is on: a number that governs

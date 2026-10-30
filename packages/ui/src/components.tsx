@@ -21,6 +21,50 @@ export function Button({ variant = 'default', size = 'md', loading, children, cl
   );
 }
 
+/**
+ * A ? beside a name, holding the note that used to sit in grey under it.
+ *
+ * Every switch, box and card on the admin pages came with a paragraph of
+ * explanation underneath, and a page of them reads as a page of small print:
+ * the controls themselves get lost. The note is still there for anybody who
+ * wants it, one tap away, and out of the way of everybody who does not.
+ *
+ * A button, so it can be reached with Tab and read by a screen reader. Tapping
+ * it inside a switch's label or a fold's heading neither flips the switch nor
+ * folds the card. Escape, or a tap anywhere else, closes it.
+ */
+export function InfoTip({ children, label = 'What this means' }: { children: ReactNode; label?: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const away = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('pointerdown', away);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('pointerdown', away);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+  return (
+    <span className="infotip" ref={ref}>
+      <button
+        type="button"
+        className="infotip-btn"
+        aria-label={label}
+        aria-expanded={open}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((o) => !o); }}
+      >
+        ?
+      </button>
+      {open && (
+        <span className="infotip-pop" role="note" onClick={(e) => e.stopPropagation()}>{children}</span>
+      )}
+    </span>
+  );
+}
+
 export function Field({
   label,
   hint,
@@ -39,9 +83,11 @@ export function Field({
   if (hidden) return null;
   return (
     <div className="field">
-      {label && <label>{label}</label>}
+      {/* The hint behind a ? beside the label; under the box only where
+          there is no label to put it beside. An error is always shown. */}
+      {label && <label>{label}{hint && <InfoTip label={`About ${label}`}>{hint}</InfoTip>}</label>}
       {children}
-      {error ? <span className="err">{error}</span> : hint ? <span className="hint">{hint}</span> : null}
+      {error ? <span className="err">{error}</span> : hint && !label ? <span className="hint">{hint}</span> : null}
     </div>
   );
 }
@@ -66,29 +112,36 @@ export function Toggle({
   onChange,
   label,
   disabled,
+  help,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label?: ReactNode;
   disabled?: boolean;
+  /** What switching it means, behind a ? beside the label. */
+  help?: ReactNode;
 }) {
   return (
     <label className="toggle">
       <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <span className="track" />
-      {label && <span>{label}</span>}
+      {label && <span>{label}{help && <InfoTip>{help}</InfoTip>}</span>}
     </label>
   );
 }
 
 /* ---- layout ------------------------------------------------------------ */
 
-export function Card({ title, actions, children, pad = true }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; pad?: boolean }) {
+export function Card({ title, actions, children, pad = true, help }: {
+  title?: ReactNode; actions?: ReactNode; children: ReactNode; pad?: boolean;
+  /** What this card is for, behind a ? beside its title. */
+  help?: ReactNode;
+}) {
   return (
     <section className="card">
       {(title || actions) && (
         <header className="card-head">
-          <h2>{title}</h2>
+          <h2>{title}{help && <InfoTip>{help}</InfoTip>}</h2>
           {actions}
         </header>
       )}
@@ -112,8 +165,10 @@ export function Card({ title, actions, children, pad = true }: { title?: ReactNo
  * somebody opens one at a time until they find the right one.
  */
 export function FoldCard({
-  title, summary, open, children, actions,
+  title, summary, open, children, actions, help,
 }: {
+  /** What this section is for, behind a ? beside its title. */
+  help?: ReactNode;
   title: ReactNode;
   summary?: ReactNode;
   /** Open on first render. Leave off for anything most people never touch. */
@@ -126,7 +181,7 @@ export function FoldCard({
       <summary className="card-head fold-head">
         <span className="fold-title">
           <span className="fold-caret" aria-hidden="true" />
-          <h2>{title}</h2>
+          <h2>{title}{help && <InfoTip>{help}</InfoTip>}</h2>
         </span>
         {summary !== undefined && <span className="fold-summary">{summary}</span>}
         {actions}

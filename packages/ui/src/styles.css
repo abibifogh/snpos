@@ -1190,3 +1190,23 @@ table.data th .sort-order {
   .shopcount-rail { width: 100%; flex-direction: row; overflow-x: auto; position: static; }
   .shopcount-rail .shopcount-part { min-width: 12rem; }
 }
+
+/* ---- A ? beside a name, holding its note. See InfoTip. ---- */
+.infotip { position: relative; display: inline-flex; vertical-align: middle; margin-left: 0.4rem; }
+.infotip-btn {
+  width: 22px; height: 22px; min-width: 22px; padding: 0; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-dim);
+  font: inherit; font-size: 0.78rem; font-weight: 700; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+/* A bigger target than it looks, for a finger on a tablet. */
+.infotip-btn::before { content: ''; position: absolute; inset: -11px; }
+.infotip-btn:hover, .infotip-btn[aria-expanded='true'] { color: var(--brand); border-color: var(--brand); }
+.infotip-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.infotip-pop {
+  position: absolute; z-index: 60; top: calc(100% + 8px); left: -0.5rem;
+  width: max-content; max-width: min(24rem, 78vw); padding: 0.7rem 0.85rem;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg); font-size: 0.85rem; font-weight: 400; line-height: 1.5; text-align: left;
+  white-space: normal; text-transform: none; letter-spacing: normal; cursor: auto;
+}
