@@ -39,7 +39,13 @@ export function InfoTip({ children, label = 'What this means' }: { children: Rea
   useEffect(() => {
     if (!open) return undefined;
     const away = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    // Escape shuts the note and nothing else: inside a modal, the same key
+    // would otherwise close the modal too and lose what was typed in it.
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setOpen(false);
+    };
     document.addEventListener('pointerdown', away);
     document.addEventListener('keydown', esc);
     return () => {
@@ -215,11 +221,14 @@ export function Modal({
   footer,
   wide,
   dismissible = true,
+  help,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  /** A note read once rather than every time, behind a ? on the title. */
+  help?: ReactNode;
   /** For content that genuinely needs the room, like the manual. */
   wide?: boolean;
   /**
@@ -314,7 +323,7 @@ export function Modal({
     <div className="modal-backdrop">
       <div className={wide ? 'modal modal-wide' : 'modal'} role="dialog" aria-modal="true" aria-label={title}>
         <header className="card-head">
-          <h2>{title}</h2>
+          <h2>{title}{help && <InfoTip>{help}</InfoTip>}</h2>
           {dismissible && <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close">✕</Button>}
         </header>
         <div className="modal-body">{children}</div>
