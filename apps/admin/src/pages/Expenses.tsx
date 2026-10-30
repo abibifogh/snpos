@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, Card, Empty, Notice, Select, Spinner, Badge, useToast, ViewTabs, ExpenseModal, Segmented } from '@snpos/ui';
+import { Button, Card, Empty, Notice, Select, Spinner, Badge, useToast, ViewTabs, ExpenseModal, Segmented, InfoTip } from '@snpos/ui';
 import { db, DB_ID, listAll, humanError } from '../lib';
 import {
   formatMoney, downloadUrl, deleteFile, Query,
@@ -258,9 +258,12 @@ export function ExpensesPage() {
         />
       ) : (
         <>
-          <p className="dim small" style={{ marginTop: 0 }}>
-            Everything that left: spends from the drawers, petty cash and the bank, stock received and not yet
-            paid for, and maker payouts. Receipts are visible to managers and admins only.
+          <p className="small dim" style={{ marginTop: 0 }}>
+            How this works
+            <InfoTip>
+              Everything that left: spends from the drawers, petty cash and the bank, stock received and not yet
+              paid for, and maker payouts. Receipts are visible to managers and admins only.
+            </InfoTip>
           </p>
 
           {error && !editing && <Notice>{error}</Notice>}

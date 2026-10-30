@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, useToast } from '@snpos/ui';
+import { Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, useToast, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, Query, listAll, humanError } from '../lib';
 import { isSystemAccount } from '@snpos/core';
 import type { Doc } from '@snpos/core';
@@ -182,11 +182,14 @@ export function AccountsManager() {
   return (
     <>
       <div className="spread">
-        <p className="dim small" style={{ marginTop: 0, maxWidth: '46rem' }}>
-          The lines your money lands on. Expense categories point at one of these, and Reports adds up by them, so
-          this is what decides whether your report says “GH₵4,200 other” or “GH₵2,800 gas, GH₵1,400 transport”.
-          Add whatever your outgoings actually are. One you have stopped using can be archived: it comes off every
-          list you choose from, and stays on every report it already appears in.
+        <p className="small dim" style={{ marginTop: 0 }}>
+          How this works
+          <InfoTip>
+            The lines your money lands on. Expense categories point at one of these, and Reports adds up by them, so
+            this is what decides whether your report says “GH₵4,200 other” or “GH₵2,800 gas, GH₵1,400 transport”.
+            Add whatever your outgoings actually are. One you have stopped using can be archived: it comes off every
+            list you choose from, and stays on every report it already appears in.
+          </InfoTip>
         </p>
         <div className="row" style={{ gap: '0.5rem' }}>
           {archivedCount > 0 && (

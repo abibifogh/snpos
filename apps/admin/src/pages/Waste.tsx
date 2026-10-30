@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast } from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import { formatMoney, dateWords } from '@snpos/core';
 import type { Ingredient, MenuItem, Doc } from '@snpos/core';
@@ -101,16 +101,17 @@ export function WastePage() {
   return (
     <>
       <div className="spread">
-        <h1>Waste</h1>
+        <h1>
+          Waste
+          <InfoTip>
+            Recording waste as it happens is what makes the stock figures trustworthy. Without it, food thrown away and
+            food walking out of the door look identical when you count.
+          </InfoTip>
+        </h1>
         <Button variant="primary" onClick={() => { setEditing({ qty: 1, reason: 'spoiled' }); setKind('ingredient'); setError(null); }}>
           Record waste
         </Button>
       </div>
-
-      <p className="dim small" style={{ marginTop: 0 }}>
-        Recording waste as it happens is what makes the stock figures trustworthy. Without it, food thrown away and
-        food walking out of the door look identical when you count.
-      </p>
 
       {error && !editing && <Notice>{error}</Notice>}
 

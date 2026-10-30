@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Empty, Field, FormError, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast } from '@snpos/ui';
+import { Button, Card, Empty, Field, FormError, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, dateWords, downloadFile,
@@ -392,17 +392,19 @@ export function VouchersPage() {
   return (
     <>
       <div className="spread">
-        <h1>Discount vouchers</h1>
+        <h1>
+          Discount vouchers
+          <InfoTip>
+            A voucher with a code can be typed by a customer while ordering. One without a code is a button staff press.
+            Every voucher is money leaving the till, so give each one an end date and, for anything by percentage, a
+            maximum amount.
+          </InfoTip>
+        </h1>
         <div className="row" style={{ gap: '0.4rem' }}>
           <Button onClick={() => void recount()} loading={busy && !editing}>Recount uses</Button>
           <Button variant="primary" onClick={() => open()}>New voucher</Button>
         </div>
       </div>
-      <p className="dim" style={{ maxWidth: '46rem' }}>
-        A voucher with a code can be typed by a customer while ordering. One without a code is a button staff press.
-        Every voucher is money leaving the till, so give each one an end date and, for anything by percentage, a
-        maximum amount.
-      </p>
 
       {error && !editing && <Notice>{error}</Notice>}
 

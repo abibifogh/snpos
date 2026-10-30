@@ -62,7 +62,14 @@ export function TaxReturnReport({ accounts, lines, entries, from, to, money, set
   ];
 
   return (
-    <Card title={`Tax return · ${period}`} pad>
+    <Card title={`Tax return · ${period}`} pad
+      help={
+        <>
+          Collected is what the closes credited to each levy over these dates; paid is what was recorded as paid to the
+          revenue authority; still owed counts everything up to the last day. Set the dates to the month being filed.
+        </>
+      }
+    >
       <div className="row row-wrap" style={{ gap: '0.5rem', marginBottom: '0.8rem' }}>
         <Button size="sm" onClick={() => downloadFile(`Tax return ${period}.xlsx`, writeXlsx([{ name: 'Tax return', rows: sheet }]).buffer as ArrayBuffer, XLSX_TYPE)}>Excel</Button>
         <Button size="sm" onClick={() => openPrintable(buildReportHtml({
@@ -72,10 +79,6 @@ export function TaxReturnReport({ accounts, lines, entries, from, to, money, set
           brandColor: settings?.primary_color ?? undefined,
         }), `Tax return ${period}`)}>PDF</Button>
       </div>
-      <p className="small dim" style={{ marginTop: 0 }}>
-        Collected is what the closes credited to each levy over these dates; paid is what was recorded as paid to the
-        revenue authority; still owed counts everything up to the last day. Set the dates to the month being filed.
-      </p>
       <div className="table-wrap">
         <table className="data">
           <thead><tr><th>Line</th><th className="num">Collected</th><th className="num">Paid</th><th className="num">Still owed</th><th /></tr></thead>
@@ -176,10 +179,13 @@ export function RecurringEntries({ accounts, money, settings, venueId, userId, t
   };
 
   return (
-    <Card title="Recurring entries" pad>
-      <p className="small dim" style={{ marginTop: 0 }}>
-        Posted by themselves on their day each month, and caught up if one is missed. A month already closed is skipped.
-      </p>
+    <Card title="Recurring entries" pad
+      help={
+        <>
+          Posted by themselves on their day each month, and caught up if one is missed. A month already closed is skipped.
+        </>
+      }
+    >
       {!adding && <Button variant="primary" onClick={() => setAdding(true)}>Add a recurring entry</Button>}
       {adding && (
         <div style={{ display: 'grid', gap: '0.6rem', margin: '0.6rem 0 1rem' }}>
@@ -283,12 +289,15 @@ export function OpeningBalances({ accounts, entries, money, settings, venueId, u
   };
 
   return (
-    <Card title="Opening balances" pad>
-      <p className="small dim" style={{ marginTop: 0 }}>
-        What each account held on the day these books start, from the last balance sheet kept anywhere else. Enter
-        each as it is normally held: what is owned or what is owed, as a plain figure. Anything left over goes to owner
-        equity, which keeps the entry balanced.
-      </p>
+    <Card title="Opening balances" pad
+      help={
+        <>
+          What each account held on the day these books start, from the last balance sheet kept anywhere else. Enter
+          each as it is normally held: what is owned or what is owed, as a plain figure. Anything left over goes to owner
+          equity, which keeps the entry balanced.
+        </>
+      }
+    >
       {done.length > 0 && (
         <Notice tone="info">
           Opening balances already posted on {done.map((e) => e.date.slice(0, 10)).join(', ')}. To change them, reverse
@@ -353,11 +362,14 @@ export function YearEnd({ accounts, lines, entries, money, venueId, userId, onCh
   };
 
   return (
-    <Card title="Year end" pad>
-      <p className="small dim" style={{ marginTop: 0 }}>
-        Moves the year&rsquo;s profit out of the income and cost accounts into retained earnings, and closes the books
-        through the last day so nothing more lands in that year. Statements still show the year as it was.
-      </p>
+    <Card title="Year end" pad
+      help={
+        <>
+          Moves the year&rsquo;s profit out of the income and cost accounts into retained earnings, and closes the books
+          through the last day so nothing more lands in that year. Statements still show the year as it was.
+        </>
+      }
+    >
       {closed.length > 0 && <p className="small">Years already closed: {closed.join(', ')}.</p>}
       {!from ? (
         <Empty title="Nothing to close">Nothing has been posted yet.</Empty>

@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast, ViewTabs,
-  PickerMenu, PickerItem, FacetChips, GroupedRows, SortableTh, ExpenseModal,
-} from '@snpos/ui';
+  PickerMenu, PickerItem, FacetChips, GroupedRows, SortableTh, ExpenseModal, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, levelOf, saveDropping, AVERAGE_COST_WORDS,
@@ -1040,12 +1039,14 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
               is what every kitchen ingredient wants.
             */}
             <div style={{ gridColumn: '1 / -1', marginTop: '0.4rem' }}>
-              <h4 style={{ margin: '0 0 0.15rem' }}>How it arrives</h4>
-              <p className="small dim" style={{ margin: 0 }}>
-                Only different from the unit above when you buy it in something bigger than you count it in —
-                a sack of rice counted in kg, a bottle of gin poured as shots. Buy it by the{' '}
-                {editing.unit ?? 'unit'} and there is nothing to set here.
-              </p>
+              <h4 style={{ margin: '0 0 0.15rem' }}>
+                How it arrives
+                <InfoTip>
+                  Only different from the unit above when you buy it in something bigger than you count it in —
+                  a sack of rice counted in kg, a bottle of gin poured as shots. Buy it by the{' '}
+                  {editing.unit ?? 'unit'} and there is nothing to set here.
+                </InfoTip>
+              </h4>
             </div>
             <Field
               label={`Bought by the ${editing.unit ?? 'unit'}, or in something bigger?`}

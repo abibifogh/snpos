@@ -155,11 +155,14 @@ export function Insights({ revenue, cost, from, to, money, tickMoney }: InsightI
       </Card>
 
       <div className="grid-2">
-        <Card title="Which days actually earn">
-          <p className="small dim" style={{ marginTop: 0 }}>
-            An average, not a total, a month holds five Mondays and four Sundays, and totalling would
-            call Monday the better day when it is only the more frequent one.
-          </p>
+        <Card title="Which days actually earn"
+          help={
+            <>
+              An average, not a total, a month holds five Mondays and four Sundays, and totalling would
+              call Monday the better day when it is only the more frequent one.
+            </>
+          }
+        >
           <div className="dow">
             {dow.map((d) => (
               <div className="dow-row" key={d.day}>

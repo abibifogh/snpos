@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Badge, Card, Segmented, Spinner } from '@snpos/ui';
+import { Badge, Card, InfoTip, Segmented, Spinner } from '@snpos/ui';
 import { closeDayFacts, closeDayChecklist, closeDayProgress, dateWords } from '@snpos/core';
 import type { CloseDayRow } from '@snpos/core';
 
@@ -39,6 +39,11 @@ export function CloseDayCard({ money, compact = false }: { money: (n: number) =>
     <Card
       title={`Close the day · ${dateWords(day.toISOString())}${progress && progress.of ? ` · ${progress.done} of ${progress.of} done` : ''}`}
       pad={false}
+      help={compact ? undefined : (
+        <>
+          Each line is a job that already has a page; this says whether it is done for the day, and takes you there.
+        </>
+      )}
     >
       <div className="card-pad" style={{ paddingBottom: 0 }}>
         <Segmented<Which>
@@ -47,11 +52,6 @@ export function CloseDayCard({ money, compact = false }: { money: (n: number) =>
           ariaLabel="Which day"
           options={[{ value: 'yesterday', label: 'Yesterday' }, { value: 'today', label: 'Today' }]}
         />
-        {!compact && (
-          <p className="small dim" style={{ margin: '0.5rem 0 0' }}>
-            Each line is a job that already has a page; this says whether it is done for the day, and takes you there.
-          </p>
-        )}
       </div>
       {error ? (
         <p className="card-pad small" style={{ margin: 0 }}>The day's shifts could not be read, so it cannot say whether the day is finished.</p>
@@ -86,11 +86,13 @@ export function CloseDayCard({ money, compact = false }: { money: (n: number) =>
 export function CloseDayPage({ money }: { money: (n: number) => string }) {
   return (
     <>
-      <h1>Close the day</h1>
-      <p className="dim" style={{ maxWidth: '62ch' }}>
-        Whether a day is finished: shifts closed, counts and spends agreed, cash put away and banked, card and mobile
-        money matched to the bank, petty cash counted.
-      </p>
+      <h1>
+        Close the day
+        <InfoTip>
+          Whether a day is finished: shifts closed, counts and spends agreed, cash put away and banked, card and mobile
+          money matched to the bank, petty cash counted.
+        </InfoTip>
+      </h1>
       <CloseDayCard money={money} />
     </>
   );

@@ -91,12 +91,16 @@ export function MenuEngineeringPanel({
   const shown = showAll ? analysis.rows : analysis.rows.slice(0, 12);
 
   return (
-    <Card title="Which dishes earn their place">
-      <p className="dim" style={{ marginTop: 0 }}>
-        Every dish on two axes: how often it sold, and what was left after the recipe.
-        The dashed lines are this menu&rsquo;s own averages, so a dot&rsquo;s corner is the decision.
-        {side !== 'all' ? ' Limited to the side you are looking at.' : ''}
-      </p>
+    <Card
+      title="Which dishes earn their place"
+      help={
+        <>
+          Every dish on two axes: how often it sold, and what was left after the recipe.
+          The dashed lines are this menu&rsquo;s own averages, so a dot&rsquo;s corner is the decision.
+          {side !== 'all' ? ' Limited to the side you are looking at.' : ''}
+        </>
+      }
+    >
 
       {analysis.tooThin ? (
         <p className="notice notice-info">{analysis.tooThin}</p>

@@ -63,11 +63,14 @@ export function CashToBank({ venueId, userId, money, decimals, onChanged, toast,
   };
 
   return (
-    <Card title="Cash to the bank" pad>
-      <p className="small dim" style={{ marginTop: 0 }}>
-        Each close says how much cash went into the safe or to the bank. Confirm it here when the bank slip is in
-        hand: that is when the books move it from cash on hand into the bank.
-      </p>
+    <Card title="Cash to the bank" pad
+      help={
+        <>
+          Each close says how much cash went into the safe or to the bank. Confirm it here when the bank slip is in
+          hand: that is when the books move it from cash on hand into the bank.
+        </>
+      }
+    >
       {moves === null ? null : pending.length === 0 && inSafe <= 0 ? (
         <p className="small" style={{ margin: 0 }}>Nothing waiting. No cash is in the safe or on its way to the bank.</p>
       ) : null}

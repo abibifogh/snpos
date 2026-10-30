@@ -404,12 +404,15 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
               recorded. The question was got out of the way of; this is where it
               survives. */}
           {outstanding.length > 0 && (
-            <Card title={`${outstanding.length} ${outstanding.length === 1 ? 'purchase' : 'purchases'} worth a look`}>
-              <p className="small dim" style={{ marginTop: 0 }}>
-                Each of these looked dear, or larger than usual, when it was entered. Whoever recorded it was
-                asked and carried on, which is right — prices genuinely move. Tick off the ones that were fine
-                and what is left is what to ask about.
-              </p>
+            <Card title={`${outstanding.length} ${outstanding.length === 1 ? 'purchase' : 'purchases'} worth a look`}
+              help={
+                <>
+                  Each of these looked dear, or larger than usual, when it was entered. Whoever recorded it was
+                  asked and carried on, which is right — prices genuinely move. Tick off the ones that were fine
+                  and what is left is what to ask about.
+                </>
+              }
+            >
               <div className="table-wrap">
                 <table className="data">
                   <thead>
@@ -455,19 +458,30 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
             </Card>
           )}
 
-          <Card title={by === 'day' ? 'Day by day' : 'Week by week'}>
+          <Card title={by === 'day' ? 'Day by day' : 'Week by week'}
+            help={
+              <>
+                Every {by} in the range, including the ones nothing was spent on — a chart that skips its empty
+                days makes a fortnight of nothing look like a busy week.
+              </>
+            }
+          >
             <Bars rows={a.buckets} money={money} />
-            <p className="small dim" style={{ marginBottom: 0, marginTop: '0.5rem' }}>
-              Every {by} in the range, including the ones nothing was spent on — a chart that skips its empty
-              days makes a fortnight of nothing look like a busy week.
-            </p>
           </Card>
 
           {/* Side by side, which is the comparison the whole page exists for.
               Only when all three are being shown: a page already narrowed to
               the bar has nothing to compare. */}
           {side === 'all' && (
-            <Card title="The three trades">
+            <Card title="The three trades"
+              help={
+                <>
+                  A bar&rsquo;s spending is almost all stock, a kitchen&rsquo;s is stock and gas and transport, a
+                  shop&rsquo;s is barely anything at all. Added together they describe none of them, which is why
+                  they are shown apart.
+                </>
+              }
+            >
               <div className="table-wrap">
                 <table className="data">
                   <thead>
@@ -498,11 +512,6 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
                   </tbody>
                 </table>
               </div>
-              <p className="small dim" style={{ marginBottom: 0, marginTop: '0.6rem' }}>
-                A bar&rsquo;s spending is almost all stock, a kitchen&rsquo;s is stock and gas and transport, a
-                shop&rsquo;s is barely anything at all. Added together they describe none of them, which is why
-                they are shown apart.
-              </p>
             </Card>
           )}
 
@@ -514,12 +523,15 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
             somebody can act on; a list of forty percentages is not.
           */}
           {ranked.filter((r) => r.now > 0).length > 0 && (
-            <Card title="Every item ranked by what it cost">
-              <p className="small dim" style={{ marginTop: 0 }}>
-                Measured against the {money(coverage.itemised)} that was itemised, not against everything spent.
-                Transport, gas and repairs have no lines behind them — {bpWords(coverage.coverBp)} of
-                spending in these dates does.
-              </p>
+            <Card title="Every item ranked by what it cost"
+              help={
+                <>
+                  Measured against the {money(coverage.itemised)} that was itemised, not against everything spent.
+                  Transport, gas and repairs have no lines behind them — {bpWords(coverage.coverBp)} of
+                  spending in these dates does.
+                </>
+              }
+            >
 
               {itemNotes.length > 0 && (
                 <ul className="small" style={{ marginTop: 0, paddingLeft: '1.1rem' }}>

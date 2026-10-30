@@ -2,8 +2,7 @@ import { Fragment, useEffect, useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Card, Empty, Notice, Spinner, Badge, Modal, Button, Field, Input, Textarea, useToast,
-  FilterBar, FilterField, ShiftHistory,
-} from '@snpos/ui';
+  FilterBar, FilterField, ShiftHistory, InfoTip } from '@snpos/ui';
 import { listAll, humanError, Query, db, DB_ID } from '../lib';
 import {
   formatMoney, byStaff, destinationLabel, fromTakings,
@@ -742,13 +741,15 @@ export function ShiftsPage() {
   return (
     <>
       <div className="page-head">
-        <h1>Shifts</h1>
+        <h1>
+          Shifts
+          <InfoTip>
+            Shifts are opened and closed on the terminal, by whoever is on the till. This is the record of what happened,
+            what was expected in each drawer, what was actually counted, and the difference.
+          </InfoTip>
+        </h1>
         <SideFilter value={side} onChange={setSide} settings={settings} profile={profile} />
       </div>
-      <p className="dim small" style={{ marginTop: 0 }}>
-        Shifts are opened and closed on the terminal, by whoever is on the till. This is the record of what happened, 
-        what was expected in each drawer, what was actually counted, and the difference.
-      </p>
 
       <FilterBar>
         <FilterField label="From"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></FilterField>
@@ -763,7 +764,23 @@ export function ShiftsPage() {
       </FilterBar>
 
       {rows && shown.length > 0 && (
-        <Card>
+        <Card
+          help={
+            <>
+              The big figures are what was <strong>counted</strong> at each close — somebody's hand in the
+              drawer. Underneath is what the <strong>records</strong> say should have been there. Correcting how
+              a payment was made moves the records; it never moves a count, because what was in the drawer that
+              night is a fact and no later edit reaches back and changes it.
+              {totals.open > 0 && (
+                <>
+                  {' '}
+                  <strong>{totals.open}</strong> {totals.open === 1 ? 'shift is' : 'shifts are'} still open and
+                  counted by nobody, so {totals.open === 1 ? 'it adds' : 'they add'} nothing here.
+                </>
+              )}
+            </>
+          }
+        >
           <div className="row row-wrap" style={{ gap: '1.8rem', alignItems: 'flex-end' }}>
             <div>
               <div className="dim small">Shifts</div>
@@ -841,19 +858,6 @@ export function ShiftsPage() {
             </div>
           </div>
 
-          <p className="small dim" style={{ margin: '0.9rem 0 0' }}>
-            The big figures are what was <strong>counted</strong> at each close — somebody's hand in the
-            drawer. Underneath is what the <strong>records</strong> say should have been there. Correcting how
-            a payment was made moves the records; it never moves a count, because what was in the drawer that
-            night is a fact and no later edit reaches back and changes it.
-            {totals.open > 0 && (
-              <>
-                {' '}
-                <strong>{totals.open}</strong> {totals.open === 1 ? 'shift is' : 'shifts are'} still open and
-                counted by nobody, so {totals.open === 1 ? 'it adds' : 'they add'} nothing here.
-              </>
-            )}
-          </p>
 
           {openKind && (
             <TotalsBreakdown
@@ -1437,9 +1441,12 @@ export function ShiftsPage() {
             wrong, which is a fair conclusion from what they can see.
           */}
           <p className="small dim" style={{ marginTop: 0 }}>
-            <strong>Expected</strong> is the float this drawer opened with, plus everything taken through it,
-            less anything paid out of it. <strong>Counted</strong> is what the person closing physically found.
-            The difference between them is the only figure here that nobody typed.
+            How this works
+            <InfoTip>
+              <strong>Expected</strong> is the float this drawer opened with, plus everything taken through it,
+              less anything paid out of it. <strong>Counted</strong> is what the person closing physically found.
+              The difference between them is the only figure here that nobody typed.
+            </InfoTip>
           </p>
           {/*
             Where the float came from, on the screen where a float is argued
@@ -1938,9 +1945,12 @@ export function ShiftsPage() {
             }
           >
             <p className="small dim" style={{ marginTop: 0 }}>
-              What was physically in each drawer when this shift opened. It is the one figure in a close nobody
-              counts twice — everything else is measured, this is asserted once and then believed all night — so
-              a wrong one stays invisible until the drawer comes up short by exactly that amount.
+              How this works
+              <InfoTip>
+                What was physically in each drawer when this shift opened. It is the one figure in a close nobody
+                counts twice — everything else is measured, this is asserted once and then believed all night — so
+                a wrong one stays invisible until the drawer comes up short by exactly that amount.
+              </InfoTip>
             </p>
 
             {methods.map((m) => (
@@ -2003,8 +2013,11 @@ export function ShiftsPage() {
             }
           >
             <p className="small dim" style={{ marginTop: 0 }}>
-              For a till nobody got back to: a bar that stopped serving at one and was closed on the system at
-              eleven the next morning. Opened {dateTimeWords(closeEdit.opened_at)}.
+              How this works
+              <InfoTip>
+                For a till nobody got back to: a bar that stopped serving at one and was closed on the system at
+                eleven the next morning. Opened {dateTimeWords(closeEdit.opened_at)}.
+              </InfoTip>
             </p>
             {/* Said early and plainly, because it is the question an admin
                 actually has and the answer is reassuring. */}

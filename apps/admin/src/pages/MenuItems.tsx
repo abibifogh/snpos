@@ -1499,11 +1499,14 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
         miss leaves a heading of one behind on the group menu.
       */}
       {module === 'kitchen' && headingsInUse(items ?? []).length > 0 && (
-        <Card title="Headings on the group menu">
-          <p className="small dim" style={{ marginTop: 0 }}>
-            How a party sees the group menu divided. Renaming one moves every dish under it; renaming into a
-            heading that already exists joins the two.
-          </p>
+        <Card title="Headings on the group menu"
+          help={
+            <>
+              How a party sees the group menu divided. Renaming one moves every dish under it; renaming into a
+              heading that already exists joins the two.
+            </>
+          }
+        >
           {headingsInUse(items ?? []).map((h) => (
             <div className="row" key={h.heading} style={{ justifyContent: 'space-between', padding: '0.35rem 0' }}>
               <span>

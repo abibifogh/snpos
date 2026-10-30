@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Empty, Field, Input, Modal, Notice, Segmented, Select, Spinner, useToast } from '@snpos/ui';
+import { Badge, Button, Card, Empty, Field, Input, Modal, Notice, Segmented, Select, Spinner, useToast, InfoTip } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
   loadStaffCharges, loadSettlements, settleCharge, owingByPerson, owingTotals, chargeLeft, settleProblem, foundAmount,
@@ -62,11 +62,13 @@ export function StaffOwingPage() {
     <>
       <div className="spread">
         <div>
-          <h1>Staff owing</h1>
-          <p className="dim small" style={{ margin: '0.2rem 0 0' }}>
-            Count differences charged to a person, and what has been done about each. Charge a short line from
-            Waiting for you.
-          </p>
+          <h1>
+            Staff owing
+            <InfoTip>
+              Count differences charged to a person, and what has been done about each. Charge a short line from
+              Waiting for you.
+            </InfoTip>
+          </h1>
         </div>
         <div className="row row-wrap" style={{ gap: '0.5rem' }}>
           <Button onClick={() => setStatementFor('')} disabled={!charges || charges.length === 0}>Download statement</Button>

@@ -1,4 +1,4 @@
-import { Badge, Empty, Notice } from '@snpos/ui';
+import { Badge, Empty, Notice, InfoTip } from '@snpos/ui';
 import { formatMoney, readImport, importStock, IMPORT_COLUMNS, IMPORT_HEADINGS, TEMPLATE_ROWS } from '@snpos/core';
 import type { Category, Consignor, VariantType, Settings, ImportResult } from '@snpos/core';
 import { ImportDialog } from './ImportDialog';
@@ -93,11 +93,13 @@ export function StockUpload({
             </Notice>
             {result.intakes.length > 0 && (
               <>
-                <h3 style={{ margin: '1.1rem 0 0.35rem', fontSize: '0.95rem' }}>Deliveries created</h3>
-                <p className="small dim" style={{ marginTop: 0 }}>
-                  One per maker, exactly as if it had been booked in at the counter. A slip can be printed for any
-                  of them from Goods received.
-                </p>
+                <h3 style={{ margin: '1.1rem 0 0.35rem', fontSize: '0.95rem' }}>
+                  Deliveries created
+                  <InfoTip>
+                    One per maker, exactly as if it had been booked in at the counter. A slip can be printed for any
+                    of them from Goods received.
+                  </InfoTip>
+                </h3>
                 <div className="table-wrap">
                   <table className="data">
                     <thead><tr><th>Reference</th><th>From</th><th className="num">Pieces</th></tr></thead>

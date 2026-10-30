@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Badge, Button, Card, Empty, Input, Modal, Notice, Segmented, Spinner, useToast } from '@snpos/ui';
+import { Badge, Button, Card, Empty, Input, Modal, Notice, Segmented, Spinner, useToast, InfoTip } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
   
@@ -323,7 +323,13 @@ export function WaitingPage() {
   return (
     <>
       <div className="spread">
-        <h1>Waiting for you</h1>
+        <h1>
+          Waiting for you
+          <InfoTip>
+            Oldest first. Approving a count moves the shelf by the difference it found; refusing leaves the shelf as
+            it is. Refusing a spend takes it off the books.
+          </InfoTip>
+        </h1>
         <Segmented<Show>
           value={show}
           onChange={setShow}
@@ -334,10 +340,7 @@ export function WaitingPage() {
           }))}
         />
       </div>
-      <p className="dim small" style={{ marginTop: 0 }}>
-        {items ? waitingSummary(items) : 'Reading every queue…'} Oldest first. Approving a count moves the shelf by the
-        difference it found; refusing leaves the shelf as it is. Refusing a spend takes it off the books.
-      </p>
+      <p className="small" style={{ marginTop: 0 }}>{items ? waitingSummary(items) : 'Reading every queue…'}</p>
 
       {error && <Notice>{error}</Notice>}
 
@@ -350,11 +353,14 @@ export function WaitingPage() {
         longer it sits.
       */}
       {bookings.length > 0 && (
-        <Card title={`Group bookings to confirm (${bookings.length})`}>
-          <p className="small dim" style={{ marginTop: 0 }}>
-            Open one to confirm or decline it. Its meal times reach the kitchen at their time either way, marked
-            Not confirmed until you decide; declining can cancel them too.
-          </p>
+        <Card title={`Group bookings to confirm (${bookings.length})`}
+          help={
+            <>
+              Open one to confirm or decline it. Its meal times reach the kitchen at their time either way, marked
+              Not confirmed until you decide; declining can cancel them too.
+            </>
+          }
+        >
           {bookings.map((b) => (
             <div key={b.$id} style={{ padding: '0.6rem 0', borderBottom: '1px solid var(--border)' }}>
               <div className="spread" style={{ alignItems: 'baseline' }}>

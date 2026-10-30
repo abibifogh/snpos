@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Field, Input, Modal, Notice, Segmented, Select, Spinner, Textarea, useToast, ExpenseModal } from '@snpos/ui';
+import { Badge, Button, Card, Field, Input, Modal, Notice, Segmented, Select, Spinner, Textarea, useToast, ExpenseModal, InfoTip } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
   loadPurchaseOrders, loadOrderables, savePurchaseOrder, markOrderSent, askToEmailOrder, cancelPurchaseOrder,
@@ -99,13 +99,15 @@ export function PurchaseOrdersPage() {
     <>
       <div className="spread">
         <div>
-          <h1>Purchase orders</h1>
-          <p className="dim small" style={{ margin: '0.2rem 0 0', maxWidth: '64ch' }}>
-            Orders to suppliers for things running low. Send one as a PDF, a message or an email. When the goods
-            arrive, press Record the delivery on the order, or record the spend at a till and pick the order: its
-            items fill in and go into stock.
-            {limit > 0 && ` Orders over ${money(limit)} wait on Waiting for you before they can be sent.`}
-          </p>
+          <h1>
+            Purchase orders
+            <InfoTip>
+              Orders to suppliers for things running low. Send one as a PDF, a message or an email. When the goods
+              arrive, press Record the delivery on the order, or record the spend at a till and pick the order: its
+              items fill in and go into stock.
+              {limit > 0 && ` Orders over ${money(limit)} wait on Waiting for you before they can be sent.`}
+            </InfoTip>
+          </h1>
         </div>
         {mayOrder && <Button variant="primary" onClick={() => setOpen({})}>New order</Button>}
       </div>
@@ -117,15 +119,18 @@ export function PurchaseOrdersPage() {
       {isAdmin && settings && <WhoOrders settings={settings} onSaved={refreshSettings} toast={toast} />}
 
       {mayOrder && orders && (
-        <Card title={ideas.length ? `Running low (${ideas.reduce((n, g) => n + g.lines.length, 0)} items)` : 'Running low'}>
+        <Card title={ideas.length ? `Running low (${ideas.reduce((n, g) => n + g.lines.length, 0)} items)` : 'Running low'}
+          help={
+            <>
+              Worked out to bring each item back to its full level, in the packs it is bought in. Set the full
+              level, pack and supplier for an item under Stock.
+            </>
+          }
+        >
           {ideas.length === 0 ? (
             <p className="small dim" style={{ margin: 0 }}>Nothing is running low that is not already on an order.</p>
           ) : (
             <div style={{ display: 'grid', gap: '0.6rem' }}>
-              <p className="small dim" style={{ margin: 0 }}>
-                Worked out to bring each item back to its full level, in the packs it is bought in. Set the full
-                level, pack and supplier for an item under Stock.
-              </p>
               {ideas.map((g) => (
                 <div key={`${g.supplierId || 'none'}|${g.module}`} className="spread" style={{ borderTop: '1px solid var(--border)', paddingTop: '0.5rem', alignItems: 'center' }}>
                   <div>
@@ -279,11 +284,14 @@ function WhoOrders({ settings, onSaved, toast }: {
     }
   };
   return (
-    <Card title="Who can make orders" pad>
-      <p className="small dim" style={{ marginTop: 0 }}>
-        Admins always can. Tick the roles that may make and send orders; one person can be made an exception
-        either way under Staff, Make purchase orders. Orders over the limit still wait for approval.
-      </p>
+    <Card title="Who can make orders" pad
+      help={
+        <>
+          Admins always can. Tick the roles that may make and send orders; one person can be made an exception
+          either way under Staff, Make purchase orders. Orders over the limit still wait for approval.
+        </>
+      }
+    >
       <div className="row row-wrap" style={{ gap: '1.2rem' }}>
         {ORDER_ROLES.map((r) => (
           <label key={r} className="row" style={{ gap: '0.4rem', alignItems: 'center', cursor: 'pointer' }}>
@@ -651,7 +659,14 @@ function OrderModal({
 
         {/* Sending: any of three ways, then say it has gone. */}
         {sendable && (
-          <Card title="Send it">
+          <Card title="Send it"
+            help={
+              <>
+                When it arrives, press Record the delivery below, or record the spend at a till and choose{' '}
+                {order?.po_no} under "For an order".
+              </>
+            }
+          >
             <div className="row" style={{ gap: '0.5rem', flexWrap: 'wrap' }}>
               <Button loading={busy === 'pdf'} disabled={!!busy} onClick={() => void pdf()}>Download PDF</Button>
               <Button loading={busy === 'copy'} disabled={!!busy} onClick={() => void copy()}>Copy as a message</Button>
@@ -667,20 +682,19 @@ function OrderModal({
                 <Button size="sm" disabled={!!busy} onClick={() => void sent('message')}>Mark as sent</Button>
               </div>
             )}
-            <p className="small dim" style={{ marginBottom: 0 }}>
-              When it arrives, press Record the delivery below, or record the spend at a till and choose{' '}
-              {order?.po_no} under "For an order".
-            </p>
           </Card>
         )}
 
         {/* The goods have come: the till's spend form, with this order picked. */}
         {order && onReceive && isOpenOrder(order.status) && (
-          <Card title="It has arrived">
-            <p className="small dim" style={{ marginTop: 0 }}>
-              Records the spend that pays for it. What is still to come fills in; change anything that came
-              differently, and say how it was paid, or that it has not been paid yet.
-            </p>
+          <Card title="It has arrived"
+            help={
+              <>
+                Records the spend that pays for it. What is still to come fills in; change anything that came
+                differently, and say how it was paid, or that it has not been paid yet.
+              </>
+            }
+          >
             <Button variant="primary" disabled={!!busy} onClick={() => onReceive(order)}>Record the delivery</Button>
           </Card>
         )}

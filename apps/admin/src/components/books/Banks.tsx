@@ -48,11 +48,14 @@ export function BankAccounts({ accounts, lines, money, decimals, venueId, userId
 
   return (
     <>
-      <Card title="Bank and cash accounts" pad>
-        <p className="small dim" style={{ marginTop: 0 }}>
-          Every account money sits in. Each bank account and the MoMo merchant wallet is its own account, with its own
-          balance, and can be reconciled against its own statement under Reconcile.
-        </p>
+      <Card title="Bank and cash accounts" pad
+        help={
+          <>
+            Every account money sits in. Each bank account and the MoMo merchant wallet is its own account, with its own
+            balance, and can be reconciled against its own statement under Reconcile.
+          </>
+        }
+      >
         <div className="table-wrap">
           <table className="data">
             <thead><tr><th>Account</th><th>Kind</th><th className="num">Holds</th></tr></thead>
@@ -100,11 +103,14 @@ export function BankAccounts({ accounts, lines, money, decimals, venueId, userId
         )}
       </Card>
 
-      <Card title="Move money between accounts" pad>
-        <p className="small dim" style={{ marginTop: 0 }}>
-          Cash paid into the bank, the MoMo wallet emptied to the bank, money moved between two banks. Nothing is
-          earned or spent; it only moves.
-        </p>
+      <Card title="Move money between accounts" pad
+        help={
+          <>
+            Cash paid into the bank, the MoMo wallet emptied to the bank, money moved between two banks. Nothing is
+            earned or spent; it only moves.
+          </>
+        }
+      >
         <div className="row row-wrap" style={{ gap: '0.5rem', alignItems: 'flex-end' }}>
           <Field label="From">
             <Select value={move.from} onChange={(e) => setMove({ ...move, from: e.target.value })}>

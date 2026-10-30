@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Modal, Notice, Spinner, Badge, Input, Field, useToast } from '@snpos/ui';
+import { Button, Card, Empty, Modal, Notice, Spinner, Badge, Input, Field, useToast, InfoTip } from '@snpos/ui';
 import { listAll, humanError, db, DB_ID } from '../lib';
 import {
   axisMoney, trialBalance, buildReportHtml, openPrintable, downloadUrl,
@@ -508,8 +508,13 @@ export function ReportsPage() {
             </div>
           </Card>
 
-          <Card title="Busiest hours">
-            <p className="small dim" style={{ marginTop: 0 }}>Sales by hour of day. Useful for deciding who to roster and when.</p>
+          <Card title="Busiest hours"
+            help={
+              <>
+                Sales by hour of day. Useful for deciding who to roster and when.
+              </>
+            }
+          >
             {byHour.filter((h) => h.value > 0).map((h) => (
               <div className="row" key={h.hour} style={{ gap: '0.6rem', padding: '0.15rem 0' }}>
                 <span className="small dim" style={{ width: '3rem' }}>{String(h.hour).padStart(2, '0')}:00</span>
@@ -666,9 +671,12 @@ function CostAccountPicker({
       {error && <div style={{ marginBottom: '0.8rem' }}><Notice>{error}</Notice></div>}
 
       <p className="small dim" style={{ marginTop: 0 }}>
-        Tick the accounts that should add up to the Costs figure. The amounts are what you actually spent on each in
-        the dates you are looking at. Everything you leave out stays on the profit and loss; it just stops being part
-        of this one headline.
+        How this works
+        <InfoTip>
+          Tick the accounts that should add up to the Costs figure. The amounts are what you actually spent on each in
+          the dates you are looking at. Everything you leave out stays on the profit and loss; it just stops being part
+          of this one headline.
+        </InfoTip>
       </p>
 
       <div className="row" style={{ gap: '0.4rem', marginBottom: '0.6rem' }}>

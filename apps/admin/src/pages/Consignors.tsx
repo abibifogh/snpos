@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Toggle, Badge, useToast,
-} from '@snpos/ui';
+  Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Toggle, Badge, useToast, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, humanError } from '../lib';
 import { listAll, Query, dateWords } from '@snpos/core';
 import {
@@ -166,7 +165,14 @@ export function ConsignorsPage() {
 
       {error && <Notice tone="err">{error}</Notice>}
 
-      <Card>
+      <Card
+        help={
+          <>
+            Every balance here is added up from the sales and payments on record, not stored anywhere.
+            It can always be shown line by line, open a statement to see exactly where a figure came from.
+          </>
+        }
+      >
         <div className="stat-row">
           <div className="stat">
             <div className="label">People</div>
@@ -177,10 +183,6 @@ export function ConsignorsPage() {
             <div className="value">{money(totalOwed)}</div>
           </div>
         </div>
-        <p className="small dim" style={{ marginBottom: 0 }}>
-          Every balance here is added up from the sales and payments on record, not stored anywhere.
-          It can always be shown line by line, open a statement to see exactly where a figure came from.
-        </p>
       </Card>
 
       <Card>
@@ -367,12 +369,14 @@ export function ConsignorsPage() {
             checked={editing.active ?? true}
             onChange={(v) => setEditing({ ...editing, active: v })}
             label="Still consigning"
+            help={
+              <>
+                Turning this off only hides them from the day-to-day lists. Their sales, statements and anything
+                still owed stay exactly where they are, somebody who has stopped bringing work in is usually still
+                waiting to be paid.
+              </>
+            }
           />
-          <p className="small dim" style={{ marginBottom: 0 }}>
-            Turning this off only hides them from the day-to-day lists. Their sales, statements and anything
-            still owed stay exactly where they are, somebody who has stopped bringing work in is usually still
-            waiting to be paid.
-          </p>
         </Modal>
       )}
 
@@ -901,9 +905,12 @@ function OwedBreakdown({
               </tbody>
             </table>
           </div>
-          <p className="small dim" style={{ marginBottom: 0 }}>
-            Every entry there has ever been, so the running balance on the top row is the figure on the list.
-            The statement covers a period and can be printed for them.
+          <p className="small dim" style={{ marginTop: 0 }}>
+            How this works
+            <InfoTip>
+              Every entry there has ever been, so the running balance on the top row is the figure on the list.
+              The statement covers a period and can be printed for them.
+            </InfoTip>
           </p>
         </>
       )}

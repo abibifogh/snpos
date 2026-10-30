@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, useToast,
-  FilterBar, FilterField, Segmented, PickerMenu, PickerItem, FacetChips, GroupedRows, SortableTh,
-} from '@snpos/ui';
+  FilterBar, FilterField, Segmented, PickerMenu, PickerItem, FacetChips, GroupedRows, SortableTh, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   Query, toCsv, downloadCsv, buildReceiptHtml, openPrintable, receiptForOrder,
@@ -1745,12 +1744,14 @@ export function OrdersPage() {
           */}
           {isAdmin && (
             <>
-              <h3 style={{ margin: '1.4rem 0 0.4rem' }}>Put this right</h3>
-              <p className="small dim" style={{ marginTop: 0 }}>
-                For an order that should not have happened: a duplicate, a walkout, a bill rung up against
-                the wrong table. Both take it off the shift it belongs to, and the shift's figures are worked
-                out again.
-              </p>
+              <h3 style={{ margin: '1.4rem 0 0.4rem' }}>
+                Put this right
+                <InfoTip>
+                  For an order that should not have happened: a duplicate, a walkout, a bill rung up against
+                  the wrong table. Both take it off the shift it belongs to, and the shift's figures are worked
+                  out again.
+                </InfoTip>
+              </h3>
               <div className="row" style={{ gap: '0.5rem' }}>
                 {open.status !== 'CANCELLED' && (
                   <Button size="sm" onClick={() => { setKillReason(''); setKilling({ order: open, how: 'cancel' }); }}>

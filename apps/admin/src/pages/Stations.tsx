@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Notice, Spinner, Toggle, Badge, useToast, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import type { Doc } from '@snpos/core';
 
@@ -76,16 +76,17 @@ export function StationsPage() {
   return (
     <>
       <div className="spread">
-        <h1>Stations</h1>
+        <h1>
+          Stations
+          <InfoTip>
+            A station is <strong>where food is cooked</strong>, hot line, grill, bar, pastry. Each dish is sent to one,
+            and the kitchen screen can be filtered to show only that station's tickets.
+          </InfoTip>
+        </h1>
         <Button variant="primary" onClick={() => { setEditing({ name: '', sort: (rows?.length ?? 0), active: true }); setError(null); }}>
           Add station
         </Button>
       </div>
-
-      <p className="dim small" style={{ marginTop: 0 }}>
-        A station is <strong>where food is cooked</strong>, hot line, grill, bar, pastry. Each dish is sent to one,
-        and the kitchen screen can be filtered to show only that station's tickets.
-      </p>
 
       <Notice tone="warn">
         <strong>Stations are not pickup points.</strong> A station is inside the kitchen; a pickup point is where the

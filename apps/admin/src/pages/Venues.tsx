@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Notice, Spinner, Toggle, Badge, useToast, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import { parseWindows, describeWindows, isAvailable } from '@snpos/core';
 import type { Venue, DayKey, Windows } from '@snpos/core';
@@ -107,15 +107,16 @@ export function VenuesPage() {
   return (
     <>
       <div className="spread">
-        <h1>Venues</h1>
+        <h1>
+          Venues
+          <InfoTip>
+            Opening hours matter beyond looking tidy: without them the system cannot tell customers when you are open, and
+            ordering ahead has no times to offer.
+          </InfoTip>
+        </h1>
         <Button variant="primary" onClick={() => open()}>Add venue</Button>
       </div>
       <AlsoHere host="venues" />
-
-      <p className="dim small" style={{ marginTop: 0 }}>
-        Opening hours matter beyond looking tidy: without them the system cannot tell customers when you are open, and
-        ordering ahead has no times to offer.
-      </p>
 
       {error && !editing && <Notice>{error}</Notice>}
 
