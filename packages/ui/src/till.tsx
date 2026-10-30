@@ -10,12 +10,12 @@ import {
   loadFloats, balancesFor, recordBoxSpend, boxOverdrawn, boxHeadroom,
   checkPurchase, raiseAlerts, FLAG_WORDS, logSpendChange, spendSnapshot,
   openOrdersFor, receiveOrderFromSpend, readLines, stillToCome,
-  loadLocations, openIn, purchaseLocation,
+  loadLocations, openIn, purchaseLocation, ownedChoices, receivePieces,
 } from '@snpos/core';
 import type {
   PaymentMethod, Settings, StaffProfile, PaidToKind, Supplier, ExpenseCategoryDoc, Ingredient,
   CashHandover, HandoverDestination, Module, ShiftExpense, ImprestFloatDoc, CheckedLine, ExpenseDesk,
-  PurchaseOrderDoc, StockLocation,
+  PurchaseOrderDoc, StockLocation, RestockChoice, RestockItem, RestockSize,
 } from '@snpos/core';
 
 /**
@@ -44,6 +44,14 @@ import type {
  * shelf. Absent means the pack when the item has one. See packs.ts.
  */
 interface DraftLine { ingredientId: string; qtyText: string; totalText: string; buyKey?: 'pack' | 'unit' }
+
+/**
+ * A line for one of the shop's own pieces rather than a stock item. Kept in
+ * the same field as an ingredient id, marked, so a recovered draft and the
+ * one item picker carry both without a second kind of line.
+ */
+const PIECE = 'piece:';
+const isPiece = (key: string) => key.startsWith(PIECE);
 
 /**
  * Said when the spend saved but the answer to "where did the money come from"
@@ -151,6 +159,8 @@ export function ExpenseModal({
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  /** The pieces the shop owns outright, which a purchase puts on the shelf. See sellsPieces. */
+  const [pieces, setPieces] = useState<RestockChoice[]>([]);
   const [categoryKey, setCategoryKey] = useState(editing?.category_key || editing?.category || '');
   const [methodId, setMethodId] = useState(editing?.paid_from_method_id ?? '');
   /**
@@ -339,7 +349,18 @@ export function ExpenseModal({
    * already reached the shelf stays reached.
    */
   const canStock = !editing;
-  const stocks = canStock && (module !== 'craft' || ingredients.length > 0);
+  /*
+    The shop's own pieces, on the office's form only.
+
+    A shop that buys a box of cards to sell owns them: no maker brought them
+    and nobody is credited when they sell, so they come in through a purchase
+    rather than Goods received. Only in the office, because the shelf count is
+    kept on the product and only a manager may change a product; the counter
+    would save the spend and then fail to put a single card on the shelf.
+  */
+  const sellsPieces = canStock && module === 'craft' && desk === 'office';
+  const stocks = canStock && (module !== 'craft' || ingredients.length > 0 || pieces.length > 0);
+  const pieceOf = (key: string) => (isPiece(key) ? pieces.find((x) => x.key === key.slice(PIECE.length)) ?? null : null);
 
   /** Fill the spend from an order: its supplier, and what is still to arrive. */
   const pickOrder = (id: string) => {
@@ -401,6 +422,12 @@ export function ExpenseModal({
           : Promise.resolve([] as Ingredient[]),
       ]);
       if (canStock) void openOrdersFor(venueId, module).then(setOrders).catch(() => undefined);
+      if (sellsPieces) {
+        void Promise.all([
+          listAll<RestockItem>('menu_items', [Query.equal('module', 'craft')]),
+          listAll<RestockSize>('product_variants'),
+        ]).then(([items, sizes]) => setPieces(ownedChoices(items, sizes))).catch(() => undefined);
+      }
       if (canStock) {
         void loadLocations(venueId).then((all: StockLocation[]) => {
           const mine = openIn(all, module);
@@ -433,7 +460,9 @@ export function ExpenseModal({
         under whatever happens to be first in the list. Functional, so it reads
         the value as it is at that moment rather than as it was on mount.
       */
-      if (!editing) setCategoryKey((cur) => cur || mine[0]?.key || 'other');
+      // A recovered draft can name a category that has since been retired; a
+      // new spend is filed under one still on offer, not under the old one.
+      if (!editing) setCategoryKey((cur) => (cur && mine.some((c) => c.key === cur) ? cur : mine[0]?.key || 'other'));
       // Only what an expense is allowed to be paid out of ever reaches the
       // form, so the restriction cannot be got round by leaving the dropdown
       // where it was.
@@ -576,7 +605,7 @@ export function ExpenseModal({
     setChecking(true);
     try {
       const rows = await checkPurchase(
-        filledLines.map((l) => {
+        filledLines.filter((l) => !isPiece(l.ingredientId)).map((l) => {
           const ing = ingredients.find((x) => x.$id === l.ingredientId);
           const opt = buyOptionFor(ing ?? { unit: 'unit' }, l.buyKey);
           const converted = convertPurchase({
@@ -636,6 +665,10 @@ export function ExpenseModal({
         setError('One of the items does not have a valid amount paid.');
         return;
       }
+      if (pieceOf(l.ingredientId) && !Number.isInteger(Number(l.qtyText))) {
+        setError(`${pieceOf(l.ingredientId)?.label ?? 'A piece'} is counted in whole pieces. Enter how many came in.`);
+        return;
+      }
     }
 
     setBusy(true);
@@ -691,6 +724,7 @@ export function ExpenseModal({
         // What it was and where the money came from, in a word each, so no
         // screen has to work it out again. See spend-kind.ts.
         kind: spendKind(filledLines.flatMap((l) => {
+          if (pieceOf(l.ingredientId)) return [{ stocked: true }];
           const ing = ingredients.find((i) => i.$id === l.ingredientId);
           return ing ? [{ stocked: ing.counted_at_close !== false }] : [];
         })),
@@ -824,6 +858,27 @@ export function ExpenseModal({
       // says so rather than disappearing quietly.
       let stockFailures = 0;
       for (const l of filledLines) {
+        const piece = pieceOf(l.ingredientId);
+        if (piece) {
+          // On the spend, and on the shelf with the movement that says where
+          // they came from. See shop-purchase.ts for why it is not stock in the books.
+          try {
+            await receivePieces({
+              venueId,
+              expenseId: expense.$id,
+              piece,
+              qty: Number(l.qtyText),
+              lineTotal: parseMoney(l.totalText, decimals) ?? 0,
+              unitCost: unitCostOf(l),
+              shiftId,
+              userId,
+              note: payee.trim() ? `Bought from ${payee.trim()}` : undefined,
+            });
+          } catch {
+            stockFailures += 1;
+          }
+          continue;
+        }
         const ing = ingredients.find((i) => i.$id === l.ingredientId);
         if (!ing) continue;
         /*
@@ -990,6 +1045,8 @@ export function ExpenseModal({
           ? 'Fix what was typed wrongly. What was added to stock stays as it is.'
           : bill
             ? 'An invoice to pay later: rent, power, a repair, a delivery on account. It waits under Bills to pay until it is paid, in full or in parts.'
+          : receive && module === 'craft'
+            ? 'Pieces the shop bought to sell, or supplies such as bags and wrapping: what came in and how it was paid. Puts them on the shelf and records the spend in one go.'
           : receive
             ? 'A delivery, a market run or a top-up: what came in, where it went and how it was paid. Adds to stock and records the spend in one go.'
             : 'Money paid out now, so the drawer still balances at the end of the night.'}
@@ -1027,7 +1084,7 @@ export function ExpenseModal({
         <div className="stack" style={{ gap: '0.45rem' }}>
           {lines.map((l, i) => {
             const picked = ingredients.find((x) => x.$id === l.ingredientId);
-            const unit = picked?.unit ?? 'unit';
+            const unit = picked?.unit ?? (isPiece(l.ingredientId) ? 'piece' : 'unit');
             const opt = buyOptionFor(picked ?? { unit }, l.buyKey);
             const per = unitCostOf(l);
             return (
@@ -1039,7 +1096,22 @@ export function ExpenseModal({
                     style={{ flex: 2 }}
                   >
                     <option value="">Item</option>
-                    {ingredients.map((ing) => (
+                    {pieces.length > 0 ? (
+                      <>
+                        <optgroup label="The shop's own pieces">
+                          {pieces.map((x) => (
+                            <option key={x.key} value={`${PIECE}${x.key}`}>{x.label} ({x.onHand} on the shelf)</option>
+                          ))}
+                        </optgroup>
+                        {ingredients.length > 0 && (
+                          <optgroup label="Supplies">
+                            {ingredients.map((ing) => (
+                              <option key={ing.$id} value={ing.$id}>{ing.name} ({ing.unit})</option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </>
+                    ) : ingredients.map((ing) => (
                       <option key={ing.$id} value={ing.$id}>{ing.name} ({ing.unit})</option>
                     ))}
                   </Select>
@@ -1149,7 +1221,9 @@ export function ExpenseModal({
           is asking the same question twice and inviting two answers.
           Still asked for spending with nothing to stock: a taxi, gas, a
           repair, because there is nothing to take the answer from. */}
-      {filledLines.length === 0 && (
+      {/* A piece of the shop's carries no category of its own, so a purchase of
+          nothing but pieces is still asked what it was for. */}
+      {filledLines.every((l) => isPiece(l.ingredientId)) && (
         <Field label="What for">
           <Select value={categoryKey} onChange={(e) => setCategoryKey(e.target.value)}>
             {categories.map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}
@@ -1164,7 +1238,7 @@ export function ExpenseModal({
           </Select>
         </Field>
       )}
-      {filledLines.length > 0 && (
+      {filledLines.some((l) => !isPiece(l.ingredientId)) && (
         <p className="small dim">
           Filed under <strong>{categories.find((c) => c.key === categoryKey)?.name ?? categoryKey}</strong>, from the
           items above.

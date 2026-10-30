@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { restockChoices, restockedBy } from '../intake-restock.ts';
+import { ownedChoices, restockChoices, restockedBy } from '../intake-restock.ts';
 
 const items = [
   { $id: 'soap', name: 'Moringa Soap', price: 7_500, on_hand: 4, module: 'craft', consignor_id: 'abi', active: true },
@@ -25,6 +25,20 @@ test('a delivery offers only this maker\'s own products, each size on its own', 
   // Somebody else's basket is not this maker's to restock, nor a retired one, nor a dish.
   assert.deepEqual(restockChoices(items, sizes, 'ama').map((c) => c.key), ['basket']);
   assert.deepEqual(restockChoices(items, sizes, ''), []);
+});
+
+test('a purchase offers only the pieces the shop owns, never a maker\'s', () => {
+  const mixed = [
+    ...items,
+    { $id: 'bag', name: 'Gift bag', price: 1_500, on_hand: 12, module: 'craft', consignor_id: '', active: true },
+    { $id: 'card', name: 'Greeting card', price: 2_000, module: 'craft', active: true },
+    { $id: 'gone', name: 'Old card', price: 2_000, module: 'craft', active: false },
+  ];
+  const cardSizes = [...sizes, { $id: 'card-a5', menu_item_id: 'card', label: 'A5', price: 3_000, on_hand: 5, active: true, sort: 1 }];
+  assert.deepEqual(ownedChoices(mixed, cardSizes).map((c) => [c.key, c.label, c.onHand]), [
+    ['bag', 'Gift bag', 12],
+    ['card|card-a5', 'Greeting card · A5', 5],
+  ]);
 });
 
 test('what a delivery restocked is read from its own movements, apart from what it created', () => {

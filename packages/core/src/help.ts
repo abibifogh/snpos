@@ -802,6 +802,13 @@ export const HELP_ARTICLES: HelpArticle[] = [
         'Everything booked in goes onto the shop floor immediately at the price you set.',
         'A delivery slip opens straight away, while the maker is still at the counter.',
       ),
+      h('Pieces the shop buys itself'),
+      p(
+        'Not everything on the shelf is a maker\u2019s. Cards, bags or a crate of baskets the shop paid for are '
+        + 'its own, and come in as a purchase: Stock \u2192 Shop \u2192 Receive stock \u2192 Bought by the shop. List '
+        + 'the pieces, how many and what was paid. They go onto the shelf and the spend is recorded in one go. '
+        + 'From a maker, on the same button, opens Goods received instead.',
+      ),
       h('The delivery slip'),
       p(
         'A proper page, not a screenshot: the pieces, how many of each came in, what each one earns THEM, '

@@ -48,9 +48,26 @@ export interface RestockChoice {
 
 /** What this maker's delivery can restock, by name. */
 export function restockChoices(items: RestockItem[], sizes: RestockSize[], consignorId: string): RestockChoice[] {
+  if (!consignorId) return [];
+  return choicesFor(items, sizes, (item) => item.consignor_id === consignorId);
+}
+
+/**
+ * The pieces the shop owns outright, which a purchase can restock.
+ *
+ * No maker, so nobody is credited when they sell: the shop bought them, and
+ * buying more is a spend like any other. A maker's product is never offered,
+ * because restocking it from a purchase would put pieces on the maker's shelf
+ * that the maker never brought.
+ */
+export function ownedChoices(items: RestockItem[], sizes: RestockSize[]): RestockChoice[] {
+  return choicesFor(items, sizes, (item) => !item.consignor_id);
+}
+
+function choicesFor(items: RestockItem[], sizes: RestockSize[], keep: (item: RestockItem) => boolean): RestockChoice[] {
   const out: RestockChoice[] = [];
   for (const item of items) {
-    if ((item.module ?? 'kitchen') !== 'craft' || item.active === false || !consignorId || item.consignor_id !== consignorId) continue;
+    if ((item.module ?? 'kitchen') !== 'craft' || item.active === false || !keep(item)) continue;
     const own = sizes
       .filter((s) => s.menu_item_id === item.$id && s.active !== false)
       .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.label.localeCompare(b.label));

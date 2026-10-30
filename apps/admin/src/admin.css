@@ -224,3 +224,20 @@
   text-transform: none;
   vertical-align: middle;
 }
+
+/* A choice between two ways of doing one job, each said in a sentence. */
+.choice-card {
+  display: grid;
+  gap: 0.25rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.choice-card:hover { border-color: var(--brand); background: var(--surface-2); }
+.choice-card:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }

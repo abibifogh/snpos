@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
@@ -70,6 +71,14 @@ export function IntakePage() {
   const [consignors, setConsignors] = useState<Consignor[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [receiving, setReceiving] = useState(false);
+  // Opened from Stock's Receive stock, "From a maker", with the form already up.
+  const [params, setParams] = useSearchParams();
+  // Once the makers have loaded, so the form opens on one; with none, the page says what is missing instead.
+  useEffect(() => {
+    if (params.get('receive') !== '1' || rows === null) return;
+    if (consignors.some((c) => c.active) && categories.length > 0) setReceiving(true);
+    setParams((p) => { p.delete('receive'); return p; }, { replace: true });
+  }, [params, setParams, rows, consignors, categories]);
   const [viewing, setViewing] = useState<ConsignmentIntake | null>(null);
   const [error, setError] = useState<string | null>(null);
 

@@ -10,6 +10,8 @@ import { postOpeningBalances } from './core/books-year-store.ts';
 import { addSupplier } from './core/purchase-orders-store.ts';
 import { movedThisShift, saveServerDraft, loadServerDraft, clearServerDraft } from './core/shop-count-store.ts';
 import { shelfLines } from './core/consignment.ts';
+import { receivePieces } from './core/shop-purchase.ts';
+import { ownedChoices } from './core/intake-restock.ts';
 import {
   barCountSheet, relinkShelves, pourMissedSales, unpouredForShift, saveBarCount, hasOpeningCount,
 } from './core/stock.ts';
@@ -1217,6 +1219,54 @@ console.log('\n=== SV — anything filed under Services stays off the shop count
   const sheet = await shelfLines();
   results.push(['SV the count sheet has the tote, not the alteration or the hemming', ok(
     'sheet', sheet.map((l) => l.menuItemId), ['tote'],
+  )]);
+}
+
+console.log('\n=== SP — the shop buys pieces to sell: on the shelf, and spent in the books ===');
+{
+  __reset();
+  __seed('menu_items', [
+    { $id: 'card', module: 'craft', name: 'Greeting card', price: 2000, on_hand: 0, active: true },
+    { $id: 'bag', module: 'craft', name: 'Gift bag', price: 1500, on_hand: 3, active: true, consignor_id: '' },
+    // A maker's piece: a purchase never restocks it.
+    { $id: 'soap', module: 'craft', name: 'Moringa soap', price: 7500, on_hand: 4, active: true, consignor_id: 'abi' },
+  ]);
+  __seed('product_variants', [
+    { $id: 'card-a5', menu_item_id: 'card', label: 'A5', price: 3000, on_hand: 2, active: true, sort: 1 },
+  ]);
+  __seed('expense_categories', [{ $id: 'c1', key: 'resale', name: 'Goods for resale', account_code: '5200' }]);
+  __seed('shift_expenses', [{
+    $id: 'e9', venue_id: 'main', shift_id: '', amount: 9_000, module: 'craft', category_key: 'resale',
+    created_by: 'regina', approval_status: 'pending', source: 'bank',
+  }]);
+  const choices = ownedChoices(__all('menu_items') as any[], __all('product_variants') as any[]);
+  results.push(['SP only the shop\'s own pieces are offered', ok(
+    'choices', choices.map((c) => c.key), ['bag', 'card|card-a5'],
+  )]);
+  // Something sold since the form opened: the delivery adds to the shelf as it is now.
+  await db.updateDocument(DB_ID, 'product_variants', 'card-a5', { on_hand: 1 });
+  for (const [key, qty, total] of [['card|card-a5', 10, 6_000], ['bag', 20, 3_000]] as const) {
+    const piece = choices.find((c) => c.key === key)!;
+    await receivePieces({ venueId: 'main', expenseId: 'e9', piece, qty, lineTotal: total, unitCost: total / qty, userId: 'regina' });
+  }
+  const shelf = [
+    (__all('product_variants') as any[]).find((v) => v.$id === 'card-a5').on_hand,
+    (__all('menu_items') as any[]).find((m) => m.$id === 'bag').on_hand,
+    (__all('menu_items') as any[]).find((m) => m.$id === 'soap').on_hand,
+  ];
+  results.push(['SP the shelf goes up by what came in, the maker\'s soap untouched', ok('on hand', shelf, [11, 23, 4])]);
+  results.push(['SP each line says where it came from', ok(
+    'moves', (__all('product_moves') as any[]).map((m) => [m.menu_item_id, m.variant_id, m.type, m.qty_delta, m.ref_type, m.consignor_id]),
+    [['card', 'card-a5', 'intake', 10, 'expense', ''], ['bag', '', 'intake', 20, 'expense', '']],
+  )]);
+  let refused = '';
+  await receivePieces({
+    venueId: 'main', expenseId: 'e9', piece: choices[0], qty: 1.5, lineTotal: 100, unitCost: 67,
+  }).catch((e) => { refused = e.message; });
+  results.push(['SP half a piece is refused', ok('refused', refused, 'Gift bag is counted in whole pieces.')]);
+  const posted = await postSpend(server, (__all('shift_expenses') as any[])[0]);
+  results.push(['SP bought to sell is spent, not left on the balance sheet', ok(
+    'lines', byAccount(linesOf(posted.entryId)), { '5200': 9_000, '1040': -9_000 },
   )]);
 }
 
