@@ -64,7 +64,7 @@ export function CombinedBar({
   const [countingIn, setCountingIn] = useState(false);
   /*
     Counting the kitchen OUT, on the same sheet, before the drawer. Its
-    differences wait on Waiting for you like the bar's. Asked for, never a
+    differences wait on Approvals like the bar's. Asked for, never a
     wall: leaving the sheet goes on to the close, which says it was skipped.
   */
   const [countingOut, setCountingOut] = useState(false);

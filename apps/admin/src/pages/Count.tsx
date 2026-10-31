@@ -13,7 +13,7 @@ import { StocktakePage } from './Stocktake';
  * Bar counts, the shop's Count the shelf and the kitchen's count were three
  * pages with three names for one job. The bar and the kitchen count on the
  * same sheet, against whichever place is picked; the shop counts its pieces
- * on the shelf. Every difference waits on Waiting for you.
+ * on the shelf. Every difference waits on Approvals.
  *
  * The old addresses (/bar/counts, /stocktake) open this page on their side.
  */

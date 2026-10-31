@@ -114,7 +114,7 @@ const NUMBERS: Record<string, {
     {
       option: 'approve_over',
       label: 'Orders over this amount need approval',
-      hint: 'An order worth more than this waits on Waiting for you before it can be sent. Orders an admin makes go straight out. Leave at 0 for no approval.',
+      hint: 'An order worth more than this waits on Approvals before it can be sent. Orders an admin makes go straight out. Leave at 0 for no approval.',
       fallback: 100000,
       money: true,
     },

@@ -49,7 +49,7 @@ export async function openOrdersFor(venueId: string, module?: Module): Promise<P
   return rows.filter((o) => isOpenOrder(o.status) && (!module || (o.module ?? 'kitchen') === module));
 }
 
-/** Orders waiting for somebody to approve them, for Waiting for you. */
+/** Orders waiting for somebody to approve them, for Approvals. */
 export const ordersWaiting = (): Promise<PurchaseOrderDoc[]> =>
   listAll<PurchaseOrderDoc>('stock_orders', [Query.equal('status', 'waiting')]).catch(() => []);
 

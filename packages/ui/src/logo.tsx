@@ -48,7 +48,7 @@ export function currentBrand(): BrandColours {
   const css = typeof document === 'undefined' ? null : getComputedStyle(document.documentElement);
   const read = (name: string, fallback: string) => (css?.getPropertyValue(name) || '').trim() || fallback;
   return {
-    brand: read('--brand', '#0f766e'),
+    brand: read('--brand', '#6A4DFF'),
     ink: read('--brand-ink', '#ffffff'),
     accent: read('--accent', '#f59e0b'),
   };

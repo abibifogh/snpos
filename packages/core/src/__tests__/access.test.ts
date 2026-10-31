@@ -132,7 +132,7 @@ test('a page that is switched off says so rather than blaming the account', () =
   assert.match(words, /Settings/);
   // And it says where a count already submitted went, because it did not go
   // anywhere: it is still waiting, holding its pieces frozen.
-  assert.match(words, /Waiting for you/);
+  assert.match(words, /Approvals/);
 
   const kitchenOnly = settings({ kitchen_enabled: true, craft_enabled: false });
   assert.match(unavailableWords('consignors', staff({ role: 'admin' }), kitchenOnly), /not switched on/);
@@ -504,29 +504,37 @@ test('every side has a name, and no screen has to invent one', () => {
 test('the sidebar is grouped by job, and the per-side pages are one link each', () => {
   const both = settings({ kitchen_enabled: true, craft_enabled: true, bar_enabled: true });
   const nav = navFor(staff({ role: 'admin' }), both);
-  assert.deepEqual(nav.map((g) => g.group), ['Today', 'Selling', 'Stock', 'Money', 'Books', 'Setup']);
+  // One group per icon on the rail.
+  assert.deepEqual(nav.map((g) => g.group), ['Today', 'Approvals', 'Sell', 'Stock', 'Money', 'Books', 'Setup']);
   const labels = (g: string) => nav.find((x) => x.group === g)!.links.map((l) => l.label);
-  assert.deepEqual(labels('Today'), ['Today', 'Close the day', 'Waiting for you', 'Orders']);
-  const sell = nav.find((g) => g.group === 'Selling')!;
+  assert.deepEqual(labels('Today'), ['Today', 'Close the day']);
+  assert.deepEqual(labels('Approvals'), ['Approvals']);
+  const sell = nav.find((g) => g.group === 'Sell')!;
+  assert.equal(sell.links[0].label, 'Orders');
   assert.deepEqual(sell.links.filter((l) => l.label === 'Categories').length, 1);
   assert.deepEqual(sell.links.find((l) => l.label === 'Categories')?.keys, ['menu_categories', 'bar_categories', 'shop_categories']);
-  assert.equal(sell.links.find((l) => l.label === 'Menu & products')?.to, '/catalogue/items');
+  assert.equal(sell.links.find((l) => l.label === 'Products')?.to, '/catalogue/items');
+  assert.ok(['Bookings', 'Discounts'].every((l) => labels('Sell').includes(l)));
   const stock = nav.find((g) => g.group === 'Stock')!;
   assert.deepEqual(stock.links.find((l) => l.label === 'Stock')?.keys, ['stock', 'bar_stock', 'shop_items']);
-  assert.equal(stock.links.find((l) => l.label === 'Receive stock')?.to, '/stock?receive=1');
+  // Receiving is the Stock page's own main button, not a link of its own.
+  assert.ok(!stock.links.some((l) => l.label === 'Receive stock'));
+  assert.ok(stock.links.some((l) => l.label === 'Makers'));
   // Count, one link for every side: the bar's sheet, the kitchen's, the shop's shelf.
   assert.deepEqual(stock.links.find((l) => l.label === 'Count')?.keys, ['stock', 'bar_counts', 'stocktake']);
   // Where stock sits is a tab of Stock, not a link of its own.
   assert.ok(!stock.links.some((l) => l.label === 'Where stock sits' || l.label === 'Places & moves'));
   assert.deepEqual(labels('Money'), ['Shifts', 'Money out', 'Petty cash', 'Staff owing']);
   // The books: the weekly jobs, and the accountant's tools, as two links to one page.
-  assert.deepEqual(labels('Books'), ['Reports', 'Accounting', 'For your accountant']);
+  assert.deepEqual(labels('Books'), ['Reports', 'Accounting', 'Accountant tools']);
+  // Set up once, so with the rest of the setting up.
+  assert.deepEqual(labels('Setup'), ['Staff', 'Venues', 'Tables & QR', 'Features', 'Health', 'Settings']);
   // Reached from their host page: Options, Tabs, Goods received, Payouts, Stations, Erase.
   const all = nav.flatMap((g) => g.links.map((l) => l.label));
   for (const gone of ['Options', 'Tabs', 'Goods received', 'Payouts', 'Stations', 'Erase records', 'Spends']) {
     assert.ok(!all.includes(gone), gone);
   }
-  assert.equal(all.length, 28);
+  assert.equal(all.length, 27);
 });
 
 test('a page reached from its host is in the sidebar when the host is not', () => {
@@ -560,7 +568,7 @@ test('a merged link appears when any of its sides is granted, and offers only th
   assert.deepEqual(catalogueSides('/catalogue/items', manager, both), ['craft']);
   assert.deepEqual(catalogueSides('/catalogue/categories', manager, both), []);
   const labels = navFor(manager, both).flatMap((g) => g.links.map((l) => l.label));
-  assert.ok(labels.includes('Menu & products'));
+  assert.ok(labels.includes('Products'));
   assert.ok(!labels.includes('Categories'));
   // A side the business does not run is never offered, whatever is granted.
   const kitchenOnly = settings({ kitchen_enabled: true, craft_enabled: false, bar_enabled: false });

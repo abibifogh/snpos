@@ -105,7 +105,7 @@ export function PurchaseOrdersPage() {
               Orders to suppliers for things running low. Send one as a PDF, a message or an email. When the goods
               arrive, press Record the delivery on the order, or record the spend at a till and pick the order: its
               items fill in and go into stock.
-              {limit > 0 && ` Orders over ${money(limit)} wait on Waiting for you before they can be sent.`}
+              {limit > 0 && ` Orders over ${money(limit)} wait on Approvals before they can be sent.`}
             </InfoTip>
           </h1>
         </div>
@@ -453,7 +453,7 @@ function OrderModal({
     });
     if (!submit) return `${saved.po_no} saved as a draft.`;
     return saved.status === 'waiting'
-      ? `${saved.po_no} is over ${money(limit)}, so it waits on Waiting for you before it can be sent. The admins are being emailed.`
+      ? `${saved.po_no} is over ${money(limit)}, so it waits on Approvals before it can be sent. The admins are being emailed.`
       : `${saved.po_no} is ready to send. The admins are being emailed.`;
   });
 
@@ -506,7 +506,7 @@ function OrderModal({
             {order?.sent_at && <span className="small dim">Sent {dateTimeWords(order.sent_at)}{order.sent_via ? ` by ${order.sent_via}` : ''}</span>}
           </div>
         )}
-        {status === 'waiting' && <Notice tone="info">Over {money(limit)}, so it is on Waiting for you. It can be sent once it is approved.</Notice>}
+        {status === 'waiting' && <Notice tone="info">Over {money(limit)}, so it is on Approvals. It can be sent once it is approved.</Notice>}
         {status === 'refused' && (
           <Notice tone="warn">Not approved{order?.decided_note ? `: “${order.decided_note}”` : ''}. Change it and press Done to ask again, or cancel it.</Notice>
         )}
@@ -626,7 +626,7 @@ function OrderModal({
               <Field label="Note to the supplier (optional)"><Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
             </div>
             {!isAdmin && orderNeedsApproval(total, limit) && (
-              <Notice tone="info">Over {money(limit)}: once done, it waits on Waiting for you before it can be sent.</Notice>
+              <Notice tone="info">Over {money(limit)}: once done, it waits on Approvals before it can be sent.</Notice>
             )}
             <div className="row" style={{ gap: '0.5rem', justifyContent: 'flex-end' }}>
               <Button loading={busy === 'draft'} disabled={!!busy} onClick={() => void save(false)}>Save as draft</Button>

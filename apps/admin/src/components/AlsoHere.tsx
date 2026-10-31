@@ -12,8 +12,8 @@ export function AlsoHere({ host }: { host: string }) {
   const pages = ADMIN_SECTIONS.filter((s) => s.under === host && canOpen(s.key, profile, settings));
   if (pages.length === 0) return null;
   return (
-    <div className="row row-wrap" style={{ gap: '0.5rem', margin: '0 0 0.8rem' }}>
-      {pages.map((s) => <Link key={s.key} className="btn btn-sm" to={s.path}>{s.label}</Link>)}
+    <div className="chips" style={{ margin: '0 0 0.8rem' }}>
+      {pages.map((s) => <Link key={s.key} className="chip" to={s.path}>{s.label} →</Link>)}
     </div>
   );
 }

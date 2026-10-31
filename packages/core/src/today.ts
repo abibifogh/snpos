@@ -89,6 +89,23 @@ export function against(now: number, before: number): number | null {
   return before === 0 ? null : (now - before) / before;
 }
 
+/** What Today says first, by the hour on the reader's clock. */
+export function greetingFor(hour: number): string {
+  if (hour < 5) return 'Still up';
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+/**
+ * The day so far as points for a line: each trading hour's takings up to the
+ * hour now, so the line ends where the day has got to rather than dropping to
+ * nothing across the hours still to come.
+ */
+export function daySoFar(hours: number[], takings: number[], nowHour: number): { hour: number; value: number }[] {
+  return hours.filter((h) => h <= nowHour).map((h) => ({ hour: h, value: takings[h] ?? 0 }));
+}
+
 /** "+12%" or "−9%", or nothing. */
 export function percentWords(ratio: number | null): string {
   if (ratio === null) return '';

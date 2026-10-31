@@ -211,7 +211,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       p('The bar and the shop count their shelf on the count sheet: when the shift opens, and again before it closes, and they must. The kitchen does a quick check instead: at the close the cook taps OK, Low or Out against every ingredient. An admin can switch the kitchen to counting in and out on the sheet under Settings, Stock; it is then asked, never forced, and the close says when it was skipped.'),
       list(
         'You type what is actually there. The sheet shows what the shelf should hold and works out the difference.',
-        'A difference does not change the stock on its own. It waits on Waiting for you, where a manager agrees it, refuses it, or charges it to whoever was responsible. That is the same on every side.',
+        'A difference does not change the stock on its own. It waits on Approvals, where a manager agrees it, refuses it, or charges it to whoever was responsible. That is the same on every side.',
         'Food and drink come off the shelf as each order is paid, so what the shelf should hold is always up to date, in the kitchen as well as the bar.',
         'The shop counts a short list at each shift, not every piece: what was sold or added since the shift opened, pieces over a set price, and one shelf a day in turn. The whole shop is counted on the full-count day. An admin sets all of this under Settings, Stock.',
         'At the shop, tap All here on a piece that matches; use − and + only when it does not, and say why it is short. Every tap is saved on the system as you go, so a count left half way carries on from any till.',
@@ -764,7 +764,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       steps(
         'Settings \u2192 What this business runs. Switch on Craft shop.',
         'You can have both sides on at once. A kitchen with a craft corner is one business, not two systems: one till, one set of staff, one Reports page you can read either way.',
-        'The shop\'s pages appear in the sidebar: Categories, Menu & products, Count, and Makers & payouts, which leads to Goods received and Payouts.',
+        'The shop\'s pages are under Sell and Stock on the rail: Products, Categories, Count, and Makers, which leads to Goods received and Payouts.',
       ),
       h('Consignors'),
       p(

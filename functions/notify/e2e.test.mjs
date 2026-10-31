@@ -323,7 +323,7 @@ test('the party agreeing stamps the booking and tells the house', async () => {
 });
 
 test('an approval is settled rather than left waiting on somebody', async () => {
-  // Left open it sits on the Waiting for you page as a job to do, and the job
+  // Left open it sits on the Approvals page as a job to do, and the job
   // is done: the party agreed, and there is nothing here to decide.
   reset([{ $id: 'p1', role: 'admin', email: 'owner@bistro.com', active: true }]);
   await run(
@@ -708,7 +708,7 @@ test('an order over the limit is emailed to the admins the moment it is made', a
   assert.match(mail[0].subject, /PO-0004 to Accra Brewery needs your approval · GH₵7200\.00/);
   assert.match(mail[0].html, /Godfred has made purchase order <strong>PO-0004<\/strong> for the bar/);
   assert.match(mail[0].html, /Club Large/);
-  assert.match(mail[0].html, /Money, Waiting for you/);
+  assert.match(mail[0].html, /under <strong>Approvals<\/strong>/);
   assert.equal(stamped().length, 1, 'stamped, so it is never told twice');
 });
 

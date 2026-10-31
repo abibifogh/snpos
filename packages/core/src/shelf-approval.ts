@@ -110,7 +110,7 @@ export function waitingWords(change: WaitingChange, who?: string): string {
   const direction = moved > 0 ? `up ${moved}` : `down ${-moved}`;
   return `${who ? `${who} changed` : 'Changed'} this from ${line.expected} to ${line.counted} `
     + `(${direction}), and it is waiting for an admin. It cannot be changed again until that is `
-    + 'approved or turned down under Waiting for you.';
+    + 'approved or turned down under Approvals.';
 }
 
 /**

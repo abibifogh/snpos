@@ -165,14 +165,19 @@ export const SIDE_NAMES: Record<Module, string> = { kitchen: 'Bistro', bar: 'Bar
  * Permissions are unchanged: every key here is exactly what it was, and the
  * merged links appear when any of their keys is granted.
  */
-export const NAV_GROUPS = ['Today', 'Selling', 'Stock', 'Money', 'Books', 'Setup'] as const;
+/*
+ * Seven, one per icon on the admin's rail. Approvals is a group of its own
+ * because it is the one place somebody is sent to decide things; Today is
+ * the day's figures and whether it is finished.
+ */
+export const NAV_GROUPS = ['Today', 'Approvals', 'Sell', 'Stock', 'Money', 'Books', 'Setup'] as const;
 
 export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'dashboard', label: 'Today', path: '/', group: 'Today' },
   { key: 'close_day', label: 'Close the day', path: '/close-day', group: 'Today' },
   // Everything waiting for a decision, from every side, beside the day itself.
-  { key: 'waiting', label: 'Waiting for you', path: '/waiting', group: 'Today' },
-  { key: 'orders', label: 'Orders', path: '/orders', group: 'Today' },
+  { key: 'waiting', label: 'Approvals', path: '/waiting', group: 'Approvals' },
+  { key: 'orders', label: 'Orders', path: '/orders', group: 'Sell' },
   /*
     The people who have bought something.
 
@@ -183,18 +188,18 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     list" is a decision worth making on purpose rather than inheriting from a
     job title.
   */
-  { key: 'customers', label: 'Customers', path: '/customers', group: 'Selling' },
+  { key: 'customers', label: 'Customers', path: '/customers', group: 'Sell' },
   // One catalogue page per side, each its own grant, reached through one
   // link with a side switch. A cook adding a dish and a shop assistant
   // adding a basket are doing unrelated jobs on unrelated stock, and each
   // can be given one side without the other.
-  { key: 'menu_categories', label: 'Categories · bistro', path: '/catalogue/categories', group: 'Selling', module: 'kitchen' },
-  { key: 'shop_categories', label: 'Categories · shop', path: '/catalogue/categories', group: 'Selling', module: 'craft' },
-  { key: 'bar_categories', label: 'Categories · bar', path: '/catalogue/categories', group: 'Selling', module: 'bar' },
-  { key: 'menu_items', label: 'Menu & products · bistro', path: '/catalogue/items', group: 'Selling', module: 'kitchen' },
-  { key: 'shop_items', label: 'Menu & products · shop', path: '/catalogue/items', group: 'Selling', module: 'craft' },
-  { key: 'bar_items', label: 'Menu & products · bar', path: '/catalogue/items', group: 'Selling', module: 'bar' },
-  { key: 'menu_options', label: 'Options', path: '/menu/options', group: 'Selling', module: 'kitchen', under: 'menu_categories' },
+  { key: 'menu_categories', label: 'Categories · bistro', path: '/catalogue/categories', group: 'Sell', module: 'kitchen' },
+  { key: 'shop_categories', label: 'Categories · shop', path: '/catalogue/categories', group: 'Sell', module: 'craft' },
+  { key: 'bar_categories', label: 'Categories · bar', path: '/catalogue/categories', group: 'Sell', module: 'bar' },
+  { key: 'menu_items', label: 'Products · bistro', path: '/catalogue/items', group: 'Sell', module: 'kitchen' },
+  { key: 'shop_items', label: 'Products · shop', path: '/catalogue/items', group: 'Sell', module: 'craft' },
+  { key: 'bar_items', label: 'Products · bar', path: '/catalogue/items', group: 'Sell', module: 'bar' },
+  { key: 'menu_options', label: 'Options', path: '/menu/options', group: 'Sell', module: 'kitchen', under: 'menu_categories' },
   /*
     Group bookings, which had no page at all.
 
@@ -203,9 +208,8 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     fine until the notice to the team failed — and when it did there was
     nothing to open, nothing to check and nothing to press.
   */
-  { key: 'group_bookings', label: 'Group bookings', path: '/group-bookings', group: 'Selling', module: 'kitchen' },
-  { key: 'tables', label: 'Tables & QR', path: '/tables', group: 'Selling' },
-  { key: 'vouchers', label: 'Discount vouchers', path: '/vouchers', group: 'Selling' },
+  { key: 'group_bookings', label: 'Bookings', path: '/group-bookings', group: 'Sell', module: 'kitchen' },
+  { key: 'vouchers', label: 'Discounts', path: '/vouchers', group: 'Sell' },
   { key: 'stock', label: 'Stock · kitchen', path: '/stock', group: 'Stock', module: 'kitchen' },
   { key: 'bar_stock', label: 'Stock · bar', path: '/stock', group: 'Stock', module: 'bar' },
   { key: 'waste', label: 'Waste', path: '/waste', group: 'Stock', module: 'kitchen' },
@@ -215,7 +219,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   // Every side's places, on the Stock page's Places tab rather than a page
   // of its own. No side of its own: the kitchen keeps a store room too.
   { key: 'locations', label: 'Places & moves', path: '/stock?tab=places', group: 'Stock', parent: 'stock' },
-  { key: 'consignors', label: 'Makers & payouts', path: '/consignors', group: 'Stock', module: 'craft' },
+  { key: 'consignors', label: 'Makers', path: '/consignors', group: 'Stock', module: 'craft' },
   { key: 'intake', label: 'Goods received', path: '/intake', group: 'Stock', module: 'craft', under: 'consignors' },
   /*
     Everything held for somebody senior, on one page: bar and store counts,
@@ -284,6 +288,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'staff', label: 'Staff', path: '/staff', group: 'Setup' },
   { key: 'stations', label: 'Stations', path: '/stations', group: 'Setup', module: 'kitchen', under: 'venues' },
   { key: 'venues', label: 'Venues', path: '/venues', group: 'Setup' },
+  { key: 'tables', label: 'Tables & QR', path: '/tables', group: 'Setup' },
   { key: 'features', label: 'Features', path: '/features', group: 'Setup' },
   // Records that do not add up and jobs that have gone quiet, checked
   // nightly and on opening. Owner-only: every button on it changes the books.
@@ -309,13 +314,13 @@ export interface NavMerge {
 
 export const NAV_MERGES: NavMerge[] = [
   { to: '/catalogue/categories', label: 'Categories', keys: { kitchen: 'menu_categories', craft: 'shop_categories', bar: 'bar_categories' } },
-  { to: '/catalogue/items', label: 'Menu & products', keys: { kitchen: 'menu_items', craft: 'shop_items', bar: 'bar_items' } },
+  { to: '/catalogue/items', label: 'Products', keys: { kitchen: 'menu_items', craft: 'shop_items', bar: 'bar_items' } },
   /*
     The shop's own supplies (bags, wrapping, labels) are reached with its
     products grant: it has no separate stock grant, and its pieces are the
     makers', counted on Count.
   */
-  { to: '/stock', label: 'Stock', keys: { kitchen: 'stock', bar: 'bar_stock', craft: 'shop_items' }, also: { label: 'Receive stock', query: 'receive=1' } },
+  { to: '/stock', label: 'Stock', keys: { kitchen: 'stock', bar: 'bar_stock', craft: 'shop_items' } },
   /*
     Count, every place. The kitchen counts on the bar's sheet now, so it is
     reached with the kitchen's stock grant; the shop's shelf count is its
@@ -435,7 +440,7 @@ export function parseAccess(settings: Settings | null): Record<string, string[]>
  * This stops NEW counts being taken. It cannot un-submit the ones already
  * waiting: a pending count freezes the pieces it names (see frozenPieces), so
  * stranding the queue would freeze those pieces for ever. They stay decidable
- * under Waiting for you until somebody has agreed or refused them.
+ * under Approvals until somebody has agreed or refused them.
  */
 export const shopCountsOn = (settings: Settings | null): boolean =>
   settings?.craft_counts_enabled !== false;
@@ -511,7 +516,7 @@ export function unavailableWords(
   const meta = ADMIN_SECTIONS.find((s) => s.key === section);
   if (section === 'stocktake' && !shopCountsOn(settings)) {
     return 'The shop\'s stocktake is switched off, so there is nothing here. An admin can turn it back on '
-      + 'under Settings, in Stock. Any count already submitted is still under Waiting for you.';
+      + 'under Settings, in Stock. Any count already submitted is still under Approvals.';
   }
   if (meta && !inTrade(meta, settings, profile)) {
     return 'This page belongs to a side of the business that is not switched on. Nothing is being kept from '
@@ -612,7 +617,7 @@ export function navFor(profile: StaffProfile | null, settings: Settings | null, 
     if (s.key === 'accounting') {
       const areas = areasOf('accounting', profile, settings);
       if (areas.some((a) => ACCOUNTANT_AREAS.includes(a))) {
-        add(s.group, { to: '/accounting?tab=journal', label: 'For your accountant', keys: ['accounting:accountant'] });
+        add(s.group, { to: '/accounting?tab=journal', label: 'Accountant tools', keys: ['accounting:accountant'] });
       }
     }
   }

@@ -203,7 +203,7 @@
   font-weight: 550;
   transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
-.pos-tabs button.on { box-shadow: 0 1px 6px rgb(15 118 110 / 0.28); }
+.pos-tabs button.on { box-shadow: 0 2px 8px rgba(14, 20, 27, .18); }
 
 .menu-grid { gap: 0.7rem; grid-template-columns: repeat(auto-fill, minmax(clamp(140px, 15vw, 176px), 1fr)); }
 
@@ -317,7 +317,7 @@
   font-size: 1.1rem;
   font-weight: 700;
   border-radius: var(--radius);
-  box-shadow: 0 2px 10px rgb(15 118 110 / 0.3);
+  box-shadow: var(--glow);
   touch-action: manipulation;
 }
 .bill .btn-primary:active { transform: scale(0.99); box-shadow: none; }
@@ -414,3 +414,75 @@
   .qty-step button:active,
   .bill .btn-primary:active { transform: none; }
 }
+
+/* =====================================================================
+   Still Water, at the till
+
+   The family's look on the screen worked hardest: colour tiles to pick from,
+   a calm bill beside them with one bright button, and tabs that read as
+   chips. The tile colours cycle through six soft tints so a grid of dishes
+   reads as a tray of different things rather than a wall of white boxes;
+   the price stays in the one colour that means "press".
+   ===================================================================== */
+.pos { --tile-1: #EEEAFF; --tile-2: #DDF3EC; --tile-3: #FFEDE3; --tile-4: #E3F0FF; --tile-5: #FDE7EF; --tile-6: #FFF6D6; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .pos { --tile-1: #231D45; --tile-2: #11291F; --tile-3: #3A2116; --tile-4: #142338; --tile-5: #33162A; --tile-6: #2E2610; }
+}
+:root[data-theme='dark'] .pos { --tile-1: #231D45; --tile-2: #11291F; --tile-3: #3A2116; --tile-4: #142338; --tile-5: #33162A; --tile-6: #2E2610; }
+
+.pos-top { border-bottom-color: var(--hair); }
+.pos-tabs button {
+  border: 0; background: var(--quiet); color: var(--quiet-ink); font-weight: 700;
+}
+.pos-tabs button:active { transform: scale(0.95); }
+.pos-tabs button.on { background: var(--text); color: var(--bg); }
+.pos-side { border: 0; background: var(--quiet); padding: 3px; gap: 2px; }
+.pos-side button { background: transparent; }
+.pos-side button.on { background: var(--brand); color: var(--brand-ink); box-shadow: var(--glow); }
+
+.table-card {
+  border: 0; border-radius: 22px; box-shadow: var(--shadow); padding: 1.1rem 0.8rem;
+  transition: transform 0.15s var(--spring), box-shadow 0.2s ease;
+  animation: card-in 0.35s var(--settle) both;
+}
+.table-card:active { transform: scale(0.96); }
+.table-card .label { font: 800 1.35rem var(--font-display); }
+.table-card.seated { box-shadow: 0 0 0 2px var(--brand), var(--shadow); background: var(--brand-soft); }
+.table-card.bill { box-shadow: 0 0 0 2px var(--ember), var(--shadow); background: var(--warn-bg); }
+
+.menu-card {
+  border: 0; border-radius: 20px; background: var(--tile-1);
+  box-shadow: none; padding: 0.9rem;
+  transition: transform 0.15s var(--spring), box-shadow 0.2s ease;
+  animation: card-in 0.3s var(--settle) both;
+}
+.menu-grid > :nth-child(6n+2) .menu-card, .menu-grid > .menu-card:nth-child(6n+2) { background: var(--tile-2); }
+.menu-grid > :nth-child(6n+3) .menu-card, .menu-grid > .menu-card:nth-child(6n+3) { background: var(--tile-3); }
+.menu-grid > :nth-child(6n+4) .menu-card, .menu-grid > .menu-card:nth-child(6n+4) { background: var(--tile-4); }
+.menu-grid > :nth-child(6n+5) .menu-card, .menu-grid > .menu-card:nth-child(6n+5) { background: var(--tile-5); }
+.menu-grid > :nth-child(6n+6) .menu-card, .menu-grid > .menu-card:nth-child(6n+6) { background: var(--tile-6); }
+.menu-card:hover:not(:disabled) { box-shadow: var(--shadow); }
+.menu-card:active:not(:disabled) { transform: scale(0.94); box-shadow: none; }
+.menu-card .n { font-weight: 750; font-size: 1rem; }
+.menu-card .p { color: var(--brand-dk); font: 600 0.92rem var(--font-mono); }
+.menu-card.has-pic { background: var(--surface); box-shadow: var(--shadow); }
+.menu-card .pic { border-bottom: 0; }
+.menu-card .soldout { background: var(--text); color: var(--bg); border-radius: 999px; padding: 0.15rem 0.55rem; }
+.recipe-peek { background: var(--surface); border: 0; box-shadow: var(--shadow); }
+
+.order-layout > .card { border-radius: 26px; }
+.bill-line { border-bottom-color: var(--hair); }
+.qty-step { background: var(--field); border-radius: 999px; padding: 3px; gap: 2px; }
+.qty-step button, .qty-step button:first-child, .qty-step button:last-child {
+  border: 0; border-radius: 50%; background: var(--surface); box-shadow: var(--shadow);
+  transition: transform 0.15s var(--spring);
+}
+.qty-step button:active { transform: scale(0.85); background: var(--surface); }
+.qty-step .n { border: 0; font-family: var(--font-mono); }
+.bill-total.grand { font-family: var(--font-display); }
+.bill .btn-primary { border-radius: 18px; font-family: var(--font-display); font-size: 1.15rem; }
+.pad button { border: 0; border-radius: 16px; background: var(--surface-2); font-family: var(--font-mono); }
+.pad button:active { transform: scale(0.94); }
+/* Inside the bill the glow would be cut off by the panel's own edge, leaving a
+   square of colour behind a round button; the button stands on its own. */
+.bill .btn-primary { box-shadow: none; }

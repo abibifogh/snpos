@@ -15,7 +15,7 @@ type OpenShift = { $id: string; code?: string; module?: string };
 /**
  * Count differences charged to a person, and what has been done about each.
  *
- * A charge is made from a short line on Waiting for you: the shelf is put
+ * A charge is made from a short line on Approvals: the shelf is put
  * right there and then, and what the missing stock was worth is owed here
  * until it is paid in cash, taken from pay, found, or written off. The rules
  * are in core, see staff-charges.ts.
@@ -66,7 +66,7 @@ export function StaffOwingPage() {
             Staff owing
             <InfoTip>
               Count differences charged to a person, and what has been done about each. Charge a short line from
-              Waiting for you.
+              Approvals.
             </InfoTip>
           </h1>
         </div>
@@ -94,7 +94,7 @@ export function StaffOwingPage() {
       <Card pad={false}>
         {!charges ? <Spinner /> : people.length === 0 ? (
           <Empty title={show === 'owed' ? 'Nobody owes anything' : 'Nothing here'}>
-            A short line on a count can be charged to a person from Waiting for you.
+            A short line on a count can be charged to a person from Approvals.
           </Empty>
         ) : (
           <div className="table-wrap">

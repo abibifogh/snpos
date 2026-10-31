@@ -22,7 +22,7 @@
  *
  * NOT HERE. Counts (bar, kitchen, store-room and shop) and shelf changes move
  * stock through rules that live in the app, so they are listed with a link to
- * Waiting for you rather than decided from outside. So is refusing a group
+ * Approvals rather than decided from outside. So is refusing a group
  * booking whose meal times are already on the kitchen's list, which in the app
  * also cancels them and gives money back.
  *
@@ -196,7 +196,7 @@ export async function listWaiting({ db, DB_ID, Query, person, settings = {}, app
         sub: `${String(lines[0].shift_id).startsWith('store:') ? 'Store room' : 'Shift'} count${nameOf(lines[0].checked_by) ? ` by ${nameOf(lines[0].checked_by)}` : ''}`,
         who: nameOf(lines[0].checked_by), askedAt: lines.map((l) => l.$createdAt).sort()[0], amount: null,
         details: lines.slice(0, 12).map((l) => [names.get(l.ingredient_id) || 'An item', `expected ${l.theoretical_qty ?? '?'}, counted ${l.counted_qty ?? '?'}`]),
-        warnings: ['Counts move stock, so they are decided in the POS: Waiting for you.'],
+        warnings: ['Counts move stock, so they are decided in the POS: Approvals.'],
         decisions: [], open: open('count'),
       })),
       ...shop.map((s) => ({
@@ -205,7 +205,7 @@ export async function listWaiting({ db, DB_ID, Query, person, settings = {}, app
         sub: [s.line_count ? `${s.line_count} line${s.line_count === 1 ? '' : 's'}` : null, nameOf(s.counted_by) ? `by ${nameOf(s.counted_by)}` : null].filter(Boolean).join(' · ') || 'waiting',
         who: nameOf(s.counted_by), askedAt: s.counted_at || s.$createdAt, amount: null,
         details: [['Note', s.note], ['Missing', s.missing_pieces ? `${s.missing_pieces} pieces` : null], ['Over', s.surplus_pieces ? `${s.surplus_pieces} pieces` : null]],
-        warnings: ['Counts move stock, so they are decided in the POS: Waiting for you.'],
+        warnings: ['Counts move stock, so they are decided in the POS: Approvals.'],
         decisions: [], open: open('count'),
       })),
     ];
@@ -222,7 +222,7 @@ export async function decide({ db, DB_ID, Query, person, body }) {
   const note = String(body?.note || '').slice(0, 500);
   if (!['approve', 'refuse'].includes(decision)) throw Object.assign(new Error('The POS does not know that decision.'), { status: 400 });
   if (!id) throw Object.assign(new Error('Which one?'), { status: 400 });
-  if (kind === 'count') throw Object.assign(new Error('Counts are decided in the POS: Waiting for you.'), { status: 400 });
+  if (kind === 'count') throw Object.assign(new Error('Counts are decided in the POS: Approvals.'), { status: 400 });
   if (!mayDecide(person.profile.role, kind)) throw Object.assign(new Error(`Your POS login may not decide that.`), { status: 403 });
   const by = person.user.$id;
   const now = new Date().toISOString();

@@ -324,7 +324,7 @@ export function WaitingPage() {
     <>
       <div className="spread">
         <h1>
-          Waiting for you
+          Approvals
           <InfoTip>
             Oldest first. Approving a count moves the shelf by the difference it found; refusing leaves the shelf as
             it is. Refusing a spend takes it off the books.

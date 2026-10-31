@@ -240,7 +240,7 @@ test('the words for each trade agree, everywhere', () => {
 });
 
 test('"waiting 3 days" reads the same in the inbox and on the page', () => {
-  // The approval email and the Waiting for you page each say how long a thing
+  // The approval email and the Approvals page each say how long a thing
   // has waited. The function cannot import the bundle, so there are two
   // copies; this holds them together.
   for (const ms of [1, 30_000, 90_000, 59 * 60_000, 3_600_000, 5 * 3_600_000, 86_400_000, 40 * 86_400_000]) {

@@ -143,7 +143,7 @@ test('who may order, approve, and what can still be changed', () => {
   assert.deepEqual(readLines('not json'), []);
 });
 
-test('an order over the limit is on Waiting for you, counted under its own chip', () => {
+test('an order over the limit is on Approvals, counted under its own chip', () => {
   const items = waitingList({
     barCounts: [], shopCounts: [], spends: [], tabShifts: [],
     orders: [{ $id: 'o1', po_no: 'PO-0007', supplier_name: 'Guinness Ghana', total: 150_000, lines: JSON.stringify([suggestLine(club())]), $createdAt: '2026-10-17T09:00:00Z' }],

@@ -98,7 +98,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   const kitchenCountsIn = !countsShelves && countsInAtOpen(ctx.module, ctx.settings);
   /*
     The bar and the shop count out on the sheet before they close, and so does
-    a kitchen set to count; every difference waits on Waiting for you. A
+    a kitchen set to count; every difference waits on Approvals. A
     kitchen that glances says OK, Low or Out about every ingredient on the
     close instead. See countsOutAtClose.
   */

@@ -443,7 +443,7 @@ export const COLLECTIONS = [
       // How the kitchen checks its larder. 'levels', the default: OK, Low or
       // Out on every ingredient at the close, and no count sheet at either
       // end. 'count': counted in and out on the count sheet like the bar, with
-      // differences waiting on Waiting for you. See kitchenCounts.
+      // differences waiting on Approvals. See kitchenCounts.
       ['kitchen_stock_check', 'e', ['levels', 'count'], false, 'levels'],
       // Whether whoever holds a petty cash box may count it themselves. Off:
       // a count is the check ON the custodian and catches nothing when the
@@ -4577,7 +4577,7 @@ export const FEATURES = [
     label: 'Orders to suppliers',
     enabled: true,
     config: {
-      // An order worth more than this waits on Waiting for you before it can
+      // An order worth more than this waits on Approvals before it can
       // be sent. Minor units, so 100000 is GH₵1,000. Nought: none wait.
       approve_over: 100000,
     },

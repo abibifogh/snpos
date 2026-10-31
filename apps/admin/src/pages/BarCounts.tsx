@@ -232,7 +232,7 @@ export function BarCountsPage({ module = 'bar' }: { module?: 'bar' | 'kitchen' }
 
   const loadDecisions = async () => {
     // The bar's own. The kitchen counts in on the same sheet and its counts
-    // are decided under Waiting for you, where they are named as the kitchen's.
+    // are decided under Approvals, where they are named as the kitchen's.
     const barsOnly = <T extends { module?: string | null }>(rows: T[]) =>
       rows.filter((r) => ((r.module ?? 'bar') === 'kitchen') === !isBar);
     const [waiting, filed] = await Promise.all([
@@ -1024,7 +1024,7 @@ export function BarCountsPage({ module = 'bar' }: { module?: 'bar' | 'kitchen' }
         HELD COUNTS.
 
         A count with a difference on it waits until an admin agrees, and the
-        agreeing happens under Money, Waiting for you, beside every other held
+        agreeing happens under Approvals, beside every other held
         thing. Here it is only named, so somebody at the bar page knows the
         shelf has not moved yet. The held counts stay in the record below,
         marked as waiting.
@@ -1033,7 +1033,7 @@ export function BarCountsPage({ module = 'bar' }: { module?: 'bar' | 'kitchen' }
         <Notice tone="info">
           {pending.length === 1 ? 'One count is' : `${pending.length} counts are`} waiting for an admin. The shelf
           still says what it said before {pending.length === 1 ? 'it' : 'them'}.
-          {isAdmin && <> Decide {pending.length === 1 ? 'it' : 'them'} under <Link to="/waiting?show=count">Waiting for you</Link>.</>}
+          {isAdmin && <> Decide {pending.length === 1 ? 'it' : 'them'} under <Link to="/waiting?show=count">Approvals</Link>.</>}
         </Notice>
       )}
 

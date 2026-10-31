@@ -592,3 +592,61 @@
 
 /* Remove, quiet beside Change: three solid red buttons down a list shouted louder than the meal times. */
 .btn.remove-quiet { color: var(--danger); }
+
+/* =====================================================================
+   Still Water, for guests
+
+   The family's look, warmed up for somebody choosing dinner: a cover that
+   glows, dishes on soft cards rather than ruled rows, round buttons a thumb
+   finds, and a bar that rises once there is something in the order.
+   ===================================================================== */
+.menu-header {
+  background:
+    radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--brand) 70%, #fff) 0%, transparent 55%),
+    linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--brand) 70%, #12083f));
+  padding-bottom: 1.6rem;
+  border-radius: 0 0 28px 28px;
+  box-shadow: var(--glow);
+}
+.menu-header h1 { font-size: 1.75rem; letter-spacing: -0.02em; }
+.menu-header .sub { font-weight: 600; }
+
+.banner { border-radius: 16px; margin: 0.75rem 1rem 0; }
+
+.cat-nav { border-bottom: 0; padding: 0.7rem 1rem; }
+.cat-nav button, .book-tabs button, .diet-chips button {
+  border: 0; background: var(--quiet); color: var(--quiet-ink); font-weight: 700;
+  transition: transform 0.12s ease, background 0.2s ease;
+}
+.cat-nav button:active, .book-tabs button:active, .diet-chips button:active { transform: scale(0.95); }
+.cat-nav button.on, .book-tabs button.on { background: var(--text); color: var(--bg); }
+.diet-chips button.on { background: var(--ok); color: #fff; }
+
+.section h2 { border-bottom: 0; padding-bottom: 0.2rem; font-size: 1.55rem; }
+
+.dish {
+  background: var(--surface); border: 0; border-radius: 20px; box-shadow: var(--shadow);
+  padding: 0.85rem; margin-top: 0.7rem;
+  transition: transform 0.15s var(--spring), box-shadow 0.2s ease;
+  animation: card-in 0.38s var(--settle) both;
+}
+.dish.dish-open:active { transform: scale(0.98); }
+@media (hover: hover) {
+  .dish.dish-open:hover { background: var(--surface); box-shadow: var(--shadow-lg); transform: translateY(-2px); }
+}
+.dish .name { font-weight: 750; font-size: 1rem; }
+.dish .price { font: 600 0.95rem var(--font-mono); color: var(--text); }
+.dish img, .dish .noimg { width: 92px; height: 92px; border-radius: 16px; }
+.dish .noimg { background: linear-gradient(135deg, var(--brand-soft), color-mix(in srgb, var(--accent) 22%, var(--surface))); }
+.dish-actions .linkish { text-decoration: none; }
+
+.cart-bar { background: transparent; border-top: 0; box-shadow: none; padding-top: 0; animation: bar-up 0.45s var(--spring); }
+@keyframes bar-up { from { transform: translateY(120%); } }
+.cart-bar-btn {
+  border-radius: 999px; background: var(--text); color: var(--bg); padding: 0.85rem 1.2rem;
+  box-shadow: var(--shadow-lg);
+}
+.cart-bar-money { font-family: var(--font-display); }
+
+.qty button { border-radius: 50%; border: 0; background: var(--surface-2); transition: transform 0.15s var(--spring); }
+.qty button:active { transform: scale(0.85); }

@@ -259,7 +259,7 @@ export function StocktakePage() {
       await loadShelf();
       await loadQueue();
       toast(
-        `${written} difference${written === 1 ? '' : 's'} sent to Waiting for you, to be agreed or refused.`,
+        `${written} difference${written === 1 ? '' : 's'} sent to Approvals, to be agreed or refused.`,
       );
     } catch (e) {
       setError(humanError(e));
@@ -303,13 +303,13 @@ export function StocktakePage() {
         ]}
       />
 
-      {/* Decided in one place, with every other count: Waiting for you. This
+      {/* Decided in one place, with every other count: Approvals. This
           page used to have its own approvals list as well, so a shop count
           could be agreed here and still be waiting there. */}
       {(queue?.length ?? 0) > 0 && (
         <Notice tone="info">
           {queue!.length} count{queue!.length === 1 ? ' is' : 's are'} waiting to be agreed.{' '}
-          <Link to="/waiting?show=count">Open Waiting for you</Link>
+          <Link to="/waiting?show=count">Open Approvals</Link>
         </Notice>
       )}
 

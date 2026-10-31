@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Card, Badge, Spinner, Notice, TrendChart } from '@snpos/ui';
 import {
   todayFacts, against, percentWords, tradingHours, topSellers, openForWords, SIDE_NAMES,
-  loadWaiting, waitedWords, levelOf, timeWords, nameFrom } from '@snpos/core';
+  loadWaiting, waitedWords, levelOf, timeWords, nameFrom, greetingFor, daySoFar } from '@snpos/core';
 import type { TodayFacts, WaitingItem } from '@snpos/core';
 import { useSession, useMoney } from '../session';
 import { CloseDayCard } from '../components/CloseDay';
@@ -20,7 +20,7 @@ import { CloseDayCard } from '../components/CloseDay';
  * that turn them into these cards are in today.ts.
  */
 export function Dashboard() {
-  const { settings } = useSession();
+  const { settings, profile } = useSession();
   const money = useMoney();
   const [facts, setFacts] = useState<TodayFacts | null>(null);
   const [waiting, setWaiting] = useState<{ items: WaitingItem[]; names: Map<string, string> } | null>(null);
@@ -80,14 +80,20 @@ export function Dashboard() {
   const sides = facts.sides;
   const kinds = facts.today.byKind;
   const sellers = topSellers(facts.lines, 5);
+  const bills = sides.reduce((n, sd) => n + (facts.today.orders[sd] ?? 0), 0);
+  const billsBefore = sides.reduce((n, sd) => n + (facts.lastWeek.orders[sd] ?? 0), 0);
+  const totalPct = percentWords(against(facts.today.total, facts.lastWeek.total));
+  const billPct = percentWords(against(bills, billsBefore));
+  const first = (profile?.display_name ?? '').trim().split(/\s+/)[0];
+  const soFar = daySoFar(points.map((x) => Number(x.key)), facts.hoursToday, now.getHours());
+  const topQty = Math.max(1, ...sellers.map((x) => x.qty));
+  const oldestWait = waiting?.items.reduce((m, w) => (w.at ? Math.max(m, Date.parse(facts.now) - Date.parse(w.at)) : m), 0) ?? 0;
 
   return (
     <>
-      <div className="spread">
-        <div>
-          <h1>Today</h1>
-          <p className="dim small" style={{ margin: '0.2rem 0 0' }}>{when}</p>
-        </div>
+      <div className="today-head">
+        <div className="kicker today-when">{when}</div>
+        <h1>{greetingFor(now.getHours())}{first ? `, ${first}` : ''}</h1>
       </div>
 
       {facts.catalogueEmpty && (
@@ -102,111 +108,149 @@ export function Dashboard() {
             <li><Link to="/settings">Settings</Link>, restaurant name, currency, tax and colours.</li>
             <li><Link to="/venues">Venues</Link>, set your opening hours. Pre-ordering needs these.</li>
             <li><Link to="/catalogue/categories">Categories</Link>, Starters, Mains, Drinks.</li>
-            <li><Link to="/catalogue/items">Menu &amp; products</Link>, the menu itself, with prices.</li>
+            <li><Link to="/catalogue/items">Products</Link>, the menu itself, with prices.</li>
             <li><Link to="/features">Features</Link>, switch off anything you do not want yet.</li>
           </ol>
         </Card>
       )}
 
-      {/* One card per side that trades, and one for the lot. */}
-      <div className="grid-4" style={{ marginBottom: '1rem' }}>
-        {sides.map((side) => {
-          const ratio = against(facts.today.bySide[side], facts.lastWeek.bySide[side]);
-          const pct = percentWords(ratio);
-          return (
-            <Card key={side} title={SIDE_NAMES[side]}>
-              <div style={{ fontSize: '1.6rem', fontWeight: 650 }}>{money(facts.today.bySide[side])}</div>
-              <div className="small">
-                {pct && <Badge tone={ratio! >= 0 ? 'ok' : 'warn'}>{pct}</Badge>}
-                <span className="dim">
-                  {pct ? ` vs ${lastWeekName}` : `Nothing to compare with ${lastWeekName}`}
-                  {side === 'kitchen' && facts.today.covers > 0 ? ` · ${facts.today.covers} covers` : ''}
-                  {side !== 'kitchen' && facts.today.orders[side] > 0 ? ` · ${facts.today.orders[side]} ${side === 'craft' ? 'sales' : 'bills'}` : ''}
-                </span>
-              </div>
-            </Card>
-          );
-        })}
-        <Card title="All sides">
-          <div style={{ fontSize: '1.6rem', fontWeight: 650 }}>{money(facts.today.total)}</div>
-          <div className="small dim">
-            Cash {money(kinds.cash)} · Card {money(kinds.card)} · MoMo {money(kinds.mobile_money)}
+      {/*
+        The figure an owner opens the app for, as big as it deserves, with
+        the day drawn under it hour by hour. Then who is on.
+      */}
+      <div className="today-top">
+        <section className="hero" aria-label="Takings so far">
+          <div className="kicker hero-k">Takings so far</div>
+          <div className="hero-big">{money(facts.today.total)}</div>
+          <div className="hero-sub">
+            {totalPct ? `${totalPct} on ${lastWeekName}` : `Nothing to compare with ${lastWeekName}`}
+            {` · Cash ${money(kinds.cash)} · Card ${money(kinds.card)} · MoMo ${money(kinds.mobile_money)}`}
             {kinds.other > 0 ? ` · Other ${money(kinds.other)}` : ''}
           </div>
-        </Card>
-      </div>
+          <DayLine points={soFar} />
+          {sides.length > 1 && (
+            <div className="hero-sides">
+              {sides.map((side) => <span key={side}>{SIDE_NAMES[side]} {money(facts.today.bySide[side])}</span>)}
+            </div>
+          )}
+        </section>
 
-      <div className="grid-2" style={{ marginBottom: '1rem' }}>
-        <Card title={`Open shifts · ${facts.openShifts.length}`} pad={false}>
+        <Card title={`On now · ${facts.openShifts.length}`} pad={false}>
           {facts.openShifts.length === 0 && facts.closedToday.length === 0 ? (
             <p className="small dim card-pad" style={{ margin: 0 }}>Nothing is open. No shift has closed today either.</p>
           ) : (
-            <div className="table-wrap">
-              <table className="data">
-                <tbody>
-                  {facts.openShifts.map((o) => {
-                    const age = Date.parse(facts.now) - Date.parse(o.shift.opened_at);
-                    return (
-                      <tr key={o.shift.$id}>
-                        <td>
-                          <div style={{ fontWeight: 550 }}>{SIDE_NAMES[o.side]}{o.openedBy ? ` · ${o.openedBy}` : ''}</div>
-                          <div className="small dim">
-                            Since {timeWords(o.shift.opened_at)} · {openForWords(o.shift.opened_at, facts.now)}
-                            {o.side === 'bar' && o.countedIn === true ? ' · counted in' : ''}
-                            {o.side === 'bar' && o.countedIn === false ? ' · not counted in' : ''}
-                          </div>
-                        </td>
-                        <td className="num">
-                          <div>{money(o.takings)}</div>
-                          {age > 8 * 3_600_000 && <Badge tone="warn">Past 8h</Badge>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {facts.closedToday.filter((c) => !facts.openShifts.some((o) => o.side === c.side)).map((c) => (
-                    <tr key={c.code}>
-                      <td colSpan={2} className="small dim">
-                        {SIDE_NAMES[c.side]} closed at {timeWords(c.closedAt)}
-                        {c.settled ? ' · settled' : ' · not yet settled'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="today-list">
+              {facts.openShifts.map((o) => {
+                const age = Date.parse(facts.now) - Date.parse(o.shift.opened_at);
+                return (
+                  <div className="today-row" key={o.shift.$id}>
+                    <span className="live-dot" aria-hidden="true" />
+                    <div className="grow">
+                      <div className="t">{SIDE_NAMES[o.side]}{o.openedBy ? ` · ${o.openedBy}` : ''}</div>
+                      <div className="d">
+                        Since {timeWords(o.shift.opened_at)} · {openForWords(o.shift.opened_at, facts.now)}
+                        {o.side === 'bar' && o.countedIn === true ? ' · counted in' : ''}
+                        {o.side === 'bar' && o.countedIn === false ? ' · not counted in' : ''}
+                      </div>
+                    </div>
+                    <div className="num">
+                      {money(o.takings)}
+                      {age > 8 * 3_600_000 && <div><Badge tone="warn">Past 8h</Badge></div>}
+                    </div>
+                  </div>
+                );
+              })}
+              {facts.closedToday.filter((c) => !facts.openShifts.some((o) => o.side === c.side)).map((c) => (
+                <div className="today-row" key={c.code}>
+                  <span className={`check ${c.settled ? 'y' : 'n'}`} aria-hidden="true">{c.settled ? '✓' : '!'}</span>
+                  <div className="grow d">
+                    {SIDE_NAMES[c.side]} closed at {timeWords(c.closedAt)}
+                    {c.settled ? ' · settled' : ' · not yet settled'}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </Card>
+      </div>
 
+      <div className="stat-row">
+        <div className="stat">
+          <div className="label">Bills paid</div>
+          <div className="value">{bills}</div>
+          <div className="note">{billPct ? `${billPct} on ${lastWeekName}` : 'Nothing to compare with yet'}</div>
+        </div>
+        {sides.includes('kitchen') && (
+          <div className="stat">
+            <div className="label">Covers</div>
+            <div className="value">{facts.today.covers}</div>
+            <div className="note">guests on bistro bills</div>
+          </div>
+        )}
+        <div className="stat">
+          <div className="label">Average bill</div>
+          <div className="value">{bills > 0 ? money(Math.round(facts.today.total / bills)) : '—'}</div>
+          <div className="note">across every side</div>
+        </div>
+        <div className="stat">
+          <div className="label">Waiting for a decision</div>
+          <div className="value">{waiting ? waiting.items.length : '…'}</div>
+          <div className="note">
+            {waiting && waiting.items.length > 0 && oldestWait > 0
+              ? <Badge tone={oldestWait > 24 * 3_600_000 ? 'warn' : 'default'}>oldest {waitedWords(oldestWait)}</Badge>
+              : 'nothing held up'}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid-2 today-pair">
         <Card
-          title={`Waiting for you${waiting ? ` · ${waiting.items.length}` : ''}`}
-          actions={<Link to="/waiting" className="small">Open the list</Link>}
+          title={`Needs you${waiting ? ` · ${waiting.items.length}` : ''}`}
+          actions={<Link to="/waiting" className="btn btn-ghost btn-sm">Open Approvals →</Link>}
           pad={false}
         >
           {!waiting ? (
             <div className="card-pad"><Spinner /></div>
           ) : waiting.items.length === 0 ? (
-            <p className="small dim card-pad" style={{ margin: 0 }}>Nothing is waiting for you.</p>
+            <div className="card-pad today-clear"><span className="check y" aria-hidden="true">✓</span>All clear. Nothing is waiting for you.</div>
           ) : (
-            <div className="table-wrap">
-              <table className="data">
-                <tbody>
-                  {waiting.items.slice(0, 4).map((w) => (
-                    <tr key={w.id}>
-                      <td>
-                        <div style={{ fontWeight: 550 }}>{w.title}</div>
-                        <div className="small dim">
-                          {w.by ? nameFrom(waiting.names, w.by, '') : ''}
-                          {w.at ? ` · waiting ${waitedWords(Date.parse(facts.now) - Date.parse(w.at))}` : ''}
-                        </div>
-                      </td>
-                      <td className="num">{w.value > 0 ? money(w.value) : ''}</td>
-                    </tr>
-                  ))}
-                  {waiting.items.length > 4 && (
-                    <tr><td colSpan={2} className="small dim">and {waiting.items.length - 4} more</td></tr>
-                  )}
-                </tbody>
-              </table>
+            <div className="today-list">
+              {waiting.items.slice(0, 4).map((w) => {
+                const waited = w.at ? Date.parse(facts.now) - Date.parse(w.at) : 0;
+                return (
+                  <Link className="today-row" to="/waiting" key={w.id}>
+                    <div className="grow">
+                      <div className="t">{w.title}</div>
+                      <div className="d">
+                        {w.by ? nameFrom(waiting.names, w.by, '') : ''}
+                        {w.at ? ` · waiting ${waitedWords(waited)}` : ''}
+                      </div>
+                    </div>
+                    {w.value > 0
+                      ? <span className="num">{money(w.value)}</span>
+                      : waited > 24 * 3_600_000 ? <Badge tone="warn">over a day</Badge> : null}
+                  </Link>
+                );
+              })}
+              {waiting.items.length > 4 && <div className="today-row d">and {waiting.items.length - 4} more</div>}
+            </div>
+          )}
+        </Card>
+        <Card title="Selling today" pad={false}>
+          {sellers.length === 0 ? (
+            <p className="small dim card-pad" style={{ margin: 0 }}>Nothing sold yet today.</p>
+          ) : (
+            <div className="today-list">
+              {sellers.map((s, i) => (
+                <div className="today-row" key={s.name}>
+                  <span className="rank">{i + 1}</span>
+                  <div className="grow">
+                    <div className="t">{s.name}</div>
+                    <div className="meter" style={{ marginTop: 6 }}><span style={{ width: `${(s.qty / topQty) * 100}%` }} /></div>
+                  </div>
+                  <span className="num">{s.qty}</span>
+                </div>
+              ))}
             </div>
           )}
         </Card>
@@ -215,53 +259,62 @@ export function Dashboard() {
       {/* Whether yesterday (or today) is put away, before anything else that
           needs a look. See close-day.ts. */}
       <CloseDayCard money={money} compact />
-      <div style={{ height: '1rem' }} />
 
       <Card title={`Needs a look${look.length ? ` · ${look.length}` : ''}`} pad={false}>
         {look.length === 0 ? (
-          <p className="small dim card-pad" style={{ margin: 0 }}>Nothing is running low, nothing is in transit, and the checks are up to date.</p>
+          <div className="card-pad today-clear"><span className="check y" aria-hidden="true">✓</span>Nothing is running low, nothing is in transit, and the checks are up to date.</div>
         ) : (
-          <div className="table-wrap">
-            <table className="data">
-              <tbody>
-                {look.map((l) => (
-                  <tr key={l.what}>
-                    <td>
-                      <div style={{ fontWeight: 550 }}>{l.what}</div>
-                      <div className="small dim">{l.why}</div>
-                    </td>
-                    <td className="num"><Link to={l.to}><Badge tone={l.tone}>{l.badge}</Badge></Link></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="today-list">
+            {look.map((l) => (
+              <Link className="today-row" to={l.to} key={l.what}>
+                <div className="grow">
+                  <div className="t">{l.what}</div>
+                  <div className="d">{l.why}</div>
+                </div>
+                <Badge tone={l.tone}>{l.badge}</Badge>
+              </Link>
+            ))}
           </div>
         )}
       </Card>
 
-      <div style={{ height: '1rem' }} />
-
-      <div className="grid-2">
-        <Card title="Takings by hour">
-          <p className="small dim" style={{ marginTop: 0 }}>Today against {lastWeekName}, every side together.</p>
-          <TrendChart points={points} money={money} height={200} revenueLabel="Today" costLabel={lastWeekName} />
-        </Card>
-        <Card title="Selling today" pad={false}>
-          {sellers.length === 0 ? (
-            <p className="small dim card-pad" style={{ margin: 0 }}>Nothing sold yet today.</p>
-          ) : (
-            <div className="table-wrap">
-              <table className="data">
-                <tbody>
-                  {sellers.map((s) => (
-                    <tr key={s.name}><td>{s.name}</td><td className="num">{s.qty}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-      </div>
+      <Card title="Takings by hour">
+        <p className="small dim" style={{ marginTop: 0 }}>Today against {lastWeekName}, every side together.</p>
+        <TrendChart points={points} money={money} height={200} revenueLabel="Today" costLabel={lastWeekName} />
+      </Card>
     </>
+  );
+}
+
+/**
+ * The day so far, drawn on the hero in its own ink: a line and a wash under it,
+ * ending on a dot at the hour now. The hours are written under it as text
+ * rather than inside the drawing, so they keep their shape at any width.
+ */
+function DayLine({ points }: { points: { hour: number; value: number }[] }) {
+  if (points.length < 2) return <div className="hero-line empty" aria-hidden="true" />;
+  const W = 600;
+  const H = 110;
+  const max = Math.max(1, ...points.map((x) => x.value));
+  const step = W / (points.length - 1);
+  const xy = points.map((x, i) => [i * step, H - 6 - (x.value / max) * (H - 18)] as const);
+  const line = xy.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+  const last = xy[xy.length - 1];
+  const label = (h: number) => (h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`);
+  return (
+    <div className="hero-line">
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Takings hour by hour so far today">
+        <defs>
+          <linearGradient id="dayline-wash" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="currentColor" stopOpacity="0.42" />
+            <stop offset="1" stopColor="currentColor" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={`${line} L${W} ${H} L0 ${H}Z`} fill="url(#dayline-wash)" />
+        <path d={line} fill="none" stroke="currentColor" strokeWidth="2.5" vectorEffect="non-scaling-stroke" strokeLinejoin="round" className="hero-path" />
+        <circle cx={last[0] - 3} cy={last[1]} r="5" fill="currentColor" />
+      </svg>
+      <div className="hero-hours" aria-hidden="true">{points.map((x) => <span key={x.hour}>{label(x.hour)}</span>)}</div>
+    </div>
   );
 }

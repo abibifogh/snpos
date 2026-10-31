@@ -73,7 +73,7 @@ export function orderNoticeBody(doc, money, esc) {
     : `${who} has made purchase order <strong>${esc(doc.po_no)}</strong>${side}. It is under the approval limit, `
       + 'so it is ready to send to the supplier now.';
   const where = doc.status === 'waiting'
-    ? 'Approve or refuse it under <strong>Money, Waiting for you</strong>.'
+    ? 'Approve or refuse it under <strong>Approvals</strong>.'
     : 'It is under <strong>Stock, Purchase orders</strong>.';
 
   const items = lines.map((l) => {
