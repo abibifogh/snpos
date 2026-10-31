@@ -18,7 +18,7 @@ import { ordersWaiting } from './purchase-orders-store';
  * Everything waiting for somebody senior, read once.
  *
  * The rules that shape the rows are in waiting.ts and import nothing; this
- * goes and gets the rows. Shared by the Waiting for you page and the Today
+ * goes and gets the rows. Shared by the Approvals page and the Today
  * dashboard, so the two cannot count differently. Each queue fails soft to
  * "nothing waiting" except the shifts, which fail loud: a list that cannot
  * see the shifts must not say nothing is waiting on them.

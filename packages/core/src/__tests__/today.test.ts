@@ -77,3 +77,13 @@ test('how long a shift has been open, and which days to compare', () => {
   assert.equal(dayKey(new Date(2026, 0, 5)), '2026-01-05');
   assert.deepEqual(sidesOn({ kitchen: true, bar: false, craft: true }), ['kitchen', 'craft']);
 });
+
+test('Today greets by the hour, and draws the day only as far as it has got', async () => {
+  const { greetingFor, daySoFar } = await import('../today.ts');
+  assert.deepEqual([3, 9, 13, 20].map(greetingFor), ['Still up', 'Good morning', 'Good afternoon', 'Good evening']);
+  const takings = Array.from({ length: 24 }, (_, h) => (h >= 11 && h <= 22 ? h * 100 : 0));
+  assert.deepEqual(daySoFar([11, 12, 13, 14], takings, 13), [
+    { hour: 11, value: 1100 }, { hour: 12, value: 1200 }, { hour: 13, value: 1300 },
+  ]);
+  assert.deepEqual(daySoFar([11, 12], takings, 9), []);
+});

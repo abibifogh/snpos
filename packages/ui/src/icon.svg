@@ -21,16 +21,16 @@
     shape the launcher uses, circles included, and a mark drawn to the edges
     loses its edges.
   -->
-  <rect width="64" height="64" rx="14" fill="#0f766e"/>
+  <rect width="64" height="64" rx="14" fill="#6A4DFF"/>
   <g transform="translate(32 32) scale(0.86) translate(-32 -32)">
     <!-- The slip, torn off at the bottom. The tear is what makes it a receipt
          at any size; without it this is a rectangle. -->
     <path d="M16 15a4 4 0 0 1 4-4h24a4 4 0 0 1 4 4v36l-4-3.5-4 3.5-4-3.5-4 3.5-4-3.5-4 3.5-4-3.5-4 3.5Z" fill="#ffffff"/>
     <!-- The paper's lines are the tile showing through rather than ink on top,
          so the mark holds up when a launcher shrinks it. -->
-    <rect x="22" y="21" width="20" height="3" rx="1.5" fill="#0f766e"/>
-    <rect x="22" y="28" width="20" height="3" rx="1.5" fill="#0f766e"/>
-    <rect x="22" y="35" width="13" height="3" rx="1.5" fill="#0f766e"/>
+    <rect x="22" y="21" width="20" height="3" rx="1.5" fill="#6A4DFF"/>
+    <rect x="22" y="28" width="20" height="3" rx="1.5" fill="#6A4DFF"/>
+    <rect x="22" y="35" width="13" height="3" rx="1.5" fill="#6A4DFF"/>
     <!-- The total: the one spot of contrast, and the line on a receipt anybody
          actually looks at. -->
     <rect x="22" y="42" width="20" height="4" rx="2" fill="#f59e0b"/>

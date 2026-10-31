@@ -195,7 +195,7 @@ export const openingCountOptional = (module?: string): boolean => (module ?? 'ki
  * ingredient instead. A kitchen that counts does it on the same sheet as the
  * bar, never by typing amounts on the closing screen — that replaced the
  * stock figure on the spot with nobody agreeing to it, the one place a
- * shortage could be typed away — and its differences wait on Waiting for you
+ * shortage could be typed away — and its differences wait on Approvals
  * like everybody else's. Unlike the bar's, the kitchen's is never a wall.
  */
 export const countsOutAtClose = (

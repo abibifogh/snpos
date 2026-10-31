@@ -138,7 +138,7 @@ test('the body groups by the screen that deals with it, and says where that is',
   assert.match(html, /Bar counts/);
   assert.match(html, /Spending/);
   // Both send the reader to the one page that decides everything.
-  assert.match(html, /Money, Waiting for you/);
+  assert.match(html, /Approvals/);
   assert.doesNotMatch(html, /Money, Expenses|Counts and variances/);
   assert.match(html, /GH¢60.00, 6 lines, counted by Regina/);
   assert.match(html, /Waiting 1 day/);
@@ -234,7 +234,7 @@ test('the body says the shelf has NOT moved, which is the part that makes anybod
   */
   const html = countBody({ lines: countLines(held, shelves), who: '', phase: 'close', money });
   assert.match(html, /<strong>The stock figures have not moved.<\/strong>/);
-  assert.match(html, /Money, Waiting for you/);
+  assert.match(html, /Approvals/);
   // And with nobody named it still reads as a sentence.
   assert.match(html, /The bar was counted out/);
 });

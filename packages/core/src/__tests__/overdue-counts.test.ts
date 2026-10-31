@@ -159,5 +159,5 @@ test('the email explains why a day matters, including the double-approval trap',
   assert.match(html, /approving two takes it off the shelf twice/);
   assert.match(html, /href="https:\/\/pos\.example\.com\/admin\/#\/waiting\?show=count"/);
   // Without a configured address it says where, rather than linking nowhere.
-  assert.match(overdueBody(items, money, NOW, ''), /Under Money, Waiting for you/);
+  assert.match(overdueBody(items, money, NOW, ''), /Under Approvals/);
 });

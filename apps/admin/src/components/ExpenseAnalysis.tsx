@@ -46,7 +46,7 @@ function Bars({ rows, money }: { rows: { key: string; label: string; total: numb
           <div
             style={{
               height: `${Math.max(r.total > 0 ? 3 : 0, (r.total / peak) * 100)}%`,
-              background: r.total > 0 ? 'var(--primary, #0f766e)' : 'transparent',
+              background: r.total > 0 ? 'var(--brand)' : 'transparent',
               borderRadius: '2px 2px 0 0',
             }}
           />
@@ -569,7 +569,7 @@ export function ExpenseAnalysisTab({ categories }: { categories: ExpenseCategory
                             height: '100%',
                             // The few that make up most of it are picked out,
                             // because that is the list worth acting on.
-                            background: inFew ? 'var(--primary, #0f766e)' : 'var(--muted, #9ca3af)',
+                            background: inFew ? 'var(--brand)' : 'var(--muted, #9ca3af)',
                           }}
                         />
                       </div>

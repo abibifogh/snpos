@@ -61,17 +61,27 @@ export const THEME_MODES: { v: ThemeMode; l: string; hint: string }[] = [
   { v: 'dark', l: 'Always dark', hint: 'Easier on the eyes in a dim room.' },
 ];
 
+/**
+ * The colours every install was given before anybody chose one.
+ *
+ * NiceOps is violet now. A setting still holding the old default teal or
+ * amber is a colour nobody picked, so it gives way to the stylesheet's own,
+ * which also has a lighter shade for dark mode. A colour an owner did choose
+ * still wins, as it always has.
+ */
+const UNCHOSEN = ['#0f766e', '#f59e0b'];
+export const isChosenColour = (c?: string | null): c is string => !!c && !UNCHOSEN.includes(c.trim().toLowerCase());
+
 export function applyTheme(t: ThemeInput): void {
   applyThemeMode();
   const root = document.documentElement;
-  if (t.primary_color) {
+  if (isChosenColour(t.primary_color)) {
     root.style.setProperty('--brand', t.primary_color);
     // Never let a pale brand colour produce white-on-white button text.
     root.style.setProperty('--brand-ink', luminance(t.primary_color) > 0.45 ? '#16202b' : '#ffffff');
   }
-  if (t.accent_color || t.secondary_color) {
-    root.style.setProperty('--accent', (t.accent_color || t.secondary_color) as string);
-  }
+  const accent = t.accent_color || t.secondary_color;
+  if (isChosenColour(accent)) root.style.setProperty('--accent', accent);
   // The tab icon is drawn from these same colours, so it changes with them.
   applyFavicon();
 }

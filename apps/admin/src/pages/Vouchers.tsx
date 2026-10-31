@@ -393,7 +393,7 @@ export function VouchersPage() {
     <>
       <div className="spread">
         <h1>
-          Discount vouchers
+          Discounts
           <InfoTip>
             A voucher with a code can be typed by a customer while ordering. One without a code is a button staff press.
             Every voucher is money leaving the till, so give each one an end date and, for anything by percentage, a

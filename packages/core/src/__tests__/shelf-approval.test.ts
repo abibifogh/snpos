@@ -80,7 +80,7 @@ test('the frozen box says what is waiting, who for, and where the answer is', ()
   assert.match(words, /Ama changed/);
   assert.match(words, /from 5 to 3/);
   assert.match(words, /down 2/);
-  assert.match(words, /Waiting for you/);
+  assert.match(words, /Approvals/);
 
   // Nobody named is still a sentence rather than "undefined changed this".
   assert.match(waitingWords(change()), /^Changed this from 5 to 3/);

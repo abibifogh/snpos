@@ -37,7 +37,7 @@ const TABS: BookingTab[] = ['decide', 'changes', 'upcoming', 'past', 'all'];
  * has one button. Everything else about a booking is inside it: the decision,
  * its meal times and moving them, what the guest has asked for, the sheets,
  * and the messages. The row used to carry five buttons, and the decision
- * itself was only on Waiting for you.
+ * itself was only on Approvals.
  *
  * The words are the guest's words: "Confirm booking" here sends "Your booking
  * is confirmed" there. "Send changes to guest" is the other direction —
@@ -103,7 +103,7 @@ export function GroupBookingsPage() {
   return (
     <>
       <h1>
-        Group bookings
+        Bookings
         <InfoTip>
           Every group booking, by when it is eaten. Open one to confirm or decline it, move its meal times, answer
           the guest, or download its sheets. Meal times reach the kitchen at their time either way; until a booking

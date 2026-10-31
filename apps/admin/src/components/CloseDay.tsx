@@ -52,6 +52,11 @@ export function CloseDayCard({ money, compact = false }: { money: (n: number) =>
           ariaLabel="Which day"
           options={[{ value: 'yesterday', label: 'Yesterday' }, { value: 'today', label: 'Today' }]}
         />
+        {progress && progress.of > 0 && (
+          <div className="meter" style={{ marginTop: '0.8rem' }} aria-hidden="true">
+            <span className={progress.done === progress.of ? 'ok' : ''} style={{ width: `${(progress.done / progress.of) * 100}%` }} />
+          </div>
+        )}
       </div>
       {error ? (
         <p className="card-pad small" style={{ margin: 0 }}>The day's shifts could not be read, so it cannot say whether the day is finished.</p>

@@ -144,6 +144,6 @@ export function trailWarning(rows: TrailRow[]): string | null {
   const waiting = rows.filter((r) => r.waiting);
   if (waiting.length === 0) return null;
   return `${waiting.length === 1 ? 'A count of this is' : `${waiting.length} counts of this are`} waiting for `
-    + 'approval. Until it is approved, refused or charged on Waiting for you, the shelf figure — and so what '
+    + 'approval. Until it is approved, refused or charged on Approvals, the shelf figure — and so what '
     + 'the next count expects — has not moved for it.';
 }

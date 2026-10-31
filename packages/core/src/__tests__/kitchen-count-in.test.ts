@@ -79,7 +79,7 @@ test('the hourly digest and the day-late alert name the kitchen too', () => {
   assert.equal(items[0]?.what, 'Kitchen count, counting in');
 });
 
-test('Waiting for you lists a kitchen count as the kitchen\'s', () => {
+test('Approvals lists a kitchen count as the kitchen\'s', () => {
   const [item] = waitingList({
     barCounts: [{ shiftId: 'k1', phase: 'open', at: 'x', worth: 500, changed: 1, pending: 1, side: 'kitchen' }],
     shopCounts: [],

@@ -6,7 +6,7 @@
  * level. Somebody allowed to order (can_order_stock, or an admin) turns a
  * suggestion into an order, changes what they like, and sends it — as a PDF,
  * a message pasted into WhatsApp, or an email. An order worth more than the
- * owner's limit waits on Waiting for you first.
+ * owner's limit waits on Approvals first.
  *
  * When the goods arrive they are received THROUGH THE SPEND that pays for
  * them, exactly as stock is bought today: picking the order fills the spend's

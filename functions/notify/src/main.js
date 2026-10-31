@@ -477,7 +477,7 @@ async function sweepApprovals({ db, DB_ID, settings, transport, from, log, error
     to: to.join(','),
     subject: approvalSubject(items),
     html: shell(
-      'Waiting for your approval',
+      'Approvalsr approval',
       approvalBody(items, (n) => money(n, settings)),
       settings.primary_color || '#0f766e',
     ),
@@ -1984,7 +1984,7 @@ export default async ({ req, res, log, error }) => {
         /*
           Settled as it is read, because it is not waiting on anybody.
 
-          Left open it would sit on the Waiting for you page as a job to do,
+          Left open it would sit on the Approvals page as a job to do,
           and the job is done: the party agreed, and there is nothing for
           anybody here to decide.
         */
@@ -2044,7 +2044,7 @@ export default async ({ req, res, log, error }) => {
       if (!transport || !to.length) {
         log(`A group asked for a change to booking ${doc.booking_id}, but ${
           !transport ? 'no SMTP is configured' : asked.why}, so nobody was told by email. `
-          + 'It is on the Waiting for you page.');
+          + 'It is on the Approvals page.');
         return res.json({ sent: false });
       }
 

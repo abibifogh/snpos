@@ -371,7 +371,7 @@ export function ConsignmentFields({
               {variants.filter((v) => held(v.$id)).length === 1 ? 'One size has' : 'Some sizes have'} a shelf
               change waiting for an admin, so {variants.filter((v) => held(v.$id)).length === 1 ? 'its' : 'their'}
               {' '}count cannot be changed again yet. Everything else here can still be edited and saved.
-              An admin approves or turns it down under <strong>Waiting for you</strong>.
+              An admin approves or turns it down under <strong>Approvals</strong>.
             </Notice>
           )}
 

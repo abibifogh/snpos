@@ -1,15 +1,12 @@
 /*
  * Kitchen display. Read from two metres away, by someone holding a pan.
- * Dark by default, a bright white screen in a dim kitchen is unusable.
+ *
+ * Light or dark is the screen's own button (see ThemeButton): Auto follows the
+ * device, Light and Dark are fixed. The colours are the family's own, from the
+ * shared stylesheet, in both themes. This file used to paint its own dark
+ * palette over them unconditionally, so the button changed its label and
+ * nothing else; a kitchen that wants dark all evening picks Dark once.
  */
-:root {
-  --bg: #0d1117;
-  --surface: #161b22;
-  --surface-2: #1f262e;
-  --border: #2b333d;
-  --text: #e9eef4;
-  --text-dim: #93a1b0;
-}
 
 body { background: var(--bg); color: var(--text); }
 
@@ -28,21 +25,23 @@ body { background: var(--bg); color: var(--text); }
 
 .kds-top {
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: 0.7rem 1rem; background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 0.75rem 1rem; background: var(--surface); border-bottom: 1px solid var(--hair);
   padding-top: calc(0.7rem + env(safe-area-inset-top, 0));
   padding-left: calc(1rem + env(safe-area-inset-left, 0));
   padding-right: calc(1rem + env(safe-area-inset-right, 0));
 }
-.kds-top h1 { font-size: 1.05rem; }
+.kds-top h1 { font-size: 1.2rem; }
 .kds-stats { display: flex; gap: 1.25rem; font-size: 0.85rem; color: var(--text-dim); }
-.kds-stats b { color: var(--text); font-size: 1.05rem; }
+.kds-stats b { color: var(--text); font: 800 1.15rem var(--font-display); }
 
 .station-tabs { display: flex; gap: 0.4rem; }
 .station-tabs button {
-  padding: 0.35rem 0.75rem; border-radius: 999px; border: 1px solid var(--border);
-  background: var(--surface-2); color: var(--text); font: inherit; font-size: 0.82rem; cursor: pointer;
+  padding: 0.42rem 0.9rem; border-radius: 999px; border: 0;
+  background: var(--quiet); color: var(--quiet-ink); font: inherit; font-size: 0.85rem; font-weight: 700; cursor: pointer;
+  transition: transform 0.12s ease, background 0.2s ease;
 }
-.station-tabs button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.station-tabs button:active { transform: scale(0.95); }
+.station-tabs button.on { background: var(--text); color: var(--bg); }
 
 .ticket-grid {
   flex: 1; display: grid; gap: 0.85rem; padding: 0.85rem;
@@ -50,19 +49,27 @@ body { background: var(--bg); color: var(--text); }
   align-content: start;
 }
 
+/*
+ * One card per order. Its head is tinted by state: violet while new (it wants
+ * accepting), quiet while cooking, ember once it runs late, with a ring that
+ * breathes so it is seen from across the room.
+ */
 .ticket {
-  background: var(--surface); border: 2px solid var(--border); border-radius: 10px;
+  background: var(--surface); border: 0; border-radius: 22px; box-shadow: var(--shadow);
   display: flex; flex-direction: column; overflow: hidden;
+  animation: card-in 0.38s var(--settle) both;
 }
-.ticket.pending { border-color: var(--accent); }
-.ticket.late { border-color: #d92d20; animation: pulse 1s ease-in-out infinite; }
-@keyframes pulse { 50% { border-color: #ff6b5e; box-shadow: 0 0 0 4px rgba(217,45,32,0.18); } }
+.ticket.pending { box-shadow: 0 0 0 2px var(--brand), var(--shadow); }
+.ticket.pending .ticket-head { background: var(--brand-soft); }
+.ticket.late { box-shadow: 0 0 0 2px var(--ember), var(--shadow); animation: card-in 0.38s var(--settle) both, pulse 1.4s ease-in-out infinite; }
+.ticket.late .ticket-head { background: var(--warn-bg); }
+@keyframes pulse { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--ember) 30%, transparent), var(--shadow); } }
 
 .ticket-head {
-  padding: 0.6rem 0.8rem; background: var(--surface-2);
+  padding: 0.75rem 0.95rem; background: var(--surface-2);
   display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem;
 }
-.ticket-head .no { font-size: 1.15rem; font-weight: 700; }
+.ticket-head .no { font: 800 1.3rem var(--font-display); }
 /* The name is what gets called out, so it is nearly as loud as the number and
    in full colour, not the dim grey the rest of the detail sits in. A long name
    wraps rather than pushing the clock off the side of the ticket. */
@@ -83,9 +90,9 @@ body { background: var(--bg); color: var(--text); }
   color: var(--text);
   overflow-wrap: anywhere;
 }
-.ticket-head .age { font-variant-numeric: tabular-nums; font-weight: 650; }
-.ticket-head .age.warn { color: #f5a524; }
-.ticket-head .age.bad { color: #ff6b5e; }
+.ticket-head .age { font: 600 0.95rem var(--font-mono); font-variant-numeric: tabular-nums; color: var(--brand-dk); }
+.ticket-head .age.warn { color: var(--warn); }
+.ticket-head .age.bad { color: var(--ember); }
 /* The clock, stopped. Quiet on purpose: a finished ticket should not be
    competing for attention with one still on a stove. */
 .ticket-head .age.done { color: var(--text-dim); font-weight: 550; }
@@ -100,10 +107,10 @@ body { background: var(--bg); color: var(--text); }
 }
 .ticket-head .due .dim { color: var(--text-dim); }
 
-.ticket-items { padding: 0.55rem 0.8rem; flex: 1; }
-.ticket-items li { list-style: none; padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+.ticket-items { padding: 0.55rem 0.95rem; flex: 1; margin: 0; }
+.ticket-items li { list-style: none; padding: 0.45rem 0; border-bottom: 1px solid var(--hair); font-size: 1.02rem; }
 .ticket-items li:last-child { border-bottom: none; }
-.ticket-items .qty { font-weight: 700; margin-right: 0.4rem; }
+.ticket-items .qty { font: 600 1rem var(--font-mono); margin-right: 0.45rem; }
 /*
   What was chosen on the dish, read from across a kitchen.
 
@@ -118,34 +125,35 @@ body { background: var(--bg); color: var(--text); }
   color: var(--text);
   padding-left: 0.6rem;
   margin-left: 1.3rem;
-  border-left: 2px solid var(--accent, #f5a524);
+  border-left: 2px solid var(--ember);
   margin-top: 0.15rem;
 }
-.ticket-items .note { font-size: 0.83rem; color: #f5a524; padding-left: 1.3rem; }
+.ticket-items .note { font-size: 0.86rem; font-weight: 700; color: var(--warn); padding-left: 1.3rem; }
 
-.ticket-foot { display: flex; gap: 0.5rem; padding: 0.6rem 0.8rem; border-top: 1px solid var(--border); }
-.ticket-foot .btn { flex: 1; padding: 0.65rem; }
+.ticket-foot { display: flex; gap: 0.5rem; padding: 0.4rem 0.8rem 0.85rem; }
+.ticket-foot .btn { flex: 1; padding: 0.8rem; border-radius: 16px; font-size: 0.98rem; }
 
 .pill {
   font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-  padding: 0.12rem 0.45rem; border-radius: 4px; background: var(--surface-2); color: var(--text-dim);
+  padding: 0.14rem 0.55rem; border-radius: 999px; background: var(--quiet); color: var(--quiet-ink);
 }
-.pill.preorder { background: #1d2b3a; color: #7cc4ff; }
-.pill.qr { background: #12291f; color: #6ee7a8; }
+.pill.preorder { background: var(--brand-soft); color: var(--brand-dk); }
+.pill.qr { background: var(--ok-bg); color: var(--ok); }
 
 .kds-empty { flex: 1; display: grid; place-items: center; color: var(--text-dim); text-align: center; padding: 3rem; }
 
-.audio-gate { position: fixed; inset: 0; background: rgba(0,0,0,0.88); display: grid; place-items: center; z-index: 100; text-align: center; padding: 2rem; }
+.audio-gate { position: fixed; inset: 0; background: rgba(11,15,20,0.9); backdrop-filter: blur(4px); display: grid; place-items: center; z-index: 100; text-align: center; padding: 2rem; }
 .audio-gate .btn { margin-top: 1.2rem; padding: 1rem 2rem; font-size: 1.05rem; }
 
 /* PIN keypad, thumb-sized, because it is used with wet or gloved hands. */
 .pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
 .pin-pad button {
-  padding: 1.1rem 0; font-size: 1.35rem; font-weight: 600;
-  border-radius: 10px; border: 1px solid var(--border);
+  padding: 1.1rem 0; font: 600 1.4rem var(--font-mono);
+  border-radius: 18px; border: 0;
   background: var(--surface-2); color: var(--text); cursor: pointer;
+  transition: transform 0.12s ease, background 0.15s ease;
 }
-.pin-pad button:active { background: var(--brand); border-color: var(--brand); color: #fff; }
+.pin-pad button:active { background: var(--brand); color: var(--brand-ink); transform: scale(0.94); }
 
 /* A question mark rather than the word: the kitchen bar is already full, and
    this is the one control nobody needs to find in a hurry. */

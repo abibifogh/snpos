@@ -724,7 +724,7 @@ export function SettingsPage() {
           Counting at the end of a shift
           <InfoTip label="About counting at the end of a shift">
           The bar and the shop count out on the count sheet before they close, and every difference waits on
-          {' '}<strong>Waiting for you</strong> to be agreed or charged. Their close then only asks OK, Low or Out
+          {' '}<strong>Approvals</strong> to be agreed or charged. Their close then only asks OK, Low or Out
           about items marked <strong>Just check it</strong> under <strong>Stock</strong>: the cheap and bulky
           things, like salt and oil, that are not worth a number.
           </InfoTip>
@@ -739,7 +739,7 @@ export function SettingsPage() {
                     <strong>Counted.</strong> The kitchen is asked to count every ingredient when a shift opens and
                     again before it closes, on the same sheet as the bar. What was counted is set against what the
                     recipes say should be left, which is where waste and over-portioning show up, and each
-                    difference waits on <strong>Waiting for you</strong>. It is slower, and it is asked for rather
+                    difference waits on <strong>Approvals</strong>. It is slower, and it is asked for rather
                     than forced: a cook can close without it.
                   </>
                 ) : (
@@ -821,7 +821,7 @@ export function SettingsPage() {
                   can be started. The shelf still moves on goods received and on a sale — what stops is the only
                   way to correct it, so a piece that breaks or goes back to its maker will sit on the shelf
                   saying it is still there. Anything already submitted is <em>not</em> thrown away: it stays
-                  under <strong>Waiting for you</strong> until it is agreed or refused, because a count that is
+                  under <strong>Approvals</strong> until it is agreed or refused, because a count that is
                   waiting holds its pieces frozen and abandoning it would freeze them for good.
                 </>
               ) : (
