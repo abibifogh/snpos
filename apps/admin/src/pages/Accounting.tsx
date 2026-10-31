@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, useToast } from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, useToast, InfoTip } from '@snpos/ui';
 import { listAll, humanError, saveDropping } from '../lib';
 import {
   parseMoney, toInput, Query,
@@ -165,11 +165,13 @@ export function AccountingPage() {
 
   return (
     <>
-      <h1>Accounting</h1>
-      <p className="dim small" style={{ marginTop: 0 }}>
-        Sales and spending post themselves as shifts close. This is where they add up, and where anything that
-        never passes through a till gets in.
-      </p>
+      <h1>
+        Accounting
+        <InfoTip>
+          Sales and spending post themselves as shifts close. This is where they add up, and where anything that
+          never passes through a till gets in.
+        </InfoTip>
+      </h1>
 
       {/*
         Two rows: the jobs somebody here does every week, and the tools only
@@ -671,13 +673,15 @@ function Journal({
         title="Journal"
         actions={<Button size="sm" variant="primary" onClick={startNew}>New entry</Button>}
         pad
+        help={
+          <>
+            Every posting, whether the system wrote it or somebody did. An entry can be changed, and what it said
+            before goes into the audit log, which this page cannot reach and erasing records never clears.
+            Reversing instead leaves both halves standing, which is the better answer for anything an accountant
+            or a bank has already seen.
+          </>
+        }
       >
-        <p className="small dim" style={{ marginTop: 0 }}>
-          Every posting, whether the system wrote it or somebody did. An entry can be changed, and what it said
-          before goes into the audit log, which this page cannot reach and erasing records never clears.
-          Reversing instead leaves both halves standing, which is the better answer for anything an accountant
-          or a bank has already seen.
-        </p>
         {shown.length === 0 ? (
           <Empty title="Nothing in this period">Close a shift, or widen the dates.</Empty>
         ) : (
@@ -978,12 +982,14 @@ function Assets({
         title="Fixed assets"
         actions={<Button size="sm" variant="primary" onClick={() => open()}>Add an asset</Button>}
         pad
+        help={
+          <>
+            Things the business owns and uses rather than sells: an oven, a fridge, a van, the fit-out of a room.
+            They are not a cost on the day they are bought — the money left, but you still have the oven — so the
+            cost is charged a month at a time over the years it is used.
+          </>
+        }
       >
-        <p className="small dim" style={{ marginTop: 0 }}>
-          Things the business owns and uses rather than sells: an oven, a fridge, a van, the fit-out of a room.
-          They are not a cost on the day they are bought — the money left, but you still have the oven — so the
-          cost is charged a month at a time over the years it is used.
-        </p>
 
         {assets.length === 0 ? (
           <Empty title="Nothing on the register">Add the first oven and it starts being written down.</Empty>
@@ -1023,15 +1029,18 @@ function Assets({
         )}
       </Card>
 
-      <Card title="Charge a month's depreciation" pad>
+      <Card title="Charge a month's depreciation" pad
+        help={
+          <>
+            Posts one month of wear against every asset that owes it, dated the last day of that month. Running the
+            same month twice is safe: anything already charged is left alone rather than charged again.
+          </>
+        }
+      >
         {/* Run rather than scheduled. This system may have four background jobs
             in total and all four are doing something that cannot wait;
             depreciation can, because nobody needs last month's charge before
             somebody looks at last month's figures. */}
-        <p className="small dim" style={{ marginTop: 0 }}>
-          Posts one month of wear against every asset that owes it, dated the last day of that month. Running the
-          same month twice is safe: anything already charged is left alone rather than charged again.
-        </p>
         <div className="row" style={{ gap: '0.6rem' }}>
           <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} style={{ maxWidth: '12rem' }} />
           <Button variant="primary" loading={running} disabled={!isOwner} onClick={() => void run()}>
@@ -1361,11 +1370,14 @@ function Reconcile({
 
   return (
     <>
-      <Card title="Check an account against a statement" pad>
-        <p className="small dim" style={{ marginTop: 0 }}>
-          Tick every posting the bank has also seen. What is left over is money you have written down and they
-          have not processed yet, which is normal. What must come to nothing is the difference.
-        </p>
+      <Card title="Check an account against a statement" pad
+        help={
+          <>
+            Tick every posting the bank has also seen. What is left over is money you have written down and they
+            have not processed yet, which is normal. What must come to nothing is the difference.
+          </>
+        }
+      >
         <div className="grid-2">
           <Field label="Account">
             <Select value={code} onChange={(e) => { setCode(e.target.value); setCleared(new Set()); }}>
@@ -1442,12 +1454,14 @@ function Reconcile({
           </label>
         }
         pad
+        help={
+          <>
+            A CSV from the bank. The columns are read by name, so whatever yours calls them — Date, Narration,
+            Amount, or Money in and Money out — is fine as long as those names are in the first row. Uploading the
+            same file twice adds nothing twice.
+          </>
+        }
       >
-        <p className="small dim" style={{ marginTop: 0 }}>
-          A CSV from the bank. The columns are read by name, so whatever yours calls them — Date, Narration,
-          Amount, or Money in and Money out — is fine as long as those names are in the first row. Uploading the
-          same file twice adds nothing twice.
-        </p>
 
         {importProblems.length > 0 && (
           <Notice>
@@ -1695,12 +1709,15 @@ function Settle({
   return (
     <div className="stack">
       <CashToBank venueId={venueId} userId={userId} money={money} decimals={decimals} onChanged={onChanged} toast={toast} banks={banks} />
-      <Card title="Card and mobile money settled to the bank" pad>
-        <p className="small dim" style={{ marginTop: 0 }}>
-          Every close puts card and mobile-money takings into a clearing account. When the provider pays it into
-          the bank, record it here: what arrived, and what they kept. Waiting now:
-          {' '}<strong>{money(owed?.momo ?? 0)}</strong> mobile money, <strong>{money(owed?.card ?? 0)}</strong> card.
-        </p>
+      <Card title="Card and mobile money settled to the bank" pad
+        help={
+          <>
+            Every close puts card and mobile-money takings into a clearing account. When the provider pays it into
+            the bank, record it here: what arrived, and what they kept. Waiting now:
+            {' '}<strong>{money(owed?.momo ?? 0)}</strong> mobile money, <strong>{money(owed?.card ?? 0)}</strong> card.
+          </>
+        }
+      >
         <div className="grid-2">
           <Field label="Which provider">
             <Select value={kind} onChange={(e) => setKind(e.target.value as 'momo' | 'card')}>
@@ -1771,14 +1788,17 @@ function Settle({
         </div>
       </Card>
 
-      <Card title="Tax remitted" pad>
-        <p className="small dim" style={{ marginTop: 0 }}>
-          Tax collected on sales is owed to the revenue authority until it is paid, each levy on its own return.
-          Owed now: {taxChoices.length === 0
-            ? <strong>nothing</strong>
-            : taxChoices.map((t, i) => <span key={t.account_code}>{i > 0 ? ' · ' : ''}<strong>{money(t.amount)}</strong> {t.name}</span>)}.
-          Paid from the bank.
-        </p>
+      <Card title="Tax remitted" pad
+        help={
+          <>
+            Tax collected on sales is owed to the revenue authority until it is paid, each levy on its own return.
+            Owed now: {taxChoices.length === 0
+              ? <strong>nothing</strong>
+              : taxChoices.map((t, i) => <span key={t.account_code}>{i > 0 ? ' · ' : ''}<strong>{money(t.amount)}</strong> {t.name}</span>)}.
+            Paid from the bank.
+          </>
+        }
+      >
         <div className="grid-2">
           <Field label="Which return">
             <Select value={chosenTax?.account_code ?? ''} onChange={(e) => setTaxAccount(e.target.value)}>
@@ -1894,12 +1914,14 @@ function Locks({
         title="Before the month can be locked"
         actions={items ? <span className="dim small">{closeProgress(items)}</span> : undefined}
         pad
+        help={
+          <>
+            A lock is a checklist, not a date. Pick the last day to close below and this fills in. Anything that
+            would still change the month's figures blocks the lock; money still in transit is named and lets it
+            through, because a settlement that lands next month belongs to next month.
+          </>
+        }
       >
-        <p className="small dim" style={{ marginTop: 0 }}>
-          A lock is a checklist, not a date. Pick the last day to close below and this fills in. Anything that
-          would still change the month's figures blocks the lock; money still in transit is named and lets it
-          through, because a settlement that lands next month belongs to next month.
-        </p>
         {!through && <Notice tone="info">Choose the date to close up to, and the checks appear here.</Notice>}
         {through && checking && !items && <Spinner />}
         {items && (
@@ -1930,11 +1952,14 @@ function Locks({
         )}
       </Card>
 
-      <Card title="Close the books to a date" pad>
-        <p className="small dim" style={{ marginTop: 0 }}>
-          Nothing can be posted, edited or reversed on or before the date the books are closed to — not by hand,
-          not by a shift closing, not by depreciation. It applies to everybody including you.
-        </p>
+      <Card title="Close the books to a date" pad
+        help={
+          <>
+            Nothing can be posted, edited or reversed on or before the date the books are closed to — not by hand,
+            not by a shift closing, not by depreciation. It applies to everybody including you.
+          </>
+        }
+      >
 
         {current ? (
           <Notice tone="ok">Closed up to <strong>{current}</strong>. Everything after that is open.</Notice>

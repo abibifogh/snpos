@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, useToast, Segmented} from '@snpos/ui';
+import { Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, useToast, Segmented, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, humanError } from '../lib';
 import {
   loadLocations, loadLevels, loadIngredients, transferSheet, transferStock,
@@ -241,10 +241,13 @@ export function LocationsPage({ side }: { side?: Module } = {}) {
         </div>
       </div>
 
-      <p className="dim" style={{ maxWidth: '46rem' }}>
-        A delivery is put down in a store room, and stock is carried out to a counter as it is needed. What you buy
-        lands in the store; what you sell or pour comes off the counter; and the counter is what gets counted at the
-        start and end of a shift. Until you set a place up, everything behaves exactly as it did.
+      <p className="small dim" style={{ marginTop: 0 }}>
+        How this works
+        <InfoTip>
+          A delivery is put down in a store room, and stock is carried out to a counter as it is needed. What you buy
+          lands in the store; what you sell or pour comes off the counter; and the counter is what gets counted at the
+          start and end of a shift. Until you set a place up, everything behaves exactly as it did.
+        </InfoTip>
       </p>
 
       {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
@@ -560,9 +563,12 @@ export function LocationsPage({ side }: { side?: Module } = {}) {
               </label>
             </Field>
           )}
-          <p className="small dim" style={{ marginBottom: 0 }}>
-            Deliveries land in the first store room and sales come off the first counter. With one place, it does
-            both, which is how a business that has never thought about this keeps working unchanged.
+          <p className="small dim" style={{ marginTop: 0 }}>
+            How this works
+            <InfoTip>
+              Deliveries land in the first store room and sales come off the first counter. With one place, it does
+              both, which is how a business that has never thought about this keeps working unchanged.
+            </InfoTip>
           </p>
         </Modal>
       )}

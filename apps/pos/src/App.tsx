@@ -1232,11 +1232,15 @@ export function App() {
 /** Counter and phone orders, which have no table to sit against. */
 function TakeawayList({ ctx, onOpen }: { ctx: PosContext; onOpen: (t: TableRow | null) => void }) {
   return (
-    <Card title="Takeaway">
-      <p className="small dim" style={{ marginTop: 0 }}>
-        Orders taken at the counter or over the phone. They go to the kitchen the same way, but are not tied to a
-        table.
-      </p>
+    <Card
+      title="Takeaway"
+      help={
+        <>
+          Orders taken at the counter or over the phone. They go to the kitchen the same way, but are not tied to a
+          table.
+        </>
+      }
+    >
       <Button
         variant="primary"
         onClick={() =>

@@ -67,7 +67,14 @@ export function PayoutsPage() {
 
       {error && <Notice tone="err">{error}</Notice>}
 
-      <Card title="Waiting to be paid">
+      <Card title="Waiting to be paid"
+        help={
+          <>
+            Somebody who has stopped consigning can still be owed money, so they stay on this list until they
+            are paid.
+          </>
+        }
+      >
         <div className="stat-row">
           <div className="stat">
             <div className="label">People</div>
@@ -119,10 +126,6 @@ export function PayoutsPage() {
             </table>
           </div>
         )}
-        <p className="small dim" style={{ marginBottom: 0 }}>
-          Somebody who has stopped consigning can still be owed money, so they stay on this list until they
-          are paid.
-        </p>
       </Card>
 
       <Card title="Already paid">

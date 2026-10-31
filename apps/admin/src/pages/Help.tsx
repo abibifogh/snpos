@@ -119,10 +119,12 @@ export function HelpPage() {
               checked={enabled}
               onChange={(v) => { setEnabled(v); setDirty(true); }}
               label="Show the help button in the apps"
+              help={
+                <>
+                  Off hides it everywhere. The manual is still readable here.
+                </>
+              }
             />
-            <p className="small dim" style={{ marginBottom: 0 }}>
-              Off hides it everywhere. The manual is still readable here.
-            </p>
             <div style={{ marginTop: '0.8rem' }}>
               <Toggle
                 checked={showOnMenu}

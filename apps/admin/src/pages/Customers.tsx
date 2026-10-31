@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, useToast,
-  FilterBar, FilterField,
-} from '@snpos/ui';
+  FilterBar, FilterField, InfoTip } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
   listCreatedBetween, toCsv, downloadCsv, MODULE_LABELS,
@@ -249,18 +248,24 @@ export function CustomersPage() {
             </Card>
           )}
 
-          <Card title="How people end up on this list">
+          <Card title="How people end up on this list"
+            help={
+              <>
+                Three ways, and all three are the customer choosing to give something: ordering from their own phone,
+                asking for a receipt by email, or leaving a name or number for a takeaway or a booking. Nothing is
+                collected quietly, and a walk-in who pays cash leaves no trace here at all.
+              </>
+            }
+          >
             <p className="small dim" style={{ marginTop: 0 }}>
-              Three ways, and all three are the customer choosing to give something: ordering from their own phone,
-              asking for a receipt by email, or leaving a name or number for a takeaway or a booking. Nothing is
-              collected quietly, and a walk-in who pays cash leaves no trace here at all.
-            </p>
-            <p className="small dim" style={{ marginBottom: 0 }}>
-              Somebody who gave a phone number once and an email another time will appear twice — there is nothing
-              shared between those two orders to join them by. Guessing from names would be worse: two people called
-              Kwame are two people, and a wrong join quietly credits one person&rsquo;s spending to another with
-              nothing on screen to show it happened. Being in the list {REGULAR_AT} times or more is what earns the
-              Regular badge.
+              How this works
+              <InfoTip>
+                Somebody who gave a phone number once and an email another time will appear twice — there is nothing
+                shared between those two orders to join them by. Guessing from names would be worse: two people called
+                Kwame are two people, and a wrong join quietly credits one person&rsquo;s spending to another with
+                nothing on screen to show it happened. Being in the list {REGULAR_AT} times or more is what earns the
+                Regular badge.
+              </InfoTip>
             </p>
           </Card>
         </>

@@ -1,8 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   Badge, Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, useToast,
-  ExpenseModal,
-} from '@snpos/ui';
+  ExpenseModal, InfoTip } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
   parseMoney, toInput, saveDropping,
@@ -410,17 +409,23 @@ export function ImprestPage() {
       )}
 
       {floats.length > 0 && (
-        <Card title="How this works">
+        <Card title="How this works"
+          help={
+            <>
+              The box is set at a fixed amount. Money is spent out of it against receipts, and it is topped back
+              up by exactly what was spent — so what is in the box plus what has been spent since always comes to
+              the fixed amount. That is what makes it checkable: count the tin, and anything that does not add up
+              is visible the same day rather than at the end of a month nobody can reconstruct.
+            </>
+          }
+        >
           <p className="small dim" style={{ marginTop: 0 }}>
-            The box is set at a fixed amount. Money is spent out of it against receipts, and it is topped back
-            up by exactly what was spent — so what is in the box plus what has been spent since always comes to
-            the fixed amount. That is what makes it checkable: count the tin, and anything that does not add up
-            is visible the same day rather than at the end of a month nobody can reconstruct.
-          </p>
-          <p className="small dim" style={{ marginBottom: 0 }}>
-            Every spend from a box lands in the accounts the same way any other expense does, under whichever
-            account its category points at — and it is credited against the box rather than the till, so a
-            drawer is never counted short for money that is sitting in a tin.
+            How this works
+            <InfoTip>
+              Every spend from a box lands in the accounts the same way any other expense does, under whichever
+              account its category points at — and it is credited against the box rather than the till, so a
+              drawer is never counted short for money that is sitting in a tin.
+            </InfoTip>
           </p>
         </Card>
       )}

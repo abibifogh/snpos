@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   encodePin, pinProblem, modulesOf, sidesOf, legacySide, MODULE_LABELS,
@@ -380,15 +380,16 @@ export function StaffPage() {
   return (
     <>
       <div className="spread">
-        <h1>Staff</h1>
+        <h1>
+          Staff
+          <InfoTip>
+            Kitchen and floor staff sign in with a <strong>PIN</strong> on the shared device, no email, no password.
+            Only people who need the admin dashboard on their own device get a login. Either way each person is
+            identified individually, which is what makes “who authorised this discount” answerable at all.
+          </InfoTip>
+        </h1>
         <Button variant="primary" onClick={() => open(undefined, false)}>Add someone</Button>
       </div>
-
-      <p className="dim small" style={{ marginTop: 0 }}>
-        Kitchen and floor staff sign in with a <strong>PIN</strong> on the shared device, no email, no password.
-        Only people who need the admin dashboard on their own device get a login. Either way each person is
-        identified individually, which is what makes “who authorised this discount” answerable at all.
-      </p>
 
       {error && !editing && <Notice>{error}</Notice>}
 
@@ -667,11 +668,13 @@ export function StaffPage() {
             </Field>
           )}
 
-          <h3 style={{ margin: '1.1rem 0 0.5rem' }}>What they can do</h3>
-          <p className="small dim" style={{ marginTop: 0 }}>
-            These are per person, not per job title. On a quiet shift the cook is the cashier, so give a cook the till
-            permissions if that is how your restaurant runs, the role above only sets the starting point.
-          </p>
+          <h3 style={{ margin: '1.1rem 0 0.5rem' }}>
+            What they can do
+            <InfoTip>
+              These are per person, not per job title. On a quiet shift the cook is the cashier, so give a cook the till
+              permissions if that is how your restaurant runs, the role above only sets the starting point.
+            </InfoTip>
+          </h3>
           <Field hint="Counting the opening float and starting the till.">
             <Toggle
               checked={editing.can_open_shift ?? false}

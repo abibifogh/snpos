@@ -1872,7 +1872,11 @@ export const COLLECTIONS = [
     perms: { read: ['team:cashiers', ...MGMT], create: ['team:cashiers', ...MGMT], update: MGMT, delete: ADMIN },
     attributes: [
       ['expense_id', 's', 64, true],
-      ['ingredient_id', 's', 64, true],
+      // Blank on a line for one of the shop's own pieces, which is a product
+      // rather than a stock item: menu_item_id and variant_id say which.
+      ['ingredient_id', 's', 64, false],
+      ['menu_item_id', 's', 64, false],
+      ['variant_id', 's', 64, false],
       ['name_snapshot', 's', 160, true],
       ['qty', 'f', null, true, 0],
       ['unit_cost', 'i', null, false, 0],

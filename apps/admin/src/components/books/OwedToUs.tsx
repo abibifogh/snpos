@@ -52,15 +52,18 @@ export function OwedToUs({ money, settings }: { money: (n: number) => string; se
   };
 
   return (
-    <Card title={`Owed to us${bands.total ? ` · ${money(bands.total)}` : ''}`} pad>
+    <Card title={`Owed to us${bands.total ? ` · ${money(bands.total)}` : ''}`} pad
+      help={
+        <>
+          What customers owe on tabs, counted as a sale on the day it was served. Paying a tab at a till clears it here.
+          Days are counted from when each bill was served.
+        </>
+      }
+    >
       <div className="row row-wrap" style={{ gap: '0.5rem', marginBottom: '0.8rem' }}>
         <Button onClick={exportXlsx} disabled={!tabs || tabs.length === 0}>Excel</Button>
         <Link className="btn" to="/tabs">Tabs</Link>
       </div>
-      <p className="small dim" style={{ marginTop: 0 }}>
-        What customers owe on tabs, counted as a sale on the day it was served. Paying a tab at a till clears it here.
-        Days are counted from when each bill was served.
-      </p>
       <AgeBands b={bands} money={money} />
       {tabs === null ? <Spinner /> : tabs.length === 0 ? (
         <Empty title="Nobody owes anything">Every tab is paid up.</Empty>

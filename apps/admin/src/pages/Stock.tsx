@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast, ViewTabs,
-  PickerMenu, PickerItem, FacetChips, GroupedRows, SortableTh, ExpenseModal,
-} from '@snpos/ui';
+  PickerMenu, PickerItem, FacetChips, GroupedRows, SortableTh, ExpenseModal, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, levelOf, saveDropping, AVERAGE_COST_WORDS,
@@ -179,8 +178,18 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   /** Closing the form takes the request out of the address, so a reload does not reopen it. */
   const doneReceiving = () => {
     setReceiving(false);
+    setBuying(false);
     if (wantsReceive) setParams((p) => { p.delete('receive'); return p; }, { replace: true });
   };
+  /*
+    The shop gets more to sell in two ways, and they are recorded in two
+    places: a maker leaving pieces is a delivery on Goods received, with a
+    slip and nothing paid; the shop buying pieces or bags is a spend. So
+    Receive stock asks which, before showing either form.
+  */
+  const navigate = useNavigate();
+  const mayIntake = module === 'craft' && canOpen('intake', profile, settings);
+  const [buying, setBuying] = useState(false);
   const mayPlaces = canOpen('locations', profile, settings);
   const mayCount = canOpen(module === 'bar' ? 'bar_counts' : module === 'craft' ? 'stocktake' : 'stock', profile, settings);
   const mayWaste = canOpen('waste', profile, settings);
@@ -900,7 +909,28 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
       </Card>
       )}
 
-      {receiving && settings && (
+      {receiving && mayIntake && !buying && (
+        <Modal title="Receive stock" onClose={doneReceiving}>
+          <div className="stack" style={{ gap: '0.6rem' }}>
+            <button type="button" className="choice-card" onClick={() => { doneReceiving(); navigate('/intake?receive=1'); }}>
+              <strong>From a maker</strong>
+              <span className="small dim">
+                Pieces a maker leaves for the shop to sell. Booked in on Goods received, with a slip for the maker.
+                Nothing is paid now; they are paid when the pieces sell.
+              </span>
+            </button>
+            <button type="button" className="choice-card" onClick={() => setBuying(true)}>
+              <strong>Bought by the shop</strong>
+              <span className="small dim">
+                Pieces the shop paid for to sell, or supplies such as bags and wrapping. Puts them on the shelf and
+                records what was paid.
+              </span>
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {receiving && settings && (!mayIntake || buying) && (
         <ExpenseModal
           receive
           desk="office"
@@ -1040,12 +1070,14 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
               is what every kitchen ingredient wants.
             */}
             <div style={{ gridColumn: '1 / -1', marginTop: '0.4rem' }}>
-              <h4 style={{ margin: '0 0 0.15rem' }}>How it arrives</h4>
-              <p className="small dim" style={{ margin: 0 }}>
-                Only different from the unit above when you buy it in something bigger than you count it in —
-                a sack of rice counted in kg, a bottle of gin poured as shots. Buy it by the{' '}
-                {editing.unit ?? 'unit'} and there is nothing to set here.
-              </p>
+              <h4 style={{ margin: '0 0 0.15rem' }}>
+                How it arrives
+                <InfoTip>
+                  Only different from the unit above when you buy it in something bigger than you count it in —
+                  a sack of rice counted in kg, a bottle of gin poured as shots. Buy it by the{' '}
+                  {editing.unit ?? 'unit'} and there is nothing to set here.
+                </InfoTip>
+              </h4>
             </div>
             <Field
               label={`Bought by the ${editing.unit ?? 'unit'}, or in something bigger?`}

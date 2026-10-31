@@ -1159,7 +1159,16 @@ export function OrderView({
       {peeking && (() => {
         const lines = pourList(peeking.$id, recipes ?? [], barIngredients);
         return (
-          <Modal title={`How ${peeking.name} is made`} onClose={() => setPeeking(null)}>
+          <Modal
+            title={`How ${peeking.name} is made`}
+            onClose={() => setPeeking(null)}
+            help={
+              <>
+                What the books expect this drink to use. Pouring differently is what shows up as a gap at the
+                next count.
+              </>
+            }
+          >
             {/* The method, where somebody wrote one. A recipe is a list of
                 measures; "muddle the mint first" is the part that is not in
                 the quantities and the part a new bartender needs most. */}
@@ -1185,10 +1194,6 @@ export function OrderView({
                 ))}
               </tbody>
             </table>
-            <p className="small dim" style={{ marginBottom: 0 }}>
-              What the books expect this drink to use. Pouring differently is what shows up as a gap at the
-              next count.
-            </p>
           </Modal>
         );
       })()}
@@ -1440,7 +1445,16 @@ export function OrderView({
       )}
 
       {showParked && (
-        <Modal title="Parked sales" onClose={() => setShowParked(false)}>
+        <Modal
+          title="Parked sales"
+          onClose={() => setShowParked(false)}
+          help={
+            <>
+              These live on this till only, and nothing has been ordered or charged. Picking one up puts it back on
+              the counter as it was.
+            </>
+          }
+        >
           {parked.length === 0 ? (
             <p className="small dim" style={{ margin: 0 }}>Nothing is parked.</p>
           ) : (
@@ -1481,10 +1495,6 @@ export function OrderView({
               ))}
             </div>
           )}
-          <p className="small dim" style={{ marginBottom: 0, marginTop: '0.8rem' }}>
-            These live on this till only, and nothing has been ordered or charged. Picking one up puts it back on
-            the counter as it was.
-          </p>
         </Modal>
       )}
     </div>
@@ -1541,6 +1551,12 @@ function DiscountModal({
     <Modal
       title="Apply a discount"
       onClose={onClose}
+      help={
+        <>
+          Discounts come from a code somebody set up beforehand, not from a figure typed at the till. They can only
+          be applied before the bill is paid; afterwards, use a refund, which leaves its own trail.
+        </>
+      }
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
@@ -1555,11 +1571,6 @@ function DiscountModal({
         </>
       }
     >
-      <p className="small dim" style={{ marginTop: 0 }}>
-        Discounts come from a code somebody set up beforehand, not from a figure typed at the till. They can only
-        be applied before the bill is paid; afterwards, use a refund, which leaves its own trail.
-      </p>
-
       <Field label="Discount code" error={error}>
         <Input
           value={code}

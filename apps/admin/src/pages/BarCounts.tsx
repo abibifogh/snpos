@@ -914,13 +914,16 @@ export function BarCountsPage({ module = 'bar' }: { module?: 'bar' | 'kitchen' }
         the drink it is a size of.
       */}
       {isAdmin && shift && (
-        <Card title="Sales that never came off a shelf">
-          <p className="small dim" style={{ marginTop: 0 }}>
-            Sales that were never taken off a shelf — a drink sold before its size had a shelf, a dish paid
-            while the screen was offline — are put through now, so what the shelves say includes this
-            shift&rsquo;s sales. Safe to press twice — a sale
-            already accounted for is left alone.
-          </p>
+        <Card title="Sales that never came off a shelf"
+          help={
+            <>
+              Sales that were never taken off a shelf — a drink sold before its size had a shelf, a dish paid
+              while the screen was offline — are put through now, so what the shelves say includes this
+              shift&rsquo;s sales. Safe to press twice — a sale
+              already accounted for is left alone.
+            </>
+          }
+        >
           <Button loading={pouring} onClick={() => void catchUp()}>
             Bring the shelves up to date with this shift
           </Button>

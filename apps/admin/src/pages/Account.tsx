@@ -77,11 +77,14 @@ export function AccountPage() {
 
       <PushCard />
 
-      <Card title="Password">
-        <p className="small dim" style={{ marginTop: 0 }}>
-          If you are still using the temporary password that was printed during setup, change it now. It was shown in a
-          terminal window and may still be sitting in your scroll-back.
-        </p>
+      <Card title="Password"
+        help={
+          <>
+            If you are still using the temporary password that was printed during setup, change it now. It was shown in a
+            terminal window and may still be sitting in your scroll-back.
+          </>
+        }
+      >
         <Field label="Current password">
           <Input
             type="password"
@@ -137,10 +140,13 @@ export function AccountPage() {
       </Card>
 
       {profile && (
-        <Card title="Your permissions">
-          <p className="small dim" style={{ marginTop: 0 }}>
-            Set by an administrator; you cannot raise your own limits, which is the point of them.
-          </p>
+        <Card title="Your permissions"
+          help={
+            <>
+              Set by an administrator; you cannot raise your own limits, which is the point of them.
+            </>
+          }
+        >
           <div className="table-wrap">
             <table className="data">
               <tbody>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
-  Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast,
-} from '@snpos/ui';
+  Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   parseMoney, Query,
@@ -71,6 +71,14 @@ export function IntakePage() {
   const [consignors, setConsignors] = useState<Consignor[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [receiving, setReceiving] = useState(false);
+  // Opened from Stock's Receive stock, "From a maker", with the form already up.
+  const [params, setParams] = useSearchParams();
+  // Once the makers have loaded, so the form opens on one; with none, the page says what is missing instead.
+  useEffect(() => {
+    if (params.get('receive') !== '1' || rows === null) return;
+    if (consignors.some((c) => c.active) && categories.length > 0) setReceiving(true);
+    setParams((p) => { p.delete('receive'); return p; }, { replace: true });
+  }, [params, setParams, rows, consignors, categories]);
   const [viewing, setViewing] = useState<ConsignmentIntake | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -568,10 +576,13 @@ function ReceiveModal({
         <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
       </Field>
 
-      <p className="small dim" style={{ marginBottom: 0 }}>
-        Everything booked in here goes straight onto the shop floor at the price you set, credited to this
-        maker when it sells. Pick one of their products to add to its shelf; a new piece becomes a product of its
-        own, and its sizes are added afterwards from the product itself under Craft shop → Products.
+      <p className="small dim" style={{ marginTop: 0 }}>
+        How this works
+        <InfoTip>
+          Everything booked in here goes straight onto the shop floor at the price you set, credited to this
+          maker when it sells. Pick one of their products to add to its shelf; a new piece becomes a product of its
+          own, and its sizes are added afterwards from the product itself under Craft shop → Products.
+        </InfoTip>
       </p>
     </Modal>
   );

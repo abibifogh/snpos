@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Card, Badge, Button, Notice, Spinner, Input, Modal, Segmented, Textarea, useToast } from '@snpos/ui';
+import { Card, Badge, Button, Notice, Spinner, Input, Modal, Segmented, Textarea, useToast, InfoTip } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
   groupBookingsFrom, resendBookingNotice, resendPendingFor,
@@ -102,12 +102,14 @@ export function GroupBookingsPage() {
 
   return (
     <>
-      <h1>Group bookings</h1>
-      <p className="dim" style={{ maxWidth: '62ch' }}>
-        Every group booking, by when it is eaten. Open one to confirm or decline it, move its meal times, answer
-        the guest, or download its sheets. Meal times reach the kitchen at their time either way; until a booking
-        is confirmed they show <strong>Not confirmed</strong> on the kitchen screen.
-      </p>
+      <h1>
+        Group bookings
+        <InfoTip>
+          Every group booking, by when it is eaten. Open one to confirm or decline it, move its meal times, answer
+          the guest, or download its sheets. Meal times reach the kitchen at their time either way; until a booking
+          is confirmed they show <strong>Not confirmed</strong> on the kitchen screen.
+        </InfoTip>
+      </h1>
 
       <div style={{ margin: '0.9rem 0' }}>
         <Segmented<BookingTab>

@@ -233,11 +233,13 @@ export function CountUpload({
                   checked={makeProducts}
                   onChange={setMakeProducts}
                   label={`Create ${read.missingProducts.length} piece${read.missingProducts.length === 1 ? '' : 's'} not on the shelf`}
+                  help={
+                    <>
+                      Each starts at none on the shelf, so the count brings them on as a difference you approve like any
+                      other. Left off, those rows are skipped.
+                    </>
+                  }
                 />
-                <p className="small dim" style={{ margin: '0.35rem 0 0' }}>
-                  Each starts at none on the shelf, so the count brings them on as a difference you approve like any
-                  other. Left off, those rows are skipped.
-                </p>
                 <div className="table-wrap" style={{ maxHeight: '20vh', overflowY: 'auto', marginTop: '0.5rem' }}>
                   <table className="data">
                     <thead>

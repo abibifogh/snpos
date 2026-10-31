@@ -194,11 +194,14 @@ export function PushCard() {
   const why = support ? supportWords(support) : null;
 
   return (
-    <Card title="Notifications on this device">
-      <p className="small dim" style={{ marginTop: 0 }}>
-        A notification when a stock count has held a difference for more than a day without anybody agreeing or
-        refusing it. The same alert is emailed to every admin with an address on their staff profile.
-      </p>
+    <Card title="Notifications on this device"
+      help={
+        <>
+          A notification when a stock count has held a difference for more than a day without anybody agreeing or
+          refusing it. The same alert is emailed to every admin with an address on their staff profile.
+        </>
+      }
+    >
 
       {!isAdmin ? (
         <Notice tone="info">

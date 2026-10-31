@@ -87,7 +87,14 @@ export function BillsToPay({ venueId, userId, accounts, money, settings, onChang
   };
 
   return (
-    <Card title={`Bills to pay${bands.total ? ` · ${money(bands.total)}` : ''}`} pad>
+    <Card title={`Bills to pay${bands.total ? ` · ${money(bands.total)}` : ''}`} pad
+      help={
+        <>
+          Rent, power, a repair or a delivery on account: anything recorded as not paid yet, until it is paid.
+          Stock received as not paid yet is here too.
+        </>
+      }
+    >
       <div className="row row-wrap" style={{ gap: '0.5rem', alignItems: 'flex-end', marginBottom: '0.8rem' }}>
         {sides.length > 1 && (
           <Field label="For">
@@ -99,10 +106,6 @@ export function BillsToPay({ venueId, userId, accounts, money, settings, onChang
         <Button variant="primary" onClick={() => setAdding(true)} disabled={!settings}>Add a bill</Button>
         <Button onClick={exportXlsx} disabled={owed.length === 0}>Excel</Button>
       </div>
-      <p className="small dim" style={{ marginTop: 0 }}>
-        Rent, power, a repair or a delivery on account: anything recorded as not paid yet, until it is paid.
-        Stock received as not paid yet is here too.
-      </p>
       <AgeBands b={bands} money={money} />
       {rows === null ? <Spinner /> : owed.length === 0 ? (
         <Empty title="Nothing owed to suppliers">Add a bill when an invoice comes in that is paid later.</Empty>

@@ -91,10 +91,13 @@ export function Dashboard() {
       </div>
 
       {facts.catalogueEmpty && (
-        <Card title="Getting started">
-          <p className="small dim" style={{ marginTop: 0 }}>
-            The database is set up. Work down this list and the customer menu will have something to show.
-          </p>
+        <Card title="Getting started"
+          help={
+            <>
+              The database is set up. Work down this list and the customer menu will have something to show.
+            </>
+          }
+        >
           <ol className="small" style={{ lineHeight: 1.9, paddingLeft: '1.2rem', margin: 0 }}>
             <li><Link to="/settings">Settings</Link>, restaurant name, currency, tax and colours.</li>
             <li><Link to="/venues">Venues</Link>, set your opening hours. Pre-ordering needs these.</li>

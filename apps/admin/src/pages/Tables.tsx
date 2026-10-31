@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast } from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Toggle, Badge, useToast, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError, saveDropping } from '../lib';
 import { groupLink } from '@snpos/core';
 import type { Doc, FeatureFlag } from '@snpos/core';
@@ -255,22 +255,26 @@ export function TablesPage() {
         {/* The words in the sidebar, exactly. A page whose heading disagrees
             with the link that reached it reads as the wrong page, and somebody
             told to open "Tables" scrolls past "Tables & QR" looking for it. */}
-        <h1>Tables &amp; QR</h1>
+        <h1>
+          Tables &amp; QR
+          <InfoTip>
+            Each table gets its own web address. Print it as a QR code and stick it on the table; scanning it opens the
+            menu already knowing where the customer is sitting.
+          </InfoTip>
+        </h1>
         <Button variant="primary" onClick={() => open()}>Add table</Button>
       </div>
 
-      <p className="dim small" style={{ marginTop: 0 }}>
-        Each table gets its own web address. Print it as a QR code and stick it on the table; scanning it opens the
-        menu already knowing where the customer is sitting.
-      </p>
-
       {error && !editing && <Notice>{error}</Notice>}
 
-      <Card title="Walk-in QR">
-        <p className="small dim" style={{ marginTop: 0 }}>
-          For people who are not sitting down, the counter queue, a poster in the window, a flyer. Same menu, opened
-          as a takeaway order rather than against a table.
-        </p>
+      <Card title="Walk-in QR"
+        help={
+          <>
+            For people who are not sitting down, the counter queue, a poster in the window, a flyer. Same menu, opened
+            as a takeaway order rather than against a table.
+          </>
+        }
+      >
         {venues.map((v) => {
           const url = walkInUrl(v);
           return (
@@ -297,13 +301,16 @@ export function TablesPage() {
         next customer picks up within the minute — they would find a stranger's
         order, and somebody would have to reset the thing between every sale.
       */}
-      <Card title="Screen ordering">
-        <p className="small dim" style={{ marginTop: 0 }}>
-          For a tablet you own, propped on the counter or fixed to a wall, used by one customer after another.
-          Same menu as the walk-in QR. The difference is what happens after the order is sent: it says thank
-          you and how long the food will be, then puts the menu back by itself after twenty seconds, so nobody
-          has to reset it and nobody sees the last customer's order.
-        </p>
+      <Card title="Screen ordering"
+        help={
+          <>
+            For a tablet you own, propped on the counter or fixed to a wall, used by one customer after another.
+            Same menu as the walk-in QR. The difference is what happens after the order is sent: it says thank
+            you and how long the food will be, then puts the menu back by itself after twenty seconds, so nobody
+            has to reset it and nobody sees the last customer's order.
+          </>
+        }
+      >
         {venues.map((v) => {
           const url = screenUrl(v);
           return (
@@ -322,12 +329,15 @@ export function TablesPage() {
         })}
       </Card>
 
-      <Card title="Group ordering link">
-        <p className="small dim" style={{ marginTop: 0 }}>
-          A separate, private address for parties and hotel bookings. It shows only the categories you have marked
-          group-only, and it does not appear anywhere on the ordinary menu, the only way in is this link. Send it to
-          whoever takes group bookings, and replace it if it ends up somewhere it should not be.
-        </p>
+      <Card title="Group ordering link"
+        help={
+          <>
+            A separate, private address for parties and hotel bookings. It shows only the categories you have marked
+            group-only, and it does not appear anywhere on the ordinary menu, the only way in is this link. Send it to
+            whoever takes group bookings, and replace it if it ends up somewhere it should not be.
+          </>
+        }
+      >
         {/*
           Said where the link is copied from, not only on the Features page.
 
@@ -372,17 +382,22 @@ export function TablesPage() {
           </div>
         </div>
         <p className="small dim" style={{ marginTop: 0 }}>
-          Anybody who types this address sees the group menu and its prices. Seeing it is not booking against
-          it: a booking still needs a contact name, the reservation reference where you require one, and a
-          group at least as large as your smallest. If you would rather it could not be found at all, hand out
-          a private link below instead.
+          How this works
+          <InfoTip>
+            Anybody who types this address sees the group menu and its prices. Seeing it is not booking against
+            it: a booking still needs a contact name, the reservation reference where you require one, and a
+            group at least as large as your smallest. If you would rather it could not be found at all, hand out
+            a private link below instead.
+          </InfoTip>
         </p>
 
-        <h4 style={{ margin: '1rem 0 0.3rem' }}>Private links, one per venue</h4>
-        <p className="small dim" style={{ marginTop: 0 }}>
-          Unguessable, and can be replaced if one ends up somewhere it should not be. Anybody already using one
-          keeps working.
-        </p>
+        <h4 style={{ margin: '1rem 0 0.3rem' }}>
+          Private links, one per venue
+          <InfoTip>
+            Unguessable, and can be replaced if one ends up somewhere it should not be. Anybody already using one
+            keeps working.
+          </InfoTip>
+        </h4>
         {venues.map((v) => {
           const url = groupUrl(v);
           return (

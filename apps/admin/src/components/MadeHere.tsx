@@ -193,11 +193,14 @@ export function MadeHere({
 
   return (
     <>
-      <Card title="Made here">
-        <p className="small dim" style={{ marginTop: 0 }}>
-          For drinks made in the house — sobolo, ginger beer, a punch. Record a batch once it is made and bottled:
-          it goes into the store room or the bar, and whatever went into it comes off its own shelf.
-        </p>
+      <Card title="Made here"
+        help={
+          <>
+            For drinks made in the house — sobolo, ginger beer, a punch. Record a batch once it is made and bottled:
+            it goes into the store room or the bar, and whatever went into it comes off its own shelf.
+          </>
+        }
+      >
         <Button onClick={() => void start()} disabled={!hasPlace}>Record a batch</Button>
         {!hasPlace && (
           <p className="small dim" style={{ marginBottom: 0 }}>Add a store room or a bar above first, so it has somewhere to go.</p>

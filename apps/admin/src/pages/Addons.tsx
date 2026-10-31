@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Toggle, Badge, useToast, Segmented,
-} from '@snpos/ui';
+  Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, Toggle, Badge, useToast, Segmented, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, Query, listAll as listAllCore, canDeleteCatalogue,
@@ -245,15 +244,16 @@ export function AddonsPage() {
   return (
     <>
       <div className="spread">
-        <h1>Options</h1>
+        <h1>
+          Options
+          <InfoTip>
+            Choices a customer makes when ordering, protein, spice level, extras. Build a group once and attach it to as
+            many {side === 'bar' ? 'drinks' : 'dishes'} as you like. A choice can add nothing to the price: set it to 0.
+            {side === 'bar' && ' For a drink that comes in sizes with their own prices, use Variant types on the Drinks page instead.'}
+          </InfoTip>
+        </h1>
         <Button variant="primary" onClick={() => open()}>Add option group</Button>
       </div>
-
-      <p className="dim small" style={{ marginTop: 0 }}>
-        Choices a customer makes when ordering, protein, spice level, extras. Build a group once and attach it to as
-        many {side === 'bar' ? 'drinks' : 'dishes'} as you like. A choice can add nothing to the price: set it to 0.
-        {side === 'bar' && ' For a drink that comes in sizes with their own prices, use Variant types on the Drinks page instead.'}
-      </p>
 
       {/* Each side's own choices. "Rare, medium, well done" has no business on
           a gin and tonic, and it was being offered on one. */}

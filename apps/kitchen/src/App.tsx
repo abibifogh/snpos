@@ -1077,14 +1077,19 @@ export function App() {
       )}
 
       {busyOpen && (
-        <Modal title="How busy are we?" onClose={() => setBusyOpen(false)}>
+        <Modal
+          title="How busy are we?"
+          onClose={() => setBusyOpen(false)}
+          help={
+            <>
+              Left alone, this follows the tickets waiting. Setting it by hand is for what the count cannot see: a
+              fryer down, people off, a coach party at the door. It goes back to counting on its own, so nobody
+              leaves ordering switched off overnight.
+            </>
+          }
+        >
           <p className="small dim" style={{ marginTop: 0 }}>
             {staffWords({ waiting: waitingNow, cfg: busyCfg, override })}
-          </p>
-          <p className="small dim">
-            Left alone, this follows the tickets waiting. Setting it by hand is for what the count cannot see: a
-            fryer down, people off, a coach party at the door. It goes back to counting on its own, so nobody
-            leaves ordering switched off overnight.
           </p>
           <div className="stack" style={{ gap: '0.5rem' }}>
             {(['normal', 'busy', 'paused'] as BusyLevel[]).map((l) => (

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Badge, Button, Empty, Field, Input, Modal, Notice, Spinner, Textarea, useToast,
-} from '@snpos/ui';
+  Badge, Button, Empty, Field, Input, Modal, Notice, Spinner, Textarea, useToast, InfoTip } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
   parseMoney,
@@ -149,11 +148,13 @@ export function TabsPage() {
     <>
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <div>
-          <h2 style={{ margin: 0 }}>Tabs</h2>
-          <p className="small dim" style={{ margin: '0.2rem 0 0' }}>
-            A running account somebody settles later. One tab takes orders from the bar, the kitchen and the
-            shop — a guest who does all three has one account, not three.
-          </p>
+          <h2 style={{ margin: 0 }}>
+            Tabs
+            <InfoTip>
+              A running account somebody settles later. One tab takes orders from the bar, the kitchen and the
+              shop — a guest who does all three has one account, not three.
+            </InfoTip>
+          </h2>
         </div>
         <div className="row" style={{ gap: '0.5rem' }}>
           <Button variant="ghost" onClick={() => setShowClosed((v) => !v)}>
