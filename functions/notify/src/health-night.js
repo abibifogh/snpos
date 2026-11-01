@@ -1,6 +1,7 @@
 import { Query } from 'node-appwrite';
 import { localHour, localDay, recipientsFor } from './daily.js';
 import { healthFacts, healthFindings, healthSummary } from './health.js';
+import { brandColour } from './brand.js';
 
 /** Two in the morning, where the restaurant is: after the last close, before the first open. */
 export const HEALTH_HOUR = 2;
@@ -78,7 +79,7 @@ export async function nightlyReconcile({ db, DB_ID, settings, transport, from, s
     await transport.sendMail({
       from, to: to.join(','),
       subject: `${settings.restaurant_name}: ${summary.blocks === 1 ? 'one thing needs' : `${summary.blocks} things need`} fixing`,
-      html: shell('Health check', healthBody(findings, summary, process.env.APP_URL || ''), settings.primary_color || '#0f766e'),
+      html: shell('Health check', healthBody(findings, summary, process.env.APP_URL || ''), brandColour(settings.primary_color)),
     });
     await db.updateDocument(DB_ID, 'summary_reports', report.$id, { delivery_status: 'sent', sent_at: now.toISOString() }).catch(() => undefined);
     return { ok: true, blocks: summary.blocks, emailed: true };

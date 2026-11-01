@@ -18,7 +18,7 @@ import {
   shiftCountEntries, countsByPhase, phaseSummary, bothEndsWords, countsGapWords,
   buildReportHtml, openPrintable,
   tabExposure, issueCloseCode, releaseWords, displayOrderNo, CLOSE_CODE_GOOD_FOR_MS, dateWords, timeWords, dateTimeWords,
-  loadStaffNames, forDateTimeInput } from '@snpos/core';
+  loadStaffNames, forDateTimeInput, brandColour } from '@snpos/core';
 import type {
   Module, Doc, CashHandover, MoneyKind, CountedParts, Settings, CountRow, CountEntry, TabOrder,
   Shift as CoreShift, Venue, BulkSealPlan, SealResult,
@@ -410,7 +410,7 @@ export function ShiftsPage() {
           + `${shift.closed_at ? ` to ${dateTimeWords(shift.closed_at)}` : ' (still open)'}`,
         generatedAt: new Date(),
         generatedBy: profile?.display_name ?? '',
-        brandColor: settings?.primary_color,
+        brandColor: brandColour(settings?.primary_color),
         stats: [
           { label: 'Opened', value: money(openSum.netValue), note: `${openSum.counted} of ${openSum.items} counted` },
           { label: 'Closed', value: money(closeSum.netValue), note: `${closeSum.counted} of ${closeSum.items} counted` },

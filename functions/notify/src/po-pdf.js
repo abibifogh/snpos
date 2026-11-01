@@ -56,7 +56,7 @@ export function quantityWords(l) {
  * @param {Record<string, any>} [input.settings]
  * @param {string} [input.accent]
  */
-export function purchaseOrderPdf({ order, settings = {}, accent = '#0f766e' }) {
+export function purchaseOrderPdf({ order, settings = {}, accent = '#6A4DFF' }) {
   const decimals = settings.currency_decimals ?? 2;
   const code = settings.currency_code || '';
   const money = (n) => `${code} ${((n || 0) / 10 ** decimals).toFixed(decimals)}`.trim();

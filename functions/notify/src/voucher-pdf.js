@@ -242,7 +242,7 @@ function draw(doc, p, { venueName, accent }) {
  * @param {string} [input.accent]
  */
 export function voucherPdf({
-  settings = {}, venue = null, vouchers, accent = '#0f766e',
+  settings = {}, venue = null, vouchers, accent = '#6A4DFF',
   headline, validity, terms, codeWords, hasCode,
 }) {
   const venueName = clean(venue?.name) || clean(settings.restaurant_name) || 'Voucher';

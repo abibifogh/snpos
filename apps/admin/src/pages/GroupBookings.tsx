@@ -9,8 +9,7 @@ import {
   decideGroupBooking, declineGroupBooking, openBookingChanges, decideBookingChange, CHANGE_KIND_WORDS,
   bookingStatusWords, bookingsOnTab, tabCounts, whenFromNow, BOOKING_TAB_WORDS,
   loadFeatures, featureConfig, FULFILMENT_WORDS, SERVICE_WORDS,
-  formatMoney, dateTimeWords, forDateTimeInput, downloadFile, db, DB_ID, Query, listByIds,
-} from '@snpos/core';
+  formatMoney, dateTimeWords, forDateTimeInput, downloadFile, db, DB_ID, Query, listByIds, brandColour } from '@snpos/core';
 import type { GroupBookingDoc, BookingSitting, BookingChangeDoc, BookingTab, FeatureMap } from '@snpos/core';
 /*
   THE SAME BUILDER THE EMAIL USES, not a second one that looks like it.
@@ -200,7 +199,7 @@ export function GroupBookingsPage() {
           userId={user?.$id ?? ''}
           profileId={profile?.$id ?? ''}
           role={profile?.role ?? ''}
-          accent={settings?.primary_color ?? '#0f766e'}
+          accent={brandColour(settings?.primary_color)}
           settings={settings}
           onClose={() => open(null)}
           onChanged={async (words) => {

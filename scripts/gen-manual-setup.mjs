@@ -234,7 +234,7 @@ p('| --- | --- |');
 const settingsSeed = [
   ['restaurant_name', 'My Restaurant'], ['timezone', 'Africa/Accra'], ['currency_code', 'GHS'],
   ['currency_symbol', 'GH₵'], ['currency_decimals', '2'], ['symbol_position', 'before'],
-  ['primary_color', '#0F766E'], ['secondary_color', '#F59E0B'], ['tax_rate_bp', '0'],
+  ['primary_color', '#6A4DFF'], ['secondary_color', '#E9772E'], ['tax_rate_bp', '0'],
   ['tax_inclusive', 'true'], ['service_charge_bp', '0'], ['shift_float_policy', 'zero'],
   ['shift_float_default', '0'], ['kitchen_ack_sla_seconds', '60'], ['kitchen_ping_max_level', '4'],
   ['require_reject_reason', 'true'], ['qr_orders_need_approval', 'false'],

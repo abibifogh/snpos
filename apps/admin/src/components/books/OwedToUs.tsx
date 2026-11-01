@@ -3,8 +3,7 @@ import { Link } from 'react-router-dom';
 import { Button, Card, Empty, Spinner } from '@snpos/ui';
 import {
   loadReceivables, owedRows, ageBuckets, daysLate, writeXlsx, XLSX_TYPE, downloadFile,
-  buildReportHtml, openPrintable,
-} from '@snpos/core';
+  buildReportHtml, openPrintable, brandColour } from '@snpos/core';
 import type { OwedTab, Settings } from '@snpos/core';
 import { AgeBands } from './BillsToPay';
 
@@ -40,7 +39,7 @@ export function OwedToUs({ money, settings }: { money: (n: number) => string; se
         numeric: [2],
       }],
       note: t.tab.reference ? `Account reference: ${t.tab.reference}` : undefined,
-      brandColor: settings?.primary_color ?? undefined,
+      brandColor: brandColour(settings?.primary_color),
     }), `Statement ${t.tab.name} ${now}`);
   };
 

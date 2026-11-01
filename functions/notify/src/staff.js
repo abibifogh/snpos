@@ -1,4 +1,5 @@
 import { Teams, Users, Query, ID } from 'node-appwrite';
+import { brandColour } from './brand.js';
 
 /**
  * Cancelling a login when somebody leaves.
@@ -141,9 +142,9 @@ export async function ensureLogin({ client, db, DB_ID, doc, settings, transport,
       `Your sign-in for ${place}`,
       `<p style="margin:0 0 14px">${doc.display_name ? `${doc.display_name},` : 'Hello,'}</p>
        <p style="margin:0 0 18px">You have been set up on ${place}'s system as <strong>${doc.role || 'staff'}</strong>.</p>
-       <p style="margin:0 0 22px"><a href="${link}" style="display:inline-block;background:${settings.primary_color || '#0f766e'};color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600">Sign in and choose a password</a></p>
+       <p style="margin:0 0 22px"><a href="${link}" style="display:inline-block;background:${brandColour(settings.primary_color)};color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600">Sign in and choose a password</a></p>
        <p style="margin:0;color:#5d6b7a;font-size:13px">The link works once and expires in 24 hours. If it has expired, ask for another.</p>`,
-      settings.primary_color || '#0f766e',
+      brandColour(settings.primary_color),
     ),
   });
 

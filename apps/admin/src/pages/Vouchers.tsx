@@ -4,8 +4,7 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, dateWords, downloadFile,
   voucherHeadline, voucherValidity, voucherTerms, voucherCodeWords, voucherHasCode, voucherPrintProblem,
-  sendVoucherTo, splitAddresses, looksLikeEmail, mayBeOffered,
-} from '@snpos/core';
+  sendVoucherTo, splitAddresses, looksLikeEmail, mayBeOffered, brandColour } from '@snpos/core';
 import type { Doc } from '@snpos/core';
 /*
   THE SAME PDF TOOLKIT THE BOOKING SHEET USES, not a second one.
@@ -269,7 +268,7 @@ export function VouchersPage() {
           settings,
           venue: null,
           vouchers: printable,
-          accent: settings.primary_color || '#0f766e',
+          accent: brandColour(settings.primary_color),
           headline: (v: Voucher) => voucherHeadline(v as never, money),
           validity: (v: Voucher) => voucherValidity(v as never, (d: string) => dateWords(d)),
           terms: (v: Voucher) => voucherTerms(v as never, money),

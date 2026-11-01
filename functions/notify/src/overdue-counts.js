@@ -153,7 +153,7 @@ export function overdueBody(items, money, now = Date.now(), link = '') {
     + 'two takes it off the shelf twice.'
     + '</p>'
     + (link
-      ? `<p style="margin:18px 0 0"><a href="${link}" style="color:#0f766e;font-weight:600">`
+      ? `<p style="margin:18px 0 0"><a href="${link}" style="color:#6A4DFF;font-weight:600">`
         + 'Open Approvals</a></p>'
       : '<p style="margin:18px 0 0;color:#5d6b7a;font-size:13px">Under Approvals.</p>');
 }

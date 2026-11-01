@@ -5,7 +5,7 @@ import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   bpToPercent, percentToBp,
   ADMIN_SECTIONS, GRANTABLE_ROLES, DEFAULT_ACCESS, parseAccess, asksForTip, modulesOf, saveDropping,
-  parseLevies, serialiseLevies, GHANA_LEVIES, dateTimeWords, FULL_COUNT_DAYS, DEFAULT_COUNT_OVER } from '@snpos/core';
+  parseLevies, serialiseLevies, GHANA_LEVIES, dateTimeWords, FULL_COUNT_DAYS, DEFAULT_COUNT_OVER, brandColour, secondColour } from '@snpos/core';
 import type { Levy } from '@snpos/core';
 import type { Settings, Doc } from '@snpos/core';
 
@@ -106,7 +106,16 @@ interface ReportSub extends Doc {
 export function SettingsPage() {
   const { settings, refreshSettings } = useSession();
   const toast = useToast();
-  const [form, setForm] = useState<Settings | null>(settings);
+  /*
+    The colours as they are drawn, not as they were stored. A business set up
+    before NiceOps had colours of its own still holds the old teal and amber
+    defaults; showing those here would make saving any other setting put
+    them back on every email and PDF.
+  */
+  const drawn = (x: Settings | null): Settings | null => (x
+    ? { ...x, primary_color: brandColour(x.primary_color), secondary_color: secondColour(x.secondary_color) }
+    : x);
+  const [form, setForm] = useState<Settings | null>(() => drawn(settings));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -123,7 +132,7 @@ export function SettingsPage() {
   const [savingSubs, setSavingSubs] = useState(false);
   const [subsError, setSubsError] = useState<string | null>(null);
 
-  useEffect(() => setForm(settings), [settings]);
+  useEffect(() => setForm(drawn(settings)), [settings]);
 
   useEffect(() => {
     listAll<Delivery>('summary_reports')
@@ -237,7 +246,7 @@ export function SettingsPage() {
 
   // A pale brand colour with white text is unreadable at a glance on a busy
   // terminal, so warn rather than let it ship silently.
-  const brandContrast = contrastRatio(form.primary_color || '#0f766e', '#ffffff');
+  const brandContrast = contrastRatio(brandColour(form.primary_color), '#ffffff');
 
   const save = async () => {
     setBusy(true);

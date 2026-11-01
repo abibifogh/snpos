@@ -1,5 +1,6 @@
 import { Query } from 'node-appwrite';
 import { receiptPdf } from './receipt-pdf.js';
+import { brandColour } from './brand.js';
 
 /**
  * What the mail server actually said, written onto the report row.
@@ -240,7 +241,7 @@ export async function dailyDigest({ db, DB_ID, settings, transport, from, shell,
          ? '<p style="margin:14px 0 0;font-size:13px;color:#b54708">An order still unpaid after close is money that will not be chased tomorrow unless somebody writes it down tonight.</p>'
          : ''
      }`,
-    settings.primary_color || '#0f766e',
+    brandColour(settings.primary_color),
   );
 
   const report = await db.createDocument(DB_ID, 'summary_reports', 'unique()', {
@@ -433,7 +434,7 @@ export async function nightlyBackup({ db, DB_ID, settings, transport, from, shel
            This is your only copy. The hosting plan keeps none, so if something is deleted by mistake, this email is
            what it comes back from.
          </p>`,
-        settings.primary_color || '#0f766e',
+        brandColour(settings.primary_color),
       ),
       attachments,
     });

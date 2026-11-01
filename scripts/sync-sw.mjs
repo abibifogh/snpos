@@ -170,7 +170,7 @@ for (const app of building) {
       : ['fullscreen', 'standalone', 'minimal-ui'],
     orientation: 'any',
     background_color: '#f6f7f9',
-    theme_color: '#0f766e',
+    theme_color: '#6A4DFF',
     /*
       The rasters first, because they are what decides whether this installs.
 

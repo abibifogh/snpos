@@ -4,6 +4,7 @@
  * Colours live in the settings document rather than in the build, so an admin
  * changing them takes effect on the next load without anyone redeploying.
  */
+import { isChosenColour } from '@snpos/core';
 import { applyFavicon } from './logo';
 
 export interface ThemeInput {
@@ -60,17 +61,6 @@ export const THEME_MODES: { v: ThemeMode; l: string; hint: string }[] = [
   { v: 'light', l: 'Always light', hint: 'Bright, whatever the device is set to.' },
   { v: 'dark', l: 'Always dark', hint: 'Easier on the eyes in a dim room.' },
 ];
-
-/**
- * The colours every install was given before anybody chose one.
- *
- * NiceOps is violet now. A setting still holding the old default teal or
- * amber is a colour nobody picked, so it gives way to the stylesheet's own,
- * which also has a lighter shade for dark mode. A colour an owner did choose
- * still wins, as it always has.
- */
-const UNCHOSEN = ['#0f766e', '#f59e0b'];
-export const isChosenColour = (c?: string | null): c is string => !!c && !UNCHOSEN.includes(c.trim().toLowerCase());
 
 export function applyTheme(t: ThemeInput): void {
   applyThemeMode();

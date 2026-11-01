@@ -84,7 +84,7 @@ function dish(doc, item, { money, showPrice }) {
  * @param {boolean} [input.prices] false for a list with no money on it
  */
 export function menuPdf({
-  settings = {}, venue = null, sections, money, title = 'Menu', accent = '#0f766e', prices = true,
+  settings = {}, venue = null, sections, money, title = 'Menu', accent = '#6A4DFF', prices = true,
 }) {
   const doc = new Doc();
   const house = clean(venue?.name) || clean(settings.restaurant_name) || 'Menu';
