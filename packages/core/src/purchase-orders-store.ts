@@ -37,6 +37,15 @@ export interface PurchaseOrderDoc {
   email_error?: string;
   received_at?: string;
   expense_ids?: string;
+  /** Set on an order that came from Insight, already paid from a float. See paidFromFloat. */
+  insight_key?: string;
+  insight_ref?: string;
+  /** Whose float paid, in words: "Esi Test's float". */
+  insight_from?: string;
+  /** The float holder's receipt, in the receipts bucket. */
+  receipt_file_id?: string;
+  /** 'float' when the money came from a float in Insight. */
+  paid_by?: string;
 }
 
 export const loadPurchaseOrders = (venueId: string): Promise<PurchaseOrderDoc[]> =>
@@ -102,10 +111,18 @@ export async function savePurchaseOrder(input: {
   isAdmin: boolean;
   by: string;
   byName?: string;
+  /**
+   * Already paid for: an order from a float in Insight. Finished, it is
+   * ready to receive whatever it came to, because the money has already
+   * been spent and approving it here would change nothing.
+   */
+  alreadyPaid?: boolean;
 }): Promise<PurchaseOrderDoc> {
   const lines = input.lines.filter((l) => l.qty > 0);
   const total = orderTotal(lines);
-  const status: PoStatus = input.submit ? submittedStatus(total, input.approveOver, input.isAdmin) : 'draft';
+  const status: PoStatus = input.submit
+    ? (input.alreadyPaid ? 'ready' : submittedStatus(total, input.approveOver, input.isAdmin))
+    : 'draft';
   const body: Record<string, unknown> = {
     venue_id: input.venueId,
     module: input.module,
@@ -118,8 +135,9 @@ export async function savePurchaseOrder(input: {
     total,
     note: (input.note ?? '').slice(0, 1000),
     expected_on: input.expectedOn ?? '',
-    // An admin's own order over the limit is approved by writing it.
-    ...(status === 'ready' && input.isAdmin ? { approved_by: input.by, approved_at: new Date().toISOString() } : {}),
+    // An admin's own order over the limit is approved by writing it, and an
+    // order already paid for is as good as approved by whoever checked it.
+    ...(status === 'ready' && (input.isAdmin || input.alreadyPaid) ? { approved_by: input.by, approved_at: new Date().toISOString() } : {}),
   };
   if (input.id) {
     await saveDropping('stock_orders', input.id, body);

@@ -28,6 +28,7 @@ an accounting/analytics layer.
 | [17, Testing](docs/17-testing.md) | What is covered, and how to run it |
 | [18, Reporting API](docs/18-reports-api.md) | The read-only door another system pulls data through |
 | [19, Group sign-in](docs/19-group-sign-in.md) | Arriving already signed in from the Insight hub |
+| [21, Orders from floats](docs/21-insight-floats.md) | Purchases made from a float in Insight, received here as draft orders |
 
 ## Confirmed decisions
 

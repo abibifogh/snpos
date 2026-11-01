@@ -1,4 +1,4 @@
-import { Client, Databases, Query, Users } from 'node-appwrite';
+import { Client, Databases, Query, Storage, Users } from 'node-appwrite';
 import nodemailer from 'nodemailer';
 import { receiptPdf, portionsOf } from './receipt-pdf.js';
 import { purchaseOrderPdf } from './po-pdf.js';
@@ -17,6 +17,7 @@ import { ensureLogin, revokeLogin } from './staff.js';
 import { handleReports } from './reports.js';
 import { handleSso } from './sso.js';
 import { handleInsightApprovals } from './insight-approvals.js';
+import { handleInsightFloats } from './insight-floats.js';
 import {
   fromBarChecks, fromShopCounts, fromExpenses, worthSending, approvalSubject, approvalBody,
   countLines, countSubject, countBody, countPlace,
@@ -262,9 +263,14 @@ async function sweepUnavailable({ db, DB_ID, settings, transport, from, log, err
  * nobody to tell), so neither ever sends it twice. See po-notice.js.
  */
 async function tellAdminsAboutOrder({ db, DB_ID, settings, transport, from, doc, log, error }) {
-  if (!orderToTell(doc)) return { skipped: true };
   const stamp = () => db.updateDocument(DB_ID, 'stock_orders', doc.$id, { admin_told_at: new Date().toISOString() })
     .catch((e) => error(`Could not stamp order ${doc.po_no}: ${e.message}`));
+  if (!orderToTell(doc)) {
+    // An order from a float in Insight is never told about (see po-notice.js),
+    // and is stamped all the same so the hourly run stops finding it.
+    if (doc && (doc.insight_key || doc.paid_by === 'float') && ['waiting', 'ready'].includes(doc.status) && !doc.admin_told_at) await stamp();
+    return { skipped: true };
+  }
 
   const profiles = await db.listDocuments(DB_ID, 'staff_profiles', [
     Query.equal('role', 'admin'), Query.limit(100),
@@ -916,6 +922,15 @@ export default async ({ req, res, log, error }) => {
    */
   const approved = await handleInsightApprovals({ req, res, db, DB_ID, users: new Users(client), Query, log, error });
   if (approved) return approved;
+
+  /**
+   * Purchases a float holder made in Insight, sent here as draft purchase
+   * orders for a manager to check and receive. Signed by the hub like the
+   * Approvals paths, and answered before anything else for the same reason.
+   * See insight-floats.js.
+   */
+  const floated = await handleInsightFloats({ req, res, db, DB_ID, Query, storage: new Storage(client), log, error });
+  if (floated) return floated;
 
   /**
    * What kind of invocation this is, according to Appwrite rather than

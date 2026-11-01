@@ -9,7 +9,7 @@ import {
   expenseDraftKey, readExpenseDraft, saveExpenseDraft, clearExpenseDraft,
   loadFloats, balancesFor, recordBoxSpend, boxOverdrawn, boxHeadroom,
   checkPurchase, raiseAlerts, FLAG_WORDS, logSpendChange, spendSnapshot,
-  openOrdersFor, receiveOrderFromSpend, readLines, stillToCome,
+  openOrdersFor, receiveOrderFromSpend, readLines, stillToCome, paidFromFloat, floatPaidWords,
   loadLocations, openIn, purchaseLocation, ownedChoices, receivePieces,
 } from '@snpos/core';
 import type {
@@ -368,6 +368,15 @@ export function ExpenseModal({
     const o = orders.find((x) => x.$id === id);
     if (!o) return;
     const left = stillToCome(readLines(o.lines)).filter((l) => l.qty > 0);
+    /*
+      Bought out of a float in Insight: the money has already gone, from
+      there. Not owed, not out of a drawer or a box. See byFloat below.
+    */
+    if (paidFromFloat(o)) {
+      setPayLater(false);
+      setFromDrawer(false);
+      setNoBox(true);
+    }
     if (o.supplier_id && suppliers.some((x) => x.$id === o.supplier_id)) {
       setPaidToKind('supplier');
       setSupplierId(o.supplier_id);
@@ -515,7 +524,19 @@ export function ExpenseModal({
     screen the question was never asked — leaving it to the default would file
     a spend somebody made from the tin against the till.
   */
-  const chosenBox = fromFloatId
+  /*
+    Paid out of a float somebody holds in Insight, the group hub.
+
+    An order that came from there was bought with the float's money before
+    it reached this form, so the answer to "where did the money come from"
+    is already known and is not the drawer: asking would only offer ways to
+    give the wrong one, and a drawer counted short for it would be somebody
+    accused of losing money that never passed through their hands. The
+    books credit it to 2310 Paid from floats. See docs/21-insight-floats.md.
+  */
+  const floatOrder = orderId ? orders.find((o) => o.$id === orderId && paidFromFloat(o)) ?? null : null;
+  const byFloat = editing ? editing.source === 'float' : !!floatOrder;
+  const chosenBox = byFloat ? null : fromFloatId
     ? boxes.find((b) => b.$id === fromFloatId) ?? null
     : fromDrawer || noBox ? null : boxes.find((b) => b.$id === boxId) ?? boxes[0] ?? null;
   /** What is being spent, as the form currently stands, for the warning below. */
@@ -649,8 +670,8 @@ export function ExpenseModal({
       return;
     }
     if (receive && filledLines.length === 0) { setError('Add what came in: the item, how many and what it cost.'); return; }
-    if (!methodId && !payLater) { setError('Choose how it was paid.'); return; }
-    if (payLater && paidToKind !== 'supplier') { setError('Not paid yet means it is owed to a supplier. Choose which one under Paid to.'); return; }
+    if (!methodId && !payLater && !byFloat) { setError('Choose how it was paid.'); return; }
+    if (payLater && !byFloat && paidToKind !== 'supplier') { setError('Not paid yet means it is owed to a supplier. Choose which one under Paid to.'); return; }
     if (paidToKind === 'supplier' && !supplierId) { setError('Choose which supplier was paid.'); return; }
     // Either the person from the list, or their name typed in. Somebody who
     // has left, or a casual hand for the day, is still somebody the money went
@@ -716,11 +737,11 @@ export function ExpenseModal({
             ? `Includes ${formatMoney(extra, settings)} not itemised.`
             : '',
         ].filter(Boolean).join(' · ').slice(0, 500), // the column's own limit
-        from_takings: payLater ? false : chosenBox ? false : fromDrawer,
+        from_takings: byFloat || payLater ? false : chosenBox ? false : fromDrawer,
         // Owed to the supplier rather than paid. The books credit Accounts
         // payable; see books-post.js spendFromAccount.
-        pay_later: payLater,
-        due_on: payLater ? dueOn : '',
+        pay_later: byFloat ? false : payLater,
+        due_on: payLater && !byFloat ? dueOn : '',
         // What it was and where the money came from, in a word each, so no
         // screen has to work it out again. See spend-kind.ts.
         kind: spendKind(filledLines.flatMap((l) => {
@@ -728,7 +749,7 @@ export function ExpenseModal({
           const ing = ingredients.find((i) => i.$id === l.ingredientId);
           return ing ? [{ stocked: ing.counted_at_close !== false }] : [];
         })),
-        source: payLater ? 'own' : spendSource({
+        source: byFloat ? 'float' : payLater ? 'own' : spendSource({
           imprest_float_id: chosenBox?.$id ?? '',
           from_takings: chosenBox ? false : fromDrawer,
           methodKind: methods.find((m) => m.$id === methodId)?.kind ?? 'cash',
@@ -740,7 +761,7 @@ export function ExpenseModal({
           decides the account the expense is credited against — see
           postExpense — and it is what the box's own balance is rebuilt from.
         */
-        imprest_float_id: payLater ? '' : chosenBox?.$id ?? '',
+        imprest_float_id: payLater || byFloat ? '' : chosenBox?.$id ?? '',
       };
 
       /**
@@ -804,7 +825,8 @@ export function ExpenseModal({
         venue_id: venueId,
         shift_id: shiftId,
         ...fields,
-        receipt_file_id: receiptFileId,
+        // The float holder's own photo, sent with the order, when none was taken here.
+        receipt_file_id: receiptFileId || floatOrder?.receipt_file_id || '',
         created_by: userId,
         approval_status: 'pending',
       });
@@ -1286,7 +1308,14 @@ export function ExpenseModal({
           recorded — it defaults to the cash drawer, which is where a cook's
           market money comes from — it is just not put in front of somebody
           who has no other answer to give. */}
-      {askPaidFrom && !payLater && (methods.length === 1 ? (
+      {/* Bought out of a float in Insight: said, not asked. See byFloat. */}
+      {byFloat && (
+        <Notice tone="info">
+          {floatPaidWords(floatOrder?.insight_from)} &mdash; not from the drawer. Nothing is taken off any drawer or
+          petty cash box for it.
+        </Notice>
+      )}
+      {askPaidFrom && !payLater && !byFloat && (methods.length === 1 ? (
         <Field label="Paid from" hint="Set by an admin under Settings.">
           <Input value={methods[0].name} disabled />
         </Field>
@@ -1312,7 +1341,7 @@ export function ExpenseModal({
         exactly as before; it only stops it being taken off the count.
       */}
       <Field
-        hidden={!!fromFloatId}
+        hidden={!!fromFloatId || byFloat}
         label="Where did the money come from"
         hint={payLater
           ? 'Owed to the supplier. Nothing leaves a drawer, a box or the bank until it is paid, under Accounting, Bills to pay.'
@@ -1339,7 +1368,7 @@ export function ExpenseModal({
           {(stocks || payLater || desk === 'office') && <option value="owed">Not paid yet (owed to the supplier)</option>}
         </Select>
       </Field>
-      {payLater && (
+      {payLater && !byFloat && (
         <Field label="Due on (optional)" hint="When the supplier wants it paid. Blank means on receipt. Bills to pay sorts and ages by this.">
           <Input type="date" value={dueOn} onChange={(e) => setDueOn(e.target.value)} />
         </Field>
@@ -1372,7 +1401,7 @@ export function ExpenseModal({
         books repost when where the money came from has changed. The only
         thing missing was the question.
       */}
-      {!fromFloatId && !fromDrawer && !noBox && !payLater && boxes.length > 0 && (
+      {!fromFloatId && !byFloat && !fromDrawer && !noBox && !payLater && boxes.length > 0 && (
         <Field
           label={boxes.length > 1 ? 'Which petty cash box' : 'The petty cash box'}
           hint={

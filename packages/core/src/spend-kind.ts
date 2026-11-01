@@ -24,8 +24,11 @@ export type SpendKind = 'stock' | 'overhead';
  *   box     a petty cash box, which is counted on its own schedule
  *   bank    a transfer or card, which no drawer count ever sees
  *   own     somebody's own pocket, to be paid back — the drawer is not short
+ *   float   a float somebody holds in Insight, the group hub. The order came
+ *           from there already paid for, so no drawer, box or bank here paid
+ *           it, and the books owe it to the float. See docs/21-insight-floats.md.
  */
-export type SpendSource = 'drawer' | 'box' | 'bank' | 'own';
+export type SpendSource = 'drawer' | 'box' | 'bank' | 'own' | 'float';
 
 export const KIND_WORDS: Record<SpendKind, string> = {
   stock: 'Stock bought',
@@ -37,6 +40,7 @@ export const SOURCE_WORDS: Record<SpendSource, string> = {
   box: 'From a petty cash box',
   bank: 'From the bank',
   own: 'Own money, to be paid back',
+  float: 'Paid from a float, in Insight',
 };
 
 /** A spend with any line on a shelf is a stock purchase, whatever else is on it. */

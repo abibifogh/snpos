@@ -1637,7 +1637,7 @@ export const COLLECTIONS = [
       // when the row is saved so every screen reads the same answer. See
       // spend-kind.ts. Absent on rows from before; those are derived.
       ['kind', 'e', ['stock', 'overhead'], false, 'overhead'],
-      ['source', 'e', ['drawer', 'box', 'bank', 'own'], false, 'drawer'],
+      ['source', 'e', ['drawer', 'box', 'bank', 'own', 'float'], false, 'drawer'],
       ['note', 's', 500, false],
       ['receipt_file_id', 's', 64, false],
       ['created_by', 's', 64, true],
@@ -2293,8 +2293,25 @@ export const COLLECTIONS = [
       ['admin_told_at', 'd', null, false],
       // The spends that received it, comma separated.
       ['expense_ids', 's', 1000, false],
+      /*
+        An order that came from Insight, the group hub: something a float
+        holder there already bought for this side, with the money from their
+        float. Insight makes it as a draft and names it by its own key, so
+        asking twice never makes two. See docs/21-insight-floats.md and
+        functions/notify/src/insight-floats.js.
+      */
+      ['insight_key', 's', 64, false],
+      // Insight's own reference for the purchase, e.g. FLT/ESI/007.
+      ['insight_ref', 's', 40, false],
+      // Whose float paid, in words: "Esi Test's float".
+      ['insight_from', 's', 160, false],
+      // The receipt the holder photographed, in the receipts bucket.
+      ['receipt_file_id', 's', 64, false],
+      // 'float' when the money came from a float in Insight: the spend that
+      // receives it then comes off no drawer, box or bank here.
+      ['paid_by', 's', 16, false],
     ],
-    indexes: [['venue_no', 'key', ['venue_id', 'po_no']], ['status', 'key', ['status']]],
+    indexes: [['venue_no', 'key', ['venue_id', 'po_no']], ['status', 'key', ['status']], ['insight_key', 'key', ['insight_key']]],
   },
   {
     /**
@@ -4638,6 +4655,9 @@ export const SYSTEM_ACCOUNT_CODES = [
   // Stock received and not yet paid for: Receive stock credits it, paying
   // the supplier debits it. See owed-spends.ts.
   '2300',
+  // Stock paid from a float held in Insight: receiving an order that came
+  // from there credits it. See docs/21-insight-floats.md.
+  '2310',
   // What customers owe on tabs, from the day they are served.
   '1100',
   // The year end moves the year's profit here by number.
@@ -4684,6 +4704,9 @@ export const SEED_ACCOUNTS = [
   // theirs from that moment and the shop is holding it.
   ['2400', 'Owed to makers', 'liability'],
   ['2300', 'Accounts payable', 'liability'],
+  // An order bought out of a float held in Insight, the group hub, credits
+  // this when it is received: the money left the float, not a drawer here.
+  ['2310', 'Paid from floats (Insight)', 'liability'],
   ['3000', 'Owner equity', 'equity'],
   // Each closed year's profit, moved here by the year-end entry.
   ['3100', 'Retained earnings', 'equity'],

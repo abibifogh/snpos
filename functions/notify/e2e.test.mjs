@@ -97,6 +97,7 @@ mock.module('node-appwrite', {
     Client: class { setEndpoint() { return this; } setProject() { return this; } setKey() { return this; } },
     Databases: FakeDatabases,
     Users: class { async get() { throw new Error('no account'); } },
+    Storage: class { async createFile() { throw new Error('no storage here'); } },
     Query: {
       equal: () => 'eq', limit: () => 'lim', greaterThanEqual: () => 'gte', lessThanEqual: () => 'lte',
       orderDesc: () => 'od', isNull: () => 'null', lessThan: () => 'lt', offset: () => 'off',

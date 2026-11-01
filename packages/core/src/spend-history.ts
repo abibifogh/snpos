@@ -48,6 +48,7 @@ export const SPEND_ACTIONS = ['spend_edited', 'spend_approved', 'spend_refused']
 
 const SOURCE_WORDS: Record<string, string> = {
   drawer: 'the drawer', box: 'a petty cash box', bank: 'the bank', own: 'their own money',
+  float: 'a float, in Insight',
 };
 
 const itemsWords = (items: SpendSnapshot['items'], money: (n: number) => string): string =>

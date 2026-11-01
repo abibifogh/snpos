@@ -76,6 +76,8 @@ export interface ShiftExpense extends Doc {
   /** The petty cash box it came out of, when it came out of one. */
   imprest_float_id?: string;
   from_takings?: boolean;
+  /** Where the money came from, in a word. See spend-kind.ts. */
+  source?: string;
   note?: string;
   receipt_file_id?: string;
   created_by?: string;

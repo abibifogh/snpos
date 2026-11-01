@@ -53,6 +53,12 @@ export interface PoLine {
   unit_cost: number;
   /** How many of the buying unit have arrived so far. */
   received_qty: number;
+  /**
+   * What the line was called where it came from, when that was not here: an
+   * order from Insight carries the words off the float holder's receipt, so
+   * whoever picks the stock item can see what was actually bought.
+   */
+  bought_as?: string;
 }
 
 export interface OrderableItem {
@@ -314,3 +320,58 @@ export function readLines(raw: string | null | undefined): PoLine[] {
 /** May approve an order over the limit. The same people who approve spends. */
 export const canApproveOrders = (p: { role?: string } | null | undefined): boolean =>
   !!p && (p.role === 'admin' || p.role === 'manager');
+
+
+/* ------------------------------------------------- orders from a float */
+
+/*
+  An order that came from Insight, the group hub.
+
+  Somebody holding a float there bought something for this side and paid
+  for it out of the float. Insight makes the order here as a draft, already
+  paid for, so it is checked and received rather than sent: there is no
+  supplier to send it to, and the money did not leave any drawer, box or
+  bank here. See docs/21-insight-floats.md.
+*/
+
+/** Whether an order was paid for out of a float in Insight. */
+export const paidFromFloat = (o: { paid_by?: string | null; insight_key?: string | null } | null | undefined): boolean =>
+  !!o && (o.paid_by === 'float' || !!o.insight_key);
+
+/** "Paid from Esi Test's float, in Insight", or a float with no name when it has none. */
+export const floatPaidWords = (insightFrom?: string | null): string =>
+  `Paid from ${(insightFrom ?? '').trim() || 'a float'}, in Insight`;
+
+/** Lines still waiting for somebody to say which stock item they are. */
+export const unmatchedLines = (lines: PoLine[]): PoLine[] => lines.filter((l) => l.qty > 0 && !l.ingredient_id);
+
+/** Why a float's order cannot be received yet, or null when it can. */
+export function floatOrderProblem(lines: PoLine[]): string | null {
+  const live = lines.filter((l) => l.qty > 0);
+  if (live.length === 0) return 'Nothing on it to receive.';
+  const left = unmatchedLines(lines).length;
+  if (left > 0) return `Pick the stock item for ${left === 1 ? 'the line' : `the ${left} lines`} marked "Choose…" first.`;
+  return null;
+}
+
+/**
+ * A line once somebody has said which stock item it is.
+ *
+ * Unlike suggestLine, how many and what was paid are kept: they are what the
+ * receipt says was bought, not a guess at what to order. Only what the item
+ * is, and what it is counted and bought in, come from the item. Bought in
+ * its pack where it has one, as a delivery usually is.
+ */
+export function lineForItem(line: PoLine, item: Pick<OrderableItem, '$id' | 'name' | 'unit' | 'pack_size' | 'pack_name'>): PoLine {
+  const pack = hasPack(item);
+  return {
+    ...line,
+    ingredient_id: item.$id,
+    name: item.name,
+    unit: item.unit,
+    buy_key: pack ? 'pack' : 'unit',
+    buy_label: pack ? plural(item.pack_name || 'pack') : plural(item.unit),
+    per: pack ? (item.pack_size as number) : 1,
+    bought_as: line.bought_as || line.name || undefined,
+  };
+}

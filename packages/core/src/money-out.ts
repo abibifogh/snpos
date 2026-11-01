@@ -9,7 +9,7 @@
  * Pure. Imports nothing at runtime.
  */
 
-export type OutFrom = 'drawer' | 'box' | 'bank' | 'own' | 'owed' | 'maker';
+export type OutFrom = 'drawer' | 'box' | 'bank' | 'own' | 'float' | 'owed' | 'maker';
 export type OutState = 'waiting' | 'approved' | 'refused' | 'paid' | 'reversed';
 export type OutFilter = 'all' | OutFrom | 'waiting';
 export type OutPeriod = 'week' | 'month' | 'all';
@@ -19,6 +19,7 @@ export const OUT_FROM_WORDS: Record<OutFrom, string> = {
   box: 'From petty cash',
   bank: 'From the bank',
   own: 'Own money',
+  float: 'From floats, in Insight',
   owed: 'Not paid yet',
   maker: 'Maker payouts',
 };
@@ -70,7 +71,7 @@ export interface OutRow {
 export function spendFrom(s: OutSpend, methodKind?: string | null): OutFrom {
   if (s.pay_later === true) return 'owed';
   if (s.imprest_float_id) return 'box';
-  if (s.source === 'drawer' || s.source === 'box' || s.source === 'bank' || s.source === 'own') return s.source;
+  if (s.source === 'drawer' || s.source === 'box' || s.source === 'bank' || s.source === 'own' || s.source === 'float') return s.source;
   if (methodKind && methodKind !== 'cash') return 'bank';
   return s.from_takings === false ? 'own' : 'drawer';
 }
@@ -135,7 +136,7 @@ export const outTotal = (rows: OutRow[]): number =>
 
 /** The filters worth offering: All, each source that has a row, and Waiting when anything is. */
 export function outFilters(rows: OutRow[]): { value: OutFilter; label: string; count: number }[] {
-  const order: OutFrom[] = ['drawer', 'box', 'bank', 'owed', 'own', 'maker'];
+  const order: OutFrom[] = ['drawer', 'box', 'bank', 'float', 'owed', 'own', 'maker'];
   const waiting = rows.filter((r) => r.state === 'waiting').length;
   return [
     { value: 'all', label: 'All', count: rows.length },
