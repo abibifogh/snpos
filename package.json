@@ -29,7 +29,7 @@
     "verify": "npm run typecheck && npm run typecheck:tests && npm run test && npm run test:notify && npm run test:e2e && npm run test:ui && npm run check:writes && npm run build",
     "test:e2e": "node scripts/e2e.mjs",
     "test:ui": "node scripts/ui-e2e.mjs",
-    "test:notify": "node --experimental-test-module-mocks --test functions/notify/e2e.test.mjs functions/notify/insight-approvals.test.mjs"
+    "test:notify": "node --experimental-test-module-mocks --test functions/notify/e2e.test.mjs functions/notify/insight-approvals.test.mjs functions/notify/insight-floats.test.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

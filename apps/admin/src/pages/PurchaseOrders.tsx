@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, Field, Input, Modal, Notice, Segmented, Select, Spinner, Textarea, useToast, ExpenseModal, InfoTip } from '@snpos/ui';
 import { humanError } from '../lib';
 import {
@@ -8,6 +9,7 @@ import {
   loadFeatures, featureConfig, formatMoney, dateTimeWords, downloadFile, MODULE_LABELS,
   modulesOf, SIDE_NAMES, itemsFor, newSupplierProblem, addSupplier, parseUnitPrice, unitPriceInput, parseQty,
   ORDER_ROLES, orderRoles, orderRolesValue, saveDropping, canOpen,
+  paidFromFloat, floatOrderProblem, unmatchedLines, lineForItem, downloadUrl,
 } from '@snpos/core';
 import type { PurchaseOrderDoc, PoLine, OrderSupplier, Ingredient, Module, Suggestion, FeatureMap, Settings } from '@snpos/core';
 /* The same builder the email attaches, so the office's copy and the
@@ -29,6 +31,11 @@ type Show = 'open' | 'received' | 'all';
  *
  * Who may make and send orders is set per person on Staff ("Order stock").
  * Anybody who can open this page can read it.
+ *
+ * An order can also arrive from Insight, the group hub: something a float
+ * holder there has already bought and paid for. It lands as a draft to be
+ * checked, each line given its stock item, and received; it is never sent
+ * and never waits for approval. See docs/21-insight-floats.md.
  */
 export function PurchaseOrdersPage() {
   const toast = useToast();
@@ -41,6 +48,9 @@ export function PurchaseOrdersPage() {
   const [features, setFeatures] = useState<FeatureMap>({});
   const [error, setError] = useState<string | null>(null);
   const [show, setShow] = useState<Show>('open');
+  /** `?show=<id>` opens that order, as Insight's links do. */
+  const [params, setParams] = useSearchParams();
+  const showId = params.get('show');
   /** The order being written or read: an existing one, or a new one's starting lines. */
   const [open, setOpen] = useState<{ order?: PurchaseOrderDoc; start?: Suggestion } | null>(null);
   /**
@@ -70,6 +80,13 @@ export function PurchaseOrdersPage() {
     }
   };
   useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    if (!showId || !orders) return;
+    const o = orders.find((x) => x.$id === showId);
+    if (o) setOpen({ order: o });
+    // Once: closing it should not open it again.
+    setParams((p) => { p.delete('show'); return p; }, { replace: true });
+  }, [showId, orders, setParams]);
 
   const money = (n: number) => (settings ? formatMoney(n, settings) : String(n));
   /** The departments the business runs, each ordering its own stock. */
@@ -178,6 +195,7 @@ export function PurchaseOrdersPage() {
                     <tr key={o.$id}>
                       <td>
                         <strong>{o.po_no}</strong>
+                        {paidFromFloat(o) && <> <Badge tone="default">From Insight</Badge></>}
                         <div className="small dim">{o.$createdAt ? dateTimeWords(o.$createdAt) : ''}{o.created_by_name ? ` · ${o.created_by_name}` : ''}</div>
                       </td>
                       <td>{o.supplier_name || '-'}<div className="small dim">{MODULE_LABELS[(o.module ?? 'kitchen') as Module]}</div></td>
@@ -334,6 +352,8 @@ function OrderModal({
   /** A unit price as written: whole pesewas as money, a finer one with its extra places. */
   const priceEach = (n: number) => (Number.isInteger(n) ? money(n) : `${settings.currency_symbol ?? ''}${unitPriceInput(n, decimals)}`);
   const editable = mayOrder && (!order || isEditableOrder(order.status));
+  /** Bought out of a float in Insight and already paid: checked and received, never sent. */
+  const float = paidFromFloat(order);
   const [supplierId, setSupplierId] = useState(order?.supplier_id ?? start?.supplierId ?? '');
   const [lines, setLines] = useState<PoLine[]>(() => (order ? readLines(order.lines) : start?.lines ?? []));
   /**
@@ -382,13 +402,16 @@ function OrderModal({
   const supplier = suppliers.find((s) => s.$id === supplierId);
   const total = orderTotal(lines);
   const draft = { supplier_name: adding ? fresh.name : supplier?.name ?? order?.supplier_name ?? '', lines };
-  const problem = orderProblem(draft);
+  const problem = float ? floatOrderProblem(lines) ?? orderProblem(draft) : orderProblem(draft);
+  const toPick = float ? unmatchedLines(lines).length : 0;
   const status = order?.status;
 
   const setLine = (i: number, patch: Partial<PoLine>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const pickItem = (i: number, id: string) => {
     const ing = items.find((x) => x.$id === id);
     if (!ing) return;
+    // From a float: what was bought and paid stays; only what it is changes.
+    if (float) { setLine(i, lineForItem(lines[i], ing as never)); return; }
     const fresh = suggestLine(ing as never);
     setLine(i, fresh);
     setTextAt(i, { qty: String(fresh.qty), cost: unitPriceInput(fresh.unit_cost, decimals) });
@@ -398,6 +421,10 @@ function OrderModal({
     const ing = items.find((x) => x.$id === l?.ingredient_id) as (Ingredient & { pack_size?: number; pack_name?: string }) | undefined;
     if (!l || !ing) return;
     const per = key === 'pack' ? (ing.pack_size ?? 1) : 1;
+    const label = key === 'pack' ? `${(ing.pack_name || 'pack').replace(/s$/, '')}s` : `${ing.unit}s`;
+    // From a float the price of one is what was paid over how many, whichever
+    // they are counted in, so it does not move.
+    if (float) { setLine(i, { buy_key: key, per, buy_label: label }); return; }
     // Kept to the same two extra places a typed price has, so a per-unit
     // price worked back from a pack keeps its fraction of a pesewa.
     const each = Math.round((l.unit_cost / (l.per || 1)) * per * 100) / 100;
@@ -450,8 +477,14 @@ function OrderModal({
       isAdmin,
       by: userId,
       byName: userName,
+      alreadyPaid: float,
     });
     if (!submit) return `${saved.po_no} saved as a draft.`;
+    if (float) {
+      // Checked: straight on to receiving it, where the person may.
+      if (onReceive) { onReceive(saved); return `${saved.po_no} checked. Record what came in.`; }
+      return `${saved.po_no} checked and ready to receive, at a till or here.`;
+    }
     return saved.status === 'waiting'
       ? `${saved.po_no} is over ${money(limit)}, so it waits on Approvals before it can be sent. The admins are being emailed.`
       : `${saved.po_no} is ready to send. The admins are being emailed.`;
@@ -495,7 +528,7 @@ function OrderModal({
 
   const title = order ? `${order.po_no} · ${order.supplier_name || 'No supplier'}` : 'New order';
   const st = order ? PO_STATUS_WORDS[order.status] : null;
-  const sendable = !!order && mayOrder && (status === 'ready' || status === 'sent' || status === 'part');
+  const sendable = !!order && mayOrder && !float && (status === 'ready' || status === 'sent' || status === 'part');
 
   return (
     <Modal wide title={title} onClose={onClose}>
@@ -511,10 +544,28 @@ function OrderModal({
           <Notice tone="warn">Not approved{order?.decided_note ? `: “${order.decided_note}”` : ''}. Change it and press Done to ask again, or cancel it.</Notice>
         )}
         {order?.email_error && <Notice>{order.email_error}</Notice>}
+        {/* Where it came from and who paid, from Insight's own words. */}
+        {order && float && (
+          <Notice tone="info">
+            <div>From Insight: {[order.insight_from, order.insight_ref].filter(Boolean).join(' · ') || 'a float'}</div>
+            <div>Paid from: {order.insight_from || 'a float'}, in Insight. Not from a drawer, a box or the bank.</div>
+            {order.receipt_file_id && (
+              <div>
+                <a href={downloadUrl(order.receipt_file_id, 'receipt', settings)} target="_blank" rel="noreferrer">See the receipt</a>
+              </div>
+            )}
+          </Notice>
+        )}
+        {editable && float && toPick > 0 && (
+          <Notice tone="warn">
+            {toPick === 1 ? 'One line' : `${toPick} lines`} did not match a stock item by name. Choose the item for{' '}
+            {toPick === 1 ? 'it' : 'each'} below, and how it is bought, before it can be received.
+          </Notice>
+        )}
 
         {editable ? (
           <>
-            {sides.length > 1 && (
+            {sides.length > 1 && !float && (
               <Field label="Department" hint="Only this department's stock is offered below. It is received into its store and paid from its books.">
                 <Segmented<Module>
                   value={side}
@@ -570,6 +621,7 @@ function OrderModal({
                             {ing && !mine.some((x) => x.$id === ing.$id) && <option value={ing.$id}>{ing.name}</option>}
                           </Select>
                           {ing && <div className="small dim">{ing.current_qty} {ing.unit} left{ing.par_level ? `, full is ${ing.par_level}` : ''}</div>}
+                          {float && l.bought_as && <div className="small dim">On the receipt: {l.bought_as}</div>}
                         </td>
                         <td className="num" style={{ width: '6rem' }}>
                           <Input
@@ -621,18 +673,28 @@ function OrderModal({
               </Button>
               <strong>Total {money(total)}</strong>
             </div>
-            <div className="grid-2">
-              <Field label="Needed by (optional)"><Input type="date" value={neededBy} onChange={(e) => setNeededBy(e.target.value)} /></Field>
-              <Field label="Note to the supplier (optional)"><Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
-            </div>
-            {!isAdmin && orderNeedsApproval(total, limit) && (
+            {float ? (
+              <Field label="Note"><Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+            ) : (
+              <div className="grid-2">
+                <Field label="Needed by (optional)"><Input type="date" value={neededBy} onChange={(e) => setNeededBy(e.target.value)} /></Field>
+                <Field label="Note to the supplier (optional)"><Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+              </div>
+            )}
+            {!float && !isAdmin && orderNeedsApproval(total, limit) && (
               <Notice tone="info">Over {money(limit)}: once done, it waits on Approvals before it can be sent.</Notice>
             )}
             <div className="row" style={{ gap: '0.5rem', justifyContent: 'flex-end' }}>
               <Button loading={busy === 'draft'} disabled={!!busy} onClick={() => void save(false)}>Save as draft</Button>
-              <Button variant="primary" loading={busy === 'submit'} disabled={!!busy || !!problem} onClick={() => void save(true)}>
-                Done{!isAdmin && orderNeedsApproval(total, limit) ? ', send for approval' : ''}
-              </Button>
+              {float ? (
+                <Button variant="primary" loading={busy === 'submit'} disabled={!!busy || !!problem} onClick={() => void save(true)}>
+                  Checked, receive it
+                </Button>
+              ) : (
+                <Button variant="primary" loading={busy === 'submit'} disabled={!!busy || !!problem} onClick={() => void save(true)}>
+                  Done{!isAdmin && orderNeedsApproval(total, limit) ? ', send for approval' : ''}
+                </Button>
+              )}
             </div>
           </>
         ) : order ? (

@@ -398,8 +398,9 @@ export async function postTabs(ctx, shift) {
  * Where a spend's money came out of.
  *
  * A petty cash box named on the row is the box's account. Otherwise the row
- * says: a transfer came from the bank, and anything else from the till's
- * cash, whether it was the drawer's money or somebody's own to be paid back.
+ * says: a transfer came from the bank, an order bought out of a float in
+ * Insight is owed to that float, and anything else from the till's cash,
+ * whether it was the drawer's money or somebody's own to be paid back.
  */
 async function spendFromAccount(ctx, expense) {
   if (expense.imprest_float_id) {
@@ -409,6 +410,8 @@ async function spendFromAccount(ctx, expense) {
   // Received and not yet paid: owed to the supplier until somebody pays it.
   if (expense.pay_later === true) return { account: ACCOUNTS.accountsPayable, memo: 'Not paid yet' };
   if (expense.source === 'bank') return { account: ACCOUNTS.bank, memo: 'Paid from the bank' };
+  // Paid out of a float somebody holds in Insight. See docs/21-insight-floats.md.
+  if (expense.source === 'float') return { account: ACCOUNTS.floatsPayable, memo: 'Paid from a float, in Insight' };
   return { account: ACCOUNTS.cash, memo: 'Money paid out' };
 }
 

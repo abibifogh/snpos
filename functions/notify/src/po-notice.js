@@ -26,9 +26,15 @@ import { quantityWords } from './po-pdf.js';
 /** The statuses that mean somebody pressed Done. */
 const TOLD_ABOUT = ['waiting', 'ready'];
 
-/** Whether this order should be told about now. */
+/**
+ * Whether this order should be told about now.
+ *
+ * Never one that came from a float in Insight: that was bought and paid for
+ * before it got here, so there is nothing to agree to and no supplier to send
+ * it to. Checking it is the whole of it. See insight-floats.js.
+ */
 export function orderToTell(doc) {
-  return !!doc && TOLD_ABOUT.includes(doc.status) && !doc.admin_told_at;
+  return !!doc && TOLD_ABOUT.includes(doc.status) && !doc.admin_told_at && !doc.insight_key && doc.paid_by !== 'float';
 }
 
 const SIDE = { kitchen: 'Kitchen', bar: 'Bar', craft: 'Shop' };

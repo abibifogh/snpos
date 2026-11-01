@@ -71,6 +71,15 @@ export const ACCOUNTS = {
    */
   accountsPayable: '2300',
   /**
+   * Stock paid for out of a float somebody holds in Insight, the group hub.
+   *
+   * The order came over from Insight already paid: no drawer, box or bank
+   * here gave the money, so receiving it credits this instead. The float is
+   * accounted for in Insight; this says what the POS owes back to it, and is
+   * cleared by hand when the float is squared up. See docs/21-insight-floats.md.
+   */
+  floatsPayable: '2310',
+  /**
    * What customers owe for what they have been served: a tab, until it is
    * paid. A tab's sales are income the day they are served, and this holds
    * the debt. See tabAccrualLines in functions/notify/src/books.js.

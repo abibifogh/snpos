@@ -29,6 +29,7 @@ export const ACCOUNTS = {
   tipsPayable: '2200',
   owedToMakers: '2400',
   accountsPayable: '2300',
+  floatsPayable: '2310',
   owedByCustomers: '1100',
   retainedEarnings: '3100',
   foodSales: '4000',
