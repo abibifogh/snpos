@@ -194,6 +194,40 @@ export const HELP_ARTICLES: HelpArticle[] = [
   },
 
   {
+    id: 'cleaning',
+    title: 'Cleaning before service and at closing',
+    summary: 'The opening and closing lists, the deep-clean day, and where the record goes.',
+    area: 'kitchen',
+    audience: ['cook', 'cashier', 'manager', 'admin'],
+    body: [
+      p(
+        'When an admin switches it on under Setup \u2192 Cleaning, the kitchen screen and the bar till ask for a short '
+        + 'clean before service. Tap each check as it is done; type each fridge or freezer reading in \u00b0C. Every '
+        + 'tick is recorded with your name and the time.',
+      ),
+      h('Before service'),
+      p(
+        'The list appears once you have started service on the kitchen screen, or once a bar shift is open. '
+        + 'Where the admin chose to hold service for it, Start service waits until the required checks are done. '
+        + 'If you really must start, press Start without finishing and say why; a manager sees it on Approvals.',
+      ),
+      h('At closing'),
+      p('On the bar, Close shift shows the closing list first. On the kitchen screen, press Close up at the top.'),
+      h('Deep-clean day'),
+      p(
+        'One day a week the list is longer: ovens, hood filters, the walk-in fridge, drains. A few checks ask for a '
+        + 'photo. The admin chooses the day, and whether it is done before opening or after closing the night before.',
+      ),
+      note(
+        'A reading outside the safe range turns orange and goes to Approvals the moment the list is saved. Tell the '
+        + 'manager straight away too: food in a warm fridge is a decision for now, not for tomorrow.',
+      ),
+      h('The record'),
+      p('Setup \u2192 Cleaning \u2192 Cleaning log lists every day, who did it, when, and every reading. It downloads as a PDF for an inspection.'),
+    ],
+  },
+
+  {
     id: 'shifts',
     title: 'Opening and closing a shift',
     summary: 'The cash drawer, the count, and the stock check at close.',

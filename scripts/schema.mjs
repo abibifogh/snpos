@@ -2698,6 +2698,66 @@ export const COLLECTIONS = [
   },
   {
     /**
+     * A side's cleaning routine: what the kitchen or the bar checks before it
+     * opens and after it closes, and the deep-clean day. One row per side, its
+     * id the side. Off until an admin switches it on. See cleaning.ts.
+     */
+    id: 'clean_routines',
+    name: 'Cleaning routines',
+    perms: { read: ALL_STAFF, create: MGMT, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['active', 'b', null, false, false],
+      ['hold', 'e', ['hold', 'show'], false, 'hold'],
+      // 1 Monday to 7 Sunday; 0 for no deep clean.
+      ['deep_day', 'i', null, false, 1],
+      ['deep_when', 'e', ['before', 'after'], false, 'before'],
+      // JSON lists of checks: [{ id, area, text, hint, required, kind, min, max }].
+      ['open_items', 's', 20000, false],
+      ['close_items', 's', 20000, false],
+      ['deep_items', 's', 20000, false],
+      ['updated_by', 's', 64, false],
+    ],
+    indexes: [],
+  },
+  {
+    /**
+     * One cleaning list as filed: who, when, every tick and reading. Kept as
+     * the record an inspector asks for. A list started without its required
+     * checks, or with a reading out of range, waits on Approvals until a
+     * manager has seen it. See cleaning.ts.
+     */
+    id: 'clean_logs',
+    name: 'Cleaning log',
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: MGMT, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['side', 'e', ['kitchen', 'bar'], true, 'kitchen'],
+      ['kind', 'e', ['open', 'close'], true, 'open'],
+      // The calendar day on the screen's clock: 2026-11-02.
+      ['day', 's', 10, true],
+      ['shift_id', 's', 64, false],
+      ['by_id', 's', 64, false],
+      ['by_name', 's', 120, false],
+      ['finished_at', 'd', null, false],
+      // JSON: [{ id, text, area, required, kind, done, at, value, out, photoId, deep }].
+      ['answers', 's', 30000, false, '[]'],
+      ['done', 'i', null, false, 0],
+      ['of', 'i', null, false, 0],
+      ['required_left', 'i', null, false, 0],
+      ['out_of_range', 'i', null, false, 0],
+      ['skip_reason', 's', 300, false],
+      ['deep', 'b', null, false, false],
+      ['review', 'e', ['none', 'pending', 'seen'], false, 'none'],
+      ['reviewed_by', 's', 64, false],
+      ['reviewed_at', 'd', null, false],
+    ],
+    indexes: [
+      ['day', 'key', ['venue_id', 'side', 'kind', 'day']],
+      ['review', 'key', ['review']],
+    ],
+  },
+  {
+    /**
      * A count of the shop's shelves, waiting to be applied.
      *
      * The shelf does not move when somebody counts it. It moves when an admin

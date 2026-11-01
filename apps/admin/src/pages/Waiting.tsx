@@ -9,7 +9,7 @@ import {
   decideSpend, decidePurchaseOrder, loadWaiting, nameFrom, waitingCounts, waitingSummary, waitedWords, refuseSpendWords, WAITING_KIND_WORDS, dateTimeWords,
   loadReview, offWords, countDifferencesHtml, openPrintable,
   openBookingChanges, decideBookingChange, CHANGE_KIND_WORDS,
-  pendingGroupBookings, bookingStatusWords } from '@snpos/core';
+  pendingGroupBookings, bookingStatusWords, markCleanSeen } from '@snpos/core';
 import type {
   WaitingItem, WaitingKind, WaitingSpend, WaitingTabShift, TabOrder, Review, ReviewLine, BookingChangeDoc, GroupBookingDoc,
 } from '@snpos/core';
@@ -17,7 +17,7 @@ import { useSession, useMoney } from '../session';
 import { ChargeLineModal } from '../components/ChargeLine';
 
 type Show = WaitingKind | 'all';
-const SHOWS: Show[] = ['all', 'count', 'spend', 'shelf', 'tab', 'order'];
+const SHOWS: Show[] = ['all', 'count', 'spend', 'shelf', 'tab', 'order', 'clean'];
 
 /**
  * Everything waiting for somebody senior, and the buttons to decide it.
@@ -161,6 +161,10 @@ export function WaitingPage() {
     if (ref.kind === 'order') {
       await decidePurchaseOrder({ id: ref.orderId, approve: true, by: userId });
       return 'Order approved. It can be sent now from Purchase orders.';
+    }
+    if (ref.kind === 'clean') {
+      await markCleanSeen(ref.logId, userId);
+      return 'Marked seen. The cleaning log keeps it as it was.';
     }
     return '';
   });
@@ -469,11 +473,11 @@ export function WaitingPage() {
                   const since = Date.parse(item.at);
                   const decidable = item.kind !== 'tab';
                   // A spend is any manager's to decide; a count that moves a shelf is an admin's.
-                  const may = item.kind === 'spend' || item.kind === 'order' ? true : isAdmin;
+                  const may = item.kind === 'spend' || item.kind === 'order' || item.kind === 'clean' ? true : isAdmin;
                   const open = openId === item.id;
                   // A tab has its own screen already, and there are no lines
                   // behind it to read.
-                  const hasLines = item.kind !== 'tab';
+                  const hasLines = item.kind !== 'tab' && item.kind !== 'clean';
                   return (
                     <Fragment key={item.id}>
                     <tr>
@@ -528,9 +532,16 @@ export function WaitingPage() {
                         {decidable ? (
                           may ? (
                             <>
-                              <Button size="sm" variant="primary" loading={busy === item.id} onClick={() => void approve(item)}>Approve</Button>
-                              {' '}
-                              <Button size="sm" variant="ghost" disabled={busy === item.id} onClick={() => refuse(item)}>Refuse</Button>
+                              {/* A cleaning list is a record, not a request: it is seen, not decided. */}
+                              <Button size="sm" variant="primary" loading={busy === item.id} onClick={() => void approve(item)}>
+                                {item.kind === 'clean' ? 'Seen' : 'Approve'}
+                              </Button>
+                              {item.kind !== 'clean' && (
+                                <>
+                                  {' '}
+                                  <Button size="sm" variant="ghost" disabled={busy === item.id} onClick={() => refuse(item)}>Refuse</Button>
+                                </>
+                              )}
                             </>
                           ) : (
                             <span className="small dim">An admin decides this</span>

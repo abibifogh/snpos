@@ -528,13 +528,13 @@ test('the sidebar is grouped by job, and the per-side pages are one link each', 
   // The books: the weekly jobs, and the accountant's tools, as two links to one page.
   assert.deepEqual(labels('Books'), ['Reports', 'Accounting', 'Accountant tools']);
   // Set up once, so with the rest of the setting up.
-  assert.deepEqual(labels('Setup'), ['Staff', 'Venues', 'Tables & QR', 'Features', 'Health', 'Settings']);
+  assert.deepEqual(labels('Setup'), ['Staff', 'Venues', 'Tables & QR', 'Features', 'Cleaning', 'Health', 'Settings']);
   // Reached from their host page: Options, Tabs, Goods received, Payouts, Stations, Erase.
   const all = nav.flatMap((g) => g.links.map((l) => l.label));
   for (const gone of ['Options', 'Tabs', 'Goods received', 'Payouts', 'Stations', 'Erase records', 'Spends']) {
     assert.ok(!all.includes(gone), gone);
   }
-  assert.equal(all.length, 27);
+  assert.equal(all.length, 28);
 });
 
 test('a page reached from its host is in the sidebar when the host is not', () => {

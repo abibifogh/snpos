@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo, HelpModal, EightySixModal,
   OfflineBar, SchemaBar, StaleBar, useOfflineQueue, IdleScreen, ThemeButton, OwedNotice,
+  CleanChecklist, useCleanRoutine,
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
@@ -114,6 +115,19 @@ export function App() {
   const [pinError, setPinError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /*
+    The kitchen's cleaning lists, when an admin has switched them on: the
+    opening one stands in front of the tickets once a cook has started
+    service; the closing one is behind Close up. See cleaning.ts.
+  */
+  const openClean = useCleanRoutine('kitchen', venue?.$id, 'open', ready && !switching);
+  const [closingUp, setClosingUp] = useState(false);
+  const [cleanNote, setCleanNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!cleanNote) return undefined;
+    const t = window.setTimeout(() => setCleanNote(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [cleanNote]);
   const [rejecting, setRejecting] = useState<Order | null>(null);
   const [rejectCode, setRejectCode] = useState(REJECT_REASONS[0].code);
   const [rejectNote, setRejectNote] = useState('');
@@ -1014,6 +1028,37 @@ export function App() {
         </div>
       )}
 
+      {ready && !switching && venue && openClean.owed && openClean.routine && (
+        <CleanChecklist
+          routine={openClean.routine}
+          kind="open"
+          venueId={venue.$id}
+          who={{ id: who?.user_id || who?.$id || session?.userId, name: who?.display_name || session?.name }}
+          settings={settings}
+          onFiled={({ review }) => {
+            openClean.done();
+            setCleanNote(review ? 'Opening clean saved. What was missed is on Approvals for a manager.' : 'Opening clean saved.');
+          }}
+        />
+      )}
+      {closingUp && venue && openClean.routine && (
+        <CleanChecklist
+          routine={openClean.routine}
+          kind="close"
+          venueId={venue.$id}
+          who={{ id: who?.user_id || who?.$id || session?.userId, name: who?.display_name || session?.name }}
+          settings={settings}
+          onBack={() => setClosingUp(false)}
+          onFiled={({ review }) => {
+            setClosingUp(false);
+            setCleanNote(review ? 'Closing clean saved. What was missed is on Approvals for a manager.' : 'Closing clean saved. Good night.');
+          }}
+        />
+      )}
+      {cleanNote && (
+        <div className="toasts"><div className="toast" role="status" onClick={() => setCleanNote(null)}>{cleanNote}</div></div>
+      )}
+
       {offOpen && venue && (
         <EightySixModal
           items={offItems.map((i) => ({
@@ -1197,6 +1242,11 @@ export function App() {
               differs at those two moments on the same screen, so it belongs
               here rather than in a settings page on another app. */}
           <ThemeButton />
+          {openClean.routine && (
+            <button className="kds-help" style={{ width: 'auto', padding: '0 0.7rem' }} title="The closing clean" onClick={() => setClosingUp(true)}>
+              Close up
+            </button>
+          )}
           <span>New <b>{pending.length}</b></span>
           <span>Cooking <b>{visible.filter((o) => o.status === 'PREPARING').length}</b></span>
           <span>Ready <b>{visible.filter((o) => o.status === 'READY').length}</b></span>
