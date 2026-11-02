@@ -51,6 +51,15 @@ const REJECT_REASONS: { code: string; label: string }[] = [
 const secondsSince = (iso: string) => Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
+
+/** "Michael Osei" as "MO"; one name as its first two letters. */
+const initialsOf = (name?: string): string => {
+  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '·';
+  return (parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+const firstName = (name?: string): string => (name ?? '').trim().split(/\s+/)[0] || 'On the pass';
+
 export function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [venue, setVenue] = useState<Venue | null>(null);
@@ -84,6 +93,15 @@ export function App() {
   // Who is at the screen. The device holds the session; the PIN says which
   // person is acting, so accepts and rejects have a name against them.
   const [who, setWho] = useState<StaffProfile | null>(null);
+  /** When whoever is on the pass took it, for the name chip's menu. */
+  const [whoSince, setWhoSince] = useState<Date | null>(null);
+  const [whoMenu, setWhoMenu] = useState(false);
+  useEffect(() => {
+    if (!whoMenu) return undefined;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setWhoMenu(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [whoMenu]);
   const [session, setSession] = useState<StaffSession | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   /**
@@ -942,6 +960,7 @@ export function App() {
 
                         const accept = (person: StaffProfile) => {
                           setWho(person);
+                          setWhoSince(new Date());
                           setPinEntry('');
                           setSwitching(false);
                           setReady(true);
@@ -1292,15 +1311,46 @@ export function App() {
               going home had no way to hand the screen over except reloading
               the page, so whatever the next person did was recorded against
               the person who had left. */}
+          {/* The person on the pass, as a person: a face, a name, and a short
+              menu with Hand over in it. It was an outlined pill reading
+              "Michael · hand over", which looked like a label nobody would tap. */}
           {who && (
-            <button
-              className="kds-help"
-              style={{ width: 'auto', padding: '0 0.7rem' }}
-              title="Hand this screen to somebody else"
-              onClick={() => { setSwitching(true); setPinEntry(''); setPinError(null); }}
-            >
-              {who.display_name} · hand over
-            </button>
+            <span className="kds-who">
+              <button
+                type="button"
+                className="kds-who-chip"
+                aria-haspopup="menu"
+                aria-expanded={whoMenu}
+                title="Who is on the pass"
+                onClick={() => setWhoMenu((v) => !v)}
+              >
+                <span className="kds-av" aria-hidden="true">{initialsOf(who.display_name)}<i /></span>
+                <span className="kds-who-name">{firstName(who.display_name)}</span>
+                <span className="kds-caret" aria-hidden="true" />
+              </button>
+              {whoMenu && (
+                <>
+                  <button type="button" className="kds-who-scrim" aria-label="Close" onClick={() => setWhoMenu(false)} />
+                  <div className="kds-who-pop" role="menu">
+                    <div className="kds-who-me">
+                      <span className="kds-av lg" aria-hidden="true">{initialsOf(who.display_name)}<i /></span>
+                      <div>
+                        <b>{who.display_name}</b>
+                        <small>{whoSince ? `On the pass since ${whoSince.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'On the pass'}</small>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="kds-who-hand"
+                      onClick={() => { setWhoMenu(false); setSwitching(true); setPinEntry(''); setPinError(null); }}
+                    >
+                      <span aria-hidden="true">⇄</span> Hand over to someone else
+                    </button>
+                  </div>
+                </>
+              )}
+            </span>
           )}
         </div>
       </div>

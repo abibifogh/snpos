@@ -166,9 +166,42 @@ body { background: var(--bg); color: var(--text); }
 /* Need stock: the one header button that asks something of somebody else, so it is the brand colour. */
 .kds-help.kds-ask {
   border-radius: 999px; opacity: 1; background: var(--brand); border-color: var(--brand); color: var(--brand-ink);
-  display: inline-flex; align-items: center; gap: 0.4rem;
+  display: inline-flex; align-items: center; gap: 0.4rem; white-space: nowrap;
 }
 .kds-ask-n { background: var(--brand-ink); color: var(--brand); border-radius: 999px; font-size: 0.72rem; padding: 0 0.45rem; line-height: 1.3rem; }
+
+/* The person on the pass: a face, a name, and a menu with Hand over in it. */
+.kds-who { position: relative; display: inline-flex; }
+.kds-who-chip {
+  display: inline-flex; align-items: center; gap: 0.45rem; height: 2.3rem; padding: 0 0.65rem 0 0.22rem;
+  border-radius: 999px; border: 1px solid var(--hair, var(--border)); background: var(--surface-2); color: var(--text);
+  font: inherit; font-weight: 700; font-size: 0.9rem; cursor: pointer;
+}
+.kds-who-chip:hover, .kds-who-chip[aria-expanded="true"] { border-color: var(--brand); }
+.kds-av {
+  position: relative; width: 1.85rem; height: 1.85rem; border-radius: 50%; flex: none;
+  display: grid; place-items: center; background: var(--brand-soft); color: var(--brand-dk);
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.02em;
+}
+.kds-av.lg { width: 2.6rem; height: 2.6rem; font-size: 0.9rem; }
+.kds-av i { position: absolute; right: -1px; bottom: -1px; width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--ok); border: 2px solid var(--surface); }
+.kds-who-name { max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kds-caret { width: 0.45rem; height: 0.45rem; border-right: 2px solid var(--text-dim); border-bottom: 2px solid var(--text-dim); transform: rotate(45deg) translateY(-2px); }
+.kds-who-scrim { position: fixed; inset: 0; z-index: 40; background: transparent; border: 0; padding: 0; cursor: default; }
+.kds-who-pop {
+  position: absolute; right: 0; top: calc(100% + 0.45rem); z-index: 41; width: 17.5rem; max-width: calc(100vw - 1.5rem);
+  background: var(--surface); color: var(--text); border: 1px solid var(--hair, var(--border)); border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(14, 20, 27, 0.06), 0 14px 32px rgba(14, 20, 27, 0.16); padding: 0.55rem; display: grid; gap: 0.35rem;
+  animation: fade-in 0.15s ease-out;
+}
+.kds-who-me { display: flex; align-items: center; gap: 0.65rem; padding: 0.4rem 0.45rem 0.6rem; border-bottom: 1px solid var(--hair, var(--border)); }
+.kds-who-me b { display: block; font-family: var(--font-display); font-size: 1rem; }
+.kds-who-me small { color: var(--text-dim); font-size: 0.8rem; }
+.kds-who-hand {
+  display: flex; align-items: center; gap: 0.55rem; width: 100%; border: 0; border-radius: 11px; padding: 0.7rem 0.75rem;
+  background: var(--brand); color: var(--brand-ink); font: inherit; font-weight: 700; cursor: pointer; text-align: left;
+}
+.kds-who-hand:hover { background: var(--brand-dk); }
 
 /* ---- the till strip, in combined mode ---------------------------------- */
 
