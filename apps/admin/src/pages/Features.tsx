@@ -190,10 +190,17 @@ const NUMBERS: Record<string, {
 const SWITCHES: Record<string, { option: string; label: string; hint: string; fallback: boolean }[]> = {
   stock_requests: [
     {
+      option: 'show_low',
+      label: 'List what is running low first',
+      hint: 'Off: the sheet opens on a search and the items on the list, and the cook picks what is needed. '
+        + 'On: what is running low comes first, in its own section, with the amount to bring it back to full.',
+      fallback: false,
+    },
+    {
       option: 'tick_low',
       label: 'Tick what is running low to begin with',
-      hint: 'Off: everything running low is listed first, unticked, and the cook ticks what is actually needed. '
-        + 'On: it all starts ticked, and the cook unticks what is not.',
+      hint: 'Only with the list above switched on. Off: the low items start unticked and the cook ticks what is '
+        + 'needed. On: they all start ticked, and the cook unticks what is not.',
       fallback: false,
     },
     {

@@ -247,9 +247,12 @@ export const HELP_ARTICLES: HelpArticle[] = [
       ),
       h('Asking'),
       p(
-        'It opens on everything on the list that is running low, each already set to bring it back to full in the packs it comes in: sacks, '
-        + 'crates, bottles. Untick what you do not need and change any amount with \u2212 and +. Search the list to add '
-        + 'anything else on it, and write what is not on the list in the note. Press Send. Your name goes with it.',
+        'Search the list or tap what you need. Each one is set to bring it back to full in the packs it comes in '
+        + '(sacks, crates, bottles); change any amount with \u2212 and +, and tap a name to leave it out again. Write what '
+        + 'is not on the list in the note. Press Send. Your name goes with it.',
+      ),
+      p(
+        'An admin can switch on, under Features, listing what is running low first, and having those start ticked.',
       ),
       note('What is already on order, or already asked for by somebody else, is shown but cannot be asked for again.'),
       h('What happens next'),
