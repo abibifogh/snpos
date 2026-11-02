@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Empty, Field, FormError, Input, Modal, Spinner } from './components';
 import {
   Query, formatMoney, listAll, listByIds, displayOrderNo, requestReceipt, soldInShift, soldTotals,
@@ -174,8 +174,33 @@ export function ShiftHistory({
     Worked out from the lines already loaded for the orders list, rather than
     fetched again. The same rows answer both questions; only the cut differs.
   */
-  const sold = soldInShift(Object.values(items).flat());
+  /*
+    One way of paying, chosen by tapping its figure: the orders paid that
+    way and what they sold, so "where did the GH₵515 on card come from" is
+    one tap. "All money in" shows everything again. 'other' is money paid by
+    a method no longer listed.
+  */
+  const [via, setVia] = useState<string | null>(null);
+  const viaPaid = useMemo(() => {
+    const m = new Map<string, number>();
+    if (!via) return m;
+    const ids = new Set(methods.map((x) => x.$id));
+    for (const p of payments) {
+      if (!isLivePayment(p) || !p.order_id) continue;
+      const hit = via === 'other' ? !ids.has(p.method_id) : p.method_id === via;
+      if (hit) m.set(p.order_id, (m.get(p.order_id) ?? 0) + (p.amount ?? 0) + (p.tip ?? 0));
+    }
+    return m;
+  }, [via, payments, methods]);
+  const shownOrders = via ? (orders ?? []).filter((o) => viaPaid.has(o.$id)) : (orders ?? []);
+  const sold = soldInShift(via ? shownOrders.flatMap((o) => items[o.$id] ?? []) : Object.values(items).flat());
   const soldSum = soldTotals(sold);
+  // Paid partly this way and partly another: in both lists, and said so.
+  const split = via ? shownOrders.filter((o) => (viaPaid.get(o.$id) ?? 0) < (o.total ?? 0)).length : 0;
+  const pick = (id: string | null) => {
+    setVia((cur) => (cur === id ? null : id));
+    if (id && tab === 'spend') setTab('orders');
+  };
 
   const methodName = (id: string) => methods.find((m) => m.$id === id)?.name ?? 'a method no longer listed';
   const paymentsFor = (orderId: string) => payments.filter((p) => p.order_id === orderId);
@@ -348,7 +373,7 @@ export function ShiftHistory({
 
       <div className="row" style={{ gap: '0.4rem', marginBottom: '0.9rem' }}>
         <Button size="sm" variant={tab === 'orders' ? 'primary' : 'default'} onClick={() => setTab('orders')}>
-          Orders {orders ? `(${orders.length})` : ''}
+          Orders {orders ? `(${shownOrders.length})` : ''}
         </Button>
         {/*
           What went over the counter, by the thing rather than by the sale.
@@ -383,24 +408,34 @@ export function ShiftHistory({
       {(byMethod.length > 0 || strayAmount > 0) && (
         <div className="cash-split">
           {byMethod.map((m) => (
-            <div className="cash-split-item" key={m.id}>
+            <button type="button" className="cash-split-item" key={m.id} aria-pressed={via === m.id} onClick={() => pick(m.id)}>
               <div className="label">{m.name}</div>
               <div className="figure">{money(m.amount + m.tips)}</div>
               {m.tips > 0 && <div className="small dim">incl. {money(m.tips)} tips</div>}
-            </div>
+            </button>
           ))}
           {strayAmount > 0 && (
-            <div className="cash-split-item">
+            <button type="button" className="cash-split-item" aria-pressed={via === 'other'} onClick={() => pick('other')}>
               <div className="label">Other</div>
               <div className="figure">{money(strayAmount)}</div>
               <div className="small dim">a method no longer listed</div>
-            </div>
+            </button>
           )}
-          <div className="cash-split-item total">
+          <button type="button" className="cash-split-item total" aria-pressed={via === null} onClick={() => setVia(null)}>
             <div className="label">All money in</div>
             <div className="figure">{money(takings)}</div>
             {tipsTotal > 0 && <div className="small dim">incl. {money(tipsTotal)} tips</div>}
-          </div>
+          </button>
+        </div>
+      )}
+      {via && (
+        <div className="cash-split-showing">
+          <span>
+            Showing what was paid by <strong>{via === 'other' ? 'a method no longer listed' : methodName(via)}</strong>:{' '}
+            {shownOrders.length} order{shownOrders.length === 1 ? '' : 's'}.
+            {split > 0 && ` ${split} ${split === 1 ? 'was' : 'were'} paid partly another way too, so ${split === 1 ? 'it is' : 'they are'} in both.`}
+          </span>
+          <Button size="sm" variant="ghost" onClick={() => setVia(null)}>Show everything</Button>
         </div>
       )}
 
@@ -436,7 +471,7 @@ export function ShiftHistory({
         <Spinner />
       ) : tab === 'sold' ? (
         sold.length === 0 ? (
-          <p className="small dim">Nothing has been sold on this shift yet.</p>
+          <p className="small dim">{via ? 'Nothing was sold on orders paid that way.' : 'Nothing has been sold on this shift yet.'}</p>
         ) : (
           <div className="table-wrap">
             <table className="data">
@@ -461,8 +496,10 @@ export function ShiftHistory({
           </div>
         )
       ) : tab === 'orders' ? (
-        orders.length === 0 ? (
-          <Empty title="Nothing yet this shift">Orders appear here as they come in.</Empty>
+        shownOrders.length === 0 ? (
+          via
+            ? <p className="small dim">No order on this shift was paid that way.</p>
+            : <Empty title="Nothing yet this shift">Orders appear here as they come in.</Empty>
         ) : (
           <div className="table-wrap">
             <table className="data">
@@ -473,7 +510,7 @@ export function ShiftHistory({
                 </tr>
               </thead>
               <tbody>
-                {orders.map((o) => (
+                {shownOrders.map((o) => (
                   <>
                     <tr key={o.$id} onClick={() => setOpenId(openId === o.$id ? null : o.$id)} style={{ cursor: 'pointer' }}>
                       <td className="dim small">{time(o.$createdAt)}</td>
@@ -487,7 +524,12 @@ export function ShiftHistory({
                       <td>
                         <Badge tone={o.payment_status === 'paid' ? 'ok' : 'warn'}>{o.payment_status}</Badge>
                       </td>
-                      <td className="num">{money(o.total)}</td>
+                      <td className="num">
+                        {money(o.total)}
+                        {via && (viaPaid.get(o.$id) ?? 0) !== (o.total ?? 0) && (
+                          <div className="small dim">{money(viaPaid.get(o.$id) ?? 0)} this way</div>
+                        )}
+                      </td>
                       <td onClick={(e) => e.stopPropagation()} style={{ whiteSpace: 'nowrap' }}>
                         <Button size="sm" variant="ghost" onClick={() => startSend(o)}>
                           {o.customer_email ? 'Send again' : 'Email it'}
