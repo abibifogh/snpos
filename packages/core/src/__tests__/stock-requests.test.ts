@@ -10,7 +10,7 @@ import { canOrderStock } from '../access.ts';
 import { mayOrder, askRecipients, askToTell, askSubject, askBody } from '../../../../functions/notify/src/stock-ask.js';
 
 const item = (o: Partial<OrderableItem> & { $id: string; name: string }): OrderableItem => ({
-  unit: 'kg', current_qty: 0, par_level: 10, module: 'kitchen', active: true, ...o,
+  unit: 'kg', current_qty: 0, par_level: 10, module: 'kitchen', active: true, requestable: true, ...o,
 });
 
 const ITEMS: OrderableItem[] = [
@@ -34,6 +34,17 @@ test('the sheet opens on what is low, filled in to bring it back to full, and on
   assert.deepEqual(list.others.map((l) => l.ingredient_id), ['gari']);
   assert.ok(![...list.low, ...list.others].some((l) => l.ingredient_id === 'gin'), 'the bar is not the kitchen');
   assert.deepEqual(askList(ITEMS, 'bar', new Map(), low, suggestLine).low.map((l) => l.ingredient_id), ['gin']);
+});
+
+test('only what a manager has marked can be asked for', () => {
+  const marked = ITEMS.map((i) => (i.$id === 'foil' || i.$id === 'gari' ? { ...i, requestable: false } : i));
+  const list = askList(marked, 'kitchen', new Map(), low, suggestLine);
+  assert.deepEqual(list.low.map((l) => l.ingredient_id), ['tom', 'rice', 'onion', 'oil'], 'the foil is low but not on the list');
+  assert.deepEqual(list.others, [], 'and gari cannot be searched for');
+  assert.equal(list.marked, 4);
+  // Nothing marked: nothing offered, and the sheet can say why.
+  const none = askList(ITEMS.map((i) => ({ ...i, requestable: undefined })), 'kitchen', new Map(), low, suggestLine);
+  assert.deepEqual([none.low.length, none.others.length, none.marked], [0, 0, 0]);
 });
 
 test('what is already ordered or asked for is shown, not offered twice', () => {

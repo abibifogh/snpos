@@ -239,11 +239,17 @@ export const HELP_ARTICLES: HelpArticle[] = [
         + 'button at the top, and the bar till has one beside Record spend. The number on it is how many things are '
         + 'running low.',
       ),
+      h('What can be asked for'),
+      p(
+        'Only what a manager has put on the list. On the Stock page in the admin, Need stock list ticks the items the '
+        + 'kitchen or the bar may ask for, all at once; each item\'s own form has the same switch. Nothing is on the list '
+        + 'until somebody ticks it.',
+      ),
       h('Asking'),
       p(
-        'It opens on everything running low, each already set to bring it back to full in the packs it comes in: sacks, '
+        'It opens on everything on the list that is running low, each already set to bring it back to full in the packs it comes in: sacks, '
         + 'crates, bottles. Untick what you do not need and change any amount with \u2212 and +. Search the list to add '
-        + 'anything else, and write what is not on the list in the note. Press Send. Your name goes with it.',
+        + 'anything else on it, and write what is not on the list in the note. Press Send. Your name goes with it.',
       ),
       note('What is already on order, or already asked for by somebody else, is shown but cannot be asked for again.'),
       h('What happens next'),

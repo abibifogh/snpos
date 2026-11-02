@@ -58,6 +58,8 @@ export interface Ingredient extends Doc {
    * with nothing on a shelf to walk over and look at.
    */
   counted_at_close?: boolean;
+  /** On the side's Need stock list. Off until a manager ticks it. See stock-requests.ts. */
+  requestable?: boolean;
   /** Only a manager may put a number against this. See managerCountOnly. */
   manager_count_only?: boolean;
   /**
