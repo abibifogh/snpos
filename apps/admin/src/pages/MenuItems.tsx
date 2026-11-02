@@ -18,8 +18,7 @@ import {
   headingsInUse, headingProblem, itemsUnder, renameWords,
   reviewMenu, reviewSummary, dietsClaimed,
   nameBook, nameFrom,
-  menuCsv, menuSections, menuFileStem, menuExportProblem, toCsv, downloadCsv, downloadFile,
-} from '@snpos/core';
+  menuCsv, menuSections, menuFileStem, menuExportProblem, toCsv, downloadCsv, downloadFile, brandColour } from '@snpos/core';
 import type { ItemSort, Module, Category, MenuItem, Ingredient, Recipe, Doc, Consignor, VariantType, GroupChoice, SortChoice, WaitingChange, StaffProfile, ProductVariant, Omission } from '@snpos/core';
 import { ConsignmentFields, draftVariantsFrom, type DraftVariant } from '../components/ConsignmentFields';
 // Which sizes this drink still sells, and what makes two of them a clash.
@@ -423,7 +422,7 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
           sections: menuSections(rows),
           money: (n: number) => (settings ? formatMoney(n, settings) : String(n)),
           title: `${W.title} \u00b7 price list`,
-          accent: settings?.primary_color ?? '#0f766e',
+          accent: brandColour(settings?.primary_color),
         }),
         'application/pdf',
       );

@@ -192,7 +192,7 @@ function when(iso) {
  * @param {boolean} [input.prices] false for the kitchen's copy. See below.
  */
 export function bookingSheetPdf({
-  settings = {}, venue = null, booking, sittings, label = 'Reservation', accent = '#0f766e',
+  settings = {}, venue = null, booking, sittings, label = 'Reservation', accent = '#6A4DFF',
   prices = true,
 }) {
   const decimals = settings.currency_decimals ?? 2;

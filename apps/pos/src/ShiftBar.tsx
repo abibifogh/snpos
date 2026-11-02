@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Button, Modal, Field, Input, Notice, Badge, ShiftCloseForm, resolveCounts,
   ShiftHistory, ExpenseModal, HandoverModal, BarCountModal, CraftCountModal,
+  CleanChecklist, useCleanRoutine,
 } from '@snpos/ui';
 import type { BlockerRow, CountRow, StockRow, ShiftFlow } from '@snpos/ui';
 import {
@@ -25,6 +26,16 @@ export type { Shift } from '@snpos/core';
 export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: string, tone?: 'ok' | 'err') => void }) {
   const [opening, setOpening] = useState(false);
   const [closing, setClosing] = useState(false);
+  /*
+    The bar's cleaning lists, when an admin has switched them on. The opening
+    one stands in front of the till once a bar shift is open; the closing one
+    comes before the shift can be closed. See cleaning.ts.
+  */
+  const barShift = ctx.module === 'bar' && !!ctx.shift;
+  const openClean = useCleanRoutine('bar', ctx.venue.$id, 'open', barShift);
+  const closeClean = useCleanRoutine('bar', ctx.venue.$id, 'close', barShift);
+  const [cleaningUp, setCleaningUp] = useState(false);
+  const cleanWho = { id: ctx.userId, name: ctx.profile?.display_name ?? '' };
   const [floats, setFloats] = useState<Record<string, string>>({});
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [rows, setRows] = useState<CountRow[]>([]);
@@ -553,6 +564,37 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
 
   return (
     <>
+      {barShift && openClean.owed && openClean.routine && (
+        <CleanChecklist
+          routine={openClean.routine}
+          kind="open"
+          venueId={ctx.venue.$id}
+          shiftId={ctx.shift?.$id}
+          who={cleanWho}
+          settings={ctx.settings}
+          onFiled={({ review }) => {
+            openClean.done();
+            onToast(review ? 'Opening clean saved. What was missed is on Approvals.' : 'Opening clean saved.');
+          }}
+        />
+      )}
+      {cleaningUp && closeClean.routine && (
+        <CleanChecklist
+          routine={closeClean.routine}
+          kind="close"
+          venueId={ctx.venue.$id}
+          shiftId={ctx.shift?.$id}
+          who={cleanWho}
+          settings={ctx.settings}
+          onBack={() => setCleaningUp(false)}
+          onFiled={({ review }) => {
+            setCleaningUp(false);
+            closeClean.done();
+            onToast(review ? 'Closing clean saved. What was missed is on Approvals.' : 'Closing clean saved.');
+            void startClose();
+          }}
+        />
+      )}
       <div
         className="pos-top"
         style={{ borderTop: 'none', background: ctx.shift ? 'var(--surface)' : 'var(--warn-bg)' }}
@@ -595,7 +637,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           {ctx.shift ? (
             <Button
               size="sm"
-              onClick={() => void startClose()}
+              onClick={() => { if (closeClean.owed && closeClean.routine) setCleaningUp(true); else void startClose(); }}
               loading={busy && !closing}
               disabled={!ctx.profile?.can_close_shift}
             >

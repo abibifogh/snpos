@@ -9,6 +9,7 @@
  *
  * The browser turns it into a PDF, which is why there is no PDF library here.
  */
+import { brandColour } from './brand';
 
 export interface ReportStat {
   label: string;
@@ -48,7 +49,7 @@ const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 export function buildReportHtml(d: ReportDoc): string {
-  const brand = d.brandColor || '#0f766e';
+  const brand = brandColour(d.brandColor);
   const when = d.generatedAt ?? new Date();
 
   const statCards = d.stats

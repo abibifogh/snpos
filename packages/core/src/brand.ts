@@ -37,3 +37,30 @@ export function pageTitle(page: string | null | undefined, app: AppKey): string 
   const here = (page ?? '').trim();
   return here && here !== APP_NAMES[app] ? `${here} · ${appTitle(app)}` : appTitle(app);
 }
+
+/**
+ * NiceOps' own colours: violet for what you press, ember for what is late.
+ *
+ * The brand colour on the settings row was filled with a default when the
+ * business was set up (teal, with an amber second colour) before NiceOps had
+ * colours of its own. Nobody chose those, so wherever the colour is used
+ * (the screens, emails, PDFs) the old defaults give way to these. A colour an
+ * owner did choose always wins. functions/notify/src/brand.js is the same rule
+ * for the server; a parity test holds the two together.
+ */
+export const BRAND_VIOLET = '#6A4DFF';
+export const BRAND_EMBER = '#E9772E';
+const UNCHOSEN_PRIMARY = '#0f766e';
+const UNCHOSEN_SECOND = '#f59e0b';
+
+/** Whether this is a colour somebody picked, rather than empty or an old default. */
+export const isChosenColour = (c?: string | null): c is string => {
+  const v = (c ?? '').trim().toLowerCase();
+  return v !== '' && v !== UNCHOSEN_PRIMARY && v !== UNCHOSEN_SECOND;
+};
+
+/** The colour to draw the brand in: the owner's, or violet. */
+export const brandColour = (c?: string | null): string => (isChosenColour(c) ? c.trim() : BRAND_VIOLET);
+
+/** The second colour: the owner's, or ember. */
+export const secondColour = (c?: string | null): string => (isChosenColour(c) ? c.trim() : BRAND_EMBER);

@@ -223,7 +223,7 @@ function failurePage(res, message, appUrl) {
   main{background:#fff;border:1px solid #e3e7ec;border-radius:12px;padding:1.75rem;max-width:30rem}
   h1{font-size:1.15rem;margin:0 0 .6rem}
   p{margin:0 0 1rem;line-height:1.55;color:#5d6b7a}
-  a{color:#0f766e}
+  a{color:#6A4DFF}
   @media (prefers-color-scheme:dark){body{background:#0d1416;color:#e9f1f0}main{background:#151d1f;border-color:rgba(255,255,255,.12)}p{color:#9fb0ad}a{color:#4bbfae}}
 </style></head><body><main>
   <h1>Could not sign you in</h1>

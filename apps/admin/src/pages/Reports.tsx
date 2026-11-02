@@ -6,7 +6,7 @@ import {
   toCsv, downloadCsv,
   parseCostAccounts, serialiseCostAccounts, startingCostChoice, hasCostChoice, splitCosts, costCodeFor,
   isLivePayment,
-  listCreatedBetween, listByIds, dayStartIso, dayEndIso, windowProblem, dateTimeWords } from '@snpos/core';
+  listCreatedBetween, listByIds, dayStartIso, dayEndIso, windowProblem, dateTimeWords, brandColour } from '@snpos/core';
 import type { Order, OrderItem, Doc, TrialBalanceRow } from '@snpos/core';
 import { useSession, useMoney } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
@@ -288,7 +288,7 @@ export function ReportsPage() {
       period: periodLabel,
       generatedBy: profile?.display_name,
       logoUrl: settings.logo_light_id ? downloadUrl(settings.logo_light_id, 'branding', settings) : undefined,
-      brandColor: settings.primary_color,
+      brandColor: brandColour(settings.primary_color),
       stats: [
         { label: 'Sales', value: money(sales), note: `${paid.length} orders · ${covers} covers` },
         { label: 'Average order', value: money(Math.round(sales / paid.length)) },

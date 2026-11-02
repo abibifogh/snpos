@@ -9,8 +9,7 @@ import {
   loadFeatures, featureConfig, formatMoney, dateTimeWords, downloadFile, MODULE_LABELS,
   modulesOf, SIDE_NAMES, itemsFor, newSupplierProblem, addSupplier, parseUnitPrice, unitPriceInput, parseQty,
   ORDER_ROLES, orderRoles, orderRolesValue, saveDropping, canOpen,
-  paidFromFloat, floatOrderProblem, unmatchedLines, lineForItem, downloadUrl,
-} from '@snpos/core';
+  paidFromFloat, floatOrderProblem, unmatchedLines, lineForItem, downloadUrl, brandColour } from '@snpos/core';
 import type { PurchaseOrderDoc, PoLine, OrderSupplier, Ingredient, Module, Suggestion, FeatureMap, Settings } from '@snpos/core';
 /* The same builder the email attaches, so the office's copy and the
    supplier's are one document. See functions/notify/src/po-pdf.js. */
@@ -503,7 +502,7 @@ function OrderModal({
 
   const pdf = () => run('pdf', async () => {
     if (!order) return undefined;
-    downloadFile(`${order.po_no}.pdf`, purchaseOrderPdf({ order, settings, accent: settings.primary_color ?? '#0f766e' }), 'application/pdf');
+    downloadFile(`${order.po_no}.pdf`, purchaseOrderPdf({ order, settings, accent: brandColour(settings.primary_color) }), 'application/pdf');
     return undefined;
   });
 

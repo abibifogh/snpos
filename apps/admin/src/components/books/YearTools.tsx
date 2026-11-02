@@ -4,8 +4,7 @@ import {
   taxReturn, TAX_ACCOUNTS, postTaxRemitted, yearEndLines, yearStart, openingLines, isClosingEntry,
   closeYear, postOpeningBalances, loadRecurring, saveRecurring, setRecurringActive, deleteRecurring,
   ACCOUNTS, parseMoney, toInput, writeXlsx, XLSX_TYPE, downloadFile, buildReportHtml, openPrintable, humanError,
-  entryProblem, openAccounts,
-} from '@snpos/core';
+  entryProblem, openAccounts, brandColour } from '@snpos/core';
 import type { AccountRow, JournalEntry, Settings, PostedLine, RecurringEntry } from '@snpos/core';
 import type { Lines } from './BookReports';
 import { closingEntries } from './BookReports';
@@ -76,7 +75,7 @@ export function TaxReturnReport({ accounts, lines, entries, from, to, money, set
           title: 'Tax return', restaurantName: settings?.restaurant_name ?? '', period,
           stats: [{ label: 'Sales before tax', value: money(r.sales) }, { label: 'Still owed', value: money(r.owed) }],
           tables: [{ title: 'Levies', headers: ['Line', 'Collected', 'Paid', 'Still owed'], rows: r.rows.map((x) => [nameOf(x.code), money(x.collected), money(x.paid), money(x.owed)]), numeric: [1, 2, 3] }],
-          brandColor: settings?.primary_color ?? undefined,
+          brandColor: brandColour(settings?.primary_color),
         }), `Tax return ${period}`)}>PDF</Button>
       </div>
       <div className="table-wrap">

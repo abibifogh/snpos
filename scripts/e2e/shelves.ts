@@ -11,6 +11,9 @@ import { addSupplier } from './core/purchase-orders-store.ts';
 import { movedThisShift, saveServerDraft, loadServerDraft, clearServerDraft } from './core/shop-count-store.ts';
 import { shelfLines } from './core/consignment.ts';
 import { receivePieces } from './core/shop-purchase.ts';
+import { loadRoutine, saveRoutine, fileClean, filedToday, pendingCleanLogs, markCleanSeen, cleanLogsSince } from './core/cleaning-store.ts';
+import { listFor } from './core/cleaning.ts';
+import { loadWaiting } from './core/waiting-facts.ts';
 import { ownedChoices } from './core/intake-restock.ts';
 import {
   barCountSheet, relinkShelves, pourMissedSales, unpouredForShift, saveBarCount, hasOpeningCount,
@@ -1268,6 +1271,39 @@ console.log('\n=== SP — the shop buys pieces to sell: on the shelf, and spent 
   results.push(['SP bought to sell is spent, not left on the balance sheet', ok(
     'lines', byAccount(linesOf(posted.entryId)), { '5200': 9_000, '1040': -9_000 },
   )]);
+}
+
+console.log('\n=== CL \u2014 cleaning: off until switched on, filed with who and when, missed checks on Approvals ===');
+{
+  __reset();
+  const off = await loadRoutine('kitchen');
+  results.push(['CL a routine nobody saved is the suggested one, switched off', ok('active', [off.active, off.open.length > 5], [false, true])]);
+  await saveRoutine({ ...off, active: true, deepDay: 1, deepWhen: 'before' }, 'ama');
+  await saveRoutine({ ...(await loadRoutine('kitchen')), hold: 'show' }, 'ama');
+  const on = await loadRoutine('kitchen');
+  results.push(['CL saved twice, one row, switched on', ok('row', [(__all('clean_routines') as any[]).length, on.active, on.hold], [1, true, 'show'])]);
+
+  const monday = new Date(2026, 10, 2, 8, 40);
+  const list = listFor(on, 'open', monday);
+  const answers = list.map((i) => ({
+    id: i.id, text: i.text, area: i.area, required: i.required, kind: i.kind,
+    done: i.id !== 'k-floor', ...(i.kind === 'temp' ? { value: i.id === 'k-under' ? 7 : 3, out: i.id === 'k-under' } : {}),
+  }));
+  results.push(['CL not filed yet today', ok('filed', await filedToday('main', 'kitchen', 'open', monday), false)]);
+  const filed = await fileClean({ venueId: 'main', side: 'kitchen', kind: 'open', answers, deep: true, byId: 'betty', byName: 'Betty Quaye', now: monday });
+  results.push(['CL filed: today is done, and it goes to Approvals', ok('filed', [await filedToday('main', 'kitchen', 'open', monday), filed.review], [true, true])]);
+  const clean = list.map((i) => ({ id: i.id, text: i.text, area: i.area, required: i.required, kind: i.kind, done: true, ...(i.kind === 'temp' ? { value: 3, out: false } : {}) }));
+  const fine = await fileClean({ venueId: 'main', side: 'bar', kind: 'close', answers: clean, deep: false, byName: 'Kojo', now: monday });
+  results.push(['CL a list with nothing missed stays off Approvals', ok('review', fine.review, false)]);
+
+  const waiting = await loadWaiting('main', (n) => String(n));
+  const row = waiting.items.find((w) => w.kind === 'clean');
+  results.push(['CL Approvals names what was missed and the warm fridge', ok('row', [
+    waiting.items.filter((w) => w.kind === 'clean').length, row?.title, /Floor swept and mopped|1 required check/.test(row?.detail ?? ''), /Under-counter fridge at 7/.test(row?.detail ?? ''),
+  ], [1, `Kitchen opening clean and deep clean: ${list.length - 1} of ${list.length} done`, true, true])]);
+  await markCleanSeen(filed.id, 'regina');
+  const log = (await cleanLogsSince('main', '2026-11-01')).find((l) => l.$id === filed.id)!;
+  results.push(['CL seen: off Approvals, the record unchanged', ok('seen', [(await pendingCleanLogs()).length, log.review, log.reviewed_by, log.answers.length, log.by_name], [0, 'seen', 'regina', list.length, 'Betty Quaye'])]);
 }
 
 console.log('\n=== summary ===');

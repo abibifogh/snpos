@@ -1,4 +1,6 @@
 import { listAll, Query } from './client';
+import { pendingCleanLogs } from './cleaning-store';
+import { reviewWords } from './cleaning';
 import { pendingBarChecks, loadLocations, replacedAmong } from './stock';
 import { filedCounts, countSide, liveCount } from './bar-count';
 import type { FiledCheck } from './bar-count';
@@ -92,8 +94,22 @@ export async function loadWaiting(venueId: string, money: (minor: number) => str
     money,
   });
 
+  /*
+    Cleaning lists started without their required checks, or with a reading
+    outside the safe range: a manager marks each one seen. See cleaning.ts.
+  */
+  const cleans = await pendingCleanLogs().catch(() => []);
+  const cleanItems: WaitingItem[] = cleans.map((l) => {
+    const w = reviewWords({ side: l.side, kind: l.kind, answers: l.answers, skipReason: l.skip_reason, deep: l.deep });
+    return {
+      id: `clean:${l.$id}`, kind: 'clean', title: w.title, detail: w.detail,
+      by: l.by_id || undefined, at: l.finished_at || l.$createdAt || '', value: 0,
+      ref: { kind: 'clean', logId: l.$id },
+    };
+  });
+
   return {
-    items,
+    items: [...items, ...cleanItems],
     names,
     spends: new Map(pendingSpends.map((s) => [s.$id, s])),
     tabShifts: new Map(tabShifts.map((s) => [s.$id, s])),

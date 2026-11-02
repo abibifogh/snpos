@@ -3,8 +3,7 @@ import { Button, Card, Empty, Field, Input, Segmented, Select } from '@snpos/ui'
 import {
   plTable, previousPeriod, sameLastYear, changeShare, generalLedger, cashFlow, CASH_CODES,
   writeXlsx, XLSX_TYPE, downloadFile, buildReportHtml, openPrintable, totalsByAccount, naturalBalance,
-  profitAndLoss, balanceSheet, within, isClosingEntry,
-} from '@snpos/core';
+  profitAndLoss, balanceSheet, within, isClosingEntry, brandColour } from '@snpos/core';
 import type {
   AccountRow, JournalEntry, JournalLine, Settings, PlBy, PlTable, PostedLine, Cell, Sheet, ReportTable,
 } from '@snpos/core';
@@ -40,7 +39,7 @@ function printable(settings: Settings | null, title: string, period: string, tab
     stats: [],
     tables,
     note,
-    brandColor: settings?.primary_color ?? undefined,
+    brandColor: brandColour(settings?.primary_color),
   }), `${title} ${period}`);
 }
 

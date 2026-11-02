@@ -30,6 +30,7 @@ import { send as pushSend } from './webpush.js';
 import {
   overdueCounts, rowsToStamp, adminRecipients, overdueSubject, overduePush, overdueBody, OVERDUE_MS,
 } from './overdue-counts.js';
+import { brandColour } from './brand.js';
 
 /**
  * Everything that sends an email.
@@ -118,7 +119,7 @@ const bookingLink = (booking) => {
 
 // Defaulted, because several callers pass two arguments and every one of them
 // was rendering "background:undefined" behind the heading.
-const shell = (title, body, brand = '#0f766e') => `<!doctype html>
+const shell = (title, body, brand = '#6A4DFF') => `<!doctype html>
 <html><body style="margin:0;background:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#16202b">
 <div style="max-width:520px;margin:24px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e3e7ec">
 <div style="background:${brand};color:#fff;padding:18px 22px"><h1 style="margin:0;font-size:19px">${title}</h1></div>
@@ -243,7 +244,7 @@ async function sweepUnavailable({ db, DB_ID, settings, transport, from, log, err
        <p style="margin:18px 0 0;color:#5d6b7a;font-size:13px">
          Either the supply has not arrived, or somebody forgot to put them back. Both are worth a minute.
        </p>`,
-      settings.primary_color || '#0f766e',
+      brandColour(settings.primary_color),
     ),
   });
 
@@ -296,7 +297,7 @@ async function tellAdminsAboutOrder({ db, DB_ID, settings, transport, from, doc,
     html: shell(
       doc.status === 'waiting' ? `Order ${doc.po_no} needs your approval` : `New order ${doc.po_no}`,
       orderNoticeBody(doc, m, esc),
-      settings.primary_color || '#0f766e',
+      brandColour(settings.primary_color),
     ),
   });
   await stamp();
@@ -391,7 +392,7 @@ async function noticeSent({ db, DB_ID, settings, transport, from, doc, log, erro
     html: shell(
       `A ${countPlace(side)} count needs your approval`,
       countBody({ lines, who, phase: doc.phase, side, money: (n) => money(n, settings) }),
-      settings.primary_color || '#0f766e',
+      brandColour(settings.primary_color),
     ),
   });
 
@@ -485,7 +486,7 @@ async function sweepApprovals({ db, DB_ID, settings, transport, from, log, error
     html: shell(
       'Approvalsr approval',
       approvalBody(items, (n) => money(n, settings)),
-      settings.primary_color || '#0f766e',
+      brandColour(settings.primary_color),
     ),
   });
 
@@ -638,7 +639,7 @@ async function sweepOverdueCounts({ db, DB_ID, settings, transport, from, log, e
         html: shell(
           'Still waiting for your decision',
           overdueBody(items, say, Date.now(), base ? `${base}/admin/#/waiting?show=count` : ''),
-          settings.primary_color || '#0f766e',
+          brandColour(settings.primary_color),
         ),
       });
       emailed = true;
@@ -792,7 +793,7 @@ async function sweepStaleShifts({ db, DB_ID, settings, transport, from, shell, l
          still unpaid moves across. Nothing has been closed automatically, because that would record a
          cash count nobody made.
        </p>`,
-      settings.primary_color || '#0f766e',
+      brandColour(settings.primary_color),
     ),
   });
 
@@ -1008,7 +1009,7 @@ export default async ({ req, res, log, error }) => {
     return res.json({ ok: false, error: why }, 500);
   }
   const from = `"${settings.email_from_name || settings.restaurant_name}" <${settings.email_from_address}>`;
-  const brand = settings.primary_color || '#0f766e';
+  const brand = brandColour(settings.primary_color);
 
   const featureConfig = async (key, option, fallback) => {
     try {
@@ -1216,7 +1217,7 @@ export default async ({ req, res, log, error }) => {
             `<p style="margin:0 0 10px">Its first meal time is tomorrow and nobody has confirmed or declined it.
              The kitchen will still get the food at its time, and the guest has not heard back.</p>`
             + facts + noteBlock('They also said')
-            + (link ? `<p style="margin:14px 0 0"><a href="${link}" style="color:#0f766e;font-weight:600">Open the booking</a></p>` : ''),
+            + (link ? `<p style="margin:14px 0 0"><a href="${link}" style="color:#6A4DFF;font-weight:600">Open the booking</a></p>` : ''),
           ),
         }),
       });
@@ -1642,7 +1643,7 @@ export default async ({ req, res, log, error }) => {
              cook it and not before.</p>
              ${bookingLink(doc)
                ? `<p style="margin:14px 0 0"><a href="${bookingLink(doc)}"
-                    style="color:#0f766e;font-weight:600">Need to change something?</a></p>`
+                    style="color:#6A4DFF;font-weight:600">Need to change something?</a></p>`
                : '<p style="margin:14px 0 0;color:#5d6b7a;font-size:14px">If anything needs to change, ring us.</p>'}`,
           ),
           attachments: sheet,

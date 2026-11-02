@@ -247,3 +247,14 @@ test('"waiting 3 days" reads the same in the inbox and on the page', () => {
     assert.equal(waitedWords(ms), approvals.waitedWords(ms), `disagreed at ${ms}ms`);
   }
 });
+
+test('emails and PDFs draw the brand in the same colour as the screens', async () => {
+  const { brandColour } = await import('../brand.ts');
+  const server = await import('../../../../functions/notify/src/brand.js');
+  for (const c of ['', undefined, null, '#0F766E', '#0f766e', ' #f59e0b ', '#123456', '#6A4DFF']) {
+    assert.equal(server.brandColour(c), brandColour(c as string), String(c));
+  }
+  // Nobody chose the old defaults, so they are violet; a chosen colour stays.
+  assert.equal(brandColour('#0F766E'), '#6A4DFF');
+  assert.equal(brandColour('#123456'), '#123456');
+});

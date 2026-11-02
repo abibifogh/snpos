@@ -25,3 +25,4 @@ export * from './filters';
 export * from './idlescreen';
 export * from './themebutton';
 export * from './owed';
+export * from './cleaning';

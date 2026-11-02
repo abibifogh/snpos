@@ -14,7 +14,7 @@
  */
 
 /** What kind of thing is waiting. The filter chips are these, plus "all". */
-export type WaitingKind = 'count' | 'spend' | 'shelf' | 'tab' | 'order';
+export type WaitingKind = 'count' | 'spend' | 'shelf' | 'tab' | 'order' | 'clean';
 
 export const WAITING_KIND_WORDS: Record<WaitingKind, string> = {
   count: 'Counts',
@@ -22,6 +22,7 @@ export const WAITING_KIND_WORDS: Record<WaitingKind, string> = {
   shelf: 'Shelf changes',
   tab: 'Tabs to release',
   order: 'Orders to suppliers',
+  clean: 'Cleaning',
 };
 
 /** How the page finds the thing again when a button on the row is pressed. */
@@ -31,7 +32,8 @@ export type WaitingRef =
   | { kind: 'shelf'; countId: string }
   | { kind: 'spend'; expenseId: string }
   | { kind: 'tab'; shiftId: string; module: string; venueId: string }
-  | { kind: 'order'; orderId: string };
+  | { kind: 'order'; orderId: string }
+  | { kind: 'clean'; logId: string };
 
 export interface WaitingItem {
   /** Unique across kinds, so a list of mixed rows can key on it. */
@@ -280,7 +282,7 @@ export function waitingList(input: WaitingInput): WaitingItem[] {
 
 /** How many of each kind, for the chips. */
 export function waitingCounts(items: WaitingItem[]): Record<WaitingKind, number> {
-  const counts: Record<WaitingKind, number> = { count: 0, spend: 0, shelf: 0, tab: 0, order: 0 };
+  const counts: Record<WaitingKind, number> = { count: 0, spend: 0, shelf: 0, tab: 0, order: 0, clean: 0 };
   for (const i of items) counts[i.kind] += 1;
   return counts;
 }

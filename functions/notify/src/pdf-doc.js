@@ -104,7 +104,7 @@ export function widthOf(text, size, bold = false) {
 
 /* ------------------------------------------------------------------- colour */
 
-/** '#0f766e' as the three numbers a content stream wants. */
+/** '#6A4DFF' as the three numbers a content stream wants. */
 export function rgb(hex) {
   const clean = String(hex || '').replace('#', '');
   const full = clean.length === 3 ? clean.split('').map((c) => c + c).join('') : clean;
@@ -257,7 +257,7 @@ export class Doc {
 
   /** A filled band with text in it. The thing that separates one sitting from the next. */
   band(text, {
-    colour = '#0f766e', ink = '#ffffff', size = 11, font = 'bold', padding = 7, right = '',
+    colour = '#6A4DFF', ink = '#ffffff', size = 11, font = 'bold', padding = 7, right = '',
   } = {}) {
     const h = size * 1.3 + padding * 2;
     this.need(h + 6);

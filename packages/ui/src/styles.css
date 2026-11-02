@@ -1322,3 +1322,71 @@ table.data th .sort-order {
 /* Small buttons in a table row stay compact, so a row of actions fits beside
    the figures rather than doubling every row's height. */
 table.data td .btn-sm { padding: 0.3rem 0.6rem; }
+
+/* ---- The cleaning list: before service, at closing. See cleaning.tsx. ---- */
+.clean {
+  position: fixed; inset: 0; z-index: 70; overflow-y: auto; background: var(--bg); color: var(--text);
+  animation: fade-in 0.25s ease-out;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.clean-top {
+  display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;
+  padding: calc(0.85rem + env(safe-area-inset-top, 0)) 1.2rem 0.85rem; background: var(--surface); border-bottom: 1px solid var(--hair);
+}
+.clean-top h1 { font-size: 1.35rem; }
+.clean-body { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 1.1rem; padding: 1.1rem; max-width: 1180px; margin: 0 auto; }
+.clean-side { display: grid; gap: 0.75rem; align-content: start; position: sticky; top: 1rem; }
+.clean-ring-card {
+  background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow); padding: 1.1rem;
+  display: grid; justify-items: center; gap: 0.55rem; text-align: center;
+}
+.clean-ring { width: 132px; height: 132px; }
+.clean-ring circle { fill: none; stroke-width: 12; }
+.clean-ring .bg { stroke: var(--hair); }
+.clean-ring .fg { stroke: var(--brand); stroke-linecap: round; transition: stroke-dashoffset 0.7s var(--settle), stroke 0.3s; }
+.clean-ring.all .fg { stroke: var(--ok); }
+.clean-ring text { font: 800 1.7rem var(--font-display); fill: var(--text); }
+.clean-ring .sub { font: 600 0.62rem var(--font-mono); fill: var(--text-dim); letter-spacing: 0.08em; }
+.clean-who { display: flex; align-items: center; gap: 0.6rem; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 0.7rem 0.85rem; }
+.clean-go { padding: 0.95rem 1.2rem; border-radius: 18px; font: 800 1.05rem var(--font-display); }
+.clean-groups { display: grid; gap: 0.85rem; align-content: start; }
+.clean-group { background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow); overflow: hidden; animation: card-in 0.35s var(--settle) both; }
+.clean-group.deep { box-shadow: 0 0 0 2px var(--brand), var(--shadow); }
+.clean-group header { display: flex; align-items: center; gap: 0.6rem; padding: 0.85rem 1rem 0.45rem; }
+.clean-group h2 { font-size: 1.05rem; }
+.clean-count { margin-left: auto; font: 600 0.75rem var(--font-mono); color: var(--text-dim); }
+.clean-item {
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 0.75rem; align-items: center;
+  padding: 0.7rem 1rem; border-top: 1px solid var(--hair); min-height: 56px;
+}
+.clean-item[role='checkbox'] { cursor: pointer; transition: background 0.15s ease; -webkit-tap-highlight-color: transparent; }
+.clean-item[role='checkbox']:hover { background: color-mix(in srgb, var(--brand-soft) 45%, transparent); }
+.clean-item:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.clean-tick {
+  width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--border); display: grid; place-items: center;
+  transition: background 0.2s, border-color 0.2s, transform 0.25s var(--spring);
+}
+.clean-tick svg { width: 16px; height: 16px; stroke: #fff; stroke-width: 3; fill: none; stroke-linecap: round; stroke-linejoin: round; opacity: 0; transform: scale(0.5); transition: all 0.25s var(--spring); }
+.clean-item.on .clean-tick { background: var(--ok); border-color: var(--ok); transform: scale(1.06); }
+.clean-item.on .clean-tick svg { opacity: 1; transform: none; }
+.clean-what { display: grid; min-width: 0; }
+.clean-what .t { font-weight: 700; }
+.clean-item.on .clean-what .t { color: var(--text-dim); }
+.clean-what .d { font-size: 0.8rem; color: var(--text-dim); }
+.clean-out { color: var(--warn); }
+.clean-req { color: var(--warn); font-weight: 700; font-size: 0.82rem; }
+.clean-stamp { font: 600 0.75rem var(--font-mono); color: var(--ok); white-space: nowrap; }
+.clean-temp { display: flex; align-items: center; gap: 0.35rem; }
+.clean-temp .input { width: 4.8rem; text-align: right; font-family: var(--font-mono); padding: 0.45rem 0.6rem; }
+.clean-temp .input.out { border-color: var(--ember); background: var(--warn-bg); }
+.clean-photo {
+  border: 1.5px dashed var(--border); border-radius: 12px; padding: 0.4rem 0.7rem; font-size: 0.82rem; font-weight: 700;
+  color: var(--brand-dk); cursor: pointer; white-space: nowrap;
+}
+.clean-photo.got { border-style: solid; border-color: var(--ok); color: var(--ok); background: var(--ok-bg); }
+@media (max-width: 760px) {
+  .clean-body { grid-template-columns: minmax(0, 1fr); padding: 0.8rem; }
+  .clean-side { position: static; }
+  .clean-ring { width: 108px; height: 108px; }
+}
+.clean-av { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--brand-soft); color: var(--brand-dk); font-size: 0.78rem; font-weight: 800; }
