@@ -91,6 +91,9 @@ test('the words: Approvals, the pass, and where a request has got to', () => {
   assert.match(w.detail, /^Foil, 6 rolls; Tomatoes, 2 crates; Jasmine rice, 3 sacks, and 2 more\. Note: “Pepper sauce too”$/);
   assert.equal(requestWords({ side: 'bar', lines: [], note: 'Limes' }).title, 'A note from the bar');
   assert.equal(buyWord({ buy_label: 'boxes' }, 1), 'box');
+  // "each" is a count, not a word to make plural.
+  assert.equal(suggestLine({ $id: 'b', name: 'Bread', unit: 'each', current_qty: 0, par_level: 4 }).buy_label, 'each');
+  assert.equal(qtyWords({ qty: 4, buy_label: 'each' }), '4 each');
   assert.equal(suggestLine({ $id: 'c', name: 'Chicken', unit: 'kg', current_qty: 3, par_level: 30, pack_size: 10, pack_name: 'box' }).buy_label, 'boxes');
   assert.equal(qtyWords({ qty: 1, buy_label: 'sacks' }), '1 sack');
   assert.equal(leftWords({ left: 6, full: 75, unit: 'kg' }), '6 kg left of 75');

@@ -4710,6 +4710,9 @@ export const FEATURES = [
     config: {
       // Whoever may order stock is emailed when a request arrives, once.
       email_orderers: true,
+      // Whether what is running low starts ticked on the sheet. Off: the cook
+      // ticks what is needed.
+      tick_low: false,
     },
   },
   {

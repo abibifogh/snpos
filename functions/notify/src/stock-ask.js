@@ -67,7 +67,7 @@ const one = (label, qty) => {
   const w = String(label || 'units');
   if (qty !== 1) return w;
   if (/(sh|ch|x|ss)es$/.test(w)) return w.slice(0, -2);
-  if (/^(kg|g|l|ml|cl)$/i.test(w)) return w;
+  if (/^(kg|g|l|ml|cl|each)$/i.test(w)) return w;
   return w.endsWith('s') ? w.slice(0, -1) : w;
 };
 

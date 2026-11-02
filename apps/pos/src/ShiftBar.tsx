@@ -11,7 +11,7 @@ import {
   tabOrdersOnShift, releaseWords, closeCodeProblem, spendCloseCode, humanError, liveOrders,
   openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, HANDOVER_ENABLED,
   countsAtBothEnds, countsInAtOpen, countsOutAtClose, pourMissedSales, cashCounted, cashPlanProblem, askForOpeningCount, hasOpeningCount, shiftCountPhases, ownFigure, floatOrigin, floatMethods,
-  isEnabled,
+  isEnabled, featureConfig,
 } from '@snpos/core';
 import type { PaymentMethod, Shift, FloatSource, TabOrder } from '@snpos/core';
 import type { PosContext } from './App';
@@ -609,6 +609,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           venueId={ctx.venue.$id}
           who={cleanWho}
           lowBp={ctx.settings?.low_stock_default_bp}
+          tickLow={featureConfig(ctx.features, 'stock_requests', 'tick_low', false)}
           onClose={() => setAsking(false)}
           onSent={(words) => { setAsking(false); onToast(words); lowStock.recheck(); }}
         />
