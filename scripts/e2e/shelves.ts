@@ -1316,11 +1316,13 @@ console.log('\n=== SR \u2014 stock asked for: from the pass to draft orders, nev
     { $id: 'kan', venue_id: 'main', name: 'Kaneshie Market', active: true },
   ]);
   __seed('ingredients', [
-    { $id: 'rice', venue_id: 'main', name: 'Jasmine rice', unit: 'kg', module: 'kitchen', current_qty: 6, par_level: 75, pack_size: 25, pack_name: 'sack', supplier_id: 'mak', base_unit_cost: 1900, last_unit_cost: 1920, critical: false },
-    { $id: 'oil', venue_id: 'main', name: 'Vegetable oil', unit: 'L', module: 'kitchen', current_qty: 4, par_level: 50, pack_size: 25, pack_name: 'jerrycan', supplier_id: 'mak', base_unit_cost: 2880, critical: false },
-    { $id: 'tom', venue_id: 'main', name: 'Tomatoes', unit: 'kg', module: 'kitchen', current_qty: 0, par_level: 40, pack_size: 20, pack_name: 'crate', supplier_id: 'kan', base_unit_cost: 1900, critical: false },
-    { $id: 'gari', venue_id: 'main', name: 'Gari', unit: 'kg', module: 'kitchen', current_qty: 18, par_level: 20, base_unit_cost: 900, critical: false },
-    { $id: 'gin', venue_id: 'main', name: 'Gin', unit: 'bottle', module: 'bar', current_qty: 1, par_level: 12, base_unit_cost: 9000, critical: false },
+    { $id: 'rice', venue_id: 'main', name: 'Jasmine rice', unit: 'kg', module: 'kitchen', current_qty: 6, par_level: 75, pack_size: 25, pack_name: 'sack', supplier_id: 'mak', base_unit_cost: 1900, last_unit_cost: 1920, critical: false, requestable: true },
+    { $id: 'oil', venue_id: 'main', name: 'Vegetable oil', unit: 'L', module: 'kitchen', current_qty: 4, par_level: 50, pack_size: 25, pack_name: 'jerrycan', supplier_id: 'mak', base_unit_cost: 2880, critical: false, requestable: true },
+    { $id: 'tom', venue_id: 'main', name: 'Tomatoes', unit: 'kg', module: 'kitchen', current_qty: 0, par_level: 40, pack_size: 20, pack_name: 'crate', supplier_id: 'kan', base_unit_cost: 1900, critical: false, requestable: true },
+    { $id: 'gari', venue_id: 'main', name: 'Gari', unit: 'kg', module: 'kitchen', current_qty: 18, par_level: 20, base_unit_cost: 900, critical: false, requestable: true },
+    { $id: 'gin', venue_id: 'main', name: 'Gin', unit: 'bottle', module: 'bar', current_qty: 1, par_level: 12, base_unit_cost: 9000, critical: false, requestable: true },
+    // Low, but nobody has put it on the kitchen's list: never offered.
+    { $id: 'gas', venue_id: 'main', name: 'Cooking gas', unit: 'cylinder', module: 'kitchen', current_qty: 0, par_level: 2, base_unit_cost: 25000, critical: false },
   ]);
   const list = await loadAskList('main', 'kitchen');
   results.push(['SR the pass opens on its own low items, filled in to full', ok('low', [

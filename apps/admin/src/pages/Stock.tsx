@@ -9,7 +9,7 @@ import {
   purchasesFor, priceHistory, priceMoveNote, packProblem, hasPack, packSize,
   matches, sortStock, stockState, STOCK_SORTS, STOCK_STATES,
   groupRows, sortRows, toggleGroup, cycleSort, sortDir, sortPosition, normaliseName, bpWords, dateWords,
-  loadLocations, loadLevels, openIn, levelFor, canOpen } from '@snpos/core';
+  loadLocations, loadLevels, openIn, levelFor, canOpen, loadFeatures, isEnabled } from '@snpos/core';
 import { SalesHistory } from '../components/SalesHistory';
 import { ShelfTrailModal } from '../components/ShelfTrail';
 import type {
@@ -21,6 +21,7 @@ import { StockImport } from '../components/StockImport';
 import { useSession } from '../session';
 import { LocationsPage } from './Locations';
 import { WastePage } from './Waste';
+import { AskableList } from '../components/AskableList';
 
 interface Supplier extends Doc { venue_id: string; name: string; contact?: string; phone?: string; email?: string; active: boolean }
 
@@ -213,6 +214,16 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   const [editing, setEditing] = useState<Partial<Ingredient> | null>(null);
   const [editingSupplier, setEditingSupplier] = useState<Partial<Supplier> | null>(null);
   const [importing, setImporting] = useState(false);
+  /*
+    Which items the kitchen or the bar may ask for from its Need stock
+    button, while that is switched on. See stock-requests.ts.
+  */
+  const [askOn, setAskOn] = useState(false);
+  const [choosingAskable, setChoosingAskable] = useState(false);
+  useEffect(() => {
+    loadFeatures().then((f) => setAskOn(isEnabled(f, 'stock_requests'))).catch(() => setAskOn(false));
+  }, []);
+  const asks = askOn && (module === 'kitchen' || module === 'bar');
   const [costText, setCostText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -525,6 +536,9 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
         pack_name: (editing.pack_name ?? '').trim(),
         count_each_shift: editing.count_each_shift === true,
         check_only: editing.check_only === true,
+        // Left as it was unless the form shows the switch, so saving an item
+        // on a side without Need stock never takes it off the list.
+        ...(asks ? { requestable: editing.requestable === true } : {}),
         // Whose shelf, taken from the page rather than asked for. A bottle
         // added from the bar's screen belongs to the bar; nobody should have
         // to answer a question the screen already knows the answer to.
@@ -607,6 +621,9 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
             )}
             {tab === 'ingredients' && (
               <Button onClick={() => setImporting(true)}>Import from a spreadsheet</Button>
+            )}
+            {tab === 'ingredients' && asks && (
+              <Button onClick={() => setChoosingAskable(true)}>Need stock list</Button>
             )}
             {/*
               Only shown while there is something to fix, and it says how many.
@@ -1297,10 +1314,28 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
           <Field hint="Critical items are called out first when they run low, ahead of everything else.">
             <Toggle checked={editing.critical ?? false} onChange={(v) => setEditing({ ...editing, critical: v })} label="Critical (service stops without it)" />
           </Field>
+          {asks && (
+            <Field hint={`Offered on the ${module}'s Need stock list, and first when it runs low.`}>
+              <Toggle
+                checked={editing.requestable === true}
+                onChange={(v) => setEditing({ ...editing, requestable: v })}
+                label={`The ${module} can ask for this`}
+              />
+            </Field>
+          )}
           <Field>
             <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label="Active" />
           </Field>
         </Modal>
+      )}
+      {choosingAskable && (
+        <AskableList
+          items={ingredients ?? []}
+          module={module}
+          lowBp={lowDefaultBp}
+          onClose={() => setChoosingAskable(false)}
+          onSaved={(n) => { setChoosingAskable(false); void load(); toast(`${n} item${n === 1 ? '' : 's'} changed on the ${module}'s Need stock list`); }}
+        />
       )}
 
       {editingSupplier && (

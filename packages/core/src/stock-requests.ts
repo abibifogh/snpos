@@ -144,6 +144,8 @@ export interface AskList {
   held: (AskLine & Held)[];
   /** Everything else on this side's list, to search and add. */
   others: AskLine[];
+  /** How many of this side's items a manager has marked as askable. None: the sheet says so. */
+  marked: number;
 }
 
 /** The list the sheet opens on, for one side. */
@@ -154,10 +156,16 @@ export function askList(
   isLow: (i: OrderableItem) => boolean,
   suggest: (i: OrderableItem) => PoLine,
 ): AskList {
+  /*
+    Only what a manager has marked as askable. The stock list holds cleaning
+    cloths, gas and the owner's coffee as well as rice and oil; the pass asks
+    for what it is meant to ask for, and nothing appears until somebody has
+    said so. See requestable on ingredients.
+  */
   const mine = items
-    .filter((i) => i.active !== false && (i.module ?? 'kitchen') === side)
+    .filter((i) => i.active !== false && i.requestable === true && (i.module ?? 'kitchen') === side)
     .sort((a, b) => a.name.localeCompare(b.name));
-  const out: AskList = { low: [], held: [], others: [] };
+  const out: AskList = { low: [], held: [], others: [], marked: mine.length };
   for (const i of mine) {
     const line = askLine(i, suggest);
     const h = held.get(i.$id);

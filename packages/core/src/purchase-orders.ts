@@ -76,6 +76,7 @@ export interface OrderableItem {
   module?: string;
   active?: boolean;
   counted_at_close?: boolean;
+  requestable?: boolean;
 }
 
 export interface OrderSupplier { $id: string; name: string; email?: string; phone?: string; active?: boolean }

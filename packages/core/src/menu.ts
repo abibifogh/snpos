@@ -227,6 +227,7 @@ export async function loadMenu(venueId: string, at: Date = new Date()): Promise<
 export const visibleSections = (menu: LoadedMenu): MenuSection[] =>
   menu.sections.filter((s) => s.open || s.category.unavailable_display !== 'hide');
 
+
 /**
  * Dishes that are actually on today, in menu order, each listed once.
  *

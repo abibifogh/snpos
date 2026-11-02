@@ -2105,6 +2105,10 @@ export const COLLECTIONS = [
       // Only glanced at: OK, Low or Out at the close, never on the count
       // sheet. For the cheap and bulky. See checkOnly.
       ['check_only', 'b', null, false, false],
+      // Offered on the kitchen screen's or the bar till's Need stock list.
+      // Off until a manager ticks it: the pass asks only for what it is meant
+      // to. See stock-requests.ts.
+      ['requestable', 'b', null, false, false],
       /**
        * Only a manager may put a number against this.
        *

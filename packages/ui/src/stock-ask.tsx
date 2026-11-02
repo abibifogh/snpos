@@ -127,8 +127,16 @@ export function NeedStock({ side, venueId, who, lowBp, onClose, onSent }: {
         <div className="ask-body">
           {tab === 'past' ? <AskedBefore side={side} venueId={venueId} /> : !list ? (error ? <FormError message={error} /> : <Spinner />) : (
             <>
+              {/* Nothing marked yet: a manager chooses what this side may ask for, on Stock. */}
+              {list.marked === 0 && (
+                <p className="ask-empty">
+                  Nothing has been put on the {side}&apos;s Need stock list yet. A manager chooses what can be asked for,
+                  on the Stock page in the admin. Until then, write what you need in the note below.
+                </p>
+              )}
+              {list.marked > 0 && (<>
               <section className="ask-group">
-                <div className="ask-h"><h2>Running low</h2><span>{list.low.length + list.held.length} on the {side}'s list</span></div>
+                <div className="ask-h"><h2>Running low</h2><span>of {list.marked} on the {side}&apos;s list</span></div>
                 {lines.filter((l) => !l.added).map(row)}
                 {list.held.map((h) => (
                   <div key={h.ingredient_id} className="ask-line held">
@@ -138,7 +146,7 @@ export function NeedStock({ side, venueId, who, lowBp, onClose, onSent }: {
                   </div>
                 ))}
                 {list.low.length + list.held.length === 0 && (
-                  <p className="ask-empty">Nothing on the {side}'s list is running low. Add anything you need below.</p>
+                  <p className="ask-empty">Nothing on the {side}&apos;s list is running low. Add anything you need below.</p>
                 )}
               </section>
               {lines.some((l) => l.added) && (
@@ -148,13 +156,14 @@ export function NeedStock({ side, venueId, who, lowBp, onClose, onSent }: {
                 </section>
               )}
               <section className="ask-group">
-                <div className="ask-h"><h2>Something else</h2><span>from the {side}'s stock list</span></div>
+                <div className="ask-h"><h2>Something else</h2><span>from the {side}&apos;s list</span></div>
                 <Input type="search" value={query} placeholder="Search the stock list" aria-label="Search the stock list" onChange={(e) => setQuery(e.target.value)} />
                 <div className="ask-chips">
                   {more.map((o) => <button key={o.ingredient_id} type="button" className="chip" onClick={() => add(o)}>+ {o.name}</button>)}
                   {more.length === 0 && <span className="ask-empty">{q ? 'Nothing else matches.' : 'Everything on the list is above.'}</span>}
                 </div>
               </section>
+              </>)}
               <section className="ask-group">
                 <div className="ask-h"><h2>Not on the list?</h2><span>a note for the manager</span></div>
                 <Textarea rows={2} value={note} aria-label="Note for the manager" placeholder="For example: the pepper sauce bottles are nearly gone." onChange={(e) => setNote(e.target.value)} />
