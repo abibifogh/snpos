@@ -20,10 +20,16 @@ type Who = { id?: string; name?: string };
 
 type Line = AskLine & { on: boolean; added?: boolean };
 
-export function NeedStock({ side, venueId, who, lowBp, onClose, onSent }: {
+export function NeedStock({ side, venueId, who, lowBp, tickLow = false, onClose, onSent }: {
   side: AskSide;
   venueId: string;
   who: Who;
+  /**
+   * Whether what is running low starts ticked. Off unless an admin turns it
+   * on under Features: a cook then ticks what is actually needed, rather than
+   * unticking everything that is not.
+   */
+  tickLow?: boolean;
   /** The business's default low line, settings.low_stock_default_bp. */
   lowBp?: number;
   onClose: () => void;
@@ -43,11 +49,11 @@ export function NeedStock({ side, venueId, who, lowBp, onClose, onSent }: {
       .then((l) => {
         if (!live) return;
         setList(l);
-        setLines(l.low.map((x) => ({ ...x, on: true })));
+        setLines(l.low.map((x) => ({ ...x, on: tickLow })));
       })
       .catch(() => { if (live) setError('The stock list could not be read. Check the connection and open this again.'); });
     return () => { live = false; };
-  }, [venueId, side, lowBp]);
+  }, [venueId, side, lowBp, tickLow]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -88,7 +94,7 @@ export function NeedStock({ side, venueId, who, lowBp, onClose, onSent }: {
   const row = (l: Line) => {
     const pct = l.full > 0 ? Math.max(0, Math.min(100, (l.left / l.full) * 100)) : 0;
     return (
-      <div key={l.ingredient_id} className={`ask-line${l.on ? '' : ' off'}`}>
+      <div key={l.ingredient_id} className={`ask-line${l.on ? ' on' : ''}`}>
         <button
           type="button"
           className="ask-tick"
@@ -99,7 +105,7 @@ export function NeedStock({ side, venueId, who, lowBp, onClose, onSent }: {
         >
           {l.on && <Check />}
         </button>
-        <div className="ask-what">
+        <div className="ask-what ask-pick" onClick={() => change(l.ingredient_id, (x) => ({ ...x, on: !x.on }))}>
           <b>{l.name}</b>
           <small>{leftWords(l)}{l.added ? ' · added by you' : ''}</small>
           {l.full > 0 && <span className="ask-meter" aria-hidden="true"><i style={{ width: `${pct}%` }} /></span>}
@@ -176,7 +182,7 @@ export function NeedStock({ side, venueId, who, lowBp, onClose, onSent }: {
             <span className="ask-who">Asking as <b>{who.name || 'this screen'}</b></span>
             {error && <FormError message={error} />}
             <Button variant="primary" className="ask-go" loading={busy} disabled={picked.length === 0 && !note.trim()} onClick={() => void send()}>
-              {picked.length > 0 ? `Send ${picked.length} to the managers` : 'Send the note to the managers'}
+              {picked.length > 0 ? `Send ${picked.length} to the managers` : note.trim() ? 'Send the note to the managers' : 'Tick what you need'}
             </Button>
           </div>
         )}

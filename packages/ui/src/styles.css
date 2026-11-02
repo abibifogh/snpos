@@ -1418,7 +1418,7 @@ table.data td .btn-sm { padding: 0.3rem 0.6rem; }
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.75rem; align-items: center;
   padding: 0.7rem 0.8rem; border: 1px solid var(--hair); border-radius: 14px; background: var(--surface);
 }
-.ask-line.off { opacity: 0.5; }
+.ask-line.on { border-color: var(--brand); background: var(--brand-soft); }
 .ask-line.held { background: var(--surface-2); }
 .ask-tick {
   width: 30px; height: 30px; border-radius: 9px; border: 2px solid var(--hair); background: var(--surface);
@@ -1427,6 +1427,7 @@ table.data td .btn-sm { padding: 0.3rem 0.6rem; }
 .ask-tick[aria-checked="true"] { background: var(--brand); border-color: var(--brand); }
 .ask-what { display: grid; gap: 0.2rem; min-width: 0; }
 .ask-what small { color: var(--text-dim); font-size: 0.8rem; }
+.ask-pick { cursor: pointer; }
 .ask-meter { display: block; height: 5px; max-width: 180px; border-radius: 99px; background: var(--quiet); overflow: hidden; }
 .ask-meter i { display: block; height: 100%; min-width: 3px; background: var(--ember); border-radius: 99px; }
 .ask-step { display: inline-flex; align-items: center; gap: 0.15rem; background: var(--quiet); border-radius: 12px; padding: 3px; }

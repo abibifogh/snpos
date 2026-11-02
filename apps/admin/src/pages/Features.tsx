@@ -188,6 +188,21 @@ const NUMBERS: Record<string, {
  * for; the rest of each feature's config stays where it is.
  */
 const SWITCHES: Record<string, { option: string; label: string; hint: string; fallback: boolean }[]> = {
+  stock_requests: [
+    {
+      option: 'tick_low',
+      label: 'Tick what is running low to begin with',
+      hint: 'Off: everything running low is listed first, unticked, and the cook ticks what is actually needed. '
+        + 'On: it all starts ticked, and the cook unticks what is not.',
+      fallback: false,
+    },
+    {
+      option: 'email_orderers',
+      label: 'Email whoever orders stock when a request arrives',
+      hint: 'Once per request, to the people who may make orders. Approvals shows it either way.',
+      fallback: true,
+    },
+  ],
   busy_mode: [
     {
       option: 'show_on_pass',

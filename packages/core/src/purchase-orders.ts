@@ -85,7 +85,7 @@ const hasPack = (i: Pick<OrderableItem, 'pack_size'>) => Number.isFinite(i.pack_
 const plural = (w: string) => {
   const s = (w || '').trim() || 'unit';
   // A measure stays as it is (kg, L, ml); a word ending in one is still a word: rolls, bowls.
-  if (/s$/i.test(s) || /^(kg|g|l|ml|cl)$/i.test(s)) return s;
+  if (/s$/i.test(s) || /^(kg|g|l|ml|cl|each)$/i.test(s)) return s;
   return /(x|sh|ch)$/i.test(s) ? `${s}es` : `${s}s`;
 };
 

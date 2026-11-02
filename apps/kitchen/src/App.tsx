@@ -1069,6 +1069,7 @@ export function App() {
           venueId={venue.$id}
           who={{ id: who?.user_id || who?.$id || session?.userId, name: who?.display_name || session?.name }}
           lowBp={settings?.low_stock_default_bp}
+          tickLow={featureConfig(features, 'stock_requests', 'tick_low', false)}
           onClose={() => setAsking(false)}
           onSent={(words) => { setAsking(false); setCleanNote(words); lowStock.recheck(); }}
         />

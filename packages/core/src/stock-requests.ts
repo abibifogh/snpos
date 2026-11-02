@@ -67,7 +67,7 @@ export function buyWord(line: Pick<AskLine, 'buy_label'>, qty: number): string {
   if (qty !== 1) return w;
   if (/(sh|ch|x|ss)es$/.test(w)) return w.slice(0, -2);
   // Measures are the same either way: 1 kg, 2 kg.
-  if (/^(kg|g|l|ml|cl)$/i.test(w)) return w;
+  if (/^(kg|g|l|ml|cl|each)$/i.test(w)) return w;
   return w.endsWith('s') ? w.slice(0, -1) : w;
 }
 
@@ -78,7 +78,7 @@ export const qtyWords = (l: Pick<AskLine, 'qty' | 'buy_label'>): string => `${l.
 export function leftWords(l: Pick<AskLine, 'left' | 'full' | 'unit'>): string {
   if (!(l.left > 0)) return 'Run out';
   const u = (l.unit || '').trim();
-  const unit = /^(kg|g|l|ml|cl)$/i.test(u) || l.left === 1 || /s$/.test(u) ? u : `${u}s`;
+  const unit = /^(kg|g|l|ml|cl|each)$/i.test(u) || l.left === 1 || /s$/.test(u) ? u : `${u}s`;
   const left = Math.round(l.left * 100) / 100;
   return l.full > 0 ? `${left} ${unit} left of ${l.full}` : `${left} ${unit} left`;
 }
