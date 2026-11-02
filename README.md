@@ -29,6 +29,7 @@ an accounting/analytics layer.
 | [18, Reporting API](docs/18-reports-api.md) | The read-only door another system pulls data through |
 | [19, Group sign-in](docs/19-group-sign-in.md) | Arriving already signed in from the Insight hub |
 | [21, Orders from floats](docs/21-insight-floats.md) | Purchases made from a float in Insight, received here as draft orders |
+| [22, Team activity](docs/22-insight-team.md) | What each person has on, read by the Insight hub's Team page |
 
 ## Confirmed decisions
 

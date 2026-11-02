@@ -19,6 +19,7 @@ import { handleReports } from './reports.js';
 import { handleSso } from './sso.js';
 import { handleInsightApprovals } from './insight-approvals.js';
 import { handleInsightFloats } from './insight-floats.js';
+import { handleInsightTeam } from './insight-team.js';
 import {
   fromBarChecks, fromShopCounts, fromExpenses, worthSending, approvalSubject, approvalBody,
   countLines, countSubject, countBody, countPlace,
@@ -982,6 +983,14 @@ export default async ({ req, res, log, error }) => {
    */
   const floated = await handleInsightFloats({ req, res, db, DB_ID, Query, storage: new Storage(client), log, error });
   if (floated) return floated;
+
+  /**
+   * The group hub's Team page: what each person asked about has on here,
+   * open and in the period. Read only, signed like the paths above, and
+   * answered before anything else for the same reason. See insight-team.js.
+   */
+  const team = await handleInsightTeam({ req, res, db, DB_ID, users: new Users(client), Query, log, error });
+  if (team) return team;
 
   /**
    * What kind of invocation this is, according to Appwrite rather than
