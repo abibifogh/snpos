@@ -27,3 +27,4 @@ export * from './themebutton';
 export * from './owed';
 export * from './cleaning';
 export * from './stock-ask';
+export * from './person-chip';
