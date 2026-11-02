@@ -13,6 +13,7 @@ import type {
   Consignor, ConsignmentIntake, MenuItem, Category, ProductMove, Settings, ProductVariant, RestockChoice, Restocked,
 } from '@snpos/core';
 import { useSession, useMoney } from '../session';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 /**
  * The desk where work arrives.
@@ -167,11 +168,12 @@ export function IntakePage() {
   return (
     <div>
       <div className="page-head">
-        <h1>Goods received</h1>
+        <h1><HubTitle>Goods received</HubTitle></h1>
         <Button variant="primary" onClick={() => setReceiving(true)} disabled={noPeople || noCategories}>
           Receive a delivery
         </Button>
       </div>
+      <HubTabs />
 
       {error && <Notice tone="err">{error}</Notice>}
 

@@ -8,6 +8,7 @@ import {
 } from '@snpos/core';
 import type { StaffCharge, StaffSettlement, SettleKind, Module } from '@snpos/core';
 import { useSession, useMoney } from '../session';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 type Show = 'owed' | 'settled' | 'all';
 type OpenShift = { $id: string; code?: string; module?: string };
@@ -63,7 +64,7 @@ export function StaffOwingPage() {
       <div className="spread">
         <div>
           <h1>
-            Staff owing
+            <HubTitle>Staff owing</HubTitle>
             <InfoTip>
               Count differences charged to a person, and what has been done about each. Charge a short line from
               Approvals.
@@ -80,6 +81,7 @@ export function StaffOwingPage() {
           />
         </div>
       </div>
+      <HubTabs />
 
       {error && <Notice>{error}</Notice>}
 

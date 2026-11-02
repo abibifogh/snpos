@@ -61,7 +61,7 @@ export function OwedToUs({ money, settings }: { money: (n: number) => string; se
     >
       <div className="row row-wrap" style={{ gap: '0.5rem', marginBottom: '0.8rem' }}>
         <Button onClick={exportXlsx} disabled={!tabs || tabs.length === 0}>Excel</Button>
-        <Link className="btn" to="/tabs">Tabs</Link>
+        <Link className="btn" to="/customers?tab=tabs">Tabs</Link>
       </div>
       <AgeBands b={bands} money={money} />
       {tabs === null ? <Spinner /> : tabs.length === 0 ? (

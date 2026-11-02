@@ -125,7 +125,9 @@ const GROUPS: Group[] = [
  * confirmation, the count shown before anything happens, and the entry written
  * to the audit log after, the one record the erase never touches.
  */
-export function PurgePage() {
+/** `asSection`: a part of Settings' Data tab, under its heading, rather than a page. */
+export function PurgePage({ asSection = false }: { asSection?: boolean }) {
+  const Head = asSection ? 'h2' : 'h1';
   const { user, profile } = useSession();
   const toast = useToast();
 
@@ -321,7 +323,7 @@ export function PurgePage() {
   if (!isAdmin) {
     return (
       <>
-        <h1>Erase records</h1>
+        <Head>Erase records</Head>
         <Notice>Only an admin or a manager can erase records.</Notice>
       </>
     );
@@ -329,7 +331,7 @@ export function PurgePage() {
 
   return (
     <>
-      <h1>Erase records</h1>
+      <Head>Erase records</Head>
       <p className="dim" style={{ maxWidth: '46rem' }}>
         For clearing out test data before you go live, or removing a period you no longer need to keep. This deletes
         permanently; there is no undo and no copy kept. Run your reports first if there is anything you want off them.

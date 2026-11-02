@@ -2310,8 +2310,44 @@ export const COLLECTIONS = [
       // 'float' when the money came from a float in Insight: the spend that
       // receives it then comes off no drawer, box or bank here.
       ['paid_by', 's', 16, false],
+      // Made from what the kitchen or the bar asked for, and who asked:
+      // "Asked by the kitchen · Kofi". See stock-requests.ts.
+      ['request_id', 's', 64, false],
+      ['asked_by', 's', 160, false],
     ],
     indexes: [['venue_no', 'key', ['venue_id', 'po_no']], ['status', 'key', ['status']], ['insight_key', 'key', ['insight_key']]],
+  },
+  {
+    /**
+     * Stock the kitchen or the bar asked for, from its own screen.
+     *
+     * A request, not an order: anyone working may ask, and whoever may order
+     * stock turns it into draft orders from Approvals, or sends it back with
+     * a reason. No prices on it. Off until an admin switches on the
+     * stock_requests feature. See stock-requests.ts.
+     */
+    id: 'stock_requests',
+    name: 'Stock asked for',
+    perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['side', 'e', ['kitchen', 'bar'], true, 'kitchen'],
+      ['by_id', 's', 64, false],
+      ['by_name', 's', 120, false],
+      // JSON: [{ ingredient_id, name, unit, buy_label, buy_key, per, qty, left, full }].
+      ['lines', 's', 20000, false, '[]'],
+      ['note', 's', 1000, false],
+      ['status', 'e', ['asked', 'ordered', 'declined'], true, 'asked'],
+      // The draft orders it became, comma separated.
+      ['order_ids', 's', 1000, false],
+      ['decided_by', 's', 64, false],
+      ['decided_by_name', 's', 120, false],
+      ['decided_at', 'd', null, false],
+      ['decided_note', 's', 500, false],
+      // When whoever orders stock was emailed about it. Once.
+      ['told_at', 'd', null, false],
+    ],
+    indexes: [['status', 'key', ['status']], ['venue_side', 'key', ['venue_id', 'side']]],
   },
   {
     /**
@@ -4657,6 +4693,19 @@ export const FEATURES = [
       // An order worth more than this waits on Approvals before it can
       // be sent. Minor units, so 100000 is GH₵1,000. Nought: none wait.
       approve_over: 100000,
+    },
+  },
+  {
+    /*
+      The kitchen and the bar asking for stock from their own screens. Off
+      until an admin switches it on. See stock-requests.ts.
+    */
+    key: 'stock_requests',
+    label: 'Kitchen and bar can ask for stock',
+    enabled: false,
+    config: {
+      // Whoever may order stock is emailed when a request arrives, once.
+      email_orderers: true,
     },
   },
   {

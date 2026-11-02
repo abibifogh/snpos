@@ -26,6 +26,7 @@ import type {
 import { useSession, useMoney } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 import { SpendDetailsModal } from '../components/SpendDetails';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 interface Shift extends Doc {
   venue_id: string;
@@ -742,7 +743,7 @@ export function ShiftsPage() {
     <>
       <div className="page-head">
         <h1>
-          Shifts
+          <HubTitle>Shifts</HubTitle>
           <InfoTip>
             Shifts are opened and closed on the terminal, by whoever is on the till. This is the record of what happened,
             what was expected in each drawer, what was actually counted, and the difference.
@@ -750,6 +751,7 @@ export function ShiftsPage() {
         </h1>
         <SideFilter value={side} onChange={setSide} settings={settings} profile={profile} />
       </div>
+      <HubTabs />
 
       <FilterBar>
         <FilterField label="From"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></FilterField>
@@ -1837,7 +1839,7 @@ export function ShiftsPage() {
             open Shifts however carefully that page had been withheld. One
             permission, asked in both places, rather than a screen that quietly
             undoes a decision made elsewhere. An owner sets it under
-            Settings, "Who can see what".
+            Staff, on the Permissions tab.
           */}
           {maySeeExpenses && (() => {
           const mySpends = expenses.filter((e) => e.shift_id === detail.$id);

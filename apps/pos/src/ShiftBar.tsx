@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Button, Modal, Field, Input, Notice, Badge, ShiftCloseForm, resolveCounts,
   ShiftHistory, ExpenseModal, HandoverModal, BarCountModal, CraftCountModal,
-  CleanChecklist, useCleanRoutine,
+  CleanChecklist, useCleanRoutine, NeedStock, useLowCount,
 } from '@snpos/ui';
 import type { BlockerRow, CountRow, StockRow, ShiftFlow } from '@snpos/ui';
 import {
@@ -11,6 +11,7 @@ import {
   tabOrdersOnShift, releaseWords, closeCodeProblem, spendCloseCode, humanError, liveOrders,
   openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, HANDOVER_ENABLED,
   countsAtBothEnds, countsInAtOpen, countsOutAtClose, pourMissedSales, cashCounted, cashPlanProblem, askForOpeningCount, hasOpeningCount, shiftCountPhases, ownFigure, floatOrigin, floatMethods,
+  isEnabled,
 } from '@snpos/core';
 import type { PaymentMethod, Shift, FloatSource, TabOrder } from '@snpos/core';
 import type { PosContext } from './App';
@@ -36,6 +37,13 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   const closeClean = useCleanRoutine('bar', ctx.venue.$id, 'close', barShift);
   const [cleaningUp, setCleaningUp] = useState(false);
   const cleanWho = { id: ctx.userId, name: ctx.profile?.display_name ?? '' };
+  /*
+    The bar asking for stock, when an admin has switched it on: bottles and
+    mixers running low, to whoever orders. See stock-requests.ts.
+  */
+  const askOn = ctx.module === 'bar' && isEnabled(ctx.features, 'stock_requests');
+  const [asking, setAsking] = useState(false);
+  const lowStock = useLowCount('bar', ctx.venue.$id, askOn, ctx.settings?.low_stock_default_bp);
   const [floats, setFloats] = useState<Record<string, string>>({});
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [rows, setRows] = useState<CountRow[]>([]);
@@ -595,6 +603,16 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           }}
         />
       )}
+      {asking && (
+        <NeedStock
+          side="bar"
+          venueId={ctx.venue.$id}
+          who={cleanWho}
+          lowBp={ctx.settings?.low_stock_default_bp}
+          onClose={() => setAsking(false)}
+          onSent={(words) => { setAsking(false); onToast(words); lowStock.recheck(); }}
+        />
+      )}
       <div
         className="pos-top"
         style={{ borderTop: 'none', background: ctx.shift ? 'var(--surface)' : 'var(--warn-bg)' }}
@@ -628,6 +646,11 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
             <>
               <Button size="sm" onClick={() => setHistory(true)}>This shift</Button>
               <Button size="sm" onClick={() => { setSpending(true); setError(null); }}>Record spend</Button>
+              {askOn && (
+                <Button size="sm" onClick={() => setAsking(true)}>
+                  Need stock{lowStock.low ? ` · ${lowStock.low} low` : ''}
+                </Button>
+              )}
               {/* Switched off for now. See HANDOVER_ENABLED. */}
               {HANDOVER_ENABLED && (
                 <Button size="sm" onClick={() => { setHandingOver(true); setError(null); }}>Hand over cash</Button>

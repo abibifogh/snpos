@@ -4,13 +4,13 @@ import { contrastRatio } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   bpToPercent, percentToBp,
-  ADMIN_SECTIONS, GRANTABLE_ROLES, DEFAULT_ACCESS, parseAccess, asksForTip, modulesOf, saveDropping,
+  ADMIN_SECTIONS, NAV_MERGES, GRANTABLE_ROLES, DEFAULT_ACCESS, parseAccess, asksForTip, modulesOf, saveDropping,
   parseLevies, serialiseLevies, GHANA_LEVIES, dateTimeWords, FULL_COUNT_DAYS, DEFAULT_COUNT_OVER, brandColour, secondColour } from '@snpos/core';
 import type { Levy } from '@snpos/core';
 import type { Settings, Doc } from '@snpos/core';
 
 import { useSession } from '../session';
-import { AlsoHere } from '../components/AlsoHere';
+import { HubTabs, HubTitle } from '../components/Hub';
 import { MoneyInput } from '../components/MoneyInput';
 
 /**
@@ -103,7 +103,11 @@ interface ReportSub extends Doc {
   active?: boolean;
 }
 
-export function SettingsPage() {
+/** Which part of the settings a tab shows. One form underneath, saved together. */
+export type SettingsSection = 'business' | 'money' | 'shifts' | 'kitchen' | 'email' | 'permissions';
+
+
+export function SettingsPage({ section = 'business' }: { section?: SettingsSection }) {
   const { settings, refreshSettings } = useSession();
   const toast = useToast();
   /*
@@ -345,22 +349,25 @@ export function SettingsPage() {
   return (
     <>
       <div className="spread">
-        <h1>Settings</h1>
+        <h1>
+          <HubTitle>{section === 'permissions' ? 'Who can see what' : 'Settings'}</HubTitle>
+          <InfoTip>
+            {section === 'permissions'
+              ? 'Which admin pages each role may open. An admin always sees everything.'
+              : 'What the business runs, and how. Every tab here is one form: change what you need on any of them, then Save changes once.'}
+          </InfoTip>
+        </h1>
         <Button variant="primary" onClick={save} loading={busy}>Save changes</Button>
       </div>
-      <AlsoHere host="settings" />
+      <HubTabs />
 
       {error && <Notice>{error}</Notice>}
 
-      {/* Nine folds instead of thirteen cards, and only the first open.
-          A settings page is read twice: once on the day it is set up, and
-          afterwards only to change one thing. Thirteen open sections serve
-          neither, the first reading has no shape and the second is a scroll
-          past twelve things to reach one. Each heading carries what is
-          currently set, so most questions are answered without opening it. */}
-      <FoldCard
+      {/* One tab per part, a card or two on each, instead of one page of
+          nine folds. Everything on every tab is one form and one Save: an edit
+          made on Money is still there after a look at Tips. */}
+      {section === 'business' && (<FoldCard open={true}
         title="The basics"
-        open
         summary={`${form.restaurant_name || 'Unnamed'} · ${[mods.kitchen && 'kitchen', mods.craft && 'craft shop'].filter(Boolean).join(' + ')}`}
       >
         <div className="grid-2">
@@ -468,9 +475,9 @@ export function SettingsPage() {
             ? 'This is what the table QR codes are for. Off means orders can only be taken by staff.'
             : 'Off suits a shop where the normal way to buy is to hand something to whoever is on the till. Worth turning on for a market stall or a busy weekend, where a queue is the problem.'}
         />
-      </FoldCard>
+      </FoldCard>)}
 
-      <FoldCard
+      {section === 'money' && (<FoldCard open={true}
         title="Money"
         summary={`${form.currency_code} · VAT ${form.vat_charged === false ? 'not charged' : `${bpToPercent(form.tax_rate_bp)}%`} · service ${bpToPercent(form.service_charge_bp)}%`}
       >
@@ -647,9 +654,9 @@ export function SettingsPage() {
             );
           })}
         </div>
-      </FoldCard>
+      </FoldCard>)}
 
-      <FoldCard title="Tips" summary={askOn === 'none' ? 'Never asked' : `Asked on the ${askOn === 'both' ? 'till and in the kitchen' : askOn}`}>
+      {section === 'money' && (<FoldCard open={true} title="Tips" summary={askOn === 'none' ? 'Never asked' : `Asked on the ${askOn === 'both' ? 'till and in the kitchen' : askOn}`}>
         <Field
           label="Where to ask for a tip"
           hint="A waiter closing a table and a cook handing a bag over a counter are different moments. You can have the box on one and not the other. Nowhere removes the box entirely rather than defaulting it to zero: a field staff have to look at and skip past on every bill is worse than no field."
@@ -679,9 +686,9 @@ export function SettingsPage() {
           <strong>{savedAsks('kitchen') ? 'asking' : 'not asking'}</strong>.
           {askOn !== savedAskOn && ' Unsaved change, press Save changes.'}
         </p>
-      </FoldCard>
+      </FoldCard>)}
 
-      <FoldCard title="Cash and shifts" summary={`${FLOAT_WORDS[form.shift_float_policy ?? 'zero']} · ${form.expense_paid_from === 'any' ? 'expenses any method' : 'expenses cash only'}`}>
+      {section === 'shifts' && (<FoldCard open={true} title="Cash and shifts" summary={`${FLOAT_WORDS[form.shift_float_policy ?? 'zero']} · ${form.expense_paid_from === 'any' ? 'expenses any method' : 'expenses cash only'}`}>
         <Field
           label="What a shift starts with in the drawer"
           hint="Starting at nothing every time only makes sense if somebody physically empties the till at the end of each shift."
@@ -914,9 +921,9 @@ export function SettingsPage() {
             </>
           )}
         />
-      </FoldCard>
+      </FoldCard>)}
 
-      <FoldCard
+      {section === 'kitchen' && (<FoldCard open={true}
         title="Orders and the kitchen"
         summary={`Numbers ${form.order_number_prefix ?? ''}0001 · ping every ${form.kitchen_ack_sla_seconds ?? 60}s`}
         help="Order numbers get shouted across a pass, so they are yours to shape."
@@ -1016,9 +1023,9 @@ export function SettingsPage() {
             help="Leave off for the usual flow, where a customer's order goes straight to the kitchen."
           />
         </Field>
-      </FoldCard>
+      </FoldCard>)}
 
-      <FoldCard
+      {section === 'email' && (<FoldCard open={true}
         title="Reports, backups and email"
         summary={subs.filter((r) => r.active !== false).length === 0
           ? 'Going to nobody'
@@ -1225,9 +1232,9 @@ export function SettingsPage() {
             </table>
           </div>
         )}
-      </FoldCard>
+      </FoldCard>)}
 
-      <FoldCard title="Colours and logo" summary="How the customer menu and receipts look">
+      {section === 'business' && (<FoldCard open={true} title="Colours and logo" summary="How the customer menu and receipts look">
         <div className="grid-2">
           <Field label="Primary">
             <div className="color-row">
@@ -1248,9 +1255,9 @@ export function SettingsPage() {
             to read; the app will use dark text instead, but a deeper colour would look better.
           </Notice>
         )}
-      </FoldCard>
+      </FoldCard>)}
 
-      <FoldCard
+      {section === 'permissions' && (<FoldCard open={true}
         title="Who can see what"
         summary="Which admin pages each role may open"
         help={
@@ -1284,7 +1291,11 @@ export function SettingsPage() {
                     <div className="small dim">
                       {section.parent
                         ? `part of ${ADMIN_SECTIONS.find((x) => x.key === section.parent)?.label ?? section.parent}`
-                        : section.group}
+                        : section.under
+                          ? `${section.group}, a tab of ${section.under.startsWith('/')
+                            ? NAV_MERGES.find((m) => m.to === section.under)?.label ?? section.under
+                            : ADMIN_SECTIONS.find((x) => x.key === section.under)?.label ?? section.under}`
+                          : section.group}
                     </div>
                   </td>
                   {GRANTABLE_ROLES.map((role) => (
@@ -1308,7 +1319,7 @@ export function SettingsPage() {
             </tbody>
           </table>
         </div>
-      </FoldCard>
+      </FoldCard>)}
 
     </>
   );

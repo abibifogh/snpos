@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Badge, Card, InfoTip, Segmented, Spinner } from '@snpos/ui';
 import { closeDayFacts, closeDayChecklist, closeDayProgress, dateWords } from '@snpos/core';
 import type { CloseDayRow } from '@snpos/core';
+import { HubTabs } from './Hub';
 
 type Which = 'today' | 'yesterday';
 
@@ -98,6 +99,7 @@ export function CloseDayPage({ money }: { money: (n: number) => string }) {
           money matched to the bank, petty cash counted.
         </InfoTip>
       </h1>
+      <HubTabs />
       <CloseDayCard money={money} />
     </>
   );

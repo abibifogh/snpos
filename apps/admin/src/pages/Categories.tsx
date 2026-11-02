@@ -11,7 +11,7 @@ import { ImageField } from '../components/ImageField';
 import { StationPicker, useStations, legacyStationFor } from '../components/StationPicker';
 import { useSession } from '../session';
 import { canEditCatalogue, canDeleteCatalogue } from '@snpos/core';
-import { AlsoHere } from '../components/AlsoHere';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 const blank = (sort: number): Partial<Category> => ({
   name: '', description: '', sort, active: true, unavailable_display: 'grey', station: 'hot',
@@ -144,7 +144,7 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: Module }) {
   return (
     <>
       <div className="spread">
-        <h1>Categories</h1>
+        <h1><HubTitle>Categories</HubTitle></h1>
         <div className="row" style={{ gap: '0.5rem' }}>
           {archivedCount > 0 && (
             <Button onClick={() => setShowArchived((s) => !s)}>
@@ -154,7 +154,7 @@ export function CategoriesPage({ module = 'kitchen' }: { module?: Module }) {
           {mayEdit && <Button variant="primary" onClick={() => open()}>Add category</Button>}
         </div>
       </div>
-      {module === 'kitchen' && <AlsoHere host="menu_categories" />}
+      <HubTabs />
 
       {error && !editing && <Notice>{error}</Notice>}
 

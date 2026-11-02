@@ -5,6 +5,7 @@ import { db, DB_ID, listAll, humanError } from '../lib';
 import { useSession } from '../session';
 import { FEATURE_DEPENDENCIES, toInput, parseMoney } from '@snpos/core';
 import type { FeatureFlag, Venue } from '@snpos/core';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 /** One number out of a feature's config text, or the fallback if it says nothing. */
 function configNumber(flag: FeatureFlag, option: string, fallback: number): number {
@@ -60,6 +61,13 @@ const LABELS: Record<string, { title: string; blurb: string; to?: string; toLabe
       + 'screen can also set the level by hand, which lapses on its own so nobody leaves ordering switched off.',
   },
   discounts: { title: 'Discounts and discount codes', blurb: 'Guests type a code while ordering; staff apply discounts before the bill is marked paid.' },
+  stock_requests: {
+    title: 'Kitchen and bar can ask for stock',
+    blurb:
+      'A Need stock button on the kitchen screen and the bar\'s till. It opens on what is running low, already set to '
+      + 'bring each item back to full, and sends the list to whoever orders stock. They make the orders from Approvals, '
+      + 'or send it back with a reason. Nothing is bought from the pass, and cooks and bartenders never see prices.',
+  },
   /*
     These five had no entry, so they appeared on this page as their raw key
     with no explanation: a switch called `group_orders` and nothing to say
@@ -72,8 +80,8 @@ const LABELS: Record<string, { title: string; blurb: string; to?: string; toLabe
       'A separate, private link for parties and hotel bookings. It shows only the categories you have marked '
       + 'group-only, and lets a group staying several nights book a meal at a time, each one eaten here or packed '
       + 'to take away. With this off, that link opens the ordinary menu.',
-    to: '/tables',
-    toLabel: 'Sell → Tables & QR',
+    to: '/venues?tab=tables',
+    toLabel: 'Setup → Venues → Tables & QR',
   },
   item_availability: {
     title: 'Mark a dish as run out',
@@ -282,12 +290,13 @@ export function FeaturesPage() {
   return (
     <>
       <h1>
-        Features
+        <HubTitle>Features</HubTitle>
         <InfoTip label="About features">
           Switching a feature off hides it; it never deletes what you have already recorded, so you can turn it back
           on later and find everything intact.
         </InfoTip>
       </h1>
+      <HubTabs />
 
       <Card pad>
         {!rows ? (

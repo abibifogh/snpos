@@ -40,7 +40,9 @@ const tone = (level: HealthFinding['level']): 'ok' | 'warn' | 'danger' | 'defaul
  * a page that shows only trouble cannot say what it checked. The questions
  * themselves are in core, see health-rules.ts.
  */
-export function HealthPage() {
+/** `asSection`: a part of Settings' Data tab, under its heading, rather than a page. */
+export function HealthPage({ asSection = false }: { asSection?: boolean }) {
+  const Head = asSection ? 'h2' : 'h1';
   const navigate = useNavigate();
   const money = useMoney();
 
@@ -146,7 +148,7 @@ export function HealthPage() {
     <>
       <div className="spread">
         <div>
-          <h1>Health</h1>
+          <Head>Health</Head>
           <p className="dim small" style={{ margin: '0.2rem 0 0' }}>
             Checked every night at two, and whenever you open this page.
             {night === undefined ? '' : night

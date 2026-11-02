@@ -9,6 +9,7 @@ import {
 import type { StaffProfile, Module, OrderChoice } from '@snpos/core';
 import type { Doc } from '@snpos/core';
 import { useSession } from '../session';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 interface VenueRow extends Doc { name: string }
 
@@ -381,7 +382,7 @@ export function StaffPage() {
     <>
       <div className="spread">
         <h1>
-          Staff
+          <HubTitle>Staff</HubTitle>
           <InfoTip>
             Kitchen and floor staff sign in with a <strong>PIN</strong> on the shared device, no email, no password.
             Only people who need the admin dashboard on their own device get a login. Either way each person is
@@ -390,6 +391,7 @@ export function StaffPage() {
         </h1>
         <Button variant="primary" onClick={() => open(undefined, false)}>Add someone</Button>
       </div>
+      <HubTabs />
 
       {error && !editing && <Notice>{error}</Notice>}
 

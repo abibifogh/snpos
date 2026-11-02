@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo, HelpModal, EightySixModal,
   OfflineBar, SchemaBar, StaleBar, useOfflineQueue, IdleScreen, ThemeButton, OwedNotice,
-  CleanChecklist, useCleanRoutine,
+  CleanChecklist, useCleanRoutine, NeedStock, useLowCount,
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
@@ -123,6 +123,14 @@ export function App() {
   const openClean = useCleanRoutine('kitchen', venue?.$id, 'open', ready && !switching);
   const [closingUp, setClosingUp] = useState(false);
   const [cleanNote, setCleanNote] = useState<string | null>(null);
+  /*
+    Asking for stock from the pass, when an admin has switched it on: what is
+    running low, to whoever orders. Nothing is bought from here and no price
+    is shown. See stock-requests.ts.
+  */
+  const askOn = isEnabled(features, 'stock_requests');
+  const [asking, setAsking] = useState(false);
+  const lowStock = useLowCount('kitchen', venue?.$id, askOn && ready, settings?.low_stock_default_bp);
   useEffect(() => {
     if (!cleanNote) return undefined;
     const t = window.setTimeout(() => setCleanNote(null), 4000);
@@ -1055,6 +1063,16 @@ export function App() {
           }}
         />
       )}
+      {asking && venue && (
+        <NeedStock
+          side="kitchen"
+          venueId={venue.$id}
+          who={{ id: who?.user_id || who?.$id || session?.userId, name: who?.display_name || session?.name }}
+          lowBp={settings?.low_stock_default_bp}
+          onClose={() => setAsking(false)}
+          onSent={(words) => { setAsking(false); setCleanNote(words); lowStock.recheck(); }}
+        />
+      )}
       {cleanNote && (
         <div className="toasts"><div className="toast" role="status" onClick={() => setCleanNote(null)}>{cleanNote}</div></div>
       )}
@@ -1245,6 +1263,11 @@ export function App() {
           {openClean.routine && (
             <button className="kds-help" style={{ width: 'auto', padding: '0 0.7rem' }} title="The closing clean" onClick={() => setClosingUp(true)}>
               Close up
+            </button>
+          )}
+          {askOn && (
+            <button className="kds-help kds-ask" style={{ width: 'auto', padding: '0 0.7rem' }} title="Ask the managers for stock" onClick={() => setAsking(true)}>
+              Need stock{lowStock.low ? <span className="kds-ask-n">{lowStock.low} low</span> : null}
             </button>
           )}
           <span>New <b>{pending.length}</b></span>

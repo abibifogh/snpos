@@ -95,7 +95,8 @@
         "databases.snpos.collections.staff_charges.documents.*.create",
         "databases.snpos.collections.staff_charge_settlements.documents.*.create",
         "databases.snpos.collections.stock_orders.documents.*.create",
-        "databases.snpos.collections.stock_orders.documents.*.update"
+        "databases.snpos.collections.stock_orders.documents.*.update",
+        "databases.snpos.collections.stock_requests.documents.*.create"
       ],
       "schedule": "0 * * * *",
       "timeout": 60,

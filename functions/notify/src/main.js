@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer';
 import { receiptPdf, portionsOf } from './receipt-pdf.js';
 import { purchaseOrderPdf } from './po-pdf.js';
 import { orderToTell, orderNoticeRecipients, orderNoticeSubject, orderNoticeBody } from './po-notice.js';
+import { askToTell, askRecipients, askSubject, askBody } from './stock-ask.js';
 import { bookingSittings, bookingSheetPdf } from './booking-sheet.js';
 import { ordersForSide, shelfCheckSummary } from './shift-shape.js';
 import { houseRecipients, sendToEach } from './house.js';
@@ -303,6 +304,55 @@ async function tellAdminsAboutOrder({ db, DB_ID, settings, transport, from, doc,
   await stamp();
   log(`Told ${to.length} admin(s) about order ${doc.po_no}.`);
   return { told: to.length };
+}
+
+/**
+ * Stock the kitchen or the bar asked for, told to whoever may order. Once,
+ * stamped `told_at`; from the request's own event and again from the hourly
+ * run for any the event missed. Only while the feature is on and its
+ * email_orderers option has not been switched off. See stock-ask.js.
+ */
+async function tellAboutAsk({ db, DB_ID, settings, transport, from, doc, log, error }) {
+  if (!askToTell(doc)) return { skipped: true };
+  const flags = await db.listDocuments(DB_ID, 'feature_flags', [Query.equal('key', 'stock_requests'), Query.limit(5)])
+    .catch(() => ({ documents: [] }));
+  const flag = flags.documents.find((f) => !f.venue_id);
+  let config = {};
+  try { config = JSON.parse(flag?.config || '{}'); } catch { config = {}; }
+  if (!flag?.enabled || config.email_orderers === false) return { skipped: 'off' };
+
+  const stamp = () => db.updateDocument(DB_ID, 'stock_requests', doc.$id, { told_at: new Date().toISOString() })
+    .catch((e) => error(`Could not stamp stock request ${doc.$id}: ${e.message}`));
+  const profiles = await db.listDocuments(DB_ID, 'staff_profiles', [Query.limit(500)]).catch(() => ({ documents: [] }));
+  const to = askRecipients(profiles.documents, settings, doc.by_id);
+  if (to.length === 0) { await stamp(); return { told: 0 }; }
+  if (!transport) {
+    error('Stock was asked for but SMTP is not configured, so nobody was emailed.');
+    return { ok: false, error: 'no smtp' };
+  }
+  await transport.sendMail({
+    from,
+    to: to.join(','),
+    subject: askSubject(doc),
+    html: shell(`The ${doc.side === 'bar' ? 'bar' : 'kitchen'} needs stock`, askBody(doc, esc), brandColour(settings.primary_color)),
+  });
+  await stamp();
+  log(`Told ${to.length} about a stock request from the ${doc.side}.`);
+  return { told: to.length };
+}
+
+/** Requests the event missed, from the last two days. */
+async function sweepAsks({ db, DB_ID, settings, transport, from, log, error }) {
+  const since = new Date(Date.now() - 2 * 86_400_000).toISOString();
+  const rows = await db.listDocuments(DB_ID, 'stock_requests', [
+    Query.equal('status', 'asked'), Query.isNull('told_at'), Query.greaterThan('$createdAt', since), Query.limit(50),
+  ]).catch(() => ({ documents: [] }));
+  let told = 0;
+  for (const doc of rows.documents) {
+    const r = await tellAboutAsk({ db, DB_ID, settings, transport, from, doc, log, error });
+    if (r.told) told++;
+  }
+  return { asks: rows.documents.length, told };
 }
 
 /**
@@ -1248,6 +1298,7 @@ export default async ({ req, res, log, error }) => {
       ['stale_shifts', () => sweepStaleShifts({ db, DB_ID, settings, transport, from, shell, log, error })],
       ['approvals', () => sweepApprovals({ db, DB_ID, settings, transport, from, log, error })],
       ['order_notices', () => sweepOrderNotices({ db, DB_ID, settings, transport, from, log, error })],
+      ['stock_asks', () => sweepAsks({ db, DB_ID, settings, transport, from, log, error })],
       // After the first word, so a count filed an hour ago is never escalated
       // before it has been announced. See overdue-counts.js.
       ['overdue_counts', () => sweepOverdueCounts({ db, DB_ID, settings, transport, from, log, error })],
@@ -1499,6 +1550,10 @@ export default async ({ req, res, log, error }) => {
       fires the event again, and a failure is written on the order where the
       person who asked will see it.
     */
+    // The kitchen or the bar asking for stock: whoever may order is emailed, once.
+    if (events.some((e) => e.includes('collections.stock_requests')) && events.some((e) => e.endsWith('.create'))) {
+      return res.json(await tellAboutAsk({ db, DB_ID, settings, transport, from, doc, log, error }));
+    }
     if (events.some((e) => e.includes('collections.stock_orders'))) {
       // An order just finished is told to the admins first, once. A failure
       // here must not stop a supplier email asked for in the same write.

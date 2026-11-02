@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Spinner, Toggle, Badge, useToast, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import type { Doc } from '@snpos/core';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 interface Station extends Doc {
   venue_id: string;
@@ -77,7 +78,7 @@ export function StationsPage() {
     <>
       <div className="spread">
         <h1>
-          Stations
+          <HubTitle>Kitchen stations</HubTitle>
           <InfoTip>
             A station is <strong>where food is cooked</strong>, hot line, grill, bar, pastry. Each dish is sent to one,
             and the kitchen screen can be filtered to show only that station's tickets.
@@ -87,6 +88,7 @@ export function StationsPage() {
           Add station
         </Button>
       </div>
+      <HubTabs />
 
       <Notice tone="warn">
         <strong>Stations are not pickup points.</strong> A station is inside the kitchen; a pickup point is where the

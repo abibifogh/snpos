@@ -1,6 +1,8 @@
 import { listAll, Query } from './client';
 import { pendingCleanLogs } from './cleaning-store';
 import { reviewWords } from './cleaning';
+import { pendingStockRequests } from './stock-requests-store';
+import { requestWords } from './stock-requests';
 import { pendingBarChecks, loadLocations, replacedAmong } from './stock';
 import { filedCounts, countSide, liveCount } from './bar-count';
 import type { FiledCheck } from './bar-count';
@@ -108,8 +110,22 @@ export async function loadWaiting(venueId: string, money: (minor: number) => str
     };
   });
 
+  /*
+    Stock the kitchen or the bar asked for: whoever orders stock turns each
+    into draft orders, or sends it back. See stock-requests.ts.
+  */
+  const asks = await pendingStockRequests().catch(() => []);
+  const askItems: WaitingItem[] = asks.map((r) => {
+    const w = requestWords(r);
+    return {
+      id: `stock:${r.$id}`, kind: 'stock', title: w.title, detail: w.detail,
+      by: r.by_id || undefined, at: r.$createdAt || '', value: 0,
+      ref: { kind: 'stock', requestId: r.$id },
+    };
+  });
+
   return {
-    items: [...items, ...cleanItems],
+    items: [...items, ...cleanItems, ...askItems],
     names,
     spends: new Map(pendingSpends.map((s) => [s.$id, s])),
     tabShifts: new Map(tabShifts.map((s) => [s.$id, s])),

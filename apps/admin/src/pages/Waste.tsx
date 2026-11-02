@@ -23,7 +23,9 @@ const REASONS = [
   { v: 'staff_meal', l: 'Staff meal' }, { v: 'trim', l: 'Trim' }, { v: 'other', l: 'Other' },
 ];
 
-export function WastePage() {
+export function WastePage({ asTab = false }: { asTab?: boolean }) {
+  // A tab of Stock, under its heading, or the page itself for somebody given Waste alone.
+  const Head = asTab ? 'h2' : 'h1';
   const { settings, user } = useSession();
   const toast = useToast();
   const [rows, setRows] = useState<WasteRow[] | null>(null);
@@ -101,13 +103,13 @@ export function WastePage() {
   return (
     <>
       <div className="spread">
-        <h1>
+        <Head style={asTab ? { margin: 0 } : undefined}>
           Waste
           <InfoTip>
             Recording waste as it happens is what makes the stock figures trustworthy. Without it, food thrown away and
             food walking out of the door look identical when you count.
           </InfoTip>
-        </h1>
+        </Head>
         <Button variant="primary" onClick={() => { setEditing({ qty: 1, reason: 'spoiled' }); setKind('ingredient'); setError(null); }}>
           Record waste
         </Button>

@@ -83,7 +83,9 @@ export interface OrderSupplier { $id: string; name: string; email?: string; phon
 const hasPack = (i: Pick<OrderableItem, 'pack_size'>) => Number.isFinite(i.pack_size) && (i.pack_size ?? 0) > 1;
 const plural = (w: string) => {
   const s = (w || '').trim() || 'unit';
-  return /s$|kg$|ml$|cl$|g$|l$/i.test(s) ? s : `${s}s`;
+  // A measure stays as it is (kg, L, ml); a word ending in one is still a word: rolls, bowls.
+  if (/s$/i.test(s) || /^(kg|g|l|ml|cl)$/i.test(s)) return s;
+  return /(x|sh|ch)$/i.test(s) ? `${s}es` : `${s}s`;
 };
 
 /** The low line for an item: its own, or a share of its full level. Same rule as levelOf in stock.ts. */

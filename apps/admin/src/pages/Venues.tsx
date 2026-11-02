@@ -3,7 +3,7 @@ import { Button, Card, Empty, Field, Input, Modal, Notice, Spinner, Toggle, Badg
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import { parseWindows, describeWindows, isAvailable } from '@snpos/core';
 import type { Venue, DayKey, Windows } from '@snpos/core';
-import { AlsoHere } from '../components/AlsoHere';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 const DAYS: { key: DayKey; label: string }[] = [
   { key: 'mon', label: 'Monday' }, { key: 'tue', label: 'Tuesday' }, { key: 'wed', label: 'Wednesday' },
@@ -108,7 +108,7 @@ export function VenuesPage() {
     <>
       <div className="spread">
         <h1>
-          Venues
+          <HubTitle>Venues</HubTitle>
           <InfoTip>
             Opening hours matter beyond looking tidy: without them the system cannot tell customers when you are open, and
             ordering ahead has no times to offer.
@@ -116,7 +116,7 @@ export function VenuesPage() {
         </h1>
         <Button variant="primary" onClick={() => open()}>Add venue</Button>
       </div>
-      <AlsoHere host="venues" />
+      <HubTabs />
 
       {error && !editing && <Notice>{error}</Notice>}
 

@@ -12,6 +12,7 @@ import { useSession, useMoney } from '../session';
 import { SideFilter, onSide, narrowSide, type Side } from '../components/SideFilter';
 import { Insights } from '../components/Insights';
 import { MenuEngineeringPanel } from '../components/MenuEngineering';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 interface Payment extends Doc { order_id: string; method_id: string; method_kind_snapshot: string; amount: number; tip: number; shift_id: string; status?: string }
 interface PaymentMethod extends Doc { name: string }
@@ -36,7 +37,10 @@ const SHORTCUTS = [
 const todayStr = () => new Date().toLocaleDateString('en-CA');
 const daysAgoStr = (n: number) => new Date(Date.now() - n * 86400_000).toLocaleDateString('en-CA');
 
-export function ReportsPage() {
+/** Which part of the reports: the sales, how they are trending, or dish by dish. */
+export type ReportView = 'sales' | 'trends' | 'dishes';
+
+export function ReportsPage({ view = 'sales' }: { view?: ReportView }) {
   const { settings, profile, refreshSettings } = useSession();
   const toast = useToast();
   // A manager may read the reports; what the headline figure is made of is the
@@ -369,13 +373,13 @@ export function ReportsPage() {
     downloadCsv(`report-${from}-to-${to}`, toCsv(['Sales report', periodLabel], rows));
   };
 
-  if (error) return <Notice>{error}</Notice>;
-  if (!orders) return <Spinner />;
+  if (error) return <><h1><HubTitle>Reports</HubTitle></h1><HubTabs /><Notice>{error}</Notice></>;
+  if (!orders) return <><h1><HubTitle>Reports</HubTitle></h1><HubTabs /><Spinner /></>;
 
   return (
     <>
       <div className="spread">
-        <h1>Reports</h1>
+        <h1><HubTitle>Reports</HubTitle></h1>
         <div className="row" style={{ gap: '0.5rem' }}>
           {/* Two sides under one roof keep two sets of books, so every figure
               below can be read for one or for the whole business. Placed with
@@ -386,6 +390,7 @@ export function ReportsPage() {
           <Button onClick={exportCsv} disabled={paid.length === 0}>Spreadsheet</Button>
         </div>
       </div>
+      <HubTabs />
 
       <Card title="Which dates">
         <div className="grid-2">
@@ -416,14 +421,14 @@ export function ReportsPage() {
           {/* The comparisons come first. A total on its own gets read as
               whatever mood the reader arrived in; the same total next to last
               period's is the thing you can act on. */}
-          <Insights
+          {view === 'trends' && <Insights
             revenue={insightRevenue}
             cost={insightCost}
             from={since}
             to={until}
             money={money}
             tickMoney={tickMoney}
-          />
+          />}
 
           {/*
             Then the menu itself, dish by dish.
@@ -433,7 +438,7 @@ export function ReportsPage() {
             being carried. It is the only thing on this page that names
             something to change rather than something that happened.
           */}
-          <MenuEngineeringPanel sold={soldByItem} money={money} side={side} />
+          {view === 'dishes' && <MenuEngineeringPanel sold={soldByItem} money={money} side={side} />}
 
           {/*
             What Costs is made of, next to the figure it explains.
@@ -442,7 +447,7 @@ export function ReportsPage() {
             is looking at it right now, and the answer to "why is that so low"
             should be within reach of the thing that raised the question.
           */}
-          <Card>
+          {view === 'trends' && <Card>
             <div className="spread" style={{ alignItems: 'flex-start', gap: '0.8rem' }}>
               <div style={{ minWidth: 0 }}>
                 <strong>Costs counts {hasCostChoice(costCodes) ? `${costCodes.length} account${costCodes.length === 1 ? '' : 's'}` : 'every expense'}.</strong>
@@ -464,8 +469,9 @@ export function ReportsPage() {
               </div>
               {isAdmin && <Button onClick={() => setPickingCosts(true)}>Choose accounts</Button>}
             </div>
-          </Card>
+          </Card>}
 
+          {view === 'sales' && <>
           <div className="grid-2">
             <Card title="Discounts given"><p style={{ margin: 0, fontSize: '1.7rem', fontWeight: 650 }}>{money(discounts)}</p><span className="dim small">{sales ? ((discounts / (sales + discounts)) * 100).toFixed(1) : '0'}% of gross</span></Card>
             <Card title="Covers"><p style={{ margin: 0, fontSize: '1.7rem', fontWeight: 650 }}>{covers}</p><span className="dim small">{paid.length} bills · {money(paid.length ? Math.round(sales / covers) : 0)} a head</span></Card>
@@ -525,9 +531,11 @@ export function ReportsPage() {
               </div>
             ))}
           </Card>
+          </>}
         </>
       )}
 
+      {view === 'sales' && <>
       <Card title="Accounts">
         {!tb ? (
           <Spinner />
@@ -564,6 +572,7 @@ export function ReportsPage() {
       </Card>
 
       <EmailPanel receipts={receipts} />
+      </>}
 
       {pickingCosts && (
         <CostAccountPicker

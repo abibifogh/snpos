@@ -905,6 +905,11 @@ td.num.bad { color: var(--danger); }
 .view-tabs button.on { color: var(--brand-dk); border-bottom-color: var(--brand); }
 .view-tabs button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 4px; }
 
+/* The tabs of a page made of several (see Hub in the admin): under its header. */
+.hub-tabs { margin-top: 0.75rem; }
+.hub-tabs .view-tabs { margin-bottom: 1.1rem; }
+.hub-under { margin: -0.3rem 0 1.1rem; }
+
 /* Which subset. Reads as a setting: enclosed, one of these is on. */
 .segmented {
   display: inline-flex; border: 0; background: var(--quiet); padding: 3px; gap: 2px;
@@ -1390,3 +1395,65 @@ table.data td .btn-sm { padding: 0.3rem 0.6rem; }
   .clean-ring { width: 108px; height: 108px; }
 }
 .clean-av { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--brand-soft); color: var(--brand-dk); font-size: 0.78rem; font-weight: 800; }
+
+/* ---- Need stock: the kitchen and the bar asking for stock. See stock-ask.tsx. ---- */
+.ask-scrim {
+  position: fixed; inset: 0; z-index: 70; background: rgba(8, 12, 18, 0.45); display: flex; justify-content: flex-end;
+  animation: fade-in 0.2s ease-out;
+}
+.ask-sheet {
+  width: min(600px, 100%); height: 100%; background: var(--surface); color: var(--text);
+  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; box-shadow: -18px 0 40px rgba(8, 12, 18, 0.18);
+}
+.ask-top { display: flex; align-items: center; gap: 0.8rem; padding: calc(0.9rem + env(safe-area-inset-top, 0)) 1.2rem 0.5rem; }
+.ask-top h1 { font-size: 1.45rem; margin-right: auto; }
+.ask-x { border: 0; background: var(--quiet); color: var(--text); width: 40px; height: 40px; border-radius: 50%; font-size: 1.2rem; cursor: pointer; }
+.ask-tabs { padding: 0 1.2rem; margin-bottom: 0; }
+.ask-body { overflow-y: auto; padding: 1rem 1.2rem 1.4rem; display: grid; gap: 1.2rem; align-content: start; }
+.ask-group { display: grid; gap: 0.5rem; }
+.ask-h { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+.ask-h h2 { font: 700 0.76rem var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); }
+.ask-h span { font-size: 0.8rem; color: var(--text-dim); }
+.ask-line {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.75rem; align-items: center;
+  padding: 0.7rem 0.8rem; border: 1px solid var(--hair); border-radius: 14px; background: var(--surface);
+}
+.ask-line.off { opacity: 0.5; }
+.ask-line.held { background: var(--surface-2); }
+.ask-tick {
+  width: 30px; height: 30px; border-radius: 9px; border: 2px solid var(--hair); background: var(--surface);
+  display: grid; place-items: center; cursor: pointer; padding: 0; color: var(--brand-ink);
+}
+.ask-tick[aria-checked="true"] { background: var(--brand); border-color: var(--brand); }
+.ask-what { display: grid; gap: 0.2rem; min-width: 0; }
+.ask-what small { color: var(--text-dim); font-size: 0.8rem; }
+.ask-meter { display: block; height: 5px; max-width: 180px; border-radius: 99px; background: var(--quiet); overflow: hidden; }
+.ask-meter i { display: block; height: 100%; min-width: 3px; background: var(--ember); border-radius: 99px; }
+.ask-step { display: inline-flex; align-items: center; gap: 0.15rem; background: var(--quiet); border-radius: 12px; padding: 3px; }
+.ask-step button { width: 40px; height: 40px; border: 0; border-radius: 9px; background: var(--surface); color: var(--text); font-size: 1.15rem; font-weight: 700; cursor: pointer; }
+.ask-step output { min-width: 5.2rem; text-align: center; font: 600 0.86rem var(--font-mono); }
+.ask-pill { font-size: 0.75rem; font-weight: 700; padding: 0.18rem 0.6rem; border-radius: 999px; background: var(--brand-soft); color: var(--brand-dk); white-space: nowrap; }
+.ask-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.ask-empty { margin: 0; color: var(--text-dim); font-size: 0.88rem; }
+.ask-foot {
+  border-top: 1px solid var(--hair); padding: 0.9rem 1.2rem calc(0.9rem + env(safe-area-inset-bottom, 0));
+  display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; background: var(--surface);
+}
+.ask-who { margin-right: auto; font-size: 0.85rem; color: var(--text-dim); }
+.ask-who b { color: var(--text); }
+.ask-go { padding: 0.85rem 1.2rem; border-radius: 16px; font-weight: 800; }
+.ask-req { border: 1px solid var(--hair); border-radius: 14px; padding: 0.8rem 0.9rem; display: grid; gap: 0.4rem; }
+.ask-req p { margin: 0; font-size: 0.88rem; color: var(--text-dim); }
+.ask-req p b { color: var(--text); }
+.ask-req .ask-note { font-style: italic; }
+.ask-req-top { display: flex; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+.ask-req-top span { font-size: 0.82rem; color: var(--text-dim); }
+.ask-trail { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+.ask-trail span { font-size: 0.76rem; padding: 0.12rem 0.55rem; border-radius: 999px; background: var(--quiet); color: var(--text-dim); }
+.ask-trail .past { background: var(--ok-bg); color: var(--ok); font-weight: 700; }
+.ask-trail .on { background: var(--brand-soft); color: var(--brand-dk); font-weight: 700; }
+.ask-trail .no { background: var(--warn-bg); color: var(--warn); font-weight: 700; }
+@media (max-width: 520px) {
+  .ask-line { grid-template-columns: auto minmax(0, 1fr); }
+  .ask-line .ask-step, .ask-line .ask-pill { grid-column: 2; justify-self: start; }
+}
