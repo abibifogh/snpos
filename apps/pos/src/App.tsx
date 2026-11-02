@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Button, Spinner, Card, Field, Input, Notice, useToast, Logo, HelpModal, EightySixModal, Modal, Badge,
-  OfflineBar, SchemaBar, StaleBar, useOfflineQueue, IdleScreen, ThemeButton, OwedNotice,
+  OfflineBar, SchemaBar, StaleBar, useOfflineQueue, IdleScreen, ThemeButton, OwedNotice, PersonChip,
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
@@ -276,6 +276,11 @@ export function App() {
       window.removeEventListener('online', now);
     };
   }, [locked, ctx?.venue.$id, loadStaff]);
+
+  /** When whoever is on the till took it: their PIN, or the sign-in. For the name chip. */
+  const [onSince, setOnSince] = useState<Date | null>(null);
+  const standingId = ctx?.profile?.$id;
+  useEffect(() => { setOnSince(standingId ? new Date() : null); }, [standingId]);
 
   const lock = () => {
     /*
@@ -964,7 +969,6 @@ export function App() {
           <Logo size={26} />
           <div>
             <strong>{ctx.venue.name}</strong>
-            <div className="who">{ctx.profile?.display_name ?? 'Staff'} · {ctx.profile?.role ?? 'no profile'}</div>
           </div>
         </div>
         {/* The two strips of buttons, held together.
@@ -1068,12 +1072,18 @@ export function App() {
               setting lived in the admin app, which is where nobody working a
               till ever is. */}
           <ThemeButton />
-          <Button size="sm" variant="ghost" onClick={lock} title="Lock this till">
-            Lock
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => account.deleteSession('current').then(() => location.reload())}>
-            Sign out
-          </Button>
+          {/* Whoever is on the till, as a person, with Lock and Sign out
+              behind their name. The same chip as the kitchen screen's. */}
+          <PersonChip
+            name={ctx.profile?.display_name ?? 'Staff'}
+            detail={ctx.profile?.role ? ctx.profile.role.charAt(0).toUpperCase() + ctx.profile.role.slice(1) : 'No staff profile'}
+            since={onSince}
+            sinceWords="On the till since"
+            actions={[
+              { label: 'Lock the till', main: true, onClick: lock },
+              { label: 'Sign out of this device', onClick: () => void account.deleteSession('current').then(() => location.reload()) },
+            ]}
+          />
         </div>
       </div>
 

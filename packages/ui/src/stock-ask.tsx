@@ -20,7 +20,7 @@ type Who = { id?: string; name?: string };
 
 type Line = AskLine & { on: boolean; added?: boolean };
 
-export function NeedStock({ side, venueId, who, lowBp, tickLow = false, onClose, onSent }: {
+export function NeedStock({ side, venueId, who, lowBp, showLow = false, tickLow = false, onClose, onSent }: {
   side: AskSide;
   venueId: string;
   who: Who;
@@ -30,6 +30,12 @@ export function NeedStock({ side, venueId, who, lowBp, tickLow = false, onClose,
    * unticking everything that is not.
    */
   tickLow?: boolean;
+  /**
+   * Whether what is running low is listed first, as its own section. Off
+   * unless an admin turns it on under Features: the sheet then opens on a
+   * search and the side's list, and the cook picks what is needed.
+   */
+  showLow?: boolean;
   /** The business's default low line, settings.low_stock_default_bp. */
   lowBp?: number;
   onClose: () => void;
@@ -49,11 +55,11 @@ export function NeedStock({ side, venueId, who, lowBp, tickLow = false, onClose,
       .then((l) => {
         if (!live) return;
         setList(l);
-        setLines(l.low.map((x) => ({ ...x, on: tickLow })));
+        setLines(showLow ? l.low.map((x) => ({ ...x, on: tickLow })) : []);
       })
       .catch(() => { if (live) setError('The stock list could not be read. Check the connection and open this again.'); });
     return () => { live = false; };
-  }, [venueId, side, lowBp, tickLow]);
+  }, [venueId, side, lowBp, tickLow, showLow]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -63,13 +69,20 @@ export function NeedStock({ side, venueId, who, lowBp, tickLow = false, onClose,
 
   const picked = lines.filter((l) => l.on && l.qty > 0);
   const q = query.trim().toLowerCase();
+  /*
+    What can be added. With the low list on, the rest of the side's list;
+    with it off, all of it, low or not, by name. Each once it is not
+    already being asked for.
+  */
   const more = useMemo(
-    () => (list?.others ?? [])
+    () => (showLow ? (list?.others ?? []) : [...(list?.low ?? []), ...(list?.others ?? [])].sort((a, b) => a.name.localeCompare(b.name)))
       .filter((o) => !lines.some((l) => l.ingredient_id === o.ingredient_id))
       .filter((o) => !q || o.name.toLowerCase().includes(q))
-      .slice(0, q ? 24 : 12),
-    [list, lines, q],
+      .slice(0, showLow && !q ? 12 : 80),
+    [list, lines, q, showLow],
   );
+  // Already ordered or asked for, and searched for: said, not offered.
+  const heldHits = !showLow && q ? (list?.held ?? []).filter((h) => h.name.toLowerCase().includes(q)) : [];
 
   const change = (id: string, f: (l: Line) => Line) => setLines((ls) => ls.map((l) => (l.ingredient_id === id ? f(l) : l)));
   const add = (o: AskLine) => { setLines((ls) => [...ls, { ...o, on: true, added: true }]); setQuery(''); };
@@ -107,8 +120,15 @@ export function NeedStock({ side, venueId, who, lowBp, tickLow = false, onClose,
         </button>
         <div className="ask-what ask-pick" onClick={() => change(l.ingredient_id, (x) => ({ ...x, on: !x.on }))}>
           <b>{l.name}</b>
-          <small>{leftWords(l)}{l.added ? ' · added by you' : ''}</small>
-          {l.full > 0 && <span className="ask-meter" aria-hidden="true"><i style={{ width: `${pct}%` }} /></span>}
+          {/* How low it is, only where the low list is switched on. Otherwise what one pack holds. */}
+          {showLow ? (
+            <>
+              <small>{leftWords(l)}{l.added ? ' · added by you' : ''}</small>
+              {l.full > 0 && <span className="ask-meter" aria-hidden="true"><i style={{ width: `${pct}%` }} /></span>}
+            </>
+          ) : l.buy_key === 'pack' && l.per > 1 ? (
+            <small>1 {buyWord(l, 1)} = {l.per} {l.unit}</small>
+          ) : null}
         </div>
         <div className="ask-step" aria-label={`How many ${l.buy_label}`}>
           <button type="button" aria-label="One fewer" onClick={() => change(l.ingredient_id, (x) => ({ ...x, qty: Math.max(1, x.qty - 1) }))}>−</button>
@@ -140,7 +160,24 @@ export function NeedStock({ side, venueId, who, lowBp, tickLow = false, onClose,
                   on the Stock page in the admin. Until then, write what you need in the note below.
                 </p>
               )}
-              {list.marked > 0 && (<>
+              {list.marked > 0 && !showLow && (<>
+              <section className="ask-group">
+                <div className="ask-h"><h2>What do you need?</h2><span>from the {list.marked} on the {side}&apos;s list</span></div>
+                <Input type="search" value={query} placeholder="Search the list" aria-label="Search the list" onChange={(e) => setQuery(e.target.value)} />
+                <div className="ask-chips">
+                  {more.map((o) => <button key={o.ingredient_id} type="button" className="chip" onClick={() => add(o)}>+ {o.name}</button>)}
+                  {heldHits.map((h) => <span key={h.ingredient_id} className="chip" aria-disabled="true" style={{ opacity: 0.6 }}>{h.name} · {h.why.toLowerCase()}</span>)}
+                  {more.length === 0 && heldHits.length === 0 && <span className="ask-empty">{q ? 'Nothing on the list matches.' : 'Everything on the list is below.'}</span>}
+                </div>
+              </section>
+              {lines.length > 0 && (
+                <section className="ask-group">
+                  <div className="ask-h"><h2>Asking for</h2><span>tap a name to leave it out</span></div>
+                  {lines.map(row)}
+                </section>
+              )}
+              </>)}
+              {list.marked > 0 && showLow && (<>
               <section className="ask-group">
                 <div className="ask-h"><h2>Running low</h2><span>of {list.marked} on the {side}&apos;s list</span></div>
                 {lines.filter((l) => !l.added).map(row)}

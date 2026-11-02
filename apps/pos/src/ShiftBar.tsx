@@ -43,7 +43,8 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   */
   const askOn = ctx.module === 'bar' && isEnabled(ctx.features, 'stock_requests');
   const [asking, setAsking] = useState(false);
-  const lowStock = useLowCount('bar', ctx.venue.$id, askOn, ctx.settings?.low_stock_default_bp);
+  const showLow = featureConfig(ctx.features, 'stock_requests', 'show_low', false);
+  const lowStock = useLowCount('bar', ctx.venue.$id, askOn && showLow, ctx.settings?.low_stock_default_bp);
   const [floats, setFloats] = useState<Record<string, string>>({});
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [rows, setRows] = useState<CountRow[]>([]);
@@ -609,6 +610,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           venueId={ctx.venue.$id}
           who={cleanWho}
           lowBp={ctx.settings?.low_stock_default_bp}
+          showLow={showLow}
           tickLow={featureConfig(ctx.features, 'stock_requests', 'tick_low', false)}
           onClose={() => setAsking(false)}
           onSent={(words) => { setAsking(false); onToast(words); lowStock.recheck(); }}

@@ -1406,6 +1406,42 @@ table.data td .btn-sm { padding: 0.3rem 0.6rem; }
 }
 .clean-av { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--brand-soft); color: var(--brand-dk); font-size: 0.78rem; font-weight: 800; }
 
+/* ---- Whoever is working this screen: a face, a name and a short menu. See person-chip.tsx. ---- */
+.who-chip-wrap { position: relative; display: inline-flex; }
+.who-chip {
+  display: inline-flex; align-items: center; gap: 0.45rem; height: 2.3rem; padding: 0 0.65rem 0 0.22rem;
+  border-radius: 999px; border: 1px solid var(--hair); background: var(--surface-2); color: var(--text);
+  font: inherit; font-weight: 700; font-size: 0.9rem; cursor: pointer; white-space: nowrap;
+}
+.who-chip:hover, .who-chip[aria-expanded="true"] { border-color: var(--brand); }
+.who-chip:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.who-av {
+  position: relative; width: 1.85rem; height: 1.85rem; border-radius: 50%; flex: none;
+  display: grid; place-items: center; background: var(--brand-soft); color: var(--brand-dk);
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.02em;
+}
+.who-av.lg { width: 2.6rem; height: 2.6rem; font-size: 0.9rem; }
+.who-av i { position: absolute; right: -1px; bottom: -1px; width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--ok); border: 2px solid var(--surface); }
+.who-chip-name { max-width: 9rem; overflow: hidden; text-overflow: ellipsis; }
+.who-caret { width: 0.45rem; height: 0.45rem; border-right: 2px solid var(--text-dim); border-bottom: 2px solid var(--text-dim); transform: rotate(45deg) translateY(-2px); }
+.who-scrim { position: fixed; inset: 0; z-index: 40; background: transparent; border: 0; padding: 0; cursor: default; }
+.who-pop {
+  position: absolute; right: 0; top: calc(100% + 0.45rem); z-index: 41; width: 17.5rem; max-width: calc(100vw - 1.5rem);
+  background: var(--surface); color: var(--text); border: 1px solid var(--hair); border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(14, 20, 27, 0.06), 0 14px 32px rgba(14, 20, 27, 0.16); padding: 0.55rem; display: grid; gap: 0.3rem;
+  animation: fade-in 0.15s ease-out; text-align: left;
+}
+.who-me { display: flex; align-items: center; gap: 0.65rem; padding: 0.4rem 0.45rem 0.6rem; border-bottom: 1px solid var(--hair); margin-bottom: 0.1rem; }
+.who-me b { display: block; font-family: var(--font-display); font-size: 1rem; }
+.who-me small { color: var(--text-dim); font-size: 0.8rem; }
+.who-act {
+  display: flex; align-items: center; gap: 0.55rem; width: 100%; border: 0; border-radius: 11px; padding: 0.65rem 0.75rem;
+  background: transparent; color: var(--text); font: inherit; font-weight: 650; cursor: pointer; text-align: left;
+}
+.who-act:hover { background: var(--surface-2); }
+.who-act.main { background: var(--brand); color: var(--brand-ink); font-weight: 700; }
+.who-act.main:hover { background: var(--brand-dk); }
+
 /* ---- Need stock: the kitchen and the bar asking for stock. See stock-ask.tsx. ---- */
 .ask-scrim {
   position: fixed; inset: 0; z-index: 70; background: rgba(8, 12, 18, 0.45); display: flex; justify-content: flex-end;
