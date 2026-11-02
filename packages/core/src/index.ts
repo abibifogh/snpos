@@ -92,6 +92,8 @@ export * from './intake-restock';
 export * from './shop-purchase';
 export * from './cleaning';
 export * from './cleaning-store';
+export * from './stock-requests';
+export * from './stock-requests-store';
 export * from './count-report';
 export * from './owing-statement';
 export * from './push-device';

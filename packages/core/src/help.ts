@@ -228,6 +228,35 @@ export const HELP_ARTICLES: HelpArticle[] = [
   },
 
   {
+    id: 'stock-requests',
+    title: 'Asking for stock',
+    summary: 'Need stock on the kitchen screen and the bar till, and what the manager does with it.',
+    area: 'kitchen',
+    audience: ['cook', 'cashier', 'manager', 'admin'],
+    body: [
+      p(
+        'When an admin switches it on under Setup \u2192 Settings \u2192 Features, the kitchen screen has a Need stock '
+        + 'button at the top, and the bar till has one beside Record spend. The number on it is how many things are '
+        + 'running low.',
+      ),
+      h('Asking'),
+      p(
+        'It opens on everything running low, each already set to bring it back to full in the packs it comes in: sacks, '
+        + 'crates, bottles. Untick what you do not need and change any amount with \u2212 and +. Search the list to add '
+        + 'anything else, and write what is not on the list in the note. Press Send. Your name goes with it.',
+      ),
+      note('What is already on order, or already asked for by somebody else, is shown but cannot be asked for again.'),
+      h('What happens next'),
+      p(
+        'It goes to Approvals for whoever orders stock, who is also emailed. They make the orders (one draft per '
+        + 'supplier, marked as asked by the kitchen or the bar), change the amounts first, or send it back with a reason. '
+        + 'Asked before, beside Ask, shows each request as asked, ordered or arrived, and the reason when it was sent back.',
+      ),
+      p('Nothing is bought from the kitchen screen or the till, and no prices are shown there.'),
+    ],
+  },
+
+  {
     id: 'shifts',
     title: 'Opening and closing a shift',
     summary: 'The cash drawer, the count, and the stock check at close.',

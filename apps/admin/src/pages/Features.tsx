@@ -61,6 +61,13 @@ const LABELS: Record<string, { title: string; blurb: string; to?: string; toLabe
       + 'screen can also set the level by hand, which lapses on its own so nobody leaves ordering switched off.',
   },
   discounts: { title: 'Discounts and discount codes', blurb: 'Guests type a code while ordering; staff apply discounts before the bill is marked paid.' },
+  stock_requests: {
+    title: 'Kitchen and bar can ask for stock',
+    blurb:
+      'A Need stock button on the kitchen screen and the bar\'s till. It opens on what is running low, already set to '
+      + 'bring each item back to full, and sends the list to whoever orders stock. They make the orders from Approvals, '
+      + 'or send it back with a reason. Nothing is bought from the pass, and cooks and bartenders never see prices.',
+  },
   /*
     These five had no entry, so they appeared on this page as their raw key
     with no explanation: a switch called `group_orders` and nothing to say

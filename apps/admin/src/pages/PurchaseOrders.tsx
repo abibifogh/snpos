@@ -195,6 +195,8 @@ export function PurchaseOrdersPage() {
                       <td>
                         <strong>{o.po_no}</strong>
                         {paidFromFloat(o) && <> <Badge tone="default">From Insight</Badge></>}
+                        {/* Made from what the kitchen or the bar asked for. See stock-requests.ts. */}
+                        {o.asked_by && <div><Badge tone="default">{o.asked_by}</Badge></div>}
                         <div className="small dim">{o.$createdAt ? dateTimeWords(o.$createdAt) : ''}{o.created_by_name ? ` · ${o.created_by_name}` : ''}</div>
                       </td>
                       <td>{o.supplier_name || '-'}<div className="small dim">{MODULE_LABELS[(o.module ?? 'kitchen') as Module]}</div></td>

@@ -13,6 +13,8 @@ import { shelfLines } from './core/consignment.ts';
 import { receivePieces } from './core/shop-purchase.ts';
 import { loadRoutine, saveRoutine, fileClean, filedToday, pendingCleanLogs, markCleanSeen, cleanLogsSince } from './core/cleaning-store.ts';
 import { listFor } from './core/cleaning.ts';
+import { loadAskList, fileStockRequest, pendingStockRequests, orderFromRequest, declineStockRequest, recentRequests, loadStockRequest } from './core/stock-requests-store.ts';
+import { requestStage } from './core/stock-requests.ts';
 import { loadWaiting } from './core/waiting-facts.ts';
 import { ownedChoices } from './core/intake-restock.ts';
 import {
@@ -1304,6 +1306,57 @@ console.log('\n=== CL \u2014 cleaning: off until switched on, filed with who and
   await markCleanSeen(filed.id, 'regina');
   const log = (await cleanLogsSince('main', '2026-11-01')).find((l) => l.$id === filed.id)!;
   results.push(['CL seen: off Approvals, the record unchanged', ok('seen', [(await pendingCleanLogs()).length, log.review, log.reviewed_by, log.answers.length, log.by_name], [0, 'seen', 'regina', list.length, 'Betty Quaye'])]);
+}
+
+console.log('\n=== SR \u2014 stock asked for: from the pass to draft orders, never twice ===');
+{
+  __reset();
+  __seed('suppliers', [
+    { $id: 'mak', venue_id: 'main', name: 'Makola Wholesale', email: 'orders@makola.gh', active: true },
+    { $id: 'kan', venue_id: 'main', name: 'Kaneshie Market', active: true },
+  ]);
+  __seed('ingredients', [
+    { $id: 'rice', venue_id: 'main', name: 'Jasmine rice', unit: 'kg', module: 'kitchen', current_qty: 6, par_level: 75, pack_size: 25, pack_name: 'sack', supplier_id: 'mak', base_unit_cost: 1900, last_unit_cost: 1920, critical: false },
+    { $id: 'oil', venue_id: 'main', name: 'Vegetable oil', unit: 'L', module: 'kitchen', current_qty: 4, par_level: 50, pack_size: 25, pack_name: 'jerrycan', supplier_id: 'mak', base_unit_cost: 2880, critical: false },
+    { $id: 'tom', venue_id: 'main', name: 'Tomatoes', unit: 'kg', module: 'kitchen', current_qty: 0, par_level: 40, pack_size: 20, pack_name: 'crate', supplier_id: 'kan', base_unit_cost: 1900, critical: false },
+    { $id: 'gari', venue_id: 'main', name: 'Gari', unit: 'kg', module: 'kitchen', current_qty: 18, par_level: 20, base_unit_cost: 900, critical: false },
+    { $id: 'gin', venue_id: 'main', name: 'Gin', unit: 'bottle', module: 'bar', current_qty: 1, par_level: 12, base_unit_cost: 9000, critical: false },
+  ]);
+  const list = await loadAskList('main', 'kitchen');
+  results.push(['SR the pass opens on its own low items, filled in to full', ok('low', [
+    list.low.map((l) => `${l.ingredient_id}:${l.qty}`).join(','), list.others.map((o) => o.ingredient_id).join(','),
+  ], ['tom:2,rice:3,oil:2', 'gari'])]);
+
+  const id = await fileStockRequest({ venueId: 'main', side: 'kitchen', lines: list.low, note: 'Pepper sauce too', byId: 'kofi', byName: 'Kofi' });
+  const again = await loadAskList('main', 'kitchen');
+  results.push(['SR asked for once: the second look shows it held, not offered', ok('held', [again.low.length, again.held.map((h) => h.why).join('|')], [0, 'Asked for by Kofi|Asked for by Kofi|Asked for by Kofi'])]);
+
+  const waiting = await loadWaiting('main', (n) => String(n));
+  const row = waiting.items.find((w) => w.kind === 'stock');
+  results.push(['SR on Approvals, in words', ok('row', [row?.title, row?.by, /Tomatoes, 2 crates/.test(row?.detail ?? ''), /Pepper sauce too/.test(row?.detail ?? '')], ['The kitchen needs 3 items', 'kofi', true, true])]);
+
+  const req = await loadStockRequest(id);
+  const changed = req.lines.map((l) => (l.ingredient_id === 'oil' ? { ...l, qty: 1 } : l));
+  const made = await orderFromRequest({ request: req, lines: changed, approveOver: 100000, isAdmin: false, by: 'ama', byName: 'Ama' });
+  const orders = (__all('stock_orders') as any[]).sort((a, b) => a.po_no.localeCompare(b.po_no));
+  const after = await loadStockRequest(id);
+  results.push(['SR one draft per supplier, marked, with the amounts the manager left', ok('drafts', [
+    made.orders, orders.map((o) => `${o.supplier_name}:${o.status}:${o.asked_by}`).join('|'),
+    JSON.parse(orders.find((o) => o.supplier_id === 'mak').lines).map((l: any) => `${l.ingredient_id}:${l.qty}:${l.unit_cost}`).join(','),
+    after.status, after.order_ids?.split(',').length, (await pendingStockRequests()).length,
+  ], [2, 'Makola Wholesale:draft:Asked by the kitchen · Kofi|Kaneshie Market:draft:Asked by the kitchen · Kofi', 'rice:3:48000,oil:1:72000', 'ordered', 2, 0])]);
+  results.push(['SR still held while the drafts are open', ok('held', (await loadAskList('main', 'kitchen')).held.map((h) => h.why).join('|'), 'Being ordered|Being ordered|Being ordered')]);
+
+  for (const o of orders) await db.updateDocument(DB_ID, 'stock_orders', o.$id, { status: 'received' });
+  const past = await recentRequests('main', 'kitchen');
+  results.push(['SR the pass sees it arrive', ok('stage', requestStage(past.requests[0], past.orders), 'arrived')]);
+
+  const id2 = await fileStockRequest({ venueId: 'main', side: 'bar', lines: (await loadAskList('main', 'bar')).low, note: '', byName: 'Kojo' });
+  await declineStockRequest({ id: id2, by: 'ama', byName: 'Ama', reason: 'Market run is Thursday' });
+  const bar = await recentRequests('main', 'bar');
+  results.push(['SR not now: nothing ordered, the reason goes back', ok('declined', [
+    requestStage(bar.requests[0], bar.orders), bar.requests[0].decided_note, (__all('stock_orders') as any[]).length, (await loadAskList('main', 'bar')).low.length,
+  ], ['declined', 'Market run is Thursday', 2, 1])]);
 }
 
 console.log('\n=== summary ===');

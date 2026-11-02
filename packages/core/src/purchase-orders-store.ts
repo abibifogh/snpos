@@ -46,6 +46,10 @@ export interface PurchaseOrderDoc {
   receipt_file_id?: string;
   /** 'float' when the money came from a float in Insight. */
   paid_by?: string;
+  /** Made from what the kitchen or the bar asked for. See stock-requests.ts. */
+  request_id?: string;
+  /** Who asked, in words: "Asked by the kitchen · Kofi". */
+  asked_by?: string;
 }
 
 export const loadPurchaseOrders = (venueId: string): Promise<PurchaseOrderDoc[]> =>
@@ -117,6 +121,8 @@ export async function savePurchaseOrder(input: {
    * been spent and approving it here would change nothing.
    */
   alreadyPaid?: boolean;
+  /** Written on a new order only: where it came from (request_id, asked_by). */
+  origin?: { request_id: string; asked_by: string };
 }): Promise<PurchaseOrderDoc> {
   const lines = input.lines.filter((l) => l.qty > 0);
   const total = orderTotal(lines);
@@ -150,6 +156,7 @@ export async function savePurchaseOrder(input: {
     po_no: nextPoNo(used),
     created_by: input.by,
     created_by_name: input.byName ?? '',
+    ...(input.origin ?? {}),
   });
   return db.getDocument(DB_ID, 'stock_orders', id) as unknown as Promise<PurchaseOrderDoc>;
 }

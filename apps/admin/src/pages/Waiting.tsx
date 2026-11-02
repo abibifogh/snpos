@@ -9,15 +9,17 @@ import {
   decideSpend, decidePurchaseOrder, loadWaiting, nameFrom, waitingCounts, waitingSummary, waitedWords, refuseSpendWords, WAITING_KIND_WORDS, dateTimeWords,
   loadReview, offWords, countDifferencesHtml, openPrintable,
   openBookingChanges, decideBookingChange, CHANGE_KIND_WORDS,
-  pendingGroupBookings, bookingStatusWords, markCleanSeen } from '@snpos/core';
+  pendingGroupBookings, bookingStatusWords, markCleanSeen, canOrderStock, loadStockRequest, orderFromRequest,
+  loadFeatures, featureConfig } from '@snpos/core';
 import type {
   WaitingItem, WaitingKind, WaitingSpend, WaitingTabShift, TabOrder, Review, ReviewLine, BookingChangeDoc, GroupBookingDoc,
 } from '@snpos/core';
 import { useSession, useMoney } from '../session';
 import { ChargeLineModal } from '../components/ChargeLine';
+import { StockAskPanel } from '../components/StockAsk';
 
 type Show = WaitingKind | 'all';
-const SHOWS: Show[] = ['all', 'count', 'spend', 'shelf', 'tab', 'order', 'clean'];
+const SHOWS: Show[] = ['all', 'count', 'spend', 'shelf', 'tab', 'order', 'clean', 'stock'];
 
 /**
  * Everything waiting for somebody senior, and the buttons to decide it.
@@ -89,8 +91,14 @@ export function WaitingPage() {
   /** A short line being charged to a person. See ChargeLineModal. */
   const [charging, setCharging] = useState<{ item: WaitingItem; line: ReviewLine } | null>(null);
 
+  /** A stock request opened from "Not now", with the reason box up. */
+  const [declineFirst, setDeclineFirst] = useState(false);
+
   const toggle = async (item: WaitingItem) => {
     if (openId === item.id) { setOpenId(null); setReview(null); return; }
+    setDeclineFirst(false);
+    // A stock request has its own panel, which reads what it needs.
+    if (item.kind === 'stock') { setOpenId(item.id); setReview(null); return; }
     setOpenId(item.id);
     setReview(null);
     setReviewing(true);
@@ -166,11 +174,23 @@ export function WaitingPage() {
       await markCleanSeen(ref.logId, userId);
       return 'Marked seen. The cleaning log keeps it as it was.';
     }
+    if (ref.kind === 'stock') {
+      // The amounts as asked. "See it, change amounts" is the way to change them first.
+      const r = await loadStockRequest(ref.requestId);
+      const features = await loadFeatures().catch(() => ({}));
+      const { orders } = await orderFromRequest({
+        request: r, lines: r.lines, isAdmin, by: userId, byName: profile?.display_name,
+        approveOver: featureConfig(features, 'purchase_orders', 'approve_over', 100000),
+      });
+      return `${orders} draft order${orders === 1 ? '' : 's'} made, under Stock › Purchase orders.`;
+    }
     return '';
   });
 
   const refuse = (item: WaitingItem) => {
     const ref = item.ref;
+    // Not now needs a reason, written in the request's own panel.
+    if (ref.kind === 'stock') { setOpenId(item.id); setReview(null); setDeclineFirst(true); return; }
     if (ref.kind === 'spend') {
       const s = spends.get(ref.expenseId);
       if (!confirm(refuseSpendWords(s?.source, money(item.value)))) return;
@@ -473,7 +493,9 @@ export function WaitingPage() {
                   const since = Date.parse(item.at);
                   const decidable = item.kind !== 'tab';
                   // A spend is any manager's to decide; a count that moves a shelf is an admin's.
-                  const may = item.kind === 'spend' || item.kind === 'order' || item.kind === 'clean' ? true : isAdmin;
+                  // Stock asked for is decided by whoever may order stock: making orders is theirs.
+                  const may = item.kind === 'stock' ? canOrderStock(profile, settings)
+                    : item.kind === 'spend' || item.kind === 'order' || item.kind === 'clean' ? true : isAdmin;
                   const open = openId === item.id;
                   // A tab has its own screen already, and there are no lines
                   // behind it to read.
@@ -502,7 +524,7 @@ export function WaitingPage() {
                             style={{ marginTop: '0.3rem', paddingLeft: 0 }}
                             onClick={() => void toggle(item)}
                           >
-                            {open ? 'Hide what is in it' : 'See what is in it'}
+                            {open ? 'Hide what is in it' : item.kind === 'stock' ? 'See it, change amounts' : 'See what is in it'}
                           </Button>
                         )}
                         {/* This count on its own, as a PDF. */}
@@ -534,17 +556,19 @@ export function WaitingPage() {
                             <>
                               {/* A cleaning list is a record, not a request: it is seen, not decided. */}
                               <Button size="sm" variant="primary" loading={busy === item.id} onClick={() => void approve(item)}>
-                                {item.kind === 'clean' ? 'Seen' : 'Approve'}
+                                {item.kind === 'clean' ? 'Seen' : item.kind === 'stock' ? 'Make orders' : 'Approve'}
                               </Button>
                               {item.kind !== 'clean' && (
                                 <>
                                   {' '}
-                                  <Button size="sm" variant="ghost" disabled={busy === item.id} onClick={() => refuse(item)}>Refuse</Button>
+                                  <Button size="sm" variant="ghost" disabled={busy === item.id} onClick={() => refuse(item)}>
+                                    {item.kind === 'stock' ? 'Not now' : 'Refuse'}
+                                  </Button>
                                 </>
                               )}
                             </>
                           ) : (
-                            <span className="small dim">An admin decides this</span>
+                            <span className="small dim">{item.kind === 'stock' ? 'Whoever orders stock decides this' : 'An admin decides this'}</span>
                           )
                         ) : (
                           <Button size="sm" variant="primary" loading={busy === item.id} onClick={() => void openRelease(item)}>
@@ -559,7 +583,20 @@ export function WaitingPage() {
                             it: the figures being judged stay on screen while
                             the lines that explain them are read. */}
                         <td colSpan={5} style={{ background: 'var(--surface-2, rgba(0,0,0,0.02))' }}>
-                          {reviewing || !review ? <Spinner /> : (
+                          {item.kind === 'stock' && item.ref.kind === 'stock' ? (
+                            may ? (
+                              <StockAskPanel
+                                key={`${item.id}:${declineFirst}`}
+                                requestId={item.ref.requestId}
+                                userId={userId}
+                                userName={profile?.display_name}
+                                isAdmin={isAdmin}
+                                money={money}
+                                startDeclining={declineFirst}
+                                onDone={(words) => { toast(words); setOpenId(null); void load(); }}
+                              />
+                            ) : <span className="small dim">Whoever orders stock decides this.</span>
+                          ) : reviewing || !review ? <Spinner /> : (
                             <ReviewLines
                               review={review}
                               money={money}
