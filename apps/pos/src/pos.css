@@ -30,6 +30,10 @@
   padding-right: calc(1rem + env(safe-area-inset-right, 0));
 }
 .pos-top .who { font-size: 0.85rem; color: var(--text-dim); }
+/* Search across every category, above the category chips. See searchMenu. */
+.pos-search { display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.7rem; }
+.pos-search .input { flex: 1 1 auto; max-width: 30rem; }
+.pos-search span { white-space: nowrap; }
 .pos-tabs { display: flex; gap: 0.4rem; }
 .pos-tabs button {
   padding: 0.45rem 0.9rem; border-radius: 999px; border: 1px solid var(--border);

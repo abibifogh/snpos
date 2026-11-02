@@ -93,6 +93,7 @@ export * from './shop-purchase';
 export * from './cleaning';
 export * from './cleaning-store';
 export * from './stock-requests';
+export * from './menu-search';
 export * from './stock-requests-store';
 export * from './count-report';
 export * from './owing-statement';

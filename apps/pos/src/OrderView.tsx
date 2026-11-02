@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Field, Input, Modal, Notice, Select, Badge, Spinner } from '@snpos/ui';
 import {
   db, DB_ID, ID, Query, listAll, createOrder, computeTotals, lineTotal, formatMoney,
-  parseMoney, toInput, isEnabled, featureConfig, visibleSections, recordPayment, asksForTip,
+  parseMoney, toInput, isEnabled, featureConfig, visibleSections, searchMenu, recordPayment, asksForTip,
   referenceProblem, referenceRequired, referenceWords,
   variantPriceRange, shiftUsable, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, sharesFor, shouldWarnLateOrder,
   sellBlockedReason, previewUrl,
@@ -14,7 +14,7 @@ import {
   amountDueOn, unrungProblem, displayOrderNo, humanError, isUnpaidBill, parksAfterSend,
   loadOpenTabs, postOrderToTab, postProblem, tabOwing, ordersOnTab, paidOnOrders, bpWords } from '@snpos/core';
 import type {
-  CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, Settings, DiscountRow,
+  CartAddon, CartLine, Order, OrderItem, Doc, MenuEntry, MenuSection, Settings, DiscountRow,
   Recipe, Ingredient, MenuItem, TakenPayment, Tab,
 } from '@snpos/core';
 import { OptionSheet } from './OptionSheet';
@@ -379,6 +379,21 @@ export function OrderView({
 
   /** The section on screen, needed for its name as well as its entries. */
   const shownSection = sections.find((s) => s.category.$id === sectionId) ?? null;
+
+  /*
+    Search, across every category on this side. A counter with fourteen
+    categories is a counter where somebody hunts for the lip balm; typing
+    "lip" finds it wherever it is filed. Choosing a category clears it.
+    See searchMenu.
+  */
+  const [query, setQuery] = useState('');
+  const searching = query.trim().length > 0;
+  const hits = useMemo(
+    () => (searching
+      ? searchMenu<MenuEntry, MenuSection>(sections, query)
+      : (shownSection?.entries ?? []).map((entry) => ({ entry, section: shownSection as NonNullable<typeof shownSection> }))),
+    [searching, sections, query, shownSection],
+  );
 
   /*
     The bar's recipes, once per shift.
@@ -836,6 +851,29 @@ export function OrderView({
 
       <div className="pos-body order-layout">
         <div>
+          <div className="pos-search">
+            <input
+              type="search"
+              className="input"
+              value={query}
+              placeholder={ctx.module === 'kitchen' ? 'Search the menu' : 'Search products'}
+              aria-label={ctx.module === 'kitchen' ? 'Search the menu' : 'Search products'}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                // One match and Enter adds it, which is also how a barcode scanner finishes.
+                if (e.key === 'Enter' && hits.length === 1 && !hits[0].entry.soldOut) {
+                  addItem(hits[0].entry.item.$id);
+                  setQuery('');
+                }
+                if (e.key === 'Escape') setQuery('');
+              }}
+            />
+            {searching && (
+              <span className="small dim" aria-live="polite">
+                {hits.length === 0 ? 'Nothing matches' : `${hits.length} ${hits.length === 1 ? 'match' : 'matches'}`}
+              </span>
+            )}
+          </div>
           <div className="pos-tabs" style={{ marginBottom: '0.8rem', flexWrap: 'wrap' }}>
             {sections.map((s) => {
               /*
@@ -854,7 +892,7 @@ export function OrderView({
                 chipColour, which returns nothing for those.
               */
               const paint = chipColour(s.category);
-              const chosen = sectionId === s.category.$id;
+              const chosen = !searching && sectionId === s.category.$id;
               const pic = showsPicture(s.category) && s.category.image_id
                 ? downloadUrl(s.category.image_id, 'menu', ctx.settings)
                 : null;
@@ -862,7 +900,7 @@ export function OrderView({
                 <button
                   key={s.category.$id}
                   className={chosen ? 'on' : ''}
-                  onClick={() => setSectionId(s.category.$id)}
+                  onClick={() => { setSectionId(s.category.$id); setQuery(''); }}
                   style={paint
                     ? {
                       background: paint,
@@ -884,7 +922,7 @@ export function OrderView({
             })}
           </div>
           <div className={ctx.module === 'kitchen' ? 'menu-grid' : 'menu-grid with-pics'}>
-            {(shownSection?.entries ?? []).map((entry) => {
+            {hits.map(({ entry, section }) => {
               /*
                 A shop sells things that look like something.
 
@@ -930,7 +968,7 @@ export function OrderView({
                 choice because of a feature used occasionally.
               */
               const peekable = ctx.module === 'bar'
-                && showsRecipe(entry.item.$id, recipes ?? [], shownSection?.category.name);
+                && showsRecipe(entry.item.$id, recipes ?? [], section.category.name);
               const card = (
                 <button
                   key={peekable ? undefined : entry.item.$id}
@@ -1130,7 +1168,9 @@ export function OrderView({
             )}
 
             {existing.length === 0 && cart.length === 0 && (
-              <p className="dim small" style={{ margin: 0 }}>Tap dishes to build the order.</p>
+              <p className="dim small" style={{ margin: 0 }}>
+                {ctx.module === 'kitchen' ? 'Tap dishes to build the order.' : 'Tap items to build the sale.'}
+              </p>
             )}
           </div>
         </Card>
