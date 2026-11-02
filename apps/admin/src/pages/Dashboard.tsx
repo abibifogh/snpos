@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom';
 import { Card, Badge, Spinner, Notice, TrendChart } from '@snpos/ui';
 import {
   todayFacts, against, percentWords, tradingHours, topSellers, openForWords, SIDE_NAMES,
-  loadWaiting, waitedWords, levelOf, timeWords, nameFrom, greetingFor, daySoFar } from '@snpos/core';
+  loadWaiting, waitedWords, levelOf, timeWords, nameFrom, greetingFor, daySoFar, canOpen } from '@snpos/core';
 import type { TodayFacts, WaitingItem } from '@snpos/core';
 import { useSession, useMoney } from '../session';
 import { CloseDayCard } from '../components/CloseDay';
+import { HubTabs } from '../components/Hub';
 
 /**
  * Today.
@@ -64,18 +65,18 @@ export function Dashboard() {
       out.push({ what: 'Card and mobile money not settled to the bank', why: `MoMo ${money(facts.hanging.momo)} · Card ${money(facts.hanging.card)}`, badge: 'Books', to: '/accounting?tab=settle', tone: 'default' });
     }
     if (facts.schema === 'behind') {
-      out.push({ what: 'The database is behind the app', why: 'A provision run has not happened since the schema changed', badge: 'Health', to: '/health', tone: 'danger' });
+      out.push({ what: 'The database is behind the app', why: 'A provision run has not happened since the schema changed', badge: 'Health', to: '/settings?tab=data', tone: 'danger' });
     }
     const quiet = !facts.lastHealthRun || Date.parse(facts.now) - Date.parse(facts.lastHealthRun) > 36 * 3_600_000;
     if (quiet) {
-      out.push({ what: 'The nightly check has not run', why: facts.lastHealthRun ? `Last ran ${facts.lastHealthRun.slice(0, 10)}` : 'It has never run; the background job may not be deployed', badge: 'Health', to: '/health', tone: 'warn' });
+      out.push({ what: 'The nightly check has not run', why: facts.lastHealthRun ? `Last ran ${facts.lastHealthRun.slice(0, 10)}` : 'It has never run; the background job may not be deployed', badge: 'Health', to: '/settings?tab=data', tone: 'warn' });
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [facts]);
 
-  if (error) return <><h1>Today</h1><Notice>{error}</Notice></>;
-  if (!facts) return <><h1>Today</h1><Spinner /></>;
+  if (error) return <><h1>Today</h1><HubTabs /><Notice>{error}</Notice></>;
+  if (!facts) return <><h1>Today</h1><HubTabs /><Spinner /></>;
 
   const sides = facts.sides;
   const kinds = facts.today.byKind;
@@ -95,6 +96,7 @@ export function Dashboard() {
         <div className="kicker today-when">{when}</div>
         <h1>{greetingFor(now.getHours())}{first ? `, ${first}` : ''}</h1>
       </div>
+      <HubTabs />
 
       {facts.catalogueEmpty && (
         <Card title="Getting started"
@@ -107,9 +109,9 @@ export function Dashboard() {
           <ol className="small" style={{ lineHeight: 1.9, paddingLeft: '1.2rem', margin: 0 }}>
             <li><Link to="/settings">Settings</Link>, restaurant name, currency, tax and colours.</li>
             <li><Link to="/venues">Venues</Link>, set your opening hours. Pre-ordering needs these.</li>
-            <li><Link to="/catalogue/categories">Categories</Link>, Starters, Mains, Drinks.</li>
+            <li><Link to="/catalogue/items?tab=categories">Categories</Link>, Starters, Mains, Drinks.</li>
             <li><Link to="/catalogue/items">Products</Link>, the menu itself, with prices.</li>
-            <li><Link to="/features">Features</Link>, switch off anything you do not want yet.</li>
+            <li><Link to="/settings?tab=features">Features</Link>, switch off anything you do not want yet.</li>
           </ol>
         </Card>
       )}
@@ -257,8 +259,10 @@ export function Dashboard() {
       </div>
 
       {/* Whether yesterday (or today) is put away, before anything else that
-          needs a look. See close-day.ts. */}
-      <CloseDayCard money={money} compact />
+          needs a look. See close-day.ts. The whole list is the Close the day
+          tab beside this one; the card stays only for somebody who can see
+          the day and not that tab, as it always has. */}
+      {!canOpen('close_day', profile, settings) && <CloseDayCard money={money} compact />}
 
       <Card title={`Needs a look${look.length ? ` · ${look.length}` : ''}`} pad={false}>
         {look.length === 0 ? (

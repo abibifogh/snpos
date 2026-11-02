@@ -8,6 +8,7 @@ import {
   tabOwing, tabSummaryWords, tabIsOpen, displayOrderNo, MODULE_LABELS, dateTimeWords } from '@snpos/core';
 import type { Tab, Order, Module } from '@snpos/core';
 import { useSession, useMoney } from '../session';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 /**
  * Running accounts, and what is on them.
@@ -146,15 +147,15 @@ export function TabsPage() {
 
   return (
     <>
-      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+      <div className="spread">
         <div>
-          <h2 style={{ margin: 0 }}>
-            Tabs
+          <h1>
+            <HubTitle>Tabs</HubTitle>
             <InfoTip>
               A running account somebody settles later. One tab takes orders from the bar, the kitchen and the
               shop — a guest who does all three has one account, not three.
             </InfoTip>
-          </h2>
+          </h1>
         </div>
         <div className="row" style={{ gap: '0.5rem' }}>
           <Button variant="ghost" onClick={() => setShowClosed((v) => !v)}>
@@ -163,6 +164,7 @@ export function TabsPage() {
           <Button variant="primary" onClick={() => { setAdding(true); setError(null); }}>Open a tab</Button>
         </div>
       </div>
+      <HubTabs />
 
       {error && <div style={{ marginBottom: '1rem' }}><Notice>{error}</Notice></div>}
 

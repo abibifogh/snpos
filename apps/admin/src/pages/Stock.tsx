@@ -20,6 +20,7 @@ import { KeyedListManager, useKeyedList, nameForKey } from '../components/KeyedL
 import { StockImport } from '../components/StockImport';
 import { useSession } from '../session';
 import { LocationsPage } from './Locations';
+import { WastePage } from './Waste';
 
 interface Supplier extends Doc { venue_id: string; name: string; contact?: string; phone?: string; email?: string; active: boolean }
 
@@ -156,11 +157,15 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   const decimals = settings?.currency_decimals ?? 2;
   const [params, setParams] = useSearchParams();
 
-  type Tab = 'ingredients' | 'places' | 'suppliers' | 'categories' | 'packs';
-  const [tab, setTab] = useState<Tab>(() => {
-    const asked = params.get('tab');
-    return asked === 'places' || asked === 'suppliers' || asked === 'categories' || asked === 'packs' ? asked : 'ingredients';
-  });
+  type Tab = 'ingredients' | 'places' | 'suppliers' | 'categories' | 'packs' | 'waste';
+  /*
+    Which tab is in the address, read every time, so a link to another tab of
+    this page (Waste from the sidebar, Places from Approvals) switches to it.
+  */
+  const asked = params.get('tab');
+  const askedTab: Tab = asked === 'places' || asked === 'suppliers' || asked === 'categories' || asked === 'packs' || asked === 'waste'
+    ? asked : 'ingredients';
+  const setTab = (t: Tab) => setParams((p) => { p.set('tab', t); return p; }, { replace: true });
   /**
    * This side's places and what each holds, for a column per place.
    *
@@ -193,6 +198,9 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
   const mayPlaces = canOpen('locations', profile, settings);
   const mayCount = canOpen(module === 'bar' ? 'bar_counts' : module === 'craft' ? 'stocktake' : 'stock', profile, settings);
   const mayWaste = canOpen('waste', profile, settings);
+  // Waste is the kitchen's, and Places only for whoever may move stock.
+  const tab: Tab = (askedTab === 'waste' && !(mayWaste && module === 'kitchen')) || (askedTab === 'places' && !mayPlaces)
+    ? 'ingredients' : askedTab;
   const { rows: packKinds, reload: reloadPacks } = useKeyedList('pack_kinds');
   const [ingredients, setIngredients] = useState<Ingredient[] | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -590,7 +598,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
     <>
       <div className="spread">
         <h1>{W.title}</h1>
-        {tab !== 'categories' && (
+        {(tab === 'ingredients' || tab === 'suppliers') && (
           <div className="row">
             {tab === 'ingredients' && archivedCount > 0 && (
               <Button onClick={() => setShowArchived((s) => !s)}>
@@ -629,7 +637,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
         <Button variant="primary" onClick={() => setReceiving(true)}>Receive stock</Button>
         {mayPlaces && <Button onClick={() => setTab('places')}>Move</Button>}
         {mayCount && <Link className="btn" to={`/count?side=${module}`}>Count</Link>}
-        {mayWaste && module === 'kitchen' && <Link className="btn" to="/waste">Waste</Link>}
+        {mayWaste && module === 'kitchen' && <Button onClick={() => setTab('waste')}>Waste</Button>}
       </div>
 
       <ViewTabs
@@ -637,10 +645,12 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
         onChange={setTab}
         options={[
           { value: 'ingredients', label: 'Items' },
-          ...(mayPlaces ? [{ value: 'places' as const, label: 'Places & moves' }] : []),
+          ...(mayPlaces ? [{ value: 'places' as const, label: 'Places' }] : []),
           { value: 'suppliers', label: 'Suppliers' },
-          { value: 'categories', label: 'Categories' },
           { value: 'packs', label: 'Packs' },
+          { value: 'categories', label: 'Stock categories' },
+          // Stock leaving, beside the stock. It was a page of its own.
+          ...(mayWaste && module === 'kitchen' ? [{ value: 'waste' as const, label: 'Waste' }] : []),
         ]}
       />
 
@@ -720,6 +730,8 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
 
       {tab === 'places' ? (
         <LocationsPage side={module} />
+      ) : tab === 'waste' ? (
+        <WastePage asTab />
       ) : tab === 'packs' ? (
         <KeyedListManager
           collection="pack_kinds"
@@ -912,7 +924,7 @@ export function StockPage({ module = 'kitchen' }: { module?: Module }) {
       {receiving && mayIntake && !buying && (
         <Modal title="Receive stock" onClose={doneReceiving}>
           <div className="stack" style={{ gap: '0.6rem' }}>
-            <button type="button" className="choice-card" onClick={() => { doneReceiving(); navigate('/intake?receive=1'); }}>
+            <button type="button" className="choice-card" onClick={() => { doneReceiving(); navigate('/consignors?tab=received&receive=1'); }}>
               <strong>From a maker</strong>
               <span className="small dim">
                 Pieces a maker leaves for the shop to sell. Booked in on Goods received, with a slip for the maker.

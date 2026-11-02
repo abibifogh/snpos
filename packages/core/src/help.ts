@@ -344,10 +344,10 @@ export const HELP_ARTICLES: HelpArticle[] = [
         'Cash in the safe shows there too. Bank it from the safe when convenient, the same way.',
       ),
       h('Close the day'),
-      p('Today opens with a short list for yesterday (or today, after noon): shifts closed, count differences decided, cash put away and banked, MoMo and card matched to the bank, spends agreed, and petty cash counted. Each line says whether it is done and takes you to where it is done. It decides nothing itself.'),
+      p('The Close the day tab on Today is a short list for yesterday (or today, after noon): shifts closed, count differences decided, cash put away and banked, MoMo and card matched to the bank, spends agreed, and petty cash counted. Each line says whether it is done and takes you to where it is done. It decides nothing itself.'),
       h('The books'),
-      p('Accounting is one page in three rows. Your jobs: Settle up, Bills to pay, Owed to us, Reconcile, Close a period. Reports: profit and loss with the balance sheet, cash flow, general ledger, tax return, trial balance. For your accountant: journal, recurring entries, fixed assets, chart of accounts, bank and cash accounts, opening balances, year end. See "The accounts" for each.'),
-      note('What each person sees of it is granted part by part, under Settings.'),
+      p('The books are three pages under Books. Accounting holds the weekly jobs: Settle up, Bills to pay, Owed to us, Reconcile, Close a period. Reports holds the sales figures and, beside them, profit and loss with the balance sheet, cash flow and the tax return. Accountant tools holds the journal, general ledger, trial balance, recurring entries, fixed assets, chart of accounts, bank and cash accounts, opening balances and year end. See "The accounts" for each.'),
+      note('What each person sees of it is granted part by part, under Staff, on the Permissions tab.'),
     ],
   },
 
@@ -442,7 +442,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       p('Stock is one page with a side switch: the kitchen, the bar. Each item is one row, with a column for each place it can sit in (the counter, the store room) and the total beside them. The jobs done to stock sit on top of the list.'),
       list(
         'Receive stock: what came in, from whom, into which place, and how it was paid.',
-        'Move: carry stock from one place to another, on the Places & moves tab. That tab is also where places are set up and opening levels uploaded; it used to be called Where stock sits.',
+        'Move: carry stock from one place to another, on the Places tab of Stock. That tab is also where places are set up and opening levels uploaded; it used to be called Where stock sits.',
         'Count: one count sheet for every place, opened on the side you are looking at. The shop counts its pieces on the shelf from the same page.',
         'Waste: anything thrown away, spoiled or eaten by staff.',
       ),

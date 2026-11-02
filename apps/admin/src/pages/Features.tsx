@@ -5,6 +5,7 @@ import { db, DB_ID, listAll, humanError } from '../lib';
 import { useSession } from '../session';
 import { FEATURE_DEPENDENCIES, toInput, parseMoney } from '@snpos/core';
 import type { FeatureFlag, Venue } from '@snpos/core';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 /** One number out of a feature's config text, or the fallback if it says nothing. */
 function configNumber(flag: FeatureFlag, option: string, fallback: number): number {
@@ -72,8 +73,8 @@ const LABELS: Record<string, { title: string; blurb: string; to?: string; toLabe
       'A separate, private link for parties and hotel bookings. It shows only the categories you have marked '
       + 'group-only, and lets a group staying several nights book a meal at a time, each one eaten here or packed '
       + 'to take away. With this off, that link opens the ordinary menu.',
-    to: '/tables',
-    toLabel: 'Sell → Tables & QR',
+    to: '/venues?tab=tables',
+    toLabel: 'Setup → Venues → Tables & QR',
   },
   item_availability: {
     title: 'Mark a dish as run out',
@@ -282,12 +283,13 @@ export function FeaturesPage() {
   return (
     <>
       <h1>
-        Features
+        <HubTitle>Features</HubTitle>
         <InfoTip label="About features">
           Switching a feature off hides it; it never deletes what you have already recorded, so you can turn it back
           on later and find everything intact.
         </InfoTip>
       </h1>
+      <HubTabs />
 
       <Card pad>
         {!rows ? (

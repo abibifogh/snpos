@@ -905,6 +905,11 @@ td.num.bad { color: var(--danger); }
 .view-tabs button.on { color: var(--brand-dk); border-bottom-color: var(--brand); }
 .view-tabs button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 4px; }
 
+/* The tabs of a page made of several (see Hub in the admin): under its header. */
+.hub-tabs { margin-top: 0.75rem; }
+.hub-tabs .view-tabs { margin-bottom: 1.1rem; }
+.hub-under { margin: -0.3rem 0 1.1rem; }
+
 /* Which subset. Reads as a setting: enclosed, one of these is on. */
 .segmented {
   display: inline-flex; border: 0; background: var(--quiet); padding: 3px; gap: 2px;

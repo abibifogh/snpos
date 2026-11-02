@@ -4,6 +4,7 @@ import { listAll, humanError } from '../lib';
 import { loadConsignors, balancesByConsignor, dateWords } from '@snpos/core';
 import type { Consignor, ConsignorPayout } from '@snpos/core';
 import { useMoney } from '../session';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 /**
  * Who is waiting to be paid, and what has been paid already.
@@ -62,8 +63,9 @@ export function PayoutsPage() {
   return (
     <div>
       <div className="page-head">
-        <h1>Payouts</h1>
+        <h1><HubTitle>Payouts</HubTitle></h1>
       </div>
+      <HubTabs />
 
       {error && <Notice tone="err">{error}</Notice>}
 

@@ -15,7 +15,7 @@ import type {
 } from '@snpos/core';
 import { useSession, useMoney } from '../session';
 import { MakerUpload } from '../components/MakerUpload';
-import { AlsoHere } from '../components/AlsoHere';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 /**
  * The people whose work the shop sells, and what it owes them.
@@ -152,7 +152,7 @@ export function ConsignorsPage() {
       <div className="page-head">
         {/* "Makers" in the sidebar, so "Makers" here. Consignor is the trade
             word and nobody looking for it in the list would find it. */}
-        <h1>Makers</h1>
+        <h1><HubTitle>Makers</HubTitle></h1>
         <div className="row" style={{ gap: '0.5rem' }}>
           {/* A shop opening its doors already has thirty of these written down
               somewhere, and the alternative is thirty forms and four commission
@@ -161,7 +161,7 @@ export function ConsignorsPage() {
           <Button variant="primary" onClick={() => open()}>Add a consignor</Button>
         </div>
       </div>
-      <AlsoHere host="consignors" />
+      <HubTabs />
 
       {error && <Notice tone="err">{error}</Notice>}
 

@@ -1,43 +1,27 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Spinner, Notice } from '@snpos/ui';
-import { canOpen, unavailableWords, NAV_MERGES } from '@snpos/core';
+import { canOpen, opensPage, catalogueSides, unavailableWords, NAV_MERGES } from '@snpos/core';
 import type { ReactElement } from 'react';
-import { useSession, useMoney } from './session';
+import { useSession } from './session';
 import { Login } from './pages/Login';
 import { Shell } from './Shell';
-import { Dashboard } from './pages/Dashboard';
-import { SettingsPage } from './pages/SettingsPage';
-import { FeaturesPage } from './pages/Features';
-import { VenuesPage } from './pages/Venues';
 import { AccountPage } from './pages/Account';
 import { HelpPage } from './pages/Help';
-import { AddonsPage } from './pages/Addons';
 import { ExpensesPage } from './pages/Expenses';
 import { WaitingPage } from './pages/Waiting';
 import { GroupBookingsPage } from './pages/GroupBookings';
-import { HealthPage } from './pages/Health';
-import { CataloguePage } from './pages/Catalogue';
 import { ImprestPage } from './pages/Imprest';
-import { CustomersPage } from './pages/Customers';
+import { CataloguePage } from './pages/Catalogue';
 import { AccountingPage } from './pages/Accounting';
-import { TablesPage } from './pages/Tables';
-import { ShiftsPage } from './pages/Shifts';
-import { StaffPage } from './pages/Staff';
 import { WastePage } from './pages/Waste';
 import { CleaningPage } from './pages/Cleaning';
 import { PurchaseOrdersPage } from './pages/PurchaseOrders';
-import { CloseDayPage } from './components/CloseDay';
-import { ReportsPage } from './pages/Reports';
-import { StationsPage } from './pages/Stations';
 import { OrdersPage } from './pages/Orders';
-import { PurgePage } from './pages/Purge';
 import { VouchersPage } from './pages/Vouchers';
-import { ConsignorsPage } from './pages/Consignors';
-import { TabsPage } from './pages/Tabs';
-import { StaffOwingPage } from './pages/StaffOwing';
-import { IntakePage } from './pages/Intake';
 import { CountPage } from './pages/Count';
-import { PayoutsPage } from './pages/Payouts';
+import {
+  TodayHub, ProductsHub, CustomersHub, MakersHub, ShiftsHub, ReportsHub, VenuesHub, SettingsHub, StaffHub,
+} from './pages/Hubs';
 
 export function App() {
   const { user, profile, settings, loading } = useSession();
@@ -71,66 +55,70 @@ export function App() {
     );
 
   /** A page that stands for several sides: open if any of them is. */
-  const guardAny = (to: string, element: ReactElement) => {
-    const keys = Object.values(NAV_MERGES.find((m) => m.to === to)?.keys ?? {});
-    return keys.some((k) => canOpen(k, profile, settings)) ? element : guard(keys[0] ?? '', element);
-  };
+  const sidesOf = (to: string) => Object.values(NAV_MERGES.find((m) => m.to === to)?.keys ?? {});
+  /**
+   * A page made of tabs: open if any tab is, and each tab then shows only to
+   * whoever could open it before. The first key names the refusal.
+   */
+  const guardSome = (keys: string[], element: ReactElement) =>
+    keys.some((k) => opensPage(k, profile, settings)) ? element : guard(keys[0] ?? '', element);
 
   return (
     <Shell>
       <Routes>
-        <Route path="/" element={guard('dashboard', <Dashboard />)} />
+        <Route path="/" element={guardSome(['dashboard', 'close_day'], <TodayHub />)} />
         <Route path="/orders" element={guard('orders', <OrdersPage />)} />
-        <Route path="/reports" element={guard('reports', <ReportsPage />)} />
-        {/* One catalogue page per kind, with a side switch on it. Each side is
+        <Route path="/reports" element={guardSome(['reports'], <ReportsHub />)} />
+        {/* Products: items, categories and options, a tab each. Each side is
             still its own grant; the page offers only the sides this person
-            holds. The old per-side addresses still work, redirected. */}
-        <Route path="/catalogue/categories" element={guardAny('/catalogue/categories', <CataloguePage kind="categories" />)} />
-        <Route path="/catalogue/items" element={guardAny('/catalogue/items', <CataloguePage kind="items" />)} />
-        <Route path="/menu/categories" element={<Navigate to="/catalogue/categories?side=kitchen" replace />} />
-        <Route path="/menu/items" element={<Navigate to="/catalogue/items?side=kitchen" replace />} />
-        <Route path="/shop/categories" element={<Navigate to="/catalogue/categories?side=craft" replace />} />
-        <Route path="/shop/items" element={<Navigate to="/catalogue/items?side=craft" replace />} />
-        <Route path="/menu/options" element={guard('menu_options', <AddonsPage />)} />
+            holds. The old addresses still work, redirected to their tab. */}
+        <Route
+          path="/catalogue/items"
+          element={guardSome([...sidesOf('/catalogue/items'), ...sidesOf('/catalogue/categories'), 'menu_options'], <ProductsHub />)}
+        />
+        <Route path="/catalogue/categories" element={<ToTab path="/catalogue/items" tab="categories" />} />
+        <Route path="/menu/options" element={<ToTab path="/catalogue/items" tab="options" />} />
+        <Route path="/menu/items" element={<ToTab path="/catalogue/items" tab="items" side="kitchen" />} />
+        <Route path="/menu/categories" element={<ToTab path="/catalogue/items" tab="categories" side="kitchen" />} />
+        <Route path="/shop/items" element={<ToTab path="/catalogue/items" tab="items" side="craft" />} />
+        <Route path="/shop/categories" element={<ToTab path="/catalogue/items" tab="categories" side="craft" />} />
+        <Route path="/bar/items" element={<ToTab path="/catalogue/items" tab="items" side="bar" />} />
+        <Route path="/bar/categories" element={<ToTab path="/catalogue/items" tab="categories" side="bar" />} />
         <Route path="/expenses" element={guard('expenses', <ExpensesPage />)} />
         <Route path="/waiting" element={guard('waiting', <WaitingPage />)} />
-        <Route path="/close-day" element={guard('close_day', <CloseDayRoute />)} />
+        <Route path="/close-day" element={<ToTab path="/" tab="close" />} />
         <Route path="/group-bookings" element={guard('group_bookings', <GroupBookingsPage />)} />
-        <Route path="/health" element={guard('health', <HealthPage />)} />
         <Route path="/imprest" element={guard('imprest', <ImprestPage />)} />
-        <Route path="/customers" element={guard('customers', <CustomersPage />)} />
-        <Route path="/accounting" element={guard('accounting', <AccountingPage />)} />
+        <Route path="/customers" element={guardSome(['customers', 'tabs'], <CustomersHub />)} />
+        <Route path="/tabs" element={<ToTab path="/customers" tab="tabs" />} />
+        {/* The books, as three pages over one set of grants. */}
+        <Route path="/accounting" element={guard('accounting', <AccountingPage key="jobs" set="jobs" />)} />
+        <Route path="/accountant" element={guard('accounting', <AccountingPage key="accountant" set="accountant" />)} />
         <Route path="/vouchers" element={guard('vouchers', <VouchersPage />)} />
-        <Route path="/consignors" element={guard('consignors', <ConsignorsPage />)} />
-        <Route path="/tabs" element={guard('tabs', <TabsPage />)} />
-        <Route path="/staff-owing" element={guard('staff_owing', <StaffOwingPage />)} />
-        <Route path="/intake" element={guard('intake', <IntakePage />)} />
+        <Route path="/consignors" element={guardSome(['consignors', 'intake', 'payouts'], <MakersHub />)} />
+        <Route path="/intake" element={<ToTab path="/consignors" tab="received" />} />
+        <Route path="/payouts" element={<ToTab path="/consignors" tab="payouts" />} />
         {/* Count, every place. The old addresses open it on their side. */}
-        <Route path="/count" element={guardAny('/count', <CountPage />)} />
+        <Route path="/count" element={guardSome(sidesOf('/count'), <CountPage />)} />
         <Route path="/stocktake" element={<Navigate to="/count?side=craft" replace />} />
-        {/* The bar reuses the kitchen's screens for its catalogue and its
-            shelves — a dish and a cocktail are both a menu item with a recipe,
-            and a bottle is an ingredient. What it does NOT share is the
-            counting, which is why that has a screen of its own. */}
-        <Route path="/bar/categories" element={<Navigate to="/catalogue/categories?side=bar" replace />} />
-        <Route path="/bar/items" element={<Navigate to="/catalogue/items?side=bar" replace />} />
-        <Route path="/bar/stock" element={<Navigate to="/stock?side=bar" replace />} />
         <Route path="/bar/counts" element={<Navigate to="/count?side=bar" replace />} />
-        {/* Where stock sits is the Stock page's Places tab now. */}
-        <Route path="/locations" element={<Navigate to="/stock?tab=places" replace />} />
-        <Route path="/payouts" element={guard('payouts', <PayoutsPage />)} />
-        <Route path="/venues" element={guard('venues', <VenuesPage />)} />
-        <Route path="/tables" element={guard('tables', <TablesPage />)} />
-        <Route path="/shifts" element={guard('shifts', <ShiftsPage />)} />
-        <Route path="/staff" element={guard('staff', <StaffPage />)} />
-        <Route path="/stock" element={guardAny('/stock', <CataloguePage kind="stock" />)} />
-        <Route path="/stations" element={guard('stations', <StationsPage />)} />
-        <Route path="/waste" element={guard('waste', <WastePage />)} />
+        {/* Stock, with Places and Waste among its tabs. */}
+        <Route path="/stock" element={guardSome([...sidesOf('/stock'), 'waste'], <StockRoute />)} />
+        <Route path="/bar/stock" element={<Navigate to="/stock?side=bar" replace />} />
+        <Route path="/locations" element={<ToTab path="/stock" tab="places" />} />
+        <Route path="/waste" element={<ToTab path="/stock" tab="waste" side="kitchen" />} />
+        <Route path="/shifts" element={guardSome(['shifts', 'staff_owing'], <ShiftsHub />)} />
+        <Route path="/staff-owing" element={<ToTab path="/shifts" tab="owing" />} />
+        <Route path="/staff" element={guardSome(['staff'], <StaffHub />)} />
+        <Route path="/venues" element={guardSome(['venues', 'tables', 'stations'], <VenuesHub />)} />
+        <Route path="/tables" element={<ToTab path="/venues" tab="tables" />} />
+        <Route path="/stations" element={<ToTab path="/venues" tab="stations" />} />
         <Route path="/cleaning" element={guard('cleaning', <CleaningPage />)} />
         <Route path="/purchase-orders" element={guard('purchase_orders', <PurchaseOrdersPage />)} />
-        <Route path="/features" element={guard('features', <FeaturesPage />)} />
-        <Route path="/settings" element={guard('settings', <SettingsPage />)} />
-        <Route path="/erase" element={guard('erase', <PurgePage />)} />
+        <Route path="/settings" element={guardSome(['settings', 'features', 'health', 'erase'], <SettingsHub />)} />
+        <Route path="/features" element={<ToTab path="/settings" tab="features" />} />
+        <Route path="/health" element={<ToTab path="/settings" tab="data" />} />
+        <Route path="/erase" element={<ToTab path="/settings" tab="data" />} />
         {/* Always yours, whatever your role. */}
         <Route path="/account" element={<AccountPage />} />
         <Route path="/help" element={<HelpPage />} />
@@ -140,8 +128,23 @@ export function App() {
   );
 }
 
-/** Close the day, with the business's own money format. */
-function CloseDayRoute() {
-  const money = useMoney();
-  return <CloseDayPage money={money} />;
+/** Stock for anybody with a side of it; Waste alone for somebody given only that. */
+function StockRoute() {
+  const { profile, settings } = useSession();
+  return catalogueSides('/stock', profile, settings).length > 0 ? <CataloguePage kind="stock" /> : <WastePage />;
+}
+
+/**
+ * An old address, sent to the tab it became.
+ *
+ * Whatever else was in the address comes along (?receive=1 opens the form on
+ * Goods received as it did on its own page), and the side when the old
+ * address named one.
+ */
+function ToTab({ path, tab, side }: { path: string; tab: string; side?: string }) {
+  const { search } = useLocation();
+  const p = new URLSearchParams(search);
+  p.set('tab', tab);
+  if (side && !p.has('side')) p.set('side', side);
+  return <Navigate to={`${path}?${p.toString()}`} replace />;
 }

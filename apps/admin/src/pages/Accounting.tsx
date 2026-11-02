@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, useToast, InfoTip } from '@snpos/ui';
+import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, useToast, InfoTip, ViewTabs } from '@snpos/ui';
 import { listAll, humanError, saveDropping } from '../lib';
 import {
   parseMoney, toInput, Query,
@@ -10,18 +10,20 @@ import {
   postFromStatement, attachReceipt, downloadUrl, areasOf,
   loadLocks, lockPeriod, openAccounts,
   hanging, postSettlement, postTipsPaid, postTaxRemitted, settlementProblem, paydownProblem,
-  closeFacts, closeChecklist, mayLock, closeProgress, lockOverWarningsWords, bpWords, payFromAccounts, moneyAccounts } from '@snpos/core';
+  closeFacts, closeChecklist, mayLock, closeProgress, lockOverWarningsWords, bpWords, payFromAccounts, moneyAccounts,
+  BOOK_PAGES } from '@snpos/core';
 import type {
   AccountRow, JournalEntry, JournalLine, FixedAsset, LineRow, Doc, BankStatementLine, Settings,
-  PeriodLock, CloseItem,
+  PeriodLock, CloseItem, BookPage,
 } from '@snpos/core';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { CashToBank } from '../components/CashToBank';
 import { BillsToPay } from '../components/books/BillsToPay';
 import { OwedToUs } from '../components/books/OwedToUs';
 import { TaxReturnReport, RecurringEntries, OpeningBalances, YearEnd } from '../components/books/YearTools';
 import { BankAccounts } from '../components/books/Banks';
 import { useSession, useMoney } from '../session';
+import { HubTabs, HubTitle } from '../components/Hub';
 import { AccountsManager } from '../components/AccountsManager';
 import { PlReport, LedgerReport, CashFlowReport, BalanceExports, yearPack } from '../components/books/BookReports';
 
@@ -39,7 +41,7 @@ import { PlReport, LedgerReport, CashFlowReport, BalanceExports, yearPack } from
  * sitting, and each of those is the same figures read a different way; putting
  * them behind separate navigation makes it feel like separate work.
  */
-type Tab = 'statements' | 'cashflow' | 'ledger' | 'tax' | 'journal' | 'recurring' | 'opening' | 'yearend' | 'banks' | 'trial' | 'assets' | 'bank' | 'settle' | 'payables' | 'receivables' | 'chart' | 'locks';
+export type Tab = 'statements' | 'cashflow' | 'ledger' | 'tax' | 'journal' | 'recurring' | 'opening' | 'yearend' | 'banks' | 'trial' | 'assets' | 'bank' | 'settle' | 'payables' | 'receivables' | 'chart' | 'locks';
 
 /** A month back from today, as YYYY-MM-DD, for the default window. */
 const monthStart = (d = new Date()) => `${d.toISOString().slice(0, 7)}-01`;
@@ -63,7 +65,26 @@ const BLANK: DraftLine = { account_code: '', debitText: '', creditText: '', memo
 const choices = (accounts: AccountRow[], chosen?: string): AccountRow[] =>
   accounts.filter((a) => a.active !== false || a.code === chosen);
 
-export function AccountingPage() {
+/** Each part's name on its tab. */
+const TAB_LABELS: Record<Tab, string> = {
+  settle: 'Settle up', payables: 'Bills to pay', receivables: 'Owed to us', bank: 'Reconcile', locks: 'Close a period',
+  statements: 'Profit & loss', cashflow: 'Cash flow', tax: 'Tax return',
+  journal: 'Journal', ledger: 'General ledger', trial: 'Trial balance', recurring: 'Recurring', assets: 'Fixed assets',
+  chart: 'Chart of accounts', banks: 'Bank & cash accounts', opening: 'Opening balances', yearend: 'Year end',
+};
+
+/** Where each set of parts lives, so an old link to any of them lands on its page. */
+const PAGE_PATH: Record<BookPage, string> = { jobs: '/accounting', reports: '/reports', accountant: '/accountant' };
+
+/**
+ * The books, as one of three pages over the same grants.
+ *
+ * Accounting holds the jobs somebody here does every week; Accountant tools
+ * holds what only an accountant opens; the statements are tabs of Reports
+ * (passed one at a time as `only`). It was one page with three rows of
+ * buttons, seventeen in all, and the weekly jobs were lost among them.
+ */
+export function AccountingPage({ set = 'jobs', only }: { set?: BookPage; only?: Tab }) {
   const { settings, user, profile } = useSession();
   const toast = useToast();
   /**
@@ -81,17 +102,17 @@ export function AccountingPage() {
   // Read from the address every time, so a sidebar link to another tab of
   // this page switches to it rather than leaving the old one showing.
   const [params, setParams] = useSearchParams();
-  const asked = params.get('tab');
-  const tab = (['statements', 'cashflow', 'ledger', 'tax', 'journal', 'recurring', 'opening', 'yearend', 'banks', 'trial', 'assets', 'bank', 'settle', 'payables', 'receivables', 'chart', 'locks'].includes(asked ?? '') ? asked : 'statements') as Tab;
+  const asked = only ? null : params.get('tab');
+  const tabsHere = BOOK_PAGES[set] as readonly Tab[];
+  const mine = tabsHere.filter((t) => can(t));
+  // An old link to a part that now lives on another of the three pages.
+  const elsewhere = asked && !tabsHere.includes(asked as Tab)
+    ? (Object.keys(BOOK_PAGES) as BookPage[]).find((k) => (BOOK_PAGES[k] as readonly string[]).includes(asked))
+    : undefined;
+  // Land on something they can see. Opening on a tab they were not given
+  // shows an empty page that reads as a fault rather than as a permission.
+  const tab: Tab = only ?? (asked && mine.includes(asked as Tab) ? asked as Tab : mine[0] ?? tabsHere[0]);
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
-  useEffect(() => {
-    // Land on something they can see. Opening on a tab they were not given
-    // shows an empty page that reads as a fault rather than as a permission.
-    if (allowed.length > 0 && !can(tab)) {
-      setTab(allowed[0].replace('accounting_', '') as Tab);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allowed]);
   // The books belong to the venue, and every page here reads it the same way.
   const [venueId, setVenueId] = useState('');
   useEffect(() => {
@@ -160,69 +181,48 @@ export function AccountingPage() {
     return { rows, debit, credit, balanced: debit === credit };
   }, [accounts, periodLines]);
 
-  if (loading) return <Spinner />;
-  if (error) return <Notice>{error}</Notice>;
+  if (elsewhere) return <Navigate to={`${PAGE_PATH[elsewhere]}?tab=${asked}`} replace />;
+
+  const heading = (
+    <>
+      <h1>
+        {set === 'accountant' ? 'Accountant tools' : set === 'reports' ? <HubTitle>{TAB_LABELS[tab]}</HubTitle> : 'Accounting'}
+        <InfoTip>
+          {set === 'accountant'
+            ? 'The parts of the books only an accountant opens: entries by hand, every line on any account, the chart of accounts, and closing a year.'
+            : set === 'reports'
+              ? 'Read straight from the books, which fill up as shifts close and spends are recorded.'
+              : 'Sales and spending post themselves as shifts close. These are the jobs somebody here does each week, and where anything that never passes through a till gets in.'}
+        </InfoTip>
+      </h1>
+      <HubTabs />
+    </>
+  );
+
+  if (loading) return <>{heading}<Spinner /></>;
+  if (error) return <>{heading}<Notice>{error}</Notice></>;
 
   return (
     <>
-      <h1>
-        Accounting
-        <InfoTip>
-          Sales and spending post themselves as shifts close. This is where they add up, and where anything that
-          never passes through a till gets in.
-        </InfoTip>
-      </h1>
+      {heading}
 
-      {/*
-        Two rows: the jobs somebody here does every week, and the tools only
-        an accountant opens. Side by side in one row, the weekly jobs were
-        hidden among the accountant's.
-      */}
-      {([
-        ['Your jobs', [
-          ['settle', 'Settle up'],
-          ['payables', 'Bills to pay'],
-          ['receivables', 'Owed to us'],
-          ['bank', 'Reconcile'],
-          ['locks', 'Close a period'],
-        ]],
-        ['Reports', [
-          ['statements', 'Profit & loss and balance sheet'],
-          ['cashflow', 'Cash flow'],
-          ['ledger', 'General ledger'],
-          ['tax', 'Tax return'],
-          ['trial', 'Trial balance'],
-        ]],
-        ['For your accountant', [
-          ['journal', 'Journal'],
-          ['recurring', 'Recurring entries'],
-          ['assets', 'Fixed assets'],
-          ['chart', 'Chart of accounts'],
-          ['banks', 'Bank and cash accounts'],
-          ['opening', 'Opening balances'],
-          ['yearend', 'Year end'],
-        ]],
-      ] as [string, [Tab, string][]][]).map(([heading, tabs]) => {
-        const mine = tabs.filter(([key]) => can(key));
-        if (mine.length === 0) return null;
-        return (
-          <div key={heading} className="row row-wrap" style={{ gap: '0.4rem', margin: '0.6rem 0', alignItems: 'center' }}>
-            <span className="small dim" style={{ minWidth: '9rem' }}>{heading}</span>
-            {mine.map(([key, label]) => (
-              <Button key={key} size="sm" variant={tab === key ? 'primary' : 'default'} onClick={() => setTab(key)}>
-                {label}
-              </Button>
-            ))}
-          </div>
-        );
-      })}
+      {/* One row of tabs, the parts of the books this page holds that this
+          person was given. */}
+      {!only && mine.length > 1 && (
+        <ViewTabs<Tab>
+          value={tab}
+          onChange={setTab}
+          ariaLabel="Which part of the books"
+          options={mine.map((t) => ({ value: t, label: TAB_LABELS[t] }))}
+        />
+      )}
 
       {/* Granted the page and none of its parts. Said plainly rather than shown
           as an empty screen somebody reads as broken. */}
-      {allowed.length === 0 && (
+      {mine.length === 0 && (
         <Notice>
-          You can open this page, but no part of the books has been given to you yet. An admin sets that under
-          Settings, in who can open what.
+          You can open this page, but no part of the books on it has been given to you yet. An admin sets that under
+          Staff, on the Permissions tab.
         </Notice>
       )}
 
@@ -1869,7 +1869,7 @@ function Locks({
   const go = (item: CloseItem) => {
     if (item.goto === 'settle' || item.goto === 'journal') { onGoto(item.goto); return; }
     if (item.goto === 'shifts') navigate('/shifts');
-    if (item.goto === 'payouts') navigate('/payouts');
+    if (item.goto === 'payouts') navigate('/consignors?tab=payouts');
     if (item.goto === 'counts') navigate('/count?side=bar');
     // Held counts, spends and shelf changes are all decided on the one page.
     if (item.goto === 'waiting') navigate(item.key === 'spends' ? '/waiting?show=spend' : item.key === 'shelf' ? '/waiting?show=shelf' : '/waiting?show=count');

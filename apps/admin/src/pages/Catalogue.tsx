@@ -7,6 +7,7 @@ import { useSession } from '../session';
 import { CategoriesPage } from './Categories';
 import { MenuItemsPage } from './MenuItems';
 import { StockPage } from './Stock';
+import { UnderTabs, useInHub } from '../components/Hub';
 
 const TO: Record<'categories' | 'items' | 'stock', string> = {
   categories: '/catalogue/categories',
@@ -31,6 +32,7 @@ const TO: Record<'categories' | 'items' | 'stock', string> = {
 export function CataloguePage({ kind }: { kind: 'categories' | 'items' | 'stock' }) {
   const { profile, settings } = useSession();
   const [params, setParams] = useSearchParams();
+  const inHub = useInHub();
   const sides = catalogueSides(TO[kind], profile, settings);
   const asked = params.get('side') as Module | null;
   const side: Module | undefined = asked && sides.includes(asked) ? asked : sides[0];
@@ -44,23 +46,25 @@ export function CataloguePage({ kind }: { kind: 'categories' | 'items' | 'stock'
 
   if (!side) return null;
 
+  const switcher = sides.length > 1 ? (
+    <Segmented<Module>
+      value={side}
+      // The tab stays; whatever one side's page put in the address does not.
+      onChange={(m) => setParams((p) => { const n = new URLSearchParams({ side: m }); const t = p.get('tab'); if (t) n.set('tab', t); return n; })}
+      ariaLabel="Which side of the business"
+      options={sides.map((m) => ({ value: m, label: SIDE_NAMES[m] }))}
+    />
+  ) : null;
+
   return (
-    <>
-      {sides.length > 1 && (
-        <div style={{ marginBottom: '1rem' }}>
-          <Segmented<Module>
-            value={side}
-            onChange={(m) => setParams({ side: m })}
-            ariaLabel="Which side of the business"
-            options={sides.map((m) => ({ value: m, label: SIDE_NAMES[m] }))}
-          />
-        </div>
-      )}
+    // As a tab of Products the switch sits under the tabs; on Stock, at the top.
+    <UnderTabs.Provider value={inHub ? switcher : null}>
+      {switcher && !inHub && <div style={{ marginBottom: '1rem' }}>{switcher}</div>}
       {/* Keyed by side, so switching starts the page afresh rather than
           leaving one side's half-typed form over the other's list. */}
       {kind === 'categories' && <CategoriesPage key={side} module={side} />}
       {kind === 'items' && <MenuItemsPage key={side} module={side} />}
       {kind === 'stock' && <StockPage key={side} module={side} />}
-    </>
+    </UnderTabs.Provider>
   );
 }

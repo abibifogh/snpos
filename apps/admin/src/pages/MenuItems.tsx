@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Field, Input, Modal, Select, Notice, Spinner, Textarea, Toggle, Badge, useToast, ViewTabs,
+import { Button, Card, Empty, Field, Input, Modal, Select, Notice, Spinner, Textarea, Toggle, Badge, useToast, Segmented,
   PickerMenu, PickerItem, FacetChips, GroupedRows,
 } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError, saveDropping } from '../lib';
@@ -40,6 +40,7 @@ import { DrinkUpload } from '../components/DrinkUpload';
 */
 import { menuPdf } from '../../../../functions/notify/src/menu-pdf.js';
 import { useSession } from '../session';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 interface ItemCategory extends Doc { menu_item_id: string; category_id: string; sort: number; active: boolean }
 interface AddonGroup extends Doc { name: string; required: boolean; sort: number; module?: string }
@@ -1234,23 +1235,31 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
     }
   };
 
+  // The kinds of variation, beside the products that use them: a switch under the tabs.
+  const sizesSwitch = hasSizes ? (
+    <div style={{ marginBottom: '1rem' }}>
+      <Segmented<typeof tab>
+        value={tab}
+        onChange={setTab}
+        ariaLabel="Products or their variant types"
+        options={[
+          { value: 'items', label: W.many.charAt(0).toUpperCase() + W.many.slice(1) },
+          { value: 'types', label: 'Variant types' },
+        ]}
+      />
+    </div>
+  ) : null;
+
   return (
     <>
       {/* The kinds of variation this shop sells by are the shop's own list, so
           they are edited where the products that use them are, rather than
           buried in a settings page nobody opens twice. */}
-      {hasSizes && (
-        <ViewTabs
-          value={tab}
-          onChange={setTab}
-          options={[
-            { value: 'items', label: W.many.charAt(0).toUpperCase() + W.many.slice(1) },
-            { value: 'types', label: 'Variant types' },
-          ]}
-        />
-      )}
-
       {hasSizes && tab === 'types' ? (
+        <>
+        <div className="spread"><h1><HubTitle>{W.title}</HubTitle></h1></div>
+        <HubTabs />
+        {sizesSwitch}
         <KeyedListManager
           collection="variant_types"
           singular="variant type"
@@ -1264,10 +1273,11 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
           onChanged={() => void loadVariantTypes()
             .then((t) => setVariantTypes(t.filter((x) => (x.module ?? 'craft') === module)))}
         />
+        </>
       ) : (
       <>
       <div className="spread">
-        <h1>{W.title}</h1>
+        <h1><HubTitle>{W.title}</HubTitle></h1>
         {/* Reading and changing are different jobs. Somebody who opens this
             page twenty times a day to check a price needs to create a product
             roughly never, and every person who can create one is a person whose
@@ -1320,6 +1330,8 @@ export function MenuItemsPage({ module = 'kitchen' }: { module?: Module }) {
           )}
         </div>
       </div>
+      <HubTabs />
+      {sizesSwitch}
 
       {categories.length === 0 && (
         <Notice tone="warn">Create at least one category first, every {W.one} belongs to one.</Notice>

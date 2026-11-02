@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Button, Card, Empty, Notice, Select, Spinner, Badge, useToast, ViewTabs, ExpenseModal, Segmented, InfoTip } from '@snpos/ui';
 import { db, DB_ID, listAll, humanError } from '../lib';
 import {
@@ -79,7 +79,12 @@ export function ExpensesPage() {
   /** The spend whose full details are open. See SpendDetailsModal. */
   const [detailsFor, setDetailsFor] = useState<string | null>(null);
   const toast = useToast();
-  const [tab, setTab] = useState<'expenses' | 'analysis' | 'categories' | 'accounts'>('expenses');
+  // The tab is in the address, so a link or a bookmark opens the same one.
+  type OutTab = 'expenses' | 'analysis' | 'categories' | 'accounts';
+  const [params, setParams] = useSearchParams();
+  const askedTab = params.get('tab');
+  const tab: OutTab = askedTab === 'analysis' || askedTab === 'categories' || askedTab === 'accounts' ? askedTab : 'expenses';
+  const setTab = (t: OutTab) => setParams({ tab: t }, { replace: true });
   const [rows, setRows] = useState<Expense[] | null>(null);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [side, setSide] = useState<Side>('all');
@@ -232,9 +237,9 @@ export function ExpensesPage() {
         value={tab}
         onChange={setTab}
         options={[
-          { value: 'expenses', label: 'Money out' },
+          { value: 'expenses', label: 'Payments' },
           { value: 'analysis', label: 'Analysis' },
-          { value: 'categories', label: 'Categories' },
+          { value: 'categories', label: 'Spending categories' },
           { value: 'accounts', label: 'Accounts' },
         ]}
       />
@@ -356,7 +361,7 @@ export function ExpensesPage() {
                                 {isAdmin && <Button size="sm" variant="ghost" onClick={() => remove(r)}>Delete</Button>}
                               </>
                             ) : (
-                              <Link className="small" to="/payouts">Payouts</Link>
+                              <Link className="small" to="/consignors?tab=payouts">Payouts</Link>
                             )}
                           </td>
                         </tr>

@@ -53,6 +53,12 @@ export interface AdminSection {
    * host page can be opened, and the host page links to it; somebody given
    * this page and not its host still gets it in the sidebar, so nothing is
    * ever out of reach.
+   *
+   * A host whose name starts with "/" is a merged link (see NAV_MERGES): the
+   * page is reached from it while any of its sides can be opened.
+   *
+   * In the admin these are tabs of their host page, and the address they had
+   * redirects to that tab.
    */
   under?: string;
 }
@@ -174,7 +180,7 @@ export const NAV_GROUPS = ['Today', 'Approvals', 'Sell', 'Stock', 'Money', 'Book
 
 export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'dashboard', label: 'Today', path: '/', group: 'Today' },
-  { key: 'close_day', label: 'Close the day', path: '/close-day', group: 'Today' },
+  { key: 'close_day', label: 'Close the day', path: '/close-day', group: 'Today', under: 'dashboard' },
   // Everything waiting for a decision, from every side, beside the day itself.
   { key: 'waiting', label: 'Approvals', path: '/waiting', group: 'Approvals' },
   { key: 'orders', label: 'Orders', path: '/orders', group: 'Sell' },
@@ -199,7 +205,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'menu_items', label: 'Products · bistro', path: '/catalogue/items', group: 'Sell', module: 'kitchen' },
   { key: 'shop_items', label: 'Products · shop', path: '/catalogue/items', group: 'Sell', module: 'craft' },
   { key: 'bar_items', label: 'Products · bar', path: '/catalogue/items', group: 'Sell', module: 'bar' },
-  { key: 'menu_options', label: 'Options', path: '/menu/options', group: 'Sell', module: 'kitchen', under: 'menu_categories' },
+  { key: 'menu_options', label: 'Options', path: '/menu/options', group: 'Sell', module: 'kitchen', under: '/catalogue/items' },
   /*
     Group bookings, which had no page at all.
 
@@ -212,13 +218,13 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'vouchers', label: 'Discounts', path: '/vouchers', group: 'Sell' },
   { key: 'stock', label: 'Stock · kitchen', path: '/stock', group: 'Stock', module: 'kitchen' },
   { key: 'bar_stock', label: 'Stock · bar', path: '/stock', group: 'Stock', module: 'bar' },
-  { key: 'waste', label: 'Waste', path: '/waste', group: 'Stock', module: 'kitchen' },
+  { key: 'waste', label: 'Waste', path: '/waste', group: 'Stock', module: 'kitchen', under: '/stock' },
   { key: 'purchase_orders', label: 'Purchase orders', path: '/purchase-orders', group: 'Stock' },
   { key: 'bar_counts', label: 'Count · bar', path: '/count', group: 'Stock', module: 'bar' },
   { key: 'stocktake', label: 'Count · shop', path: '/count', group: 'Stock', module: 'craft' },
   // Every side's places, on the Stock page's Places tab rather than a page
   // of its own. No side of its own: the kitchen keeps a store room too.
-  { key: 'locations', label: 'Places & moves', path: '/stock?tab=places', group: 'Stock', parent: 'stock' },
+  { key: 'locations', label: 'Places', path: '/stock?tab=places', group: 'Stock', parent: 'stock' },
   { key: 'consignors', label: 'Makers', path: '/consignors', group: 'Stock', module: 'craft' },
   { key: 'intake', label: 'Goods received', path: '/intake', group: 'Stock', module: 'craft', under: 'consignors' },
   /*
@@ -249,7 +255,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     Count differences charged to a person, until each is paid, taken from pay,
     found or written off. See staff-charges.ts.
   */
-  { key: 'staff_owing', label: 'Staff owing', path: '/staff-owing', group: 'Money' },
+  { key: 'staff_owing', label: 'Staff owing', path: '/staff-owing', group: 'Money', under: 'shifts' },
   { key: 'payouts', label: 'Payouts', path: '/payouts', group: 'Money', module: 'craft', under: 'consignors' },
   { key: 'reports', label: 'Reports', path: '/reports', group: 'Books' },
   /**
@@ -288,13 +294,13 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'staff', label: 'Staff', path: '/staff', group: 'Setup' },
   { key: 'stations', label: 'Stations', path: '/stations', group: 'Setup', module: 'kitchen', under: 'venues' },
   { key: 'venues', label: 'Venues', path: '/venues', group: 'Setup' },
-  { key: 'tables', label: 'Tables & QR', path: '/tables', group: 'Setup' },
-  { key: 'features', label: 'Features', path: '/features', group: 'Setup' },
+  { key: 'tables', label: 'Tables & QR', path: '/tables', group: 'Setup', under: 'venues' },
+  { key: 'features', label: 'Features', path: '/features', group: 'Setup', under: 'settings' },
   // The kitchen's and the bar's cleaning routines, and the log they leave. See cleaning.ts.
   { key: 'cleaning', label: 'Cleaning', path: '/cleaning', group: 'Setup' },
   // Records that do not add up and jobs that have gone quiet, checked
   // nightly and on opening. Owner-only: every button on it changes the books.
-  { key: 'health', label: 'Health', path: '/health', group: 'Setup', ownerOnly: true },
+  { key: 'health', label: 'Health', path: '/health', group: 'Setup', ownerOnly: true, under: 'settings' },
   { key: 'settings', label: 'Settings', path: '/settings', group: 'Setup', ownerOnly: true },
   { key: 'erase', label: 'Erase records', path: '/erase', group: 'Setup', ownerOnly: true, under: 'settings' },
 ];
@@ -312,10 +318,12 @@ export interface NavMerge {
   keys: Partial<Record<Module, string>>;
   /** A second link to the same page, opened on one job: Receive stock. */
   also?: { label: string; query: string };
+  /** A tab of another merged page: left out of the sidebar while that one is in it. */
+  under?: string;
 }
 
 export const NAV_MERGES: NavMerge[] = [
-  { to: '/catalogue/categories', label: 'Categories', keys: { kitchen: 'menu_categories', craft: 'shop_categories', bar: 'bar_categories' } },
+  { to: '/catalogue/categories', label: 'Categories', keys: { kitchen: 'menu_categories', craft: 'shop_categories', bar: 'bar_categories' }, under: '/catalogue/items' },
   { to: '/catalogue/items', label: 'Products', keys: { kitchen: 'menu_items', craft: 'shop_items', bar: 'bar_items' } },
   /*
     The shop's own supplies (bags, wrapping, labels) are reached with its
@@ -576,13 +584,51 @@ export function sidebarSides(profile: StaffProfile | null, settings: Settings | 
  * bar's counts and bottles and nothing about the kitchen. Anything with no
  * side — shifts, spends, the books — is always there.
  */
-/** The parts of Accounting only an accountant opens. */
-const ACCOUNTANT_AREAS = ['accounting_journal', 'accounting_trial', 'accounting_recurring', 'accounting_assets', 'accounting_chart', 'accounting_banks', 'accounting_opening', 'accounting_yearend'];
+/**
+ * The books, split three ways by who opens them. One set of grants underneath
+ * (the accounting_* areas); these only say which page each part is a tab of.
+ */
+export const BOOK_PAGES = {
+  /** Accounting: the jobs somebody here does every week. */
+  jobs: ['settle', 'payables', 'receivables', 'bank', 'locks'],
+  /** Reports: the statements, beside the sales figures. */
+  reports: ['statements', 'cashflow', 'tax'],
+  /** Accountant tools: what only an accountant opens. */
+  accountant: ['journal', 'ledger', 'trial', 'recurring', 'assets', 'chart', 'banks', 'opening', 'yearend'],
+} as const;
+export type BookPage = keyof typeof BOOK_PAGES;
+
+/** Which of one page's parts of the books this person may open (without the accounting_ prefix). */
+export function bookAreas(page: BookPage, profile: StaffProfile | null, settings: Settings | null): string[] {
+  // The way in is still the Accounting grant; an area without it opened nothing before, and opens nothing now.
+  if (!canOpen('accounting', profile, settings)) return [];
+  const mine = areasOf('accounting', profile, settings).map((a) => a.replace('accounting_', ''));
+  return (BOOK_PAGES[page] as readonly string[]).filter((a) => mine.includes(a));
+}
+
+/**
+ * Whether this person can open a page at all, counting the tabs that moved onto it.
+ *
+ * Reports carries the profit and loss, cash flow and the tax return, which
+ * were reached through Accounting; Staff carries who can see what, which was
+ * on Settings. Somebody given those and not the page they now sit on still
+ * reaches them, on that page, with only those tabs.
+ */
+export function opensPage(key: string, profile: StaffProfile | null, settings: Settings | null): boolean {
+  if (canOpen(key, profile, settings)) return true;
+  if (key === 'reports') return bookAreas('reports', profile, settings).length > 0;
+  if (key === 'staff') return canOpen('settings', profile, settings);
+  return false;
+}
 
 /** Whether a page that hosts others is itself in this person's sidebar. */
-function hostOpen(key: string, profile: StaffProfile | null, settings: Settings | null, side: Module | 'all'): boolean {
+function hostOpen(key: string, profile: StaffProfile | null, settings: Settings | null, side: Module | 'all', module?: Module): boolean {
+  if (key.startsWith('/')) {
+    // On that side of it: Waste is a tab of the kitchen's stock, not the shop's.
+    return catalogueSides(key, profile, settings).some((m) => (side === 'all' || m === side) && (!module || m === module));
+  }
   const host = ADMIN_SECTIONS.find((x) => x.key === key);
-  if (!host || !canOpen(key, profile, settings)) return false;
+  if (!host || !opensPage(key, profile, settings)) return false;
   return side === 'all' || !host.module || host.module === side;
 }
 
@@ -596,6 +642,7 @@ export function navFor(profile: StaffProfile | null, settings: Settings | null, 
     const merge = NAV_MERGES.find((m) => Object.values(m.keys).includes(s.key));
     if (merge) {
       if (merged.has(merge.to)) continue;
+      if (merge.under && hostOpen(merge.under, profile, settings, side)) continue;
       const sides = catalogueSides(merge.to, profile, settings).filter((m) => side === 'all' || m === side);
       if (sides.length === 0) continue;
       merged.add(merge.to);
@@ -607,21 +654,25 @@ export function navFor(profile: StaffProfile | null, settings: Settings | null, 
       }
       continue;
     }
-    if (!canOpen(s.key, profile, settings)) continue;
+    if (!opensPage(s.key, profile, settings)) continue;
     if (side !== 'all' && s.module && s.module !== side) continue;
-    // Reached from its host page, when the host is there to be reached.
-    if (s.under && hostOpen(s.under, profile, settings, side)) continue;
-    add(s.group, { to: s.path, label: s.label, end: s.path === '/', keys: [s.key] });
+    // A tab of its host page, when the host is there to be reached.
+    if (s.under && hostOpen(s.under, profile, settings, side, s.module)) continue;
     /*
-      The books in two links: the jobs done every week (Settle up first),
-      and the tools only an accountant opens. One page underneath.
+      The books in three links: Reports above (the statements are tabs of
+      it), the jobs done every week, and the tools only an accountant opens.
+      Accounting itself is left out for somebody whose parts of the books
+      all live on the other two; with no part at all it stays, and says so.
     */
     if (s.key === 'accounting') {
-      const areas = areasOf('accounting', profile, settings);
-      if (areas.some((a) => ACCOUNTANT_AREAS.includes(a))) {
-        add(s.group, { to: '/accounting?tab=journal', label: 'Accountant tools', keys: ['accounting:accountant'] });
-      }
+      const jobs = bookAreas('jobs', profile, settings).length;
+      const tools = bookAreas('accountant', profile, settings).length;
+      const reports = bookAreas('reports', profile, settings).length;
+      if (jobs > 0 || (tools === 0 && reports === 0)) add(s.group, { to: s.path, label: s.label, keys: [s.key] });
+      if (tools > 0) add(s.group, { to: '/accountant', label: 'Accountant tools', keys: ['accounting:accountant'] });
+      continue;
     }
+    add(s.group, { to: s.path, label: s.label, end: s.path === '/', keys: [s.key] });
   }
 
   const order = [...NAV_GROUPS] as string[];

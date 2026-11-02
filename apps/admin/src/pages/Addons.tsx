@@ -9,6 +9,7 @@ import {
 } from '@snpos/core';
 import type { Doc, Ingredient, Recipe, Module } from '@snpos/core';
 import { useSession } from '../session';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 interface AddonGroup extends Doc {
   name: string;
@@ -245,7 +246,7 @@ export function AddonsPage() {
     <>
       <div className="spread">
         <h1>
-          Options
+          <HubTitle>Options</HubTitle>
           <InfoTip>
             Choices a customer makes when ordering, protein, spice level, extras. Build a group once and attach it to as
             many {side === 'bar' ? 'drinks' : 'dishes'} as you like. A choice can add nothing to the price: set it to 0.
@@ -254,6 +255,7 @@ export function AddonsPage() {
         </h1>
         <Button variant="primary" onClick={() => open()}>Add option group</Button>
       </div>
+      <HubTabs />
 
       {/* Each side's own choices. "Rare, medium, well done" has no business on
           a gin and tonic, and it was being offered on one. */}

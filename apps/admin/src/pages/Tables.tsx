@@ -5,6 +5,7 @@ import { db, DB_ID, ID, listAll, humanError, saveDropping } from '../lib';
 import { groupLink } from '@snpos/core';
 import type { Doc, FeatureFlag } from '@snpos/core';
 import { useSession } from '../session';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 interface TableRow extends Doc {
   venue_id: string;
@@ -256,7 +257,7 @@ export function TablesPage() {
             with the link that reached it reads as the wrong page, and somebody
             told to open "Tables" scrolls past "Tables & QR" looking for it. */}
         <h1>
-          Tables &amp; QR
+          <HubTitle>Tables &amp; QR</HubTitle>
           <InfoTip>
             Each table gets its own web address. Print it as a QR code and stick it on the table; scanning it opens the
             menu already knowing where the customer is sitting.
@@ -264,6 +265,7 @@ export function TablesPage() {
         </h1>
         <Button variant="primary" onClick={() => open()}>Add table</Button>
       </div>
+      <HubTabs />
 
       {error && !editing && <Notice>{error}</Notice>}
 
@@ -349,7 +351,7 @@ export function TablesPage() {
         {!groupOn && (
           <Notice tone="warn">
             <strong>Group ordering is switched off</strong>, so this link opens the ordinary menu. Turn it on
-            under <Link to="/features">People &amp; setup → Features</Link>, or the party you send it to will
+            under <Link to="/settings?tab=features">Setup → Settings → Features</Link>, or the party you send it to will
             see the à la carte list.
           </Notice>
         )}
@@ -361,7 +363,7 @@ export function TablesPage() {
         {groupOn && groupCats === 0 && (
           <Notice tone="warn">
             <strong>No category is marked group-only yet</strong>, so this link opens on an empty menu. Under{' '}
-            <Link to="/catalogue/categories">Sell &rarr; Categories</Link>, edit a category and tick
+            <Link to="/catalogue/items?tab=categories">Sell &rarr; Products &rarr; Categories</Link>, edit a category and tick
             &ldquo;group-only&rdquo; for each one a party should be able to order from.
           </Notice>
         )}
