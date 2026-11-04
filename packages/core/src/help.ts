@@ -228,6 +228,61 @@ export const HELP_ARTICLES: HelpArticle[] = [
   },
 
   {
+    id: 'count-differences',
+    title: 'When the bar count comes up short',
+    summary: 'A bar count takes effect when saved. A shortfall goes on the account of whoever answers for it, not final, and they have a day to answer.',
+    area: 'pos',
+    audience: ['cashier', 'manager', 'admin'],
+    body: [
+      p(
+        'When an admin switches on Bar count differences under Setup \u2192 Settings \u2192 Features, a bar count no '
+        + 'longer waits on Approvals. It takes effect the moment it is saved: the shelf shows what was counted.',
+      ),
+      h('Whose shortfall it is'),
+      p(
+        'A closing count is the shift that is closing. An opening count that finds less than was handed over is the '
+        + 'shift before, the person who ran it: the stock went before you started. If your opening count agreed, '
+        + 'anything short at your close is yours.',
+      ),
+      p(
+        'Anything short is valued at selling price. A line over on the same count is set against it, so a bottle rung '
+        + 'up as the wrong size does not count twice. A count that only comes out over charges nobody.',
+      ),
+      h('It is not final'),
+      p(
+        'The amount goes on your account as a deduction waiting to be decided. The till shows it when you sign in, '
+        + 'with the time left to answer, and you are emailed. Choose one:',
+      ),
+      steps(
+        'Take it from my pay: it is right.',
+        'I will put it back at my next shift: once a manager agrees, it is added to what your drawer should hold when you next close, on its own line. When the shift closes it is settled as paid back.',
+        'I want to explain: say what happened. A manager reads it before deciding.',
+      ),
+      note('You can change your answer until a manager decides.'),
+      h('If nobody decides in time'),
+      p(
+        'If you accepted it or said nothing, it is deducted when your time is up (a day, unless the admin set '
+        + 'another). If you explained or offered to put it back, it waits for a manager, who is reminded each morning.',
+      ),
+      h('For managers'),
+      p(
+        'Approvals \u2192 Count differences lists each one: the person, the count, the lines and their answer. Deduct it '
+        + 'all, deduct part, waive it, or agree to the put-back they offered. Part and waive ask for a reason, which the '
+        + 'person sees. A decision can be undone until it has gone to HIVE; after an undo it waits for a manager, never '
+        + 'the clock.',
+      ),
+      h('HIVE'),
+      p(
+        'On Staff, an admin matches each person to their record in HIVE, once. Nothing is matched without an admin '
+        + 'choosing it. Staff \u2192 Staff owing has the month\u2019s final deductions: Download for HIVE gives the '
+        + 'spreadsheet, each row with its own reference so it is never taken twice. Anybody not matched is held and '
+        + 'named until they are. Once HIVE is connected it reads them itself.',
+      ),
+      note('Shop counts, store-room counts and the kitchen\u2019s counts work as before, through Approvals.'),
+    ],
+  },
+
+  {
     id: 'stock-requests',
     title: 'Asking for stock',
     summary: 'Need stock on the kitchen screen and the bar till, and what the manager does with it.',

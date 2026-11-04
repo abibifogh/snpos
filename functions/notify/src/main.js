@@ -1,4 +1,4 @@
-import { Client, Databases, Query, Storage, Users } from 'node-appwrite';
+import { Client, Databases, ID, Permission, Query, Role, Storage, Users } from 'node-appwrite';
 import nodemailer from 'nodemailer';
 import { receiptPdf, portionsOf } from './receipt-pdf.js';
 import { purchaseOrderPdf } from './po-pdf.js';
@@ -20,12 +20,14 @@ import { handleSso } from './sso.js';
 import { handleInsightApprovals } from './insight-approvals.js';
 import { handleInsightFloats } from './insight-floats.js';
 import { handleInsightTeam } from './insight-team.js';
+import { handleHive } from './hive.js';
+import { raiseCountCharge, applyReply, sweepCountCharges, settlePutbacks } from './count-charges.js';
 import {
   fromBarChecks, fromShopCounts, fromExpenses, worthSending, approvalSubject, approvalBody,
   countLines, countSubject, countBody, countPlace,
 } from './approvals.js';
 import {
-  postShiftClose, postSpend, unpostSpend, postPayoutRow, postWasteRow, postBatchRow, postStaffChargeRow, postStaffSettleRow, sweepBooks,
+  postShiftClose, postSpend, unpostSpend, postPayoutRow, postWasteRow, postBatchRow, postStaffChargeRow, postStaffSettleRow, unpostStaffSettleRow, sweepBooks,
 } from './books-post.js';
 import { nightlyReconcile } from './health-night.js';
 import { send as pushSend } from './webpush.js';
@@ -54,6 +56,9 @@ import { brandColour } from './brand.js';
  *   production_batches.*.create → a drink made here from another side's stock, on the books
  *   staff_charges.*.create     → a count difference charged to somebody, on the books
  *   staff_charge_settlements.*.create → paid, taken from pay, found or written off, on the books
+ *   staff_charge_settlements.*.delete → a count-difference decision taken back, off the books
+ *   approval_notices.*.create (count_charge) → a bar count took effect: its difference on somebody's account, not final
+ *   charge_replies.*.create    → an answer or a decision on a count difference, checked and made
  *   shifts.*.update            → the shift's takings, costs and drawer, on the books
  *   shift_expenses.*.create/update → the spend on the books, corrected, or reversed if refused
  *   shift_expenses.*.delete        → a deleted spend's entry reversed
@@ -993,6 +998,15 @@ export default async ({ req, res, log, error }) => {
   if (team) return team;
 
   /**
+   * HIVE, the payroll: its staff list in, final count-difference deductions
+   * out, and its word that it has taken them. Signed with HIVE_SECRET, and
+   * answered before anything else for the same reason as the paths above.
+   * See hive.js.
+   */
+  const hive = await handleHive({ req, res, db, DB_ID, Query, newId: () => ID.unique(), log, error });
+  if (hive) return hive;
+
+  /**
    * What kind of invocation this is, according to Appwrite rather than
    * according to a guess.
    *
@@ -1069,6 +1083,23 @@ export default async ({ req, res, log, error }) => {
   }
   const from = `"${settings.email_from_name || settings.restaurant_name}" <${settings.email_from_address}>`;
   const brand = brandColour(settings.primary_color);
+
+  /*
+    Count differences on somebody's account, not final. Everything the
+    count-charges module needs, handed to it, so its tests can hand it fakes.
+  */
+  const counts = {
+    db, DB_ID, Query, log, error,
+    newId: () => ID.unique(),
+    readableBy: (userId) => Permission.read(Role.user(userId)),
+    money: (n) => money(n, settings),
+    timeZone: settings.timezone || 'UTC',
+    send: async ({ to, subject, title, body }) => {
+      if (!transport) throw new Error('SMTP is not configured');
+      await transport.sendMail({ from, to: to.join(','), subject, html: shell(title, body, brand) });
+    },
+    unpostSettlement: (row) => unpostStaffSettleRow({ db, DB_ID, Query, log }, row),
+  };
 
   const featureConfig = async (key, option, fallback) => {
     try {
@@ -1303,6 +1334,8 @@ export default async ({ req, res, log, error }) => {
       // First, because the others read what it writes: a daily digest that
       // runs before the books are filled reports a night that is not there.
       ['books', () => sweepBooks({ db, DB_ID, Query, log })],
+      // Before the digests: a difference deducted at its deadline is in them.
+      ['count_charges', () => sweepCountCharges(counts, { settings })],
       ['availability', () => sweepUnavailable({ db, DB_ID, settings, transport, from, log, error })],
       ['stale_shifts', () => sweepStaleShifts({ db, DB_ID, settings, transport, from, shell, log, error })],
       ['approvals', () => sweepApprovals({ db, DB_ID, settings, transport, from, log, error })],
@@ -1365,7 +1398,13 @@ export default async ({ req, res, log, error }) => {
     }
     // Checked before staff_charges: that name is the start of this one.
     if (events.some((e) => e.includes('collections.staff_charge_settlements'))) {
+      // Deleted: a decision on a count difference taken back. See undo in count-charges.js.
+      if (events.some((e) => e.endsWith('.delete'))) return res.json(await unpostStaffSettleRow(books, doc));
       return res.json(await postStaffSettleRow(books, doc));
+    }
+    // An answer or a decision on a count difference. See count-charges.js.
+    if (events.some((e) => e.includes('collections.charge_replies')) && events.some((e) => e.endsWith('.create'))) {
+      return res.json(await applyReply(counts, doc));
     }
     if (events.some((e) => e.includes('collections.staff_charges.'))) {
       return res.json(await postStaffChargeRow(books, doc));
@@ -1385,6 +1424,8 @@ export default async ({ req, res, log, error }) => {
     // who counted it has not gone home yet.
     if (events.some((e) => e.includes('collections.approval_notices'))
       && events.some((e) => e.endsWith('.create'))) {
+      // A bar count that took effect on save: no approval, a deduction that is not final.
+      if (doc.kind === 'count_charge') return res.json(await raiseCountCharge(counts, doc));
       return res.json(await noticeSent({ db, DB_ID, settings, transport, from, doc, log, error }));
     }
 
@@ -2420,6 +2461,8 @@ export default async ({ req, res, log, error }) => {
         sweep will try the books again, and the summary reads the rows, not
         the books.
       */
+      // What was put back into this drawer for count differences, settled as paid back.
+      await settlePutbacks(counts, doc).catch((e) => error(`Put back on shift ${doc.code}: ${e.message}`));
       try {
         const booked = await postShiftClose(books, doc);
         if (booked.posted) log(`Books: shift ${doc.code} posted (${booked.posted} entries, ${booked.spends} spends).`);
@@ -2622,6 +2665,13 @@ export default async ({ req, res, log, error }) => {
       const variance = Object.values(JSON.parse(doc.variance || '{}')).reduce((a, b) => a + b, 0);
       const wasteValue = waste.documents.reduce((a, w) => a + (w.value || 0), 0);
       const expenseTotal = expenses.documents.reduce((a, e) => a + e.amount, 0);
+      // Money put back into this drawer for a count difference: not takings, so said apart.
+      const putBackTotal = (() => {
+        try {
+          const rows = JSON.parse(doc.putbacks || '[]');
+          return Array.isArray(rows) ? rows.reduce((a, p) => a + (Number(p?.amount) || 0), 0) : 0;
+        } catch { return 0; }
+      })();
 
       // ------------------------------------------------- who did what
       //
@@ -2701,6 +2751,7 @@ export default async ({ req, res, log, error }) => {
            ${row('Covers', String(doc.covers || 0))}
            ${row('Discounts given', money(doc.discount_total || 0, settings))}
            ${row('Expenses', money(expenseTotal, settings))}
+           ${putBackTotal ? row('Put back for count differences', `+${money(putBackTotal, settings)}`) : ''}
            ${row('Waste', money(wasteValue, settings))}
            ${row('Cash difference', variance === 0 ? 'Balanced' : `${variance > 0 ? '+' : ''}${money(variance, settings)}`, variance !== 0)}
          </table>

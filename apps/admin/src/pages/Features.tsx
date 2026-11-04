@@ -61,6 +61,18 @@ const LABELS: Record<string, { title: string; blurb: string; to?: string; toLabe
       + 'screen can also set the level by hand, which lapses on its own so nobody leaves ordering switched off.',
   },
   discounts: { title: 'Discounts and discount codes', blurb: 'Guests type a code while ordering; staff apply discounts before the bill is marked paid.' },
+  count_charges: {
+    title: 'Bar count differences go on the bartender\'s account',
+    blurb:
+      'A bar count takes effect the moment it is saved: no approval, the shelf moves to what was counted. Anything '
+      + 'short, less anything over on the same count, at selling price, goes on the account of whoever answers for it '
+      + '(the closing shift, or for an opening count the shift before) as a deduction that is not final. They answer on '
+      + 'the till: take it from my pay, I will put it back at my next shift, or I want to explain. A manager decides '
+      + 'under Approvals; accepted or unanswered is deducted at the deadline. Final deductions go to HIVE from Staff owing. '
+      + 'Shop and store-room counts are not affected.',
+    to: '/waiting',
+    toLabel: 'Approvals',
+  },
   stock_requests: {
     title: 'Kitchen and bar can ask for stock',
     blurb:
@@ -150,6 +162,22 @@ const NUMBERS: Record<string, {
       label: 'Most orders per time slot',
       hint: 'Nought means no limit. With a limit set, a time that is full stops being offered, and two people cannot both take the last place.',
       fallback: 0,
+    },
+  ],
+  count_charges: [
+    {
+      option: 'answer_hours',
+      label: 'Hours they have to answer',
+      hint: 'Accepted or unanswered by then is deducted. Explained, or offered to put back, waits for a manager.',
+      fallback: 24,
+      min: 1,
+    },
+    {
+      option: 'remind_hour',
+      label: 'Morning reminder to managers, at this hour',
+      hint: 'Once a day, the managers are emailed whatever count differences wait for them. 0 to 23, venue time.',
+      fallback: 8,
+      min: 0,
     },
   ],
   busy_mode: [

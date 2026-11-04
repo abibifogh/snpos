@@ -11,9 +11,9 @@ import {
   tabOrdersOnShift, releaseWords, closeCodeProblem, spendCloseCode, humanError, liveOrders,
   openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, HANDOVER_ENABLED,
   countsAtBothEnds, countsInAtOpen, countsOutAtClose, pourMissedSales, cashCounted, cashPlanProblem, askForOpeningCount, hasOpeningCount, shiftCountPhases, ownFigure, floatOrigin, floatMethods,
-  isEnabled, featureConfig,
+  isEnabled, featureConfig, putbacksForClose,
 } from '@snpos/core';
-import type { PaymentMethod, Shift, FloatSource, TabOrder } from '@snpos/core';
+import type { PaymentMethod, Shift, FloatSource, TabOrder, Putback } from '@snpos/core';
 import type { PosContext } from './App';
 
 export type { Shift } from '@snpos/core';
@@ -64,6 +64,8 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   // Typed amounts, kept as text so a half-finished "0." is not read as zero.
   const [stockCounts, setStockCounts] = useState<Record<string, string>>({});
   const [flow, setFlow] = useState<ShiftFlow | undefined>(undefined);
+  /** Count differences agreed to be put back into this drawer. See count-charges.ts. */
+  const [putbacks, setPutbacks] = useState<Putback[]>([]);
   /** Orders this shift ran past its limit to take. Named before it closes. */
   const [shelving, setShelving] = useState<{ id: string; label: string }[]>([]);
   const [busy, setBusy] = useState(false);
@@ -376,7 +378,15 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
 
       // Expected is worked out from the records, never typed. Staff enter only
       // what is in their hand.
-      const takings = await expectedTakings(ctx.shift as Shift, m);
+      /*
+        What somebody agreed to put back for a count difference goes into the
+        drawer they close next, so the drawer is expected to hold it. Read as
+        whoever is signed in: a till that cannot see them expects nothing.
+      */
+      const back = await putbacksForClose(ctx.shift as Shift, ctx.userId, m)
+        .catch(() => ({ putbacks: [] as Putback[], charges: [] }));
+      setPutbacks(back.putbacks);
+      const takings = await expectedTakings(ctx.shift as Shift, m, back.putbacks);
       setRows(
         m
           .filter((x) => x.counted_at_close)
@@ -399,6 +409,10 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         // short of money it never held.
         out: takings.expensesTotal - takings.ownMoneyTotal,
         ownMoney: takings.ownMoneyTotal,
+        putBack: takings.putBackTotal,
+        putBackWords: back.charges.length === 1
+          ? `${back.charges[0]!.person_name}, ${new Date(back.charges[0]!.charged_at).toLocaleDateString([], { weekday: 'long' })}'s bar count`
+          : back.charges.length > 1 ? `${back.charges.length} bar count differences` : undefined,
       });
 
       /**
@@ -544,6 +558,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
         levels: counting ? resolved.levels : levels,
         stockCounts: counting ? resolved.counts : undefined,
         cashPlan: cashPlan(),
+        putbacks,
       });
       setCashAway({ safeText: '', bankText: '', takenBy: '' });
 

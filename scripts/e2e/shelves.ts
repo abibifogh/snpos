@@ -32,6 +32,8 @@ import { db, DB_ID, Query } from './core/client.ts';
 // against the same in-memory database. See functions/notify/src/books-post.js.
 import { postShiftClose, postSpend, unpostSpend, postPayoutRow, postWasteRow, sweepBooks, postRecurring } from './notify/books-post.js';
 import { healthFacts, healthFindings, healthSummary } from './notify/health.js';
+import { raiseCountCharge } from './notify/count-charges.js';
+import { expectedTakings } from './core/shifts.ts';
 
 /** What the notify function hands its books code: the database and a log. */
 const server = { db, DB_ID, Query, log: () => undefined };
@@ -383,6 +385,67 @@ console.log('\n=== J — the same count once the database has the column ===');
     'club level',
     (await barCountSheet('main')).find((r) => r.ingredientId === 'club-large')?.expected,
     48,
+  )]);
+}
+
+console.log('\n=== J2 — Count differences on: the count takes effect, and the server charges it, not final ===');
+{
+  __reset();
+  __seed('feature_flags', [{ $id: 'ff-cc', key: 'count_charges', enabled: true, config: '{"answer_hours":24}' }]);
+  __seed('stock_locations', [
+    { $id: 'counter', venue_id: 'main', name: 'Bar counter', kind: 'counter', module: 'bar', active: true },
+  ]);
+  __seed('ingredients', shelves);
+  __seed('stock_levels', shelves.map((i, n) => ({
+    $id: `lvl${n}`, ingredient_id: i.$id, location_id: 'counter', qty: i.current_qty,
+  })));
+  __seed('staff_profiles', [{ $id: 'p-regina', user_id: 'u1', display_name: 'Regina Test', role: 'cashier', active: true }]);
+  __seed('shifts', [{ $id: 'sh1', venue_id: 'main', module: 'bar', status: 'open', opened_by: 'u1', opened_at: '2026-11-03T08:00:00.000Z' }]);
+  // What the Large and the Small sell for, so the shortfall is priced as a sale.
+  __seed('menu_items', [{ $id: 'm-large', price: 1500 }, { $id: 'm-small', price: 1000 }]);
+  __seed('recipes', [
+    { $id: 'r1', menu_item_id: 'm-large', ingredient_id: 'club-large', qty_per_unit: 1 },
+    { $id: 'r2', menu_item_id: 'm-small', ingredient_id: 'club-small', qty_per_unit: 1 },
+  ]);
+
+  const sheet = await barCountSheet('main');
+  const out = await saveBarCount({
+    venueId: 'main',
+    shiftId: 'sh1',
+    phase: 'close',
+    userId: 'u1',
+    lines: sheet.map((r) => ({
+      ...r,
+      // Three Large short, one Small over.
+      countedText: r.ingredientId === 'club-large' ? String(r.expected - 3) : String(r.expected + 1),
+    })),
+  });
+  results.push(['J2 nothing waits for an admin', ok('pending / tookEffect', [out.pending, out.tookEffect], [0, true])]);
+  results.push(['J2 the shelf moved on save', ok(
+    'club levels',
+    (await barCountSheet('main')).map((r) => [r.ingredientId, r.expected]),
+    [['club-large', 45], ['club-small', 13]],
+  )]);
+  const notices = __all('approval_notices') as any[];
+  results.push(['J2 one notice, for the server', ok('kinds', notices.map((n) => n.kind), ['count_charge'])]);
+
+  let made = 0;
+  const raised = await raiseCountCharge({
+    db, DB_ID, Query, newId: () => `cc${(made += 1)}`, readableBy: (u: string) => `read("user:${u}")`,
+    money: (n: number) => String(n), log: () => undefined, error: () => undefined,
+  }, notices[0], { now: '2026-11-03T22:40:00.000Z' });
+  const charge = (__all('staff_charges') as any[])[0];
+  results.push(['J2 charged to whoever ran the shift, at selling price, the over set against it', ok(
+    'charge', [raised.ok, charge?.person_id, charge?.amount, charge?.decision, charge?.answer_by],
+    [true, 'p-regina', 3 * 1500 - 1000, 'pending', '2026-11-04T22:40:00.000Z'],
+  )]);
+
+  // Agreed to be put back: the next drawer expects it, on its own line.
+  const shift = (__all('shifts') as any[])[0];
+  const methods = [{ $id: 'cash', kind: 'cash', counted_at_close: true, enabled: true, name: 'Cash', venue_id: 'main' }] as any[];
+  const t = await expectedTakings({ ...shift, opening_floats: '{}' }, methods, [{ charge_id: charge.$id, amount: charge.amount, method_id: 'cash' }]);
+  results.push(['J2 a put-back is expected in the drawer, and said apart', ok(
+    'expected / put back', [t.byMethod.cash, t.putBackTotal], [3500, 3500],
   )]);
 }
 

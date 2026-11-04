@@ -1504,3 +1504,31 @@ table.data td .btn-sm { padding: 0.3rem 0.6rem; }
   .ask-line { grid-template-columns: auto minmax(0, 1fr); }
   .ask-line .ask-step, .ask-line .ask-pill { grid-column: 2; justify-self: start; }
 }
+
+/* ------------------------------------------------ count differences, not final */
+.count-due {
+  display: flex; align-items: center; gap: 0.75rem; justify-content: space-between;
+  padding: 0.55rem 0.75rem; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface);
+}
+.count-due.warn { background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+.count-due b { display: inline; }
+.count-charge { display: grid; gap: 0.75rem; }
+.count-charge-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.count-lines-total td { font-weight: 650; border-top: 1px solid var(--border); }
+.count-choices { display: grid; gap: 0.5rem; }
+.count-choice {
+  display: grid; grid-template-columns: auto 1fr; column-gap: 0.6rem; row-gap: 0.1rem; align-items: center;
+  text-align: left; padding: 0.7rem 0.8rem; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--field); color: var(--text); cursor: pointer; font: inherit;
+}
+.count-choice .dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border); grid-row: span 2; }
+.count-choice small { grid-column: 2; color: var(--text-dim); }
+.count-choice[aria-pressed='true'] { border-color: var(--brand); background: var(--brand-soft); }
+.count-choice[aria-pressed='true'] .dot { border-color: var(--brand); background: radial-gradient(circle, var(--brand) 45%, transparent 50%); }
+.count-said { display: grid; gap: 0.35rem; padding: 0.7rem 0.8rem; border-radius: 10px; background: var(--surface-2); }
+.count-said small { color: var(--text-dim); }
+button.linkish { background: none; border: 0; padding: 0; color: var(--brand); cursor: pointer; font: inherit; text-decoration: underline; }
+.count-diffs { display: grid; gap: 1rem; }
+.count-diff { padding-bottom: 1rem; border-bottom: 1px solid var(--hair); }
+.count-diff:last-child { padding-bottom: 0; border-bottom: 0; }

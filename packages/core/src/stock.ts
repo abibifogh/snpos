@@ -28,6 +28,8 @@ import { weightedUnitCost } from './unit-cost';
 import { usedInputs, batchCost, batchUnitCost, batchQty, storedInputs } from './batch-rules';
 import type { BatchInput, PastBatch } from './batch-rules';
 import type { Doc } from './types';
+import { loadFeatures, isEnabled } from './features';
+import { COUNT_CHARGES } from './count-charges';
 import type { TrailMove, TrailCheck } from './shelf-trail';
 import type { OrderItem } from './orders';
 
@@ -672,6 +674,14 @@ export async function saveBarCount(opts: {
   written: number; shortValue: number; failed: number; pending: number;
   /** Counts that applied at once because the approval column is not there yet. */
   unheld: number;
+  /**
+   * Took effect on save, with Count differences switched on: the shelf moved
+   * and any difference went to whoever answers for it, not final. See
+   * count-charges.ts.
+   */
+  tookEffect: boolean;
+  /** Something differed, so a deduction may follow. */
+  differed: boolean;
 }> {
   const places = await loadLocations(opts.venueId);
   const side: Module = opts.module ?? 'bar';
@@ -683,6 +693,18 @@ export async function saveBarCount(opts: {
   const counter = places.find((l) => l.$id === opts.locationId) ?? saleLocation(places, side);
   const variances = variancesIn(opts.lines);
   const shortValue = variances.filter((v) => v.delta < 0).reduce((s, v) => s + v.value, 0);
+  /*
+    NO APPROVAL, WITH COUNT DIFFERENCES ON.
+
+    A bar's own shift count then takes effect as it is saved, and what it
+    found goes onto the account of whoever answers for it, as a deduction
+    that is not final — see count-charges.ts. Only the bar, only a shift's
+    count: a store room, the kitchen and the shop wait for an admin as before.
+    A switch that cannot be read is off, so nothing is charged by accident.
+  */
+  const tookEffect = side === 'bar' && !!opts.shiftId
+    && await loadFeatures(opts.venueId).then((f) => isEnabled(f, COUNT_CHARGES)).catch(() => false);
+  let differed = false;
   let written = 0;
   /** Lines that found a difference and are now waiting for an admin. */
   let pending = 0;
@@ -727,7 +749,8 @@ export async function saveBarCount(opts: {
       approved the same way. It used to be written to nothing at all and
       applied at once.
     */
-    let held = !movesOnItsOwn(variance);
+    let held = !tookEffect && !movesOnItsOwn(variance);
+    if (variance !== 0) differed = true;
     const recordAs = opts.shiftId ?? storeCountId(counter?.$id ?? 'store');
     /*
       A COUNT OF TWENTY-THREE BOTTLES IS NOT LOST OVER ONE FIELD.
@@ -854,6 +877,24 @@ export async function saveBarCount(opts: {
     must not fail a count of forty bottles that landed perfectly well. The
     hourly sweep still finds it and says so.
   */
+  /*
+    Took effect: one notice, and the server raises the deduction from it. The
+    till cannot: nobody below an admin may write a charge, which is the point.
+  */
+  if (tookEffect && differed) {
+    await saveDropping('approval_notices', null, {
+      venue_id: opts.venueId,
+      kind: 'count_charge',
+      shift_id: opts.shiftId ?? '',
+      phase: opts.phase,
+      location_id: counter?.$id ?? '',
+      ref_id: opts.shiftId ?? '',
+      lines: variances.length,
+      short_value: shortValue,
+      counted_by: opts.userId,
+    }).catch(() => undefined);
+  }
+
   if (pending > 0) {
     await saveDropping('approval_notices', null, {
       venue_id: opts.venueId,
@@ -868,7 +909,7 @@ export async function saveBarCount(opts: {
     }).catch(() => undefined);
   }
 
-  return { written, shortValue, failed, pending, unheld };
+  return { written, shortValue, failed, pending, unheld, tookEffect, differed };
 }
 
 /* ------------------------------------------- agreeing to a held count */
