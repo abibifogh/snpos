@@ -10,7 +10,7 @@ import {
   loadFloats, balancesFor, recordBoxSpend, boxOverdrawn, boxHeadroom,
   checkPurchase, raiseAlerts, FLAG_WORDS, logSpendChange, spendSnapshot,
   openOrdersFor, receiveOrderFromSpend, readLines, stillToCome, paidFromFloat, floatPaidWords,
-  loadLocations, openIn, purchaseLocation, ownedChoices, receivePieces,
+  loadLocations, openIn, purchaseLocation, ownedChoices, receivePieces, repeatsOf, repeatedItemsProblem,
 } from '@snpos/core';
 import type {
   PaymentMethod, Settings, StaffProfile, PaidToKind, Supplier, ExpenseCategoryDoc, Ingredient,
@@ -554,6 +554,10 @@ export function ExpenseModal({
   );
 
   const filledLines = stocks ? lines.filter((l) => l.ingredientId && Number(l.qtyText) > 0) : [];
+  /** For each line, the earlier line that already has its item. See repeated-items.ts. */
+  const repeats = repeatsOf(lines.map((l) => l.ingredientId));
+  const lineName = (id: string): string =>
+    pieceOf(id)?.label ?? ingredients.find((i) => i.$id === id)?.name ?? 'An item';
 
   /**
    * Lines add up to the total, so nobody types it twice.
@@ -670,6 +674,9 @@ export function ExpenseModal({
       return;
     }
     if (receive && filledLines.length === 0) { setError('Add what came in: the item, how many and what it cost.'); return; }
+    // One item, one line: the same item twice is two prices for one trip.
+    const repeated = repeatedItemsProblem(lines.filter((l) => l.ingredientId).map((l) => ({ id: l.ingredientId, name: lineName(l.ingredientId) })));
+    if (repeated) { setError(repeated); return; }
     if (!methodId && !payLater && !byFloat) { setError('Choose how it was paid.'); return; }
     if (payLater && !byFloat && paidToKind !== 'supplier') { setError('Not paid yet means it is owed to a supplier. Choose which one under Paid to.'); return; }
     if (paidToKind === 'supplier' && !supplierId) { setError('Choose which supplier was paid.'); return; }
@@ -1173,6 +1180,12 @@ export function ExpenseModal({
                     </Button>
                   )}
                 </div>
+                {/* Picked twice: said on the line, and the save refuses it. */}
+                {repeats[i] !== null && (
+                  <div className="small" style={{ marginTop: '0.15rem', color: 'var(--danger)', fontWeight: 550 }}>
+                    {lineName(l.ingredientId)} is already on line {(repeats[i] ?? 0) + 1}. Add these to that line instead, and remove this one.
+                  </div>
+                )}
                 {/* The division, done and shown. Stock is costed per unit, so
                     this figure is what the recipes will use, and a price that
                     looks wrong to somebody who was at the market is caught

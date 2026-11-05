@@ -86,6 +86,7 @@ export * from './till-charged';
 export * from './till-charged-apply';
 export * from './staff-charges';
 export * from './count-charges';
+export * from './repeated-items';
 export * from './count-charges-store';
 export * from './staff-charges-store';
 export * from './shelf-trail';
