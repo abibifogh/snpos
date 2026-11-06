@@ -204,11 +204,31 @@ jobs:
 
             name=$(appwrite functions get --function-id "$fn" 2>/dev/null \
                    | sed -n 's/.*"name"[^"]*"\([^"]*\)".*/\1/p' | head -1)
+
+            # "functions update" is a full replace: whatever it is not given
+            # goes back to Appwrite's default. Given only the name and the
+            # events, it emptied Execute access (so the function's domain
+            # answered "Execution not permitted"), blanked the build commands
+            # (so the next build had no node_modules), cleared notify's hourly
+            # schedule and put every timeout back to 15 seconds. So every
+            # setting appwrite.json declares goes with it, every time.
+            f() { jq -r --arg fn "$fn" ".functions[] | select(.\"\$id\" == \$fn) | $1" appwrite.json; }
+            keep=(--runtime "$(f '.runtime')" --entrypoint "$(f '.entrypoint')" --commands "$(f '.commands // ""')"
+                  --timeout "$(f '.timeout // 15')" --enabled="$(f '.enabled // true')" --logging="$(f '.logging // true')")
+            sched=$(f '.schedule // ""')
+            [ -n "$sched" ] && keep+=(--schedule "$sched")
+            while read -r role; do
+              [ -n "$role" ] && keep+=(--execute "$role")
+            done <<EOF
+          $(f '.execute[]?')
+          EOF
+
             # shellcheck disable=SC2086
-            if appwrite functions update --function-id "$fn" --name "${name:-$fn}" $args >/dev/null 2>&1; then
+            if out=$(appwrite functions update --function-id "$fn" --name "${name:-$fn}" $args "${keep[@]}" 2>&1); then
               echo "  $fn subscribed"
             else
               echo "::warning::Could not set the events for $fn"
+              printf '%s\n' "$out" | sed 's/^/      /'
               FAILED="$FAILED $fn"
             fi
           done
