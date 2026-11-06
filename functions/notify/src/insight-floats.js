@@ -211,7 +211,8 @@ const answer = (o, appUrl) => ({
   total: Number(o.total) || 0,
   module: o.module || 'kitchen',
   receivedAt: o.received_at || null,
-  url: appUrl ? `${appUrl.replace(/\/+$/, '')}/#/purchase-orders?show=${o.$id}` : null,
+  // APP_URL is the site; the admin app lives under /admin/, like every other link this function sends.
+  url: appUrl ? `${appUrl.replace(/\/+$/, '')}/admin/#/purchase-orders?show=${o.$id}` : null,
 });
 
 /**
@@ -403,7 +404,7 @@ export async function handleInsightFloats({ req, res, db, DB_ID, Query, storage,
         ok: true,
         orders: rows.map((o) => {
           const a = answer(o, appUrl);
-          return { id: a.id, poNo: a.poNo, status: a.status, total: a.total, receivedAt: a.receivedAt, module: a.module };
+          return { id: a.id, poNo: a.poNo, status: a.status, total: a.total, receivedAt: a.receivedAt, module: a.module, url: a.url };
         }),
       });
     }

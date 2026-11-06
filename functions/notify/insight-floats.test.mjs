@@ -142,7 +142,7 @@ test('a draft order is made once, matched, with its receipt, and needs nobody to
   const o = w.tables.stock_orders.find((r) => r.insight_key === 'insight-float:123');
   assert.deepEqual(made.body, {
     ok: true, id: o.$id, poNo: 'PO-0142', status: 'draft', total: 64000, module: 'bar',
-    url: `https://pos.example.test/#/purchase-orders?show=${o.$id}`,
+    url: `https://pos.example.test/admin/#/purchase-orders?show=${o.$id}`,
   });
   assert.equal(o.status, 'draft');
   assert.equal(o.supplier_id, 's1');
@@ -225,7 +225,7 @@ test('where they have got to; ids not found are left out', async () => {
   Object.assign(w.tables.stock_orders.find((r) => r.$id === made.body.id), { status: 'received', received_at: '2026-11-01T09:00:00.000Z' });
   const { status, body } = await call(w, '/floats/po/status', { ids: [made.body.id, 'nobody'] });
   assert.equal(status, 200);
-  assert.deepEqual(body, { ok: true, orders: [{ id: made.body.id, poNo: 'PO-0142', status: 'received', total: 64000, receivedAt: '2026-11-01T09:00:00.000Z', module: 'bar' }] });
+  assert.deepEqual(body, { ok: true, orders: [{ id: made.body.id, poNo: 'PO-0142', status: 'received', total: 64000, receivedAt: '2026-11-01T09:00:00.000Z', module: 'bar', url: `https://pos.example.test/admin/#/purchase-orders?show=${made.body.id}` }] });
 });
 
 test('taken back only while it is still a draft from Insight', async () => {
