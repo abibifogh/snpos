@@ -81,6 +81,13 @@ export interface ShiftFlow {
    * reading the summary needs to see it went out.
    */
   ownMoney?: number;
+  /**
+   * A count difference somebody agreed to put back, going into this drawer.
+   * On its own line, so the takings are not read as more than they were.
+   * See count-charges.ts.
+   */
+  putBack?: number;
+  putBackWords?: string;
 }
 
 const TONE = { OK: 'ok', LOW: 'warn', OUT: 'danger' } as const;
@@ -360,10 +367,19 @@ export function ShiftCloseForm({
                   <td className="num dim">{money(flow.ownMoney ?? 0)}</td>
                 </tr>
               )}
+              {(flow.putBack ?? 0) > 0 && (
+                <tr>
+                  <td>
+                    Put back
+                    <span className="dim small">{flow.putBackWords ? `${flow.putBackWords}. ` : ''}Settled as paid back once the shift closes</span>
+                  </td>
+                  <td className="num" style={{ fontWeight: 550 }}>+ {money(flow.putBack ?? 0)}</td>
+                </tr>
+              )}
               <tr>
                 <td style={{ fontWeight: 650 }}>Should be in hand</td>
                 <td className="num" style={{ fontWeight: 650 }}>
-                  {money(flow.opening + flow.sales + flow.tips - flow.out)}
+                  {money(flow.opening + flow.sales + flow.tips - flow.out + (flow.putBack ?? 0))}
                 </td>
               </tr>
             </tbody>

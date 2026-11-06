@@ -4,9 +4,11 @@ import { humanError } from '../lib';
 import {
   loadStaffCharges, loadSettlements, settleCharge, owingByPerson, owingTotals, chargeLeft, settleProblem, foundAmount,
   SETTLE_WORDS, isCredit, loadOpenShifts, loadPaymentMethods, parseMoney, toInput, dateTimeWords, waitedWords, MODULE_LABELS,
-  owingStatement, statementPeople, owingStatementHtml, balanceWords, openPrintable,
+  owingStatement, statementPeople, owingStatementHtml, balanceWords, openPrintable, stageWords,
 } from '@snpos/core';
-import type { StaffCharge, StaffSettlement, SettleKind, Module } from '@snpos/core';
+import type { StaffCharge, StaffSettlement, SettleKind, Module, CountCharge } from '@snpos/core';
+import { Link } from 'react-router-dom';
+import { HiveExport } from '../components/HiveExport';
 import { useSession, useMoney } from '../session';
 import { HubTabs, HubTitle } from '../components/Hub';
 
@@ -93,6 +95,9 @@ export function StaffOwingPage() {
         </div>
       )}
 
+      {/* The month's final count-difference deductions, for HIVE. Nothing until there are any. */}
+      <HiveExport onChanged={() => void load()} />
+
       <Card pad={false}>
         {!charges ? <Spinner /> : people.length === 0 ? (
           <Empty title={show === 'owed' ? 'Nobody owes anything' : 'Nothing here'}>
@@ -156,14 +161,27 @@ export function StaffOwingPage() {
                                       <td className="num">{money(c.amount - left)}</td>
                                       <td className="num" style={{ fontWeight: 600 }}>{money(left)}</td>
                                       <td>
-                                        {isCredit(c) ? (
+                                        {c.decision ? (
+                                          /* A count difference raised on its own: where it stands, and HIVE. */
+                                          <>
+                                            <Badge tone={stageWords(c as CountCharge, new Date(now)).tone === 'warn' ? 'warn' : stageWords(c as CountCharge, new Date(now)).tone === 'ok' ? 'ok' : 'default'}>
+                                              {stageWords(c as CountCharge, new Date(now)).label}
+                                            </Badge>
+                                            {(c.decision === 'deduct' || c.decision === 'part') && (
+                                              <div className="small dim">
+                                                {(c as CountCharge).hive_sent_at ? `HIVE: sent ${dateTimeWords((c as CountCharge).hive_sent_at!)}` : 'HIVE: next run'}
+                                              </div>
+                                            )}
+                                          </>
+                                        ) : isCredit(c) ? (
                                           <Badge tone="ok">{left === 0 ? 'Credit, used' : left < c.amount ? 'Credit, part used' : 'Credit'}</Badge>
                                         ) : left === 0 ? (
                                           <Badge tone="ok">{done.length === 1 ? SETTLE_WORDS[done[0]!.kind] : 'Settled'}</Badge>
                                         ) : left < c.amount ? <Badge tone="warn">Part put right</Badge> : <Badge tone="danger">Open</Badge>}
                                       </td>
                                       <td className="num">
-                                        {left > 0 && !isCredit(c) && (isAdmin
+                                        {c.decision === 'pending' && <Link to="/waiting" className="small">Decide on Approvals</Link>}
+                                        {left > 0 && !isCredit(c) && !c.decision && (isAdmin
                                           ? <Button size="sm" variant="primary" onClick={() => setSettling(c)}>Put right</Button>
                                           : <span className="small dim">An admin records this</span>)}
                                       </td>

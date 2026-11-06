@@ -17,6 +17,7 @@ import type {
 import { useSession, useMoney } from '../session';
 import { ChargeLineModal } from '../components/ChargeLine';
 import { StockAskPanel } from '../components/StockAsk';
+import { CountDifferences } from '../components/CountDifferences';
 
 type Show = WaitingKind | 'all';
 const SHOWS: Show[] = ['all', 'count', 'spend', 'shelf', 'tab', 'order', 'clean', 'stock'];
@@ -367,6 +368,9 @@ export function WaitingPage() {
       <p className="small" style={{ marginTop: 0 }}>{items ? waitingSummary(items) : 'Reading every queue…'}</p>
 
       {error && <Notice>{error}</Notice>}
+
+      {/* Bar count differences on somebody's account, not final. Nothing when there are none. */}
+      <CountDifferences />
 
       {/*
         Bookings waiting to be agreed to.

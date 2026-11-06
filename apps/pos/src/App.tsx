@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Button, Spinner, Card, Field, Input, Notice, useToast, Logo, HelpModal, EightySixModal, Modal, Badge,
-  OfflineBar, SchemaBar, StaleBar, useOfflineQueue, IdleScreen, ThemeButton, OwedNotice, PersonChip,
+  OfflineBar, SchemaBar, StaleBar, useOfflineQueue, IdleScreen, ThemeButton, OwedNotice, CountChargeNotice, PersonChip,
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
@@ -1204,6 +1204,15 @@ export function App() {
       {/* What the person at this till owes from counts charged to them. Their
           own only; nothing when nothing is owed. See staff-charges.ts. */}
       <OwedNotice userId={ctx.userId} money={(n) => formatMoney(n, ctx.settings)} />
+      {/* A bar count difference on their account, not final, and their answer
+          to it. See count-charges.ts. */}
+      <CountChargeNotice
+        venueId={ctx.venue.$id}
+        userId={ctx.profile?.user_id || ctx.userId}
+        profileId={ctx.profile?.$id ?? ''}
+        name={ctx.profile?.display_name ?? ''}
+        money={(n) => formatMoney(n, ctx.settings)}
+      />
 
       <div className="pos-body">
         {/* A shop counter is not a dining room.

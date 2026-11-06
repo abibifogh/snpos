@@ -618,7 +618,10 @@ export async function postStaffChargeRow(ctx, charge) {
   try {
     const entry = await postEntry(ctx, {
       venueId, date: charge.charged_at || charge.$createdAt, source: 'adjustment', sourceId: key,
-      memo: `${charge.direction === 'credit' ? 'Credited to' : 'Charged to'} ${charge.person_name || 'staff'}: ${charge.qty} ${charge.item_name || ''}`.trim(),
+      // A count difference raised on its own already names what was short.
+      memo: charge.decision
+        ? `Charged to ${charge.person_name || 'staff'}, not final: ${charge.item_name || 'a bar count'}`.slice(0, 300)
+        : `${charge.direction === 'credit' ? 'Credited to' : 'Charged to'} ${charge.person_name || 'staff'}: ${charge.qty} ${charge.item_name || ''}`.trim(),
       postedBy: charge.charged_by,
     }, lines);
     return { ok: true, posted: true, entryId: entry.$id };
@@ -626,6 +629,28 @@ export async function postStaffChargeRow(ctx, charge) {
     if (e.locked) return { skipped: 'locked', through: e.through };
     throw e;
   }
+}
+
+/**
+ * A settlement deleted: its entry reversed. That happens when a manager takes
+ * back a decision on a count difference before it has gone to HIVE. See undo
+ * in count-charges.js. Safe to run twice.
+ */
+export async function unpostStaffSettleRow(ctx, row) {
+  const venueId = row.venue_id || 'main';
+  const key = `staffsettle:${row.$id}`;
+  const existing = await entryFor(ctx, venueId, key);
+  if (!existing || existing.reversed_by) return { skipped: 'nothing on the books' };
+  try {
+    await reverseEntry(ctx, existing, { postedBy: SYSTEM, memo: `Taken back: ${existing.memo || 'staff charge settled'}` });
+  } catch (e) {
+    if (e.locked) return { skipped: 'locked', through: e.through };
+    throw e;
+  }
+  await ctx.db.updateDocument(ctx.DB_ID, 'journal_entries', existing.$id, { source_id: `${key}:deleted` })
+    .catch(() => undefined);
+  ctx.log(`Reversed the settlement ${row.$id}, taken back.`);
+  return { ok: true, reversed: true };
 }
 
 /** Something done about a staff charge, on the books. Keyed on the settlement. */

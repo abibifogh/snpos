@@ -257,6 +257,9 @@ export interface FeatureFlag extends Doc {
 
 export interface StaffProfile extends Doc {
   user_id?: string;
+  /** Who this person is in HIVE, the payroll, chosen by an admin. See count-charges.ts. */
+  hive_staff_id?: string | null;
+  hive_name?: string | null;
   display_name: string;
   role: 'cook' | 'waiter' | 'cashier' | 'manager' | 'admin';
   active: boolean;

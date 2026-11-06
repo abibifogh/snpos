@@ -1480,6 +1480,13 @@ export const COLLECTIONS = [
       ['counted', 's', 2000, false],
       ['variance', 's', 2000, false],
       ['variance_note', 's', 1000, false],
+      /*
+        Count differences somebody offered to put back, added to what this
+        drawer should hold at close. JSON: [{ charge_id, amount, method_id }].
+        Written by the till that closes it; the function settles each one as
+        paid back once it has read the drawer. See count-charges.js.
+      */
+      ['putbacks', 's', 2000, false],
       ['sales_total', 'i', null, true, 0],
       ['expense_total', 'i', null, true, 0],
       ['tax_total', 'i', null, true, 0],
@@ -2441,8 +2448,54 @@ export const COLLECTIONS = [
       // Kept on the row so a list reads without adding up every settlement.
       ['settled_total', 'i', null, true, 0],
       ['status', 'e', ['open', 'settled'], true, 'open'],
+      /*
+        NOT FINAL YET: a count difference raised on its own.
+
+        With Count differences switched on (see the count_charges feature), a
+        bar count takes effect the moment it is saved and the shortfall, netted
+        against anything over on the same count and valued at selling price,
+        lands here as ONE row per count and person. It is not final: the
+        person has until answer_by to accept it, offer to put it back at their
+        next shift, or explain, and a manager decides. Absent on every charge
+        made by hand, which an admin decided when they made it.
+
+        See count-charges.ts for the rules and functions/notify/src/
+        count-charges.js for the only code that writes these fields.
+      */
+      ['decision', 'e', ['pending', 'deduct', 'part', 'waived', 'putback'], false],
+      // The count it came from, so the till and Approvals can name it.
+      ['shift_id', 's', 64, false],
+      ['phase', 's', 10, false],
+      ['counted_by', 's', 64, false],
+      // Each line that differed, JSON: name, qty (negative is short), unit_price, amount, basis.
+      ['lines', 's', 4000, false],
+      // Their answer, which they may change until a manager decides.
+      ['answer', 'e', ['accept', 'putback', 'explain'], false],
+      ['answer_note', 's', 1000, false],
+      ['answered_at', 'd', null, false],
+      ['answered_by', 's', 64, false],
+      // When their 24 hours (or whatever the feature says) are up.
+      ['answer_by', 'd', null, false],
+      ['decided_by', 's', 64, false],
+      ['decided_name', 's', 120, false],
+      ['decided_at', 'd', null, false],
+      // Why part or none of it was taken. The person sees it.
+      ['decided_note', 's', 500, false],
+      // What is taken from pay: the whole amount, or the part a manager chose.
+      ['decided_amount', 'i', null, false],
+      // The HIVE staff record it went to, and when HIVE took it. Never undone after.
+      ['hive_staff_id', 's', 64, false],
+      ['hive_sent_at', 'd', null, false],
+      // Put back: the shift whose drawer it went into.
+      ['putback_shift_id', 's', 64, false],
+      // The morning a manager was last reminded about it, as YYYY-MM-DD.
+      ['reminded_on', 's', 10, false],
+      // A manager took a decision back: from then on it waits for a manager,
+      // never for the clock.
+      ['reopened_by', 's', 64, false],
     ],
     indexes: [
+      ['decision', 'key', ['decision']],
       ['person_status', 'key', ['person_id', 'status']],
       ['user_status', 'key', ['person_user_id', 'status']],
       ['venue_status', 'key', ['venue_id', 'status']],
@@ -2482,6 +2535,64 @@ export const COLLECTIONS = [
       ['charge', 'key', ['charge_id']],
       ['shift', 'key', ['shift_id']],
     ],
+  },
+  {
+    /**
+     * Something said about a count difference that is not final yet: the
+     * person's answer, a manager's decision, or a decision taken back.
+     *
+     * A row here rather than a write to the charge, because nobody below an
+     * admin may write staff_charges, and a bartender must not be able to edit
+     * the amount they owe. The function reads each row the moment it lands,
+     * checks it, and makes the change on the charge itself. See
+     * functions/notify/src/count-charges.js.
+     *
+     * A decision is only taken from somebody the row PROVES it came from: it
+     * must be written readable by the deciding account, which Appwrite only
+     * lets that account do, and that account must be an admin or a manager.
+     */
+    id: 'charge_replies',
+    name: 'Count difference replies',
+    perms: { read: MGMT, create: ALL_STAFF, update: [], delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['charge_id', 's', 64, true],
+      ['kind', 'e', ['answer', 'decide', 'undo'], true, 'answer'],
+      ['answer', 'e', ['accept', 'putback', 'explain'], false],
+      ['decision', 'e', ['deduct', 'part', 'waived', 'putback'], false],
+      // For a part deduction: how much is taken.
+      ['amount', 'i', null, false],
+      ['note', 's', 1000, false],
+      // Who said it: their account, and their staff profile.
+      ['by_user', 's', 64, false],
+      ['by_profile', 's', 64, false],
+      ['by_name', 's', 120, false],
+      // Filled in by the function: done, or why not.
+      ['done_at', 'd', null, false],
+      ['error', 's', 300, false],
+    ],
+    indexes: [['charge', 'key', ['charge_id']]],
+  },
+  {
+    /**
+     * HIVE's own staff list, sent here by HIVE so an admin can match each
+     * person on the POS to their record there by choosing, not typing.
+     *
+     * Written only by the function, on a signed request from HIVE. See
+     * functions/notify/src/hive.js.
+     */
+    id: 'hive_staff',
+    name: 'HIVE staff',
+    perms: { read: MGMT, create: [], update: [], delete: ADMIN },
+    attributes: [
+      ['hive_id', 's', 64, true],
+      ['name', 's', 160, true],
+      ['email', 's', 160, false],
+      ['role', 's', 80, false],
+      ['active', 'b', null, false, true],
+      ['seen_at', 'd', null, false],
+    ],
+    indexes: [['hive_id', 'unique', ['hive_id']]],
   },
   {
     id: 'stock_movements',
@@ -2650,7 +2761,13 @@ export const COLLECTIONS = [
     perms: { read: ALL_STAFF, create: ALL_STAFF, update: ALL_STAFF, delete: ADMIN },
     attributes: [
       ['venue_id', 's', 64, true],
-      ['kind', 'e', ['bar_count', 'shop_count', 'expense'], true, 'bar_count'],
+      /*
+        'count_charge': a bar count that took effect on save with Count
+        differences switched on. The function works out who answers for the
+        difference and raises it as a deduction that is not final yet. See
+        count-charges.js.
+      */
+      ['kind', 'e', ['bar_count', 'shop_count', 'expense', 'count_charge'], true, 'bar_count'],
       // Which count, so the function can read what it actually found.
       ['shift_id', 's', 64, false],
       ['phase', 's', 20, false],
@@ -4435,6 +4552,18 @@ for (const col of COLLECTIONS) {
 // Staff belong to one or more venues; an empty list means "all venues" (owner).
 COLLECTIONS.find((c) => c.id === 'staff_profiles').attributes.push(['venue_ids', 's[]', 64, false]);
 
+/*
+  Who this person is in HIVE, the payroll, chosen by an admin on Staff.
+
+  Only a matched person's final deductions go to HIVE. Nothing is matched
+  automatically, even where the name or email agrees: a deduction from the
+  wrong person's salary is not something to leave to a guess.
+*/
+COLLECTIONS.find((c) => c.id === 'staff_profiles').attributes.push(
+  ['hive_staff_id', 's', 64, false],
+  ['hive_name', 's', 160, false],
+);
+
 /**
  * The twelve optional features, and their default configuration.
  *
@@ -4704,6 +4833,17 @@ export const FEATURES = [
       The kitchen and the bar asking for stock from their own screens. Off
       until an admin switches it on. See stock-requests.ts.
     */
+    key: 'count_charges',
+    label: 'Bar count differences charged to the bartender',
+    enabled: false,
+    config: {
+      // How long the person has to accept, explain or offer to put it back.
+      answer_hours: 24,
+      // At what hour, venue time, a manager is reminded of what waits for them.
+      remind_hour: 8,
+    },
+  },
+  {
     key: 'stock_requests',
     label: 'Kitchen and bar can ask for stock',
     enabled: false,

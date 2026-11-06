@@ -5,6 +5,7 @@ import { theoreticalUsage, pourMissedSales, loadIngredients, loadRecipes, update
 import { liveOrders } from './orders';
 import { countable } from './bar-count';
 import { repaidByMethod } from './staff-charges';
+import type { Putback } from './count-charges';
 import { makersShareOf } from './consignment-math';
 import { splitTax, parseLevies, vatBpOf } from './pricing';
 import { cashCounted, keptFrom, keptByMethod } from './cash-away';
@@ -43,6 +44,8 @@ export interface Shift extends Doc {
   closed_by?: string;
   /** JSON, per method, written at close. */
   counted?: string;
+  /** Count differences put back into this drawer, JSON. See count-charges.ts. */
+  putbacks?: string;
   /** Which side of the business. Absent on shifts opened before the split. */
   module?: Module;
   sales_total: number;
@@ -506,6 +509,14 @@ export interface ExpectedTakings {
    */
   repaidByMethod: Record<string, number>;
   repaidTotal: number;
+  /**
+   * Count differences somebody agreed to put back at this shift, not yet
+   * settled. Already inside byMethod, like the repaid money: the drawer
+   * should hold it. Once the server has settled each one it is repaid money
+   * instead, never both. See count-charges.ts.
+   */
+  putBackByMethod: Record<string, number>;
+  putBackTotal: number;
 }
 
 /**
@@ -525,7 +536,12 @@ export const shiftUsable = (shift: Pick<Shift, 'opened_at'> | null | undefined):
  * the comparison is computed from records the system already holds, because a
  * figure somebody types in as "expected" is not a check on anything.
  */
-export async function expectedTakings(shift: Shift, methods: PaymentMethod[]): Promise<ExpectedTakings> {
+export async function expectedTakings(
+  shift: Shift,
+  methods: PaymentMethod[],
+  /** To be put back at this close. Absent: what the shift row says was. */
+  putbacks?: Putback[],
+): Promise<ExpectedTakings> {
   const [payments, expenses, repaid] = await Promise.all([
     listAll<ShiftPayment>('payments', [Query.equal('shift_id', shift.$id)]),
     listAll<{ amount: number; paid_from_method_id: string; from_takings?: boolean }>('shift_expenses', [
@@ -536,7 +552,7 @@ export async function expectedTakings(shift: Shift, methods: PaymentMethod[]): P
       A database without the table yet has none; any other failure is thrown,
       because a drawer expected without money that is in it reads as over.
     */
-    listAll<{ kind: 'cash' | 'pay' | 'found' | 'written_off'; amount: number; method_id?: string }>('staff_charge_settlements', [
+    listAll<{ kind: 'cash' | 'pay' | 'found' | 'written_off'; amount: number; method_id?: string; charge_id?: string }>('staff_charge_settlements', [
       Query.equal('shift_id', shift.$id),
     ]).catch((e: unknown) => {
       if (/not.?found|could not be found/i.test(String((e as { message?: string })?.message ?? e))) return [];
@@ -544,6 +560,26 @@ export async function expectedTakings(shift: Shift, methods: PaymentMethod[]): P
     }),
   ]);
   const repaidBy = repaidByMethod(repaid);
+  /*
+    Put back, and not settled yet: settled is in repaid already. Read from the
+    row once the shift has closed, so a figure worked out again later still
+    expects the money that was put in.
+  */
+  let wanted: Putback[] = putbacks ?? [];
+  if (!putbacks) {
+    try {
+      const rows = JSON.parse(shift.putbacks || '[]');
+      wanted = Array.isArray(rows) ? rows : [];
+    } catch {
+      wanted = [];
+    }
+  }
+  const putBackBy: Record<string, number> = {};
+  for (const p of wanted) {
+    if (!p?.method_id || !(p.amount > 0)) continue;
+    if (repaid.some((r) => r.kind === 'cash' && r.charge_id === p.charge_id)) continue;
+    putBackBy[p.method_id] = (putBackBy[p.method_id] ?? 0) + p.amount;
+  }
 
   const openingFloats: Record<string, number> = JSON.parse(shift.opening_floats || '{}');
   const takenByMethod: Record<string, number> = {};
@@ -587,7 +623,8 @@ export async function expectedTakings(shift: Shift, methods: PaymentMethod[]): P
       .filter((e) => e.paid_from_method_id === m.$id)
       .reduce((a, e) => a + e.amount, 0);
     if (m.kind === 'cash') cashExpenses += paidOut;
-    byMethod[m.$id] = (openingFloats[m.$id] ?? 0) + (takenByMethod[m.$id] ?? 0) - paidOut + (repaidBy[m.$id] ?? 0);
+    byMethod[m.$id] = (openingFloats[m.$id] ?? 0) + (takenByMethod[m.$id] ?? 0) - paidOut + (repaidBy[m.$id] ?? 0)
+      + (putBackBy[m.$id] ?? 0);
   }
 
   // Everything spent, whoever's pocket it came from. This is the P&L figure and
@@ -601,6 +638,8 @@ export async function expectedTakings(shift: Shift, methods: PaymentMethod[]): P
     salesTotal, tipsTotal, payments,
     repaidByMethod: repaidBy,
     repaidTotal: Object.values(repaidBy).reduce((a, n) => a + n, 0),
+    putBackByMethod: putBackBy,
+    putBackTotal: Object.values(putBackBy).reduce((a, n) => a + n, 0),
   };
 }
 
@@ -726,9 +765,22 @@ export async function closeShift(opts: {
   stockCounts?: Record<string, number>;
   /** Where the counted cash went: safe, bank, and who took it. See cash-away.ts. */
   cashPlan?: CashPlan;
+  /**
+   * Count differences somebody agreed to put back, going into this drawer.
+   * Written on the shift first, so the server settles exactly these as paid
+   * back once it is closed. See count-charges.ts.
+   */
+  putbacks?: Putback[];
 }): Promise<CloseShiftResult> {
   const { venueId, shift, userId, settings, features, methods, counted, levels } = opts;
   const stockCounts = opts.stockCounts ?? {};
+  const putbacks = (opts.putbacks ?? []).filter((p) => p.amount > 0 && p.method_id);
+  if (putbacks.length) {
+    // If this does not land, the drawer is not expected to hold them either.
+    const { dropped } = await saveDropping('shifts', shift.$id, { putbacks: JSON.stringify(putbacks) })
+      .catch(() => ({ dropped: ['putbacks'] }));
+    if (dropped.includes('putbacks')) putbacks.length = 0;
+  }
 
   // First, before anything is counted. An order taken after this shift ran past
   // its limit is moved off its books, so the takings below and the summary that
@@ -736,7 +788,7 @@ export async function closeShift(opts: {
   // next shift opened picks it up.
   const shelved = await shelvePastLimit(venueId, shift);
 
-  const takings = await expectedTakings(shift, methods);
+  const takings = await expectedTakings(shift, methods, putbacks);
   const variance = Object.fromEntries(
     Object.keys(counted).map((k) => [k, (counted[k] ?? 0) - (takings.byMethod[k] ?? 0)]),
   );

@@ -235,7 +235,7 @@ export function BarCountModal({
     setBusy(true);
     setError(null);
     try {
-      const { written, shortValue, failed } = await saveBarCount({
+      const { written, shortValue, failed, tookEffect, differed } = await saveBarCount({
         venueId,
         shiftId,
         locationId: saleLocation(places, module)?.$id,
@@ -275,6 +275,21 @@ export function BarCountModal({
       }
       // Filed, so the half-finished copy has nothing left to protect.
       clearCountDraft(draftStore(), draftKey);
+      /*
+        Took effect, with Count differences on: no approval, and anything
+        that differed is on somebody's account, not final. Said in those
+        words, because "short" with no next step reads as an accusation.
+      */
+      if (tookEffect) {
+        onDone(
+          !differed
+            ? (phase === 'open' ? `${written} line${written === 1 ? '' : 's'} counted in, as handed over. The ${place} is yours.` : 'Counted out, and it balances.')
+            : phase === 'open'
+              ? 'Counted in, and the shelf now shows what you counted. Anything short goes on the account of whoever ran the last shift, as a deduction that is not final.'
+              : 'Counted out, and the shelf now shows what you counted. Anything short goes on the account of whoever ran this shift, as a deduction that is not final: they answer on the till before a manager decides.',
+        );
+        return;
+      }
       onDone(
         phase === 'open'
           ? `${written} line${written === 1 ? '' : 's'} counted in. The ${place} is yours.`

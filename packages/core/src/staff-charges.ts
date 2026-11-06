@@ -48,6 +48,11 @@ export interface StaffCharge {
   status: 'open' | 'settled';
   /** Absent on rows from before surpluses could be credited: owed. */
   direction?: ChargeDirection | null;
+  /**
+   * Set on a count difference raised on its own and not final yet. See
+   * count-charges.ts. Absent on every charge an admin made by hand.
+   */
+  decision?: string | null;
 }
 
 export interface StaffSettlement {
@@ -353,7 +358,9 @@ export function owingTotals(
 
 /** What the person at the till is told, or null when they owe nothing. */
 export function owedWords(mine: StaffCharge[], money: (n: number) => string): string | null {
-  const open = mine.filter((c) => !isCredit(c) && chargeLeft(c) > 0);
+  // Not final, or agreed to be put back: the till says those on their own
+  // card, with what can still be done about them. See count-charges.ts.
+  const open = mine.filter((c) => !isCredit(c) && chargeLeft(c) > 0 && c.decision !== 'pending' && c.decision !== 'putback');
   if (open.length === 0) return null;
   const credit = mine.filter(isCredit).reduce((s, c) => s + chargeLeft(c), 0);
   const sum = open.reduce((s, c) => s + chargeLeft(c), 0) - credit;

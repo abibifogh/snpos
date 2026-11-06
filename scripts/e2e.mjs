@@ -44,6 +44,8 @@ try {
   await cp(join(root, 'functions/notify/src/books.js'), join(work, 'notify/books.js'));
   await cp(join(root, 'functions/notify/src/books-post.js'), join(work, 'notify/books-post.js'));
   await cp(join(root, 'functions/notify/src/health.js'), join(work, 'notify/health.js'));
+  // Count differences: the server raises the deduction a bar count's notice asks for.
+  await cp(join(root, 'functions/notify/src/count-charges.js'), join(work, 'notify/count-charges.js'));
 
   /*
     `from './menu'` is what Vite resolves and what node does not. Rewritten on

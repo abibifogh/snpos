@@ -10,6 +10,7 @@ import type { StaffProfile, Module, OrderChoice } from '@snpos/core';
 import type { Doc } from '@snpos/core';
 import { useSession } from '../session';
 import { HubTabs, HubTitle } from '../components/Hub';
+import { HiveMatching } from '../components/HiveMatching';
 
 interface VenueRow extends Doc { name: string }
 
@@ -524,6 +525,9 @@ export function StaffPage() {
           </div>
         )}
       </Card>
+
+      {/* Who is who in HIVE, for count-difference deductions. Shown once Count differences is on. */}
+      {rows && rows.length > 0 && <HiveMatching rows={rows} onSaved={load} />}
 
       {editing && (
         <Modal
