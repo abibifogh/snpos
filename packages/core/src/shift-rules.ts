@@ -623,3 +623,35 @@ export function floatOrigin(source?: string, carriedFromCode?: string, amount?: 
 export function floatMethods<T extends { kind?: string; enabled?: boolean }>(methods: T[]): T[] {
   return methods.filter((m) => m.kind === 'cash');
 }
+
+/* ------------------------------------------------------ when it was opened */
+
+const sameDay = (a: Date, b: Date): boolean =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+/**
+ * When a shift was opened, as the till's bar says it: "since 18:05" today,
+ * "since yesterday 18:05", or "since Sun 8 Nov, 18:05".
+ *
+ * The bar used to give the time alone. A shift opened yesterday evening and
+ * never closed then read exactly like one opened this evening, so the next
+ * bartender carried on selling on it, took it for their own, and found the
+ * till stopped a day after somebody else had opened it.
+ */
+export function openedSinceWords(openedAt: string, now: Date = new Date()): string {
+  const opened = new Date(openedAt);
+  if (!Number.isFinite(opened.getTime())) return '';
+  const time = opened.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (sameDay(opened, now)) return `since ${time}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (sameDay(opened, yesterday)) return `since yesterday ${time}`;
+  const day = opened.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+  return `since ${day}, ${time}`;
+}
+
+/** Opened on an earlier day than today: not this person's shift, whoever is at the till. */
+export function openedBeforeToday(openedAt: string, now: Date = new Date()): boolean {
+  const opened = new Date(openedAt);
+  return Number.isFinite(opened.getTime()) && !sameDay(opened, now) && opened.getTime() < now.getTime();
+}
