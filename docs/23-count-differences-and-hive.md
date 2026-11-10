@@ -38,10 +38,25 @@ All three paths live on the notify function and are `POST`. They are signed like
 - **The signature:** HMAC-SHA256 over `till-link`, the time, the path and the body, each on its own line.
 - **The time limit:** within five minutes.
 
-The secret is **`HIVE_SECRET`**, set on the notify function. Without it, each path answers 503.
+The secret is **`HIVE_SECRET`**, set on the notify function. Without it, each path answers 503. Put it in this repository's Actions secrets as `HIVE_SECRET`; the Deploy functions workflow sets it on the function.
 
 | Path | Body | Answer |
 |---|---|---|
 | `/hive/staff` | `{ "staff": [{ "id", "name", "email", "role", "active" }] }` | `{ ok, added, updated }`. People missing from the list are kept but no longer offered. |
 | `/hive/deductions` | `{ "since"?: "YYYY-MM-DD", "include_sent"?: false }` | `{ ok, decimals, deductions: [{ ref, staff_id, name, amount, currency, date, description, decided_by }], held: [{ name, amount, count, reason }] }`. Amounts are in minor units. |
 | `/hive/ack` | `{ "refs": ["POS-…"] }` | `{ ok, taken, unknown? }`. Taken deductions are stamped `hive_sent_at`, are never offered again, and can no longer be undone. |
+
+### What HIVE does with them
+
+HIVE asks once an hour (attendance repository, `takePosDeductions` in `src/routes/payroll.js`):
+
+1. **The staff list.** It sends `/hive/staff` when its list has changed, and once a night. The id it sends is HIVE's own staff id, so that is what `hive_staff_id` holds once an admin has matched a person.
+2. **The deductions.** It asks `/hive/deductions` with `include_sent: true`. Each one not seen before goes on HIVE's payroll for the month it was decided in, or this month if that one is closed. The person is told: the bell, and the email copied to the office. One already marked as sent here (by hand, from Download for HIVE) is never put on again.
+3. **Undone here.** A deduction a manager undoes stops being offered, so HIVE takes it back off while its month is open, and tells the person.
+4. **Final.** Once HIVE's payroll month is closed, HIVE sends `/hive/ack` for the deductions on it. From then on nobody here can undo them.
+
+**Setting it up.** One secret, the same text on both sides, forty or more random characters:
+
+- **Here:** the repository secret `HIVE_SECRET`, then run Deploy functions (or merge anything).
+- **In HIVE (attendance):** the repository secrets `APP_POS_SECRET` (the same text) and `APP_POS_URL` (this notify function's address, the same one Insight has as the POS's reports address), then run "Set the app's secrets".
+
