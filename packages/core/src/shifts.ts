@@ -290,7 +290,7 @@ export async function openShift(opts: {
   const already = await loadOpenShifts(opts.venueId, module).catch(() => [] as Shift[]);
   if (already.length > 0) {
     throw new Error(
-      `A ${module === 'craft' ? 'craft shop' : 'kitchen'} shift is already open (${already[0].code}). ` +
+      `A ${MODULE_LABELS[module].toLowerCase()} shift is already open (${already[0].code}). ` +
       'Close that one before opening another.',
     );
   }

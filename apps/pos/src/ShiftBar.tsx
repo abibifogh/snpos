@@ -11,7 +11,7 @@ import {
   tabOrdersOnShift, releaseWords, closeCodeProblem, spendCloseCode, humanError, liveOrders,
   openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, HANDOVER_ENABLED,
   countsAtBothEnds, countsInAtOpen, countsOutAtClose, pourMissedSales, cashCounted, cashPlanProblem, askForOpeningCount, hasOpeningCount, shiftCountPhases, ownFigure, floatOrigin, floatMethods,
-  isEnabled, featureConfig, putbacksForClose,
+  isEnabled, featureConfig, openedSinceWords, openedBeforeToday, putbacksForClose,
 } from '@snpos/core';
 import type { PaymentMethod, Shift, FloatSource, TabOrder, Putback } from '@snpos/core';
 import type { PosContext } from './App';
@@ -641,8 +641,15 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
               <Badge tone={age.over ? 'danger' : age.warning ? 'warn' : 'ok'}>
                 {age.over ? 'Shift overdue' : 'Shift open'}
               </Badge>
-              <span className="small dim">
-                {ctx.shift.code} · since {new Date(ctx.shift.opened_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {/* The day as well as the time: a shift left open from yesterday
+                  must not read like one opened this evening. */}
+              <span className="small dim">{ctx.shift.code} · </span>
+              <span
+                className="small"
+                style={openedBeforeToday(ctx.shift.opened_at) ? { color: 'var(--warn)', fontWeight: 600 } : { color: 'var(--text-dim)' }}
+                title={openedBeforeToday(ctx.shift.opened_at) ? 'Opened on an earlier day. Close it and open a new shift for today.' : undefined}
+              >
+                {openedSinceWords(ctx.shift.opened_at)}
               </span>
             </>
           ) : (
