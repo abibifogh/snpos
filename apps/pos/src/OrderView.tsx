@@ -4,7 +4,7 @@ import {
   db, DB_ID, ID, Query, listAll, createOrder, computeTotals, lineTotal, formatMoney,
   parseMoney, toInput, isEnabled, featureConfig, visibleSections, searchMenu, recordPayment, asksForTip,
   referenceProblem, referenceRequired, referenceWords,
-  variantPriceRange, shiftUsable, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, sharesFor, shouldWarnLateOrder,
+  variantPriceRange, shiftUsable, shiftAgeOf, shiftAgeMessage, shiftLimit, sharesFor, shouldWarnLateOrder,
   sellBlockedReason, previewUrl,
   findCode, codeProblem, discountAmount, needsManager, discountLabelFor,
   loadRecipes, loadIngredients, pourList, showsRecipe,
@@ -821,7 +821,7 @@ export function OrderView({
       {ctx.shift && !usable && (
         <div style={{ padding: '0.6rem 1rem' }}>
           <Notice tone="warn">
-            {shiftAgeMessage(age, SHIFT_MAX_HOURS, ctx.module)}
+            {shiftAgeMessage(age, shiftLimit(ctx.shift), ctx.module)}
             {shelvedHere.length > 0 && (
               <div style={{ marginTop: '0.35rem' }}>
                 {/* Said, not enforced. Anything here can still be paid for; it

@@ -8,7 +8,7 @@ import { resolveCounts } from '@snpos/ui';
 import {
   db, DB_ID, formatMoney, parseMoney, toInput, stockCheckRows, pourMissedSales, cashCounted, cashPlanProblem,
   loadPaymentMethods, openShift, loadOpenShift, loadOpenShifts, shiftBlockers, expectedTakings, closeShift, openingFloats,
-  recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, shouldWarnLateOrder,
+  recordPayment, amountOutstanding, asksForTip, shiftAgeOf, shiftAgeMessage, shiftLimit, shouldWarnLateOrder,
   referenceProblem, referenceRequired, referenceWords,
   discountPlacedOrder, findCode, codeProblem, needsManager, discountAmount, discountLabelFor,
   listAll, Query, countsOutAtClose,
@@ -411,7 +411,7 @@ export function CombinedBar({
       {shift && (age.over || age.warning) && (
         <div style={{ padding: '0.5rem 0.9rem' }}>
           <Notice tone={age.over ? 'warn' : 'info'}>
-            {shiftAgeMessage(age, SHIFT_MAX_HOURS, 'kitchen')}
+            {shiftAgeMessage(age, shiftLimit(shift), 'kitchen')}
             {age.over && !who?.can_close_shift && ' Ask a manager to close it.'}
           </Notice>
         </div>

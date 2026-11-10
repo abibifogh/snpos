@@ -1487,6 +1487,17 @@ export const COLLECTIONS = [
         paid back once it has read the drawer. See count-charges.js.
       */
       ['putbacks', 's', 2000, false],
+      /*
+        More time, given by an admin or manager to THIS shift: a long event, a
+        till that could not be closed in time. Every other shift still stops
+        taking money at a day. Hours all told, and the last one to give it,
+        when and why. See extendShift.
+      */
+      ['extended_hours', 'i', null, false, 0],
+      ['extended_by', 's', 64, false],
+      ['extended_by_name', 's', 120, false],
+      ['extended_at', 'd', null, false],
+      ['extend_reason', 's', 300, false],
       ['sales_total', 'i', null, true, 0],
       ['expense_total', 'i', null, true, 0],
       ['tax_total', 'i', null, true, 0],

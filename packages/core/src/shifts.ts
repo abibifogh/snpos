@@ -18,7 +18,7 @@ import { featureConfig, isEnabled, type FeatureMap } from './features';
 import { MODULE_LABELS } from './access';
 import type { Module } from './access';
 import {
-  shiftAge, shiftCode, mustWaitForNextShift, openShiftsFor, blockerFor, SHIFT_MAX_HOURS, carryOverFloats,
+  shiftAge, shiftCode, mustWaitForNextShift, openShiftsFor, blockerFor, carryOverFloats, shiftLimit, extendProblem,
   lastForSide, resendProblem, takesPayment,
 } from './shift-rules';
 import { lockedProblem, sealProblem, isSealed } from './shift-lock';
@@ -46,6 +46,12 @@ export interface Shift extends Doc {
   counted?: string;
   /** Count differences put back into this drawer, JSON. See count-charges.ts. */
   putbacks?: string;
+  /** More time an admin or manager gave this shift. See extendShift. */
+  extended_hours?: number | null;
+  extended_by?: string | null;
+  extended_by_name?: string | null;
+  extended_at?: string | null;
+  extend_reason?: string | null;
   /** Which side of the business. Absent on shifts opened before the split. */
   module?: Module;
   sales_total: number;
@@ -526,8 +532,8 @@ export interface ExpectedTakings {
  * under a night that ended, and a drawer counted against two days of takings
  * balances by accident or not at all.
  */
-export const shiftUsable = (shift: Pick<Shift, 'opened_at'> | null | undefined): boolean =>
-  !!shift && !shiftAge(shift.opened_at, new Date(), SHIFT_MAX_HOURS).over;
+export const shiftUsable = (shift: Pick<Shift, 'opened_at' | 'extended_hours'> | null | undefined): boolean =>
+  !!shift && !shiftAge(shift.opened_at, new Date(), shiftLimit(shift)).over;
 
 /**
  * What the drawer should hold, worked out rather than typed.
@@ -1505,4 +1511,36 @@ export async function openShiftForDay(opts: {
   }).catch(() => undefined);
 
   return doc as unknown as Shift;
+}
+
+/**
+ * Give one open shift more time before it stops taking money.
+ *
+ * An admin or manager only, for a reason that goes on the shift: who, when
+ * and why, and the hours all told. Read again first, so two people extending
+ * at once add up rather than overwrite each other's figure from a stale copy.
+ */
+export async function extendShift(opts: {
+  shiftId: string;
+  hours: number;
+  reason: string;
+  by: string;
+  byName: string;
+  role?: string | null;
+}): Promise<Shift> {
+  const shift = await db.getDocument(DB_ID, 'shifts', opts.shiftId) as unknown as Shift & { closed_at?: string | null };
+  const problem = extendProblem({ shift, hours: opts.hours, reason: opts.reason, role: opts.role });
+  if (problem) throw new Error(problem);
+  const patch = {
+    extended_hours: Math.max(0, Math.round(Number(shift.extended_hours) || 0)) + opts.hours,
+    extended_by: opts.by,
+    extended_by_name: opts.byName.slice(0, 120),
+    extended_at: new Date().toISOString(),
+    extend_reason: opts.reason.trim().slice(0, 300),
+  };
+  const { dropped } = await saveDropping('shifts', shift.$id, patch);
+  if (dropped.includes('extended_hours')) {
+    throw new Error('The database has not been given this yet. Ask an admin to update it, then try again.');
+  }
+  return { ...shift, ...patch };
 }

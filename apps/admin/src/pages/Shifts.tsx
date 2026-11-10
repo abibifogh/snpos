@@ -2,11 +2,11 @@ import { Fragment, useEffect, useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Card, Empty, Notice, Spinner, Badge, Modal, Button, Field, Input, Textarea, useToast,
-  FilterBar, FilterField, ShiftHistory, InfoTip } from '@snpos/ui';
+  FilterBar, FilterField, ShiftHistory, InfoTip, ExtendShiftModal } from '@snpos/ui';
 import { listAll, humanError, Query, db, DB_ID } from '../lib';
 import {
   formatMoney, byStaff, destinationLabel, fromTakings,
-  changeShiftClose, closeTimeProblem, closeTimeEffects, describeCloseChange, hoursBetween, SHIFT_MAX_HOURS,
+  changeShiftClose, closeTimeProblem, closeTimeEffects, describeCloseChange, hoursBetween, shiftLimit,
   changeOpeningFloat, floatProblem, describeFloatChange, parseMoney, toInput,
   requestSummaryResend, resendPending,
   listCreatedBetween, listByIds, setShiftSealed, isSealed, describeSeal, lockedProblem,
@@ -29,6 +29,10 @@ import { SpendDetailsModal } from '../components/SpendDetails';
 import { HubTabs, HubTitle } from '../components/Hub';
 
 interface Shift extends Doc {
+  /** More time an admin or manager gave it. See extendShift. */
+  extended_hours?: number | null;
+  extended_by_name?: string | null;
+  extend_reason?: string | null;
   venue_id: string;
   code: string;
   module?: Module;
@@ -118,6 +122,8 @@ const RANGES = [
 export function ShiftsPage() {
   const { settings, profile, user } = useSession();
   const toast = useToast();
+  /** An open shift being given more time. Admins and managers only. See extendShift. */
+  const [extending, setExtending] = useState<Shift | null>(null);
   const [rows, setRows] = useState<Shift[] | null>(null);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [staffNames, setStaffNames] = useState<Map<string, string>>(new Map());
@@ -741,6 +747,16 @@ export function ShiftsPage() {
 
   return (
     <>
+      {extending && (
+        <ExtendShiftModal
+          shift={extending as unknown as CoreShift}
+          role={profile?.role}
+          by={user?.$id ?? ''}
+          byName={profile?.display_name ?? ''}
+          onClose={() => setExtending(null)}
+          onDone={(_next, words) => { setExtending(null); toast(words); void load(); }}
+        />
+      )}
       <div className="page-head">
         <h1>
           <HubTitle>Shifts</HubTitle>
@@ -1071,7 +1087,19 @@ export function ShiftsPage() {
                       </td>
                       <td>
                         {s.status === 'open' ? (
-                          <Badge tone="ok">Open</Badge>
+                          <>
+                            <Badge tone="ok">Open</Badge>
+                            {(s.extended_hours ?? 0) > 0 && (
+                              <div className="small dim" title={s.extend_reason ?? ''}>
+                                {s.extended_hours} h more, {s.extended_by_name || 'a manager'}
+                              </div>
+                            )}
+                            {(profile?.role === 'admin' || profile?.role === 'manager') && (
+                              <div>
+                                <Button size="sm" variant="ghost" onClick={() => setExtending(s)}>More time</Button>
+                              </div>
+                            )}
+                          </>
                         ) : isSealed(s) ? (
                           /* Settled is a stronger statement than closed, and
                              the two were being shown as one word. */
@@ -1994,7 +2022,7 @@ export function ShiftsPage() {
         const iso = closeAt ? new Date(closeAt).toISOString() : '';
         const problem = iso ? closeTimeProblem(closeEdit, iso) : 'Say when it actually closed.';
         const effects = iso && !problem
-          ? closeTimeEffects({ shift: closeEdit, closedAt: iso, maxHours: SHIFT_MAX_HOURS })
+          ? closeTimeEffects({ shift: closeEdit, closedAt: iso, maxHours: shiftLimit(closeEdit) })
           : null;
         return (
           <Modal

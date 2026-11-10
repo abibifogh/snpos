@@ -363,7 +363,7 @@ export async function healthFacts(ctx, venueId, now = new Date()) {
     .filter((s) => s.status === 'closed' && !s.posted_to_ledger && olderThan(s.closed_at, HEALTH_GRACE.postingHours) && !keys.has(s.$id))
     .map((s) => ({ code: s.code, closedAt: s.closed_at ?? '' }));
   const openShiftsOverDay = shifts
-    .filter((s) => s.status === 'open' && olderThan(s.opened_at, HEALTH_GRACE.shiftHours))
+    .filter((s) => s.status === 'open' && olderThan(s.opened_at, HEALTH_GRACE.shiftHours + Math.max(0, Math.min(24, Math.round(Number(s.extended_hours) || 0)))))
     .map((s) => ({ code: s.code, openedAt: s.opened_at ?? '' }));
 
   const live = spends.filter((e) => e.amount > 0 && e.approval_status !== 'rejected');

@@ -814,12 +814,14 @@ async function sweepStaleShifts({ db, DB_ID, settings, transport, from, shell, l
     Query.limit(50),
   ]);
 
+  // A day, plus any more time an admin or manager gave that shift. See extendShift.
+  const limitOf = (s) => LIMIT_HOURS + Math.max(0, Math.min(24, Math.round(Number(s.extended_hours) || 0)));
   const stale = open.documents
-    .map((s) => ({ shift: s, hours: (Date.now() - new Date(s.opened_at).getTime()) / 3_600_000 }))
-    .filter(({ hours }) => hours >= LIMIT_HOURS)
-    // On the hour it passes a day, then the same hour each day after. Anything
+    .map((s) => ({ shift: s, hours: (Date.now() - new Date(s.opened_at).getTime()) / 3_600_000, limit: limitOf(s) }))
+    .filter(({ hours, limit }) => hours >= limit)
+    // On the hour it passes its limit, then the same hour each day after. Anything
     // else and a shift nobody closes sends twenty four emails a day.
-    .filter(({ hours }) => (hours - LIMIT_HOURS) % 24 < 1);
+    .filter(({ hours, limit }) => (hours - limit) % 24 < 1);
 
   if (stale.length === 0) return { nothing: true };
 
