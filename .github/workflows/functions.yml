@@ -74,6 +74,7 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           SITE_DOMAIN: ${{ vars.SITE_DOMAIN }}
           REPORTS_API_KEY: ${{ secrets.REPORTS_API_KEY }}
+          HIVE_SECRET: ${{ secrets.HIVE_SECRET }}
         run: |
           set -e
           FAILED=""
@@ -147,6 +148,17 @@ jobs:
             echo "The reporting API is open to callers holding REPORTS_API_KEY."
           else
             echo "The reporting API is switched off. Set the REPORTS_API_KEY secret to turn it on."
+          fi
+
+          # HIVE, the payroll: it collects the final bar count deductions
+          # every hour (docs/23-count-differences-and-hive.md). The same text
+          # goes in HIVE's repository as APP_POS_SECRET. Without it the HIVE
+          # paths refuse every request, and Download for HIVE still works.
+          if [ -n "$HIVE_SECRET" ]; then
+            setvar notify HIVE_SECRET "$HIVE_SECRET"
+            echo "HIVE can collect the bar count deductions."
+          else
+            echo "HIVE is not linked. Set the HIVE_SECRET secret to let it collect the bar count deductions."
           fi
 
           # Fail at the end rather than in the middle, so the log shows every
