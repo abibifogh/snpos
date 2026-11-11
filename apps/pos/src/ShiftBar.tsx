@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Button, Modal, Field, Input, Notice, Badge, ShiftCloseForm, resolveCounts,
-  ShiftHistory, ExpenseModal, HandoverModal, BarCountModal, CraftCountModal,
+  ShiftHistory, ExpenseModal, HandoverModal, BarCountModal, CraftCountModal, ExtendShiftModal,
   CleanChecklist, useCleanRoutine, NeedStock, useLowCount,
 } from '@snpos/ui';
 import type { BlockerRow, CountRow, StockRow, ShiftFlow } from '@snpos/ui';
@@ -9,7 +9,7 @@ import {
   formatMoney, parseMoney, toInput, stockCheckRows,
   loadPaymentMethods, openShift as createShift, shiftBlockers, expectedTakings, closeShift,
   tabOrdersOnShift, releaseWords, closeCodeProblem, spendCloseCode, humanError, liveOrders,
-  openingFloats, shiftAgeOf, shiftAgeMessage, SHIFT_MAX_HOURS, HANDOVER_ENABLED,
+  openingFloats, shiftAgeOf, shiftAgeMessage, shiftLimit, HANDOVER_ENABLED,
   countsAtBothEnds, countsInAtOpen, countsOutAtClose, pourMissedSales, cashCounted, cashPlanProblem, askForOpeningCount, hasOpeningCount, shiftCountPhases, ownFigure, floatOrigin, floatMethods,
   isEnabled, featureConfig, openedSinceWords, openedBeforeToday, putbacksForClose,
 } from '@snpos/core';
@@ -232,6 +232,9 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   // A day is the limit. See shift-rules. Read before the count effect below,
   // which needs to know whether this shift can still sell anything.
   const age = shiftAgeOf(ctx.shift);
+  /** Giving this shift more time, open. Admins and managers only. See extendShift. */
+  const [extending, setExtending] = useState(false);
+  const mayExtend = ctx.profile?.role === 'admin' || ctx.profile?.role === 'manager';
 
   useEffect(() => {
     if (!askForOpeningCount({ countsIn: mustCount, counted: countedIn, canStillSell: !age.over }) || pushed) return;
@@ -651,6 +654,14 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
               >
                 {openedSinceWords(ctx.shift.opened_at)}
               </span>
+              {(ctx.shift.extended_hours ?? 0) > 0 && (
+                <span
+                  className="small dim"
+                  title={`${ctx.shift.extended_by_name || 'A manager'}: ${ctx.shift.extend_reason ?? ''}`}
+                >
+                  {' '}· {ctx.shift.extended_hours} h more given
+                </span>
+              )}
             </>
           ) : (
             <span className="small" style={{ color: 'var(--warn)' }}>
@@ -771,10 +782,31 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
       {ctx.shift && (age.over || age.warning) && (
         <div style={{ padding: '0.5rem 1rem 0' }}>
           <Notice tone={age.over ? 'warn' : 'info'}>
-            {shiftAgeMessage(age, SHIFT_MAX_HOURS, ctx.module)}
+            {shiftAgeMessage(age, shiftLimit(ctx.shift), ctx.module)}
             {age.over && !ctx.profile?.can_close_shift && ' Ask a manager to close it.'}
+            {mayExtend && (
+              <div style={{ marginTop: '0.5rem' }}>
+                <Button size="sm" onClick={() => setExtending(true)}>Give this shift more time</Button>
+              </div>
+            )}
           </Notice>
         </div>
+      )}
+
+      {extending && ctx.shift && (
+        <ExtendShiftModal
+          shift={ctx.shift as Shift}
+          role={ctx.profile?.role}
+          by={ctx.userId}
+          byName={ctx.profile?.display_name ?? ''}
+          onClose={() => setExtending(false)}
+          onDone={(next, words) => {
+            setExtending(false);
+            ctx.setShift(next);
+            void ctx.reloadShift();
+            onToast(words);
+          }}
+        />
       )}
 
       {history && ctx.shift && (

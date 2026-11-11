@@ -43,6 +43,46 @@ export const SHIFT_MAX_HOURS = 24;
 /** How long before the limit the warning starts. */
 export const SHIFT_WARN_HOURS = 20;
 
+/* --------------------------------------------- more time, for one shift */
+
+/** How much more time a manager can give a shift at once, in hours. */
+export const EXTEND_CHOICES = [2, 4, 6, 12] as const;
+/** The most extra time one shift can be given, all told: a shift ends within two days. */
+export const EXTEND_MAX_HOURS = 24;
+
+export interface ExtendableShift {
+  /** Extra hours an admin or manager gave this shift, all told. See extendShift. */
+  extended_hours?: number | null;
+}
+
+/**
+ * How long THIS shift may run before it stops taking money: a day, plus any
+ * extra time an admin or manager gave it.
+ *
+ * One shift, for a reason, recorded with who and why: a long event, a till
+ * that could not be closed in time. Every other shift still stops at a day,
+ * which is what keeps two days' takings out of one drawer.
+ */
+export const shiftLimit = (shift: ExtendableShift | null | undefined): number =>
+  SHIFT_MAX_HOURS + Math.max(0, Math.min(EXTEND_MAX_HOURS, Math.round(Number(shift?.extended_hours) || 0)));
+
+/** Why this extension cannot be given, or null. */
+export function extendProblem(input: {
+  shift: (ExtendableShift & { status?: string; closed_at?: string | null }) | null | undefined;
+  hours: number;
+  reason: string;
+  role?: string | null;
+}): string | null {
+  if (input.role !== 'admin' && input.role !== 'manager') return 'Only an admin or a manager can give a shift more time.';
+  if (!input.shift || input.shift.closed_at || (input.shift.status && input.shift.status !== 'open')) return 'Only an open shift can be given more time.';
+  if (!(EXTEND_CHOICES as readonly number[]).includes(input.hours)) return 'Choose how much more time.';
+  const had = Math.max(0, Math.round(Number(input.shift.extended_hours) || 0));
+  if (had >= EXTEND_MAX_HOURS) return `This shift has had ${EXTEND_MAX_HOURS} hours more already, the most it can have. Close it and open a new one.`;
+  if (had + input.hours > EXTEND_MAX_HOURS) return `That is more than the ${EXTEND_MAX_HOURS} extra hours a shift can have. ${EXTEND_MAX_HOURS - had} more is the most left.`;
+  if (input.reason.trim().length < 3) return 'Say why, so whoever reads the shift later knows.';
+  return null;
+}
+
 export interface ShiftAge {
   /** Hours open, to one decimal place. */
   hours: number;
@@ -77,7 +117,8 @@ export function shiftAge(
   return {
     hours,
     over: hours >= maxHours,
-    warning: hours >= Math.min(SHIFT_WARN_HOURS, maxHours) && hours < maxHours,
+    // The same four hours' notice before the limit, however long this shift was given.
+    warning: hours >= Math.max(0, maxHours - (SHIFT_MAX_HOURS - SHIFT_WARN_HOURS)) && hours < maxHours,
     hoursLeft: Math.max(0, Math.round((maxHours - hours) * 10) / 10),
   };
 }
@@ -115,7 +156,7 @@ export function shiftAgeMessage(
   if (age.over) {
     return overTheCounter(module)
       ? `${open} Nothing new can be sold on it. Settle whatever is still open, count the drawer, close it, ` +
-        'then open a fresh one.'
+        'then open a fresh one. A manager can give it more time instead, from the shift bar.'
       : `${open} Orders can still be taken, cooked and paid for. Anything that came in after the day was ` +
         'up belongs to the night before, so close this shift and open a fresh one; anything still unpaid ' +
         'moves across.';
@@ -145,9 +186,9 @@ export function shiftAgeMessage(
  * it is imported and so cannot be tested. This needs two dates and no database.
  */
 export function shiftAgeOf(
-  shift: { opened_at?: string; closed_at?: string } | null | undefined,
+  shift: ({ opened_at?: string; closed_at?: string } & ExtendableShift) | null | undefined,
   now: Date = new Date(),
-  maxHours: number = SHIFT_MAX_HOURS,
+  maxHours: number = shiftLimit(shift),
 ): ShiftAge {
   if (!shift?.opened_at || shift.closed_at) return shiftAge(now.toISOString(), now, maxHours);
   return shiftAge(shift.opened_at, now, maxHours);
@@ -227,8 +268,8 @@ export function overdueFrom(openedAt: string, maxHours: number = SHIFT_MAX_HOURS
  */
 export function isPastLimit(
   order: { $createdAt?: string },
-  shift: { $createdAt?: string; opened_at?: string } | null | undefined,
-  maxHours: number = SHIFT_MAX_HOURS,
+  shift: ({ $createdAt?: string; opened_at?: string } & ExtendableShift) | null | undefined,
+  maxHours: number = shiftLimit(shift),
 ): boolean {
   const anchor = shift?.$createdAt || shift?.opened_at;
   if (!anchor || !order.$createdAt) return false;
@@ -261,8 +302,8 @@ export function isPastLimit(
  */
 export function mustWaitForNextShift(
   order: { $createdAt?: string; shift_id?: string; shelved_from_shift?: string },
-  shift: { $id?: string; $createdAt?: string; opened_at?: string } | null | undefined,
-  maxHours: number = SHIFT_MAX_HOURS,
+  shift: ({ $id?: string; $createdAt?: string; opened_at?: string } & ExtendableShift) | null | undefined,
+  maxHours: number = shiftLimit(shift),
 ): boolean {
   if (!shift) return false;
   /**
@@ -391,10 +432,10 @@ export const isLivePayment = (p: { status?: string }): boolean =>
  * about closing it; no shift at all has a message about opening one.
  */
 export function sellBlockedReason(
-  shift: { opened_at?: string; closed_at?: string } | null | undefined,
+  shift: ({ opened_at?: string; closed_at?: string } & ExtendableShift) | null | undefined,
   module: Module = 'kitchen',
   now: Date = new Date(),
-  maxHours: number = SHIFT_MAX_HOURS,
+  maxHours: number = shiftLimit(shift),
 ): string | null {
   if (!shift?.opened_at || shift.closed_at) {
     return overTheCounter(module)
