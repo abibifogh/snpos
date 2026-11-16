@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Card, Empty, Field, FormError, Input, Modal, Notice, Select, Spinner, Textarea, Badge, useToast, InfoTip } from '@snpos/ui';
 import { db, DB_ID, ID, listAll, humanError } from '../lib';
 import {
   formatMoney, parseMoney, toInput, dateWords, downloadFile,
   voucherHeadline, voucherValidity, voucherTerms, voucherCodeWords, voucherHasCode, voucherPrintProblem,
-  sendVoucherTo, splitAddresses, looksLikeEmail, mayBeOffered, brandColour } from '@snpos/core';
+  sendVoucherTo, splitAddresses, looksLikeEmail, mayBeOffered, brandColour, storedCode, voucherCodeProblem, Query } from '@snpos/core';
 import type { Doc } from '@snpos/core';
 /*
   THE SAME PDF TOOLKIT THE BOOKING SHEET USES, not a second one.
@@ -18,7 +18,7 @@ import { useSession } from '../session';
 
 interface Voucher extends Doc {
   name: string;
-  code?: string;
+  code?: string | null;
   description?: string;
   /** Empty means every venue. See the schema. */
   venue_ids?: string[];
@@ -60,6 +60,8 @@ export function VouchersPage() {
   const symbol = settings?.currency_symbol ?? '';
 
   const [rows, setRows] = useState<Voucher[] | null>(null);
+  /** A save in flight, so a second tap does not send it again. */
+  const saving = useRef(false);
   const [editing, setEditing] = useState<Partial<Voucher> | null>(null);
   const [valueText, setValueText] = useState('');
   const [capText, setCapText] = useState('');
@@ -113,7 +115,8 @@ export function VouchersPage() {
   };
 
   const save = async () => {
-    if (!editing) return;
+    // Once: a double tap on Save would otherwise try to create it twice.
+    if (!editing || saving.current) return;
     if (!editing.name?.trim()) { setError('Give it a name, so it is recognisable on a report.'); return; }
 
     const isPercent = editing.kind === 'percent';
@@ -134,12 +137,31 @@ export function VouchersPage() {
       return;
     }
 
+    /*
+      ONE VOUCHER PER CODE, checked here so the clash is named.
+
+      Read fresh rather than from the list on screen, which may be minutes
+      old or another person's edit behind.
+    */
+    const code = storedCode(editing.code);
+    if (code) {
+      const same = await listAll<Voucher>('discounts', [Query.equal('code', code)]).catch(() => rows ?? []);
+      const clash = voucherCodeProblem(code, same, editing.$id);
+      if (clash) { setError(clash); return; }
+    }
+
+    saving.current = true;
     setBusy(true);
     setError(null);
     try {
       const payload = {
         name: editing.name.trim(),
-        code: (editing.code ?? '').trim().toUpperCase(),
+        /*
+          No code is stored as nothing, never as an empty string. The database
+          allows one voucher per code, and an empty string is a code to it:
+          every staff-only voucher after the first was refused as a duplicate.
+        */
+        code,
         description: editing.description ?? '',
         // Percent is stored in basis points so a half-percent is expressible
         // without anyone storing a fraction of a pesewa.
@@ -168,8 +190,11 @@ export function VouchersPage() {
       await load();
       toast('Voucher saved');
     } catch (e) {
-      setError(humanError(e));
+      setError(/unique attribute constraint/i.test(e instanceof Error ? e.message : String(e))
+        ? `Another voucher already has the code ${code}. Choose a different code.`
+        : humanError(e));
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   };
