@@ -13,7 +13,7 @@ import type { LockableShift } from './shift-lock';
  */
 export {
   MAX_ETA_MINUTES, shownEta, cookMinutes, estimateMinutes, queueMinutes, dueMinutes, fireTimeFor,
-  CANCEL_WINDOW_MS, cancelWindowLeft, LINES_GRACE_MS, ticketLines, linesComplete, isOverdue, minutesOver, clockStart,
+  CANCEL_WINDOW_MS, cancelWindowLeft, LINES_GRACE_MS, ticketLines, linesComplete, isOverdue, minutesOver, clockStart, PREORDER_ALARM_MINUTES, preorderFor, pastPreorderTime,
   addonNames, addonsUnreadable, waitIncludingOpening, customerWait, quotedWait, formatWait,
 } from './orders-time';
 import { createOrQueue, isOffline } from './offline';

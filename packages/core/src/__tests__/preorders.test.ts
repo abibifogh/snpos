@@ -62,3 +62,24 @@ test('time left reads plainly', () => {
   assert.equal(inWords(120 * 60_000), '2 h');
   assert.equal(inWords(-1), 'now');
 });
+
+test('a pre-order accepted early rings twenty minutes before its time, never on its cooking clock', async () => {
+  const { isOverdue: due, minutesOver: over, pastPreorderTime, PREORDER_ALARM_MINUTES } = await import('../orders-time.ts');
+  const wrap = {
+    status: 'ACCEPTED', is_preorder: true,
+    $createdAt: iso(local(17, 9, 0)), fired_at: iso(local(17, 16, 15)), scheduled_for: iso(local(17, 18, 30)),
+  };
+  // Fifteen minutes of cooking, accepted at 16:15: at 16:31 it is not late.
+  assert.equal(due(wrap, 15, local(17, 16, 31).getTime()), false);
+  assert.equal(over(wrap, 15, local(17, 16, 31).getTime()), -119, 'counts down to 18:30');
+  // It rings from 18:10.
+  assert.equal(PREORDER_ALARM_MINUTES, 20);
+  assert.equal(due(wrap, 15, local(17, 18, 9).getTime()), false);
+  assert.equal(due(wrap, 15, local(17, 18, 10).getTime()), true);
+  // Ringing, but not late until 18:30 has passed.
+  assert.equal(pastPreorderTime(wrap, local(17, 18, 20).getTime()), false);
+  assert.equal(pastPreorderTime(wrap, local(17, 18, 31).getTime()), true);
+  // An ordinary order is unchanged: late on its own cooking clock.
+  const walkIn = { status: 'ACCEPTED', $createdAt: iso(local(17, 16, 15)) };
+  assert.equal(due(walkIn, 15, local(17, 16, 31).getTime()), true);
+});

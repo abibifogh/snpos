@@ -11,7 +11,7 @@ import {
   verifyPin, pinChecksWork, pinUnavailableWords, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
   cookNowProblem, isGroupSitting, passTakesPayment, passHoldsCash,
-  itemsAvailableNow, dueMinutes, ticketLines, linesComplete, isOverdue, minutesOver, clockStart, bookedStage, seatFor, amountOutstanding,
+  itemsAvailableNow, dueMinutes, ticketLines, linesComplete, isOverdue, minutesOver, clockStart, bookedStage, preorderFor, pastPreorderTime, seatFor, amountOutstanding,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, addonNames, addonsUnreadable,
   formatWait, giveTheMoneyBack, wakesScreen, latestMovement,
   billsToSettle, settleableTotal, billsToSettleLabel,
@@ -1289,7 +1289,10 @@ export function App() {
           <span>New <b>{pending.length}</b></span>
           <span>Cooking <b>{visible.filter((o) => o.status === 'PREPARING').length}</b></span>
           <span>Ready <b>{visible.filter((o) => o.status === 'READY').length}</b></span>
-          {overdue.length > 0 && <span style={{ color: '#ff6b5e' }}>Late <b>{overdue.length}</b></span>}
+          {/* Late is late: a pre-order inside its reminder window is not, yet. */}
+          {overdue.filter((o) => preorderFor(o) === null || pastPreorderTime(o)).length > 0 && (
+            <span style={{ color: '#ff6b5e' }}>Late <b>{overdue.filter((o) => preorderFor(o) === null || pastPreorderTime(o)).length}</b></span>
+          )}
           {/* Only once there is more than one. A single blank ticket has its
               own Reject button and deserves its own reason. */}
           {blank.length > 1 && (
@@ -1553,7 +1556,12 @@ function Ticket({
   onReject: () => void;
 }) {
   const age = secondsSince(clockStart(order));
-  const late = (order.status === 'PENDING' && age > sla) || overdue;
+  /*
+    A pre-order inside its twenty-minute reminder rings and says when it is
+    due; it is not late until the time it was for has passed.
+  */
+  const reminding = overdue && preorderFor(order) !== null && !pastPreorderTime(order);
+  const late = (order.status === 'PENDING' && age > sla) || (overdue && !reminding);
   const ageClass = age > sla * 2 ? 'bad' : age > sla ? 'warn' : '';
 
   /**
@@ -1740,7 +1748,12 @@ function Ticket({
             {order.total <= 0 && (
               <span className="pill">No charge</span>
             )}
-            {overdue && <span className="pill" style={{ background: '#3a1714', color: '#ff9b90' }}>Late</span>}
+            {overdue && !reminding && <span className="pill" style={{ background: '#3a1714', color: '#ff9b90' }}>Late</span>}
+            {reminding && (
+              <span className="pill" style={{ background: '#4a3210', color: '#ffcf8a' }}>
+                Due {order.scheduled_for ? new Date(order.scheduled_for).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+              </span>
+            )}
           </div>
         </div>
       </div>
