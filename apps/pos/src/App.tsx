@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Button, Spinner, Card, Field, Input, Notice, useToast, Logo, HelpModal, EightySixModal, Modal, Badge,
-  OfflineBar, SchemaBar, StaleBar, useOfflineQueue, IdleScreen, ThemeButton, OwedNotice, CountChargeNotice, PersonChip,
+  OfflineBar, SchemaBar, StaleBar, useOfflineQueue, IdleScreen, ThemeButton, OwedNotice, CountChargeNotice, PersonChip, useReleaseBackup,
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
@@ -15,6 +15,7 @@ import {
   catalogueStamp, catalogueMoved, worthLooking, CATALOGUE_COLLECTIONS, SETTLE_MS, LOOK_EVERY_MS,
   probeAppwrite, appwriteHost, diagnose, reachWords, reachLabel, isOursToFix,
   unpaidBillsFor, withBill, billPlace, billWho, unpaidWords, formatMoney, dateTimeWords,
+  bookedList, nextBooked, bookedStage,
 } from '@snpos/core';
 import type {
   Settings, Venue, LoadedMenu, FeatureMap, StaffProfile, HelpRole, Doc, Module, Unlocker, Order,
@@ -24,6 +25,7 @@ import { TablesView } from './TablesView';
 import { OrderView } from './OrderView';
 import { ShiftBar, type Shift } from './ShiftBar';
 import { KitchenPanel } from './KitchenPanel';
+import { BookedPanel, useBooked } from './BookedPanel';
 import { SettleTab } from './SettleTab';
 
 export interface TableRow extends Doc {
@@ -112,6 +114,15 @@ export interface PosContext {
 export function App() {
   const toast = useToast();
   const [ctx, setCtx] = useState<PosContext | null>(null);
+  /*
+    THE BACKUP FOR PRE-ORDERS. A pre-order still waiting two minutes past its
+    start time is sent to the kitchen from here, whatever side this till is
+    on: the server should have, and food somebody was promised is not being
+    cooked. See preorders.ts.
+  */
+  useReleaseBackup(ctx?.venue.$id, 'till', (nos) => toast(
+    `${nos.join(', ')} sent to the kitchen from this till: ${nos.length === 1 ? 'it was' : 'they were'} late going.`,
+  ), !!ctx);
   const [error, setError] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [email, setEmail] = useState('');
@@ -536,7 +547,13 @@ export function App() {
   }, [venueId, refreshCatalogue]);
 
   const queued = useOfflineQueue(onQueueChange, startOfflineSync);
-  const [tab, setTab] = useState<'tables' | 'takeaway' | 'kitchen' | 'counter'>('tables');
+  const [tab, setTab] = useState<'tables' | 'takeaway' | 'kitchen' | 'counter' | 'booked'>('tables');
+  /** Pre-orders for today and tomorrow, for the Booked tab and the top bar. See BookedPanel. */
+  const booked = useBooked(ctx?.venue.$id, ctx?.module === 'kitchen');
+  const bookedNow = bookedList(booked.orders ?? [], booked.now);
+  const waitingToday = bookedNow.today.filter((o) => o.status === 'SCHEDULED');
+  const nextUp = nextBooked(booked.orders ?? [], booked.now);
+  const nextStage = nextUp ? bookedStage(nextUp, booked.now.getTime()) : null;
   const [helpOpen, setHelpOpen] = useState(false);
   /** Settling every bill on a running account in one go. See SettleTab. */
   const [settlingTab, setSettlingTab] = useState(false);
@@ -1023,6 +1040,18 @@ export function App() {
             {isEnabled(ctx.features, 'combined_mode') && (
               <button className={tab === 'kitchen' ? 'on' : ''} onClick={() => setTab('kitchen')}>Kitchen</button>
             )}
+            {/* Pre-orders, so the front of house sees them coming. See BookedPanel. */}
+            <button className={tab === 'booked' ? 'on' : ''} onClick={() => setTab('booked')}>
+              Booked{waitingToday.length > 0 && <span className="tab-count">{waitingToday.length}</span>}
+            </button>
+            {nextUp && tab !== 'booked' && (
+              <Badge tone={nextStage === 'late' ? 'danger' : nextStage === 'soon' || nextStage === 'due' ? 'warn' : 'default'}>
+                <span className="next-booked">
+                  Next booked: {nextUp.scheduled_for ? new Date(nextUp.scheduled_for).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                  {nextUp.customer_name ? `, ${nextUp.customer_name.split(' ')[0]}` : ''}
+                </span>
+              </Badge>
+            )}
           </div>
         )}
         </div>
@@ -1240,6 +1269,8 @@ export function App() {
           <TablesView ctx={ctx} onOpen={setOpenTable} />
         ) : tab === 'takeaway' ? (
           <TakeawayList ctx={ctx} onOpen={setOpenTable} />
+        ) : tab === 'booked' ? (
+          <BookedPanel ctx={ctx} booked={booked} onToast={(m, t) => toast(m, t)} />
         ) : (
           <KitchenPanel ctx={ctx} onToast={(m, t) => toast(m, t)} />
         )}

@@ -200,13 +200,25 @@ export function dueMinutes(
  * Anything else — waiting to be accepted, cancelled, paid — is not this
  * question. A ticket nobody has acknowledged has its own alarm.
  */
+/**
+ * When the kitchen's clock on an order starts: when it reached the kitchen.
+ *
+ * For an ordinary order that is when it was placed. A pre-order reaches the
+ * kitchen when it is released (fired_at), which may be fifteen hours after it
+ * was placed; counting from the placing made every released pre-order land
+ * at the loudest alarm and read as fifteen hours late. See preorders.ts.
+ */
+export function clockStart(order: { $createdAt: string; fired_at?: string | null }): string {
+  return order.fired_at || order.$createdAt;
+}
+
 export function isOverdue(
-  order: { status: string; $createdAt: string },
+  order: { status: string; $createdAt: string; fired_at?: string | null },
   dueMins: number,
   now: number = Date.now(),
 ): boolean {
   if (!COOKING.includes(order.status) || order.status === 'PENDING') return false;
-  const placed = Date.parse(order.$createdAt);
+  const placed = Date.parse(clockStart(order));
   return Number.isFinite(placed) && now > placed + dueMins * 60_000;
 }
 
@@ -216,11 +228,11 @@ export function isOverdue(
  * two can never drift apart.
  */
 export function minutesOver(
-  order: { $createdAt: string },
+  order: { $createdAt: string; fired_at?: string | null },
   dueMins: number,
   now: number = Date.now(),
 ): number {
-  const placed = Date.parse(order.$createdAt);
+  const placed = Date.parse(clockStart(order));
   if (!Number.isFinite(placed)) return 0;
   return Math.round((now - placed) / 60_000 - dueMins);
 }

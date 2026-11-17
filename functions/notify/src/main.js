@@ -806,6 +806,45 @@ async function answerDevice({ db, DB_ID, settings, doc, log, error }) {
  * column for it would be a schema change for a nag; the hourly clock is enough
  * to keep this from becoming noise.
  */
+/**
+ * Pre-orders still not in the kitchen ten minutes after their start time.
+ *
+ * The server releases them each minute, and any open till or kitchen screen
+ * releases one two minutes late. One still waiting means neither happened:
+ * the release function is not running and no screen is open, so the food is
+ * not being cooked for somebody who was promised it. Told on every hourly
+ * run while it is so.
+ */
+async function sweepLatePreorders({ db, DB_ID, transport, from, shell, log, error }) {
+  const cutoff = new Date(Date.now() - 10 * 60_000).toISOString();
+  const late = await db.listDocuments(DB_ID, 'orders', [
+    Query.equal('status', 'SCHEDULED'),
+    Query.lessThanEqual('fire_at', cutoff),
+    Query.limit(50),
+  ]).catch(() => ({ documents: [] }));
+  if (late.documents.length === 0) return { nothing: true };
+  const to = await alertRecipients({ db, DB_ID });
+  if (!transport || to.length === 0) {
+    error(`${late.documents.length} pre-order(s) not released, but ${!transport ? 'SMTP is not configured' : 'no recipients are set'}.`);
+    return { ok: false, error: 'cannot send' };
+  }
+  const time = (iso) => (iso ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '?');
+  const rows = late.documents
+    .map((o) => `<li><strong>${esc(o.order_no)}</strong>${o.customer_name ? `, ${esc(o.customer_name)}` : ''}: for ${time(o.scheduled_for)}, should have gone to the kitchen at ${time(o.fire_at)}</li>`)
+    .join('');
+  await transport.sendMail({
+    from,
+    to: to.join(','),
+    subject: `${late.documents.length} pre-order${late.documents.length === 1 ? '' : 's'} not sent to the kitchen`,
+    html: shell(
+      'Pre-orders waiting',
+      `<p>These are past the time they should have gone to the kitchen, and nothing has sent them. Open the till or the kitchen screen, which sends them straight away, or send them from the till's Booked tab.</p><ul>${rows}</ul>`,
+    ),
+  });
+  log(`Told ${to.length} recipient(s) about ${late.documents.length} unreleased pre-order(s).`);
+  return { alerted: late.documents.length };
+}
+
 async function sweepStaleShifts({ db, DB_ID, settings, transport, from, shell, log, error }) {
   const LIMIT_HOURS = 24;
 
@@ -1340,6 +1379,7 @@ export default async ({ req, res, log, error }) => {
       ['count_charges', () => sweepCountCharges(counts, { settings })],
       ['availability', () => sweepUnavailable({ db, DB_ID, settings, transport, from, log, error })],
       ['stale_shifts', () => sweepStaleShifts({ db, DB_ID, settings, transport, from, shell, log, error })],
+      ['late_preorders', () => sweepLatePreorders({ db, DB_ID, transport, from, shell, log, error })],
       ['approvals', () => sweepApprovals({ db, DB_ID, settings, transport, from, log, error })],
       ['order_notices', () => sweepOrderNotices({ db, DB_ID, settings, transport, from, log, error })],
       ['stock_asks', () => sweepAsks({ db, DB_ID, settings, transport, from, log, error })],

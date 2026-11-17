@@ -1234,6 +1234,9 @@ export const COLLECTIONS = [
       // and a pre-order can be started early without changing when it was for.
       ['served_at', 'd', null, false],
       ['fired_at', 'd', null, false],
+      // Who released a pre-order to the kitchen: 'server', or the till or kitchen
+      // screen that stepped in when the server had not. See preorders.ts.
+      ['released_by', 's', 40, false],
 
       // --- Who's eating (features 1, 5, 6, 7)
       ['customer_id', 's', 64, false],

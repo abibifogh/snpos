@@ -410,6 +410,8 @@ export function humanError(e: unknown): string {
   if (/missing scopes|not authorized|unauthorized/i.test(msg)) return 'Your account does not have permission to do that.';
   if (/Document with the requested ID could not be found/i.test(msg)) return 'That record no longer exists; it may have been deleted.';
   if (/already exists/i.test(msg)) return 'Something with that name or code already exists.';
+  // Appwrite's own words for the same thing, on a field that must be unique: a code, a number.
+  if (/unique attribute constraint/i.test(msg)) return 'Something else already uses that code or number. Change it and try again.';
   if (/Rate limit/i.test(msg)) return 'Too many attempts. Wait a minute and try again.';
 
   /*
