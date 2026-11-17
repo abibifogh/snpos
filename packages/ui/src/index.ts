@@ -30,3 +30,4 @@ export * from './cleaning';
 export * from './stock-ask';
 export * from './person-chip';
 export * from './extend-shift';
+export * from './release-backup';

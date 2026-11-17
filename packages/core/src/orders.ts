@@ -13,7 +13,7 @@ import type { LockableShift } from './shift-lock';
  */
 export {
   MAX_ETA_MINUTES, shownEta, cookMinutes, estimateMinutes, queueMinutes, dueMinutes, fireTimeFor,
-  CANCEL_WINDOW_MS, cancelWindowLeft, LINES_GRACE_MS, ticketLines, linesComplete, isOverdue, minutesOver,
+  CANCEL_WINDOW_MS, cancelWindowLeft, LINES_GRACE_MS, ticketLines, linesComplete, isOverdue, minutesOver, clockStart,
   addonNames, addonsUnreadable, waitIncludingOpening, customerWait, quotedWait, formatWait,
 } from './orders-time';
 import { createOrQueue, isOffline } from './offline';
@@ -74,6 +74,8 @@ export interface Order extends Doc {
   /** When the food left the pass, and when a booked order was released to it. */
   served_at?: string;
   fired_at?: string;
+  /** Who released a pre-order: 'server', or the screen that stepped in. See preorders.ts. */
+  released_by?: string;
   rejected_at?: string;
   reject_reason_code?: string;
   reject_reason_note?: string;

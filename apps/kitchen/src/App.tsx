@@ -3,6 +3,7 @@ import {
   Button, Spinner, Modal, Select, Textarea, Field, Notice, Logo, HelpModal, EightySixModal,
   OfflineBar, SchemaBar, StaleBar, useOfflineQueue, IdleScreen, ThemeButton, OwedNotice,
   CleanChecklist, useCleanRoutine, NeedStock, useLowCount, PersonChip,
+  useReleaseBackup,
 } from '@snpos/ui';
 import { applyTheme } from '@snpos/ui';
 import {
@@ -10,7 +11,7 @@ import {
   verifyPin, pinChecksWork, pinUnavailableWords, loadFeatures, isEnabled, featureConfig, articlesFor, HELP_AREAS, formatMoney, requireStaff,
   loadMenu, markUnavailable, markAvailable, isUnavailable, displayOrderNo, settleOrderNumbers,
   cookNowProblem, isGroupSitting, passTakesPayment, passHoldsCash,
-  itemsAvailableNow, dueMinutes, ticketLines, linesComplete, isOverdue, minutesOver, seatFor, amountOutstanding,
+  itemsAvailableNow, dueMinutes, ticketLines, linesComplete, isOverdue, minutesOver, clockStart, bookedStage, seatFor, amountOutstanding,
   onQueueChange, startOfflineSync, flushQueue, loadWithFallback, addonNames, addonsUnreadable,
   formatWait, giveTheMoneyBack, wakesScreen, latestMovement,
   billsToSettle, settleableTotal, billsToSettleLabel,
@@ -106,6 +107,11 @@ export function App() {
   const [offBusy, setOffBusy] = useState<string | null>(null);
   const [settling, setSettling] = useState<Order | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /* The backup for pre-orders: one still waiting two minutes past its start time is sent from here. See preorders.ts. */
+  useReleaseBackup(venue?.$id, 'kitchen screen', (nos) => {
+    setToast(`${nos.join(', ')} sent to the pass from this screen: ${nos.length === 1 ? 'it was' : 'they were'} late going.`);
+    window.setTimeout(() => setToast(null), 6000);
+  });
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   /**
    * Somebody is handing the screen over.
@@ -702,7 +708,8 @@ export function App() {
     const maxLevel = settings?.kitchen_ping_max_level ?? 4;
     let level = 0;
     if (pending.length > 0) {
-      const oldest = Math.max(...pending.map((o) => secondsSince(o.$createdAt)));
+      // From when each reached the kitchen: a released pre-order is new, not fifteen hours old.
+      const oldest = Math.max(...pending.map((o) => secondsSince(clockStart(o))));
       level = Math.min(Math.floor(oldest / sla) + 1, maxLevel);
     }
     if (overdue.length > 0) return { level: Math.max(level, 2), kind: 'late' };
@@ -804,7 +811,7 @@ export function App() {
       window.setTimeout(() => setToast(null), 4000);
       return Promise.resolve();
     }
-    return patch(o, { status: 'PENDING', fired_at: new Date().toISOString() });
+    return patch(o, { status: 'PENDING', fired_at: new Date().toISOString(), released_by: 'kitchen screen' });
   };
 
   const reject = async () => {
@@ -1352,11 +1359,16 @@ export function App() {
             return (
               <button
                 key={o.$id}
-                className="kds-coming-item"
+                className={`kds-coming-item ${['soon', 'due', 'late'].includes(bookedStage(o)) ? 'soon' : ''}`}
                 onClick={() => void fireNow(o)}
                 title={why ?? 'Send to the pass now'}
               >
-                <b>{o.fire_at ? new Date(o.fire_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'no time'}</b>
+                {/* When it starts here, and the time it is FOR, which is the promise. */}
+                <b>Starts {o.fire_at ? new Date(o.fire_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</b>
+                <span>
+                  For {o.scheduled_for ? new Date(o.scheduled_for).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                  {(o.customer_name || o.group_contact_name) ? ` · ${(o.customer_name || o.group_contact_name || '').split(' ')[0]}` : ''}
+                </span>
                 <span>{displayOrderNo(o.order_no)}</span>
                 {isGroupSitting(o) && <span className="pill">Group</span>}
                 {o.group_booking_id && unconfirmed.has(o.group_booking_id) && (
@@ -1540,7 +1552,7 @@ function Ticket({
   onSettle: () => void;
   onReject: () => void;
 }) {
-  const age = secondsSince(order.$createdAt);
+  const age = secondsSince(clockStart(order));
   const late = (order.status === 'PENDING' && age > sla) || overdue;
   const ageClass = age > sla * 2 ? 'bad' : age > sla ? 'warn' : '';
 
@@ -1675,7 +1687,12 @@ function Ticket({
           )}
           <div style={{ marginTop: '0.2rem' }}>
             {order.channel === 'qr' && <span className="pill qr">QR</span>}
-            {order.is_preorder && <span className="pill preorder">Pre-order</span>}
+            {/* The time it was booked for, which is the promise a cook works to. */}
+            {order.is_preorder && (
+              <span className="pill preorder">
+                Pre-order{order.scheduled_for ? ` · for ${new Date(order.scheduled_for).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+              </span>
+            )}
             {/* Why this ticket has so long on it. Ordered before the doors
                 opened, so its countdown starts at opening rather than at the
                 moment somebody pressed send — without saying so, a cook reads

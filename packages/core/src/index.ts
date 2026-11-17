@@ -88,6 +88,8 @@ export * from './staff-charges';
 export * from './count-charges';
 export * from './repeated-items';
 export * from './voucher-code';
+export * from './preorders';
+export * from './preorders-store';
 export * from './count-charges-store';
 export * from './staff-charges-store';
 export * from './shelf-trail';

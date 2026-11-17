@@ -200,6 +200,8 @@ body { background: var(--bg); color: var(--text); }
   color: inherit; font: inherit; font-size: 0.85rem;
 }
 .kds-coming-item:hover { border-color: var(--brand); }
+/* Starting within half an hour, or past its time: look up. See preorders.ts. */
+.kds-coming-item.soon { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, var(--surface)); }
 .kds-coming-item b { font-variant-numeric: tabular-nums; }
 .kds-coming-go { opacity: 0.6; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .kds-coming-item:hover .kds-coming-go { opacity: 1; color: var(--brand); }

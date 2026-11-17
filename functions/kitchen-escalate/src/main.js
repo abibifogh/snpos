@@ -33,7 +33,9 @@ export default async ({ req, res, log, error }) => {
 
     let raised = 0;
     for (const order of pending.documents) {
-      const ageSeconds = Math.floor((Date.now() - new Date(order.$createdAt).getTime()) / 1000);
+      // From when it reached the kitchen. A pre-order released at 12:35 is new at
+      // 12:35, not fifteen hours unacknowledged because it was placed last night.
+      const ageSeconds = Math.floor((Date.now() - new Date(order.fired_at || order.$createdAt).getTime()) / 1000);
       const shouldBe = Math.min(Math.floor(ageSeconds / sla), maxLevel);
 
       if (shouldBe > (order.alert_level || 0)) {

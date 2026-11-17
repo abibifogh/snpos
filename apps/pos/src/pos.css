@@ -490,3 +490,26 @@
 /* Inside the bill the glow would be cut off by the panel's own edge, leaving a
    square of colour behind a round button; the button stands on its own. */
 .bill .btn-primary { box-shadow: none; }
+
+/* Booked: pre-orders for today and tomorrow. See BookedPanel. */
+.booked-list { display: grid; gap: 0.6rem; }
+.booked-h { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); padding-top: 0.3rem; }
+.booked {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.25rem 0.9rem; align-items: start;
+  padding: 0.75rem 0.9rem; border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+}
+.booked.soon { border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.booked.late { border-color: var(--danger); background: color-mix(in srgb, var(--danger-bg) 55%, var(--surface)); }
+.booked.sent { opacity: 0.78; }
+.booked-for { font-size: 1.3rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.booked-for small { display: block; font-size: 0.64rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.15rem; }
+.booked-who { min-width: 0; }
+.booked-acts { display: flex; gap: 0.4rem; flex-wrap: wrap; justify-content: flex-end; }
+.booked-state { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.3rem; }
+@media (max-width: 560px) {
+  .booked { grid-template-columns: auto minmax(0, 1fr); }
+  .booked-acts { grid-column: 1 / -1; justify-content: flex-start; }
+  .booked-state { grid-column: 1 / -1; }
+}
+.pos-tabs .tab-count { display: inline-grid; place-items: center; min-width: 1.25rem; height: 1.25rem; padding: 0 0.35rem; margin-left: 0.3rem; border-radius: 999px; background: var(--warn); color: #fff; font-size: 0.72rem; }
+.next-booked { white-space: nowrap; }

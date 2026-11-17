@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Badge, Spinner, Notice } from '@snpos/ui';
 import {
   db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, displayOrderNo,
-  dueMinutes, isOverdue,
+  dueMinutes, isOverdue, clockStart,
 } from '@snpos/core';
 import type { Order, OrderItem } from '@snpos/core';
 import type { PosContext } from './App';
@@ -91,7 +91,8 @@ export function KitchenPanel({
       ) : (
         <div className="table-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
           {live.map((o) => {
-            const age = minutesSince(o.$createdAt);
+            // From when it reached the kitchen: a released pre-order is new, not hours old.
+            const age = minutesSince(clockStart(o));
             const lines = items[o.$id] ?? [];
             /**
              * The same rule as the kitchen screen, from core.
