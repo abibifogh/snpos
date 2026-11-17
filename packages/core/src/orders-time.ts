@@ -212,12 +212,39 @@ export function clockStart(order: { $createdAt: string; fired_at?: string | null
   return order.fired_at || order.$createdAt;
 }
 
+/**
+ * How long before the time a pre-order is FOR the kitchen is reminded of it.
+ *
+ * A pre-order accepted early is not on a cooking clock: a wrap for 6:30 that
+ * the kitchen took at 4:15 is not late at 4:30. It rings once, this long
+ * before the time it is for, and counts down to that time.
+ */
+export const PREORDER_ALARM_MINUTES = 20;
+
+type Timed = { $createdAt: string; fired_at?: string | null; is_preorder?: boolean | null; scheduled_for?: string | null };
+
+/** The time a pre-order is for, in ms, or null for an ordinary order. */
+export function preorderFor(order: Timed): number | null {
+  if (!order.is_preorder || !order.scheduled_for) return null;
+  const at = Date.parse(order.scheduled_for);
+  return Number.isFinite(at) ? at : null;
+}
+
+/** Past the time it was for: really late, not just inside its reminder. */
+export function pastPreorderTime(order: Timed, now: number = Date.now()): boolean {
+  const at = preorderFor(order);
+  return at !== null && now > at;
+}
+
 export function isOverdue(
-  order: { status: string; $createdAt: string; fired_at?: string | null },
+  order: { status: string } & Timed,
   dueMins: number,
   now: number = Date.now(),
 ): boolean {
   if (!COOKING.includes(order.status) || order.status === 'PENDING') return false;
+  // A pre-order rings once, before the time it is for, never on its cooking clock.
+  const forAt = preorderFor(order);
+  if (forAt !== null) return now >= forAt - PREORDER_ALARM_MINUTES * 60_000;
   const placed = Date.parse(clockStart(order));
   return Number.isFinite(placed) && now > placed + dueMins * 60_000;
 }
@@ -228,10 +255,13 @@ export function isOverdue(
  * two can never drift apart.
  */
 export function minutesOver(
-  order: { $createdAt: string; fired_at?: string | null },
+  order: Timed,
   dueMins: number,
   now: number = Date.now(),
 ): number {
+  // A pre-order counts down to the time it is for.
+  const forAt = preorderFor(order);
+  if (forAt !== null) return Math.round((now - forAt) / 60_000);
   const placed = Date.parse(clockStart(order));
   if (!Number.isFinite(placed)) return 0;
   return Math.round((now - placed) / 60_000 - dueMins);

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Card, Empty, Badge, Spinner, Notice } from '@snpos/ui';
 import {
   db, DB_ID, Query, listAll, loadOpenOrders, subscribeCollection, displayOrderNo,
-  dueMinutes, isOverdue, clockStart,
+  dueMinutes, isOverdue, clockStart, preorderFor, pastPreorderTime,
 } from '@snpos/core';
 import type { Order, OrderItem } from '@snpos/core';
 import type { PosContext } from './App';
@@ -102,7 +102,8 @@ export function KitchenPanel({
              * about which orders were late. Two screens in one room showing
              * different answers is worse than either answer.
              */
-            const overdue = isOverdue(o, dueMinutes(o, lines));
+            // A pre-order rings before its time; it is only Late once that time has passed.
+            const overdue = isOverdue(o, dueMinutes(o, lines)) && (preorderFor(o) === null || pastPreorderTime(o));
             return (
               <Card key={o.$id} title={displayOrderNo(o.order_no)}>
                 <div className="row" style={{ marginBottom: '0.5rem' }}>
