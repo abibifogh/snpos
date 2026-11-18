@@ -9,6 +9,7 @@ import {
 import type { StaffCharge, StaffSettlement, SettleKind, Module, CountCharge } from '@snpos/core';
 import { Link } from 'react-router-dom';
 import { HiveExport } from '../components/HiveExport';
+import { DeductionsReportModal } from '../components/DeductionsReport';
 import { useSession, useMoney } from '../session';
 import { HubTabs, HubTitle } from '../components/Hub';
 
@@ -37,6 +38,8 @@ export function StaffOwingPage() {
   const [settling, setSettling] = useState<StaffCharge | null>(null);
   /** The statement being chosen: a person's id, '' for everyone, null when closed. */
   const [statementFor, setStatementFor] = useState<string | null>(null);
+  /** The deductions report being chosen: a person's id, '' for everyone, null when closed. */
+  const [deductionsFor, setDeductionsFor] = useState<string | null>(null);
 
   const load = async () => {
     setError(null);
@@ -74,6 +77,7 @@ export function StaffOwingPage() {
           </h1>
         </div>
         <div className="row row-wrap" style={{ gap: '0.5rem' }}>
+          <Button onClick={() => setDeductionsFor('')} disabled={!charges}>Deductions report</Button>
           <Button onClick={() => setStatementFor('')} disabled={!charges || charges.length === 0}>Download statement</Button>
           <Segmented<Show>
             value={show}
@@ -123,6 +127,8 @@ export function StaffOwingPage() {
                             {p.open > 0 && `${p.open} open`}{p.open > 0 && p.settledCount > 0 && ', '}{p.settledCount > 0 && `${p.settledCount} settled`}
                             {' · '}
                             <button type="button" className="linky" onClick={() => setStatementFor(p.personId)}>Statement</button>
+                            {' · '}
+                            <button type="button" className="linky" onClick={() => setDeductionsFor(p.personId)}>Deductions</button>
                           </div>
                         </td>
                         <td className="small dim">{p.oldestOpen ? waitedWords(now - Date.parse(p.oldestOpen)) : '—'}</td>
@@ -201,6 +207,19 @@ export function StaffOwingPage() {
           </div>
         )}
       </Card>
+
+      {deductionsFor !== null && charges && (
+        <DeductionsReportModal
+          charges={charges}
+          settlements={settlements}
+          personId={deductionsFor}
+          business={settings?.restaurant_name ?? ''}
+          madeBy={profile?.display_name ? `${profile.display_name}${profile.role ? ` (${profile.role})` : ''}` : undefined}
+          money={money}
+          decimals={settings?.currency_decimals ?? 2}
+          onClose={() => setDeductionsFor(null)}
+        />
+      )}
 
       {statementFor !== null && charges && (
         <StatementModal
