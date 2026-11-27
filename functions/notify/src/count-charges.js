@@ -120,6 +120,40 @@ export function decisionProblem(c, decision, amount, note) {
   return null;
 }
 
+/* ============================================================ auditor */
+
+/** Until the owner sets one: 100 of the currency, in minor units. Same as auditorLimit in core. */
+export function auditorLimit(cfg, decimals = 2) {
+  const set = Number(cfg?.auditor_limit);
+  if (Number.isFinite(set) && set >= 0) return Math.round(set);
+  return 100 * 10 ** Math.max(0, Number(decimals) || 0);
+}
+
+/** Whether the charge is on the decider's own account. */
+export const isOwnCharge = (c, who) =>
+  !!who && ((!!who.$id && who.$id === c.person_id) || (!!who.user_id && !!c.person_user_id && who.user_id === c.person_user_id));
+
+/** decide, recommend or none. See decisionRight in core/auditor.ts. */
+export function decisionRight(c, who, limit) {
+  if (!who || who.active === false) return 'none';
+  if (isOwnCharge(c, who)) return 'none';
+  if (who.role === 'admin' || who.role === 'manager') return 'decide';
+  if (who.role === 'auditor') return (c.amount || 0) <= limit ? 'decide' : 'recommend';
+  return 'none';
+}
+
+export function recommendProblem(c, decision, amount, note) {
+  if (c.decision !== 'pending') return 'This has already been decided.';
+  if (!['deduct', 'part', 'waived', 'putback'].includes(decision)) return 'That is not a decision.';
+  if (decision === 'part') {
+    if (!Number.isFinite(amount) || !(amount > 0)) return 'Say how much to deduct.';
+    if (amount >= (c.amount || 0)) return 'That is all of it. Recommend Deduct instead.';
+  }
+  if (decision === 'putback' && c.answer !== 'putback') return 'Only when they have offered to put it back.';
+  if (String(note || '').trim().length < 3) return 'Say why, so whoever confirms it knows.';
+  return null;
+}
+
 export function undoProblem(c) {
   if (!c.decision || c.decision === 'pending') return 'There is no decision to undo.';
   if (c.hive_sent_at) return 'This has gone to HIVE, so it is final.';
@@ -216,6 +250,7 @@ export async function countChargesConfig(ctx, venueId = '') {
   return {
     answerHours: Number(cfg.answer_hours) > 0 ? Number(cfg.answer_hours) : ANSWER_HOURS,
     remindHour: Number.isFinite(Number(cfg.remind_hour)) ? Number(cfg.remind_hour) : 8,
+    auditorLimit: auditorLimit(cfg, ctx.decimals ?? 2),
   };
 }
 
@@ -265,11 +300,11 @@ async function pricesFor(ctx, ingredientIds) {
   return out;
 }
 
-/** Admins and managers with an email, for a reminder or a heads-up. */
+/** Admins, managers and auditors with an email, for a reminder or a heads-up. */
 async function managers(ctx) {
   const rows = await listAll(ctx, 'staff_profiles').catch(() => []);
   return [...new Set(rows
-    .filter((p) => p.active !== false && ['admin', 'manager'].includes(p.role) && p.email)
+    .filter((p) => p.active !== false && ['admin', 'manager', 'auditor'].includes(p.role) && p.email)
     .map((p) => String(p.email).trim()))];
 }
 
@@ -485,8 +520,35 @@ export async function applyReply(ctx, reply, { now = new Date().toISOString() } 
 
     if (!writtenBy(reply, reply.by_user)) return finish(ctx, reply, 'Who decided this could not be confirmed.', now);
     const decider = await profileFor(ctx, reply.by_user);
-    if (!decider || decider.active === false || !['admin', 'manager'].includes(decider.role)) {
-      return finish(ctx, reply, 'Only an admin or a manager can decide a count difference.', now);
+    if (!decider || decider.active === false || !['admin', 'manager', 'auditor'].includes(decider.role)) {
+      return finish(ctx, reply, 'Only an admin, a manager or an auditor can decide a count difference.', now);
+    }
+    // Nobody decides, recommends or takes back a difference on their own account.
+    if (isOwnCharge(charge, decider)) {
+      return finish(ctx, reply, 'This one is on your own account, so somebody else decides it.', now);
+    }
+    const cfg = await countChargesConfig(ctx, charge.venue_id || '').catch(() => null);
+    const limit = cfg?.auditorLimit ?? auditorLimit({}, ctx.decimals ?? 2);
+    const right = decisionRight(charge, decider, limit);
+
+    if (reply.kind === 'recommend') {
+      const problem = recommendProblem(charge, reply.decision, Number(reply.amount || 0), reply.note);
+      if (problem) return finish(ctx, reply, problem, now);
+      await ctx.db.updateDocument(ctx.DB_ID, 'staff_charges', charge.$id, {
+        recommended_decision: reply.decision,
+        recommended_amount: reply.decision === 'part' ? Math.round(Number(reply.amount || 0)) : 0,
+        recommended_note: String(reply.note || '').slice(0, 500),
+        recommended_by: reply.by_user,
+        recommended_name: String(decider.display_name || reply.by_name || '').slice(0, 120),
+        recommended_at: now,
+      });
+      ctx.log?.(`${decider.display_name} recommended (${reply.decision}) on ${charge.person_name}'s count difference.`);
+      return finish(ctx, reply, null, now);
+    }
+    if (right !== 'decide') {
+      return finish(ctx, reply, right === 'recommend'
+        ? `${ctx.money ? ctx.money(charge.amount) : 'This'} is above your limit of ${ctx.money ? ctx.money(limit) : 'your limit'}. Recommend a decision and an admin or a manager confirms it.`
+        : 'Only an admin, a manager or an auditor can decide a count difference.', now);
     }
     if (reply.kind === 'undo') {
       await undo(ctx, charge, { by: reply.by_user, now });
@@ -587,7 +649,7 @@ export async function sweepCountCharges(ctx, { now = new Date().toISOString(), s
           title: 'Count differences to decide',
           body: waiting.map((c) => `<p style="margin:0 0 8px"><b>${esc(c.person_name)}</b> · ${ctx.money(c.amount)} · ${
             c.answer === 'explain' ? `explained: “${esc(c.answer_note)}”` : c.answer === 'putback' ? 'offered to put it back' : 'reopened'}</p>`).join('')
-            + '<p style="margin:12px 0 0;color:#5d6b7a">Decide under Approvals › Count differences.</p>',
+            + '<p style="margin:12px 0 0;color:#5d6b7a">Decide under Checks › Differences.</p>',
         });
         for (const c of waiting) {
           await ctx.db.updateDocument(ctx.DB_ID, 'staff_charges', c.$id, { reminded_on: today }).catch(() => undefined);
@@ -636,6 +698,6 @@ async function tellManagers(ctx, { owed, lines, person, phase, deadline, why }) 
     title: 'A bar count came up short',
     body: `<p style="margin:0 0 10px">The bar count ${phase === 'open' ? 'at opening' : 'at close'} came up ${ctx.money(owed)} short, ${whose}.</p>
       ${linesTable(ctx, lines)}
-      ${deadline ? '<p style="margin:12px 0 0;color:#5d6b7a">They have until the deadline to answer. If they accept or say nothing it is deducted then; if they explain or offer to put it back, it waits for you under Approvals › Count differences.</p>' : ''}`,
+      ${deadline ? '<p style="margin:12px 0 0;color:#5d6b7a">They have until the deadline to answer. If they accept or say nothing it is deducted then; if they explain or offer to put it back, it waits for you under Checks › Differences.</p>' : ''}`,
   }).catch((e) => ctx.error?.(`Could not email managers about a count difference: ${e.message}`));
 }

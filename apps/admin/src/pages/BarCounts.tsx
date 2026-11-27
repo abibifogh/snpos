@@ -1033,7 +1033,7 @@ export function BarCountsPage({ module = 'bar' }: { module?: 'bar' | 'kitchen' }
         <Notice tone="info">
           {pending.length === 1 ? 'One count is' : `${pending.length} counts are`} waiting for an admin. The shelf
           still says what it said before {pending.length === 1 ? 'it' : 'them'}.
-          {isAdmin && <> Decide {pending.length === 1 ? 'it' : 'them'} under <Link to="/waiting?show=count">Approvals</Link>.</>}
+          {isAdmin && <> Decide {pending.length === 1 ? 'it' : 'them'} under <Link to="/todo?show=count">To do</Link>.</>}
         </Notice>
       )}
 

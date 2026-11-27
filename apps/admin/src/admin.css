@@ -298,3 +298,34 @@ a.today-row:hover { background: var(--surface-2); }
   .clean-edit-side { justify-items: start; grid-auto-flow: column; align-items: center; justify-content: space-between; }
 }
 button.choice { font: inherit; color: inherit; width: 100%; text-align: left; }
+
+/* ---- Checks: the count log, differences and follow-ups ----------------- */
+.danger-text { color: var(--danger); font-weight: 600; }
+.ok-text { color: var(--ok); font-weight: 600; }
+tr.clickable:hover td { background: var(--surface-2); }
+.diff-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 24rem); gap: 1rem; align-items: start; }
+@media (max-width: 980px) { .diff-split { grid-template-columns: minmax(0, 1fr); } }
+.diff-list { display: grid; gap: 0; }
+.diff-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.25rem 0.8rem; align-items: center;
+  padding: 0.8rem 1.1rem; border-top: 1px solid var(--hair); text-align: left; width: 100%;
+  background: transparent; border-left: 0; border-right: 0; border-bottom: 0; font: inherit; color: inherit; cursor: pointer;
+}
+.diff-row:first-child { border-top: 0; }
+.diff-row:hover { background: var(--surface-2); }
+.diff-row[aria-current='true'] { background: var(--brand-soft, var(--surface-2)); }
+.diff-row .tags { display: flex; gap: 0.35rem; flex-wrap: wrap; justify-content: flex-end; }
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+.timeline li { display: grid; grid-template-columns: 6.2rem minmax(0, 1fr); gap: 0.6rem; font-size: 0.88rem; }
+.timeline time { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.follow-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.3rem 0.8rem; align-items: center;
+  padding: 0.75rem 1.1rem; border-top: 1px solid var(--hair);
+}
+.follow-row:first-child { border-top: 0; }
+.follow-row .acts { display: flex; gap: 0.4rem; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+@media (max-width: 640px) {
+  .follow-row, .diff-row { grid-template-columns: minmax(0, 1fr); }
+  .follow-row .acts, .diff-row .tags { justify-content: flex-start; }
+}
+.readonly-bar { margin: 0 0 1rem; }

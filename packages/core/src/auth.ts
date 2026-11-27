@@ -16,7 +16,7 @@ import type { StaffProfile } from './types';
  * its way past it.
  */
 
-export const STAFF_TEAMS = ['cooks', 'waiters', 'cashiers', 'managers', 'admins'] as const;
+export const STAFF_TEAMS = ['cooks', 'waiters', 'cashiers', 'managers', 'admins', 'auditors'] as const;
 export type StaffTeam = (typeof STAFF_TEAMS)[number];
 
 /** Which staff teams this session belongs to. Empty for a guest. */

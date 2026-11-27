@@ -176,14 +176,18 @@ export const SIDE_NAMES: Record<Module, string> = { kitchen: 'Bistro', bar: 'Bar
  * because it is the one place somebody is sent to decide things; Today is
  * the day's figures and whether it is finished.
  */
-export const NAV_GROUPS = ['Today', 'Approvals', 'Sell', 'Stock', 'Money', 'Books', 'Setup'] as const;
+export const NAV_GROUPS = ['Today', 'Sales', 'Stock', 'Checks', 'Money', 'Books', 'Setup'] as const;
 
 export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'dashboard', label: 'Today', path: '/', group: 'Today' },
   { key: 'close_day', label: 'Close the day', path: '/close-day', group: 'Today', under: 'dashboard' },
-  // Everything waiting for a decision, from every side, beside the day itself.
-  { key: 'waiting', label: 'Approvals', path: '/waiting', group: 'Approvals' },
-  { key: 'orders', label: 'Orders', path: '/orders', group: 'Sell' },
+  /*
+    Everything waiting on somebody, beside the day itself: what to decide
+    (what Approvals was) and what to chase (follow-ups with a due day). The
+    key is still 'waiting', so every grant made for Approvals carries over.
+  */
+  { key: 'waiting', label: 'To do', path: '/todo', group: 'Today' },
+  { key: 'orders', label: 'Orders', path: '/orders', group: 'Sales' },
   /*
     The people who have bought something.
 
@@ -194,18 +198,18 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     list" is a decision worth making on purpose rather than inheriting from a
     job title.
   */
-  { key: 'customers', label: 'Customers', path: '/customers', group: 'Sell' },
+  { key: 'customers', label: 'Customers', path: '/customers', group: 'Sales' },
   // One catalogue page per side, each its own grant, reached through one
   // link with a side switch. A cook adding a dish and a shop assistant
   // adding a basket are doing unrelated jobs on unrelated stock, and each
   // can be given one side without the other.
-  { key: 'menu_categories', label: 'Categories · bistro', path: '/catalogue/categories', group: 'Sell', module: 'kitchen' },
-  { key: 'shop_categories', label: 'Categories · shop', path: '/catalogue/categories', group: 'Sell', module: 'craft' },
-  { key: 'bar_categories', label: 'Categories · bar', path: '/catalogue/categories', group: 'Sell', module: 'bar' },
-  { key: 'menu_items', label: 'Products · bistro', path: '/catalogue/items', group: 'Sell', module: 'kitchen' },
-  { key: 'shop_items', label: 'Products · shop', path: '/catalogue/items', group: 'Sell', module: 'craft' },
-  { key: 'bar_items', label: 'Products · bar', path: '/catalogue/items', group: 'Sell', module: 'bar' },
-  { key: 'menu_options', label: 'Options', path: '/menu/options', group: 'Sell', module: 'kitchen', under: '/catalogue/items' },
+  { key: 'menu_categories', label: 'Categories · bistro', path: '/catalogue/categories', group: 'Sales', module: 'kitchen' },
+  { key: 'shop_categories', label: 'Categories · shop', path: '/catalogue/categories', group: 'Sales', module: 'craft' },
+  { key: 'bar_categories', label: 'Categories · bar', path: '/catalogue/categories', group: 'Sales', module: 'bar' },
+  { key: 'menu_items', label: 'Products · bistro', path: '/catalogue/items', group: 'Sales', module: 'kitchen' },
+  { key: 'shop_items', label: 'Products · shop', path: '/catalogue/items', group: 'Sales', module: 'craft' },
+  { key: 'bar_items', label: 'Products · bar', path: '/catalogue/items', group: 'Sales', module: 'bar' },
+  { key: 'menu_options', label: 'Options', path: '/menu/options', group: 'Sales', module: 'kitchen', under: '/catalogue/items' },
   /*
     Group bookings, which had no page at all.
 
@@ -214,14 +218,26 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     fine until the notice to the team failed — and when it did there was
     nothing to open, nothing to check and nothing to press.
   */
-  { key: 'group_bookings', label: 'Bookings', path: '/group-bookings', group: 'Sell', module: 'kitchen' },
-  { key: 'vouchers', label: 'Discounts', path: '/vouchers', group: 'Sell' },
+  // Pre-orders and group bookings, a tab each: both are food somebody has booked.
+  { key: 'group_bookings', label: 'Bookings', path: '/group-bookings', group: 'Sales', module: 'kitchen' },
+  // A tab of Products, beside the prices it changes.
+  { key: 'vouchers', label: 'Discounts', path: '/vouchers', group: 'Sales', under: '/catalogue/items' },
   { key: 'stock', label: 'Stock · kitchen', path: '/stock', group: 'Stock', module: 'kitchen' },
   { key: 'bar_stock', label: 'Stock · bar', path: '/stock', group: 'Stock', module: 'bar' },
   { key: 'waste', label: 'Waste', path: '/waste', group: 'Stock', module: 'kitchen', under: '/stock' },
   { key: 'purchase_orders', label: 'Purchase orders', path: '/purchase-orders', group: 'Stock' },
-  { key: 'bar_counts', label: 'Count · bar', path: '/count', group: 'Stock', module: 'bar' },
-  { key: 'stocktake', label: 'Count · shop', path: '/count', group: 'Stock', module: 'craft' },
+  /*
+    Checks: the counts, what they found, and the cleaning log. Counting is a
+    check on the stock rather than a part of keeping it, and the person who
+    reviews the counts (an auditor) has no business with the rest of Stock.
+  */
+  { key: 'bar_counts', label: 'Count · bar', path: '/counts', group: 'Checks', module: 'bar' },
+  { key: 'stocktake', label: 'Count · shop', path: '/counts', group: 'Checks', module: 'craft' },
+  /*
+    Count differences from start to finish: reviewing them, what each person
+    owes, the deductions report and the file for HIVE. Staff owing is a tab of it.
+  */
+  { key: 'differences', label: 'Differences', path: '/differences', group: 'Checks' },
   // Every side's places, on the Stock page's Places tab rather than a page
   // of its own. No side of its own: the kitchen keeps a store room too.
   { key: 'locations', label: 'Places', path: '/stock?tab=places', group: 'Stock', parent: 'stock' },
@@ -255,7 +271,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     Count differences charged to a person, until each is paid, taken from pay,
     found or written off. See staff-charges.ts.
   */
-  { key: 'staff_owing', label: 'Staff owing', path: '/staff-owing', group: 'Money', under: 'shifts' },
+  { key: 'staff_owing', label: 'Staff owing', path: '/staff-owing', group: 'Checks', under: 'differences' },
   { key: 'payouts', label: 'Payouts', path: '/payouts', group: 'Money', module: 'craft', under: 'consignors' },
   { key: 'reports', label: 'Reports', path: '/reports', group: 'Books' },
   /**
@@ -296,8 +312,9 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { key: 'venues', label: 'Venues', path: '/venues', group: 'Setup' },
   { key: 'tables', label: 'Tables & QR', path: '/tables', group: 'Setup', under: 'venues' },
   { key: 'features', label: 'Features', path: '/features', group: 'Setup', under: 'settings' },
-  // The kitchen's and the bar's cleaning routines, and the log they leave. See cleaning.ts.
-  { key: 'cleaning', label: 'Cleaning', path: '/cleaning', group: 'Setup' },
+  // The kitchen's and the bar's cleaning routines, and the log they leave. A
+  // daily check, so beside the counts. See cleaning.ts.
+  { key: 'cleaning', label: 'Cleaning', path: '/cleaning', group: 'Checks' },
   // Records that do not add up and jobs that have gone quiet, checked
   // nightly and on opening. Owner-only: every button on it changes the books.
   { key: 'health', label: 'Health', path: '/health', group: 'Setup', ownerOnly: true, under: 'settings' },
@@ -332,15 +349,15 @@ export const NAV_MERGES: NavMerge[] = [
   */
   { to: '/stock', label: 'Stock', keys: { kitchen: 'stock', bar: 'bar_stock', craft: 'shop_items' } },
   /*
-    Count, every place. The kitchen counts on the bar's sheet now, so it is
-    reached with the kitchen's stock grant; the shop's shelf count is its
-    stocktake.
+    Counts, every place: the log of every count filed, and the sheet to count
+    on. The kitchen counts on the bar's sheet, so it is reached with the
+    kitchen's stock grant; the shop's shelf count is its stocktake.
   */
-  { to: '/count', label: 'Count', keys: { bar: 'bar_counts', kitchen: 'stock', craft: 'stocktake' } },
+  { to: '/counts', label: 'Counts', keys: { bar: 'bar_counts', kitchen: 'stock', craft: 'stocktake' } },
 ];
 
 /** Roles that can be granted admin sections at all. */
-export const GRANTABLE_ROLES = ['manager', 'cashier', 'waiter', 'cook'] as const;
+export const GRANTABLE_ROLES = ['manager', 'auditor', 'cashier', 'waiter', 'cook'] as const;
 export type GrantableRole = (typeof GRANTABLE_ROLES)[number];
 
 /**
@@ -356,10 +373,23 @@ export const DEFAULT_ACCESS: Record<string, string[]> = {
     // a floor decision made while somebody is standing there, and an owner who
     // has to be rung at eleven at night to open one is an owner who gets rung.
     'dashboard', 'orders', 'close_day', 'reports', 'shifts', 'expenses', 'vouchers', 'tabs', 'waiting', 'staff_owing',
+    'differences', 'cleaning',
     'menu_items', 'stock', 'waste', 'stations', 'group_bookings', 'purchase_orders',
     // A shop manager runs the intake desk and needs to see who is owed what.
     'shop_categories', 'shop_items', 'consignors', 'intake', 'stocktake', 'payouts',
     'bar_categories', 'bar_items', 'bar_stock', 'bar_counts', 'locations',
+  ],
+  /*
+    Somebody whose job is the counts and what they find. To do, the count
+    log and Differences are theirs; shifts, orders, stock and cleaning they
+    read, so a difference can be traced to what was sold and when. Nothing
+    here lets them sell, count or change a figure: the database refuses an
+    auditor every write except a note, a follow-up and a decision within
+    their limit. See auditor.ts.
+  */
+  auditor: [
+    'waiting', 'differences', 'staff_owing', 'bar_counts', 'stocktake',
+    'shifts', 'orders', 'stock', 'bar_stock', 'cleaning',
   ],
   cashier: ['dashboard', 'orders'],
   waiter: [],
@@ -526,7 +556,7 @@ export function unavailableWords(
   const meta = ADMIN_SECTIONS.find((s) => s.key === section);
   if (section === 'stocktake' && !shopCountsOn(settings)) {
     return 'The shop\'s stocktake is switched off, so there is nothing here. An admin can turn it back on '
-      + 'under Settings, in Stock. Any count already submitted is still under Approvals.';
+      + 'under Settings, in Stock. Any count already submitted is still under To do.';
   }
   if (meta && !inTrade(meta, settings, profile)) {
     return 'This page belongs to a side of the business that is not switched on. Nothing is being kept from '
@@ -659,17 +689,16 @@ export function navFor(profile: StaffProfile | null, settings: Settings | null, 
     // A tab of its host page, when the host is there to be reached.
     if (s.under && hostOpen(s.under, profile, settings, side, s.module)) continue;
     /*
-      The books in three links: Reports above (the statements are tabs of
-      it), the jobs done every week, and the tools only an accountant opens.
-      Accounting itself is left out for somebody whose parts of the books
-      all live on the other two; with no part at all it stays, and says so.
+      The books in two links: Reports (the statements are tabs of it), and
+      Accounting, which holds the weekly jobs and the accountant's tools
+      behind one switch. Accounting is left out for somebody whose parts of
+      the books all live on Reports; with no part at all it stays, and says so.
     */
     if (s.key === 'accounting') {
       const jobs = bookAreas('jobs', profile, settings).length;
       const tools = bookAreas('accountant', profile, settings).length;
       const reports = bookAreas('reports', profile, settings).length;
-      if (jobs > 0 || (tools === 0 && reports === 0)) add(s.group, { to: s.path, label: s.label, keys: [s.key] });
-      if (tools > 0) add(s.group, { to: '/accountant', label: 'Accountant tools', keys: ['accounting:accountant'] });
+      if (jobs > 0 || tools > 0 || reports === 0) add(s.group, { to: s.path, label: s.label, keys: [s.key] });
       continue;
     }
     add(s.group, { to: s.path, label: s.label, end: s.path === '/', keys: [s.key] });

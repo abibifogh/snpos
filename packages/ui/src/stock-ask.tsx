@@ -97,7 +97,7 @@ export function NeedStock({ side, venueId, who, lowBp, showLow = false, tickLow 
         venueId, side, note, byId: who.id, byName: who.name,
         lines: picked.map(({ on: _on, added: _added, ...l }) => l),
       });
-      onSent(`Sent to the managers: ${picked.length} item${picked.length === 1 ? '' : 's'}${note.trim() ? ' and your note' : ''}. It is on Approvals now.`);
+      onSent(`Sent to the managers: ${picked.length} item${picked.length === 1 ? '' : 's'}${note.trim() ? ' and your note' : ''}. It is on To do now.`);
     } catch {
       setError('It could not be sent. Check the connection and try again; nothing has been lost.');
       setBusy(false);

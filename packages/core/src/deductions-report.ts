@@ -26,7 +26,7 @@ export type DeductionKind = 'final' | 'notfinal' | 'approval' | 'off';
 export const DEDUCTION_WORDS: Record<DeductionKind, string> = {
   final: 'Deducted',
   notfinal: 'Not final',
-  approval: 'Waiting on Approvals',
+  approval: 'Waiting on approval',
   off: 'Waived / put back',
 };
 
@@ -158,8 +158,8 @@ export function waitingRow(w: WaitingCount): DeductionRow | null {
     personId: w.personId, name: w.name, at: w.at, items: shortNames.join(', '), where: countWhere(w.phase),
     kind: 'approval', amount: owed, taken: 0,
     note: w.personId
-      ? `Not charged yet. Waiting on Approvals; ${w.name.split(' ')[0]} ran that shift.`
-      : 'Not charged yet. Waiting on Approvals; nobody is on record for that shift.',
+      ? `Not charged yet. Waiting on approval; ${w.name.split(' ')[0]} ran that shift.`
+      : 'Not charged yet. Waiting on approval; nobody is on record for that shift.',
   };
 }
 
@@ -267,7 +267,7 @@ export function deductionsHtml(d: {
   const totals = (t: DeductionTotals) => [
     `<div>Deducted<strong>${esc(m(t.deducted))}</strong></div>`,
     d.include.notFinal ? `<div>Not final yet<strong>${esc(m(t.notFinal))}</strong></div>` : '',
-    d.include.approval ? `<div>Waiting on Approvals<strong>${esc(m(t.approval))}</strong></div>` : '',
+    d.include.approval ? `<div>Waiting on approval<strong>${esc(m(t.approval))}</strong></div>` : '',
     d.include.off ? `<div>Waived / put back<strong>${esc(m(t.off))}</strong></div>` : '',
   ].join('');
   const people = deductionPeople(d.rows);
@@ -327,6 +327,6 @@ export function deductionsHtml(d: {
 <div class="rule"></div>
 ${people.length > 1 ? `<div class="summary">${totals(all)}</div>` : ''}
 ${sections || '<p>No shortages in this period for the people and kinds chosen.</p>'}
-<footer>Made ${esc(d.day(d.madeAt))}${d.madeBy ? ` by ${esc(d.madeBy)}` : ''}. Only "Deducted" is taken from pay. "Not final" can still change: the person may answer and a manager decides. "Waiting on Approvals" is not on anyone's account yet. Amounts at selling price, less anything over on the same count.</footer>
+<footer>Made ${esc(d.day(d.madeAt))}${d.madeBy ? ` by ${esc(d.madeBy)}` : ''}. Only "Deducted" is taken from pay. "Not final" can still change: the person may answer and a manager decides. "Waiting on approval" is not on anyone's account yet. Amounts at selling price, less anything over on the same count.</footer>
 </body></html>`;
 }

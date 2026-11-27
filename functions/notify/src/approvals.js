@@ -161,9 +161,9 @@ const QUEUE_NAMES = {
  * sends everybody to the same page whatever is waiting.
  */
 const QUEUE_WHERE = {
-  bar_count: 'Approvals',
-  shop_count: 'Approvals',
-  expense: 'Approvals',
+  bar_count: 'To do',
+  shop_count: 'To do',
+  expense: 'To do',
 };
 
 /** The subject line: what, how many, and nothing else. */
@@ -297,6 +297,6 @@ export function countBody(opts) {
     + '<strong>The stock figures have not moved.</strong> A count that finds a difference waits for somebody '
     + 'who can see the whole business to agree to it, which is why this email exists. Until then the shelf '
     + 'still says what it said before the count — so the next count, and every report built on it, is working '
-    + 'from a number this one has already found to be wrong. Agree or refuse it under Approvals.'
+    + 'from a number this one has already found to be wrong. Agree or refuse it under To do.'
     + '</p>';
 }

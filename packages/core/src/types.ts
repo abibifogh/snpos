@@ -261,7 +261,7 @@ export interface StaffProfile extends Doc {
   hive_staff_id?: string | null;
   hive_name?: string | null;
   display_name: string;
-  role: 'cook' | 'waiter' | 'cashier' | 'manager' | 'admin';
+  role: 'cook' | 'waiter' | 'cashier' | 'manager' | 'admin' | 'auditor';
   active: boolean;
   phone?: string;
   can_open_shift: boolean;

@@ -18,10 +18,10 @@ import { brandColour } from './brand.js';
  * browser is allowed to do, and should not be.
  */
 
-const ROLE_TEAMS = ['cooks', 'waiters', 'cashiers', 'managers', 'admins'];
+const ROLE_TEAMS = ['cooks', 'waiters', 'cashiers', 'managers', 'admins', 'auditors'];
 
 const TEAM_FOR = {
-  cook: 'cooks', waiter: 'waiters', cashier: 'cashiers', manager: 'managers', admin: 'admins',
+  cook: 'cooks', waiter: 'waiters', cashier: 'cashiers', manager: 'managers', admin: 'admins', auditor: 'auditors',
 };
 
 /**

@@ -120,7 +120,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
   const kitchenCountsIn = !countsShelves && countsInAtOpen(ctx.module, ctx.settings);
   /*
     The bar and the shop count out on the sheet before they close, and so does
-    a kitchen set to count; every difference waits on Approvals. A
+    a kitchen set to count; every difference waits on To do. A
     kitchen that glances says OK, Low or Out about every ingredient on the
     close instead. See countsOutAtClose.
   */
@@ -601,7 +601,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           settings={ctx.settings}
           onFiled={({ review }) => {
             openClean.done();
-            onToast(review ? 'Opening clean saved. What was missed is on Approvals.' : 'Opening clean saved.');
+            onToast(review ? 'Opening clean saved. What was missed is on To do.' : 'Opening clean saved.');
           }}
         />
       )}
@@ -617,7 +617,7 @@ export function ShiftBar({ ctx, onToast }: { ctx: PosContext; onToast: (m: strin
           onFiled={({ review }) => {
             setCleaningUp(false);
             closeClean.done();
-            onToast(review ? 'Closing clean saved. What was missed is on Approvals.' : 'Closing clean saved.');
+            onToast(review ? 'Closing clean saved. What was missed is on To do.' : 'Closing clean saved.');
             void startClose();
           }}
         />

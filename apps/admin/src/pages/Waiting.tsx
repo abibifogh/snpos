@@ -17,7 +17,8 @@ import type {
 import { useSession, useMoney } from '../session';
 import { ChargeLineModal } from '../components/ChargeLine';
 import { StockAskPanel } from '../components/StockAsk';
-import { CountDifferences } from '../components/CountDifferences';
+import { DifferencesWaiting } from '../components/CountDifferences';
+import { HubTabs, HubTitle } from '../components/Hub';
 
 type Show = WaitingKind | 'all';
 const SHOWS: Show[] = ['all', 'count', 'spend', 'shelf', 'tab', 'order', 'clean', 'stock'];
@@ -349,7 +350,7 @@ export function WaitingPage() {
     <>
       <div className="spread">
         <h1>
-          Approvals
+          <HubTitle>To decide</HubTitle>
           <InfoTip>
             Oldest first. Approving a count moves the shelf by the difference it found; refusing leaves the shelf as
             it is. Refusing a spend takes it off the books.
@@ -365,12 +366,14 @@ export function WaitingPage() {
           }))}
         />
       </div>
+      <HubTabs />
       <p className="small" style={{ marginTop: 0 }}>{items ? waitingSummary(items) : 'Reading every queue…'}</p>
 
       {error && <Notice>{error}</Notice>}
 
-      {/* Bar count differences on somebody's account, not final. Nothing when there are none. */}
-      <CountDifferences />
+      {/* Count differences waiting on a decision: how many, and the way to
+          Differences, where each one's whole story is. Nothing when there are none. */}
+      <DifferencesWaiting />
 
       {/*
         Bookings waiting to be agreed to.

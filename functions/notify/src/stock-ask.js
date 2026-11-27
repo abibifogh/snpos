@@ -95,5 +95,5 @@ export function askBody(doc, esc) {
     + (items ? `<ul style="margin:0 0 10px;padding-left:18px;font-size:14px;line-height:1.7">${items}</ul>` : '')
     + (String(doc.note || '').trim() ? `<p style="margin:0 0 10px;white-space:pre-wrap;color:#5d6b7a">“${esc(doc.note)}”</p>` : '')
     + '<p style="margin:0;color:#5d6b7a;font-size:14px">Make the orders, change the amounts first, or send it back with a '
-    + 'reason, under <strong>Approvals</strong>. Nothing has been ordered yet.</p>';
+    + 'reason, under <strong>To do</strong>. Nothing has been ordered yet.</p>';
 }

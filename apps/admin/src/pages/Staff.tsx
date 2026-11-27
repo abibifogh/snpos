@@ -10,11 +10,13 @@ import type { StaffProfile, Module, OrderChoice } from '@snpos/core';
 import type { Doc } from '@snpos/core';
 import { useSession } from '../session';
 import { HubTabs, HubTitle } from '../components/Hub';
-import { HiveMatching } from '../components/HiveMatching';
 
 interface VenueRow extends Doc { name: string }
 
-const ROLES: StaffProfile['role'][] = ['cook', 'waiter', 'cashier', 'manager', 'admin'];
+const ROLES: StaffProfile['role'][] = ['cook', 'waiter', 'cashier', 'manager', 'auditor', 'admin'];
+const ROLE_WORDS: Record<StaffProfile['role'], string> = {
+  cook: 'cook', waiter: 'waiter', cashier: 'cashier', manager: 'manager', auditor: 'auditor (counts and differences)', admin: 'admin',
+};
 
 /**
  * Starting permissions per role. Every one is adjustable per person afterwards
@@ -26,6 +28,9 @@ const DEFAULTS: Record<StaffProfile['role'], Partial<StaffProfile>> = {
   cashier: { can_open_shift: true, can_close_shift: true, can_void: false, can_discount_up_to_bp: 500, can_mark_paid: true, can_record_waste: true },
   manager: { can_open_shift: true, can_close_shift: true, can_void: true, can_discount_up_to_bp: 2000, can_mark_paid: true, can_record_waste: true },
   admin: { can_open_shift: true, can_close_shift: true, can_void: true, can_discount_up_to_bp: 10000, can_mark_paid: true, can_record_waste: true },
+  // Checks the counts and the differences; never sells, counts or opens a till,
+  // so the person checking is never the person being checked. See auditor.ts.
+  auditor: { can_open_shift: false, can_close_shift: false, can_void: false, can_discount_up_to_bp: 0, can_mark_paid: false, can_record_waste: false },
 };
 
 /**
@@ -527,7 +532,6 @@ export function StaffPage() {
       </Card>
 
       {/* Who is who in HIVE, for count-difference deductions. Shown once Count differences is on. */}
-      {rows && rows.length > 0 && <HiveMatching rows={rows} onSaved={load} />}
 
       {editing && (
         <Modal
@@ -555,7 +559,12 @@ export function StaffPage() {
             <Field label="Phone" hint="Optional.">
               <Input value={editing.phone ?? ''} onChange={(e) => setEditing({ ...editing, phone: e.target.value })} />
             </Field>
-            <Field label="Role" hint="Changing this resets the permissions below to that role's defaults.">
+            <Field
+              label="Role"
+              hint={editing.role === 'auditor'
+                ? 'Reviews counts and differences and follows them up. Never sells, counts stock or opens a shift. Their limit for deciding a difference alone is set under Features.'
+                : "Changing this resets the permissions below to that role's defaults."}
+            >
               <Select
                 value={editing.role ?? 'waiter'}
                 onChange={(e) => {
@@ -563,7 +572,7 @@ export function StaffPage() {
                   setEditing({ ...editing, role, ...DEFAULTS[role] });
                 }}
               >
-                {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                {ROLES.map((r) => <option key={r} value={r}>{ROLE_WORDS[r]}</option>)}
               </Select>
             </Field>
           </div>

@@ -1,4 +1,7 @@
-import { canOpen, bookAreas, NAV_MERGES } from '@snpos/core';
+import { useSearchParams } from 'react-router-dom';
+import { ViewTabs } from '@snpos/ui';
+import { canOpen, bookAreas, NAV_MERGES, BOOK_PAGES } from '@snpos/core';
+import type { BookPage } from '@snpos/core';
 import { Hub, HubTabs, HubTitle } from '../components/Hub';
 import { CloseDayPage } from '../components/CloseDay';
 import { useSession, useMoney } from '../session';
@@ -24,6 +27,14 @@ import type { SettingsSection } from './SettingsPage';
 import { HealthPage } from './Health';
 import { PurgePage } from './Purge';
 import { StaffPage } from './Staff';
+import { VouchersPage } from './Vouchers';
+import { CountPage } from './Count';
+import { CountLogPage } from './CountLog';
+import { FollowUpsPage } from './FollowUps';
+import { WaitingPage } from './Waiting';
+import { GroupBookingsPage } from './GroupBookings';
+import { DeductionsHivePage, HiveMatchingPage, PreordersPage } from './ChecksTabs';
+import { DifferencesReview, ClosedDifferences, DifferencesWaiting } from '../components/CountDifferences';
 
 /**
  * The admin's pages that are several pages, each a row of tabs. See Hub.
@@ -71,6 +82,8 @@ export function ProductsHub() {
         { id: 'items', label: 'Items', open: anySide('/catalogue/items'), render: () => <CataloguePage kind="items" /> },
         { id: 'categories', label: 'Categories', open: anySide('/catalogue/categories'), render: () => <CataloguePage kind="categories" /> },
         { id: 'options', label: 'Options', open: can('menu_options'), render: () => <AddonsPage /> },
+        // Beside the prices it changes; it was a link of its own.
+        { id: 'discounts', label: 'Discounts', open: can('vouchers'), render: () => <VouchersPage /> },
       ]}
     />
   );
@@ -110,8 +123,128 @@ export function ShiftsHub() {
       title="Shifts"
       tabs={[
         { id: 'shifts', label: 'Shifts', open: can('shifts'), render: () => <ShiftsPage /> },
-        { id: 'owing', label: 'Staff owing', open: can('staff_owing'), render: () => <StaffOwingPage /> },
       ]}
+    />
+  );
+}
+
+/**
+ * To do: everything waiting on somebody. What to decide (what Approvals
+ * was), what to chase (follow-ups with a due day), and what was done this
+ * week. An auditor decides only count differences, so theirs is that line.
+ */
+export function TodoHub() {
+  const { profile } = useSession();
+  const can = useCan();
+  const chase = can('waiting') || can('differences');
+  return (
+    <Hub
+      title="To do"
+      tabs={[
+        {
+          id: 'decide',
+          label: 'To decide',
+          open: can('waiting'),
+          render: () => (profile?.role === 'auditor' ? <AuditorDecide /> : <WaitingPage />),
+        },
+        { id: 'follow', label: 'To follow up', open: chase, group: 'follow', render: () => <FollowUpsPage view="open" /> },
+        { id: 'done', label: 'Done this week', open: chase, group: 'follow', render: () => <FollowUpsPage view="done" /> },
+      ]}
+    />
+  );
+}
+
+function AuditorDecide() {
+  return (
+    <>
+      <h1><HubTitle>To decide</HubTitle></h1>
+      <HubTabs />
+      <DifferencesWaiting />
+      <p className="small dim">
+        Counts, spends and orders waiting for approval are decided by an admin or a manager. Count differences are
+        yours to decide up to your limit; above it, you recommend.
+      </p>
+    </>
+  );
+}
+
+/** Counts: every count filed, the sheet to count on, and the counts nobody filed. */
+export function CountsHub() {
+  const { profile } = useSession();
+  const anySide = useAnySide();
+  const sides = anySide('/counts');
+  return (
+    <Hub
+      title="Counts"
+      tabs={[
+        { id: 'log', label: 'Count log', open: sides, render: () => <CountLogPage view="log" /> },
+        // Never for an auditor: the person checking the counts does not take them.
+        { id: 'count', label: 'Count now', open: sides && profile?.role !== 'auditor', render: () => <CountPage /> },
+        { id: 'missed', label: 'Missed counts', open: sides, render: () => <CountLogPage view="missed" /> },
+      ]}
+    />
+  );
+}
+
+/** Differences: from the count that found it to the deduction that goes to HIVE. */
+export function DifferencesHub() {
+  const can = useCan();
+  return (
+    <Hub
+      title="Differences"
+      tabs={[
+        { id: 'review', label: 'To review', open: can('differences'), render: () => <DifferencesReview /> },
+        { id: 'owing', label: 'Owing', open: can('staff_owing'), render: () => <StaffOwingPage /> },
+        { id: 'hive', label: 'Deductions & HIVE', open: can('staff_owing') || can('differences'), render: () => <DeductionsHivePage /> },
+        { id: 'closed', label: 'Closed', open: can('differences'), render: () => <ClosedDifferences /> },
+      ]}
+    />
+  );
+}
+
+/** Bookings: food somebody has booked, one by one or as a party. */
+export function BookingsHub() {
+  const can = useCan();
+  return (
+    <Hub
+      title="Bookings"
+      tabs={[
+        { id: 'preorders', label: 'Pre-orders', open: can('group_bookings') || can('orders'), render: () => <PreordersPage /> },
+        { id: 'groups', label: 'Group bookings', open: can('group_bookings'), render: () => <GroupBookingsPage /> },
+      ]}
+    />
+  );
+}
+
+/**
+ * Accounting: the weekly jobs and the accountant's tools, one link with a
+ * switch between them. The part of the books in the address decides which
+ * side is shown, so every old link to either lands on the right one.
+ */
+export function AccountingHub() {
+  const { profile, settings } = useSession();
+  const [params, setParams] = useSearchParams();
+  const jobs = bookAreas('jobs', profile, settings);
+  const tools = bookAreas('accountant', profile, settings);
+  const tab = params.get('tab');
+  const inSet = (set: BookPage) => !!tab && (BOOK_PAGES[set] as readonly string[]).includes(tab);
+  const set: BookPage = inSet('accountant') ? 'accountant'
+    : inSet('jobs') ? 'jobs'
+      : params.get('set') === 'accountant' && tools.length ? 'accountant'
+        : jobs.length || !tools.length ? 'jobs' : 'accountant';
+  const both = jobs.length > 0 && tools.length > 0;
+  return (
+    <AccountingPage
+      key={set}
+      set={set}
+      switcher={both ? (
+        <ViewTabs<BookPage>
+          value={set}
+          onChange={(s) => setParams({ tab: (s === 'jobs' ? jobs : tools)[0] ?? '' })}
+          ariaLabel="Which part of the books"
+          options={[{ value: 'jobs', label: 'Day to day' }, { value: 'accountant', label: 'Accountant tools' }]}
+        />
+      ) : null}
     />
   );
 }
@@ -204,7 +337,9 @@ export function StaffHub() {
       tabs={[
         { id: 'people', label: 'People', open: can('staff'), render: () => <StaffPage /> },
         // Who can open what. Still behind the settings grant it had.
-        { id: 'permissions', label: 'Permissions', open: can('settings'), render: () => <SettingsPage section="permissions" /> },
+        { id: 'permissions', label: 'Roles & permissions', open: can('settings'), render: () => <SettingsPage section="permissions" /> },
+        // Each person matched once to HIVE, the payroll. Was at the foot of People.
+        { id: 'hive', label: 'HIVE matching', open: can('staff'), render: () => <HiveMatchingPage /> },
       ]}
     />
   );

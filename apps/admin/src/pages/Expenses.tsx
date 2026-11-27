@@ -6,7 +6,7 @@ import {
   formatMoney, downloadUrl, deleteFile, Query,
   isPostableExpenseAccount, expenseMethodsFor, expenseSides,
   defaultExpenseSide, MODULE_LABELS, modulesOf, spendWords, dateWords, logSpendChange, spendSnapshot,
-  moneyOutRows, inPeriod, outFilter, outFilters, outTotal, OUT_STATE_WORDS, OUT_FROM_WORDS } from '@snpos/core';
+  moneyOutRows, inPeriod, outFilter, outFilters, outTotal, OUT_STATE_WORDS, OUT_FROM_WORDS, canOpen, areasOf } from '@snpos/core';
 import type {
   Module, Doc, ExpenseCategoryDoc, ImprestFloatDoc, Settings, ShiftExpense,
   OutFilter, OutPeriod, OutPayout, OutRow,
@@ -81,6 +81,7 @@ export function ExpensesPage() {
   const toast = useToast();
   // The tab is in the address, so a link or a bookmark opens the same one.
   type OutTab = 'expenses' | 'analysis' | 'categories' | 'accounts';
+  const chartInBooks = canOpen('accounting', profile, settings) && areasOf('accounting', profile, settings).includes('accounting_chart');
   const [params, setParams] = useSearchParams();
   const askedTab = params.get('tab');
   const tab: OutTab = askedTab === 'analysis' || askedTab === 'categories' || askedTab === 'accounts' ? askedTab : 'expenses';
@@ -240,7 +241,9 @@ export function ExpensesPage() {
           { value: 'expenses', label: 'Payments' },
           { value: 'analysis', label: 'Analysis' },
           { value: 'categories', label: 'Spending categories' },
-          { value: 'accounts', label: 'Accounts' },
+          // The chart of accounts lives in Accounting. Kept here only for
+          // somebody who cannot reach it there, so nobody loses the list.
+          ...(chartInBooks ? [] : [{ value: 'accounts' as const, label: 'Accounts' }]),
         ]}
       />
 
@@ -250,7 +253,7 @@ export function ExpensesPage() {
            it. Its own component because it reads its own two windows and would
            otherwise double the size of this file. */
         <ExpenseAnalysisTab categories={(categories ?? []) as unknown as ExpenseCategoryDoc[]} />
-      ) : tab === 'accounts' ? (
+      ) : tab === 'accounts' && !chartInBooks ? (
         <AccountsManager />
       ) : tab === 'categories' ? (
         <KeyedListManager
@@ -259,7 +262,7 @@ export function ExpensesPage() {
           sharedValue="general"
           accounts={accounts.map((a) => ({ code: a.code, name: a.name }))}
           onChanged={reloadCategories}
-          hint="Your own list. Each one posts to a line of the accounts, which is what decides where the money shows up in Reports. Nothing there that fits? Add it under the Accounts tab. Rename freely; expenses already filed under a category stay with it."
+          hint="Your own list. Each one posts to a line of the accounts, which is what decides where the money shows up in Reports. Nothing there that fits? Add it to the chart of accounts, under Accounting. Rename freely; expenses already filed under a category stay with it."
         />
       ) : (
         <>

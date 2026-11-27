@@ -13,7 +13,7 @@ import type { Shift, PaymentMethod } from './shifts';
  * count-charges.ts.
  */
 
-/** Every count difference on the business, newest first. Managers only. */
+/** Every count difference on the business, newest first. Admins, managers and auditors. */
 export const loadCountCharges = (venueId: string): Promise<CountCharge[]> =>
   listAll<CountCharge>('staff_charges', [
     Query.equal('venue_id', venueId),
@@ -69,7 +69,7 @@ export const answerCountCharge = (opts: {
   by_name: opts.name.slice(0, 120),
 });
 
-/** A manager's decision. Taken only from an admin or a manager signed in as themselves. */
+/** A decision. Taken only from an admin, a manager or an auditor within their limit, signed in as themselves. */
 export const decideCountCharge = (opts: {
   venueId: string; chargeId: string; decision: Exclude<CountDecision, 'pending'>; amount?: number; note?: string;
   profileId: string; name: string;
@@ -80,6 +80,25 @@ export const decideCountCharge = (opts: {
   decision: opts.decision,
   amount: Math.round(opts.amount ?? 0),
   note: (opts.note ?? '').trim().slice(0, 1000),
+  by_profile: opts.profileId,
+  by_name: opts.name.slice(0, 120),
+  by_user: '',
+});
+
+/**
+ * An auditor's recommendation on a difference above their limit. Decides
+ * nothing: an admin or a manager confirms it, or decides otherwise.
+ */
+export const recommendCountCharge = (opts: {
+  venueId: string; chargeId: string; decision: Exclude<CountDecision, 'pending'>; amount?: number; note: string;
+  profileId: string; name: string;
+}): Promise<ReplyResult> => reply({
+  venue_id: opts.venueId,
+  charge_id: opts.chargeId,
+  kind: 'recommend',
+  decision: opts.decision,
+  amount: Math.round(opts.amount ?? 0),
+  note: opts.note.trim().slice(0, 1000),
   by_profile: opts.profileId,
   by_name: opts.name.slice(0, 120),
   by_user: '',

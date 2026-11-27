@@ -21,7 +21,8 @@ import { handleInsightApprovals } from './insight-approvals.js';
 import { handleInsightFloats } from './insight-floats.js';
 import { handleInsightTeam } from './insight-team.js';
 import { handleHive } from './hive.js';
-import { raiseCountCharge, applyReply, sweepCountCharges, settlePutbacks } from './count-charges.js';
+import { raiseCountCharge, applyReply, sweepCountCharges, settlePutbacks, countChargesConfig } from './count-charges.js';
+import { sweepFollowUps } from './follow-ups.js';
 import {
   fromBarChecks, fromShopCounts, fromExpenses, worthSending, approvalSubject, approvalBody,
   countLines, countSubject, countBody, countPlace,
@@ -540,7 +541,7 @@ async function sweepApprovals({ db, DB_ID, settings, transport, from, log, error
     to: to.join(','),
     subject: approvalSubject(items),
     html: shell(
-      'Approvalsr approval',
+      'Waiting for your approval',
       approvalBody(items, (n) => money(n, settings)),
       brandColour(settings.primary_color),
     ),
@@ -1134,6 +1135,7 @@ export default async ({ req, res, log, error }) => {
     newId: () => ID.unique(),
     readableBy: (userId) => Permission.read(Role.user(userId)),
     money: (n) => money(n, settings),
+    decimals: settings.currency_decimals ?? 2,
     timeZone: settings.timezone || 'UTC',
     send: async ({ to, subject, title, body }) => {
       if (!transport) throw new Error('SMTP is not configured');
@@ -1388,6 +1390,12 @@ export default async ({ req, res, log, error }) => {
       ['overdue_counts', () => sweepOverdueCounts({ db, DB_ID, settings, transport, from, log, error })],
       // A group booking nobody has confirmed, a day before its first meal time.
       ['unconfirmed_bookings', () => remindUnconfirmed()],
+      // After count differences and approvals have had their say: what is still
+      // waiting on somebody, raised as a follow-up, and the morning email.
+      ['follow_ups', async () => sweepFollowUps(counts, {
+        settings,
+        remindHour: (await countChargesConfig(counts).catch(() => null))?.remindHour ?? 8,
+      })],
       ['daily', () => dailyDigest({ db, DB_ID, settings, transport, from, shell, row, money, log, error })],
       ['backup', () => nightlyBackup({ db, DB_ID, settings, transport, from, shell, log, error })],
       // Last, after the books have been swept: what is still wrong once everything that can be filled has been.
@@ -2207,7 +2215,7 @@ export default async ({ req, res, log, error }) => {
       if (!transport || !to.length) {
         log(`A group asked for a change to booking ${doc.booking_id}, but ${
           !transport ? 'no SMTP is configured' : asked.why}, so nobody was told by email. `
-          + 'It is on the Approvals page.');
+          + 'It is on To do.');
         return res.json({ sent: false });
       }
 

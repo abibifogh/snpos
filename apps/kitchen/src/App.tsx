@@ -1059,7 +1059,7 @@ export function App() {
           settings={settings}
           onFiled={({ review }) => {
             openClean.done();
-            setCleanNote(review ? 'Opening clean saved. What was missed is on Approvals for a manager.' : 'Opening clean saved.');
+            setCleanNote(review ? 'Opening clean saved. What was missed is on To do for a manager.' : 'Opening clean saved.');
           }}
         />
       )}
@@ -1073,7 +1073,7 @@ export function App() {
           onBack={() => setClosingUp(false)}
           onFiled={({ review }) => {
             setClosingUp(false);
-            setCleanNote(review ? 'Closing clean saved. What was missed is on Approvals for a manager.' : 'Closing clean saved. Good night.');
+            setCleanNote(review ? 'Closing clean saved. What was missed is on To do for a manager.' : 'Closing clean saved. Good night.');
           }}
         />
       )}

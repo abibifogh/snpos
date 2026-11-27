@@ -35,6 +35,7 @@ function world({ enabled = true } = {}) {
       { $id: 'p-regina', user_id: 'u-regina', display_name: 'Regina Test', email: 'regina@example.test', role: 'cashier', active: true, hive_staff_id: 'HV-0142' },
       { $id: 'p-chichi', user_id: 'u-chichi', display_name: 'Chichi Test', email: 'chichi@example.test', role: 'cashier', active: true },
       { $id: 'p-boss', user_id: 'u-boss', display_name: 'Boss Test', email: 'boss@example.test', role: 'manager', active: true },
+      { $id: 'p-ada', user_id: 'u-ada', display_name: 'Ada Test', email: 'ada@example.test', role: 'auditor', active: true },
     ],
     shifts: [
       { $id: 'mon', module: 'bar', status: 'closed', opened_by: 'u-chichi', opened_at: '2026-11-02T08:00:00.000Z', code: 'BAR-1' },
@@ -209,7 +210,7 @@ test('a decision is only taken from a manager the row proves it came from', asyn
   // Proven, but a bartender.
   const own = reply(w, { charge_id: c.$id, kind: 'decide', decision: 'waived', note: 'Fine', by_user: 'u-regina', $permissions: ['read("user:u-regina")'] });
   await applyReply(w.ctx, own, { now: NOW });
-  assert.match(own.error, /admin or a manager/);
+  assert.match(own.error, /an admin, a manager or an auditor/);
   assert.equal(c.decision, 'pending');
   assert.equal(writtenBy({ $permissions: ['read("user:u-boss")'] }, 'u-boss'), true);
 });
@@ -353,4 +354,51 @@ test('HIVE rows: decided only, matched only, part as decided', () => {
   const out = deductionsFor(rows, [{ $id: 'p1', hive_staff_id: 'H1' }]);
   assert.deepEqual(out.deductions.map((d) => [d.ref, d.amount]), [['POS-a', 1_000], ['POS-b', 400]]);
   assert.throws(() => staffOf({}), /staff/);
+});
+
+/* ------------------------------------------------------------ the auditor */
+
+test('an auditor decides alone up to the limit, and only recommends above it', async () => {
+  const { w, c } = await raised(); // GH₵56.00, under the GH₵100.00 that stands until one is set
+  const ada = { by_user: 'u-ada', $permissions: ['read("user:u-ada")'] };
+  await applyReply(w.ctx, reply(w, { charge_id: c.$id, kind: 'decide', decision: 'deduct', ...ada }), { now: NOW });
+  assert.equal(c.decision, 'deduct');
+  assert.equal(c.decided_name, 'Ada Test');
+
+  // A limit below the amount: a decision is refused, a recommendation is kept for a manager.
+  const { w: w2, c: c2 } = await raised();
+  w2.tables.feature_flags[0].config = JSON.stringify({ answer_hours: 24, remind_hour: 8, auditor_limit: 2_000 });
+  const tooBig = reply(w2, { charge_id: c2.$id, kind: 'decide', decision: 'waived', note: 'Delivery short', ...ada });
+  await applyReply(w2.ctx, tooBig, { now: NOW });
+  assert.match(tooBig.error, /above your limit of GH₵20\.00/);
+  assert.equal(c2.decision, 'pending');
+  const rec = reply(w2, { charge_id: c2.$id, kind: 'recommend', decision: 'part', amount: 3_000, note: 'The gin was a delivery short.', ...ada });
+  await applyReply(w2.ctx, rec, { now: NOW });
+  assert.equal(rec.error, '');
+  assert.equal(c2.decision, 'pending', 'a recommendation decides nothing');
+  assert.equal(c2.recommended_decision, 'part');
+  assert.equal(c2.recommended_amount, 3_000);
+  assert.equal(c2.recommended_name, 'Ada Test');
+  // A manager confirms it.
+  const boss = { by_user: 'u-boss', $permissions: ['read("user:u-boss")'] };
+  await applyReply(w2.ctx, reply(w2, { charge_id: c2.$id, kind: 'decide', decision: 'part', amount: 3_000, note: 'As Ada says.', ...boss }), { now: NOW });
+  assert.equal(c2.decision, 'part');
+});
+
+test('nobody decides a difference on their own account, a manager included', async () => {
+  const w = world();
+  // The manager ran the shift this time.
+  w.tables.shifts.find((s) => s.$id === 'tue').opened_by = 'u-boss';
+  await raiseCountCharge(w.ctx, file(w, { lines: [['club', -1]] }), { now: NOW });
+  const c = w.tables.staff_charges[0];
+  assert.equal(c.person_id, 'p-boss');
+  const own = reply(w, { charge_id: c.$id, kind: 'decide', decision: 'waived', note: 'Mine, fine', by_user: 'u-boss', $permissions: ['read("user:u-boss")'] });
+  await applyReply(w.ctx, own, { now: NOW });
+  assert.match(own.error, /your own account/);
+  assert.equal(c.decision, 'pending');
+});
+
+test('the auditor is told about a new difference and in the morning reminder', async () => {
+  const { w } = await raised();
+  assert.ok(w.outbox.some((m) => m.to.includes('ada@example.test')));
 });

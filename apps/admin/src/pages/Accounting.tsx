@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Button, Card, Empty, Field, Input, Modal, Notice, Select, Spinner, Textarea, useToast, InfoTip, ViewTabs } from '@snpos/ui';
 import { listAll, humanError, saveDropping } from '../lib';
 import {
@@ -74,7 +75,7 @@ const TAB_LABELS: Record<Tab, string> = {
 };
 
 /** Where each set of parts lives, so an old link to any of them lands on its page. */
-const PAGE_PATH: Record<BookPage, string> = { jobs: '/accounting', reports: '/reports', accountant: '/accountant' };
+const PAGE_PATH: Record<BookPage, string> = { jobs: '/accounting', reports: '/reports', accountant: '/accounting' };
 
 /**
  * The books, as one of three pages over the same grants.
@@ -84,7 +85,7 @@ const PAGE_PATH: Record<BookPage, string> = { jobs: '/accounting', reports: '/re
  * (passed one at a time as `only`). It was one page with three rows of
  * buttons, seventeen in all, and the weekly jobs were lost among them.
  */
-export function AccountingPage({ set = 'jobs', only }: { set?: BookPage; only?: Tab }) {
+export function AccountingPage({ set = 'jobs', only, switcher }: { set?: BookPage; only?: Tab; switcher?: ReactNode }) {
   const { settings, user, profile } = useSession();
   const toast = useToast();
   /**
@@ -186,7 +187,7 @@ export function AccountingPage({ set = 'jobs', only }: { set?: BookPage; only?: 
   const heading = (
     <>
       <h1>
-        {set === 'accountant' ? 'Accountant tools' : set === 'reports' ? <HubTitle>{TAB_LABELS[tab]}</HubTitle> : 'Accounting'}
+        {set === 'accountant' && !switcher ? 'Accountant tools' : set === 'reports' ? <HubTitle>{TAB_LABELS[tab]}</HubTitle> : 'Accounting'}
         <InfoTip>
           {set === 'accountant'
             ? 'The parts of the books only an accountant opens: entries by hand, every line on any account, the chart of accounts, and closing a year.'
@@ -196,6 +197,7 @@ export function AccountingPage({ set = 'jobs', only }: { set?: BookPage; only?: 
         </InfoTip>
       </h1>
       <HubTabs />
+      {switcher}
     </>
   );
 
@@ -1870,7 +1872,7 @@ function Locks({
     if (item.goto === 'settle' || item.goto === 'journal') { onGoto(item.goto); return; }
     if (item.goto === 'shifts') navigate('/shifts');
     if (item.goto === 'payouts') navigate('/consignors?tab=payouts');
-    if (item.goto === 'counts') navigate('/count?side=bar');
+    if (item.goto === 'counts') navigate('/counts?tab=count&side=bar');
     // Held counts, spends and shelf changes are all decided on the one page.
     if (item.goto === 'waiting') navigate(item.key === 'spends' ? '/waiting?show=spend' : item.key === 'shelf' ? '/waiting?show=shelf' : '/waiting?show=count');
   };

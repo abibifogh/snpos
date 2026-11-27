@@ -67,17 +67,17 @@ const LABELS: Record<string, { title: string; blurb: string; to?: string; toLabe
       'A bar count takes effect the moment it is saved: no approval, the shelf moves to what was counted. Anything '
       + 'short, less anything over on the same count, at selling price, goes on the account of whoever answers for it '
       + '(the closing shift, or for an opening count the shift before) as a deduction that is not final. They answer on '
-      + 'the till: take it from my pay, I will put it back at my next shift, or I want to explain. A manager decides '
-      + 'under Approvals; accepted or unanswered is deducted at the deadline. Final deductions go to HIVE from Staff owing. '
-      + 'Shop and store-room counts are not affected.',
-    to: '/waiting',
-    toLabel: 'Approvals',
+      + 'the till: take it from my pay, I will put it back at my next shift, or I want to explain. A manager or the '
+      + 'auditor decides under Checks › Differences; accepted or unanswered is deducted at the deadline. Final '
+      + 'deductions go to HIVE from Differences › Deductions & HIVE. Shop and store-room counts are not affected.',
+    to: '/differences',
+    toLabel: 'Checks › Differences',
   },
   stock_requests: {
     title: 'Kitchen and bar can ask for stock',
     blurb:
       'A Need stock button on the kitchen screen and the bar\'s till. It opens on what is running low, already set to '
-      + 'bring each item back to full, and sends the list to whoever orders stock. They make the orders from Approvals, '
+      + 'bring each item back to full, and sends the list to whoever orders stock. They make the orders from To do, '
       + 'or send it back with a reason. Nothing is bought from the pass, and cooks and bartenders never see prices.',
   },
   /*
@@ -134,7 +134,7 @@ const NUMBERS: Record<string, {
     {
       option: 'approve_over',
       label: 'Orders over this amount need approval',
-      hint: 'An order worth more than this waits on Approvals before it can be sent. Orders an admin makes go straight out. Leave at 0 for no approval.',
+      hint: 'An order worth more than this waits on To do before it can be sent. Orders an admin makes go straight out. Leave at 0 for no approval.',
       fallback: 100000,
       money: true,
     },
@@ -174,10 +174,18 @@ const NUMBERS: Record<string, {
     },
     {
       option: 'remind_hour',
-      label: 'Morning reminder to managers, at this hour',
-      hint: 'Once a day, the managers are emailed whatever count differences wait for them. 0 to 23, venue time.',
+      label: 'Morning reminder, at this hour',
+      hint: 'Once a day, the managers and the auditor are emailed whatever count differences and follow-ups are due. 0 to 23, venue time.',
       fallback: 8,
       min: 0,
+    },
+    {
+      option: 'auditor_limit',
+      label: 'The auditor decides alone up to',
+      hint: 'A difference up to this amount the auditor decides on their own. Above it they recommend, and an admin or a manager confirms. 0 sends every one to a manager.',
+      fallback: 10000,
+      min: 0,
+      money: true,
     },
   ],
   busy_mode: [
@@ -234,7 +242,7 @@ const SWITCHES: Record<string, { option: string; label: string; hint: string; fa
     {
       option: 'email_orderers',
       label: 'Email whoever orders stock when a request arrives',
-      hint: 'Once per request, to the people who may make orders. Approvals shows it either way.',
+      hint: 'Once per request, to the people who may make orders. To do shows it either way.',
       fallback: true,
     },
   ],

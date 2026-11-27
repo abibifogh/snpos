@@ -81,7 +81,7 @@ export function CleaningPage() {
           <InfoTip>
             What the kitchen and the bar check before they open and after they close, and a longer deep clean
             one day a week. Each tick is recorded with who and when. A list started without its required checks,
-            or with a fridge outside its safe range, goes to Approvals.
+            or with a fridge outside its safe range, goes on To do.
           </InfoTip>
         </h1>
         {view === 'routine' && (
@@ -129,8 +129,8 @@ export function CleaningPage() {
             <Card title="If the list isn&rsquo;t finished">
               <div className="stack" style={{ gap: '0.5rem' }}>
                 {([
-                  ['hold', 'Hold service until it is', 'Staff can still carry on, but they give a reason, and it goes to Approvals.'],
-                  ['show', 'Show it, but don’t hold anything', 'Checks left undone go to Approvals for a manager to see.'],
+                  ['hold', 'Hold service until it is', 'Staff can still carry on, but they give a reason, and it goes on To do.'],
+                  ['show', 'Show it, but don’t hold anything', 'Checks left undone go on To do for a manager to see.'],
                 ] as ['hold' | 'show', string, string][]).map(([k, t, d]) => (
                   <button key={k} type="button" className={`choice${r.hold === k ? ' on' : ''}`} onClick={() => set({ hold: k })}>
                     <span style={{ textAlign: 'left' }}>
@@ -288,7 +288,7 @@ function CleanLogView({ side }: { side: CleanSide }) {
   const note = (l: CleanLog) => [
     l.required_left > 0 ? `${l.required_left} required not done` : '',
     l.skip_reason ? `Reason: ${l.skip_reason}` : '',
-    l.review === 'seen' ? 'Seen by a manager' : l.review === 'pending' ? 'On Approvals' : '',
+    l.review === 'seen' ? 'Seen by a manager' : l.review === 'pending' ? 'On To do' : '',
   ].filter(Boolean).join(' · ');
   const allDone = mine.filter((l) => l.required_left === 0 && l.out_of_range === 0).length;
 

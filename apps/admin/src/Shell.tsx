@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Button, SchemaBar, StaleBar, Segmented, THEME_MODES, themeMode, setThemeMode } from '@snpos/ui';
-import { navFor, wordsFor, sidebarSides, SIDE_NAMES, loadWaiting, pendingGroupBookings, openBookingChanges, PRODUCT_NAME, pageTitle } from '@snpos/core';
+import { Button, Notice, SchemaBar, StaleBar, Segmented, THEME_MODES, themeMode, setThemeMode } from '@snpos/ui';
+import {
+  navFor, wordsFor, sidebarSides, SIDE_NAMES, loadWaiting, pendingGroupBookings, openBookingChanges, PRODUCT_NAME, pageTitle,
+  loadFollowUps, isMine, dayOf,
+} from '@snpos/core';
 import type { Module } from '@snpos/core';
 import { useSession } from './session';
 
 /* One drawing per icon on the rail, on a 24-unit grid, stroked in the text colour. */
 const ICONS: Record<string, ReactNode> = {
   Today: <><path d="M4 11.5 12 5l8 6.5V20H4z" /><path d="M9.5 20v-5h5v5" /></>,
-  Approvals: <><circle cx="12" cy="12" r="8.5" /><path d="m8.3 12.3 2.5 2.5 5-5.3" /></>,
-  Sell: <><path d="M4 8.5h16l-1.4 10.2a2 2 0 0 1-2 1.8H7.4a2 2 0 0 1-2-1.8z" /><path d="M8.8 8.5V6.6a3.2 3.2 0 0 1 6.4 0v1.9" /></>,
+  Sales: <><path d="M4 8.5h16l-1.4 10.2a2 2 0 0 1-2 1.8H7.4a2 2 0 0 1-2-1.8z" /><path d="M8.8 8.5V6.6a3.2 3.2 0 0 1 6.4 0v1.9" /></>,
+  // A clipboard with a tick: the counts, the differences, the cleaning log.
+  Checks: <><rect x="5" y="4.5" width="14" height="16" rx="2.5" /><path d="M9 4.5V3.5h6v1M8.7 13l2.3 2.3 4.4-4.6" /></>,
   Stock: <><path d="M3.5 8 12 3.8 20.5 8v8L12 20.2 3.5 16z" /><path d="M3.5 8 12 12.2 20.5 8M12 12.2v8" /></>,
   Money: <><rect x="3" y="6" width="18" height="13" rx="3" /><path d="M3 10h18M16 14.5h2" /></>,
   Books: <path d="M4 20V13M9.3 20V5M14.7 20v-8M20 20V9" />,
@@ -21,6 +25,9 @@ const ICONS: Record<string, ReactNode> = {
 const Icon = ({ name }: { name: string }) => (
   <svg className="nav-ico" viewBox="0 0 24 24" aria-hidden="true">{ICONS[name] ?? ICONS.More}</svg>
 );
+
+/** The pages an auditor reads but cannot change. */
+const READ_ONLY_FOR_AUDITORS = ['/shifts', '/orders', '/stock', '/cleaning'];
 
 /** How many icons fit along the bottom of a phone before the rest go under More. */
 const BAR_SLOTS = 4;
@@ -63,7 +70,8 @@ export function Shell({ children }: { children: ReactNode }) {
   }));
 
   /**
-   * How many things are waiting for a decision, shown on the Approvals icon.
+   * How many things are waiting for a decision, and follow-ups due for this
+   * person, shown on the icon that holds To do.
    *
    * Counted by the same reader the page itself uses, plus the group bookings
    * and booking changes it lists above, so the badge and the page always
@@ -72,16 +80,22 @@ export function Shell({ children }: { children: ReactNode }) {
    * somebody who can open the page; a failed read shows nothing rather than a
    * number that is not true.
    */
-  const canWait = groups.some((g) => g.links.some((l) => l.to === '/waiting'));
+  const canWait = groups.some((g) => g.links.some((l) => l.to === '/todo'));
   const [waiting, setWaiting] = useState(0);
   useEffect(() => {
     if (!canWait) { setWaiting(0); return undefined; }
     let live = true;
+    const auditor = profile?.role === 'auditor';
+    const today = dayOf(new Date());
     const count = () => {
       void Promise.all([
-        loadWaiting('main', () => '').then((w) => w.items.length),
-        pendingGroupBookings().then((b) => b.length).catch(() => 0),
-        openBookingChanges().then((c) => c.length).catch(() => 0),
+        // An auditor decides count differences, not the approvals queue.
+        auditor ? Promise.resolve(0) : loadWaiting('main', () => '').then((w) => w.items.length).catch(() => 0),
+        auditor ? Promise.resolve(0) : pendingGroupBookings().then((b) => b.length).catch(() => 0),
+        auditor ? Promise.resolve(0) : openBookingChanges().then((c) => c.length).catch(() => 0),
+        loadFollowUps('main')
+          .then((rows) => rows.filter((f) => f.status === 'open' && !!f.due_on && f.due_on <= today && isMine(f, profile)).length)
+          .catch(() => 0),
       ]).then((ns) => { if (live) setWaiting(ns.reduce((a, n) => a + n, 0)); })
         .catch(() => { if (live) setWaiting(0); });
     };
@@ -89,7 +103,7 @@ export function Shell({ children }: { children: ReactNode }) {
     const timer = window.setInterval(count, 60_000);
     return () => { live = false; window.clearInterval(timer); };
   }, [canWait, path]);
-  const badgeFor = (g: { links: { to: string }[] }) => (g.links.some((l) => l.to === '/waiting') && waiting > 0
+  const badgeFor = (g: { links: { to: string }[] }) => (g.links.some((l) => l.to === '/todo') && waiting > 0
     ? <span className="nav-badge" aria-label={`${waiting} waiting`}>{waiting > 99 ? '99+' : waiting}</span>
     : null);
 
@@ -210,7 +224,7 @@ export function Shell({ children }: { children: ReactNode }) {
                 {hub.links.map((l) => (
                   <NavLink key={l.to} to={l.to} end={l.end} className="chip">
                     {l.label}
-                    {l.to === '/waiting' && waiting > 0 && <span className="n">{waiting}</span>}
+                    {l.to === '/todo' && waiting > 0 && <span className="n">{waiting}</span>}
                   </NavLink>
                 ))}
               </div>
@@ -227,7 +241,13 @@ export function Shell({ children }: { children: ReactNode }) {
             )}
           </div>
         )}
-        <div className="page">{children}</div>
+        <div className="page">
+          {/* An auditor reads these pages to trace a difference; the database refuses their changes, so say so first. */}
+          {profile?.role === 'auditor' && READ_ONLY_FOR_AUDITORS.some((p) => path === p || path.startsWith(`${p}/`)) && (
+            <div className="readonly-bar"><Notice tone="info">Read only. As the auditor you can look here, not change anything.</Notice></div>
+          )}
+          {children}
+        </div>
       </div>
 
       {/* A phone: the rail becomes a bar along the bottom, within reach of a thumb. */}

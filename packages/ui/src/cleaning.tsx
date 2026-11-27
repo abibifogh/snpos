@@ -160,11 +160,11 @@ export function CleanChecklist({
               <Button variant="ghost" onClick={() => { setSkipping(true); setReason(''); }}>
                 {kind === 'open' ? 'Start without finishing…' : 'Close without finishing…'}
               </Button>
-              <p className="small dim" style={{ textAlign: 'center', margin: 0 }}>This asks for a reason, and a manager sees it on Approvals.</p>
+              <p className="small dim" style={{ textAlign: 'center', margin: 0 }}>This asks for a reason, and a manager sees it on To do.</p>
             </>
           )}
           {!held && p.requiredLeft > 0 && (
-            <p className="small dim" style={{ textAlign: 'center', margin: 0 }}>Checks left undone go to Approvals for a manager to see.</p>
+            <p className="small dim" style={{ textAlign: 'center', margin: 0 }}>Checks left undone go on To do for a manager to see.</p>
           )}
           {onBack && <Button variant="ghost" onClick={onBack}>Back</Button>}
         </aside>
@@ -243,7 +243,7 @@ export function CleanChecklist({
             <div className="card-head"><h2>{kind === 'open' ? 'Start without finishing?' : 'Close without finishing?'}</h2></div>
             <div className="modal-body" style={{ paddingBottom: '1.25rem' }}>
               <p className="small dim" style={{ marginTop: 0 }}>
-                {p.requiredLeft} required check{p.requiredLeft === 1 ? ' is' : 's are'} not done. Say why. A manager sees it on Approvals.
+                {p.requiredLeft} required check{p.requiredLeft === 1 ? ' is' : 's are'} not done. Say why. A manager sees it on To do.
               </p>
               <div className="chips">
                 {REASONS.map((w) => (

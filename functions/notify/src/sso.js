@@ -35,7 +35,7 @@
  */
 
 /** The teams that make somebody staff here. Must match STAFF_TEAMS in core/auth. */
-export const STAFF_TEAMS = ['cooks', 'waiters', 'cashiers', 'managers', 'admins'];
+export const STAFF_TEAMS = ['cooks', 'waiters', 'cashiers', 'managers', 'admins', 'auditors'];
 
 export function ssoConfig(env) {
   return {

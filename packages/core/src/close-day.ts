@@ -66,7 +66,7 @@ export function closeDayChecklist(f: CloseDayFacts, money: (n: number) => string
       : { key: 'shifts', label: 'Shifts closed', state: 'done', detail: `${closed.map((s) => s.code).join(', ')} closed.`, to: '/shifts' });
 
   rows.push(f.pendingCountLines > 0
-    ? { key: 'counts', label: 'Counts agreed', state: 'todo', detail: `${f.pendingCountLines} count difference${f.pendingCountLines === 1 ? '' : 's'} still to decide.`, to: '/waiting?show=count', action: 'Approvals' }
+    ? { key: 'counts', label: 'Counts agreed', state: 'todo', detail: `${f.pendingCountLines} count difference${f.pendingCountLines === 1 ? '' : 's'} still to decide.`, to: '/waiting?show=count', action: 'To do' }
     : { key: 'counts', label: 'Counts agreed', state: f.shifts.length ? 'done' : 'none', detail: f.shifts.length ? 'Every count difference is decided.' : 'Nothing was counted.', to: '/waiting?show=count' });
 
   const noPlan = closed.filter((s) => typeof s.cash_kept !== 'number');
@@ -84,7 +84,7 @@ export function closeDayChecklist(f: CloseDayFacts, money: (n: number) => string
     : { key: 'settle', label: 'MoMo and card settled', state: 'done', detail: 'Everything taken by MoMo and card is matched to the bank.', to: '/accounting?tab=settle' });
 
   rows.push(f.pendingSpends > 0
-    ? { key: 'spends', label: 'Spends agreed', state: 'todo', detail: `${f.pendingSpends} spend${f.pendingSpends === 1 ? '' : 's'}, ${money(f.pendingSpendTotal)}, still to look at.`, to: '/waiting?show=spend', action: 'Approvals' }
+    ? { key: 'spends', label: 'Spends agreed', state: 'todo', detail: `${f.pendingSpends} spend${f.pendingSpends === 1 ? '' : 's'}, ${money(f.pendingSpendTotal)}, still to look at.`, to: '/waiting?show=spend', action: 'To do' }
     : { key: 'spends', label: 'Spends agreed', state: f.shifts.length ? 'done' : 'none', detail: f.shifts.length ? 'Every spend from the drawers is agreed.' : 'Nothing was spent from a drawer.', to: '/waiting?show=spend' });
 
   const due = f.boxes.filter((b) => !b.lastCounted || f.now - new Date(b.lastCounted).getTime() > BOX_DUE_MS);

@@ -68,6 +68,16 @@ export interface CountCharge extends StaffCharge {
   putback_shift_id?: string | null;
   reminded_on?: string | null;
   reopened_by?: string | null;
+  /**
+   * What an auditor recommends for a difference above their limit, for an
+   * admin or a manager to confirm. Nothing is decided by it. See auditor.ts.
+   */
+  recommended_decision?: Exclude<CountDecision, 'pending'> | null;
+  recommended_amount?: number | null;
+  recommended_note?: string | null;
+  recommended_by?: string | null;
+  recommended_name?: string | null;
+  recommended_at?: string | null;
 }
 
 /** A charge raised by a count on its own, rather than one an admin made. */

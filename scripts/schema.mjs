@@ -10,6 +10,9 @@ export const TEAMS = [
   { id: 'cashiers', name: 'Cashiers' },
   { id: 'managers', name: 'Managers' },
   { id: 'admins', name: 'Admins' },
+  // Counts and differences: reads what they check, writes only notes,
+  // follow-ups and decisions within their limit. See core/auditor.ts.
+  { id: 'auditors', name: 'Auditors' },
 ];
 
 export const BUCKETS = [
@@ -42,6 +45,7 @@ export const BUCKETS = [
 const ALL_STAFF = ['team:cooks', 'team:waiters', 'team:cashiers', 'team:managers', 'team:admins'];
 const MGMT = ['team:managers', 'team:admins'];
 const ADMIN = ['team:admins'];
+const AUDIT = 'team:auditors';
 
 /**
  * perms.read / .create / .update / .delete, arrays of Appwrite role strings.
@@ -2507,6 +2511,14 @@ export const COLLECTIONS = [
       // A manager took a decision back: from then on it waits for a manager,
       // never for the clock.
       ['reopened_by', 's', 64, false],
+      // An auditor's recommendation above their limit, for an admin or a
+      // manager to confirm. Decides nothing. Written only by the function.
+      ['recommended_decision', 'e', ['deduct', 'part', 'waived', 'putback'], false],
+      ['recommended_amount', 'i', null, false],
+      ['recommended_note', 's', 500, false],
+      ['recommended_by', 's', 64, false],
+      ['recommended_name', 's', 120, false],
+      ['recommended_at', 'd', null, false],
     ],
     indexes: [
       ['decision', 'key', ['decision']],
@@ -2567,11 +2579,12 @@ export const COLLECTIONS = [
      */
     id: 'charge_replies',
     name: 'Count difference replies',
-    perms: { read: MGMT, create: ALL_STAFF, update: [], delete: ADMIN },
+    perms: { read: MGMT, create: [...ALL_STAFF, AUDIT], update: [], delete: ADMIN },
     attributes: [
       ['venue_id', 's', 64, true],
       ['charge_id', 's', 64, true],
-      ['kind', 'e', ['answer', 'decide', 'undo'], true, 'answer'],
+      // recommend: an auditor's suggestion above their limit, for a manager to confirm.
+      ['kind', 'e', ['answer', 'decide', 'undo', 'recommend'], true, 'answer'],
       ['answer', 'e', ['accept', 'putback', 'explain'], false],
       ['decision', 'e', ['deduct', 'part', 'waived', 'putback'], false],
       // For a part deduction: how much is taken.
@@ -2586,6 +2599,55 @@ export const COLLECTIONS = [
       ['error', 's', 300, false],
     ],
     indexes: [['charge', 'key', ['charge_id']]],
+  },
+  {
+    /**
+     * Follow-ups: what somebody has to chase, with the day it is due, and
+     * notes kept on a count difference.
+     *
+     * Most are raised by the function's hourly sweep (a difference nobody
+     * has reviewed, a shift closed with no count, a put-back not returned,
+     * deductions not yet sent to HIVE) and closed by it when the thing is
+     * done; those carry an auto_key so the sweep raises each once. Anybody on
+     * To do can add their own. A note is a follow-up that is done the moment
+     * it is written: kept, never edited, never deleted from the screen.
+     * See core/follow-ups.ts and functions/notify/src/follow-ups.js.
+     */
+    id: 'follow_ups',
+    name: 'Follow-ups',
+    perms: { read: [...MGMT, AUDIT], create: [...MGMT, AUDIT], update: [...MGMT, AUDIT], delete: ADMIN },
+    attributes: [
+      ['venue_id', 's', 64, true],
+      ['kind', 'e', ['task', 'note'], true, 'task'],
+      ['title', 's', 300, true],
+      ['note', 's', 2000, false],
+      // What it is about: a count difference, a shift, a count.
+      ['ref_kind', 'e', ['charge', 'shift', 'count', 'month', 'other'], false],
+      ['ref_id', 's', 64, false],
+      ['ref_label', 's', 160, false],
+      // Whose it is: a role, or one person.
+      ['for_role', 'e', ['auditor', 'manager', 'admin', 'person'], false],
+      ['for_id', 's', 64, false],
+      ['for_name', 's', 120, false],
+      // The day it is due, YYYY-MM-DD in the venue's time.
+      ['due_on', 's', 10, false],
+      ['status', 'e', ['open', 'done'], true, 'open'],
+      ['done_at', 'd', null, false],
+      ['done_by', 's', 64, false],
+      ['done_name', 's', 120, false],
+      ['done_note', 's', 500, false],
+      ['created_by', 's', 64, false],
+      ['created_name', 's', 120, false],
+      // Raised by the sweep: what it is, so it is raised once and closed when done.
+      ['auto_key', 's', 120, false],
+      // The day the morning email last named it, so it is named once a day.
+      ['reminded_on', 's', 10, false],
+    ],
+    indexes: [
+      ['status_due', 'key', ['status', 'due_on']],
+      ['ref', 'key', ['ref_kind', 'ref_id']],
+      ['auto', 'key', ['auto_key']],
+    ],
   },
   {
     /**
@@ -3393,7 +3455,7 @@ export const COLLECTIONS = [
       ['user_id', 's', 64, false],
       ['email', 's', 160, false],
       ['display_name', 's', 120, true],
-      ['role', 'e', ['cook', 'waiter', 'cashier', 'manager', 'admin'], true],
+      ['role', 'e', ['cook', 'waiter', 'cashier', 'manager', 'admin', 'auditor'], true],
       ['pin_hash', 's', 255, false],
       ['pin_set_at', 'd', null, false],
       ['active', 'b', null, true, true],
@@ -4466,6 +4528,29 @@ export const COLLECTIONS = [
     ],
   },
 ];
+
+/**
+ * What an auditor reads: the counts, the differences and what they are
+ * charged on, and enough of shifts, orders and stock to trace a difference to
+ * what was sold and when. Read only. Their writes are the follow-ups above,
+ * a reply on a difference (checked by the function), and the audit log.
+ */
+export const AUDITOR_READS = [
+  'shifts', 'shift_stock_checks', 'stock_counts', 'stock_count_lines', 'count_drafts', 'approval_notices',
+  'staff_charges', 'staff_charge_settlements', 'charge_replies', 'hive_staff', 'staff_profiles',
+  'orders', 'order_items', 'payments', 'payment_methods', 'cash_moves', 'cash_handovers', 'shift_expenses',
+  'ingredients', 'ingredient_categories', 'recipes', 'stock_levels', 'stock_locations', 'stock_movements',
+  'product_moves', 'waste_log', 'clean_logs', 'clean_routines', 'consignors', 'pack_kinds', 'suppliers',
+];
+for (const id of AUDITOR_READS) {
+  const col = COLLECTIONS.find((c) => c.id === id);
+  if (!col) throw new Error(`AUDITOR_READS references unknown collection "${id}"`);
+  if (!col.perms.read.includes('any') && !col.perms.read.includes(AUDIT)) col.perms.read = [...col.perms.read, AUDIT];
+}
+{
+  const log = COLLECTIONS.find((c) => c.id === 'audit_log');
+  log.perms.create = [...log.perms.create, AUDIT];
+}
 
 /**
  * Guard the MariaDB row-size limit.

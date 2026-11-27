@@ -5,7 +5,7 @@ import {
   modulesOf, modulesForStaff, parseAccess, canOpen, inTrade, sectionsFor,
   canEditCatalogue, selfOrderModule, ADMIN_SECTIONS, DEFAULT_ACCESS, areasOf, sidesOf, legacySide,
   navFor, catalogueSides, sidebarSides, shopCountsOn, unavailableWords,
-  canRepriceLine, MODULE_LABELS, bookAreas, opensPage, BOOK_PAGES,
+  canRepriceLine, MODULE_LABELS, bookAreas, opensPage, BOOK_PAGES, GRANTABLE_ROLES,
 } from '../access.ts';
 import type { Settings, StaffProfile } from '../types.ts';
 import type { Module } from '../access.ts';
@@ -132,7 +132,7 @@ test('a page that is switched off says so rather than blaming the account', () =
   assert.match(words, /Settings/);
   // And it says where a count already submitted went, because it did not go
   // anywhere: it is still waiting, holding its pieces frozen.
-  assert.match(words, /Approvals/);
+  assert.match(words, /To do/);
 
   const kitchenOnly = settings({ kitchen_enabled: true, craft_enabled: false });
   assert.match(unavailableWords('consignors', staff({ role: 'admin' }), kitchenOnly), /not switched on/);
@@ -505,41 +505,45 @@ test('the sidebar is grouped by job, and the per-side pages are one link each', 
   const both = settings({ kitchen_enabled: true, craft_enabled: true, bar_enabled: true });
   const nav = navFor(staff({ role: 'admin' }), both);
   // One group per icon on the rail.
-  assert.deepEqual(nav.map((g) => g.group), ['Today', 'Approvals', 'Sell', 'Stock', 'Money', 'Books', 'Setup']);
+  assert.deepEqual(nav.map((g) => g.group), ['Today', 'Sales', 'Stock', 'Checks', 'Money', 'Books', 'Setup']);
   const labels = (g: string) => nav.find((x) => x.group === g)!.links.map((l) => l.label);
-  // Close the day is a tab of Today.
-  assert.deepEqual(labels('Today'), ['Today']);
-  assert.deepEqual(labels('Approvals'), ['Approvals']);
-  const sell = nav.find((g) => g.group === 'Sell')!;
+  // Close the day is a tab of Today; what Approvals was is To do, beside it.
+  assert.deepEqual(labels('Today'), ['Today', 'To do']);
+  assert.equal(nav[0].links[1].to, '/todo');
+  const sell = nav.find((g) => g.group === 'Sales')!;
   assert.equal(sell.links[0].label, 'Orders');
-  // Categories and Options are tabs of Products.
-  assert.ok(!sell.links.some((l) => l.label === 'Categories'));
+  // Categories, Options and Discounts are tabs of Products.
+  assert.ok(!sell.links.some((l) => l.label === 'Categories' || l.label === 'Discounts'));
   assert.deepEqual(sell.links.find((l) => l.label === 'Products')?.keys, ['menu_items', 'bar_items', 'shop_items']);
   assert.equal(sell.links.find((l) => l.label === 'Products')?.to, '/catalogue/items');
-  assert.ok(['Bookings', 'Discounts'].every((l) => labels('Sell').includes(l)));
+  assert.ok(labels('Sales').includes('Bookings'));
   const stock = nav.find((g) => g.group === 'Stock')!;
   assert.deepEqual(stock.links.find((l) => l.label === 'Stock')?.keys, ['stock', 'bar_stock', 'shop_items']);
   // Receiving is the Stock page's own main button, not a link of its own.
   assert.ok(!stock.links.some((l) => l.label === 'Receive stock'));
   assert.ok(stock.links.some((l) => l.label === 'Makers'));
-  // Count, one link for every side: the bar's sheet, the kitchen's, the shop's shelf.
-  assert.deepEqual(stock.links.find((l) => l.label === 'Count')?.keys, ['stock', 'bar_counts', 'stocktake']);
   // Places and Waste are tabs of Stock, not links of their own.
   assert.ok(!stock.links.some((l) => ['Where stock sits', 'Places & moves', 'Places', 'Waste'].includes(l.label)));
-  assert.deepEqual(stock.links.map((l) => l.label), ['Stock', 'Purchase orders', 'Count', 'Makers']);
-  // Staff owing is a tab of Shifts.
+  assert.deepEqual(stock.links.map((l) => l.label), ['Stock', 'Purchase orders', 'Makers']);
+  // Checks: every count, what they found, and the cleaning log.
+  assert.deepEqual(labels('Checks'), ['Counts', 'Differences', 'Cleaning']);
+  // Counts, one link for every side: the bar's sheet, the kitchen's, the shop's shelf.
+  const checks = nav.find((g) => g.group === 'Checks')!;
+  assert.deepEqual(checks.links.find((l) => l.label === 'Counts')?.keys, ['stock', 'bar_counts', 'stocktake']);
+  assert.equal(checks.links.find((l) => l.label === 'Counts')?.to, '/counts');
+  // Staff owing is a tab of Differences.
   assert.deepEqual(labels('Money'), ['Shifts', 'Money out', 'Petty cash']);
-  // The books: every report, the weekly jobs, and the accountant's tools.
-  assert.deepEqual(labels('Books'), ['Reports', 'Accounting', 'Accountant tools']);
-  assert.equal(nav.flatMap((g) => g.links).find((l) => l.label === 'Accountant tools')?.to, '/accountant');
+  // The books: every report, and Accounting with the accountant's tools inside it.
+  assert.deepEqual(labels('Books'), ['Reports', 'Accounting']);
   // Tables and stations are tabs of Venues; features, health and erasing of Settings.
-  assert.deepEqual(labels('Setup'), ['Staff', 'Venues', 'Cleaning', 'Settings']);
+  assert.deepEqual(labels('Setup'), ['Staff', 'Venues', 'Settings']);
   const all = nav.flatMap((g) => g.links.map((l) => l.label));
   for (const gone of ['Close the day', 'Categories', 'Options', 'Tabs', 'Goods received', 'Payouts', 'Staff owing',
-    'Waste', 'Tables & QR', 'Stations', 'Features', 'Health', 'Erase records', 'Spends']) {
+    'Waste', 'Tables & QR', 'Stations', 'Features', 'Health', 'Erase records', 'Spends', 'Approvals', 'Discounts',
+    'Accountant tools', 'Count']) {
     assert.ok(!all.includes(gone), gone);
   }
-  assert.equal(all.length, 21);
+  assert.equal(all.length, 20);
 });
 
 test('a page reached from its host is in the sidebar when the host is not', () => {
@@ -607,7 +611,7 @@ test('narrowed to one side, the sidebar keeps that side and everything with no s
   const both = settings({ kitchen_enabled: true, craft_enabled: true, bar_enabled: true });
   const nav = navFor(staff({ role: 'admin' }), both, 'bar');
   const labels = nav.flatMap((g) => g.links.map((l) => l.label));
-  assert.equal(nav.flatMap((g) => g.links).find((l) => l.label === 'Count')?.to, '/count?side=bar');
+  assert.equal(nav.flatMap((g) => g.links).find((l) => l.label === 'Counts')?.to, '/counts?side=bar');
   assert.ok(!labels.includes('Waste'));
   assert.ok(labels.includes('Shifts'), 'shifts have no side');
   // The merged links point at the chosen side.
@@ -646,4 +650,32 @@ test('only an owner views as someone else, and never as themselves', async () =>
   const both = settings({ kitchen_enabled: true, craft_enabled: true, bar_enabled: true });
   const hers = navFor(ama, both).flatMap((g) => g.links.map((l) => l.label));
   assert.ok(!hers.includes('Accounting'), 'a cashier has no books by default');
+});
+
+/* ----------------------------------------------------------- the auditor */
+
+test('an auditor starts on To do, the counts and the differences, and reads shifts, orders and stock', () => {
+  const both = settings({ kitchen_enabled: true, craft_enabled: true, bar_enabled: true });
+  const auditor = staff({ role: 'auditor' });
+  const nav = navFor(auditor, both);
+  const labels = (g: string) => nav.find((x) => x.group === g)?.links.map((l) => l.label) ?? [];
+  assert.deepEqual(labels('Today'), ['To do']);
+  assert.deepEqual(labels('Checks'), ['Counts', 'Differences', 'Cleaning']);
+  assert.ok(labels('Money').includes('Shifts'));
+  assert.ok(labels('Sales').includes('Orders'));
+  assert.ok(labels('Stock').includes('Stock'));
+  // Nothing that changes money, prices or the set-up.
+  const all = nav.flatMap((g) => g.links.map((l) => l.label));
+  for (const none of ['Products', 'Money out', 'Petty cash', 'Accounting', 'Reports', 'Staff', 'Settings', 'Purchase orders']) {
+    assert.ok(!all.includes(none), none);
+  }
+  assert.ok(GRANTABLE_ROLES.includes('auditor'), 'an owner can change what an auditor sees');
+});
+
+test('Differences is new and reaches a manager whose permissions were saved before it existed', () => {
+  const saved = settings({
+    kitchen_enabled: true, bar_enabled: true,
+    role_access: JSON.stringify({ manager: DEFAULT_ACCESS.manager.filter((k) => k !== 'differences' && k !== 'cleaning'), _known: DEFAULT_ACCESS.manager.filter((k) => k !== 'differences' && k !== 'cleaning') }),
+  });
+  assert.ok(canOpen('differences', staff({ role: 'manager' }), saved));
 });

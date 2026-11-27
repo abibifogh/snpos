@@ -2,7 +2,7 @@
 
 With **Bar count differences** switched on (feature `count_charges`, off by default), a bar count takes effect the moment it is saved. There is no approval step. Anything short, less anything over on the same count, at selling price, goes on the account of whoever answers for it, as a deduction that is **not final**. Final deductions go to **HIVE**, the payroll.
 
-Shop, store-room and kitchen counts are unchanged: they still wait on Approvals.
+Shop, store-room and kitchen counts are unchanged: they still wait on To do. The admin layout, the count log, follow-ups and the auditor are in [24-checks-to-do-and-the-auditor.md](24-checks-to-do-and-the-auditor.md).
 
 ## Who answers for a count
 

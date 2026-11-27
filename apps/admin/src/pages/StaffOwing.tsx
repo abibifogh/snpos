@@ -8,7 +8,6 @@ import {
 } from '@snpos/core';
 import type { StaffCharge, StaffSettlement, SettleKind, Module, CountCharge } from '@snpos/core';
 import { Link } from 'react-router-dom';
-import { HiveExport } from '../components/HiveExport';
 import { DeductionsReportModal } from '../components/DeductionsReport';
 import { useSession, useMoney } from '../session';
 import { HubTabs, HubTitle } from '../components/Hub';
@@ -71,8 +70,8 @@ export function StaffOwingPage() {
           <h1>
             <HubTitle>Staff owing</HubTitle>
             <InfoTip>
-              Count differences charged to a person, and what has been done about each. Charge a short line from
-              Approvals.
+              Count differences charged to a person, and what has been done about each. A bar count puts them here
+              on its own; the month's deductions for HIVE are on the Deductions &amp; HIVE tab.
             </InfoTip>
           </h1>
         </div>
@@ -99,13 +98,11 @@ export function StaffOwingPage() {
         </div>
       )}
 
-      {/* The month's final count-difference deductions, for HIVE. Nothing until there are any. */}
-      <HiveExport onChanged={() => void load()} />
 
       <Card pad={false}>
         {!charges ? <Spinner /> : people.length === 0 ? (
           <Empty title={show === 'owed' ? 'Nobody owes anything' : 'Nothing here'}>
-            A short line on a count can be charged to a person from Approvals.
+            A short line on a count can be charged to a person from To do.
           </Empty>
         ) : (
           <div className="table-wrap">
@@ -186,7 +183,7 @@ export function StaffOwingPage() {
                                         ) : left < c.amount ? <Badge tone="warn">Part put right</Badge> : <Badge tone="danger">Open</Badge>}
                                       </td>
                                       <td className="num">
-                                        {c.decision === 'pending' && <Link to="/waiting" className="small">Decide on Approvals</Link>}
+                                        {c.decision === 'pending' && <Link to="/differences" className="small">Decide on Differences</Link>}
                                         {left > 0 && !isCredit(c) && !c.decision && (isAdmin
                                           ? <Button size="sm" variant="primary" onClick={() => setSettling(c)}>Put right</Button>
                                           : <span className="small dim">An admin records this</span>)}

@@ -208,7 +208,7 @@ export function Dashboard() {
       <div className="grid-2 today-pair">
         <Card
           title={`Needs you${waiting ? ` · ${waiting.items.length}` : ''}`}
-          actions={<Link to="/waiting" className="btn btn-ghost btn-sm">Open Approvals →</Link>}
+          actions={<Link to="/todo" className="btn btn-ghost btn-sm">Open To do →</Link>}
           pad={false}
         >
           {!waiting ? (
@@ -220,7 +220,7 @@ export function Dashboard() {
               {waiting.items.slice(0, 4).map((w) => {
                 const waited = w.at ? Date.parse(facts.now) - Date.parse(w.at) : 0;
                 return (
-                  <Link className="today-row" to="/waiting" key={w.id}>
+                  <Link className="today-row" to="/todo" key={w.id}>
                     <div className="grow">
                       <div className="t">{w.title}</div>
                       <div className="d">

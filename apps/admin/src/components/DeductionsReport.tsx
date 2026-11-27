@@ -143,7 +143,7 @@ export function DeductionsReportModal({ charges, settlements, personId, business
             </label>
             <label className="row" style={{ gap: '0.5rem', alignItems: 'flex-start' }}>
               <input type="checkbox" checked={approval} onChange={(e) => setApproval(e.target.checked)} />
-              <span>Waiting on Approvals <span className="small dim">· bar counts nobody has approved, against whoever ran that shift</span></span>
+              <span>Waiting on approval <span className="small dim">· bar counts nobody has approved, against whoever ran that shift</span></span>
             </label>
             <label className="row" style={{ gap: '0.5rem', alignItems: 'flex-start' }}>
               <input type="checkbox" checked={off} onChange={(e) => setOff(e.target.checked)} />
@@ -159,7 +159,7 @@ export function DeductionsReportModal({ charges, settlements, personId, business
                 {rows.length} {rows.length === 1 ? 'shortage' : 'shortages'}{count > 1 ? `, ${count} people, a page each` : ''}.
                 {' '}Deducted {money(totals.deducted)}
                 {notFinal ? ` · not final ${money(totals.notFinal)}` : ''}
-                {approval ? ` · waiting on Approvals ${money(totals.approval)}` : ''}
+                {approval ? ` · waiting on approval ${money(totals.approval)}` : ''}
                 {off ? ` · waived or put back ${money(totals.off)}` : ''}.
               </>}
           </Notice>

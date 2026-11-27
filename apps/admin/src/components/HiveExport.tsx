@@ -110,7 +110,7 @@ export function HiveExport({ onChanged }: { onChanged?: () => void }) {
         <Notice tone="warn">
           Held, because {unmatched.length === 1 ? 'this person is' : 'these people are'} not matched to HIVE:{' '}
           {unmatched.map((u) => `${u.name} (${money(u.amount)})`).join(', ')}. Match them on{' '}
-          <Link to="/staff">Staff</Link> and their deductions go with the next download.
+          <Link to="/staff?tab=hive">Staff › HIVE matching</Link> and their deductions go with the next download.
         </Notice>
       )}
     </Card>

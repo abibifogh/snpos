@@ -259,7 +259,7 @@ export function StocktakePage() {
       await loadShelf();
       await loadQueue();
       toast(
-        `${written} difference${written === 1 ? '' : 's'} sent to Approvals, to be agreed or refused.`,
+        `${written} difference${written === 1 ? '' : 's'} sent to To do, to be agreed or refused.`,
       );
     } catch (e) {
       setError(humanError(e));
@@ -309,7 +309,7 @@ export function StocktakePage() {
       {(queue?.length ?? 0) > 0 && (
         <Notice tone="info">
           {queue!.length} count{queue!.length === 1 ? ' is' : 's are'} waiting to be agreed.{' '}
-          <Link to="/waiting?show=count">Open Approvals</Link>
+          <Link to="/todo?show=count">Open To do</Link>
         </Notice>
       )}
 
@@ -497,7 +497,7 @@ export function StocktakePage() {
               in the shape somebody can check against the clipboard in their
               hand, before it is anywhere near the shelf. */}
           <Notice tone="info">
-            Nothing on the shelf changes yet. An admin applies it from Approvals, and the till goes on selling what
+            Nothing on the shelf changes yet. An admin applies it from To do, and the till goes on selling what
             the shelf currently says until then.
           </Notice>
 

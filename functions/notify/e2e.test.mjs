@@ -709,7 +709,7 @@ test('an order over the limit is emailed to the admins the moment it is made', a
   assert.match(mail[0].subject, /PO-0004 to Accra Brewery needs your approval · GH₵7200\.00/);
   assert.match(mail[0].html, /Godfred has made purchase order <strong>PO-0004<\/strong> for the bar/);
   assert.match(mail[0].html, /Club Large/);
-  assert.match(mail[0].html, /under <strong>Approvals<\/strong>/);
+  assert.match(mail[0].html, /under <strong>To do<\/strong>/);
   assert.equal(stamped().length, 1, 'stamped, so it is never told twice');
 });
 

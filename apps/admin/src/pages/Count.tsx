@@ -20,12 +20,15 @@ import { StocktakePage } from './Stocktake';
 export function CountPage() {
   const { profile, settings } = useSession();
   const [params, setParams] = useSearchParams();
-  const sides = catalogueSides('/count', profile, settings);
+  const sides = catalogueSides('/counts', profile, settings);
   const asked = params.get('side') as Module | null;
   const side: Module | undefined = asked && sides.includes(asked) ? asked : sides[0];
 
+  // The side goes in the address beside whatever else is there: on Counts
+  // that is the tab, and dropping it would jump back to the count log.
+  const withSide = (m: Module) => (p: URLSearchParams) => { const next = new URLSearchParams(p); next.set('side', m); return next; };
   useEffect(() => {
-    if (side && asked !== side) setParams({ side }, { replace: true });
+    if (side && asked !== side) setParams(withSide(side), { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [side, asked]);
 
@@ -37,7 +40,7 @@ export function CountPage() {
         <div style={{ marginBottom: '1rem' }}>
           <Segmented<Module>
             value={side}
-            onChange={(m) => setParams({ side: m })}
+            onChange={(m) => setParams(withSide(m))}
             ariaLabel="Which side of the business"
             options={sides.map((m) => ({ value: m, label: SIDE_NAMES[m] }))}
           />

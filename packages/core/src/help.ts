@@ -12,7 +12,7 @@
  * feature's config, see `audienceFor`.
  */
 
-export type HelpRole = 'guest' | 'cook' | 'waiter' | 'cashier' | 'manager' | 'admin';
+export type HelpRole = 'guest' | 'cook' | 'waiter' | 'cashier' | 'manager' | 'auditor' | 'admin';
 
 export const HELP_ROLES: { role: HelpRole; label: string }[] = [
   { role: 'guest', label: 'Customers' },
@@ -20,6 +20,7 @@ export const HELP_ROLES: { role: HelpRole; label: string }[] = [
   { role: 'waiter', label: 'Waiters' },
   { role: 'cashier', label: 'Cashiers' },
   { role: 'manager', label: 'Managers' },
+  { role: 'auditor', label: 'Auditors' },
   { role: 'admin', label: 'Admins' },
 ];
 
@@ -201,7 +202,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     audience: ['cook', 'cashier', 'manager', 'admin'],
     body: [
       p(
-        'When an admin switches it on under Setup \u2192 Cleaning, the kitchen screen and the bar till ask for a short '
+        'When an admin switches it on under Checks \u2192 Cleaning, the kitchen screen and the bar till ask for a short '
         + 'clean before service. Tap each check as it is done; type each fridge or freezer reading in \u00b0C. Every '
         + 'tick is recorded with your name and the time.',
       ),
@@ -209,7 +210,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       p(
         'The list appears once you have started service on the kitchen screen, or once a bar shift is open. '
         + 'Where the admin chose to hold service for it, Start service waits until the required checks are done. '
-        + 'If you really must start, press Start without finishing and say why; a manager sees it on Approvals.',
+        + 'If you really must start, press Start without finishing and say why; a manager sees it on To do.',
       ),
       h('At closing'),
       p('On the bar, Close shift shows the closing list first. On the kitchen screen, press Close up at the top.'),
@@ -219,11 +220,11 @@ export const HELP_ARTICLES: HelpArticle[] = [
         + 'photo. The admin chooses the day, and whether it is done before opening or after closing the night before.',
       ),
       note(
-        'A reading outside the safe range turns orange and goes to Approvals the moment the list is saved. Tell the '
+        'A reading outside the safe range turns orange and goes on To do the moment the list is saved. Tell the '
         + 'manager straight away too: food in a warm fridge is a decision for now, not for tomorrow.',
       ),
       h('The record'),
-      p('Setup \u2192 Cleaning \u2192 Cleaning log lists every day, who did it, when, and every reading. It downloads as a PDF for an inspection.'),
+      p('Checks \u2192 Cleaning \u2192 Cleaning log lists every day, who did it, when, and every reading. It downloads as a PDF for an inspection.'),
     ],
   },
 
@@ -232,11 +233,11 @@ export const HELP_ARTICLES: HelpArticle[] = [
     title: 'When the bar count comes up short',
     summary: 'A bar count takes effect when saved. A shortfall goes on the account of whoever answers for it, not final, and they have a day to answer.',
     area: 'pos',
-    audience: ['cashier', 'manager', 'admin'],
+    audience: ['cashier', 'manager', 'auditor', 'admin'],
     body: [
       p(
         'When an admin switches on Bar count differences under Setup \u2192 Settings \u2192 Features, a bar count no '
-        + 'longer waits on Approvals. It takes effect the moment it is saved: the shelf shows what was counted.',
+        + 'longer waits on To do. It takes effect the moment it is saved: the shelf shows what was counted.',
       ),
       h('Whose shortfall it is'),
       p(
@@ -264,21 +265,69 @@ export const HELP_ARTICLES: HelpArticle[] = [
         'If you accepted it or said nothing, it is deducted when your time is up (a day, unless the admin set '
         + 'another). If you explained or offered to put it back, it waits for a manager, who is reminded each morning.',
       ),
-      h('For managers'),
+      h('For managers and the auditor'),
       p(
-        'Approvals \u2192 Count differences lists each one: the person, the count, the lines and their answer. Deduct it '
+        'Checks \u2192 Differences lists each one: the person, the count, the lines and their answer. Deduct it '
         + 'all, deduct part, waive it, or agree to the put-back they offered. Part and waive ask for a reason, which the '
         + 'person sees. A decision can be undone until it has gone to HIVE; after an undo it waits for a manager, never '
         + 'the clock.',
       ),
       h('HIVE'),
       p(
-        'On Staff, an admin matches each person to their record in HIVE, once. Nothing is matched without an admin '
-        + 'choosing it. Staff \u2192 Staff owing has the month\u2019s final deductions: Download for HIVE gives the '
+        'On Staff \u2192 HIVE matching, an admin matches each person to their record in HIVE, once. Nothing is matched '
+        + 'without an admin choosing it. Differences \u2192 Deductions & HIVE has the month\u2019s final deductions: Download for HIVE gives the '
         + 'spreadsheet, each row with its own reference so it is never taken twice. Anybody not matched is held and '
         + 'named until they are. Once HIVE is connected it reads them itself.',
       ),
-      note('Shop counts, store-room counts and the kitchen\u2019s counts work as before, through Approvals.'),
+      note('Shop counts, store-room counts and the kitchen\u2019s counts work as before, through To do.'),
+    ],
+  },
+
+  {
+    id: 'checks-and-to-do',
+    title: 'Checks, To do and the auditor',
+    summary: 'Every count in one log, every difference from count to HIVE, and the follow-ups that keep them moving.',
+    area: 'admin',
+    audience: ['manager', 'auditor', 'admin'],
+    body: [
+      h('Where things are'),
+      list(
+        'Today \u2192 To do: what is waiting to be decided (what Approvals was), what to follow up and by when, and what was done this week.',
+        'Checks \u2192 Counts: the count log, every count from every side, the sheet to count on, and the counts nobody filed.',
+        'Checks \u2192 Differences: count differences to review, what each person owes, the deductions report and HIVE, and every one decided.',
+        'Checks \u2192 Cleaning: the cleaning routines and their log.',
+      ),
+      h('The count log'),
+      p(
+        'Every start-of-shift and end-of-shift count, every store-room and shop stocktake, and the cash drawer counted '
+        + 'at both ends of every shift. Choose the days, the side, the kind of count or the person; tick Only with a '
+        + 'difference to see what needs a look. Click a row for its lines. Spreadsheet downloads what is shown. A shift '
+        + 'that opened or closed without its count shows as Missed.',
+      ),
+      h('The auditor'),
+      p(
+        'An auditor is a role on Staff for somebody whose job is the counts and what they find. They see To do, the '
+        + 'count log and Differences, and they read shifts, orders, stock and cleaning. They never sell, count stock or '
+        + 'open a shift, so the person checking is never the person being checked.',
+      ),
+      p(
+        'They decide a difference on their own up to a limit the owner sets under Settings \u2192 Features, on Bar '
+        + 'count differences (GH\u20b5100 until it is set). Above it they recommend a decision with a reason, and an admin '
+        + 'or a manager confirms it from Differences or To do. Nobody decides a difference on their own account.',
+      ),
+      h('Follow-ups'),
+      p(
+        'The system raises a follow-up when something is left waiting: a difference nobody has decided a day after the '
+        + 'count, a recommendation to confirm, a put-back not returned two days after it was agreed, a shift that opened '
+        + 'or closed with no count, a count waiting on approval for a day, a shift open past its limit, and the month\u2019s '
+        + 'deductions not yet sent to HIVE. Each one closes itself when the thing is done.',
+      ),
+      p(
+        'Anybody on To do can add their own: what, who it is for, and the day it is due. Closing one asks what was '
+        + 'done. Each morning, at the hour set on Bar count differences, whoever has something due gets one email; '
+        + 'anything two days overdue goes to the admins as well.',
+      ),
+      note('Notes on a difference are kept for good. The person charged does not see them.'),
     ],
   },
 
@@ -312,7 +361,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       note('What is already on order, or already asked for by somebody else, is shown but cannot be asked for again.'),
       h('What happens next'),
       p(
-        'It goes to Approvals for whoever orders stock, who is also emailed. They make the orders (one draft per '
+        'It goes on To do for whoever orders stock, who is also emailed. They make the orders (one draft per '
         + 'supplier, marked as asked by the kitchen or the bar), change the amounts first, or send it back with a reason. '
         + 'Asked before, beside Ask, shows each request as asked, ordered or arrived, and the reason when it was sent back.',
       ),
@@ -338,7 +387,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       p('The bar and the shop count their shelf on the count sheet: when the shift opens, and again before it closes, and they must. The kitchen does a quick check instead: at the close the cook taps OK, Low or Out against every ingredient. An admin can switch the kitchen to counting in and out on the sheet under Settings, Stock; it is then asked, never forced, and the close says when it was skipped.'),
       list(
         'You type what is actually there. The sheet shows what the shelf should hold and works out the difference.',
-        'A difference does not change the stock on its own. It waits on Approvals, where a manager agrees it, refuses it, or charges it to whoever was responsible. That is the same on every side.',
+        'A difference does not change the stock on its own. It waits on To do, where a manager agrees it, refuses it, or charges it to whoever was responsible. That is the same on every side.',
         'Food and drink come off the shelf as each order is paid, so what the shelf should hold is always up to date, in the kitchen as well as the bar.',
         'The shop counts a short list at each shift, not every piece: what was sold or added since the shift opened, pieces over a set price, and one shelf a day in turn. The whole shop is counted on the full-count day. An admin sets all of this under Settings, Stock.',
         'At the shop, tap All here on a piece that matches; use − and + only when it does not, and say why it is short. Every tap is saved on the system as you go, so a count left half way carries on from any till.',
@@ -439,7 +488,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       h('Close the day'),
       p('The Close the day tab on Today is a short list for yesterday (or today, after noon): shifts closed, count differences decided, cash put away and banked, MoMo and card matched to the bank, spends agreed, and petty cash counted. Each line says whether it is done and takes you to where it is done. It decides nothing itself.'),
       h('The books'),
-      p('The books are three pages under Books. Accounting holds the weekly jobs: Settle up, Bills to pay, Owed to us, Reconcile, Close a period. Reports holds the sales figures and, beside them, profit and loss with the balance sheet, cash flow and the tax return. Accountant tools holds the journal, general ledger, trial balance, recurring entries, fixed assets, chart of accounts, bank and cash accounts, opening balances and year end. See "The accounts" for each.'),
+      p('The books are two pages under Books. Accounting holds the weekly jobs on its Day to day side: Settle up, Bills to pay, Owed to us, Reconcile, Close a period. Reports holds the sales figures and, beside them, profit and loss with the balance sheet, cash flow and the tax return. The Accountant tools side of Accounting holds the journal, general ledger, trial balance, recurring entries, fixed assets, chart of accounts, bank and cash accounts, opening balances and year end. See "The accounts" for each.'),
       note('What each person sees of it is granted part by part, under Staff, on the Permissions tab.'),
     ],
   },
